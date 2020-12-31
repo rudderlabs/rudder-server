@@ -917,6 +917,10 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", publishBatchSize, noOfWorkers, destType, destID)
 	uniqueLoadGenID := uuid.NewV4().String()
+
+	var wg sync.WaitGroup
+	var loadFileIDsLock sync.RWMutex
+
 	for i := 0; i < len(stagingFiles); i += publishBatchSize {
 		j := i + publishBatchSize
 		if j > len(stagingFiles) {
@@ -954,32 +958,43 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 		if err != nil {
 			panic(err)
 		}
-
-		responses := <-ch
-		pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", stagingFiles[i].ID, stagingFiles[j-1].ID, destType, destID)
-		for _, resp := range responses {
-			// TODO: make it aborted
-			if resp.Status == "aborted" {
-				pkgLogger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
-				continue
+		// set messages to nil to release mem allocated
+		messages = nil
+		wg.Add(1)
+		batchStartIdx := i
+		batchEndIdx := j
+		rruntime.Go(func() {
+			responses := <-ch
+			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", stagingFiles[batchStartIdx].ID, stagingFiles[batchEndIdx-1].ID, destType, destID)
+			for _, resp := range responses {
+				// TODO: make it aborted
+				if resp.Status == "aborted" {
+					pkgLogger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
+					continue
+				}
+				var payload map[string]interface{}
+				err = json.Unmarshal(resp.Payload, &payload)
+				if err != nil {
+					panic(err)
+				}
+				respIDs, ok := payload["LoadFileIDs"].([]interface{})
+				if !ok {
+					pkgLogger.Errorf("[WH]: No LoadFileIDS returned by wh worker")
+					continue
+				}
+				ids := make([]int64, len(respIDs))
+				for i := range respIDs {
+					ids[i] = int64(respIDs[i].(float64))
+				}
+				loadFileIDsLock.Lock()
+				loadFileIDs = append(loadFileIDs, ids...)
+				loadFileIDsLock.Unlock()
 			}
-			var payload map[string]interface{}
-			err = json.Unmarshal(resp.Payload, &payload)
-			if err != nil {
-				panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(resp.Payload), err))
-			}
-			respIDs, ok := payload["LoadFileIDs"].([]interface{})
-			if !ok {
-				pkgLogger.Errorf("[WH]: No LoadFileIDS returned by wh worker")
-				continue
-			}
-			ids := make([]int64, len(respIDs))
-			for i := range respIDs {
-				ids[i] = int64(respIDs[i].(float64))
-			}
-			loadFileIDs = append(loadFileIDs, ids...)
-		}
+			wg.Done()
+		})
 	}
+
+	wg.Wait()
 
 	if len(loadFileIDs) == 0 {
 		err = fmt.Errorf("No load files generated")

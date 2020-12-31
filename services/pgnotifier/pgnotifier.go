@@ -16,12 +16,13 @@ import (
 )
 
 var (
-	queueName          string
-	maxAttempt         int
-	retriggerInterval  time.Duration
-	retriggerCount     int
-	trackBatchInterval time.Duration
-	pkgLogger          logger.LoggerI
+	queueName                      string
+	maxAttempt                     int
+	retriggerInterval              time.Duration
+	retriggerCount                 int
+	retriggerExecutingTimeLimitInS int
+	trackBatchInterval             time.Duration
+	pkgLogger                      logger.LoggerI
 )
 
 const (
@@ -37,7 +38,8 @@ func init() {
 	maxAttempt = config.GetInt("PgNotifier.maxAttempt", 3)
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
 	retriggerInterval = time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
-	retriggerCount = config.GetInt("PgNotifier.retriggerCount", 100)
+	retriggerCount = config.GetInt("PgNotifier.retriggerCount", 500)
+	retriggerExecutingTimeLimitInS = config.GetInt("PgNotifier.retriggerExecutingTimeLimitInS", 120)
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("pgnotifier")
 }
 
@@ -111,20 +113,20 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 		time.Sleep(retriggerInterval)
 		stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[3]s',
 								updated_at = '%[2]s'
-								WHERE id IN  (
-								SELECT id
-								FROM %[1]s
-								WHERE status='%[3]s' OR status='%[4]s'
-								ORDER BY id
-								FOR UPDATE SKIP LOCKED
-								LIMIT %[5]v
-								);`,
+								WHERE id IN (
+									SELECT id FROM %[1]s
+									WHERE status='%[3]s' OR status='%[4]s' OR (status='%[5]s' AND last_exec_time <= NOW() - INTERVAL '%[6]v seconds')
+									ORDER BY id
+									LIMIT %[7]v
+								)`,
 			queueName,
 			GetCurrentSQLTimestamp(),
 			WaitingState,
 			FailedState,
+			ExecutingState,
+			retriggerExecutingTimeLimitInS,
 			retriggerCount)
-		pkgLogger.Debugf("PgNotifier: triggering pending jobs")
+		pkgLogger.Debugf("PgNotifier: triggering pending jobs: %v", stmt)
 		_, err := notifier.dbHandle.Exec(stmt)
 		if err != nil {
 			panic(err)
@@ -178,7 +180,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 	})
 }
 
-func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan ClaimResponseT) {
+func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT) {
 	rruntime.Go(func() {
 		response := <-ch
 		var err error
@@ -190,33 +192,23 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, tx *sql.Tx, ch chan Cl
 									ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
 									END), attempt = attempt + 1, updated_at = '%[5]s', error = %[6]s
 									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), misc.QuoteLiteral(response.Err.Error()), id)
-			_, err = tx.Exec(stmt)
+			_, err = notifier.dbHandle.Exec(stmt)
 		} else {
 			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
-			_, err = tx.Exec(stmt)
+			_, err = notifier.dbHandle.Exec(stmt)
 		}
 
-		if err == nil {
-			tx.Commit()
-		} else {
-			// TODO: verify rollback is necessary on error
-			tx.Rollback()
+		if err != nil {
+			// TODO: abort this job or raise metric and alert
 			pkgLogger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
 		}
 	})
 }
 
 func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool) {
-	//Begin Transaction
-	tx, err := notifier.dbHandle.Begin()
-	if err != nil {
-		return
-	}
-
 	var claimedID int64
 	var batchID, status string
 	var payload json.RawMessage
-	// Dont panic if acquire fails -- Just rollback & return the worker to free state again
 	stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s',
 						updated_at = '%[3]s',
 						last_exec_time = '%[3]s',
@@ -230,12 +222,10 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 						LIMIT 1
 						)
 						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState)
-	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
+	err := notifier.dbHandle.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 
 	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
-		// TODO: verify rollback is necessary on error
-		tx.Rollback()
+		pkgLogger.Debugf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
 		return
 	}
 
@@ -247,7 +237,7 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 		Payload:           payload,
 		ClaimResponseChan: responseChan,
 	}
-	notifier.updateClaimedEvent(claimedID, tx, responseChan)
+	notifier.updateClaimedEvent(claimedID, responseChan)
 	return claim, true
 }
 

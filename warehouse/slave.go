@@ -116,6 +116,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 	fi, err := os.Stat(filePath)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error getting file size of downloaded staging file: ", err)
+		return err
 	}
 	fileSize := fi.Size()
 	pkgLogger.Debugf("[WH]: Downloaded staging file %s size:%v", job.StagingFileLocation, fileSize)
@@ -141,14 +142,22 @@ type loadFileUploadJob struct {
 	outputFile misc.GZipWriter
 }
 
+type loadFileUploadOutputT struct {
+	tableName string
+	location  string
+	totalRows int
+}
+
 func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 	job := jobRun.job
 	uploader, err := job.getFileManager()
 	if err != nil {
 		return []int64{}, err
 	}
-	var loadFileIDs []int64
-	loadFileIDChan := make(chan int64, len(jobRun.outputFileWritersMap))
+	// var loadFileIDs []int64
+	var loadFileUploadOutputs []loadFileUploadOutputT
+
+	loadFileOutputChan := make(chan loadFileUploadOutputT, len(jobRun.outputFileWritersMap))
 	uploadJobChan := make(chan *loadFileUploadJob, len(jobRun.outputFileWritersMap))
 	// close chan to avoid memory leak ranging over it
 	defer close(uploadJobChan)
@@ -169,8 +178,11 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 						uploadErrorChan <- err
 						return
 					}
-					fileID := job.markLoadFileUploadSuccess(tableName, uploadOutput.Location, jobRun.tableEventCountMap[tableName])
-					loadFileIDChan <- fileID
+					loadFileOutputChan <- loadFileUploadOutputT{
+						tableName: tableName,
+						location:  uploadOutput.Location,
+						totalRows: jobRun.tableEventCountMap[tableName],
+					}
 				}
 
 			}
@@ -184,9 +196,10 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 	// Wait for response
 	for {
 		select {
-		case loadFileID := <-loadFileIDChan:
-			loadFileIDs = append(loadFileIDs, loadFileID)
-			if len(loadFileIDs) == len(jobRun.outputFileWritersMap) {
+		case loadFileOutput := <-loadFileOutputChan:
+			loadFileUploadOutputs = append(loadFileUploadOutputs, loadFileOutput)
+			if len(loadFileUploadOutputs) == len(jobRun.outputFileWritersMap) {
+				loadFileIDs := job.bulkCreateLoadFileRecords(loadFileUploadOutputs)
 				return loadFileIDs, nil
 			}
 		case err := <-uploadErrorChan:
@@ -225,6 +238,49 @@ func (job *PayloadT) markLoadFileUploadSuccess(tableName string, uploadLocation 
 	}
 	stmt.Close()
 	return fileID
+}
+
+func (job *PayloadT) bulkCreateLoadFileRecords(loadFileUploadOutputs []loadFileUploadOutputT) (loadFileIDs []int64) {
+	columnsInInsert := 8
+	currentTime := timeutil.Now()
+	valueReferences := make([]string, 0, len(loadFileUploadOutputs))
+	valueArgs := make([]interface{}, 0, len(loadFileUploadOutputs)*columnsInInsert)
+	for idx, loadFileUploadOutput := range loadFileUploadOutputs {
+		var valueRefsArr []string
+		for index := idx*columnsInInsert + 1; index <= (idx+1)*columnsInInsert; index++ {
+			valueRefsArr = append(valueRefsArr, fmt.Sprintf(`$%d`, index))
+		}
+		valueReferences = append(valueReferences, fmt.Sprintf("(%s)", strings.Join(valueRefsArr, ",")))
+		valueArgs = append(valueArgs, job.StagingFileID)
+		valueArgs = append(valueArgs, loadFileUploadOutput.location)
+		valueArgs = append(valueArgs, job.SourceID)
+		valueArgs = append(valueArgs, job.DestinationID)
+		valueArgs = append(valueArgs, job.DestinationType)
+		valueArgs = append(valueArgs, loadFileUploadOutput.tableName)
+		valueArgs = append(valueArgs, loadFileUploadOutput.totalRows)
+		valueArgs = append(valueArgs, currentTime)
+	}
+
+	// sample cosntructed query
+	// INSERT INTO wh_load_files (staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8),($9,$10,$11,$12,$13,$14,$15,$16) RETURNING id
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at) VALUES %s RETURNING id`, warehouseutils.WarehouseLoadFilesTable, strings.Join(valueReferences, ","))
+
+	rows, err := dbHandle.Query(sqlStatement, valueArgs...)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		err := rows.Scan(&id)
+		if err != nil {
+			panic(err)
+		}
+		loadFileIDs = append(loadFileIDs, id)
+	}
+
+	return loadFileIDs
 }
 
 // Sort columns per table to maintain same order in load file (needed in case of csv load file)
@@ -460,32 +516,46 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	return loadFileIDs, err
 }
 
-func claimAndProcess(workerIdx int, slaveID string) {
+func freeWorker(workerIdx int) {
+	slaveWorkerRoutineBusy[workerIdx] = false
+	pkgLogger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
+}
+
+func claim(workerIdx int, slaveID string) (claimedJob pgnotifier.ClaimT, claimed bool) {
 	pkgLogger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
 	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
-	claim, claimed := notifier.Claim(workerID)
-	if claimed {
-		pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claim.ID, workerIdx, slaveID)
-		var payload PayloadT
-		json.Unmarshal(claim.Payload, &payload)
-		payload.BatchID = claim.BatchID
-		ids, err := processStagingFile(payload)
-		if err != nil {
-			response := pgnotifier.ClaimResponseT{
-				Err: err,
-			}
-			claim.ClaimResponseChan <- response
-		}
-		payload.LoadFileIDs = ids
-		output, err := json.Marshal(payload)
+	claimedJob, claimed = notifier.Claim(workerID)
+	return
+}
+
+func processClaimedJob(claimedJob pgnotifier.ClaimT) {
+	handleErr := func(err error, claim pgnotifier.ClaimT) {
+		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponseT{
-			Err:     err,
-			Payload: output,
+			Err: err,
 		}
 		claim.ClaimResponseChan <- response
 	}
-	slaveWorkerRoutineBusy[workerIdx-1] = false
-	pkgLogger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
+
+	var payload PayloadT
+	err := json.Unmarshal(claimedJob.Payload, &payload)
+	if err != nil {
+		handleErr(err, claimedJob)
+		return
+	}
+	payload.BatchID = claimedJob.BatchID
+	ids, err := processStagingFile(payload)
+	if err != nil {
+		handleErr(err, claimedJob)
+		return
+	}
+	payload.LoadFileIDs = ids
+	output, err := json.Marshal(payload)
+	response := pgnotifier.ClaimResponseT{
+		Err:     err,
+		Payload: output,
+	}
+	claimedJob.ClaimResponseChan <- response
 }
 
 func setupSlave() {
@@ -499,12 +569,19 @@ func setupSlave() {
 		for {
 			ev := <-jobNotificationChannel
 			pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
-			for workerIdx := 1; workerIdx <= noOfSlaveWorkerRoutines; workerIdx++ {
-				if !slaveWorkerRoutineBusy[workerIdx-1] {
-					slaveWorkerRoutineBusy[workerIdx-1] = true
+			for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
+				if !slaveWorkerRoutineBusy[workerIdx] {
+					slaveWorkerRoutineBusy[workerIdx] = true
 					idx := workerIdx
+					claimedJob, claimed := claim(idx, slaveID)
+					if !claimed {
+						freeWorker(idx)
+						break
+					}
 					rruntime.Go(func() {
-						claimAndProcess(idx, slaveID)
+						pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
+						processClaimedJob(claimedJob)
+						freeWorker(idx)
 					})
 					break
 				}
