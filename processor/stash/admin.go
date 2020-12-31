@@ -37,13 +37,17 @@ func (s *StashRpcHandler) GetDSStats(dsName string, result *string) (err error) 
 		return err
 	}
 	results, execErr := s.getErrorCountByDest(dbHandle, jobTableName)
+	if execErr != nil {
+		return execErr
+	}
+
 	response, marshalErr := json.MarshalIndent(results, "", " ")
 	if marshalErr != nil {
 		*result = ""
 	} else {
 		*result = string(response)
 	}
-	return execErr
+	return marshalErr
 }
 
 type DestinationCountResult struct {
