@@ -209,6 +209,7 @@ populateHistoricIdentities = false
     queryDebugLogs = false
     blockSize = 1000
     poolSize = 10
+    disableNullable = false
 
 [Processor]
 webPort = 8086

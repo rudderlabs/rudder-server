@@ -30,7 +30,9 @@ var (
 	blockSize          string
 	poolSize           string
 	pkgLogger          logger.LoggerI
+	disableNullable    bool
 )
+var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
 const (
 	host          = "host"
@@ -53,6 +55,13 @@ var rudderDataTypesMapToClickHouse = map[string]string{
 	"string":   "String",
 	"datetime": "DateTime",
 	"boolean":  "UInt8",
+}
+
+var datatypeDefaultValuesMap = map[string]interface{}{
+	"int":      0,
+	"float":    0.0,
+	"bool":     0,
+	"datetime": clikhouseDefaultDateTime,
 }
 
 var clickhouseDataTypesMapToRudder = map[string]string{
@@ -145,6 +154,7 @@ func loadConfig() {
 	queryDebugLogs = config.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
 	blockSize = config.GetString("Warehouse.clickhouse.blockSize", "1000")
 	poolSize = config.GetString("Warehouse.clickhouse.poolSize", "10")
+	disableNullable = config.GetBool("Warehouse.clickhouse.disableNullable", false)
 
 }
 
@@ -187,20 +197,21 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 func columnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
-		//codec := getClickHouseCodecForColumnType(dataType)
+		codec := getClickHouseCodecForColumnType(dataType, tableName)
 		columnType := getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
-		arr = append(arr, fmt.Sprintf(`%s %s`, columnName, columnType))
+		arr = append(arr, fmt.Sprintf(`%s %s %s`, columnName, columnType, codec))
 	}
 	return strings.Join(arr[:], ",")
 }
 
-func getClickHouseCodecForColumnType(columnType string) string {
+func getClickHouseCodecForColumnType(columnType string, tableName string) string {
 	switch columnType {
 	case "datetime":
-		return "Codec(DoubleDelta, LZ4)"
-	default:
-		return ""
+		if disableNullable && !(tableName == warehouseutils.IdentifiesTable || tableName == warehouseutils.UsersTable) {
+			return "Codec(DoubleDelta, LZ4)"
+		}
 	}
+	return ""
 }
 
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
@@ -208,8 +219,12 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string
 	if notNullableKey {
 		return columnType
 	}
+	// Nullable is not disabled for users and identity table
 	if tableName == warehouseutils.UsersTable {
 		return fmt.Sprintf(`SimpleAggregateFunction(anyLast, Nullable(%s))`, columnType)
+	}
+	if tableName != warehouseutils.IdentifiesTable && disableNullable {
+		return columnType
 	}
 	return fmt.Sprintf(`Nullable(%s)`, columnType)
 }
@@ -270,36 +285,30 @@ func generateArgumentString(arg string, length int) string {
 
 // typecastDataFromType typeCasts string data to the mentioned data type
 func typecastDataFromType(data string, dataType string) interface{} {
+	var dataI interface{}
+	var err error
 	switch dataType {
 	case "int":
-		i, err := strconv.Atoi(data)
-		if err != nil {
-			return nil
-		}
-		return i
+		dataI, err = strconv.Atoi(data)
 	case "float":
-		f, err := strconv.ParseFloat(data, 64)
-		if err != nil {
-			return nil
-		}
-		return f
+		dataI, err = strconv.ParseFloat(data, 64)
 	case "datetime":
-		t, err := time.Parse(time.RFC3339, data)
-		if err != nil {
-			return nil
-		}
-		return t
+		dataI, err = time.Parse(time.RFC3339, data)
 	case "boolean":
-		b, err := strconv.ParseBool(data)
-		if err != nil {
-			return nil
-		}
+		var b bool
+		b, err = strconv.ParseBool(data)
+		dataI = 0
 		if b {
-			return 1
+			dataI = 1
 		}
-		return 0
 	}
-	return data
+	if err != nil {
+		if disableNullable {
+			return datatypeDefaultValuesMap[dataType]
+		}
+		return nil
+	}
+	return dataI
 }
 
 // loadTable loads table to clickhouse from the load files
