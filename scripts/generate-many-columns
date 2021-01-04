@@ -1,0 +1,21 @@
+#!/bin/bash
+
+if [ $# != 3 ]
+then
+  echo "Usage: ./generate-many-columns <write_key> <end_point> <no-of-batches>"
+  echo "Example: ./generate-many-columns 1S0ibSaDlSSGkaQuHLi9feJqIUBNAE https://<data_plane_url>/v1/batch 2"
+  exit
+fi
+
+dir=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
+
+#curl -u $1: -X POST http://$2:8080/v1/track -d @$dir/track.json --header "Content-Type: application/json"
+#curl -u $1: -X POST $2 -d @$dir/track.json --header "Content-Type: application/json"
+
+END=$3
+for i in $(seq 1 $END); do 
+  echo $i; 
+  sed 's/ridph/r'$i'/g' many-columns-template.json > many-columns-$i.json
+  curl -u $1: -X POST $2 -d @$dir/many-columns-$i.json --header "Content-Type: application/json"; # give absolute path for batch.json to test on local machine
+  rm many-columns-$i.json;
+done

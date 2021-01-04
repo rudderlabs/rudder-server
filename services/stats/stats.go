@@ -32,6 +32,7 @@ var enableMemStats bool
 var enableGCStats bool
 var rc runtimeStatsCollector
 var pkgLogger logger.LoggerI
+var statsSamplingRate float32
 
 // DefaultStats is a common implementation of StatsD stats managements
 var DefaultStats Stats
@@ -45,6 +46,8 @@ func init() {
 	enableCPUStats = config.GetBool("RuntimeStats.enableCPUStats", true)
 	enableMemStats = config.GetBool("RuntimeStats.enabledMemStats", true)
 	enableGCStats = config.GetBool("RuntimeStats.enableGCStats", true)
+	statsSamplingRate = float32(config.GetFloat64("statsSamplingRate", 1))
+
 	pkgLogger = logger.NewLogger().Child("stats")
 
 }
@@ -55,6 +58,7 @@ type Tags map[string]string
 type Stats interface {
 	NewStat(Name string, StatType string) (rStats RudderStats)
 	NewTaggedStat(Name string, StatType string, tags Tags) RudderStats
+	NewSampledTaggedStat(Name string, StatType string, tags Tags) RudderStats
 }
 
 // HandleT is the default implementation of Stats
@@ -120,6 +124,14 @@ func NewStat(Name string, StatType string) (rStats RudderStats) {
 }
 
 func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
+	return newTaggedStat(Name, StatType, tags, 1)
+}
+
+func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
+	return newTaggedStat(Name, StatType, tags, statsSamplingRate)
+}
+
+func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
 	tagStr := StatType
 	tags["instanceName"] = instanceID
 	for tagName, tagVal := range tags {
@@ -140,7 +152,7 @@ func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats
 			tagVals = append(tagVals, tagName, tagVal)
 		}
 		var err error
-		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...))
+		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
 		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
 		if err != nil {

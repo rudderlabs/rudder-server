@@ -46,11 +46,14 @@ func getNumEventsPerTableUpload(uploadID int64) (map[string]int, error) {
 	return eventsPerTableMap, nil
 }
 
-func areTableUploadsCreated(uploadID int64) (bool, error) {
+func areTableUploadsCreated(uploadID int64) bool {
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE wh_upload_id=%d`, warehouseutils.WarehouseTableUploadsTable, uploadID)
 	var count int
 	err := dbHandle.QueryRow(sqlStatement).Scan(&count)
-	return count > 0, err
+	if err != nil {
+		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+	}
+	return count > 0
 }
 
 func createTableUploads(uploadID int64, tableNames []string) (err error) {
@@ -65,6 +68,7 @@ func createTableUploads(uploadID int64, tableNames []string) (err error) {
 	if err != nil {
 		return
 	}
+	defer stmt.Close()
 
 	now := timeutil.Now()
 	for _, table := range tableNames {
@@ -75,11 +79,6 @@ func createTableUploads(uploadID int64, tableNames []string) (err error) {
 	}
 
 	_, err = stmt.Exec()
-	if err != nil {
-		return
-	}
-
-	err = stmt.Close()
 	if err != nil {
 		return
 	}

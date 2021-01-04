@@ -294,6 +294,6 @@ enableGCStats=true
 
 [PgNotifier]
 retriggerIntervalInS = 2
-retriggerCount = 100
+retriggerCount = 500
 trackBatchIntervalInS = 2
 maxAttempt = 3

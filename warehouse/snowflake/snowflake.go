@@ -420,7 +420,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 
 func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	if len(sf.Uploader.GetTableSchemaInUpload(identifiesTable)) == 0 {
-		return
+		return errorMap
 	}
 	errorMap = map[string]error{identifiesTable: nil}
 	pkgLogger.Infof("SF: Starting load for identifies and users tables\n")
@@ -428,12 +428,12 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	resp, err := sf.loadTable(identifiesTable, sf.Uploader.GetTableSchemaInUpload(identifiesTable), nil, true)
 	if err != nil {
 		errorMap[identifiesTable] = err
-		return
+		return errorMap
 	}
 	defer resp.dbHandle.Close()
 
 	if len(sf.Uploader.GetTableSchemaInUpload(usersTable)) == 0 {
-		return
+		return errorMap
 	}
 	errorMap[usersTable] = nil
 
@@ -468,30 +468,32 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		resp.stagingTable,                // 5
 		strings.Join(userColNames, ","),  // 6
 	)
-	pkgLogger.Debugf("SF: Creating staging table for users: %s\n", sqlStatement)
+	pkgLogger.Infof("SF: Creating staging table for users: %s\n", sqlStatement)
 	_, err = resp.dbHandle.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("SF: Error creating temporary table for table:%s: %v\n", usersTable, err)
-		return
+		errorMap[usersTable] = err
+		return errorMap
 	}
 
-	primaryKey := "ID"
-	columnNames := append([]string{"ID"}, userColNames...)
+	primaryKey := `"ID"`
+	columnNames := append([]string{`"ID"`}, userColNames...)
 	columnNamesStr := strings.Join(columnNames, ",")
-	columnsWithValuesArr := []string{}
-	stagingColumnValuesArr := []string{}
-	for _, colName := range columnNames {
-		columnsWithValuesArr = append(columnsWithValuesArr, fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, colName))
-		stagingColumnValuesArr = append(stagingColumnValuesArr, fmt.Sprintf(`staging."%s"`, colName))
+	var columnsWithValues, stagingColumnValues string
+	for idx, colName := range columnNames {
+		columnsWithValues += fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName)
+		stagingColumnValues += fmt.Sprintf(`staging.%s`, colName)
+		if idx != len(columnNames)-1 {
+			columnsWithValues += fmt.Sprintf(`,`)
+			stagingColumnValues += fmt.Sprintf(`,`)
+		}
 	}
-	columnsWithValues := strings.Join(columnsWithValuesArr, ",")
-	stagingColumnValues := strings.Join(stagingColumnValuesArr, ",")
 
 	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s" AS original
 									USING (
 										SELECT %[3]s FROM "%[2]s"
 									) AS staging
-									ON (original."%[4]s" = staging."%[4]s")
+									ON (original.%[4]s = staging.%[4]s)
 									WHEN MATCHED THEN
 									UPDATE SET %[5]s
 									WHEN NOT MATCHED THEN
@@ -500,9 +502,11 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	_, err = resp.dbHandle.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
-		return
+		errorMap[usersTable] = err
+		return errorMap
 	}
-	return
+	pkgLogger.Infof("SF: Complete load for table:%s", usersTable)
+	return errorMap
 }
 
 type SnowflakeCredentialsT struct {
@@ -541,57 +545,43 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 	return db, nil
 }
 
-func (sf *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
-	if len(sf.Uploader.GetSchemaInWarehouse()) == 0 {
-		var schemaExists bool
-		if schemaExists, err = sf.schemaExists(sf.Namespace); !schemaExists {
-			err = sf.createSchema()
-		}
-		if err != nil {
-			return err
-		}
+func (sf *HandleT) CreateSchema() (err error) {
+	var schemaExists bool
+	if schemaExists, err = sf.schemaExists(sf.Namespace); err != nil && !schemaExists {
+		err = sf.createSchema()
 	}
+	return err
+}
 
+func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
 	_, err = sf.Db.Exec(sqlStatement)
 	if err != nil {
-		return
+		return err
 	}
 
-	processedTables := make(map[string]bool)
-	for _, tableName := range diff.Tables {
-		var tableExists bool
-		tableExists, err = sf.tableExists(tableName)
-		if err != nil {
-			return
-		}
-		if !tableExists {
-			err = sf.createTable(fmt.Sprintf(`%s`, tableName), diff.ColumnMaps[tableName])
-			if err != nil {
-				return
-			}
-			processedTables[tableName] = true
+	err = sf.createTable(fmt.Sprintf(`%s`, tableName), columnMap)
+	return err
+}
+
+func (sf *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
+	_, err = sf.Db.Exec(sqlStatement)
+	if err != nil {
+		return err
+	}
+
+	err = sf.addColumn(tableName, columnName, columnType)
+	if err != nil {
+		if checkAndIgnoreAlreadyExistError(err) {
+			pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, sf.Namespace, tableName, err)
+			err = nil
 		}
 	}
-	for tableName, columnMap := range diff.ColumnMaps {
-		// skip adding columns when table didn't exist previously and was created in the prev statement
-		// this to make sure all columns in the the columnMap exists in the table in snowflake
-		if _, ok := processedTables[tableName]; ok {
-			continue
-		}
-		if len(columnMap) > 0 {
-			for columnName, columnType := range columnMap {
-				err = sf.addColumn(tableName, columnName, columnType)
-				if err != nil {
-					if checkAndIgnoreAlreadyExistError(err) {
-						pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, sf.Namespace, tableName, err)
-					} else {
-						return
-					}
-				}
-			}
-		}
-	}
+	return err
+}
+
+func (sf *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
 	return
 }
 
@@ -656,7 +646,17 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 				if err != nil {
 					return
 				}
-				csvRow = append(csvRow, "anonymous_id", anonymousID.String, "user_id", userID.String)
+
+				if !anonymousID.Valid && !userID.Valid {
+					continue
+				}
+
+				// avoid setting null merge_property_1 to avoid not null constraint in local postgres
+				if anonymousID.Valid {
+					csvRow = append(csvRow, "anonymous_id", anonymousID.String, "user_id", userID.String)
+				} else {
+					csvRow = append(csvRow, "user_id", userID.String, "anonymous_id", anonymousID.String)
+				}
 				csvWriter.Write(csvRow)
 				csvWriter.Flush()
 				gzWriter.WriteGZ(buff.String())
@@ -702,19 +702,18 @@ func (sf *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 		if err != nil {
 			return
 		}
-		if exists {
-			sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"."%s"`, sf.Namespace, tableName)
-			var count int64
-			err = sf.Db.QueryRow(sqlStatement).Scan(&count)
-			if err != nil {
-				return
-			}
-			if count > 0 {
-				empty = false
-				return
-			}
-		} else {
+		if !exists {
 			continue
+		}
+		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"."%s"`, sf.Namespace, tableName)
+		var count int64
+		err = sf.Db.QueryRow(sqlStatement).Scan(&count)
+		if err != nil {
+			return
+		}
+		if count > 0 {
+			empty = false
+			return
 		}
 	}
 	return

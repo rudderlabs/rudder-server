@@ -141,7 +141,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 }
 
 func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations, _ := pg.Uploader.GetLoadFileLocations(tableName)
+	objectLocations := pg.Uploader.GetLoadFileLocations(tableName)
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		object, err := warehouseutils.GetObjectName(objectLocation, pg.Warehouse.Destination.Config, pg.ObjectStorage)
@@ -219,7 +219,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	stmt, err := txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
 	if err != nil {
-		pkgLogger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v", stagingTableName, err)
+		pkgLogger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
 		return
 	}
 	for _, objectFileName := range fileNames {
@@ -436,7 +436,7 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
-func (pg *HandleT) createSchema() (err error) {
+func (pg *HandleT) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, pg.Namespace)
 	pkgLogger.Infof("PG: Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
@@ -475,13 +475,7 @@ func (pg *HandleT) addColumn(tableName string, columnName string, columnType str
 	return
 }
 
-func (pg *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
-	if len(pg.Uploader.GetSchemaInWarehouse()) == 0 {
-		err = pg.createSchema()
-		if err != nil {
-			return err
-		}
-	}
+func (pg *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
 	_, err = pg.Db.Exec(sqlStatement)
@@ -489,38 +483,24 @@ func (pg *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
 		return err
 	}
 	pkgLogger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
+	err = pg.createTable(fmt.Sprintf(`%s`, tableName), columnMap)
+	return err
+}
 
-	processedTables := make(map[string]bool)
-	for _, tableName := range diff.Tables {
-		tableExists, err := pg.tableExists(tableName)
-		if err != nil {
-			return err
-		}
-		if !tableExists {
-			err = pg.createTable(fmt.Sprintf(`%s`, tableName), diff.ColumnMaps[tableName])
-			if err != nil {
-				return err
-			}
-			processedTables[tableName] = true
-		}
+func (pg *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
+	sqlStatement := fmt.Sprintf(`SET search_path to "%s"`, pg.Namespace)
+	_, err = pg.Db.Exec(sqlStatement)
+	if err != nil {
+		return err
 	}
-	for tableName, columnMap := range diff.ColumnMaps {
-		// skip adding columns when table didn't exist previously and was created in the prev statement
-		// this to make sure all columns in the the columnMap exists in the table in snowflake
-		if _, ok := processedTables[tableName]; ok {
-			continue
-		}
-		if len(columnMap) > 0 {
-			for columnName, columnType := range columnMap {
-				err := pg.addColumn(tableName, columnName, columnType)
-				if err != nil {
-					pkgLogger.Errorf("PG: Column %s already exists on %s.%s \nResponse: %v", columnName, pg.Namespace, tableName, err)
-					return err
-				}
-			}
-		}
-	}
-	return nil
+	pkgLogger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
+	err = pg.addColumn(tableName, columnName, columnType)
+	return err
+}
+
+func (pg *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+	return
 }
 
 func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {

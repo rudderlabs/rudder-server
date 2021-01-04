@@ -65,6 +65,7 @@ var (
 	userWebRequestBatchTimeout, dbBatchWriteTimeout             time.Duration
 	enabledWriteKeysSourceMap                                   map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                   map[string]string
+	sourceIDToNameMap                                           map[string]string
 	configSubscriberLock                                        sync.RWMutex
 	maxReqSize                                                  int
 	enableDedup                                                 bool
@@ -523,7 +524,7 @@ func (gateway *HandleT) printStats() {
 
 func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		latencyStat := gateway.stats.NewTaggedStat("gateway.response_time", stats.TimerType, stats.Tags{})
+		latencyStat := gateway.stats.NewSampledTaggedStat("gateway.response_time", stats.TimerType, stats.Tags{})
 		latencyStat.Start()
 		wrappedFunc(w, r)
 		latencyStat.End()
@@ -797,7 +798,9 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		enabledWriteKeysSourceMap = map[string]backendconfig.SourceT{}
 		enabledWriteKeyWebhookMap = map[string]string{}
 		sources := config.Data.(backendconfig.ConfigT)
+		sourceIDToNameMap = map[string]string{}
 		for _, source := range sources.Sources {
+			sourceIDToNameMap[source.ID] = source.Name
 			if source.Enabled {
 				enabledWriteKeysSourceMap[source.WriteKey] = source
 				if source.SourceDefinition.Category == "webhook" {
@@ -889,7 +892,11 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	gateway.webhookHandler = webhook.Setup(gateway)
 
-	admin.RegisterStatusHandler("Gateway", &GatewayAdmin{handle: gateway})
+	gatewayAdmin := GatewayAdmin{handle: gateway}
+	gatewayRPCHandler := GatewayRPCHandler{jobsDB: gateway.jobsDB}
+
+	admin.RegisterStatusHandler("Gateway", &gatewayAdmin)
+	admin.RegisterAdminHandler("Gateway", &gatewayRPCHandler)
 
 	if gateway.application.Features().SuppressUser != nil {
 		gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
