@@ -489,7 +489,7 @@ func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency 
 func setLastEventTime(warehouse warehouseutils.WarehouseT, lastEventAt time.Time) {
 	lastEventTimeMapLock.Lock()
 	defer lastEventTimeMapLock.Unlock()
-	lastEventTimeMap[warehouse.Identifier] = lastEventAt
+	lastEventTimeMap[warehouse.Identifier] = lastEventAt.Unix()
 }
 
 //TODO: Clean this up
