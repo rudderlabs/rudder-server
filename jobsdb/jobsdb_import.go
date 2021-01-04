@@ -32,7 +32,7 @@ func (jd *HandleT) GetLastJobIDBeforeImport() int64 {
 	for idx, dataSet := range dsList {
 		if dataSet.Index == jd.migrationState.dsForNewEvents.Index {
 			if idx > 0 {
-				lastJobIDBeforeNewImports = jd.getMaxIDForDs(dsList[idx-1])
+				lastJobIDBeforeNewImports = jd.GetMaxIDForDs(dsList[idx-1])
 			}
 		}
 	}
@@ -142,7 +142,7 @@ func (jd *HandleT) updateSequenceNumber(ds dataSetT, sequenceNumber int64) {
 	}
 }
 
-func (jd *HandleT) getMaxIDForDs(ds dataSetT) int64 {
+func (jd *HandleT) GetMaxIDForDs(ds dataSetT) int64 {
 	var maxID sql.NullInt64
 	sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)

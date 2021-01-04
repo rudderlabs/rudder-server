@@ -8,6 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/router/drain"
 )
 
 type RouterAdmin struct {
@@ -329,5 +330,47 @@ func getUnprocessedJobCounts(dbHandle *sql.DB, dsName string, dsStats *DSStats) 
 								on st.job_id=rt.job_id where st.job_id is NULL;`, routerJobsTableName, routerJobStatusTableName)
 	row := dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&dsStats.UnprocessedJobCounts)
+	return err
+}
+
+func (r *RouterRpcHandler) SetDrainJobsConfig(dHandle drain.DrainConfig, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+
+	_, err = drain.SetDrainJobIDs(dHandle.MinDrainJobID, dHandle.MaxDrainJobID, dHandle.DrainDestinationID)
+	if err == nil {
+		*reply = fmt.Sprintf("Drain config updated")
+	}
+	return err
+}
+
+func (r *RouterRpcHandler) GetDrainJobsConfig(noArgs struct{}, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	drainHandler := drain.GetDrainJobHandler()
+	formattedOutput, err := json.MarshalIndent(drainHandler, "", "  ")
+	if err == nil {
+		*reply = string(formattedOutput)
+	}
+	return err
+}
+
+func (r *RouterRpcHandler) FlushDrainJobsConfig(destID string, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+
+	*reply = drain.FlushDrainJobConfig(destID)
 	return err
 }
