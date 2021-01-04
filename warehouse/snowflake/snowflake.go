@@ -543,57 +543,43 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 	return db, nil
 }
 
-func (sf *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
-	if len(sf.Uploader.GetSchemaInWarehouse()) == 0 {
-		var schemaExists bool
-		if schemaExists, err = sf.schemaExists(sf.Namespace); !schemaExists {
-			err = sf.createSchema()
-		}
-		if err != nil {
-			return err
-		}
+func (sf *HandleT) CreateSchema() (err error) {
+	var schemaExists bool
+	if schemaExists, err = sf.schemaExists(sf.Namespace); err != nil && !schemaExists {
+		err = sf.createSchema()
 	}
+	return err
+}
 
+func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
 	_, err = sf.Db.Exec(sqlStatement)
 	if err != nil {
-		return
+		return err
 	}
 
-	processedTables := make(map[string]bool)
-	for _, tableName := range diff.Tables {
-		var tableExists bool
-		tableExists, err = sf.tableExists(tableName)
-		if err != nil {
-			return
-		}
-		if !tableExists {
-			err = sf.createTable(fmt.Sprintf(`%s`, tableName), diff.ColumnMaps[tableName])
-			if err != nil {
-				return
-			}
-			processedTables[tableName] = true
+	err = sf.createTable(fmt.Sprintf(`%s`, tableName), columnMap)
+	return err
+}
+
+func (sf *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
+	_, err = sf.Db.Exec(sqlStatement)
+	if err != nil {
+		return err
+	}
+
+	err = sf.addColumn(tableName, columnName, columnType)
+	if err != nil {
+		if checkAndIgnoreAlreadyExistError(err) {
+			pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, sf.Namespace, tableName, err)
+			err = nil
 		}
 	}
-	for tableName, columnMap := range diff.ColumnMaps {
-		// skip adding columns when table didn't exist previously and was created in the prev statement
-		// this to make sure all columns in the the columnMap exists in the table in snowflake
-		if _, ok := processedTables[tableName]; ok {
-			continue
-		}
-		if len(columnMap) > 0 {
-			for columnName, columnType := range columnMap {
-				err = sf.addColumn(tableName, columnName, columnType)
-				if err != nil {
-					if checkAndIgnoreAlreadyExistError(err) {
-						pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, sf.Namespace, tableName, err)
-					} else {
-						return
-					}
-				}
-			}
-		}
-	}
+	return err
+}
+
+func (sf *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
 	return
 }
 
@@ -658,7 +644,17 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 				if err != nil {
 					return
 				}
-				csvRow = append(csvRow, "anonymous_id", anonymousID.String, "user_id", userID.String)
+
+				if !anonymousID.Valid && !userID.Valid {
+					continue
+				}
+
+				// avoid setting null merge_property_1 to avoid not null constraint in local postgres
+				if anonymousID.Valid {
+					csvRow = append(csvRow, "anonymous_id", anonymousID.String, "user_id", userID.String)
+				} else {
+					csvRow = append(csvRow, "user_id", userID.String, "anonymous_id", anonymousID.String)
+				}
 				csvWriter.Write(csvRow)
 				csvWriter.Flush()
 				gzWriter.WriteGZ(buff.String())
@@ -704,19 +700,18 @@ func (sf *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 		if err != nil {
 			return
 		}
-		if exists {
-			sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"."%s"`, sf.Namespace, tableName)
-			var count int64
-			err = sf.Db.QueryRow(sqlStatement).Scan(&count)
-			if err != nil {
-				return
-			}
-			if count > 0 {
-				empty = false
-				return
-			}
-		} else {
+		if !exists {
 			continue
+		}
+		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"."%s"`, sf.Namespace, tableName)
+		var count int64
+		err = sf.Db.QueryRow(sqlStatement).Scan(&count)
+		if err != nil {
+			return
+		}
+		if count > 0 {
+			empty = false
+			return
 		}
 	}
 	return

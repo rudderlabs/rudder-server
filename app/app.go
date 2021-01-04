@@ -3,11 +3,24 @@ package app
 //go:generate mockgen -destination=../mocks/app/mock_app.go -package=mock_app github.com/rudderlabs/rudder-server/app Interface
 
 import (
+	"fmt"
+	"net/http"
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"strings"
 
+	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+)
+
+const (
+	GATEWAY   = "GATEWAY"
+	PROCESSOR = "PROCESSOR"
+	EMBEDDED  = "EMBEDDED"
 )
 
 // App holds the main application's configuration and state
@@ -110,4 +123,24 @@ func New(options *Options) Interface {
 	return &App{
 		options: options,
 	}
+}
+
+//HealthHandler is the http handler for health endpoint
+func HealthHandler(w http.ResponseWriter, r *http.Request, jobsDB jobsdb.JobsDB) {
+	var dbService string = "UP"
+	var enabledRouter string = "TRUE"
+	var backendConfigMode string = "API"
+	if !jobsDB.CheckPGHealth() {
+		dbService = "DOWN"
+	}
+	if !config.GetBool("enableRouter", true) {
+		enabledRouter = "FALSE"
+	}
+	if config.GetBool("BackendConfig.configFromFile", false) {
+		backendConfigMode = "JSON"
+	}
+
+	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", EMBEDDED))
+	healthVal := fmt.Sprintf(`{"appType": "%s", "server":"UP", "db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s","goroutines":"%d", "backendConfigMode": "%s", "lastSync":"%s", "lastRegulationSync":"%s"}`, appTypeStr, dbService, enabledRouter, strings.ToUpper(db.CurrentMode), runtime.NumGoroutine(), backendConfigMode, backendconfig.LastSync, backendconfig.LastRegulationSync)
+	w.Write([]byte(healthVal))
 }

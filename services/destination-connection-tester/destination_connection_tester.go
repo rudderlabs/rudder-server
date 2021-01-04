@@ -58,7 +58,7 @@ func UploadDestinationConnectionTesterResponse(testResponse string, destinationI
 		Error:         testResponse,
 		TestedAt:      time.Now(),
 		DestinationId: destinationId,
-		InstanceId:    misc.GetNodeID(),
+		InstanceId:    instanceID,
 	}
 	url := fmt.Sprintf("%s/%s", configBackendURL, destinationConnectionTesterEndpoint)
 	if err := makePostRequest(url, payload); err != nil {

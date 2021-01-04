@@ -73,7 +73,8 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 	pkgLogger.Debugf(`IDR: Fetching all rudder_id's corresponding to the merge_rule: %v`, sqlStatement)
 	err = txn.QueryRow(sqlStatement).Scan(pq.Array(&rudderIDs))
 	if err != nil {
-		panic(err)
+		pkgLogger.Errorf("IDR: Error fetching all rudder_id's corresponding to the merge_rule: %v\nwith Error: %w", sqlStatement, err)
+		return
 	}
 
 	currentTimeString := time.Now().Format(misc.RFC3339Milli)
@@ -337,7 +338,7 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 }
 
 func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations, _ := idr.Uploader.GetLoadFileLocations(tableName)
+	objectLocations := idr.Uploader.GetLoadFileLocations(tableName)
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		objectName, err := warehouseutils.GetObjectName(objectLocation, idr.Warehouse.Destination.Config, warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config))
@@ -399,9 +400,9 @@ func (idr *HandleT) uploadFile(filePath string, txn *sql.Tx, tableName string, t
 	pkgLogger.Infof(`IDR: Updating load file location for table: %s: %s `, tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
-		panic(err)
+		pkgLogger.Errorf(`IDR: Error updating load file location for table: %s: %v`, tableName, err)
 	}
-	return
+	return err
 }
 
 func (idr *HandleT) createTempGzFile(dirName string) (gzWriter misc.GZipWriter, path string) {
@@ -453,7 +454,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 			return
 		}
 		totalMappingRecords += count
-		if idx%10 == 0 {
+		if idx%1000 == 0 {
 			pkgLogger.Infof(`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namepsace: %s, Destination: %s:%s`, idx+1, len(ruleIDs), totalMappingRecords, idr.Warehouse.Namespace, idr.Warehouse.Type, idr.Warehouse.Destination.ID)
 		}
 	}

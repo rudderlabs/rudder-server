@@ -73,10 +73,8 @@ maxDBBatchSize = 128
 userWebRequestBatchTimeoutInMS = 15
 dbBatchWriteTimeoutInMS = 5
 maxReqSizeInKB = 4000
-enableDedup = false
 enableRateLimit = false
 enableSuppressUserFeature = true
-dedupWindowInS = 86400
 allowPartialWriteWithErrors = true
 allowReqsWithoutUserIDAndAnonymousID = false
 
@@ -118,8 +116,9 @@ maxMigrateDSProbe = 10
 maxTableSizeInMB = 300
 migrateDSLoopSleepDurationInS = 30
 addNewDSLoopSleepDurationInS = 5
+refreshDSListLoopSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
-backupRowsBatchSize = 10000
+backupRowsBatchSize = 1000
 
 [JobsDB.backup]
 enabled = true
@@ -210,8 +209,10 @@ populateHistoricIdentities = false
     queryDebugLogs = false
     blockSize = 1000
     poolSize = 10
+    disableNullable = false
 
 [Processor]
+webPort = 8086
 loopSleepInMS = 10
 maxLoopSleepInMS = 5000
 fixedLoopSleepInMS = 0
@@ -230,6 +231,10 @@ errReadLoopSleepInS = 30
 errDBReadBatchSize = 10000
 noOfErrStashWorkers = 2
 maxFailedCountForErrJob = 3
+
+[Dedup]
+enableDedup = false
+dedupWindowInS = 86400
 
 [BackendConfig]
 configFromFile = false
@@ -290,6 +295,6 @@ enableGCStats=true
 
 [PgNotifier]
 retriggerIntervalInS = 2
-retriggerCount = 100
+retriggerCount = 500
 trackBatchIntervalInS = 2
 maxAttempt = 3
