@@ -82,7 +82,7 @@ type UploadT struct {
 	LastAttemptAt      time.Time
 	Attempts           int64
 	Metadata           json.RawMessage
-	firstEventAt       time.Time
+	FirstEventAt       time.Time
 	LastEventAt        time.Time
 }
 
