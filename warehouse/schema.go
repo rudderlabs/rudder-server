@@ -4,12 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"reflect"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"reflect"
 )
 
 type SchemaHandleT struct {
@@ -109,37 +108,19 @@ func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Sch
 	sourceID := sHandle.warehouse.Source.ID
 	destID := sHandle.warehouse.Destination.ID
 	destType := sHandle.warehouse.Type
-
-	var count int
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s WHERE source_id='%s' AND destination_id='%s' AND namespace='%s'`, warehouseutils.WarehouseSchemasTable, sourceID, destID, namespace)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&count)
-	if err != nil {
-		return err
-	}
-
 	marshalledSchema, err := json.Marshal(updatedSchema)
 	if err != nil {
 		return err
 	}
 
-	if count == 0 {
-		sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, schema, created_at)
-									   VALUES ($1, $2, $3, $4, $5, $6)`, warehouseutils.WarehouseSchemasTable)
-		stmt, err := dbHandle.Prepare(sqlStatement)
-		if err != nil {
-			return err
-		}
-		defer stmt.Close()
-
-		_, err = stmt.Exec(sourceID, namespace, destID, destType, marshalledSchema, timeutil.Now())
-	} else {
-		sqlStatement := fmt.Sprintf(`UPDATE %s SET schema=$1 WHERE source_id=$2 AND destination_id=$3 AND namespace=$4`, warehouseutils.WarehouseSchemasTable)
-		_, err = dbHandle.Exec(sqlStatement, marshalledSchema, sourceID, destID, namespace)
-	}
-	if err != nil {
-		return err
-	}
-
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, schema, created_at, updated_at)
+								VALUES ($1, $2, $3, $4, $5, $6, $7)
+								ON CONFLICT (source_id, destination_id, namespace)
+								DO
+								UPDATE SET schema=$5, updated_at = $7 RETURNING id
+								`, warehouseutils.WarehouseSchemasTable)
+	updatedAt := timeutil.Now()
+	_, err = dbHandle.Exec(sqlStatement, sourceID, namespace, destID, destType, marshalledSchema, timeutil.Now(), updatedAt)
 	return err
 }
 
