@@ -595,7 +595,7 @@ func (gateway *HandleT) checkAndValidateWebHandler(w http.ResponseWriter, r *htt
 	payload, err := gateway.getPayloadFromRequest(r)
 	if err == nil {
 		if reqType == "import" {
-			errorMessage = gateway.userWebImportHandler(w, r, "batch", Payload, writeKey)
+			errorMessage = gateway.userWebImportHandler(w, r, "batch", payload, writeKey)
 		} else {
 			done := make(chan string, 1)
 			gateway.AddToWebRequestQ(r, &w, done, reqType, payload, writeKey)
