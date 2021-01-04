@@ -81,6 +81,9 @@ type UploadT struct {
 	FirstAttemptAt     time.Time
 	LastAttemptAt      time.Time
 	Attempts           int64
+	Metadata           json.RawMessage
+	firstEventAt       time.Time
+	LastEventAt        time.Time
 }
 
 type UploadJobT struct {
@@ -222,8 +225,11 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 }
 
 func (job *UploadJobT) run() (err error) {
+	timerStat := job.timerStat("upload_time")
+	timerStat.Start()
 	ch := job.trackLongRunningUpload()
 	defer func() {
+		timerStat.End()
 		ch <- struct{}{}
 	}()
 
@@ -383,16 +389,24 @@ func (job *UploadJobT) run() (err error) {
 		case ExportedData:
 			newStatus = nextUploadState.failed
 			skipPrevLoadedTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
+			previouslyFailedTables := job.getTablesToSkip()
+			skipLoadForTables := append(skipPrevLoadedTableNames, previouslyFailedTables...)
+
 			// Export all other tables
 			loadTimeStat := job.timerStat("other_tables_load_time")
 			loadTimeStat.Start()
 
-			loadErrors := job.loadAllTablesExcept(skipPrevLoadedTableNames)
+			loadErrors := job.loadAllTablesExcept(skipLoadForTables)
+
+			if len(previouslyFailedTables) > 0 {
+				loadErrors = append(loadErrors, fmt.Errorf("skipping the following tables because they failed previously : %+v", previouslyFailedTables))
+			}
 
 			if len(loadErrors) > 0 {
 				err = warehouseutils.ConcatErrors(loadErrors)
 				break
 			}
+
 			loadTimeStat.End()
 			job.generateUploadSuccessMetrics()
 			newStatus = nextUploadState.completed
@@ -426,6 +440,101 @@ func (job *UploadJobT) run() (err error) {
 	}
 
 	return nil
+}
+
+// TableUploadStatusT captures the status of each table upload along with its parent upload_job's info like destionation_id and namespace
+type TableUploadStatusT struct {
+	uploadID      int64
+	destinationID string
+	namespace     string
+	tableName     string
+	status        string
+}
+
+func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
+	//TODO: Get only tables' status of current uploadJob
+	sqlStatement := fmt.Sprintf(`
+		SELECT
+			%[1]s.id,
+			%[1]s.destination_id,
+			%[1]s.namespace,
+			%[2]s.table_name,
+			%[2]s.status
+		FROM
+			%[1]s INNER JOIN %[2]s
+		ON
+			%[1]s.id = %[2]s.wh_upload_id
+		WHERE
+			%[1]s.id <= '%[3]d'
+			AND %[1]s.destination_id = '%[4]s'
+			AND %[1]s.namespace = '%[5]s'
+			AND %[1]s.status != '%[6]s'
+			AND %[1]s.status != '%[7]s' 
+			AND %[2]s.table_name in (SELECT table_name FROM %[2]s WHERE %[2]s.wh_upload_id = '%[3]d')
+		ORDER BY
+			%[1]s.id ASC`,
+		warehouseutils.WarehouseUploadsTable,
+		warehouseutils.WarehouseTableUploadsTable,
+		job.upload.ID,
+		job.upload.DestinationID,
+		job.upload.Namespace,
+		ExportedData,
+		Aborted)
+	rows, err := job.dbHandle.Query(sqlStatement)
+	if err != nil && err != sql.ErrNoRows {
+		panic(err)
+	}
+	defer rows.Close()
+
+	tableUploadStatuses := make([]*TableUploadStatusT, 0)
+
+	for rows.Next() {
+		var tableUploadStatus TableUploadStatusT
+		err := rows.Scan(
+			&tableUploadStatus.uploadID,
+			&tableUploadStatus.destinationID,
+			&tableUploadStatus.namespace,
+			&tableUploadStatus.tableName,
+			&tableUploadStatus.status,
+		)
+		if err != nil {
+			panic(err)
+		}
+		tableUploadStatuses = append(tableUploadStatuses, &tableUploadStatus)
+	}
+
+	return tableUploadStatuses
+}
+
+func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int64]map[string]string {
+	tableUploadStatus := make(map[int64]map[string]string)
+	for _, tUploadStatus := range tableUploadStatuses {
+		if _, ok := tableUploadStatus[tUploadStatus.uploadID]; !ok {
+			tableUploadStatus[tUploadStatus.uploadID] = make(map[string]string)
+		}
+		tableUploadStatus[tUploadStatus.uploadID][tUploadStatus.tableName] = tUploadStatus.status
+	}
+	return tableUploadStatus
+}
+
+func (job *UploadJobT) getTablesToSkip() []string {
+	tableUploadStatuses := job.fetchPendingUploadTableStatus()
+	tableUploadStatus := getTableUploadStatusMap(tableUploadStatuses)
+	skipTableMap := make(map[string]bool)
+	for uploadID, tableStatusMap := range tableUploadStatus {
+		for tableName, status := range tableStatusMap {
+			if (uploadID < job.upload.ID && status == TableUploadExportingFailed) || //Previous upload and table upload failed
+				(uploadID == job.upload.ID && status == TableUploadExported) { //Current upload and table upload succeeded
+				//In both cases, we don't want to attempt loading the table again
+				skipTableMap[tableName] = true
+			}
+		}
+	}
+	skipTables := make([]string, 0)
+	for skipTName := range skipTableMap {
+		skipTables = append(skipTables, skipTName)
+	}
+	return skipTables
 }
 
 func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err error) {
@@ -497,12 +606,12 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 			wg.Done()
 			continue
 		}
-		loadTable, err := job.shouldTableBeLoaded(tableName)
+		hasLoadFiles, err := job.hasLoadFiles(tableName)
 		if err != nil {
 			loadErrors = append(loadErrors, err)
 			continue
 		}
-		if !loadTable {
+		if !hasLoadFiles {
 			wg.Done()
 			if misc.ContainsString(alwaysMarkExported, tableName) {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)
@@ -514,7 +623,6 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 		loadChan <- struct{}{}
 		rruntime.Go(func() {
 			alteredSchema, err := job.loadTable(tName)
-
 			if alteredSchema {
 				alteredSchemaInAtleastOneTable = true
 			}
@@ -858,9 +966,17 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 			state = Aborted
 		}
 	}
+
+	metadata := make(map[string]string)
+	metadata["nextRetryTime"] = upload.LastAttemptAt.Add(durationBeforeNextAttempt(upload.Attempts)).Format(time.RFC3339)
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		metadataJSON = []byte("{}")
+	}
+
 	serializedErr, _ := json.Marshal(&e)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseutils.WarehouseUploadsTable)
-	_, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, timeutil.Now(), upload.ID)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, metadata=$3, updated_at=$4 WHERE id=$5`, warehouseutils.WarehouseUploadsTable)
+	_, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, metadataJSON, timeutil.Now(), upload.ID)
 
 	job.upload.Status = state
 	job.upload.Error = serializedErr
