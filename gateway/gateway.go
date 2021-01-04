@@ -309,11 +309,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			ipAddr := req.ipAddr
 
 			body := req.requestPayload
-			if len(body) == 0 {
-				req.done <- response.GetStatus(response.RequestBodyNil)
-				preDbStoreCount++
-				continue
-			}
 
 			if enableRateLimit {
 				//In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
@@ -587,7 +582,7 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
-func (gateway *HandleT) cleanWebHandler(w http.ResponseWriter, r *http.Request, payload []byte, reqType string, err error) string {
+func (gateway *HandleT) checkAndValidateWebHandler(w http.ResponseWriter, r *http.Request, reqType string) string {
 	var sourceFailStats = make(map[string]int)
 	var errorMessage = ""
 	writeKey, _, ok := r.BasicAuth()
@@ -597,10 +592,10 @@ func (gateway *HandleT) cleanWebHandler(w http.ResponseWriter, r *http.Request, 
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests")
 		return errorMessage
 	}
+	payload, err := gateway.getPayloadFromRequest(r)
 	if err == nil {
 		if reqType == "import" {
-			usersPayload, payloadError := gateway.getUsersPayload(payload)
-			errorMessage = gateway.userWebImportHandler(w, r, "batch", usersPayload, writeKey, payloadError)
+			errorMessage = gateway.userWebImportHandler(w, r, "batch", Payload, writeKey)
 		} else {
 			done := make(chan string, 1)
 			gateway.AddToWebRequestQ(r, &w, done, reqType, payload, writeKey)
@@ -622,8 +617,7 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
-	payload, err := gateway.getPayloadFromRequest(r)
-	errorMessage = gateway.cleanWebHandler(w, r, payload, reqType, err)
+	errorMessage = gateway.checkAndValidateWebHandler(w, r, reqType)
 	atomic.AddUint64(&gateway.ackCount, 1)
 	gateway.trackRequestMetrics(errorMessage)
 	if errorMessage != "" {
@@ -635,8 +629,9 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	}
 }
 
-func (gateway *HandleT) userWebImportHandler(w http.ResponseWriter, r *http.Request, reqType string, usersPayload map[string][]byte, writeKey string, payloadError error) string {
+func (gateway *HandleT) userWebImportHandler(w http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
 	errorMessage := ""
+	usersPayload, payloadError := gateway.getUsersPayload(payload)
 	if payloadError != nil {
 		return payloadError.Error()
 	}
@@ -678,8 +673,12 @@ func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byt
 	recontructedUserMap := make(map[string][]byte)
 	for key := range userMap {
 		var tempValue string
+		var err error
 		for index = 0; index < len(userMap[key]); index++ {
-			tempValue, _ = sjson.SetRaw(tempValue, fmt.Sprintf("batch.%v", index), string(userMap[key][index]))
+			tempValue, err = sjson.SetRaw(tempValue, fmt.Sprintf("batch.%v", index), string(userMap[key][index]))
+			if err != nil {
+				return recontructedUserMap, err
+			}
 		}
 		recontructedUserMap[key] = []byte(tempValue)
 	}
@@ -906,9 +905,6 @@ func (gateway *HandleT) AddToWebRequestQ(req *http.Request, writer *http.Respons
 		userIDHeader = uuid.NewV4().String()
 	}
 	userWebRequestWorker := gateway.findUserWebRequestWorker(userIDHeader)
-
-	//TODO sourcefailstat
-
 	ipAddr := misc.GetIPFromReq(req)
 	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, writeKey: writeKey, ipAddr: ipAddr}
 	userWebRequestWorker.webRequestQ <- &webReq
