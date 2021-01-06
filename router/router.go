@@ -171,6 +171,11 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 	return ch
 }
 
+func (worker *workerT) routerTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
+	//TODO complete this
+	return []types.DestinationJobT{}
+}
+
 func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJobT {
 
 	inputJobsLength := len(routerJobs)
@@ -261,6 +266,17 @@ func (worker *workerT) workerProcess() {
 					worker.routerJobs = nil
 					worker.routerJobs = make([]types.RouterJobT, 0)
 				}
+			} else if val, ok := destination.DestinationDefinition.Config["routerTransform"].(bool); ok && val {
+				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
+				worker.routerJobs = append(worker.routerJobs, routerJob)
+
+				if len(worker.routerJobs) == noOfJobsToBatchInAWorker {
+					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
+					worker.handleWorkerDestinationJobs()
+					worker.destinationJobs = nil
+					worker.routerJobs = nil
+					worker.routerJobs = make([]types.RouterJobT, 0)
+				}
 			} else {
 				destinationJob := types.DestinationJobT{Message: job.EventPayload, JobMetadataArray: []types.JobMetadataT{jobMetadata}, Destination: destination}
 				worker.destinationJobs = append(worker.destinationJobs, destinationJob)
@@ -292,62 +308,101 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	var respBody string
 	handledJobMetadatas := make(map[int64]*types.JobMetadataT)
 
+	/*[u1e1, u2e1, u1e2, u2e2, u1e3, u2e3]
+	[b1, b2, b3]
+	b1 will send if success
+	b2 will send if b2 failed then will drop b3
+
+	[u1e1, u2e1, u1e2, u2e2, u1e3, u2e3]
+	200, 200, 500, 200, 200, 200
+
+	Case 1:
+	u1e1 will send - success
+	u2e1 will send - success
+	u1e2 will drop because transformer gave 500
+	u2e2 will send - success
+	u1e3 should be dropped because u1e2 should be retried
+	u2e3 will send
+
+	Case 2:
+	u1e1 will send - success
+	u2e1 will send - failed 5xx
+	u1e2 will drop because transformer gave 500
+	u2e2 will drop - because request to destination failed with 5xx
+	u1e3 should be dropped because u1e2 should be retried
+	u2e3 will drop - because request to destination failed with 5xxend
+
+	Case 3:
+	u1e1 will send - success
+	u2e1 will send - failed 4xx
+	u1e2 will drop because transformer gave 500
+	u2e2 will send - because previous job is aborted
+	u1e3 should be dropped because u1e2 should be retried
+	u2e3 will send
+	*/
+
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
-		if prevRespStatusCode == 0 || isSuccessStatus(prevRespStatusCode) {
-			diagnosisStartTime := time.Now()
+		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
+			//TODO extra check to drop failed users jobs
+			if prevRespStatusCode == 0 || isSuccessStatus(prevRespStatusCode) {
+				diagnosisStartTime := time.Now()
 
-			// START: request to destination endpoint
-			worker.deliveryTimeStat.Start()
-			ch := worker.trackStuckDelivery()
-			if worker.rt.customDestinationManager != nil {
-				sourceID := destinationJob.JobMetadataArray[0].SourceID
-				destinationID := destinationJob.JobMetadataArray[0].DestinationID
-				for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
-					if sourceID != destinationJobMetadata.SourceID {
-						panic(fmt.Errorf("Different sources are grouped together"))
+				// START: request to destination endpoint
+				worker.deliveryTimeStat.Start()
+				ch := worker.trackStuckDelivery()
+				if worker.rt.customDestinationManager != nil {
+					sourceID := destinationJob.JobMetadataArray[0].SourceID
+					destinationID := destinationJob.JobMetadataArray[0].DestinationID
+					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
+						if sourceID != destinationJobMetadata.SourceID {
+							panic(fmt.Errorf("Different sources are grouped together"))
+						}
+						if destinationID != destinationJobMetadata.DestinationID {
+							panic(fmt.Errorf("Different destinations are grouped together"))
+						}
 					}
-					if destinationID != destinationJobMetadata.DestinationID {
-						panic(fmt.Errorf("Different destinations are grouped together"))
-					}
+					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
+				} else {
+					respStatusCode, respBody = worker.rt.netHandle.sendPost(destinationJob.Message)
 				}
-				respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
-			} else {
-				respStatusCode, respBody = worker.rt.netHandle.sendPost(destinationJob.Message)
-			}
-			ch <- struct{}{}
+				ch <- struct{}{}
 
-			//Using reponse status code and body to get response code rudder router logic is based on.
-			worker.rt.destinationResonseHandlerMutex.RLock()
-			respStatusCode = worker.rt.destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
-			worker.rt.destinationResonseHandlerMutex.RUnlock()
+				//Using reponse status code and body to get response code rudder router logic is based on.
+				worker.rt.destinationResonseHandlerMutex.RLock()
+				respStatusCode = worker.rt.destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
+				worker.rt.destinationResonseHandlerMutex.RUnlock()
 
-			prevRespStatusCode = respStatusCode
-			attemptedToSendTheJob = true
+				prevRespStatusCode = respStatusCode
+				attemptedToSendTheJob = true
 
-			worker.deliveryTimeStat.End()
-			// END: request to destination endpoint
+				worker.deliveryTimeStat.End()
+				// END: request to destination endpoint
 
-			destinationTag := misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name)
-			routerResponseStat := stats.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
-				"destType":       worker.rt.destName,
-				"respStatusCode": strconv.Itoa(respStatusCode),
-				"destination":    destinationTag,
-			})
-			routerResponseStat.Count(len(destinationJob.JobMetadataArray))
-
-			if isSuccessStatus(respStatusCode) {
-				eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
-					"module":      "router",
-					"destType":    worker.rt.destName,
-					"destination": destinationTag,
+				destinationTag := misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name)
+				routerResponseStat := stats.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
+					"destType":       worker.rt.destName,
+					"respStatusCode": strconv.Itoa(respStatusCode),
+					"destination":    destinationTag,
 				})
-				eventsDeliveredStat.Count(len(destinationJob.JobMetadataArray))
-			}
+				routerResponseStat.Count(len(destinationJob.JobMetadataArray))
 
-			worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
+				if isSuccessStatus(respStatusCode) {
+					eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
+						"module":      "router",
+						"destType":    worker.rt.destName,
+						"destination": destinationTag,
+					})
+					eventsDeliveredStat.Count(len(destinationJob.JobMetadataArray))
+				}
+
+				worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
+			} else {
+				respBody = "skipping sending to destination because previous job in batch is failed."
+			}
 		} else {
-			respBody = "skipping sending to destination because previous job in batch is failed."
+			respStatusCode = destinationJob.StatusCode
+			respBody = destinationJob.Error
 		}
 
 		for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
@@ -470,11 +525,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 				worker.retryForJobMapMutex.Unlock()
 			}
 		} else {
-			if status.AttemptNum >= worker.rt.maxFailedCountForJob {
-				status.JobState = jobsdb.Aborted.State
-				addToFailedMap = false
-				worker.rt.eventsAbortedStat.Increment()
-			}
+			status.JobState = jobsdb.Aborted.State
+			addToFailedMap = false
+			worker.rt.eventsAbortedStat.Increment()
 		}
 
 		if worker.rt.guaranteeUserEventOrder {

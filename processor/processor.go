@@ -953,11 +953,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		destStat.destTransform.Start()
 		startedAt = time.Now()
 
-		val, ok := destination.DestinationDefinition.Config["routerTransform"].(bool)
-		routerTransform := ok && val
 		routerTransformVersion := "v0"
-
-		if routerTransform {
+		if val, ok := destination.DestinationDefinition.Config["routerTransform"].(bool); ok && val {
 			routerTransformVersion = "v1"
 			response = convertToTransformerResponse(eventsToTransform)
 		} else {
