@@ -389,7 +389,7 @@ func (job *UploadJobT) run() (err error) {
 		case ExportedData:
 			newStatus = nextUploadState.failed
 			skipPrevLoadedTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
-			previouslyFailedTables := job.getTablesToSkip()
+			previouslyFailedTables, allTablesPreviouslySucceeded := job.getTablesToSkip()
 			skipLoadForTables := append(skipPrevLoadedTableNames, previouslyFailedTables...)
 
 			// Export all other tables
@@ -398,7 +398,7 @@ func (job *UploadJobT) run() (err error) {
 
 			loadErrors := job.loadAllTablesExcept(skipLoadForTables)
 
-			if len(previouslyFailedTables) > 0 {
+			if !allTablesPreviouslySucceeded && len(previouslyFailedTables) > 0 {
 				loadErrors = append(loadErrors, fmt.Errorf("skipping the following tables because they failed previously : %+v", previouslyFailedTables))
 			}
 
@@ -517,14 +517,18 @@ func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int6
 	return tableUploadStatus
 }
 
-func (job *UploadJobT) getTablesToSkip() []string {
+func (job *UploadJobT) getTablesToSkip() ([]string, bool) {
 	tableUploadStatuses := job.fetchPendingUploadTableStatus()
 	tableUploadStatus := getTableUploadStatusMap(tableUploadStatuses)
 	skipTableMap := make(map[string]bool)
+	allTablesPreviouslySucceeded := true
 	for uploadID, tableStatusMap := range tableUploadStatus {
 		for tableName, status := range tableStatusMap {
-			if (uploadID < job.upload.ID && status == TableUploadExportingFailed) || //Previous upload and table upload failed
-				(uploadID == job.upload.ID && status == TableUploadExported) { //Current upload and table upload succeeded
+			if uploadID < job.upload.ID && status == TableUploadExportingFailed { //Previous upload and table upload failed
+				skipTableMap[tableName] = true
+				allTablesPreviouslySucceeded = false
+			}
+			if uploadID == job.upload.ID && status == TableUploadExported { //Current upload and table upload succeeded
 				//In both cases, we don't want to attempt loading the table again
 				skipTableMap[tableName] = true
 			}
@@ -534,7 +538,7 @@ func (job *UploadJobT) getTablesToSkip() []string {
 	for skipTName := range skipTableMap {
 		skipTables = append(skipTables, skipTName)
 	}
-	return skipTables
+	return skipTables, allTablesPreviouslySucceeded
 }
 
 func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err error) {
