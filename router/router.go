@@ -76,6 +76,7 @@ type HandleT struct {
 	backendConfigInitialized               chan bool
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
+	destinationResponseHandler             ResponseHandlerI
 }
 
 type jobResponseT struct {
@@ -1064,6 +1065,8 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customDestinationManager.New(destName)
+
+	//rt.destinationResponseHandler = New()
 
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
