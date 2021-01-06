@@ -1146,11 +1146,11 @@ func (rt *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == rt.destName {
 						rt.destinationsMap[destination.ID] = destination
-					}
 
-					rt.destinationResonseHandlerMutex.Lock()
-					rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
-					rt.destinationResonseHandlerMutex.Unlock()
+						rt.destinationResonseHandlerMutex.Lock()
+						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
+						rt.destinationResonseHandlerMutex.Unlock()
+					}
 				}
 			}
 		}
