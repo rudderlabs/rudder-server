@@ -77,6 +77,7 @@ type HandleT struct {
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
 	destinationResponseHandler             ResponseHandlerI
+	destinationResonseHandlerMutex         sync.RWMutex
 }
 
 type jobResponseT struct {
@@ -285,7 +286,6 @@ func (worker *workerT) workerProcess() {
 
 func (worker *workerT) handleWorkerDestinationJobs() {
 
-	// START: request to destination endpoint
 	worker.batchTimeStat.Start()
 
 	var respStatusCode, prevRespStatusCode int
@@ -296,6 +296,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 		var attemptedToSendTheJob bool
 		if prevRespStatusCode == 0 || isSuccessStatus(prevRespStatusCode) {
 			diagnosisStartTime := time.Now()
+
+			// START: request to destination endpoint
 			worker.deliveryTimeStat.Start()
 			ch := worker.trackStuckDelivery()
 			if worker.rt.customDestinationManager != nil {
@@ -315,11 +317,15 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			}
 			ch <- struct{}{}
 
+			//Using reponse status code and body to get response code rudder router logic is based on.
+			worker.rt.destinationResonseHandlerMutex.RLock()
+			respStatusCode = worker.rt.destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
+			worker.rt.destinationResonseHandlerMutex.RUnlock()
+
 			prevRespStatusCode = respStatusCode
 			attemptedToSendTheJob = true
 
 			worker.deliveryTimeStat.End()
-
 			// END: request to destination endpoint
 
 			destinationTag := misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name)
@@ -1045,7 +1051,8 @@ func init() {
 }
 
 //Setup initializes this module
-func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
+func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destinationDefinition backendconfig.DestinationDefinitionT) {
+	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
@@ -1066,7 +1073,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customDestinationManager.New(destName)
 
-	//rt.destinationResponseHandler = New()
+	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
 
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
@@ -1140,6 +1147,10 @@ func (rt *HandleT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == rt.destName {
 						rt.destinationsMap[destination.ID] = destination
 					}
+
+					rt.destinationResonseHandlerMutex.Lock()
+					rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
+					rt.destinationResonseHandlerMutex.Unlock()
 				}
 			}
 		}
