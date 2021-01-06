@@ -301,6 +301,8 @@ func typecastDataFromType(data string, dataType string) interface{} {
 		if b {
 			dataI = 1
 		}
+	default:
+		return data
 	}
 	if err != nil {
 		if disableNullable {
