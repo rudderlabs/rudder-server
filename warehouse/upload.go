@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -301,19 +300,20 @@ func (job *UploadJobT) run() (err error) {
 
 		case GeneratedLoadFiles:
 			newStatus = nextUploadState.failed
-			var loadFileIDs []int64
-			loadFileIDs, err = job.createLoadFiles()
+			// generate load files for all staging files(including succeeded) if hasSchemaChanged or set via toml/env
+			generateAll := hasSchemaChanged || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", false)
+			var startLoadFileID, endLoadFileID int64
+			startLoadFileID, endLoadFileID, err = job.createLoadFiles(generateAll)
 			if err != nil {
-				job.setStagingFilesStatus(warehouseutils.StagingFileFailedState, err)
+				job.setStagingFilesStatus(job.stagingFiles, warehouseutils.StagingFileFailedState, err)
 				break
 			}
 
-			err = job.setLoadFileIDs(loadFileIDs[0], loadFileIDs[len(loadFileIDs)-1])
+			err = job.setLoadFileIDs(startLoadFileID, endLoadFileID)
 			if err != nil {
 				break
 			}
-			job.setStagingFilesStatus(warehouseutils.StagingFileSucceededState, err)
-			job.recordLoadFileGenerationTimeStat(loadFileIDs[0], loadFileIDs[len(loadFileIDs)-1])
+			job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
 
 			newStatus = nextUploadState.completed
 
@@ -469,7 +469,7 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 			AND %[1]s.destination_id = '%[4]s'
 			AND %[1]s.namespace = '%[5]s'
 			AND %[1]s.status != '%[6]s'
-			AND %[1]s.status != '%[7]s' 
+			AND %[1]s.status != '%[7]s'
 			AND %[2]s.table_name in (SELECT table_name FROM %[2]s WHERE %[2]s.wh_upload_id = '%[3]d')
 		ORDER BY
 			%[1]s.id ASC`,
@@ -984,9 +984,9 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	return state, err
 }
 
-func (job *UploadJobT) setStagingFilesStatus(status string, statusError error) (err error) {
+func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, status string, statusError error) (err error) {
 	var ids []int64
-	for _, stagingFile := range job.stagingFiles {
+	for _, stagingFile := range stagingFiles {
 		ids = append(ids, stagingFile.ID)
 	}
 	// TODO: json.Marshal error instead of quoteliteral
@@ -1023,28 +1023,69 @@ func (job *UploadJobT) hasLoadFiles(tableName string) (bool, error) {
 	return count > 0, err
 }
 
-func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
+func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileID int64, err error) {
+	var stagingFileIDs []int64
+	for _, stagingFile := range job.stagingFiles {
+		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
+	}
+	stmt := fmt.Sprintf(`
+		SELECT
+			MIN(id), MAX(id)
+		FROM (
+			SELECT
+				ROW_NUMBER() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number,
+				t.id
+			FROM
+				%s t
+			WHERE
+				t.staging_file_id = ANY($1)
+		) grouped_load_files
+		WHERE
+			grouped_load_files.row_number = 1;
+	`, warehouseutils.WarehouseLoadFilesTable)
+
+	pkgLogger.Debugf(`Querying for load_file_id range for the uploadJob:%d with stagingFileIDs:%v Query:%v`, job.upload.ID, stagingFileIDs, stmt)
+	var minID, maxID sql.NullInt64
+	err = job.dbHandle.QueryRow(stmt, pq.Array(stagingFileIDs)).Scan(&minID, &maxID)
+	if err != nil {
+		panic(err)
+	}
+	return minID.Int64, maxID.Int64, nil
+}
+
+func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64, endLoadFileID int64, err error) {
 	destID := job.upload.DestinationID
 	destType := job.upload.DestinationType
 	stagingFiles := job.stagingFiles
-
-	job.setStagingFilesStatus(warehouseutils.StagingFileExecutingState, nil)
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", publishBatchSize, noOfWorkers, destType, destID)
 	uniqueLoadGenID := uuid.NewV4().String()
 
 	var wg sync.WaitGroup
-	var loadFileIDsLock sync.RWMutex
 
-	for i := 0; i < len(stagingFiles); i += publishBatchSize {
+	var toProcessStagingFiles []*StagingFileT
+	if generateAll {
+		toProcessStagingFiles = stagingFiles
+	} else {
+		// skip processing staging files marked succeeded
+		for _, stagingFile := range stagingFiles {
+			if stagingFile.Status != warehouseutils.StagingFileSucceededState {
+				toProcessStagingFiles = append(toProcessStagingFiles, stagingFile)
+			}
+		}
+	}
+
+	job.setStagingFilesStatus(toProcessStagingFiles, warehouseutils.StagingFileExecutingState, nil)
+
+	for i := 0; i < len(toProcessStagingFiles); i += publishBatchSize {
 		j := i + publishBatchSize
-		if j > len(stagingFiles) {
-			j = len(stagingFiles)
+		if j > len(toProcessStagingFiles) {
+			j = len(toProcessStagingFiles)
 		}
 
 		var messages []pgnotifier.MessageT
-		for _, stagingFile := range stagingFiles[i:j] {
+		for _, stagingFile := range toProcessStagingFiles[i:j] {
 			payload := PayloadT{
 				UploadID:            job.upload.ID,
 				StagingFileID:       stagingFile.ID,
@@ -1081,30 +1122,13 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 		batchEndIdx := j
 		rruntime.Go(func() {
 			responses := <-ch
-			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", stagingFiles[batchStartIdx].ID, stagingFiles[batchEndIdx-1].ID, destType, destID)
+			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", toProcessStagingFiles[batchStartIdx].ID, toProcessStagingFiles[batchEndIdx-1].ID, destType, destID)
 			for _, resp := range responses {
 				// TODO: make it aborted
 				if resp.Status == "aborted" {
 					pkgLogger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
 					continue
 				}
-				var payload map[string]interface{}
-				err = json.Unmarshal(resp.Payload, &payload)
-				if err != nil {
-					panic(err)
-				}
-				respIDs, ok := payload["LoadFileIDs"].([]interface{})
-				if !ok {
-					pkgLogger.Errorf("[WH]: No LoadFileIDS returned by wh worker")
-					continue
-				}
-				ids := make([]int64, len(respIDs))
-				for i := range respIDs {
-					ids[i] = int64(respIDs[i].(float64))
-				}
-				loadFileIDsLock.Lock()
-				loadFileIDs = append(loadFileIDs, ids...)
-				loadFileIDsLock.Unlock()
 			}
 			wg.Done()
 		})
@@ -1112,12 +1136,13 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 
 	wg.Wait()
 
-	if len(loadFileIDs) == 0 {
+	startLoadFileID, endLoadFileID, err = job.getLoadFileIDRange()
+
+	if startLoadFileID == 0 || endLoadFileID == 0 {
 		err = fmt.Errorf("No load files generated")
-		return loadFileIDs, err
+		return startLoadFileID, endLoadFileID, err
 	}
-	sort.Slice(loadFileIDs, func(i, j int) bool { return loadFileIDs[i] < loadFileIDs[j] })
-	return loadFileIDs, nil
+	return startLoadFileID, endLoadFileID, nil
 }
 
 func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, err error) {
