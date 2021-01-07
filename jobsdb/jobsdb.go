@@ -347,6 +347,11 @@ var (
 )
 
 var (
+	pgNotifierDBhost, pgNotifierDBuser, pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode string
+	pgNotifierDBport                                                                                int
+)
+
+var (
 	maxDSSize, maxMigrateOnce, maxMigrateDSProbe int
 	maxTableSize                                 int64
 	jobDoneMigrateThres, jobStatusMigrateThres   float64
@@ -402,16 +407,48 @@ func loadConfig() {
 
 }
 
+func loadPGNotifierConfig() {
+	pgNotifierDBhost = config.GetEnv("PGNOTIFIER_DB_HOST", "localhost")
+	pgNotifierDBuser = config.GetEnv("PGNOTIFIER_DB_USER", "ubuntu")
+	pgNotifierDBname = config.GetEnv("PGNOTIFIER_DB_NAME", "ubuntu")
+	pgNotifierDBport, _ = strconv.Atoi(config.GetEnv("PGNOTIFIER_DB_PORT", "5432"))
+	pgNotifierDBpassword = config.GetEnv("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
+	pgNotifierDBsslmode = config.GetEnv("PGNOTIFIER_DB_SSL_MODE", "disable")
+}
+
 func init() {
 	loadConfig()
+	loadPGNotifierConfig()
 	pkgLogger = logger.NewLogger().Child("jobsdb")
 }
 
+// Checks if all the required Env Variables for PG Notifier are present
+func checkForPGNotifierEnvVars() bool {
+	return config.IsSet("PGNOTIFIER_DB_HOST") &&
+		config.IsSet("PGNOTIFIER_DB_USER") &&
+		config.IsSet("PGNOTIFIER_DB_NAME") &&
+		config.IsSet("PGNOTIFIER_DB_PORT") &&
+		config.IsSet("PGNOTIFIER_DB_PASSWORD") &&
+		config.IsSet("PGNOTIFIER_DB_SSL_MODE")
+}
+
+// Returns Jobs DB connection configuration
 func GetConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s",
 		host, port, user, password, dbname, sslmode)
 
+}
+
+// Returns PG Notifier DB Connection Configuration
+func getPGNotifierConnectionString() string {
+	if checkForPGNotifierEnvVars() {
+		return fmt.Sprintf("host=%s port=%d user=%s "+
+			"password=%s dbname=%s sslmode=%s",
+			pgNotifierDBhost, pgNotifierDBport, pgNotifierDBuser,
+			pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode)
+	}
+	return GetConnectionString()
 }
 
 /*

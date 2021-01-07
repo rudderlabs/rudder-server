@@ -969,6 +969,7 @@ func Start() {
 	pkgLogger.Infof("WH: Starting Warehouse service...")
 	var err error
 	psqlInfo := getConnectionString()
+	pgNotifierSqlInfo := getPGNotifierConnectionString()
 
 	dbHandle, err = sql.Open("postgres", psqlInfo)
 	if err != nil {
@@ -999,7 +1000,7 @@ func Start() {
 		return
 	}
 
-	notifier, err = pgnotifier.New(psqlInfo)
+	notifier, err = pgnotifier.New(pgNotifierSqlInfo)
 	if err != nil {
 		panic(err)
 	}
