@@ -441,7 +441,7 @@ func GetConnectionString() string {
 }
 
 // Returns PG Notifier DB Connection Configuration
-func getPGNotifierConnectionString() string {
+func GetPGNotifierConnectionString() string {
 	if checkForPGNotifierEnvVars() {
 		return fmt.Sprintf("host=%s port=%d user=%s "+
 			"password=%s dbname=%s sslmode=%s",

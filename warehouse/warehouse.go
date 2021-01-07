@@ -931,6 +931,15 @@ func getConnectionString() string {
 		host, port, user, password, dbname, sslmode)
 }
 
+func getPGNotifierConnectionString() string {
+	if warehouseMode == config.EmbeddedMode {
+		return jobsdb.GetPGNotifierConnectionString()
+	}
+	return fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=%s",
+		host, port, user, password, dbname, sslmode)
+}
+
 func startWebHandler() {
 	// do not register same endpoint when running embedded in rudder backend
 	if isStandAlone() {
