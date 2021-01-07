@@ -172,8 +172,8 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 }
 
 func (worker *workerT) routerTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
-	//TODO complete this
-	return []types.DestinationJobT{}
+	destinationJobs := worker.rt.transformer.Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
+	return destinationJobs
 }
 
 func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJobT {
@@ -181,7 +181,7 @@ func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJ
 	inputJobsLength := len(routerJobs)
 	worker.rt.batchInputCountStat.Count(inputJobsLength)
 
-	destinationJobs := worker.rt.transformer.Transform(&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
+	destinationJobs := worker.rt.transformer.Transform(transformer.BATCH, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
 	worker.rt.batchOutputCountStat.Count(len(destinationJobs))
 
 	var totalJobMetadataCount int
@@ -290,7 +290,11 @@ func (worker *workerT) workerProcess() {
 		case <-timeout:
 			timeout = time.After(jobsBatchTimeout)
 			if len(worker.routerJobs) > 0 {
-				worker.destinationJobs = worker.batch(worker.routerJobs)
+				if worker.rt.enableBatching {
+					worker.destinationJobs = worker.batch(worker.routerJobs)
+				} else {
+					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
+				}
 				worker.handleWorkerDestinationJobs()
 				worker.destinationJobs = nil
 				worker.routerJobs = nil
@@ -308,37 +312,40 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	var respBody string
 	handledJobMetadatas := make(map[int64]*types.JobMetadataT)
 
-	/*[u1e1, u2e1, u1e2, u2e2, u1e3, u2e3]
-	[b1, b2, b3]
-	b1 will send if success
-	b2 will send if b2 failed then will drop b3
+	/*
+		Batch
+		[u1e1, u2e1, u1e2, u2e2, u1e3, u2e3]
+		[b1, b2, b3]
+		b1 will send if success
+		b2 will send if b2 failed then will drop b3
 
-	[u1e1, u2e1, u1e2, u2e2, u1e3, u2e3]
-	200, 200, 500, 200, 200, 200
+		Router transform
+		[u1e1, u2e1, u1e2, u2e2, u1e3, u2e3]
+		200, 200, 500, 200, 200, 200
 
-	Case 1:
-	u1e1 will send - success
-	u2e1 will send - success
-	u1e2 will drop because transformer gave 500
-	u2e2 will send - success
-	u1e3 should be dropped because u1e2 should be retried
-	u2e3 will send
+		Case 1:
+		u1e1 will send - success
+		u2e1 will send - success
+		u1e2 will drop because transformer gave 500
+		u2e2 will send - success
+		u1e3 should be dropped because u1e2 should be retried
+		u2e3 will send
 
-	Case 2:
-	u1e1 will send - success
-	u2e1 will send - failed 5xx
-	u1e2 will drop because transformer gave 500
-	u2e2 will drop - because request to destination failed with 5xx
-	u1e3 should be dropped because u1e2 should be retried
-	u2e3 will drop - because request to destination failed with 5xxend
+		Case 2:
+		u1e1 will send - success
+		u2e1 will send - failed 5xx
+		u1e2 will drop because transformer gave 500
+		u2e2 will drop - because request to destination failed with 5xx
+		u1e3 should be dropped because u1e2 should be retried
+		u2e3 will drop - because request to destination failed with 5xxend
 
-	Case 3:
-	u1e1 will send - success
-	u2e1 will send - failed 4xx
-	u1e2 will drop because transformer gave 500
-	u2e2 will send - because previous job is aborted
-	u1e3 should be dropped because u1e2 should be retried
-	u2e3 will send
+		Case 3:
+		u1e1 will send - success
+		u2e1 will send - failed 4xx
+		u1e2 will drop because transformer gave 500
+		u2e2 will send - because previous job is aborted
+		u1e3 should be dropped because u1e2 should be retried
+		u2e3 will send
 	*/
 
 	for _, destinationJob := range worker.destinationJobs {
@@ -370,7 +377,9 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 				//Using reponse status code and body to get response code rudder router logic is based on.
 				worker.rt.destinationResonseHandlerMutex.RLock()
-				respStatusCode = worker.rt.destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
+				if worker.rt.destinationResponseHandler != nil {
+					respStatusCode = worker.rt.destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
+				}
 				worker.rt.destinationResonseHandlerMutex.RUnlock()
 
 				prevRespStatusCode = respStatusCode
@@ -470,6 +479,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	if isSuccessStatus(respStatusCode) {
 		atomic.AddUint64(&worker.rt.successCount, 1)
 		status.JobState = jobsdb.Succeeded.State
+		//TODO not storing respBody in success state. Need this?
 		worker.rt.logger.Debugf("[%v Router] :: sending success status to response", worker.rt.destName)
 		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID}
 

@@ -14,6 +14,12 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/tidwall/gjson"
+)
+
+const (
+	BATCH            = "BATCH"
+	ROUTER_TRANSFORM = "ROUTER_TRANSFORM"
 )
 
 //HandleT is the handle for this class
@@ -27,7 +33,7 @@ type HandleT struct {
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
-	Transform(transformMessage *types.TransformMessageT) []types.DestinationJobT
+	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
 }
 
 //NewTransformer creates a new transformer
@@ -55,7 +61,7 @@ func init() {
 }
 
 //Transform transforms router jobs to destination jobs
-func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []types.DestinationJobT {
+func (trans *HandleT) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 	//Call remote transformation
 	rawJSON, err := json.Marshal(transformMessage)
 	if err != nil {
@@ -68,8 +74,19 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 	//We should rarely have error communicating with our JS
 	reqFailed := false
 
+	var url string
+	if transformType == BATCH {
+		url = getBatchURL()
+	} else if transformType == ROUTER_TRANSFORM {
+		url = getRouterTransformURL()
+	} else {
+		//Unexpected transformType returning empty
+		return []types.DestinationJobT{}
+	}
+
+	pkgLogger.Infof("router transform url %s", url)
+
 	for {
-		url := getBatchURL()
 		trans.transformRequestTimerStat.Start()
 		resp, err = trans.client.Post(url, "application/json; charset=utf-8",
 			bytes.NewBuffer(rawJSON))
@@ -104,13 +121,24 @@ func (trans *HandleT) Transform(transformMessage *types.TransformMessageT) []typ
 		if err != nil {
 			panic(err)
 		}
-		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(rawJSON))
-		err = json.Unmarshal(respData, &destinationJobs)
+		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
+
+		if transformType == BATCH {
+			err = json.Unmarshal(respData, &destinationJobs)
+		} else if transformType == ROUTER_TRANSFORM {
+			err = json.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
+		}
 		//This is returned by our JS engine so should  be parsable
 		//but still handling it
 		if err != nil {
 			panic(err)
 		}
+	} else if resp.StatusCode == http.StatusNotFound {
+		for _, routerJob := range transformMessage.Data {
+			resp := types.DestinationJobT{Message: routerJob.Message, JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata}, Destination: routerJob.Destination, Batched: false, StatusCode: 404, Error: "Transformer threw 404"}
+			destinationJobs = append(destinationJobs, resp)
+		}
+		io.Copy(ioutil.Discard, resp.Body)
 	} else {
 		io.Copy(ioutil.Discard, resp.Body)
 	}
@@ -128,4 +156,8 @@ func (trans *HandleT) Setup() {
 
 func getBatchURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/batch"
+}
+
+func getRouterTransformURL() string {
+	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
 }
