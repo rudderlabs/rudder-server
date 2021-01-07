@@ -135,6 +135,14 @@ func isSuccessStatus(status int) bool {
 	return status >= 200 && status < 300
 }
 
+func isJobTerminated(status int) bool {
+	if status == 429 {
+		return false
+	}
+
+	return status >= 200 && status < 500
+}
+
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
@@ -304,6 +312,27 @@ func (worker *workerT) workerProcess() {
 	}
 }
 
+func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUserIDsMap map[string]struct{}, destinationJob types.DestinationJobT) bool {
+	if prevRespStatusCode == 0 {
+		return true
+	}
+
+	//If batching is enabled, we send the request only if the previous one succeeds
+	if worker.rt.enableBatching {
+		return isSuccessStatus(prevRespStatusCode)
+	}
+
+	//If the destinationJob has come through router transform,
+	//drop the request if it is of a failed user, else send
+	for _, metadata := range destinationJob.JobMetadataArray {
+		if _, ok := failedUserIDsMap[metadata.UserID]; ok {
+			return false
+		}
+	}
+
+	return true
+}
+
 func (worker *workerT) handleWorkerDestinationJobs() {
 
 	worker.batchTimeStat.Start()
@@ -334,25 +363,25 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 		Case 2:
 		u1e1 will send - success
 		u2e1 will send - failed 5xx
-		u1e2 will drop because transformer gave 500
+		u1e2 will send
 		u2e2 will drop - because request to destination failed with 5xx
-		u1e3 should be dropped because u1e2 should be retried
-		u2e3 will drop - because request to destination failed with 5xxend
+		u1e3 will send
+		u2e3 will drop - because request to destination failed with 5xx
 
 		Case 3:
 		u1e1 will send - success
 		u2e1 will send - failed 4xx
-		u1e2 will drop because transformer gave 500
+		u1e2 will send
 		u2e2 will send - because previous job is aborted
-		u1e3 should be dropped because u1e2 should be retried
+		u1e3 will send
 		u2e3 will send
 	*/
 
+	failedUserIDsMap := make(map[string]struct{})
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
-			//TODO extra check to drop failed users jobs
-			if prevRespStatusCode == 0 || isSuccessStatus(prevRespStatusCode) {
+			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, destinationJob) {
 				diagnosisStartTime := time.Now()
 
 				// START: request to destination endpoint
@@ -407,11 +436,18 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 				worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
 			} else {
-				respBody = "skipping sending to destination because previous job in batch is failed."
+				respStatusCode = 500
+				respBody = "skipping sending to destination because previous job (of user) in batch is failed."
 			}
 		} else {
 			respStatusCode = destinationJob.StatusCode
 			respBody = destinationJob.Error
+		}
+
+		if !isJobTerminated(respStatusCode) {
+			for _, metadata := range destinationJob.JobMetadataArray {
+				failedUserIDsMap[metadata.UserID] = struct{}{}
+			}
 		}
 
 		for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
