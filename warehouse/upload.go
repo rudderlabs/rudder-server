@@ -285,7 +285,7 @@ func (job *UploadJobT) run() (err error) {
 
 		case GeneratedUploadSchema:
 			newStatus = nextUploadState.failed
-			err := job.generateUploadSchema(schemaHandle)
+			err = job.generateUploadSchema(schemaHandle)
 			if err != nil {
 				break
 			}
@@ -293,7 +293,7 @@ func (job *UploadJobT) run() (err error) {
 
 		case CreatedTableUploads:
 			newStatus = nextUploadState.failed
-			err := job.initTableUploads()
+			err = job.initTableUploads()
 			if err != nil {
 				break
 			}
@@ -470,7 +470,7 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 			AND %[1]s.destination_id = '%[4]s'
 			AND %[1]s.namespace = '%[5]s'
 			AND %[1]s.status != '%[6]s'
-			AND %[1]s.status != '%[7]s' 
+			AND %[1]s.status != '%[7]s'
 			AND %[2]s.table_name in (SELECT table_name FROM %[2]s WHERE %[2]s.wh_upload_id = '%[3]d')
 		ORDER BY
 			%[1]s.id ASC`,
