@@ -466,7 +466,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				RetryTime:     time.Now(),
 				AttemptNum:    attemptNum,
 				ErrorCode:     strconv.Itoa(respStatusCode),
-				ErrorResponse: []byte(`{}`),
+				ErrorResponse: []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody))), //TODO clean up
 			}
 
 			worker.postStatusOnResponseQ(respStatusCode, respBody, &destinationJobMetadata, &status)
@@ -479,6 +479,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 	//if batching is enabled, we need to make sure that all the routerJobs status are written to DB.
 	//if in any case transformer doesn't send all the job ids back, setting their statuses as failed
+	//TODO: write failed even if its routerTransform
 	if worker.rt.enableBatching && worker.routerJobs != nil {
 		for _, routerJob := range worker.routerJobs {
 			if _, ok := handledJobMetadatas[routerJob.JobMetadata.JobID]; !ok {
