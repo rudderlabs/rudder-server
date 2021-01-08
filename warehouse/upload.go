@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -1086,6 +1087,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 
 	job.setStagingFilesStatus(toProcessStagingFiles, warehouseutils.StagingFileExecutingState, nil)
 
+	saveLoadFileErrs := []error{}
 	for i := 0; i < len(toProcessStagingFiles); i += publishBatchSize {
 		j := i + publishBatchSize
 		if j > len(toProcessStagingFiles) {
@@ -1131,18 +1133,47 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		rruntime.Go(func() {
 			responses := <-ch
 			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", toProcessStagingFiles[batchStartIdx].ID, toProcessStagingFiles[batchEndIdx-1].ID, destType, destID)
+			var loadFiles []loadFileUploadOutputT
+			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
 				// TODO: make it aborted
 				if resp.Status == "aborted" {
 					pkgLogger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
+					job.setStagingFileErr(resp.JobID, fmt.Errorf(resp.Error))
 					continue
 				}
+				var output []loadFileUploadOutputT
+				err = json.Unmarshal(resp.Output, &output)
+				if err != nil {
+					panic(err)
+				}
+				if len(output) == 0 {
+					pkgLogger.Errorf("[WH]: No LoadFiles returned by wh worker")
+					continue
+				}
+				loadFiles = append(loadFiles, output...)
+				successfulStagingFileIDs = append(successfulStagingFileIDs, resp.JobID)
 			}
+			err = job.bulkInstertLoadFileRecords(loadFiles)
+			if err != nil {
+				saveLoadFileErrs = append(saveLoadFileErrs, err)
+			}
+			job.setStagingFileSuccess(successfulStagingFileIDs)
 			wg.Done()
 		})
 	}
 
 	wg.Wait()
+
+	if len(saveLoadFileErrs) > 0 {
+		pkgLogger.Errorf(`[WH]: Encountered errors in creating load file records in wh_load_files: %v`, err)
+		var errStrings []string
+		for _, saveLoadFileErr := range saveLoadFileErrs {
+			errStrings = append(errStrings, saveLoadFileErr.Error())
+		}
+		err = fmt.Errorf(strings.Join(errStrings, "\n"))
+		return startLoadFileID, endLoadFileID, err
+	}
 
 	startLoadFileID, endLoadFileID, err = job.getLoadFileIDRange()
 
@@ -1151,6 +1182,58 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		return startLoadFileID, endLoadFileID, err
 	}
 	return startLoadFileID, endLoadFileID, nil
+}
+
+func (job *UploadJobT) setStagingFileSuccess(stagingFileIDs []int64) {
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseutils.WarehouseStagingFilesTable)
+	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileSucceededState, timeutil.Now(), pq.Array(stagingFileIDs))
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (job *UploadJobT) setStagingFileErr(stagingFileID int64, statusErr error) {
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseutils.WarehouseStagingFilesTable)
+	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileFailedState, misc.QuoteLiteral(statusErr.Error()), timeutil.Now(), stagingFileID)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (job *UploadJobT) bulkInstertLoadFileRecords(loadFiles []loadFileUploadOutputT) (err error) {
+	//Using transactions for bulk copying
+	txn, err := dbHandle.Begin()
+	if err != nil {
+		return
+	}
+
+	stmt, err := txn.Prepare(pq.CopyIn("wh_load_files", "staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at"))
+	if err != nil {
+		pkgLogger.Errorf(`[WH]: Error starting bulk copy using CopyIn: %v`, err)
+		return
+	}
+	defer stmt.Close()
+
+	for _, loadFile := range loadFiles {
+		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now())
+		if err != nil {
+			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for loadFules: %v Error: %v`, loadFile, err)
+			txn.Rollback()
+			return
+		}
+	}
+
+	_, err = stmt.Exec()
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error creating load file records: %v", err)
+		return
+	}
+	err = txn.Commit()
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error committing load file records txn: %v", err)
+		return
+	}
+	return
 }
 
 func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, err error) {

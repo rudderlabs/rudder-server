@@ -59,7 +59,9 @@ type NotificationT struct {
 }
 
 type ResponseT struct {
+	JobID  int64
 	Status string
+	Output json.RawMessage
 	Error  string
 }
 
@@ -147,7 +149,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				panic(err)
 			}
 			if count == 0 {
-				stmt = fmt.Sprintf(`SELECT status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
+				stmt = fmt.Sprintf(`SELECT payload->'StagingFileID', payload->'Output', status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
 				rows, err := notifier.dbHandle.Query(stmt)
 				if err != nil {
 					panic(err)
@@ -155,8 +157,12 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				responses := []ResponseT{}
 				for rows.Next() {
 					var status, error string
-					err = rows.Scan(&status, &error)
+					var output json.RawMessage
+					var jobID int64
+					err = rows.Scan(&jobID, &output, &status, &error)
 					responses = append(responses, ResponseT{
+						JobID:  jobID,
+						Output: output,
 						Status: status,
 						Error:  error,
 					})

@@ -143,16 +143,17 @@ type loadFileUploadJob struct {
 }
 
 type loadFileUploadOutputT struct {
-	tableName string
-	location  string
-	totalRows int
+	TableName     string
+	Location      string
+	TotalRows     int
+	StagingFileID int64
 }
 
-func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
+func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT, error) {
 	job := jobRun.job
 	uploader, err := job.getFileManager()
 	if err != nil {
-		return []int64{}, err
+		return []loadFileUploadOutputT{}, err
 	}
 	// var loadFileIDs []int64
 	var loadFileUploadOutputs []loadFileUploadOutputT
@@ -179,9 +180,10 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 						return
 					}
 					loadFileOutputChan <- loadFileUploadOutputT{
-						tableName: tableName,
-						location:  uploadOutput.Location,
-						totalRows: jobRun.tableEventCountMap[tableName],
+						TableName:     tableName,
+						Location:      uploadOutput.Location,
+						TotalRows:     jobRun.tableEventCountMap[tableName],
+						StagingFileID: jobRun.job.StagingFileID,
 					}
 				}
 
@@ -199,14 +201,13 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]int64, error) {
 		case loadFileOutput := <-loadFileOutputChan:
 			loadFileUploadOutputs = append(loadFileUploadOutputs, loadFileOutput)
 			if len(loadFileUploadOutputs) == len(jobRun.outputFileWritersMap) {
-				loadFileIDs := job.bulkCreateLoadFileRecords(loadFileUploadOutputs)
-				return loadFileIDs, nil
+				return loadFileUploadOutputs, nil
 			}
 		case err := <-uploadErrorChan:
 			pkgLogger.Errorf("received error while uploading load file to bucket for staging file id %s, cancelling the context: err %w", job.StagingFileID, err)
-			return []int64{}, err
+			return []loadFileUploadOutputT{}, err
 		case <-time.After(slaveUploadTimeout):
-			return []int64{}, fmt.Errorf("Load files upload timed out for staging file id: %v", jobRun.job.StagingFileID)
+			return []loadFileUploadOutputT{}, fmt.Errorf("Load files upload timed out for staging file id: %v", jobRun.job.StagingFileID)
 		}
 	}
 }
@@ -267,12 +268,12 @@ func (job *PayloadT) bulkCreateLoadFileRecords(loadFileUploadOutputs []loadFileU
 		}
 		valueReferences = append(valueReferences, fmt.Sprintf("(%s)", strings.Join(valueRefsArr, ",")))
 		valueArgs = append(valueArgs, job.StagingFileID)
-		valueArgs = append(valueArgs, loadFileUploadOutput.location)
+		valueArgs = append(valueArgs, loadFileUploadOutput.Location)
 		valueArgs = append(valueArgs, job.SourceID)
 		valueArgs = append(valueArgs, job.DestinationID)
 		valueArgs = append(valueArgs, job.DestinationType)
-		valueArgs = append(valueArgs, loadFileUploadOutput.tableName)
-		valueArgs = append(valueArgs, loadFileUploadOutput.totalRows)
+		valueArgs = append(valueArgs, loadFileUploadOutput.TableName)
+		valueArgs = append(valueArgs, loadFileUploadOutput.TotalRows)
 		valueArgs = append(valueArgs, currentTime)
 	}
 
@@ -370,7 +371,7 @@ func (event *BatchRouterEventT) getColumnInfo(columnName string) (columnInfo Col
 // 5. Delete the staging and load files from tmp directory
 //
 
-func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
+func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
 
 	jobRun := JobRunT{
 		job:          job,
@@ -386,7 +387,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	// This creates the file, so on successful creation remove it
 	err = jobRun.downloadStagingFile()
 	if err != nil {
-		return loadFileIDs, err
+		return loadFileUploadOutputs, err
 	}
 
 	sortedTableColumnMap := job.getSortedColumnMapForAllTables()
@@ -394,7 +395,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	reader, endOfFile := jobRun.setStagingFileReader()
 	if endOfFile {
 		// If empty file, return nothing
-		return loadFileIDs, nil
+		return loadFileUploadOutputs, nil
 	}
 	scanner := bufio.NewScanner(reader)
 	// default scanner buffer maxCapacity is 64K
@@ -514,7 +515,7 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 		eventData, err := eventLoader.WriteToString()
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to write event to string: %w", err)
-			return loadFileIDs, err
+			return loadFileUploadOutputs, err
 		}
 		gzWriter.WriteGZ(eventData)
 		jobRun.tableEventCountMap[tableName]++
@@ -527,8 +528,8 @@ func processStagingFile(job PayloadT) (loadFileIDs []int64, err error) {
 	for _, loadFile := range jobRun.outputFileWritersMap {
 		loadFile.CloseGZ()
 	}
-	loadFileIDs, err = jobRun.uploadLoadFilesToObjectStorage()
-	return loadFileIDs, err
+	loadFileUploadOutputs, err = jobRun.uploadLoadFilesToObjectStorage()
+	return loadFileUploadOutputs, err
 }
 
 func freeWorker(workerIdx int) {
@@ -559,13 +560,12 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT) {
 		return
 	}
 	job.BatchID = claimedJob.BatchID
-	ids, err := processStagingFile(job)
-	job.setStagingFileStatus(err)
+	loadFileOutputs, err := processStagingFile(job)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
 	}
-	job.LoadFileIDs = ids
+	job.Output = loadFileOutputs
 	output, err := json.Marshal(job)
 	response := pgnotifier.ClaimResponseT{
 		Err:     err,

@@ -958,19 +958,17 @@ func isSlave() bool {
 	return warehouseMode == config.SlaveMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
 }
 
-func Start() {
-	time.Sleep(1 * time.Second)
-	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !isStandAlone() && !db.IsNormalMode() {
-		pkgLogger.Infof("Skipping start of warehouse service...")
+func isStandAloneSlave() bool {
+	return warehouseMode == config.SlaveMode
+}
+
+func setupDB(connInfo string) {
+	if isStandAloneSlave() {
 		return
 	}
 
-	pkgLogger.Infof("WH: Starting Warehouse service...")
 	var err error
-	psqlInfo := getConnectionString()
-
-	dbHandle, err = sql.Open("postgres", psqlInfo)
+	dbHandle, err = sql.Open("postgres", connInfo)
 	if err != nil {
 		panic(err)
 	}
@@ -987,7 +985,19 @@ func Start() {
 	}
 
 	setupTables(dbHandle)
+}
 
+func Start() {
+	time.Sleep(1 * time.Second)
+	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
+	if !isStandAlone() && !db.IsNormalMode() {
+		pkgLogger.Infof("Skipping start of warehouse service...")
+		return
+	}
+
+	pkgLogger.Infof("WH: Starting Warehouse service...")
+	psqlInfo := getConnectionString()
+	setupDB(psqlInfo)
 	defer startWebHandler()
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
@@ -999,6 +1009,7 @@ func Start() {
 		return
 	}
 
+	var err error
 	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {
 		panic(err)
