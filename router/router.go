@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -460,15 +461,19 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					worker.rt.retryAttemptsStat.Increment()
 				}
 			}
+			//respBody for GA is GIF. Will pose problem when writing to DB.
+			if !isASCII(respBody) {
+				respBody = "Non-ASCII error response"
+			}
 			status := jobsdb.JobStatusT{
 				JobID:         destinationJobMetadata.JobID,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				AttemptNum:    attemptNum,
 				ErrorCode:     strconv.Itoa(respStatusCode),
+				//TODO : failing here for GA
 				ErrorResponse: []byte(fmt.Sprintf(`{"reason": %v}`, strconv.Quote(respBody))), //TODO clean up
 			}
-
 			worker.postStatusOnResponseQ(respStatusCode, respBody, &destinationJobMetadata, &status)
 
 			worker.sendEventDeliveryStat(&destinationJobMetadata, &status, &destinationJob.Destination)
@@ -510,6 +515,15 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	}
 	reqMetric.RequestCompletedTime = time.Now().Sub(*diagnosisStartTime)
 	worker.rt.trackRequestMetrics(reqMetric)
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
 }
 
 func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
