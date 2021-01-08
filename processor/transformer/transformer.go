@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"sort"
@@ -174,11 +173,11 @@ func (trans *HandleT) transformWorker() {
 		}
 
 		var transformerResponses []TransformerResponseT
+		respData, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			panic(err)
+		}
 		if resp.StatusCode == http.StatusOK {
-			respData, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				panic(err)
-			}
 			err = json.Unmarshal(respData, &transformerResponses)
 			//This is returned by our JS engine so should  be parsable
 			//but still handling it
@@ -186,7 +185,10 @@ func (trans *HandleT) transformWorker() {
 				panic(err)
 			}
 		} else {
-			io.Copy(ioutil.Discard, resp.Body)
+			for _, transformEvent := range job.data {
+				resp := TransformerResponseT{StatusCode: resp.StatusCode, Error: string(respData), Metadata: transformEvent.Metadata}
+				transformerResponses = append(transformerResponses, resp)
+			}
 		}
 		resp.Body.Close()
 
