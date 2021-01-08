@@ -1,35 +1,34 @@
-# Contributing to RudderStack #
+# Contributing to RudderStack
 
 Thanks for taking the time and for your help improving this project!
 
-## Getting Help ##
+## Getting Help
 
 If you have a question about rudder or have encountered problems using it,
 start by asking a question on [discord][discord].
 
-## Rudder Labs Contributor Agreement ##
+## Rudder Labs Contributor Agreement
 
-To contribute to this project, we need you to sign to [Contributor License Agreement (“CLA”)][CLA] for the first commit you make. By agreeing to the [CLA][CLA]
+To contribute to this project, we need you to sign to [Contributor License Agreement (“CLA”)][cla] for the first commit you make. By agreeing to the [CLA][cla]
 we can add you to list of approved contributors and review the changes proposed by you.
 
 ## Installing and Setting Up RudderStack
 
 To contribute to this project, you need to install RudderStack on your machine. By following a few simple instructions, you can get your machine up and running to use RudderStack in no time.
 
-
-1. Download and install [Golang 1.13](https://golang.org/dl/) or above.
+1. Download and install [Golang 1.15](https://golang.org/dl/) or above.
 
 2. Download and install [Node.js 10.6](https://nodej.org/en/download/) or above.
 
 3. Download and install [PostgreSQL 10](https://www.postgresql.org/download/) or above, and set up the database using the following commands:
 
- ```
- createdb jobsdb
- createuser --superuser rudder
- psql "jobsdb" -c "alter user rudder with encrypted password 'rudder'";
- psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
+```
+createdb jobsdb
+createuser --superuser rudder
+psql "jobsdb" -c "alter user rudder with encrypted password 'rudder'";
+psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
 
- ```
+```
 
 4. Go to the [RudderStack dashboard](https://app.rudderstack.com/signup) and set up your account. Copy your workspace token from the top of the home page.
 
@@ -73,7 +72,7 @@ Once you have successfully followed the steps above, follow our guide on [How to
 
 There you go! You can now start using RudderStack on your machine.
 
-## Submitting a Pull Request ##
+## Submitting a Pull Request
 
 Do you have an improvement?
 
@@ -81,11 +80,11 @@ Do you have an improvement?
 2. We will try to respond to your issue promptly.
 3. Fork this repo, develop and test your code changes. See the project's [README](README.md) for further information about working in this repository.
 4. Submit a pull request against this repo's `master` branch.
-    - Include instructions on how to test your changes.
+   - Include instructions on how to test your changes.
 5. Your branch may be merged once all configured checks pass, including:
-    - A review from appropriate maintainers
+   - A review from appropriate maintainers
 
-## Committing ##
+## Committing
 
 We prefer squash or rebase commits so that all changes from a branch are
 committed to master as a single commit. All pull requests are squashed when
@@ -94,10 +93,9 @@ message.
 
 We look forward to your feedback on improving this project.
 
-
 <!----variable's---->
 
 [discord]: https://discordapp.com/invite/xNEdEGw
 [issue]: https://github.com/rudderlabs/rudder-server/issues/new
 [slack]: https://rudderlabs.slack.com/
-[CLA]: https://rudderlabs.wufoo.com/forms/rudderlabs-contributor-license-agreement
+[cla]: https://rudderlabs.wufoo.com/forms/rudderlabs-contributor-license-agreement
