@@ -41,6 +41,8 @@ const (
 	GeneratedStagingFileState               = "generated_staging_file"
 	PopulatingHistoricIdentitiesState       = "populating_historic_identities"
 	PopulatingHistoricIdentitiesStateFailed = "populating_historic_identities_failed"
+	FetchingRemoteSchemaFailed              = "fetching_remote_schema_failed"
+	InternalProcessingFailed                = "internal_processing_failed"
 )
 
 // Table Upload status
@@ -241,13 +243,13 @@ func (job *UploadJobT) run() (err error) {
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
-		job.setUploadError(err, job.upload.Status)
+		job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
 
 	hasSchemaChanged, err := job.syncRemoteSchema()
 	if err != nil {
-		job.setUploadError(err, job.upload.Status)
+		job.setUploadError(err, FetchingRemoteSchemaFailed)
 		return err
 	}
 	if hasSchemaChanged {
@@ -259,7 +261,7 @@ func (job *UploadJobT) run() (err error) {
 	whManager := job.whManager
 	err = whManager.Setup(job.warehouse, job)
 	if err != nil {
-		job.setUploadError(err, job.upload.Status)
+		job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
 	defer whManager.Cleanup()
@@ -470,7 +472,7 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 			AND %[1]s.destination_id = '%[4]s'
 			AND %[1]s.namespace = '%[5]s'
 			AND %[1]s.status != '%[6]s'
-			AND %[1]s.status != '%[7]s' 
+			AND %[1]s.status != '%[7]s'
 			AND %[2]s.table_name in (SELECT table_name FROM %[2]s WHERE %[2]s.wh_upload_id = '%[3]d')
 		ORDER BY
 			%[1]s.id ASC`,
