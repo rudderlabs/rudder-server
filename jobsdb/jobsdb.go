@@ -758,7 +758,17 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 		//We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
 		// 2. Migration target ds
+
+		// Skipping asserts and updating prevMax if a ds is found to be empty
+		// Happens if this function is called between addNewDS and populating data in two scenarios
+		// Scenario-1: During internal migrations
+		// Scenario-2: During scaleup scaledown
+		if !minID.Valid || !maxID.Valid {
+			continue
+		}
+		
 		if idx < len(dsList)-1 && (jd.inProgressMigrationTargetDS == nil || jd.inProgressMigrationTargetDS.Index != ds.Index) {
+			//TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
 			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
 			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
 			jd.datasetRangeList = append(jd.datasetRangeList,

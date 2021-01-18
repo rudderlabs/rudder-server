@@ -250,13 +250,11 @@ func (job *UploadJobT) run() (err error) {
 		job.setUploadError(err, job.upload.Status)
 		return err
 	}
-
-	schemaHandle := job.schemaHandle
-	if !hasSchemaChanged {
-		schemaHandle.uploadSchema = job.upload.Schema
-	} else {
+	if hasSchemaChanged {
 		pkgLogger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
 	}
+	schemaHandle := job.schemaHandle
+	schemaHandle.uploadSchema = job.upload.Schema
 
 	whManager := job.whManager
 	err = whManager.Setup(job.warehouse, job)
@@ -265,10 +263,12 @@ func (job *UploadJobT) run() (err error) {
 		return err
 	}
 	defer whManager.Cleanup()
-
 	var newStatus string
-
-	nextUploadState := getNextUploadState(job.upload.Status)
+	var nextUploadState *uploadStateT
+	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
+	if !hasSchemaChanged {
+		nextUploadState = getNextUploadState(job.upload.Status)
+	}
 	if nextUploadState == nil {
 		nextUploadState = stateTransitions[GeneratedUploadSchema]
 	}
