@@ -30,7 +30,9 @@ var (
 	blockSize          string
 	poolSize           string
 	pkgLogger          logger.LoggerI
+	disableNullable    bool
 )
+var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
 const (
 	host          = "host"
@@ -41,6 +43,7 @@ const (
 	secure        = "secure"
 	skipVerify    = "skipVerify"
 	caCertificate = "caCertificate"
+	cluster       = "cluster"
 )
 const partitionField = "received_at"
 
@@ -52,6 +55,13 @@ var rudderDataTypesMapToClickHouse = map[string]string{
 	"string":   "String",
 	"datetime": "DateTime",
 	"boolean":  "UInt8",
+}
+
+var datatypeDefaultValuesMap = map[string]interface{}{
+	"int":      0,
+	"float":    0.0,
+	"bool":     0,
+	"datetime": clikhouseDefaultDateTime,
 }
 
 var clickhouseDataTypesMapToRudder = map[string]string{
@@ -144,6 +154,7 @@ func loadConfig() {
 	queryDebugLogs = config.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
 	blockSize = config.GetString("Warehouse.clickhouse.blockSize", "1000")
 	poolSize = config.GetString("Warehouse.clickhouse.poolSize", "10")
+	disableNullable = config.GetBool("Warehouse.clickhouse.disableNullable", false)
 
 }
 
@@ -186,14 +197,21 @@ func (ch *HandleT) getConnectionCredentials() credentialsT {
 func columnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
-		if misc.ContainsString(notNullableColumns, columnName) {
-			arr = append(arr, fmt.Sprintf(`%s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], true)))
-		} else {
-			arr = append(arr, fmt.Sprintf(`%s %s`, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], false)))
-		}
-
+		codec := getClickHouseCodecForColumnType(dataType, tableName)
+		columnType := getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
+		arr = append(arr, fmt.Sprintf(`%s %s %s`, columnName, columnType, codec))
 	}
 	return strings.Join(arr[:], ",")
+}
+
+func getClickHouseCodecForColumnType(columnType string, tableName string) string {
+	switch columnType {
+	case "datetime":
+		if disableNullable && !(tableName == warehouseutils.IdentifiesTable || tableName == warehouseutils.UsersTable) {
+			return "Codec(DoubleDelta, LZ4)"
+		}
+	}
+	return ""
 }
 
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
@@ -201,15 +219,19 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string
 	if notNullableKey {
 		return columnType
 	}
+	// Nullable is not disabled for users and identity table
 	if tableName == warehouseutils.UsersTable {
 		return fmt.Sprintf(`SimpleAggregateFunction(anyLast, Nullable(%s))`, columnType)
+	}
+	if tableName != warehouseutils.IdentifiesTable && disableNullable {
+		return columnType
 	}
 	return fmt.Sprintf(`Nullable(%s)`, columnType)
 }
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations, _ := ch.Uploader.GetLoadFileLocations(tableName)
+	objectLocations := ch.Uploader.GetLoadFileLocations(tableName)
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		object, err := warehouseutils.GetObjectName(objectLocation, ch.Warehouse.Destination.Config, ch.ObjectStorage)
@@ -263,36 +285,32 @@ func generateArgumentString(arg string, length int) string {
 
 // typecastDataFromType typeCasts string data to the mentioned data type
 func typecastDataFromType(data string, dataType string) interface{} {
+	var dataI interface{}
+	var err error
 	switch dataType {
 	case "int":
-		i, err := strconv.Atoi(data)
-		if err != nil {
-			return nil
-		}
-		return i
+		dataI, err = strconv.Atoi(data)
 	case "float":
-		f, err := strconv.ParseFloat(data, 64)
-		if err != nil {
-			return nil
-		}
-		return f
+		dataI, err = strconv.ParseFloat(data, 64)
 	case "datetime":
-		t, err := time.Parse(time.RFC3339, data)
-		if err != nil {
-			return nil
-		}
-		return t
+		dataI, err = time.Parse(time.RFC3339, data)
 	case "boolean":
-		b, err := strconv.ParseBool(data)
-		if err != nil {
-			return nil
-		}
+		var b bool
+		b, err = strconv.ParseBool(data)
+		dataI = 0
 		if b {
-			return 1
+			dataI = 1
 		}
-		return 0
+	default:
+		return data
 	}
-	return data
+	if err != nil {
+		if disableNullable {
+			return datatypeDefaultValuesMap[dataType]
+		}
+		return nil
+	}
+	return dataI
 }
 
 // loadTable loads table to clickhouse from the load files
@@ -314,10 +332,10 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		pkgLogger.Errorf("CH: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
 		return
 	}
-
-	stmt, err := txn.Prepare(fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys))))
+	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
+	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: %v", tableName, err)
+		pkgLogger.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: query:%s error:%v", tableName, sqlStatement, err)
 		return
 	}
 
@@ -360,7 +378,6 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				columnDataType := tableSchemaInUpload[columnName]
 				data := typecastDataFromType(value, columnDataType)
 				recordInterface = append(recordInterface, data)
-
 			}
 
 			_, err = stmt.Exec(recordInterface...)
@@ -384,7 +401,12 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 // createSchema creates a database in clickhouse
 func (ch *HandleT) createSchema() (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS "%s"`, ch.Namespace)
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	clusterClause := ""
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+	}
+	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS "%s" %s`, ch.Namespace, clusterClause)
 	pkgLogger.Infof("CH: Creating database in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -398,7 +420,16 @@ func (ch *HandleT) createSchema() (err error) {
 func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"id"}
 	notNullableColumns := []string{"received_at", "id"}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) ENGINE = AggregatingMergeTree() ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, columnsWithDataTypes(name, columns, notNullableColumns), getSortKeyTuple(sortKeyFields), partitionField)
+	clusterClause := ""
+	engine := "AggregatingMergeTree"
+	engineOptions := ""
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
+		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
+	}
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, columnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
@@ -420,7 +451,7 @@ func getSortKeyTuple(sortKeyFields []string) string {
 
 // createTable creates table with engine ReplacingMergeTree(), this is used for dedupe event data and replace it will latest data if duplicate data found. This logic is handled by clickhouse
 // The engine differs from MergeTree in that it removes duplicate entries with the same sorting key value.
-func (ch *HandleT) createTable(tableName string, columns map[string]string) (err error) {
+func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"received_at", "id"}
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"received_at"}
@@ -429,7 +460,16 @@ func (ch *HandleT) createTable(tableName string, columns map[string]string) (err
 	if tableName == warehouseutils.UsersTable {
 		return ch.createUsersTable(tableName, columns)
 	}
-	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" ( %v ) ENGINE = ReplacingMergeTree() ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, columnsWithDataTypes(tableName, columns, sortKeyFields), getSortKeyTuple(sortKeyFields), partitionField)
+	clusterClause := ""
+	engine := "ReplacingMergeTree"
+	engineOptions := ""
+	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	if len(strings.TrimSpace(cluster)) > 0 {
+		clusterClause = fmt.Sprintf(`ON CLUSTER "%s"`, cluster)
+		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
+		engineOptions = `'/clickhouse/{cluster}/tables/{database}/{table}', '{replica}'`
+	}
+	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s"."%s" %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, tableName, clusterClause, columnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
 
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
@@ -443,53 +483,23 @@ func (ch *HandleT) tableExists(tableName string) (exists bool, err error) {
 	return
 }
 
-// addColumn adds column:columnName with dataType columnType to the tableName
-func (ch *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+// AddColumn adds column:columnName with dataType columnType to the tableName
+func (ch *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[columnType], false))
 	pkgLogger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
 }
 
-func (ch *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
-	if len(ch.Uploader.GetSchemaInWarehouse()) == 0 {
-		err = ch.createSchema()
-		if err != nil {
-			return
-		}
+func (ch *HandleT) CreateSchema() (err error) {
+	if len(ch.Uploader.GetSchemaInWarehouse()) > 0 {
+		return nil
 	}
+	err = ch.createSchema()
+	return err
+}
 
-	processedTables := make(map[string]bool)
-	for _, tableName := range diff.Tables {
-		var tableExists bool
-		tableExists, err = ch.tableExists(tableName)
-		if err != nil {
-			return
-		}
-		if !tableExists {
-			err = ch.createTable(fmt.Sprintf(`%s`, tableName), diff.ColumnMaps[tableName])
-			if err != nil {
-				return
-			}
-			processedTables[tableName] = true
-		}
-	}
-	for tableName, columnMap := range diff.ColumnMaps {
-		// skip adding columns when table didn't exist previously and was created in the prev statement
-		// this to make sure all columns in the the columnMap exists in the table in snowflake
-		if _, ok := processedTables[tableName]; ok {
-			continue
-		}
-		if len(columnMap) > 0 {
-			for columnName, columnType := range columnMap {
-				err = ch.addColumn(tableName, columnName, columnType)
-				if err != nil {
-					pkgLogger.Errorf("CH: Column %s already exists on %s.%s \nResponse: %v", columnName, ch.Namespace, tableName, err)
-					return
-				}
-			}
-		}
-	}
+func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
 	return
 }
 
@@ -549,6 +559,7 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		return
 	}
 	if err == sql.ErrNoRows {
+		pkgLogger.Infof("CH: No rows, while fetching schema from  destination:%v, query: %v", ch.Warehouse.Identifier, sqlStatement)
 		return schema, nil
 	}
 	defer rows.Close()

@@ -3,6 +3,7 @@ package jobsdb
 import (
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 )
 
@@ -37,8 +38,9 @@ func (jd *HandleT) setupDatabaseTables(clearAll bool) {
 
 	// setup migrator with appropriate schema migrations table
 	m := &migrator.Migrator{
-		Handle:          jd.dbHandle,
-		MigrationsTable: jd.SchemaMigrationTable(),
+		Handle:                     jd.dbHandle,
+		MigrationsTable:            jd.SchemaMigrationTable(),
+		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", false),
 	}
 
 	// execute any necessary migrations

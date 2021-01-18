@@ -27,7 +27,8 @@ const (
 	OffMode         = "off"
 )
 
-func transformKey(s string) string {
+//TransformKey as package method to get the formatted env from a give string
+func TransformKey(s string) string {
 	snake := matchAllCap.ReplaceAllString(s, "${1}_${2}")
 	snake = strings.ReplaceAll(snake, ".", "_")
 	return "RSERVER_" + strings.ToUpper(snake)
@@ -57,7 +58,7 @@ func init() {
 //GetBool is a wrapper for viper's GetBool
 func GetBool(key string, defaultValue bool) (value bool) {
 
-	envVal := GetEnv(transformKey(key), "")
+	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
 		return cast.ToBool(envVal)
 	}
@@ -71,7 +72,7 @@ func GetBool(key string, defaultValue bool) (value bool) {
 // GetInt is wrapper for viper's GetInt
 func GetInt(key string, defaultValue int) (value int) {
 
-	envVal := GetEnv(transformKey(key), "")
+	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
 		return cast.ToInt(envVal)
 	}
@@ -85,7 +86,7 @@ func GetInt(key string, defaultValue int) (value int) {
 // GetInt64 is wrapper for viper's GetInt
 func GetInt64(key string, defaultValue int64) (value int64) {
 
-	envVal := GetEnv(transformKey(key), "")
+	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
 		return cast.ToInt64(envVal)
 	}
@@ -99,7 +100,7 @@ func GetInt64(key string, defaultValue int64) (value int64) {
 // GetFloat64 is wrapper for viper's GetFloat64
 func GetFloat64(key string, defaultValue float64) (value float64) {
 
-	envVal := GetEnv(transformKey(key), "")
+	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
 		return cast.ToFloat64(envVal)
 	}
@@ -113,7 +114,7 @@ func GetFloat64(key string, defaultValue float64) (value float64) {
 // GetString is wrapper for viper's GetString
 func GetString(key string, defaultValue string) (value string) {
 
-	envVal := GetEnv(transformKey(key), "")
+	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
 		return envVal
 	}
@@ -127,7 +128,7 @@ func GetString(key string, defaultValue string) (value string) {
 // GetDuration is wrapper for viper's GetDuration
 func GetDuration(key string, defaultValue time.Duration) (value time.Duration) {
 
-	envVal := GetEnv(transformKey(key), "")
+	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
 		return cast.ToDuration(envVal)
 	}
@@ -140,7 +141,7 @@ func GetDuration(key string, defaultValue time.Duration) (value time.Duration) {
 
 // IsSet checks if config is set for a key
 func IsSet(key string) bool {
-	if _, exists := os.LookupEnv(transformKey(key)); exists {
+	if _, exists := os.LookupEnv(TransformKey(key)); exists {
 		return true
 	}
 

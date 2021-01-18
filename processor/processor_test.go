@@ -76,6 +76,7 @@ const (
 	WriteKeyEnabled       = "enabled-write-key"
 	WriteKeyEnabledNoUT   = "enabled-write-key-no-ut"
 	WriteKeyEnabledOnlyUT = "enabled-write-key-only-ut"
+	WorkspaceID           = "some-workspace-id"
 	SourceIDEnabled       = "enabled-source"
 	SourceIDDisabled      = "disabled-source"
 	DestinationIDEnabledA = "enabled-destination-a" // test destination router
@@ -96,7 +97,7 @@ func SetEnableEventSchemasFeature(b bool) bool {
 }
 
 // This configuration is assumed by all processor tests and, is returned on Subscribe of mocked backend config
-var sampleBackendConfig = backendconfig.SourcesT{
+var sampleBackendConfig = backendconfig.ConfigT{
 	Sources: []backendconfig.SourceT{
 		{
 			ID:       SourceIDDisabled,
@@ -133,10 +134,7 @@ var sampleBackendConfig = backendconfig.SourcesT{
 					},
 					Transformations: []backendconfig.TransformationT{
 						{
-							ID:          "transformation-id",
-							Name:        "transformation-name",
-							Description: "transformation-description",
-							VersionID:   "transformation-version-id",
+							VersionID: "transformation-version-id",
 						},
 					},
 				},
@@ -205,10 +203,7 @@ var sampleBackendConfig = backendconfig.SourcesT{
 					},
 					Transformations: []backendconfig.TransformationT{
 						{
-							ID:          "transformation-id",
-							Name:        "transformation-name",
-							Description: "transformation-description",
-							VersionID:   "transformation-version-id",
+							VersionID: "transformation-version-id",
 						},
 					},
 				},
@@ -235,6 +230,7 @@ var _ = Describe("Processor", func() {
 	})
 
 	Context("Initialization", func() {
+		var clearDB = false
 		It("should initialize (no jobs to recover)", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
@@ -246,7 +242,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
 		})
 
 		It("should recover after crash", func() {
@@ -309,11 +305,12 @@ var _ = Describe("Processor", func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
 		})
 	})
 
 	Context("normal operation", func() {
+		var clearDB = false
 		BeforeEach(func() {
 			// crash recovery check
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
@@ -327,7 +324,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
 
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1).After(callRetry)
@@ -491,11 +488,11 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2003
 					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
-
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
-
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledNoUT).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 			processorSetupAndAssertJobHandling(processor, c)
 		})
 
@@ -673,7 +670,8 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(toRetryJobsList[2], statuses[3], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2003
 					assertJobStatus(toRetryJobsList[0], statuses[4], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)     // id 2010
 				})
-
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledOnlyUT).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
@@ -1218,6 +1216,8 @@ var _ = Describe("Processor", func() {
 						assertErrStoreJob(job, i, "value-enabled-destination-a")
 					}
 				})
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
@@ -1328,7 +1328,8 @@ var _ = Describe("Processor", func() {
 						assertErrStoreJob(job)
 					}
 				})
-
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
@@ -1480,7 +1481,8 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 }
 
 func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
-	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB)
+	var clearDB = false
+	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
 
 	// make sure the mock backend config has sent the configuration
 	testutils.RunTestWithTimeout(func() {

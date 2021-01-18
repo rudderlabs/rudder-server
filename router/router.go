@@ -1,6 +1,7 @@
 package router
 
 import (
+	"container/list"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -43,6 +44,9 @@ type HandleT struct {
 	perfStats                              *misc.PerfStats
 	successCount                           uint64
 	failCount                              uint64
+	failedEventsListMutex                  sync.RWMutex
+	failedEventsList                       *list.List
+	failedEventsChan                       chan jobsdb.JobStatusT
 	isEnabled                              bool
 	toClearFailJobIDMutex                  sync.Mutex
 	toClearFailJobIDMap                    map[int][]string
@@ -70,6 +74,8 @@ type HandleT struct {
 	throttledUserMap                       map[string]struct{} // used before calling findWorker. A temp storage to save <userid> whose job can be throttled.
 	isBackendConfigInitialized             bool
 	backendConfigInitialized               chan bool
+	maxFailedCountForJob                   int
+	retryTimeWindow                        time.Duration
 }
 
 type jobResponseT struct {
@@ -105,14 +111,15 @@ type workerT struct {
 }
 
 var (
-	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel, ser       int
-	maxFailedCountForJob                                                    int
+	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel            int
+	failedEventsCacheSize                                                   int
 	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
 	testSinkURL                                                             string
-	retryTimeWindow, minRetryBackoff, maxRetryBackoff, jobsBatchTimeout     time.Duration
+	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout                      time.Duration
 	noOfJobsToBatchInAWorker                                                int
 	pkgLogger                                                               logger.LoggerI
 	Diagnostics                                                             diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	fixedLoopSleep                                                          time.Duration
 )
 
 type requestMetric struct {
@@ -133,17 +140,16 @@ func loadConfig() {
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	noOfJobsToBatchInAWorker = config.GetInt("Router.noOfJobsToBatchInAWorker", 20)
 	jobsBatchTimeout = config.GetDuration("Router.jobsBatchTimeoutInSec", time.Duration(5)) * time.Second
-	ser = config.GetInt("Router.ser", 3)
 	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(60)) * time.Second
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
-	maxFailedCountForJob = config.GetInt("Router.maxFailedCountForJob", 3)
 	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
-	retryTimeWindow = config.GetDuration("Router.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
 	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
+	fixedLoopSleep = config.GetDuration("Router.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
+	failedEventsCacheSize = config.GetInt("Router.failedEventsCacheSize", 10)
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -430,6 +436,8 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 		status.JobState = jobsdb.Failed.State
 
+		worker.rt.failedEventsChan <- *status
+
 		// TODO: 429 should mark this throttled?
 		if respStatusCode >= 500 || respStatusCode == 429 {
 			createdAt, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.CreatedAt)
@@ -443,7 +451,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 			// TODO: timeElapsed should be ideally from first attempt
 			timeElapsed := time.Now().Sub(createdAt)
-			if timeElapsed > retryTimeWindow && status.AttemptNum >= maxFailedCountForJob {
+			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
 				addToFailedMap = false
 				worker.retryForJobMapMutex.Lock()
@@ -455,7 +463,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 				worker.retryForJobMapMutex.Unlock()
 			}
 		} else {
-			if status.AttemptNum >= maxFailedCountForJob {
+			if status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
 				addToFailedMap = false
 				worker.rt.eventsAbortedStat.Increment()
@@ -598,6 +606,25 @@ func durationBeforeNextAttempt(attempt int) (d time.Duration) {
 		d = b.NextBackOff()
 	}
 	return
+}
+
+func (rt *HandleT) addToFailedList(jobStatus jobsdb.JobStatusT) {
+	rt.failedEventsListMutex.Lock()
+	defer rt.failedEventsListMutex.Unlock()
+	if rt.failedEventsList.Len() == failedEventsCacheSize {
+		firstEnqueuedStatus := rt.failedEventsList.Back()
+		rt.failedEventsList.Remove(firstEnqueuedStatus)
+	}
+	rt.failedEventsList.PushFront(jobStatus)
+}
+
+func (rt *HandleT) readFailedJobStatusChan() {
+	for {
+		select {
+		case jobStatus := <-rt.failedEventsChan:
+			rt.addToFailedList(jobStatus)
+		}
+	}
 }
 
 func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
@@ -1003,6 +1030,7 @@ func (rt *HandleT) generatorLoop() {
 
 		countStat.Count(len(combinedList))
 		generatorStat.End()
+		time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
 	}
 }
 
@@ -1027,6 +1055,8 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	rt.toClearFailJobIDMap = make(map[int][]string)
+	rt.failedEventsList = list.New()
+	rt.failedEventsChan = make(chan jobsdb.JobStatusT)
 	rt.isEnabled = true
 	rt.netHandle = &NetHandleT{}
 	rt.netHandle.logger = rt.logger.Child("network")
@@ -1037,6 +1067,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
+	rt.maxFailedCountForJob = getRouterConfigInt("maxFailedCountForJob", destName, 3)
+	rt.retryTimeWindow = getRouterConfigDuration("retryTimeWindowInMins", destName, time.Duration(180)) * time.Minute
+
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
@@ -1075,6 +1108,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destName string) {
 		rt.collectMetrics()
 	})
 	rruntime.Go(func() {
+		rt.readFailedJobStatusChan()
+	})
+	rruntime.Go(func() {
 		rt.statusInsertLoop()
 	})
 	rruntime.Go(func() {
@@ -1094,7 +1130,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		rt.configSubscriberLock.Lock()
 		rt.destinationsMap = map[string]backendconfig.DestinationT{}
-		allSources := config.Data.(backendconfig.SourcesT)
+		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {

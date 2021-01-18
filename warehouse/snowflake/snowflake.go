@@ -109,9 +109,9 @@ var primaryKeyMap = map[string]string{
 }
 
 var partitionKeyMap = map[string]string{
-	usersTable:      "ID",
-	identifiesTable: "ID",
-	discardsTable:   "ROW_ID, COLUMN_NAME, TABLE_NAME",
+	usersTable:      `"ID"`,
+	identifiesTable: `"ID"`,
+	discardsTable:   `"ROW_ID", "COLUMN_NAME", "TABLE_NAME"`,
 }
 
 var (
@@ -131,13 +131,13 @@ type tableLoadRespT struct {
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	arr := []string{}
 	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, dataTypesMap[dataType]))
+		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[dataType]))
 	}
 	return strings.Join(arr[:], ",")
 }
 
 func (sf *HandleT) createTable(name string, columns map[string]string) (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v )`, name, columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, name, columnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -173,7 +173,7 @@ func (sf *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 }
 
 func (sf *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, tableName, columnName, dataTypesMap[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN "%s" %s`, tableName, columnName, dataTypesMap[columnType])
 	pkgLogger.Infof("SF: Adding column in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -236,11 +236,11 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		if index > 0 {
 			sortedColumnNames += fmt.Sprintf(`, `)
 		}
-		sortedColumnNames += fmt.Sprintf(`%s`, key)
+		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
 	}
 
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, tableName)
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s" LIKE "%s"`, stagingTableName, tableName)
 
 	pkgLogger.Debugf("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
@@ -257,7 +257,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, csvObjectLocation)
 
 	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, sf.authString())
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`"%s"."%s"`, sf.Namespace, stagingTableName), sortedColumnNames, loadFolder, sf.authString())
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
@@ -278,7 +278,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		primaryKey = column
 	}
 
-	partitionKey := "ID"
+	partitionKey := `"ID"`
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
 	}
@@ -286,8 +286,8 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	var columnNames, stagingColumnNames, columnsWithValues string
 	for idx, str := range strkeys {
 		columnNames += fmt.Sprintf(`%s`, str)
-		stagingColumnNames += fmt.Sprintf(`staging.%s`, str)
-		columnsWithValues += fmt.Sprintf(`original.%[1]s = staging.%[1]s`, str)
+		stagingColumnNames += fmt.Sprintf(`staging."%s"`, str)
+		columnsWithValues += fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, str)
 		if idx != len(strkeys)-1 {
 			columnNames += fmt.Sprintf(`,`)
 			stagingColumnNames += fmt.Sprintf(`,`)
@@ -297,20 +297,18 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	var additionalJoinClause string
 	if tableName == discardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND original.%[1]s = staging.%[1]s AND original.%[2]s = staging.%[2]s`, "TABLE_NAME", "COLUMN_NAME")
+		additionalJoinClause = fmt.Sprintf(`AND original."%[1]s" = staging."%[1]s" AND original."%[2]s" = staging."%[2]s"`, "TABLE_NAME", "COLUMN_NAME")
 	}
 
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
+	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s" AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY %[8]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM %[2]s
+											SELECT *, row_number() OVER (PARTITION BY %[7]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM "%[2]s"
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
-									ON (original.%[3]s = staging.%[3]s %[7]s)
-									WHEN MATCHED THEN
-									UPDATE SET %[6]s
+									ON (original."%[3]s" = staging."%[3]s" %[6]s)
 									WHEN NOT MATCHED THEN
-									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey)
+									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, additionalJoinClause, partitionKey)
 	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -341,7 +339,7 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	sortedColumnNames := strings.Join([]string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"}, ",")
 	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, location)
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, identityMergeRulesTable), sortedColumnNames, loadLocation, sf.authString())
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`"%s"."%s"`, sf.Namespace, identityMergeRulesTable), sortedColumnNames, loadLocation, sf.authString())
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
@@ -377,7 +375,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	}
 
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), identityMappingsTable), 127)
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %s LIKE %s`, stagingTableName, identityMappingsTable)
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s" LIKE "%s"`, stagingTableName, identityMappingsTable)
 
 	pkgLogger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
@@ -387,8 +385,8 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	}
 
 	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, location)
-	sqlStatement = fmt.Sprintf(`COPY INTO %v(MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE, RUDDER_ID, UPDATED_AT) FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`%s.%s`, sf.Namespace, stagingTableName), loadLocation, sf.authString())
+	sqlStatement = fmt.Sprintf(`COPY INTO %v("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT") FROM '%v' %s PATTERN = '.*\.csv\.gz'
+		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )`, fmt.Sprintf(`"%s"."%s"`, sf.Namespace, stagingTableName), loadLocation, sf.authString())
 
 	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
@@ -397,17 +395,17 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
+	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s" AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE ORDER BY UPDATED_AT DESC) AS _rudder_staging_row_number FROM %[2]s
+											SELECT *, row_number() OVER (PARTITION BY "MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE" ORDER BY "UPDATED_AT" DESC) AS _rudder_staging_row_number FROM "%[2]s"
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
-									ON (original.MERGE_PROPERTY_TYPE = staging.MERGE_PROPERTY_TYPE AND original.MERGE_PROPERTY_VALUE = staging.MERGE_PROPERTY_VALUE)
+									ON (original."MERGE_PROPERTY_TYPE" = staging."MERGE_PROPERTY_TYPE" AND original."MERGE_PROPERTY_VALUE" = staging."MERGE_PROPERTY_VALUE")
 									WHEN MATCHED THEN
-									UPDATE SET original.RUDDER_ID = staging.RUDDER_ID, original.UPDATED_AT =  staging.UPDATED_AT
+									UPDATE SET original."RUDDER_ID" = staging."RUDDER_ID", original."UPDATED_AT" =  staging."UPDATED_AT"
 									WHEN NOT MATCHED THEN
-									INSERT (MERGE_PROPERTY_TYPE, MERGE_PROPERTY_VALUE, RUDDER_ID, UPDATED_AT) VALUES (staging.MERGE_PROPERTY_TYPE, staging.MERGE_PROPERTY_VALUE, staging.RUDDER_ID, staging.UPDATED_AT)`, identityMappingsTable, stagingTableName)
+									INSERT ("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT") VALUES (staging."MERGE_PROPERTY_TYPE", staging."MERGE_PROPERTY_VALUE", staging."RUDDER_ID", staging."UPDATED_AT")`, identityMappingsTable, stagingTableName)
 	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -420,7 +418,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 
 func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	if len(sf.Uploader.GetTableSchemaInUpload(identifiesTable)) == 0 {
-		return
+		return errorMap
 	}
 	errorMap = map[string]error{identifiesTable: nil}
 	pkgLogger.Infof("SF: Starting load for identifies and users tables\n")
@@ -428,12 +426,12 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	resp, err := sf.loadTable(identifiesTable, sf.Uploader.GetTableSchemaInUpload(identifiesTable), nil, true)
 	if err != nil {
 		errorMap[identifiesTable] = err
-		return
+		return errorMap
 	}
 	defer resp.dbHandle.Close()
 
 	if len(sf.Uploader.GetTableSchemaInUpload(usersTable)) == 0 {
-		return
+		return errorMap
 	}
 	errorMap[usersTable] = nil
 
@@ -443,20 +441,20 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		if colName == "ID" {
 			continue
 		}
-		userColNames = append(userColNames, colName)
-		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
+		userColNames = append(userColNames, fmt.Sprintf(`"%s"`, colName))
+		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), usersTable), 127)
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[2]s AS (SELECT DISTINCT * FROM
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%[2]s" AS (SELECT DISTINCT * FROM
 										(
 											SELECT
-											ID, %[3]s
+											"ID", %[3]s
 											FROM (
 												(
-													SELECT ID, %[6]s FROM "%[1]s"."%[4]s" WHERE ID in (SELECT USER_ID FROM %[5]s WHERE USER_ID IS NOT NULL)
+													SELECT "ID", %[6]s FROM "%[1]s"."%[4]s" WHERE "ID" in (SELECT "USER_ID" FROM "%[5]s" WHERE "USER_ID" IS NOT NULL)
 												) UNION
 												(
-													SELECT USER_ID, %[6]s FROM %[5]s WHERE USER_ID IS NOT NULL
+													SELECT "USER_ID", %[6]s FROM "%[5]s" WHERE "USER_ID" IS NOT NULL
 												)
 											)
 										)
@@ -468,28 +466,30 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		resp.stagingTable,                // 5
 		strings.Join(userColNames, ","),  // 6
 	)
-	pkgLogger.Debugf("SF: Creating staging table for users: %s\n", sqlStatement)
+	pkgLogger.Infof("SF: Creating staging table for users: %s\n", sqlStatement)
 	_, err = resp.dbHandle.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("SF: Error creating temporary table for table:%s: %v\n", usersTable, err)
-		return
+		errorMap[usersTable] = err
+		return errorMap
 	}
 
-	primaryKey := "ID"
-	columnNames := append([]string{"ID"}, userColNames...)
+	primaryKey := `"ID"`
+	columnNames := append([]string{`"ID"`}, userColNames...)
 	columnNamesStr := strings.Join(columnNames, ",")
-	columnsWithValuesArr := []string{}
-	stagingColumnValuesArr := []string{}
-	for _, colName := range columnNames {
-		columnsWithValuesArr = append(columnsWithValuesArr, fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName))
-		stagingColumnValuesArr = append(stagingColumnValuesArr, fmt.Sprintf(`staging.%s`, colName))
+	var columnsWithValues, stagingColumnValues string
+	for idx, colName := range columnNames {
+		columnsWithValues += fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName)
+		stagingColumnValues += fmt.Sprintf(`staging.%s`, colName)
+		if idx != len(columnNames)-1 {
+			columnsWithValues += fmt.Sprintf(`,`)
+			stagingColumnValues += fmt.Sprintf(`,`)
+		}
 	}
-	columnsWithValues := strings.Join(columnsWithValuesArr, ",")
-	stagingColumnValues := strings.Join(stagingColumnValuesArr, ",")
 
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
+	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s" AS original
 									USING (
-										SELECT %[3]s FROM %[2]s
+										SELECT %[3]s FROM "%[2]s"
 									) AS staging
 									ON (original.%[4]s = staging.%[4]s)
 									WHEN MATCHED THEN
@@ -500,9 +500,11 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	_, err = resp.dbHandle.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
-		return
+		errorMap[usersTable] = err
+		return errorMap
 	}
-	return
+	pkgLogger.Infof("SF: Complete load for table:%s", usersTable)
+	return errorMap
 }
 
 type SnowflakeCredentialsT struct {
@@ -541,57 +543,43 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 	return db, nil
 }
 
-func (sf *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
-	if len(sf.Uploader.GetSchemaInWarehouse()) == 0 {
-		var schemaExists bool
-		if schemaExists, err = sf.schemaExists(sf.Namespace); !schemaExists {
-			err = sf.createSchema()
-		}
-		if err != nil {
-			return err
-		}
+func (sf *HandleT) CreateSchema() (err error) {
+	var schemaExists bool
+	if schemaExists, err = sf.schemaExists(sf.Namespace); err != nil && !schemaExists {
+		err = sf.createSchema()
 	}
+	return err
+}
 
+func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
 	_, err = sf.Db.Exec(sqlStatement)
 	if err != nil {
-		return
+		return err
 	}
 
-	processedTables := make(map[string]bool)
-	for _, tableName := range diff.Tables {
-		var tableExists bool
-		tableExists, err = sf.tableExists(tableName)
-		if err != nil {
-			return
-		}
-		if !tableExists {
-			err = sf.createTable(fmt.Sprintf(`%s`, tableName), diff.ColumnMaps[tableName])
-			if err != nil {
-				return
-			}
-			processedTables[tableName] = true
+	err = sf.createTable(fmt.Sprintf(`%s`, tableName), columnMap)
+	return err
+}
+
+func (sf *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
+	_, err = sf.Db.Exec(sqlStatement)
+	if err != nil {
+		return err
+	}
+
+	err = sf.addColumn(tableName, columnName, columnType)
+	if err != nil {
+		if checkAndIgnoreAlreadyExistError(err) {
+			pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, sf.Namespace, tableName, err)
+			err = nil
 		}
 	}
-	for tableName, columnMap := range diff.ColumnMaps {
-		// skip adding columns when table didn't exist previously and was created in the prev statement
-		// this to make sure all columns in the the columnMap exists in the table in snowflake
-		if _, ok := processedTables[tableName]; ok {
-			continue
-		}
-		if len(columnMap) > 0 {
-			for columnName, columnType := range columnMap {
-				err = sf.addColumn(tableName, columnName, columnType)
-				if err != nil {
-					if checkAndIgnoreAlreadyExistError(err) {
-						pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, sf.Namespace, tableName, err)
-					} else {
-						return
-					}
-				}
-			}
-		}
-	}
+	return err
+}
+
+func (sf *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
 	return
 }
 
@@ -605,7 +593,7 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 			return
 		}
 
-		sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %s.%s`, sf.Namespace, tableName)
+		sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%s"."%s"`, sf.Namespace, tableName)
 		var totalRows int64
 		err = sf.Db.QueryRow(sqlStatement).Scan(&totalRows)
 		if err != nil {
@@ -624,11 +612,11 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 
 		var toSelectFields string
 		if hasAnonymousID && hasUserID {
-			toSelectFields = "ANONYMOUS_ID, USER_ID"
+			toSelectFields = `"ANONYMOUS_ID", "USER_ID"`
 		} else if hasAnonymousID {
-			toSelectFields = "ANONYMOUS_ID, NULL AS USER_ID"
+			toSelectFields = `"ANONYMOUS_ID", NULL AS "USER_ID"`
 		} else if hasUserID {
-			toSelectFields = "NULL AS ANONYMOUS_ID, USER_ID"
+			toSelectFields = `NULL AS "ANONYMOUS_ID", "USER_ID"`
 		} else {
 			pkgLogger.Infof("SF: ANONYMOUS_ID, USER_ID columns not present in table: %s", tableName)
 			return nil
@@ -638,7 +626,7 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 		var offset int64
 		for {
 			// TODO: Handle case for missing anonymous_id, user_id columns
-			sqlStatement = fmt.Sprintf(`SELECT DISTINCT %s FROM %s.%s LIMIT %d OFFSET %d`, toSelectFields, sf.Namespace, tableName, batchSize, offset)
+			sqlStatement = fmt.Sprintf(`SELECT DISTINCT %s FROM "%s"."%s" LIMIT %d OFFSET %d`, toSelectFields, sf.Namespace, tableName, batchSize, offset)
 			pkgLogger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s, totalRows: %d", sqlStatement, totalRows)
 			var rows *sql.Rows
 			rows, err = sf.Db.Query(sqlStatement)
@@ -656,7 +644,17 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 				if err != nil {
 					return
 				}
-				csvRow = append(csvRow, "anonymous_id", anonymousID.String, "user_id", userID.String)
+
+				if !anonymousID.Valid && !userID.Valid {
+					continue
+				}
+
+				// avoid setting null merge_property_1 to avoid not null constraint in local postgres
+				if anonymousID.Valid {
+					csvRow = append(csvRow, "anonymous_id", anonymousID.String, "user_id", userID.String)
+				} else {
+					csvRow = append(csvRow, "user_id", userID.String, "anonymous_id", anonymousID.String)
+				}
 				csvWriter.Write(csvRow)
 				csvWriter.Flush()
 				gzWriter.WriteGZ(buff.String())
@@ -702,19 +700,18 @@ func (sf *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 		if err != nil {
 			return
 		}
-		if exists {
-			sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s`, sf.Namespace, tableName)
-			var count int64
-			err = sf.Db.QueryRow(sqlStatement).Scan(&count)
-			if err != nil {
-				return
-			}
-			if count > 0 {
-				empty = false
-				return
-			}
-		} else {
+		if !exists {
 			continue
+		}
+		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"."%s"`, sf.Namespace, tableName)
+		var count int64
+		err = sf.Db.QueryRow(sqlStatement).Scan(&count)
+		if err != nil {
+			return
+		}
+		if count > 0 {
+			empty = false
+			return
 		}
 	}
 	return
@@ -789,6 +786,7 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		return
 	}
 	if err == sql.ErrNoRows {
+		pkgLogger.Infof("SF: No rows, while fetching schema from  destination:%v, query: %v", sf.Warehouse.Identifier, sqlStatement)
 		return schema, nil
 	}
 	defer rows.Close()

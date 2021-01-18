@@ -219,7 +219,7 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		customManager.configSubscriberLock.Lock()
-		allSources := config.Data.(backendconfig.SourcesT)
+		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			for _, destination := range source.Destinations {
 				if destination.DestinationDefinition.Name == customManager.destType {

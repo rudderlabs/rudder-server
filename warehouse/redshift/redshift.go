@@ -126,7 +126,8 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr[:], ",")
 }
 
-func (rs *HandleT) createTable(name string, columns map[string]string) (err error) {
+func (rs *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
+	name := fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName)
 	sortKeyField := "received_at"
 	if _, ok := columns["received_at"]; !ok {
 		sortKeyField = "uuid_ts"
@@ -160,7 +161,8 @@ func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	return
 }
 
-func (rs *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+func (rs *HandleT) AddColumn(name string, columnName string, columnType string) (err error) {
+	tableName := fmt.Sprintf(`"%s"."%s"`, rs.Namespace, name)
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, getRSDataType(columnType))
 	pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
@@ -204,10 +206,7 @@ type S3ManifestT struct {
 }
 
 func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
-	csvObjectLocations, err := rs.Uploader.GetLoadFileLocations(tableName)
-	if err != nil {
-		panic(err)
-	}
+	csvObjectLocations := rs.Uploader.GetLoadFileLocations(tableName)
 	csvS3Locations := warehouseutils.GetS3Locations(csvObjectLocations)
 	var manifest S3ManifestT
 	for _, location := range csvS3Locations {
@@ -282,7 +281,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
-	err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), tableSchemaAfterUpload)
+	err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
 		return
 	}
@@ -348,12 +347,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	var quotedColumnNames string
-	for idx, str := range strkeys {
-		quotedColumnNames += "\"" + str + "\""
-		if idx != len(strkeys)-1 {
-			quotedColumnNames += ","
-		}
-	}
+	quotedColumnNames = warehouseutils.DoubleQuoteAndJoinByComma(strkeys)
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -399,8 +393,9 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 			continue
 		}
 		userColNames = append(userColNames, colName)
-		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
+		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
+	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), warehouseutils.UsersTable), 127)
 
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
@@ -422,7 +417,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		strings.Join(firstValProps, ","), // 3
 		warehouseutils.UsersTable,        // 4
 		identifyStagingTable,             // 5
-		strings.Join(userColNames, ","),  // 6
+		quotedUserColNames,               // 6
 	)
 
 	// BEGIN TRANSACTION
@@ -432,9 +427,9 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	pkgLogger.Debugf("RS: Creating staging table for users: %s\n", sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
+		pkgLogger.Errorf("RS: Creating staging table for users failed: %s\n", sqlStatement)
 		pkgLogger.Errorf("RS: Error creating users staging table from original table and identifies staging table: %v\n", err)
 		tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
@@ -444,16 +439,17 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	primaryKey := "id"
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
-	pkgLogger.Infof("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
+		pkgLogger.Errorf("RS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 		pkgLogger.Errorf("RS: Error deleting from original table for dedup: %v\n", err)
 		tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, rs.Namespace, warehouseutils.UsersTable, stagingTableName, warehouseutils.DoubleQuoteAndJoinByComma(append([]string{"id"}, userColNames...)))
 	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 
@@ -533,7 +529,7 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
 	rows, err := rs.Db.Query(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("WH: RS:  Error dropping dangling staging tables in redshift: %v\n", err)
+		pkgLogger.Errorf("WH: RS: Error dropping dangling staging tables in redshift: %v\nQuery: %s\n", err, sqlStatement)
 		return false
 	}
 	defer rows.Close()
@@ -543,7 +539,7 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 		var tableName string
 		err := rows.Scan(&tableName)
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
@@ -569,62 +565,19 @@ func (rs *HandleT) connectToWarehouse() (*sql.DB, error) {
 	})
 }
 
-func (rs *HandleT) MigrateSchema(diff warehouseutils.SchemaDiffT) (err error) {
-	if len(rs.Uploader.GetSchemaInWarehouse()) == 0 {
-		var schemaExists bool
-		if schemaExists, err = rs.schemaExists(rs.Namespace); !schemaExists {
-			err = rs.createSchema()
-		}
-		if err != nil {
-			return err
-		}
+func (rs *HandleT) CreateSchema() (err error) {
+	var schemaExists bool
+	if schemaExists, err = rs.schemaExists(rs.Namespace); err != nil && !schemaExists {
+		err = rs.createSchema()
 	}
-	processedTables := make(map[string]bool)
-	for _, tableName := range diff.Tables {
-		tableExists, err := rs.tableExists(tableName)
-		if err != nil {
-			return err
-		}
-		if !tableExists {
-			err = rs.createTable(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), diff.ColumnMaps[tableName])
-			if err != nil {
-				return err
-			}
-			processedTables[tableName] = true
-		}
+	return err
+}
+
+func (rs *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+	if setVarCharMax && columnType == "text" {
+		err = rs.alterStringToText(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName)
 	}
-	for tableName, columnMap := range diff.ColumnMaps {
-		// skip adding columns when table didn't exist previously and was created in the prev statement
-		// this to make sure all columns in the the columnMap exists in the table in redshift
-		if _, ok := processedTables[tableName]; ok {
-			continue
-		}
-		if len(columnMap) > 0 {
-			for columnName, columnType := range columnMap {
-				err := rs.addColumn(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName, columnType)
-				if err != nil {
-					if checkAndIgnoreAlreadyExistError(err) {
-						pkgLogger.Infof("RS: Column %s already exists on %s.%s \nResponse: %v", columnName, rs.Namespace, tableName, err)
-					} else {
-						return err
-					}
-				}
-			}
-		}
-	}
-	if setVarCharMax {
-		for tableName, stringColumnsToBeAlteredToText := range diff.StringColumnsToBeAlteredToText {
-			if len(stringColumnsToBeAlteredToText) > 0 {
-				for _, columnName := range stringColumnsToBeAlteredToText {
-					err := rs.alterStringToText(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName)
-					if err != nil {
-						return err
-					}
-				}
-			}
-		}
-	}
-	return nil
+	return
 }
 
 // FetchSchema queries redshift and returns the schema assoiciated with provided namespace
@@ -654,6 +607,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		return
 	}
 	if err == sql.ErrNoRows {
+		pkgLogger.Infof("RS: No rows, while fetching schema from  destination:%v, query: %v", rs.Warehouse.Identifier, sqlStatement)
 		return schema, nil
 	}
 	defer rows.Close()

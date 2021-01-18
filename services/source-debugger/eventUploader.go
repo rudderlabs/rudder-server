@@ -237,7 +237,7 @@ func flushEvents() {
 	}
 }
 
-func updateConfig(sources backendconfig.SourcesT) {
+func updateConfig(sources backendconfig.ConfigT) {
 	configSubscriberLock.Lock()
 	uploadEnabledWriteKeys = []string{}
 	for _, source := range sources.Sources {
@@ -255,6 +255,6 @@ func backendConfigSubscriber() {
 	backendconfig.Subscribe(configChannel, backendconfig.TopicProcessConfig)
 	for {
 		config := <-configChannel
-		updateConfig(config.Data.(backendconfig.SourcesT))
+		updateConfig(config.Data.(backendconfig.ConfigT))
 	}
 }

@@ -56,27 +56,9 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 	}
 
 	if m.ShouldForceSetLowerVersion {
-		// get current version in database migrations table
-		versionInDB, _, err := destinationDriver.Version()
+		err := m.forceSetLowerVersion(migration, sourceDriver, destinationDriver)
 		if err != nil {
-			return fmt.Errorf("Could not get current migration version in DB: %w", err)
-		}
-
-		// check latest version on file
-		latestVersionOnFile, err := latestSourceVersion(sourceDriver)
-		if err != nil {
-			return fmt.Errorf("Could not check latest migration version on file: %w", err)
-		}
-
-		// force set version in DB to latestSourceVersion
-		// to handle cases where we are reverting back to old version
-		// this assumes applied changes on database are also compatible with older versions
-		if versionInDB > latestVersionOnFile {
-			pkgLogger.Infof("Force setting migration version to %d in %s", latestVersionOnFile, m.MigrationsTable)
-			err = migration.Force(latestVersionOnFile)
-			if err != nil {
-				return fmt.Errorf("Could not force set migration to latest version on file: %w", err)
-			}
+			return err
 		}
 	}
 
@@ -167,6 +149,13 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}
 		return fmt.Errorf("Could not setup migration from template directory '%v': %w", templatesDir, err)
 	}
 
+	if m.ShouldForceSetLowerVersion {
+		err := m.forceSetLowerVersion(migration, sourceDriver, destinationDriver)
+		if err != nil {
+			return err
+		}
+	}
+
 	err = migration.Up()
 	if err != nil && err != migrate.ErrNoChange { // migrate library reports that no change was required, using ErrNoChange
 		return fmt.Errorf("Could not run migration from template directory '%v', %w", templatesDir, err)
@@ -200,4 +189,31 @@ func latestSourceVersion(sourceDriver source.Driver) (int, error) {
 		v = nextVersion
 	}
 	return int(v), nil
+}
+
+func (m *Migrator) forceSetLowerVersion(migration *migrate.Migrate, sourceDriver source.Driver, destinationDriver database.Driver) error {
+	// get current version in database migrations table
+	versionInDB, _, err := destinationDriver.Version()
+	if err != nil {
+		return fmt.Errorf("Could not get current migration version in DB: %w", err)
+	}
+
+	// check latest version on file
+	latestVersionOnFile, err := latestSourceVersion(sourceDriver)
+	if err != nil {
+		return fmt.Errorf("Could not check latest migration version on file: %w", err)
+	}
+
+	// force set version in DB to latestSourceVersion
+	// to handle cases where we are reverting back to old version
+	// this assumes applied changes on database are also compatible with older versions
+	if versionInDB > latestVersionOnFile {
+		pkgLogger.Infof("Force setting migration version to %d in %s", latestVersionOnFile, m.MigrationsTable)
+		err = migration.Force(latestVersionOnFile)
+		if err != nil {
+			return fmt.Errorf("Could not force set migration to latest version on file: %w", err)
+		}
+	}
+
+	return nil
 }

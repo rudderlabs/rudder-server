@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -16,7 +17,6 @@ import (
 
 var (
 	scheduledTimesCache map[string][]int
-	nextRetryTimeCache  map[string]time.Time
 	minUploadBackoff    time.Duration
 	maxUploadBackoff    time.Duration
 	startUploadAlways   bool
@@ -24,7 +24,6 @@ var (
 
 func init() {
 	scheduledTimesCache = map[string][]int{}
-	nextRetryTimeCache = map[string]time.Time{}
 	minUploadBackoff = config.GetDuration("Warehouse.minUploadBackoffInS", time.Duration(60)) * time.Second
 	maxUploadBackoff = config.GetDuration("Warehouse.maxUploadBackoffInS", time.Duration(1800)) * time.Second
 }
@@ -102,7 +101,7 @@ func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) t
 	sqlStatement := fmt.Sprintf(`select last_exec_at from %s where source_id='%s' and destination_id='%s' order by id desc limit 1`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID)
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&t)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
 	if err == sql.ErrNoRows || !t.Valid {
 		return time.Time{} // zero value
@@ -160,29 +159,20 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	}
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
-	if syncFrequency != "" && syncStartAt != "" {
-		prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
-		lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
-		// start upload only if no upload has started in current window
-		// eg. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
-		if lastUploadExecTime.Before(prevScheduledTime) {
-			return true
-		}
-	} else {
+	if syncFrequency == "" || syncStartAt == "" {
 		return !uploadFrequencyExceeded(warehouse, syncFrequency)
+	}
+	prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
+	lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
+	// start upload only if no upload has started in current window
+	// eg. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
+	if lastUploadExecTime.Before(prevScheduledTime) {
+		return true
 	}
 	return false
 }
 
-func burstRetryCache(warehouse warehouseutils.WarehouseT) {
-	delete(nextRetryTimeCache, warehouse.Identifier)
-}
-
-func onSuccessfulUpload(warehouse warehouseutils.WarehouseT) {
-	burstRetryCache(warehouse)
-}
-
-func durationBeforeNextAttempt(attempt int64) time.Duration {
+func durationBeforeNextAttempt(attempt int64) time.Duration { //Add state(retryable/non-retryable) as an argument to decide backoff etc)
 	var d time.Duration
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = minUploadBackoff
@@ -210,27 +200,23 @@ func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutil
 		return true
 	}
 
-	// check in cache
-	if nextRetryTime, ok := nextRetryTimeCache[warehouse.Identifier]; ok {
-		canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
-		// delete in cache if is going to be started
-		if canStart {
-			delete(nextRetryTimeCache, warehouse.Identifier)
-		}
-		return canStart
+	var metadata map[string]string
+	err := json.Unmarshal(upload.Metadata, &metadata)
+	if err != nil {
+		metadata = make(map[string]string)
 	}
 
-	if upload.LastAttemptAt.IsZero() {
+	nextRetryTimeStr, ok := metadata["nextRetryTime"]
+	if !ok {
 		return true
 	}
 
-	nextRetryTime := upload.LastAttemptAt.Add(durationBeforeNextAttempt(upload.Attempts))
-	canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
-	// set in cache if not staring, to access on next hit
-	if !canStart {
-		pkgLogger.Infof("[WH]: Setting in nextRetryTimeCache for %s:%s, will retry again around %v", warehouse.Destination.Name, warehouse.Destination.ID, nextRetryTime)
-		nextRetryTimeCache[warehouse.Identifier] = nextRetryTime
+	nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr)
+	if err != nil {
+		pkgLogger.Errorf("Unable to parse time from %s", nextRetryTimeStr)
+		return true //TODO: Review this carefully
 	}
 
+	canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
 	return canStart
 }

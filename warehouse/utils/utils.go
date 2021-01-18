@@ -126,7 +126,7 @@ type UploaderI interface {
 	GetSchemaInWarehouse() SchemaT
 	GetTableSchemaInWarehouse(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
-	GetLoadFileLocations(tableName string) ([]string, error)
+	GetLoadFileLocations(tableName string) []string
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFileLocation(tableName string) (string, error)
 }
@@ -135,12 +135,12 @@ func IDResolutionEnabled() bool {
 	return enableIDResolution
 }
 
-type SchemaDiffT struct {
+type TableSchemaDiffT struct {
 	Exists                         bool
-	Tables                         []string
-	ColumnMaps                     map[string]map[string]string
-	UpdatedSchema                  map[string]map[string]string
-	StringColumnsToBeAlteredToText map[string][]string
+	TableToBeCreated               bool
+	ColumnMap                      map[string]string
+	UpdatedSchema                  map[string]string
+	StringColumnsToBeAlteredToText []string
 }
 
 type QueryResult struct {
@@ -160,7 +160,7 @@ func GetNamespace(source backendconfig.SourceT, destination backendconfig.Destin
 	sqlStatement := fmt.Sprintf(`SELECT namespace FROM %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC`, WarehouseSchemasTable, source.ID, destination.ID)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 	return namespace, len(namespace) > 0
 }
@@ -180,7 +180,7 @@ func GetTableFirstEventAt(dbHandle *sql.DB, sourceId string, destinationId strin
 		WarehouseStagingFilesTable)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&firstEventAt)
 	if err != nil && err != sql.ErrNoRows {
-		panic(err)
+		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 	return
 }
@@ -318,7 +318,7 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	var schema map[string]map[string]string
 	err := json.Unmarshal(rawMsg, &schema)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(rawMsg), err))
 	}
 	return schema
 }
@@ -518,4 +518,12 @@ func IdentityMappingsUniqueMappingConstraintName(warehouse WarehouseT) string {
 
 func GetWarehouseIdentifier(destType string, sourceID string, destinationID string) string {
 	return fmt.Sprintf("%s:%s:%s", destType, sourceID, destinationID)
+}
+
+func DoubleQuoteAndJoinByComma(strs []string) string {
+	var quotedSlice []string
+	for _, str := range strs {
+		quotedSlice = append(quotedSlice, fmt.Sprintf("%q", str))
+	}
+	return strings.Join(quotedSlice, ",")
 }
