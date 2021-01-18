@@ -225,20 +225,6 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	return uploadLocation, err
 }
 
-func (job *PayloadT) setStagingFileStatus(statusError error) {
-	status := warehouseutils.StagingFileFailedState
-	if statusError == nil {
-		statusError = fmt.Errorf("{}")
-		status = warehouseutils.StagingFileSucceededState
-	}
-
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseutils.WarehouseStagingFilesTable)
-	_, err := dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), job.StagingFileID)
-	if err != nil {
-		panic(err)
-	}
-}
-
 func (job *PayloadT) markLoadFileUploadSuccess(tableName string, uploadLocation string, numEvents int) int64 {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at)
 	VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, warehouseutils.WarehouseLoadFilesTable)
