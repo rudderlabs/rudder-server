@@ -462,12 +462,8 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]Upl
 	return uploads, nil
 }
 
-func namespaceIdentifier(warehouse warehouseutils.WarehouseT) string {
-	return fmt.Sprintf(`%s:%s`, warehouse.Namespace, warehouse.Destination.ID)
-}
-
 func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
-	identifier := namespaceIdentifier(warehouse)
+	identifier := workerIdentifier(warehouse)
 	inProgressMapLock.Lock()
 	defer inProgressMapLock.Unlock()
 	if starting {
