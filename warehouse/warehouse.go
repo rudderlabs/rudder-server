@@ -418,50 +418,6 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	return upload
 }
 
-func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]UploadT, error) {
-
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming
-								FROM %[1]s
-								WHERE (%[1]s.destination_type='%[2]s'
-									AND %[1]s.source_id='%[3]s'
-									AND %[1]s.destination_id = '%[4]s'
-									AND %[1]s.status != '%[5]s'
-									AND %[1]s.status != '%[6]s')
-								ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, wh.destType, warehouse.Source.ID, warehouse.Destination.ID, ExportedData, Aborted)
-
-	rows, err := wh.dbHandle.Query(sqlStatement)
-	if err != nil && err != sql.ErrNoRows {
-		return []UploadT{}, err
-	}
-
-	if err == sql.ErrNoRows {
-		return []UploadT{}, nil
-	}
-	defer rows.Close()
-
-	var uploads []UploadT
-	for rows.Next() {
-		var upload UploadT
-		var schema json.RawMessage
-		var firstTiming sql.NullString
-		var lastTiming sql.NullString
-		err := rows.Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error, &upload.Metadata, &firstTiming, &lastTiming)
-		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
-		}
-		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
-
-		_, upload.FirstAttemptAt = warehouseutils.TimingFromJSONString(firstTiming)
-		var lastStatus string
-		lastStatus, upload.LastAttemptAt = warehouseutils.TimingFromJSONString(lastTiming)
-		upload.Attempts = gjson.Get(string(upload.Error), fmt.Sprintf(`%s.attempt`, lastStatus)).Int()
-
-		uploads = append(uploads, upload)
-	}
-
-	return uploads, nil
-}
-
 func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
 	identifier := workerIdentifier(warehouse)
 	inProgressMapLock.Lock()
@@ -500,42 +456,6 @@ func setLastEventTime(warehouse warehouseutils.WarehouseT, lastEventAt time.Time
 	lastEventTimeMapLock.Lock()
 	defer lastEventTimeMapLock.Unlock()
 	lastEventTimeMap[warehouse.Identifier] = lastEventAt.Unix()
-}
-
-//TODO: Clean this up
-func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, pendingUploads []UploadT) (*UploadJobT, error) {
-	for _, pendingUpload := range pendingUploads {
-		copiedUpload := pendingUpload
-
-		if !wh.canStartPendingUpload(pendingUpload, warehouse) {
-			pkgLogger.Debugf("[WH]: Skipping pending upload for %s since current time less than next retry time", warehouse.Identifier)
-			if pendingUpload.Status != TableUploadExportingFailed {
-				//If we don't process the first pending upload, it doesn't make sense to attempt the following jobs. Hence we return here.
-				return nil, fmt.Errorf("[WH]: Not a retriable job. Moving on to next unprocessed jobs")
-			}
-			continue
-		}
-
-		stagingFilesList, err := wh.getStagingFiles(warehouse, pendingUpload.StartStagingFileID, pendingUpload.EndStagingFileID)
-		if err != nil {
-			return nil, err
-		}
-
-		uploadJob := UploadJobT{
-			upload:       &copiedUpload,
-			stagingFiles: stagingFilesList,
-			warehouse:    warehouse,
-			whManager:    whManager,
-			dbHandle:     wh.dbHandle,
-			pgNotifier:   &wh.notifier,
-		}
-
-		pkgLogger.Debugf("[WH]: Adding job %+v", uploadJob)
-		return &uploadJob, nil
-
-	}
-
-	return nil, fmt.Errorf("No upload job eligible")
 }
 
 func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT) ([]*UploadJobT, error) {
