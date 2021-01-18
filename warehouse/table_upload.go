@@ -59,13 +59,13 @@ func areTableUploadsCreated(uploadID int64) bool {
 }
 
 func createTableUploads(uploadID int64, tableNames []string) (err error) {
-	columnsInInsert := 6
+	columnsInInsert := []string{"wh_upload_id", "table_name", "status", "error", "created_at", "updated_at"}
 	currentTime := timeutil.Now()
 	valueReferences := make([]string, 0, len(tableNames))
-	valueArgs := make([]interface{}, 0, len(tableNames)*columnsInInsert)
+	valueArgs := make([]interface{}, 0, len(tableNames)*len(columnsInInsert))
 	for idx, tName := range tableNames {
 		var valueRefsArr []string
-		for index := idx*columnsInInsert + 1; index <= (idx+1)*columnsInInsert; index++ {
+		for index := idx*len(columnsInInsert) + 1; index <= (idx+1)*len(columnsInInsert); index++ {
 			valueRefsArr = append(valueRefsArr, fmt.Sprintf(`$%d`, index))
 		}
 		valueReferences = append(valueReferences, fmt.Sprintf("(%s)", strings.Join(valueRefsArr, ",")))
