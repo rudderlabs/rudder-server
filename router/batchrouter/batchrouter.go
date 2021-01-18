@@ -845,7 +845,7 @@ func IsWarehouseDestination(destType string) bool {
 }
 
 func getWarehouseURL() (url string) {
-	if warehouseMode == config.EmbeddedMode {
+	if warehouseMode == config.EmbeddedMode || warehouseMode == config.PooledWHSlaveMode {
 		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
 	} else {
 		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")

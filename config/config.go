@@ -19,12 +19,14 @@ var (
 	whSchemaVersion string
 )
 
+// Rudder server supported config constants
 const (
-	EmbeddedMode    = "embedded"
-	MasterMode      = "master"
-	MasterSlaveMode = "master_and_slave"
-	SlaveMode       = "slave"
-	OffMode         = "off"
+	EmbeddedMode      = "embedded"
+	MasterMode        = "master"
+	MasterSlaveMode   = "master_and_slave"
+	SlaveMode         = "slave"
+	OffMode           = "off"
+	PooledWHSlaveMode = "pooled_wh_slave"
 )
 
 //TransformKey as package method to get the formatted env from a give string

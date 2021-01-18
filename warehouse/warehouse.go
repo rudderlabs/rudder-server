@@ -77,10 +77,11 @@ var (
 
 // warehouses worker modes
 const (
-	MasterMode      = "master"
-	SlaveMode       = "slave"
-	MasterSlaveMode = "master_and_slave"
-	EmbeddedMode    = "embedded"
+	MasterMode        = "master"
+	SlaveMode         = "slave"
+	MasterSlaveMode   = "master_and_slave"
+	EmbeddedMode      = "embedded"
+	PooledWHSlaveMode = "pooled_wh_slave"
 )
 
 const (
@@ -923,7 +924,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getConnectionString() string {
-	if warehouseMode == config.EmbeddedMode {
+	if warehouseMode == config.EmbeddedMode || warehouseMode == config.PooledWHSlaveMode {
 		return jobsdb.GetConnectionString()
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
@@ -932,7 +933,7 @@ func getConnectionString() string {
 }
 
 func getPGNotifierConnectionString() string {
-	if warehouseMode == config.EmbeddedMode {
+	if warehouseMode == config.EmbeddedMode || warehouseMode == config.PooledWHSlaveMode {
 		return jobsdb.GetPGNotifierConnectionString()
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
@@ -956,11 +957,14 @@ func startWebHandler() {
 }
 
 func isStandAlone() bool {
-	return warehouseMode != EmbeddedMode
+	return warehouseMode != EmbeddedMode && warehouseMode != PooledWHSlaveMode
 }
 
 func isMaster() bool {
-	return warehouseMode == config.MasterMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
+	return warehouseMode == config.MasterMode ||
+		warehouseMode == config.MasterSlaveMode ||
+		warehouseMode == config.EmbeddedMode ||
+		warehouseMode == config.PooledWHSlaveMode
 }
 
 func isSlave() bool {
@@ -978,7 +982,8 @@ func Start() {
 	pkgLogger.Infof("WH: Starting Warehouse service...")
 	var err error
 	psqlInfo := getConnectionString()
-	pgNotifierSqlInfo := getPGNotifierConnectionString()
+	pgNotifierSQLInfo := getPGNotifierConnectionString()
+	pkgLogger.Infof("PG Notifier SQL info : %s", pgNotifierSQLInfo)
 
 	dbHandle, err = sql.Open("postgres", psqlInfo)
 	if err != nil {
@@ -1009,7 +1014,7 @@ func Start() {
 		return
 	}
 
-	notifier, err = pgnotifier.New(pgNotifierSqlInfo)
+	notifier, err = pgnotifier.New(pgNotifierSQLInfo)
 	if err != nil {
 		panic(err)
 	}
