@@ -470,7 +470,7 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 			AND %[1]s.destination_id = '%[4]s'
 			AND %[1]s.namespace = '%[5]s'
 			AND %[1]s.status != '%[6]s'
-			AND %[1]s.status != '%[7]s' 
+			AND %[1]s.status != '%[7]s'
 			AND %[2]s.table_name in (SELECT table_name FROM %[2]s WHERE %[2]s.wh_upload_id = '%[3]d')
 		ORDER BY
 			%[1]s.id ASC`,
@@ -566,8 +566,10 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 		err = job.whManager.CreateTable(tName, tableSchemaDiff.ColumnMap)
 		if err != nil {
 			pkgLogger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
+			return err
 		}
-		return err
+		job.counterStat("tables_added").Increment()
+		return nil
 	}
 
 	for columnName, columnType := range tableSchemaDiff.ColumnMap {
@@ -576,6 +578,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 			pkgLogger.Errorf("Column %s already exists on %s.%s \nResponse: %v", columnName, job.warehouse.Namespace, tName, err)
 			break
 		}
+		job.counterStat("columns_added").Increment()
 	}
 
 	if err != nil {
