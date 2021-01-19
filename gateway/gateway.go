@@ -532,7 +532,7 @@ func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 		r.Body.Close()
 		return payload, err
 	}
-	return []byte{}, errors.New("RequestBodyNil")
+	return []byte{}, errors.New(response.RequestBodyNil)
 }
 
 func (gateway *HandleT) webImportHandler(w http.ResponseWriter, r *http.Request) {
@@ -583,7 +583,7 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
-func (gateway *HandleT) checkAndAddToWebRequestQ(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+func (gateway *HandleT) checkAndAddToWebRequestQ(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) error {
 	var errorMessage = ""
 	if reqType == "import" {
 		errorMessage = gateway.userWebImportHandler(w, r, "batch", payload, writeKey)
@@ -592,18 +592,21 @@ func (gateway *HandleT) checkAndAddToWebRequestQ(w *http.ResponseWriter, r *http
 		gateway.AddToWebRequestQ(r, w, done, reqType, payload, writeKey)
 		errorMessage = <-done
 	}
-	return errorMessage
+	if errorMessage == "" {
+		return nil
+	}
+	return errors.New(errorMessage)
 }
 
-func (gateway *HandleT) checkAndValidateWebHandler(w http.ResponseWriter, r *http.Request, reqType string) string {
+func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Request, reqType string) ([]byte, string, error) {
 	var sourceFailStats = make(map[string]int)
-	var errorMessage = ""
+	var err error
 	writeKey, _, ok := r.BasicAuth()
 	if !ok || writeKey == "" {
-		errorMessage = response.GetStatus(response.NoWriteKeyInBasicAuth)
+		err = errors.New(response.NoWriteKeyInBasicAuth)
 		misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests")
-		return errorMessage
+		return []byte{}, "", err
 	}
 	payload, err := gateway.getPayloadFromRequest(r)
 	if err != nil {
@@ -611,32 +614,33 @@ func (gateway *HandleT) checkAndValidateWebHandler(w http.ResponseWriter, r *htt
 		sourceTag := misc.GetTagName(writeKey, sourceName)
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests")
-		if err.Error() == "RequestBodyNil" {
-			errorMessage = response.GetStatus(response.RequestBodyNil)
-			return errorMessage
-		}
-		errorMessage = response.GetStatus(response.RequestBodyReadFailed)
-		return errorMessage
+		return []byte{}, writeKey, err
 	}
-	errorMessage = gateway.checkAndAddToWebRequestQ(&w, r, reqType, payload, writeKey)
-
-	return errorMessage
+	return payload, writeKey, err
 }
 
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
-	var errorMessage string
-	errorMessage = gateway.checkAndValidateWebHandler(w, r, reqType)
-	atomic.AddUint64(&gateway.ackCount, 1)
-	gateway.trackRequestMetrics(errorMessage)
-	if errorMessage != "" {
-		gateway.logger.Debug(errorMessage)
-		http.Error(w, errorMessage, 400)
-	} else {
-		gateway.logger.Debug(response.GetStatus(response.Ok))
-		w.Write([]byte(response.GetStatus(response.Ok)))
+	var err error
+	defer func() {
+		if err != nil {
+			gateway.logger.Debug(err.Error())
+			http.Error(w, response.GetStatus(err.Error()), 400)
+		}
+	}()
+	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
+	if err != nil {
+		return
 	}
+	err = gateway.checkAndAddToWebRequestQ(&w, r, reqType, payload, writeKey)
+	atomic.AddUint64(&gateway.ackCount, 1)
+	if err != nil {
+		gateway.trackRequestMetrics(err.Error())
+		return
+	}
+	gateway.logger.Debug(response.GetStatus(response.Ok))
+	w.Write([]byte(response.GetStatus(response.Ok)))
 }
 
 func (gateway *HandleT) userWebImportHandler(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
