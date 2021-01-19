@@ -73,7 +73,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 	pkgLogger.Debugf(`IDR: Fetching all rudder_id's corresponding to the merge_rule: %v`, sqlStatement)
 	err = txn.QueryRow(sqlStatement).Scan(pq.Array(&rudderIDs))
 	if err != nil {
-		pkgLogger.Errorf("IDR: Error fetching all rudder_id's corresponding to the merge_rule: %v\nwith Error: %w", sqlStatement, err)
+		pkgLogger.Errorf("IDR: Error fetching all rudder_id's corresponding to the merge_rule: %v\nwith Error: %v", sqlStatement, err)
 		return
 	}
 

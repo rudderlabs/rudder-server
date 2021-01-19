@@ -425,7 +425,7 @@ func (job *UploadJobT) run() (err error) {
 		}
 
 		if err != nil {
-			pkgLogger.Errorf("[WH] Upload: %d, TargetState: %s, NewState: %s, Error: %w", job.upload.ID, targetStatus, newStatus, err.Error())
+			pkgLogger.Errorf("[WH] Upload: %d, TargetState: %s, NewState: %s, Error: %v", job.upload.ID, targetStatus, newStatus, err.Error())
 			state, err := job.setUploadError(err, newStatus)
 			if err == nil && state == Aborted {
 				job.generateUploadAbortedMetrics()
@@ -470,7 +470,7 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 			AND %[1]s.destination_id = '%[4]s'
 			AND %[1]s.namespace = '%[5]s'
 			AND %[1]s.status != '%[6]s'
-			AND %[1]s.status != '%[7]s' 
+			AND %[1]s.status != '%[7]s'
 			AND %[2]s.table_name in (SELECT table_name FROM %[2]s WHERE %[2]s.wh_upload_id = '%[3]d')
 		ORDER BY
 			%[1]s.id ASC`,
