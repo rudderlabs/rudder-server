@@ -10,7 +10,7 @@ name = "go"
 enabled = true
 
   [analyzers.meta]
-  import_paths = ["github.com/sourya-deepsource/rudder-server"]
+  import_paths = ["github.com/rudderlabs/rudder-server"]
 
 [[analyzers]]
 name = "javascript"
