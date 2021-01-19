@@ -592,10 +592,10 @@ func (gateway *HandleT) checkAndAddToWebRequestQ(w *http.ResponseWriter, r *http
 		gateway.AddToWebRequestQ(r, w, done, reqType, payload, writeKey)
 		errorMessage = <-done
 	}
-	if errorMessage == "" {
-		return nil
+	if errorMessage != "" {
+		return errors.New(errorMessage)
 	}
-	return errors.New(errorMessage)
+	return nil
 }
 
 func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Request, reqType string) ([]byte, string, error) {
@@ -639,6 +639,7 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 		gateway.trackRequestMetrics(err.Error())
 		return
 	}
+	gateway.trackRequestMetrics("")
 	gateway.logger.Debug(response.GetStatus(response.Ok))
 	w.Write([]byte(response.GetStatus(response.Ok)))
 }
