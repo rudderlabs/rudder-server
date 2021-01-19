@@ -392,7 +392,6 @@ func (job *UploadJobT) run() (err error) {
 			previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 			skipLoadForTables := append(skipPrevLoadedTableNames, previouslyFailedTables...)
 			skipLoadForTables = append(skipLoadForTables, currentJobSucceededTables...)
-
 			// Export all other tables
 			loadTimeStat := job.timerStat("other_tables_load_time")
 			loadTimeStat.Start()
@@ -401,6 +400,7 @@ func (job *UploadJobT) run() (err error) {
 
 			if len(previouslyFailedTables) > 0 {
 				loadErrors = append(loadErrors, fmt.Errorf("skipping the following tables because they failed previously : %+v", previouslyFailedTables))
+				pkgLogger.Infof("%#v", previouslyFailedTables)
 			}
 
 			if len(loadErrors) > 0 {
