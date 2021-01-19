@@ -936,6 +936,7 @@ func getPGNotifierConnectionString() string {
 	if warehouseMode == config.EmbeddedMode || warehouseMode == config.PooledWHSlaveMode {
 		return jobsdb.GetPGNotifierConnectionString()
 	}
+	pkgLogger.Infof("WH: Warehouse mode is neither embedder nor Pooled WH")
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s",
 		host, port, user, password, dbname, sslmode)
