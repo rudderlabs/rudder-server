@@ -500,6 +500,10 @@ func (jd *HandleT) readerSetup() {
 
 	jd.startBackupDSLoop()
 	jd.startMigrateDSLoop()
+
+	rruntime.Go(func() {
+		runArchiver(jd.tablePrefix, jd.dbHandle)
+	})
 }
 
 func (jd *HandleT) writerSetup() {
@@ -531,6 +535,10 @@ func (jd *HandleT) readerWriterSetup() {
 
 	jd.startBackupDSLoop()
 	jd.startMigrateDSLoop()
+
+	rruntime.Go(func() {
+		runArchiver(jd.tablePrefix, jd.dbHandle)
+	})
 }
 
 /*
@@ -766,7 +774,7 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 		if !minID.Valid || !maxID.Valid {
 			continue
 		}
-		
+
 		if idx < len(dsList)-1 && (jd.inProgressMigrationTargetDS == nil || jd.inProgressMigrationTargetDS.Index != ds.Index) {
 			//TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
 			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
