@@ -583,6 +583,18 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
+func (gateway *HandleT) checkAndAddToWebRequestQ(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+	var errorMessage = ""
+	if reqType == "import" {
+		errorMessage = gateway.userWebImportHandler(w, r, "batch", payload, writeKey)
+	} else {
+		done := make(chan string, 1)
+		gateway.AddToWebRequestQ(r, w, done, reqType, payload, writeKey)
+		errorMessage = <-done
+	}
+	return errorMessage
+}
+
 func (gateway *HandleT) checkAndValidateWebHandler(w http.ResponseWriter, r *http.Request, reqType string) string {
 	var sourceFailStats = make(map[string]int)
 	var errorMessage = ""
@@ -594,23 +606,20 @@ func (gateway *HandleT) checkAndValidateWebHandler(w http.ResponseWriter, r *htt
 		return errorMessage
 	}
 	payload, err := gateway.getPayloadFromRequest(r)
-	if err == nil {
-		if reqType == "import" {
-			errorMessage = gateway.userWebImportHandler(w, r, "batch", payload, writeKey)
-		} else {
-			done := make(chan string, 1)
-			gateway.AddToWebRequestQ(r, &w, done, reqType, payload, writeKey)
-			//Wait for batcher process to be done
-			errorMessage = <-done
-		}
-	} else if err.Error() == "RequestBodyNil" {
-		errorMessage = response.GetStatus(response.RequestBodyNil)
-	} else {
+	if err != nil {
 		sourceName := gateway.getSourceNameForWriteKey(writeKey)
 		sourceTag := misc.GetTagName(writeKey, sourceName)
-		errorMessage = response.GetStatus(response.RequestBodyReadFailed)
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests")
+		if err.Error() == "RequestBodyNil" {
+			errorMessage = response.GetStatus(response.RequestBodyNil)
+			return errorMessage
+		}
+		errorMessage = response.GetStatus(response.RequestBodyReadFailed)
+		return errorMessage
 	}
+	errorMessage = gateway.checkAndAddToWebRequestQ(&w, r, reqType, payload, writeKey)
+
 	return errorMessage
 }
 
@@ -630,7 +639,7 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	}
 }
 
-func (gateway *HandleT) userWebImportHandler(w http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+func (gateway *HandleT) userWebImportHandler(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
 	errorMessage := ""
 	usersPayload, payloadError := gateway.getUsersPayload(payload)
 	if payloadError != nil {
@@ -639,7 +648,7 @@ func (gateway *HandleT) userWebImportHandler(w http.ResponseWriter, r *http.Requ
 	count := len(usersPayload)
 	done := make(chan string, 1)
 	for key := range usersPayload {
-		gateway.AddToWebRequestQ(r, &w, done, reqType, usersPayload[key], writeKey)
+		gateway.AddToWebRequestQ(r, w, done, reqType, usersPayload[key], writeKey)
 	}
 
 	for index := 0; index < count; index++ {

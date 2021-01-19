@@ -255,7 +255,7 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) {
 		webhook.gwHandle.AddToWebRequestQ(req.request, req.writer, done, "batch", payload, req.writeKey)
 		errorMessage = <-done
 	} else {
-		errorMessage = "Invalid JSON"
+		errorMessage = err.Error()
 	}
 
 	//Wait for batcher process to be done
