@@ -285,7 +285,7 @@ func (job *UploadJobT) run() (err error) {
 
 		case GeneratedUploadSchema:
 			newStatus = nextUploadState.failed
-			err := job.generateUploadSchema(schemaHandle)
+			err = job.generateUploadSchema(schemaHandle)
 			if err != nil {
 				break
 			}
@@ -293,7 +293,7 @@ func (job *UploadJobT) run() (err error) {
 
 		case CreatedTableUploads:
 			newStatus = nextUploadState.failed
-			err := job.initTableUploads()
+			err = job.initTableUploads()
 			if err != nil {
 				break
 			}
