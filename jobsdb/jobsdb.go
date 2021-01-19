@@ -424,14 +424,14 @@ func init() {
 
 // Checks if all the required Env Variables for PG Notifier are present
 func checkForPGNotifierEnvVars() bool {
-	return config.IsSet("PGNOTIFIER_DB_HOST") &&
-		config.IsSet("PGNOTIFIER_DB_USER") &&
-		config.IsSet("PGNOTIFIER_DB_NAME") &&
-		config.IsSet("PGNOTIFIER_DB_PORT") &&
-		config.IsSet("PGNOTIFIER_DB_PASSWORD")
+	return config.IsEnvSet("PGNOTIFIER_DB_HOST") &&
+		config.IsEnvSet("PGNOTIFIER_DB_USER") &&
+		config.IsEnvSet("PGNOTIFIER_DB_NAME") &&
+		config.IsEnvSet("PGNOTIFIER_DB_PORT") &&
+		config.IsEnvSet("PGNOTIFIER_DB_PASSWORD")
 }
 
-// Returns Jobs DB connection configuration
+// GetConnectionString Returns Jobs DB connection configuration
 func GetConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s",
@@ -439,7 +439,7 @@ func GetConnectionString() string {
 
 }
 
-// Returns PG Notifier DB Connection Configuration
+// GetPGNotifierConnectionString Returns PG Notifier DB Connection Configuration
 func GetPGNotifierConnectionString() string {
 	if checkForPGNotifierEnvVars() {
 		pkgLogger.Infof("WH: All Env variables required for separate PG Notifier is set... check pg notifier says True...")

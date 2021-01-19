@@ -150,6 +150,17 @@ func IsSet(key string) bool {
 	return viper.IsSet(key)
 }
 
+// IsEnvSet checks if an environment variable is set
+func IsEnvSet(key string) bool {
+	fmt.Println("Key: ", key)
+	if _, exists := os.LookupEnv(key); exists {
+		fmt.Println("Returning true...")
+		return true
+	}
+	fmt.Println("Returning False...")
+	return false
+}
+
 // GetEnv returns the environment value stored in key variable
 func GetEnv(key string, defaultVal string) string {
 	if value, exists := os.LookupEnv(key); exists {
