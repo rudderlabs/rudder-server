@@ -302,7 +302,7 @@ func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT
 }
 
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
-	sqlStatement := fmt.Sprintf(`SELECT id, location
+	sqlStatement := fmt.Sprintf(`SELECT id, location, status
                                 FROM %[1]s
 								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
 								ORDER BY id ASC`,
@@ -316,7 +316,7 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
 	var stagingFilesList []*StagingFileT
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location)
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
@@ -335,7 +335,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT id, location, first_event_at, last_event_at
+	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at
                                 FROM %[1]s
 								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
 								ORDER BY id ASC
@@ -351,7 +351,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	var firstEventAt, lastEventAt sql.NullTime
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &firstEventAt, &lastEventAt)
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
@@ -969,6 +969,53 @@ func isSlave() bool {
 	return warehouseMode == config.SlaveMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
 }
 
+func isStandAloneSlave() bool {
+	return warehouseMode == config.SlaveMode
+}
+
+func setupDB(connInfo string) {
+	if isStandAloneSlave() {
+		return
+	}
+
+	var err error
+	//<<<<<<< HEAD
+	//psqlInfo := getConnectionString()
+	//pgNotifierSQLInfo := getPGNotifierConnectionString()
+	//pkgLogger.Infof("PG Notifier SQL info : %s", pgNotifierSQLInfo)
+
+	//if warehouseMode != config.SlaveMode {
+	//	dbHandle, err = sql.Open("postgres", psqlInfo)
+	//	if err != nil {
+	//		panic(err)
+	//	}
+	//=======
+	dbHandle, err = sql.Open("postgres", connInfo)
+	if err != nil {
+		panic(err)
+	}
+	//>>>>>>> origin/wh-save-load-file-record-in-master
+
+	isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)
+	if err != nil {
+		panic(err)
+	}
+
+	if !isDBCompatible {
+		err := errors.New("Rudder Warehouse Service needs postgres version >= 10. Exiting")
+		pkgLogger.Error(err)
+		panic(err)
+	}
+
+	//<<<<<<< HEAD
+	//		setupTables(dbHandle)
+	//	}
+	//=======
+	setupTables(dbHandle)
+}
+
+//>>>>>>> origin/wh-save-load-file-record-in-master
+
 func Start() {
 	time.Sleep(1 * time.Second)
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
@@ -978,31 +1025,10 @@ func Start() {
 	}
 
 	pkgLogger.Infof("WH: Starting Warehouse service...")
-	var err error
 	psqlInfo := getConnectionString()
 	pgNotifierSQLInfo := getPGNotifierConnectionString()
 	pkgLogger.Infof("PG Notifier SQL info : %s", pgNotifierSQLInfo)
-
-	if warehouseMode != config.SlaveMode {
-		dbHandle, err = sql.Open("postgres", psqlInfo)
-		if err != nil {
-			panic(err)
-		}
-
-		isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)
-		if err != nil {
-			panic(err)
-		}
-
-		if !isDBCompatible {
-			err := errors.New("Rudder Warehouse Service needs postgres version >= 10. Exiting")
-			pkgLogger.Error(err)
-			panic(err)
-		}
-
-		setupTables(dbHandle)
-	}
-
+	setupDB(psqlInfo)
 	defer startWebHandler()
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
@@ -1014,7 +1040,12 @@ func Start() {
 		return
 	}
 
+	//<<<<<<< HEAD
+	//	notifier, err = pgnotifier.New(pgNotifierSQLInfo)
+	//=======
+	var err error
 	notifier, err = pgnotifier.New(pgNotifierSQLInfo)
+	//>>>>>>> origin/wh-save-load-file-record-in-master
 	if err != nil {
 		panic(err)
 	}

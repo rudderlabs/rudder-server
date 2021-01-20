@@ -21,8 +21,8 @@ type PayloadT struct {
 	DestinationName     string
 	DestinationType     string
 	DestinationConfig   interface{}
-	LoadFileIDs         []int64
 	UniqueLoadGenID     string
+	Output              []loadFileUploadOutputT
 }
 
 type ProcessStagingFilesJobT struct {
