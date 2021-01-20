@@ -983,23 +983,25 @@ func Start() {
 	pgNotifierSQLInfo := getPGNotifierConnectionString()
 	pkgLogger.Infof("PG Notifier SQL info : %s", pgNotifierSQLInfo)
 
-	dbHandle, err = sql.Open("postgres", psqlInfo)
-	if err != nil {
-		panic(err)
-	}
+	if warehouseMode != config.SlaveMode {
+		dbHandle, err = sql.Open("postgres", psqlInfo)
+		if err != nil {
+			panic(err)
+		}
 
-	isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)
-	if err != nil {
-		panic(err)
-	}
+		isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)
+		if err != nil {
+			panic(err)
+		}
 
-	if !isDBCompatible {
-		err := errors.New("Rudder Warehouse Service needs postgres version >= 10. Exiting")
-		pkgLogger.Error(err)
-		panic(err)
-	}
+		if !isDBCompatible {
+			err := errors.New("Rudder Warehouse Service needs postgres version >= 10. Exiting")
+			pkgLogger.Error(err)
+			panic(err)
+		}
 
-	setupTables(dbHandle)
+		setupTables(dbHandle)
+	}
 
 	defer startWebHandler()
 
