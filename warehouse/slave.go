@@ -546,6 +546,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT) {
 		return
 	}
 	payload.BatchID = claimedJob.BatchID
+	pkgLogger.Infof(`Starting processing staging-file:%v from claim:%v`, payload.StagingFileID, claimedJob.ID)
 	ids, err := processStagingFile(payload)
 	if err != nil {
 		handleErr(err, claimedJob)

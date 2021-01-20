@@ -118,7 +118,7 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 									WHERE status='%[3]s' OR status='%[4]s' OR (status='%[5]s' AND last_exec_time <= NOW() - INTERVAL '%[6]v seconds')
 									ORDER BY id
 									LIMIT %[7]v
-								)`,
+								) RETURNING id`,
 			queueName,
 			GetCurrentSQLTimestamp(),
 			WaitingState,
@@ -127,10 +127,22 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 			retriggerExecutingTimeLimitInS,
 			retriggerCount)
 		pkgLogger.Debugf("PgNotifier: triggering pending jobs: %v", stmt)
-		_, err := notifier.dbHandle.Exec(stmt)
+		rows, err := notifier.dbHandle.Query(stmt)
 		if err != nil {
 			panic(err)
 		}
+		defer rows.Close()
+		var ids []int64
+		for rows.Next() {
+			var id int64
+			err := rows.Scan(&id)
+			if err != nil {
+				pkgLogger.Errorf("PgNotifier: Error scanning returned id from retriggered jobs: %v", err)
+				continue
+			}
+			ids = append(ids, id)
+		}
+		pkgLogger.Debugf("PgNotifier: Retreiggerd job ids: %v", ids)
 	}
 }
 
@@ -225,7 +237,13 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 	err := notifier.dbHandle.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 
 	if err != nil {
-		pkgLogger.Debugf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
+		pkgLogger.Errorf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
+		return
+	}
+
+	// TODO: Remove this
+	if claimedID == 0 || batchID == "" || status == "" || payload == nil {
+		pkgLogger.Errorf("PgNotifier: Claim returned zero values:  claimedID: %v, batchID: %s, status: %s, payload: %v", claimedID, batchID, status, payload)
 		return
 	}
 
