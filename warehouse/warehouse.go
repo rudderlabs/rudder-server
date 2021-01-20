@@ -933,7 +933,7 @@ func getConnectionString() string {
 }
 
 func getPGNotifierConnectionString() string {
-	if warehouseMode == config.EmbeddedMode || warehouseMode == config.PooledWHSlaveMode {
+	if jobsdb.CheckForPGNotifierEnvVars() {
 		return jobsdb.GetPGNotifierConnectionString()
 	}
 	pkgLogger.Infof("WH: Warehouse mode is neither embedder nor Pooled WH")
