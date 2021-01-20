@@ -250,13 +250,11 @@ func (job *UploadJobT) run() (err error) {
 		job.setUploadError(err, job.upload.Status)
 		return err
 	}
-
-	schemaHandle := job.schemaHandle
-	if !hasSchemaChanged {
-		schemaHandle.uploadSchema = job.upload.Schema
-	} else {
+	if hasSchemaChanged {
 		pkgLogger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
 	}
+	schemaHandle := job.schemaHandle
+	schemaHandle.uploadSchema = job.upload.Schema
 
 	whManager := job.whManager
 	err = whManager.Setup(job.warehouse, job)
@@ -265,10 +263,12 @@ func (job *UploadJobT) run() (err error) {
 		return err
 	}
 	defer whManager.Cleanup()
-
 	var newStatus string
-
-	nextUploadState := getNextUploadState(job.upload.Status)
+	var nextUploadState *uploadStateT
+	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
+	if !hasSchemaChanged {
+		nextUploadState = getNextUploadState(job.upload.Status)
+	}
 	if nextUploadState == nil {
 		nextUploadState = stateTransitions[GeneratedUploadSchema]
 	}
@@ -285,7 +285,7 @@ func (job *UploadJobT) run() (err error) {
 
 		case GeneratedUploadSchema:
 			newStatus = nextUploadState.failed
-			err := job.generateUploadSchema(schemaHandle)
+			err = job.generateUploadSchema(schemaHandle)
 			if err != nil {
 				break
 			}
@@ -293,7 +293,7 @@ func (job *UploadJobT) run() (err error) {
 
 		case CreatedTableUploads:
 			newStatus = nextUploadState.failed
-			err := job.initTableUploads()
+			err = job.initTableUploads()
 			if err != nil {
 				break
 			}
@@ -389,9 +389,9 @@ func (job *UploadJobT) run() (err error) {
 		case ExportedData:
 			newStatus = nextUploadState.failed
 			skipPrevLoadedTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
-			previouslyFailedTables := job.getTablesToSkip()
+			previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 			skipLoadForTables := append(skipPrevLoadedTableNames, previouslyFailedTables...)
-
+			skipLoadForTables = append(skipLoadForTables, currentJobSucceededTables...)
 			// Export all other tables
 			loadTimeStat := job.timerStat("other_tables_load_time")
 			loadTimeStat.Start()
@@ -400,6 +400,7 @@ func (job *UploadJobT) run() (err error) {
 
 			if len(previouslyFailedTables) > 0 {
 				loadErrors = append(loadErrors, fmt.Errorf("skipping the following tables because they failed previously : %+v", previouslyFailedTables))
+				pkgLogger.Infof("%#v", previouslyFailedTables)
 			}
 
 			if len(loadErrors) > 0 {
@@ -469,7 +470,7 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 			AND %[1]s.destination_id = '%[4]s'
 			AND %[1]s.namespace = '%[5]s'
 			AND %[1]s.status != '%[6]s'
-			AND %[1]s.status != '%[7]s' 
+			AND %[1]s.status != '%[7]s'
 			AND %[2]s.table_name in (SELECT table_name FROM %[2]s WHERE %[2]s.wh_upload_id = '%[3]d')
 		ORDER BY
 			%[1]s.id ASC`,
@@ -517,24 +518,31 @@ func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int6
 	return tableUploadStatus
 }
 
-func (job *UploadJobT) getTablesToSkip() []string {
+func (job *UploadJobT) getTablesToSkip() ([]string, []string) {
 	tableUploadStatuses := job.fetchPendingUploadTableStatus()
 	tableUploadStatus := getTableUploadStatusMap(tableUploadStatuses)
-	skipTableMap := make(map[string]bool)
+	previouslyFailedTableMap := make(map[string]bool)
+	currentlySucceededTableMap := make(map[string]bool)
 	for uploadID, tableStatusMap := range tableUploadStatus {
 		for tableName, status := range tableStatusMap {
-			if (uploadID < job.upload.ID && status == TableUploadExportingFailed) || //Previous upload and table upload failed
-				(uploadID == job.upload.ID && status == TableUploadExported) { //Current upload and table upload succeeded
-				//In both cases, we don't want to attempt loading the table again
-				skipTableMap[tableName] = true
+			if uploadID < job.upload.ID && status == TableUploadExportingFailed { //Previous upload and table upload failed
+				previouslyFailedTableMap[tableName] = true
+			}
+			if uploadID == job.upload.ID && status == TableUploadExported { //Current upload and table upload succeeded
+				currentlySucceededTableMap[tableName] = true
 			}
 		}
 	}
-	skipTables := make([]string, 0)
-	for skipTName := range skipTableMap {
-		skipTables = append(skipTables, skipTName)
+	previouslyFailedTables := make([]string, 0)
+	for skipTName := range previouslyFailedTableMap {
+		previouslyFailedTables = append(previouslyFailedTables, skipTName)
 	}
-	return skipTables
+
+	succeededTablesInCurrentJob := make([]string, 0)
+	for skipTName := range currentlySucceededTableMap {
+		succeededTablesInCurrentJob = append(succeededTablesInCurrentJob, skipTName)
+	}
+	return previouslyFailedTables, succeededTablesInCurrentJob
 }
 
 func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err error) {
@@ -558,8 +566,10 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 		err = job.whManager.CreateTable(tName, tableSchemaDiff.ColumnMap)
 		if err != nil {
 			pkgLogger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
+			return err
 		}
-		return err
+		job.counterStat("tables_added").Increment()
+		return nil
 	}
 
 	for columnName, columnType := range tableSchemaDiff.ColumnMap {
@@ -568,6 +578,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 			pkgLogger.Errorf("Column %s already exists on %s.%s \nResponse: %v", columnName, job.warehouse.Namespace, tName, err)
 			break
 		}
+		job.counterStat("columns_added").Increment()
 	}
 
 	if err != nil {

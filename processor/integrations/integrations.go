@@ -92,12 +92,33 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 	if !ok {
 		return
 	}
+	// All is by default true, if not present make it true
+	allVal, found := clientIntgsList["All"]
+	if !found {
+		allVal = true
+	}
+	_, isAllBoolean := allVal.(bool)
+	if !isAllBoolean {
+		return
+	}
 	var outVal []string
 	for dest := range destNameIDMap {
-		if clientIntgsList[dest] == false {
+		_, isBoolean := clientIntgsList[dest].(bool)
+		// if dest is bool and is present in clientIntgretaion list, check if true/false
+		if isBoolean {
+			if clientIntgsList[dest] == true {
+				outVal = append(outVal, destNameIDMap[dest].Name)
+			}
 			continue
 		}
-		if (clientIntgsList["All"] != false) || clientIntgsList[dest] == true {
+		// Always add for syntax dest:{...}
+		_, isMap := clientIntgsList[dest].(map[string]interface{})
+		if isMap {
+			outVal = append(outVal, destNameIDMap[dest].Name)
+			continue
+		}
+		// if dest  not present in clientIntgretaion list, add based on All flag
+		if allVal.(bool) {
 			outVal = append(outVal, destNameIDMap[dest].Name)
 		}
 	}

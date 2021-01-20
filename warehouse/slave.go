@@ -242,13 +242,13 @@ func (job *PayloadT) markLoadFileUploadSuccess(tableName string, uploadLocation 
 }
 
 func (job *PayloadT) bulkCreateLoadFileRecords(loadFileUploadOutputs []loadFileUploadOutputT) (loadFileIDs []int64) {
-	columnsInInsert := 8
+	columnsInInsert := []string{"staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at"}
 	currentTime := timeutil.Now()
 	valueReferences := make([]string, 0, len(loadFileUploadOutputs))
-	valueArgs := make([]interface{}, 0, len(loadFileUploadOutputs)*columnsInInsert)
+	valueArgs := make([]interface{}, 0, len(loadFileUploadOutputs)*len(columnsInInsert))
 	for idx, loadFileUploadOutput := range loadFileUploadOutputs {
 		var valueRefsArr []string
-		for index := idx*columnsInInsert + 1; index <= (idx+1)*columnsInInsert; index++ {
+		for index := idx*len(columnsInInsert) + 1; index <= (idx+1)*len(columnsInInsert); index++ {
 			valueRefsArr = append(valueRefsArr, fmt.Sprintf(`$%d`, index))
 		}
 		valueReferences = append(valueReferences, fmt.Sprintf("(%s)", strings.Join(valueRefsArr, ",")))

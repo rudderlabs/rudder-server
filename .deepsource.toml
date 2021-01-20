@@ -1,0 +1,19 @@
+version = 1
+
+test_patterns = ["*/test/**"]
+
+[[analyzers]]
+name = "go"
+enabled = true
+
+  [analyzers.meta]
+  import_paths = ["github.com/rudderlabs/rudder-server"]
+  dependencies_vendored = "false"
+
+[[analyzers]]
+name = "javascript"
+enabled = true
+
+  [analyzers.meta]
+  environment = ["nodejs"]
+

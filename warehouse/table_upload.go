@@ -2,12 +2,14 @@ package warehouse
 
 import (
 	"fmt"
+	"strings"
 
-	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+const tableUploadsUniqueConstraintName = "unique_table_upload_wh_upload"
 
 type TableUploadT struct {
 	uploadID  int64
@@ -57,45 +59,31 @@ func areTableUploadsCreated(uploadID int64) bool {
 }
 
 func createTableUploads(uploadID int64, tableNames []string) (err error) {
-
-	//Using transactions for bulk copying
-	txn, err := dbHandle.Begin()
-	if err != nil {
-		return
-	}
-
-	stmt, err := txn.Prepare(pq.CopyIn(warehouseutils.WarehouseTableUploadsTable, "wh_upload_id", "table_name", "status", "error", "created_at", "updated_at"))
-	if err != nil {
-		pkgLogger.Errorf(`[WH]: Error preparing txn: %v Error: %v`, stmt, err)
-		return
-	}
-	defer stmt.Close()
-
-	now := timeutil.Now()
-	for _, table := range tableNames {
-		_, err = stmt.Exec(uploadID, table, "waiting", "{}", now, now)
-		if err != nil {
-			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for table: %s Error: %v`, table, err)
-			txn.Rollback()
-			return
+	columnsInInsert := []string{"wh_upload_id", "table_name", "status", "error", "created_at", "updated_at"}
+	currentTime := timeutil.Now()
+	valueReferences := make([]string, 0, len(tableNames))
+	valueArgs := make([]interface{}, 0, len(tableNames)*len(columnsInInsert))
+	for idx, tName := range tableNames {
+		var valueRefsArr []string
+		for index := idx*len(columnsInInsert) + 1; index <= (idx+1)*len(columnsInInsert); index++ {
+			valueRefsArr = append(valueRefsArr, fmt.Sprintf(`$%d`, index))
 		}
-		pkgLogger.Debugf(`[WH]: Copied rows in pq.CopyIn for table: %s in upload: %v`, table, uploadID)
-	}
-	pkgLogger.Debugf(`[WH]: Copied all rows in pq.CopyIn for upload: %v`, uploadID)
-
-	_, err = stmt.Exec()
-	if err != nil {
-		pkgLogger.Errorf(`[WH]: Error running exec on all rows: %v`, err)
-		txn.Rollback()
-		return
+		valueReferences = append(valueReferences, fmt.Sprintf("(%s)", strings.Join(valueRefsArr, ",")))
+		valueArgs = append(valueArgs, uploadID)
+		valueArgs = append(valueArgs, tName)
+		valueArgs = append(valueArgs, "waiting")
+		valueArgs = append(valueArgs, "{}")
+		valueArgs = append(valueArgs, currentTime)
+		valueArgs = append(valueArgs, currentTime)
 	}
 
-	err = txn.Commit()
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_upload_id, table_name, status, error, created_at, updated_at) VALUES %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, warehouseutils.WarehouseTableUploadsTable, strings.Join(valueReferences, ","), tableUploadsUniqueConstraintName)
+
+	_, err = dbHandle.Exec(sqlStatement, valueArgs...)
 	if err != nil {
-		pkgLogger.Errorf(`[WH]: Error commiting txn: %v`, err)
-		return
+		pkgLogger.Errorf(`Failed created entries in wh_table_uploads for upload:%d : %v`, uploadID, err)
 	}
-	return
+	return err
 }
 
 func (tableUpload *TableUploadT) getStatus() (status string, err error) {
