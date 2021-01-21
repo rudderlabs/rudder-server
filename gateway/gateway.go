@@ -674,10 +674,12 @@ func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respon
 		gateway.addToWebRequestQ(w, r, done, "batch", usersPayload[key], writeKey)
 	}
 
+	interimMsgs := []string{}
 	for index := 0; index < count; index++ {
 		interimErrorMessage := <-done
-		errorMessage = fmt.Sprintf("%s\n%s", errorMessage, interimErrorMessage)
+		interimMsgs = append(interimMsgs, interimErrorMessage)
 	}
+	errorMessage = strings.Join(interimMsgs[:], "\n")
 
 	return errorMessage
 }
