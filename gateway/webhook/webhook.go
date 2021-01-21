@@ -247,13 +247,11 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) {
 	req.request.Body = ioutil.NopCloser(bytes.NewReader(payload))
 	// set write key in basic auth header
 	req.request.SetBasicAuth(req.writeKey, "")
-	done := make(chan string)
 	var errorMessage = ""
 	payload, err := ioutil.ReadAll(req.request.Body)
 	req.request.Body.Close()
 	if err == nil {
-		webhook.gwHandle.AddToWebRequestQ(req.request, req.writer, done, "batch", payload, req.writeKey)
-		errorMessage = <-done
+		webhook.gwHandle.ProcessWebRequest(req.writer, req.request, "batch", payload, req.writeKey)
 	} else {
 		errorMessage = err.Error()
 	}
