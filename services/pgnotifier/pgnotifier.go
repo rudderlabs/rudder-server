@@ -131,7 +131,6 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 		if err != nil {
 			panic(err)
 		}
-		defer rows.Close()
 		var ids []int64
 		for rows.Next() {
 			var id int64
@@ -142,7 +141,8 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 			}
 			ids = append(ids, id)
 		}
-		pkgLogger.Infof("PgNotifier: Retreiggerd job ids: %v", ids)
+		rows.Close()
+		pkgLogger.Debugf("PgNotifier: Retriggerd job ids: %v", ids)
 	}
 }
 
@@ -242,7 +242,7 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 
 	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
+		pkgLogger.Debugf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
 		tx.Rollback()
 		return
 	}
