@@ -639,18 +639,19 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
-	var err error
+	var errorMessage string
 	defer func() {
-		if err != nil {
-			gateway.logger.Debug(err.Error())
-			http.Error(w, response.GetStatus(err.Error()), 400)
+		if errorMessage != "" {
+			gateway.logger.Debug(errorMessage)
+			http.Error(w, response.GetStatus(errorMessage), 400)
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
 	if err != nil {
+		errorMessage = err.Error()
 		return
 	}
-	errorMessage := rh.ProcessRequest(gateway, &w, r, reqType, payload, writeKey)
+	errorMessage = rh.ProcessRequest(gateway, &w, r, reqType, payload, writeKey)
 	atomic.AddUint64(&gateway.ackCount, 1)
 	gateway.trackRequestMetrics(errorMessage)
 	if errorMessage != "" {
