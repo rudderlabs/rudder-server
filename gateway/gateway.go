@@ -583,7 +583,7 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
-func (gateway *HandleT) checkAndAddToWebRequestQ(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) error {
+func (gateway *HandleT) checkAndProcessWebRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) error {
 	var errorMessage = ""
 	if reqType == "import" {
 		errorMessage = gateway.userWebImportHandler(w, r, "batch", payload, writeKey)
@@ -633,7 +633,7 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	if err != nil {
 		return
 	}
-	err = gateway.checkAndAddToWebRequestQ(&w, r, reqType, payload, writeKey)
+	err = gateway.checkAndProcessWebRequest(&w, r, reqType, payload, writeKey)
 	atomic.AddUint64(&gateway.ackCount, 1)
 	if err != nil {
 		gateway.trackRequestMetrics(err.Error())
@@ -651,7 +651,7 @@ func (gateway *HandleT) userWebImportHandler(w *http.ResponseWriter, r *http.Req
 		return payloadError.Error()
 	}
 	count := len(usersPayload)
-	done := make(chan string, 1)
+	done := make(chan string, count)
 	for key := range usersPayload {
 		gateway.AddToWebRequestQ(r, w, done, reqType, usersPayload[key], writeKey)
 	}
