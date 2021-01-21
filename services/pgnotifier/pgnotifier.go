@@ -131,7 +131,6 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 		if err != nil {
 			panic(err)
 		}
-		defer rows.Close()
 		var ids []int64
 		for rows.Next() {
 			var id int64
@@ -142,6 +141,7 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 			}
 			ids = append(ids, id)
 		}
+		rows.Close()
 		pkgLogger.Infof("PgNotifier: Retreiggerd job ids: %v", ids)
 	}
 }
