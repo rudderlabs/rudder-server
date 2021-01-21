@@ -139,6 +139,8 @@ type HandleT struct {
 	eventSchemaHandler                            types.EventSchemasI
 	versionHandler                                func(w http.ResponseWriter, r *http.Request)
 	logger                                        logger.LoggerI
+	rrh                                           *RegularRequestHandler
+	irh                                           *ImportRequestHandler
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {
@@ -536,7 +538,7 @@ func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 }
 
 func (gateway *HandleT) webImportHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.webHandler(w, r, "import")
+	gateway.webRequestHandler(gateway.irh, w, r, "import")
 }
 
 func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
@@ -583,19 +585,30 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
-func (gateway *HandleT) checkAndProcessWebRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) error {
-	var errorMessage = ""
-	if reqType == "import" {
-		errorMessage = gateway.userWebImportHandler(w, r, "batch", payload, writeKey)
-	} else {
-		done := make(chan string, 1)
-		gateway.AddToWebRequestQ(r, w, done, reqType, payload, writeKey)
-		errorMessage = <-done
-	}
-	if errorMessage != "" {
-		return errors.New(errorMessage)
-	}
-	return nil
+//ProcessRequest throws a webRequest into the queue and waits for the response before returning
+func (rrh *RegularRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+	done := make(chan string, 1)
+	gateway.addToWebRequestQ(w, r, done, reqType, payload, writeKey)
+	errorMessage := <-done
+	return errorMessage
+}
+
+//RequestHandler interface for abstracting out server-side import request processing and rest of the calls
+type RequestHandler interface {
+	ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string
+}
+
+//ImportRequestHandler is an empty struct to capture import specific request handling functionality
+type ImportRequestHandler struct {
+}
+
+//RegularRequestHandler is an empty struct to capture non-import specific request handling functionality
+type RegularRequestHandler struct {
+}
+
+//ProcessWebRequest is an Interface wrapper for webhook
+func (gateway *HandleT) ProcessWebRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+	return gateway.rrh.ProcessRequest(gateway, w, r, reqType, payload, writeKey)
 }
 
 func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Request, reqType string) ([]byte, string, error) {
@@ -620,6 +633,10 @@ func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Req
 }
 
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
+	gateway.webRequestHandler(gateway.rrh, w, r, reqType)
+}
+
+func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var err error
@@ -633,18 +650,18 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 	if err != nil {
 		return
 	}
-	err = gateway.checkAndProcessWebRequest(&w, r, reqType, payload, writeKey)
+	errorMessage := rh.ProcessRequest(gateway, &w, r, reqType, payload, writeKey)
 	atomic.AddUint64(&gateway.ackCount, 1)
-	if err != nil {
-		gateway.trackRequestMetrics(err.Error())
+	gateway.trackRequestMetrics(errorMessage)
+	if errorMessage != "" {
 		return
 	}
-	gateway.trackRequestMetrics("")
 	gateway.logger.Debug(response.GetStatus(response.Ok))
 	w.Write([]byte(response.GetStatus(response.Ok)))
 }
 
-func (gateway *HandleT) userWebImportHandler(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+//ProcessRequest on ImportRequestHandler splits payload by user and throws them into the webrequestQ and waits for all their responses before returning
+func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
 	errorMessage := ""
 	usersPayload, payloadError := gateway.getUsersPayload(payload)
 	if payloadError != nil {
@@ -653,12 +670,12 @@ func (gateway *HandleT) userWebImportHandler(w *http.ResponseWriter, r *http.Req
 	count := len(usersPayload)
 	done := make(chan string, count)
 	for key := range usersPayload {
-		gateway.AddToWebRequestQ(r, w, done, reqType, usersPayload[key], writeKey)
+		gateway.addToWebRequestQ(w, r, done, "batch", usersPayload[key], writeKey)
 	}
 
 	for index := 0; index < count; index++ {
 		interimErrorMessage := <-done
-		errorMessage = errorMessage + interimErrorMessage
+		errorMessage = fmt.Sprintf("%s\n%s", errorMessage, interimErrorMessage)
 	}
 
 	return errorMessage
@@ -913,8 +930,8 @@ func (gateway *HandleT) backendConfigSubscriber() {
 Public methods on GatewayWebhookI
 */
 
-// AddToWebRequestQ provides access to add a request to the gateway's webRequestQ
-func (gateway *HandleT) AddToWebRequestQ(req *http.Request, writer *http.ResponseWriter, done chan string, reqType string, requestPayload []byte, writeKey string) {
+// addToWebRequestQ provides access to add a request to the gateway's webRequestQ
+func (gateway *HandleT) addToWebRequestQ(writer *http.ResponseWriter, req *http.Request, done chan string, reqType string, requestPayload []byte, writeKey string) {
 	userIDHeader := req.Header.Get("AnonymousId")
 	//If necessary fetch userID from request body.
 	if userIDHeader == "" {
@@ -984,6 +1001,9 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.jobsDB = jobsDB
 
 	gateway.versionHandler = versionHandler
+
+	gateway.irh = &ImportRequestHandler{}
+	gateway.rrh = &RegularRequestHandler{}
 
 	gateway.webhookHandler = webhook.Setup(gateway)
 
