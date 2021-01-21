@@ -545,7 +545,11 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 
 func (sf *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
-	if schemaExists, err = sf.schemaExists(sf.Namespace); err != nil && !schemaExists {
+	schemaExists, err = sf.schemaExists(sf.Namespace)
+	if err != nil {
+		return err
+	}
+	if !schemaExists {
 		err = sf.createSchema()
 	}
 	return err
