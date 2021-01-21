@@ -567,7 +567,11 @@ func (rs *HandleT) connectToWarehouse() (*sql.DB, error) {
 
 func (rs *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
-	if schemaExists, err = rs.schemaExists(rs.Namespace); err != nil && !schemaExists {
+	schemaExists, err = rs.schemaExists(rs.Namespace)
+	if err != nil {
+		return err
+	}
+	if !schemaExists {
 		err = rs.createSchema()
 	}
 	return err
