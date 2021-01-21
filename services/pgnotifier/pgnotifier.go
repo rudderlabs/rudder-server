@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -25,6 +26,11 @@ var (
 	pkgLogger                      logger.LoggerI
 )
 
+var (
+	pgNotifierDBhost, pgNotifierDBuser, pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode string
+	pgNotifierDBport                                                                                int
+)
+
 const (
 	WaitingState   = "waiting"
 	ExecutingState = "executing"
@@ -34,6 +40,7 @@ const (
 )
 
 func init() {
+	loadPGNotifierConfig()
 	queueName = "pg_notifier_queue"
 	maxAttempt = config.GetInt("PgNotifier.maxAttempt", 3)
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
@@ -78,6 +85,15 @@ type ClaimResponseT struct {
 	Err     error
 }
 
+func loadPGNotifierConfig() {
+	pgNotifierDBhost = config.GetEnv("PGNOTIFIER_DB_HOST", "localhost")
+	pgNotifierDBuser = config.GetEnv("PGNOTIFIER_DB_USER", "ubuntu")
+	pgNotifierDBname = config.GetEnv("PGNOTIFIER_DB_NAME", "ubuntu")
+	pgNotifierDBport, _ = strconv.Atoi(config.GetEnv("PGNOTIFIER_DB_PORT", "5432"))
+	pgNotifierDBpassword = config.GetEnv("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
+	pgNotifierDBsslmode = config.GetEnv("PGNOTIFIER_DB_SSL_MODE", "disable")
+}
+
 func New(connectionInfo string) (notifier PgNotifierT, err error) {
 	pkgLogger.Infof("PgNotifier: Initializing PgNotifier...")
 	dbHandle, err := sql.Open("postgres", connectionInfo)
@@ -107,6 +123,23 @@ func (notifier PgNotifierT) AddTopic(topic string) (err error) {
 		notifier.triggerPending(topic)
 	})
 	return
+}
+
+// CheckForPGNotifierEnvVars Checks if all the required Env Variables for PG Notifier are present
+func CheckForPGNotifierEnvVars() bool {
+	return config.IsEnvSet("PGNOTIFIER_DB_HOST") &&
+		config.IsEnvSet("PGNOTIFIER_DB_USER") &&
+		config.IsEnvSet("PGNOTIFIER_DB_NAME") &&
+		config.IsEnvSet("PGNOTIFIER_DB_PASSWORD")
+}
+
+// GetPGNotifierConnectionString Returns PG Notifier DB Connection Configuration
+func GetPGNotifierConnectionString() string {
+	pkgLogger.Debugf("WH: All Env variables required for separate PG Notifier are set... Check pg notifier says True...")
+	return fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=%s",
+		pgNotifierDBhost, pgNotifierDBport, pgNotifierDBuser,
+		pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode)
 }
 
 func (notifier *PgNotifierT) triggerPending(topic string) {
