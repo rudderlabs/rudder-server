@@ -591,13 +591,13 @@ func MakeJSONArray(bytesArray [][]byte) []byte {
 	return joinedArray
 }
 
-func SingleQuotedJoin(slice []string) string {
+func SingleQuoteLiteralJoin(slice []string) string {
 	var str string
 	for index, key := range slice {
 		if index > 0 {
 			str += fmt.Sprintf(`, `)
 		}
-		str += fmt.Sprintf(`'%s'`, key)
+		str += fmt.Sprintf(`%s`, QuoteLiteral(key))
 	}
 	return str
 }
