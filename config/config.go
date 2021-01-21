@@ -19,12 +19,14 @@ var (
 	whSchemaVersion string
 )
 
+// Rudder server supported config constants
 const (
-	EmbeddedMode    = "embedded"
-	MasterMode      = "master"
-	MasterSlaveMode = "master_and_slave"
-	SlaveMode       = "slave"
-	OffMode         = "off"
+	EmbeddedMode      = "embedded"
+	MasterMode        = "master"
+	MasterSlaveMode   = "master_and_slave"
+	SlaveMode         = "slave"
+	OffMode           = "off"
+	PooledWHSlaveMode = "pooled_wh_slave"
 )
 
 //TransformKey as package method to get the formatted env from a give string
@@ -146,6 +148,17 @@ func IsSet(key string) bool {
 	}
 
 	return viper.IsSet(key)
+}
+
+// IsEnvSet checks if an environment variable is set
+func IsEnvSet(key string) bool {
+	fmt.Println("Key: ", key)
+	if _, exists := os.LookupEnv(key); exists {
+		fmt.Println("Returning true...")
+		return true
+	}
+	fmt.Println("Returning False...")
+	return false
 }
 
 // GetEnv returns the environment value stored in key variable

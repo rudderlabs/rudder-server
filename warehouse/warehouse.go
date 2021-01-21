@@ -77,10 +77,11 @@ var (
 
 // warehouses worker modes
 const (
-	MasterMode      = "master"
-	SlaveMode       = "slave"
-	MasterSlaveMode = "master_and_slave"
-	EmbeddedMode    = "embedded"
+	MasterMode        = "master"
+	SlaveMode         = "slave"
+	MasterSlaveMode   = "master_and_slave"
+	EmbeddedMode      = "embedded"
+	PooledWHSlaveMode = "pooled_wh_slave"
 )
 
 const (
@@ -301,7 +302,7 @@ func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT
 }
 
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
-	sqlStatement := fmt.Sprintf(`SELECT id, location
+	sqlStatement := fmt.Sprintf(`SELECT id, location, status
                                 FROM %[1]s
 								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
 								ORDER BY id ASC`,
@@ -315,7 +316,7 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
 	var stagingFilesList []*StagingFileT
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location)
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
@@ -334,7 +335,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT id, location, first_event_at, last_event_at
+	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at
                                 FROM %[1]s
 								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
 								ORDER BY id ASC
@@ -350,7 +351,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	var firstEventAt, lastEventAt sql.NullTime
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &firstEventAt, &lastEventAt)
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
@@ -923,12 +924,19 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getConnectionString() string {
-	if warehouseMode == config.EmbeddedMode {
+	if warehouseMode == config.EmbeddedMode || warehouseMode == config.PooledWHSlaveMode {
 		return jobsdb.GetConnectionString()
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s",
 		host, port, user, password, dbname, sslmode)
+}
+
+func getPGNotifierConnectionString() string {
+	if jobsdb.CheckForPGNotifierEnvVars() {
+		return jobsdb.GetPGNotifierConnectionString()
+	}
+	return getConnectionString()
 }
 
 func startWebHandler() {
@@ -947,33 +955,46 @@ func startWebHandler() {
 }
 
 func isStandAlone() bool {
-	return warehouseMode != EmbeddedMode
+	return warehouseMode != EmbeddedMode && warehouseMode != PooledWHSlaveMode
 }
 
 func isMaster() bool {
-	return warehouseMode == config.MasterMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
+	return warehouseMode == config.MasterMode ||
+		warehouseMode == config.MasterSlaveMode ||
+		warehouseMode == config.EmbeddedMode ||
+		warehouseMode == config.PooledWHSlaveMode
 }
 
 func isSlave() bool {
 	return warehouseMode == config.SlaveMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
 }
 
-func Start() {
-	time.Sleep(1 * time.Second)
-	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !isStandAlone() && !db.IsNormalMode() {
-		pkgLogger.Infof("Skipping start of warehouse service...")
+func isStandAloneSlave() bool {
+	return warehouseMode == config.SlaveMode
+}
+
+func setupDB(connInfo string) {
+	if isStandAloneSlave() {
 		return
 	}
 
-	pkgLogger.Infof("WH: Starting Warehouse service...")
 	var err error
-	psqlInfo := getConnectionString()
+	//<<<<<<< HEAD
+	//psqlInfo := getConnectionString()
+	//pgNotifierSQLInfo := getPGNotifierConnectionString()
+	//pkgLogger.Infof("PG Notifier SQL info : %s", pgNotifierSQLInfo)
 
-	dbHandle, err = sql.Open("postgres", psqlInfo)
+	//if warehouseMode != config.SlaveMode {
+	//	dbHandle, err = sql.Open("postgres", psqlInfo)
+	//	if err != nil {
+	//		panic(err)
+	//	}
+	//=======
+	dbHandle, err = sql.Open("postgres", connInfo)
 	if err != nil {
 		panic(err)
 	}
+	//>>>>>>> origin/wh-save-load-file-record-in-master
 
 	isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)
 	if err != nil {
@@ -986,8 +1007,28 @@ func Start() {
 		panic(err)
 	}
 
+	//<<<<<<< HEAD
+	//		setupTables(dbHandle)
+	//	}
+	//=======
 	setupTables(dbHandle)
+}
 
+//>>>>>>> origin/wh-save-load-file-record-in-master
+
+func Start() {
+	time.Sleep(1 * time.Second)
+	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
+	if !isStandAlone() && !db.IsNormalMode() {
+		pkgLogger.Infof("Skipping start of warehouse service...")
+		return
+	}
+
+	pkgLogger.Infof("WH: Starting Warehouse service...")
+	psqlInfo := getConnectionString()
+	pgNotifierSQLInfo := getPGNotifierConnectionString()
+	pkgLogger.Infof("PG Notifier SQL info : %s", pgNotifierSQLInfo)
+	setupDB(psqlInfo)
 	defer startWebHandler()
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
@@ -999,7 +1040,12 @@ func Start() {
 		return
 	}
 
-	notifier, err = pgnotifier.New(psqlInfo)
+	//<<<<<<< HEAD
+	//	notifier, err = pgnotifier.New(pgNotifierSQLInfo)
+	//=======
+	var err error
+	notifier, err = pgnotifier.New(pgNotifierSQLInfo)
+	//>>>>>>> origin/wh-save-load-file-record-in-master
 	if err != nil {
 		panic(err)
 	}
