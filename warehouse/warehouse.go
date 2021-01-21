@@ -954,6 +954,7 @@ func startWebHandler() {
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
+// This checks if gateway is running or not
 func isStandAlone() bool {
 	return warehouseMode != EmbeddedMode && warehouseMode != PooledWHSlaveMode
 }

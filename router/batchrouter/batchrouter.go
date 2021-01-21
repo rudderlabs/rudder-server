@@ -844,8 +844,13 @@ func IsWarehouseDestination(destType string) bool {
 	return misc.Contains(warehouseDestinations, destType)
 }
 
+func isWarehouseMasterEnabled() bool {
+	return warehouseMode == config.EmbeddedMode ||
+		warehouseMode == config.PooledWHSlaveMode
+}
+
 func getWarehouseURL() (url string) {
-	if warehouseMode == config.EmbeddedMode || warehouseMode == config.PooledWHSlaveMode {
+	if isWarehouseMasterEnabled() {
 		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
 	} else {
 		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
