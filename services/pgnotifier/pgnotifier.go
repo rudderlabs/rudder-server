@@ -142,7 +142,7 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 			}
 			ids = append(ids, id)
 		}
-		pkgLogger.Debugf("PgNotifier: Retreiggerd job ids: %v", ids)
+		pkgLogger.Infof("PgNotifier: Retreiggerd job ids: %v", ids)
 	}
 }
 
@@ -234,16 +234,24 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 						LIMIT 1
 						)
 						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState)
-	err := notifier.dbHandle.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
+
+	tx, err := notifier.dbHandle.Begin()
+	if err != nil {
+		return
+	}
+	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 
 	if err != nil {
 		pkgLogger.Errorf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
+		tx.Rollback()
 		return
 	}
 
-	// TODO: Remove this
-	if claimedID == 0 || batchID == "" || status == "" || payload == nil {
-		pkgLogger.Errorf("PgNotifier: Claim returned zero values:  claimedID: %v, batchID: %s, status: %s, payload: %v", claimedID, batchID, status, payload)
+	err = tx.Commit()
+
+	if err != nil {
+		pkgLogger.Errorf("PgNotifier: Error commiting claim txn: %v", err)
+		tx.Rollback()
 		return
 	}
 
