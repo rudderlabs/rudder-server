@@ -472,12 +472,17 @@ func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 	return false
 }
 
-func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency string) bool {
+func getUploadFreqInS(syncFrequency string) int64 {
 	freqInS := uploadFreqInS
 	if syncFrequency != "" {
 		freqInMin, _ := strconv.ParseInt(syncFrequency, 10, 64)
 		freqInS = freqInMin * 60
 	}
+	return freqInS
+}
+
+func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency string) bool {
+	freqInS := getUploadFreqInS(syncFrequency)
 	lastEventTimeMapLock.Lock()
 	defer lastEventTimeMapLock.Unlock()
 	if lastExecTime, ok := lastEventTimeMap[warehouse.Identifier]; ok && timeutil.Now().Unix()-lastExecTime < freqInS {
@@ -486,10 +491,33 @@ func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency 
 	return false
 }
 
+func getLastStagingFileCreatedAt(warehouse warehouseutils.WarehouseT) time.Time {
+	stmt := fmt.Sprintf(`SELECT created_at from %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseStagingFilesTable, warehouse.Source.ID, warehouse.Destination.ID)
+	var createdAt sql.NullTime
+	err := dbHandle.QueryRow(stmt).Scan(&createdAt)
+	if err != nil {
+		pkgLogger.Errorf(`Error in getLastStagingFileCreatedAt: %v`, err)
+		return time.Now()
+	}
+	return createdAt.Time
+}
+
 func setLastEventTime(warehouse warehouseutils.WarehouseT, lastEventAt time.Time) {
+	unixTime := lastEventAt.Unix()
+
+	freqInS := getUploadFreqInS(warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse))
+
+	lastStagingFileCreatedAt := getLastStagingFileCreatedAt(warehouse)
+	// set lastEvent to currentTime in cases where
+	// 1. if there is lag in creating staging files - last staging file is more than freqInS old
+	// 2. and if there is less than freqInS worth of data in pending staging files
+	if time.Now().Add(time.Duration(-freqInS)*time.Second).Sub(lastStagingFileCreatedAt) > 0 && lastStagingFileCreatedAt.Sub(lastEventAt) < time.Duration(freqInS)*time.Second {
+		unixTime = time.Now().Unix()
+	}
+
 	lastEventTimeMapLock.Lock()
 	defer lastEventTimeMapLock.Unlock()
-	lastEventTimeMap[warehouse.Identifier] = lastEventAt.Unix()
+	lastEventTimeMap[warehouse.Identifier] = unixTime
 }
 
 //TODO: Clean this up

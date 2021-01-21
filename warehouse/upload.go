@@ -725,6 +725,7 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 
 	// Load all user tables
 	identityTableUpload := NewTableUpload(job.upload.ID, job.identifiesTableName())
+	identityTableUpload.setStatus(TableUploadExecuting)
 	alteredIdentitySchema, err := job.updateSchema(job.identifiesTableName())
 	if err != nil {
 		identityTableUpload.setError(TableUploadUpdatingSchemaFailed, err)
@@ -732,6 +733,7 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 	}
 
 	userTableUpload := NewTableUpload(job.upload.ID, job.usersTableName())
+	userTableUpload.setStatus(TableUploadExecuting)
 	alteredUserSchema, err := job.updateSchema(job.usersTableName())
 	if err != nil {
 		userTableUpload.setError(TableUploadUpdatingSchemaFailed, err)
@@ -981,7 +983,11 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	}
 
 	metadata := make(map[string]string)
-	metadata["nextRetryTime"] = upload.LastAttemptAt.Add(durationBeforeNextAttempt(upload.Attempts)).Format(time.RFC3339)
+	lastAttempt := upload.LastAttemptAt
+	if lastAttempt.IsZero() {
+		lastAttempt = timeutil.Now()
+	}
+	metadata["nextRetryTime"] = lastAttempt.Add(durationBeforeNextAttempt(upload.Attempts)).Format(time.RFC3339)
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		metadataJSON = []byte("{}")
