@@ -1185,6 +1185,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 }
 
 func (job *UploadJobT) setStagingFileSuccess(stagingFileIDs []int64) {
+	// using ANY instead of IN as WHERE clause filtering on primary key index uses index scan in both cases
+	// use IN for cases where filtering on composite indexes
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseutils.WarehouseStagingFilesTable)
 	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileSucceededState, timeutil.Now(), pq.Array(stagingFileIDs))
 	if err != nil {
