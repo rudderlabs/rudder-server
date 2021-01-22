@@ -70,6 +70,7 @@ type HandleT struct {
 	logger                  logger.LoggerI
 	noOfWorkers             int
 	maxFailedCountForJob    int
+	retryTimeWindow         time.Duration
 }
 
 type BatchDestinationT struct {
@@ -405,8 +406,9 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	jobStateCount := make(map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
-
-		if jobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
+		//TODO : Check sub in Time.NOW and Use FirstAttemptTime from RT
+		timeElapsed := time.Now().Sub(job.CreatedAt)
+		if jobState == jobsdb.Failed.State && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
 			jobState = jobsdb.Aborted.State
 		} else {
 			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
@@ -600,7 +602,7 @@ func (brt *HandleT) initWorkers() {
 							}
 							if !ok {
 								// TODO: Should not happen. Handle this
-								err := fmt.Errorf("BRT: Batch destiantion source not found in config for sourceID: %s", sourceID)
+								err := fmt.Errorf("BRT: Batch destination source not found in config for sourceID: %s", sourceID)
 								brt.setJobStatus(batchJobs, false, err, false)
 								wg.Done()
 								continue
@@ -918,6 +920,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 	brt.maxFailedCountForJob = getBatchRouterConfigInt("maxFailedCountForJob", destType, 128)
+	brt.retryTimeWindow = getBatchRouterConfigDuration("retryTimeWindowInMins", destType, time.Duration(180)) * time.Minute
 
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}

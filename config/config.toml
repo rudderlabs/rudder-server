@@ -178,6 +178,7 @@ warehouseServiceMaxRetryTimeinHr = 3
 # Below config variables are supported per destination type too
 noOfWorkers = 8
 maxFailedCountForJob = 128
+retryTimeWindowInMins = 180
 
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
