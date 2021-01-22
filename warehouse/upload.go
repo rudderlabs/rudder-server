@@ -1136,7 +1136,10 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			var loadFiles []loadFileUploadOutputT
 			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
-				// TODO: make it aborted
+				// Error handling during generating_load_files step:
+				// 1. any error returned by pgnotifier is set on corresponding staging_gile
+				// 2. any error effecting a batch/all of the staging files like saving load file records to wh db
+				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
 				if resp.Status == "aborted" {
 					pkgLogger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
 					job.setStagingFileErr(resp.JobID, fmt.Errorf(resp.Error))
@@ -1154,7 +1157,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				loadFiles = append(loadFiles, output...)
 				successfulStagingFileIDs = append(successfulStagingFileIDs, resp.JobID)
 			}
-			err = job.bulkInstertLoadFileRecords(loadFiles)
+			err = job.bulkInsertLoadFileRecords(loadFiles)
 			if err != nil {
 				saveLoadFileErrs = append(saveLoadFileErrs, err)
 			}
@@ -1202,7 +1205,7 @@ func (job *UploadJobT) setStagingFileErr(stagingFileID int64, statusErr error) {
 	}
 }
 
-func (job *UploadJobT) bulkInstertLoadFileRecords(loadFiles []loadFileUploadOutputT) (err error) {
+func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutputT) (err error) {
 	//Using transactions for bulk copying
 	txn, err := dbHandle.Begin()
 	if err != nil {
