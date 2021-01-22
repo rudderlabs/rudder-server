@@ -864,7 +864,7 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/v1/merge", gateway.stat(gateway.webMergeHandler))
 	srvMux.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
 	srvMux.HandleFunc("/health", gateway.healthHandler)
-	srvMux.HandleFunc("/import", gateway.stat(gateway.webImportHandler))
+	srvMux.HandleFunc("/v1/import", gateway.stat(gateway.webImportHandler))
 	srvMux.HandleFunc("/", gateway.healthHandler)
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
