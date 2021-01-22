@@ -152,13 +152,8 @@ func IsSet(key string) bool {
 
 // IsEnvSet checks if an environment variable is set
 func IsEnvSet(key string) bool {
-	fmt.Println("Key: ", key)
-	if _, exists := os.LookupEnv(key); exists {
-		fmt.Println("Returning true...")
-		return true
-	}
-	fmt.Println("Returning False...")
-	return false
+	_, exists := os.LookupEnv(key)
+	return exists
 }
 
 // GetEnv returns the environment value stored in key variable

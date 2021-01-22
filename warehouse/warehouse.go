@@ -932,13 +932,6 @@ func getConnectionString() string {
 		host, port, user, password, dbname, sslmode)
 }
 
-func getPGNotifierConnectionString() string {
-	if jobsdb.CheckForPGNotifierEnvVars() {
-		return jobsdb.GetPGNotifierConnectionString()
-	}
-	return getConnectionString()
-}
-
 func startWebHandler() {
 	// do not register same endpoint when running embedded in rudder backend
 	if isStandAlone() {
@@ -954,6 +947,7 @@ func startWebHandler() {
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
+// This checks if gateway is running or not
 func isStandAlone() bool {
 	return warehouseMode != EmbeddedMode && warehouseMode != PooledWHSlaveMode
 }
@@ -979,22 +973,10 @@ func setupDB(connInfo string) {
 	}
 
 	var err error
-	//<<<<<<< HEAD
-	//psqlInfo := getConnectionString()
-	//pgNotifierSQLInfo := getPGNotifierConnectionString()
-	//pkgLogger.Infof("PG Notifier SQL info : %s", pgNotifierSQLInfo)
-
-	//if warehouseMode != config.SlaveMode {
-	//	dbHandle, err = sql.Open("postgres", psqlInfo)
-	//	if err != nil {
-	//		panic(err)
-	//	}
-	//=======
 	dbHandle, err = sql.Open("postgres", connInfo)
 	if err != nil {
 		panic(err)
 	}
-	//>>>>>>> origin/wh-save-load-file-record-in-master
 
 	isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)
 	if err != nil {
@@ -1006,15 +988,8 @@ func setupDB(connInfo string) {
 		pkgLogger.Error(err)
 		panic(err)
 	}
-
-	//<<<<<<< HEAD
-	//		setupTables(dbHandle)
-	//	}
-	//=======
 	setupTables(dbHandle)
 }
-
-//>>>>>>> origin/wh-save-load-file-record-in-master
 
 func Start() {
 	time.Sleep(1 * time.Second)
@@ -1026,8 +1001,7 @@ func Start() {
 
 	pkgLogger.Infof("WH: Starting Warehouse service...")
 	psqlInfo := getConnectionString()
-	pgNotifierSQLInfo := getPGNotifierConnectionString()
-	pkgLogger.Infof("PG Notifier SQL info : %s", pgNotifierSQLInfo)
+
 	setupDB(psqlInfo)
 	defer startWebHandler()
 
@@ -1039,13 +1013,8 @@ func Start() {
 		})
 		return
 	}
-
-	//<<<<<<< HEAD
-	//	notifier, err = pgnotifier.New(pgNotifierSQLInfo)
-	//=======
 	var err error
-	notifier, err = pgnotifier.New(pgNotifierSQLInfo)
-	//>>>>>>> origin/wh-save-load-file-record-in-master
+	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {
 		panic(err)
 	}
