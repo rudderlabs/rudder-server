@@ -94,7 +94,16 @@ func loadPGNotifierConfig() {
 	pgNotifierDBsslmode = config.GetEnv("PGNOTIFIER_DB_SSL_MODE", "disable")
 }
 
-func New(connectionInfo string) (notifier PgNotifierT, err error) {
+//New Given default connection info return pg notifiew object from it
+func New(fallbackConnectionInfo string) (notifier PgNotifierT, err error) {
+
+	// by default connection info is fallback connection info
+	connectionInfo := fallbackConnectionInfo
+
+	// if PG Notifier variables are defined then use get values provided in env vars
+	if CheckForPGNotifierEnvVars() {
+		connectionInfo = GetPGNotifierConnectionString()
+	}
 	pkgLogger.Infof("PgNotifier: Initializing PgNotifier...")
 	dbHandle, err := sql.Open("postgres", connectionInfo)
 	if err != nil {

@@ -932,13 +932,6 @@ func getConnectionString() string {
 		host, port, user, password, dbname, sslmode)
 }
 
-func getPGNotifierConnectionString(defaultConnection string) string {
-	if pgnotifier.CheckForPGNotifierEnvVars() {
-		return pgnotifier.GetPGNotifierConnectionString()
-	}
-	return defaultConnection
-}
-
 func startWebHandler() {
 	// do not register same endpoint when running embedded in rudder backend
 	if isStandAlone() {
@@ -1008,8 +1001,7 @@ func Start() {
 
 	pkgLogger.Infof("WH: Starting Warehouse service...")
 	psqlInfo := getConnectionString()
-	pgNotifierSQLInfo := getPGNotifierConnectionString(psqlInfo)
-	pkgLogger.Infof("PG Notifier SQL info : %s", pgNotifierSQLInfo)
+
 	setupDB(psqlInfo)
 	defer startWebHandler()
 
@@ -1022,7 +1014,7 @@ func Start() {
 		return
 	}
 	var err error
-	notifier, err = pgnotifier.New(pgNotifierSQLInfo)
+	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {
 		panic(err)
 	}
