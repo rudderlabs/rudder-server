@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -110,13 +111,20 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 }
 
 func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
-	// add metric to record total loaded rows to standard tables
-	// adding metric for all event tables might result in too many metrics
-	tablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
-	if !misc.Contains(tablesToRecordEventsMetric, strings.ToLower(tableName)) {
-		tableName = "others"
+	skipMetricTagForEachEventTable := config.GetBool("Warehouse.skipMetricTagForEachEventTable", false)
+	standardTablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
+
+	if !misc.Contains(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
+		if skipMetricTagForEachEventTable {
+			// club all event table metric tags under one tag to avoid too many tags
+			tableName = "others"
+		}
 	} else {
-		job.counterStat(`event_delivery`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
+		// record total events synced (ignoring additional row synced to event table for eg.track call)
+		// also ignore rows synced to rudder_discards as they are not full events but only discarded columns
+		if tableName != "rudder_discards" {
+			job.counterStat(`event_delivery`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
+		}
 	}
 	job.counterStat(`rows_synced`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
