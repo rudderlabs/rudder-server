@@ -1,6 +1,9 @@
 version = 1
 
-test_patterns = ["*/test/**"]
+test_patterns = [
+    "**/*_test.go",
+    "tests/**"
+]
 
 [[analyzers]]
 name = "go"
@@ -8,12 +11,12 @@ enabled = true
 
   [analyzers.meta]
   import_paths = ["github.com/rudderlabs/rudder-server"]
-  dependencies_vendored = "false"
 
 [[analyzers]]
 name = "javascript"
 enabled = true
 
   [analyzers.meta]
-  environment = ["nodejs"]
-
+  plugins = ["react"]
+  dialect = "typescript"
+  environment = ["browser"]
