@@ -111,21 +111,21 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 }
 
 func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
-	skipMetricTagForEachEventTable := config.GetBool("Warehouse.skipMetricTagForEachEventTable", false)
-	standardTablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
+	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
+	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
+		// record total events synced (ignoring additional row synced to event table for eg.track call)
+		job.counterStat(`event_delivery`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
+	}
 
-	if !misc.Contains(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
-		if skipMetricTagForEachEventTable {
+	skipMetricTagForEachEventTable := config.GetBool("Warehouse.skipMetricTagForEachEventTable", false)
+	if skipMetricTagForEachEventTable {
+		standardTablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
+		if !misc.Contains(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
 			// club all event table metric tags under one tag to avoid too many tags
 			tableName = "others"
 		}
-	} else {
-		// record total events synced (ignoring additional row synced to event table for eg.track call)
-		// also ignore rows synced to rudder_discards as they are not full events but only discarded columns
-		if tableName != "rudder_discards" {
-			job.counterStat(`event_delivery`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
-		}
 	}
+
 	job.counterStat(`rows_synced`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
 	firstEventAt, err := getFirstStagedEventAt(job.upload.StartStagingFileID)
