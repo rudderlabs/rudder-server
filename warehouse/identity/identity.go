@@ -67,9 +67,9 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 	var rudderIDs []string
 	var additionalClause string
 	if prop2Val.Valid && prop2Type.Valid {
-		additionalClause = fmt.Sprintf(`OR (merge_property_type='%s' AND merge_property_value='%s')`, prop2Type.String, prop2Val.String)
+		additionalClause = fmt.Sprintf(`OR (merge_property_type='%s' AND merge_property_value=%s)`, prop2Type.String, misc.QuoteLiteral(prop2Val.String))
 	}
-	sqlStatement = fmt.Sprintf(`SELECT ARRAY_AGG(DISTINCT(rudder_id)) FROM %s WHERE (merge_property_type='%s' AND merge_property_value='%s') %s`, idr.mappingsTable(), prop1Type.String, prop1Val.String, additionalClause)
+	sqlStatement = fmt.Sprintf(`SELECT ARRAY_AGG(DISTINCT(rudder_id)) FROM %s WHERE (merge_property_type='%s' AND merge_property_value=%s) %s`, idr.mappingsTable(), prop1Type.String, misc.QuoteLiteral(prop1Val.String), additionalClause)
 	pkgLogger.Debugf(`IDR: Fetching all rudder_id's corresponding to the merge_rule: %v`, sqlStatement)
 	err = txn.QueryRow(sqlStatement).Scan(pq.Array(&rudderIDs))
 	if err != nil {
@@ -95,19 +95,20 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 		}
 		row1 := []string{prop1Type.String, prop1Val.String, rudderID, currentTimeString}
 		csvRows = append(csvRows, row1)
-		row1Values := misc.SingleQuotedJoin(row1)
+		row1Values := misc.SingleQuoteLiteralJoin(row1)
 
 		var row2Values string
 		if prop2Val.Valid && prop2Type.Valid {
 			row2 := []string{prop2Type.String, prop2Val.String, rudderID, currentTimeString}
 			csvRows = append(csvRows, row2)
-			row2Values = fmt.Sprintf(`, (%s)`, misc.SingleQuotedJoin(row2))
+			row2Values = fmt.Sprintf(`, (%s)`, misc.SingleQuoteLiteralJoin(row2))
 		}
 
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.Warehouse))
 		pkgLogger.Debugf(`IDR: Inserting properties from merge_rule into mappings table: %v`, sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
+			pkgLogger.Errorf(`IDR: Error inserting properties from merge_rule into mappings table: %v`, err)
 			return
 		}
 	} else {
@@ -115,16 +116,16 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 		newID := uuid.NewV4().String()
 		row1 := []string{prop1Type.String, prop1Val.String, newID, currentTimeString}
 		csvRows = append(csvRows, row1)
-		row1Values := misc.SingleQuotedJoin(row1)
+		row1Values := misc.SingleQuoteLiteralJoin(row1)
 
 		var row2Values string
 		if prop2Val.Valid && prop2Type.Valid {
 			row2 := []string{prop2Type.String, prop2Val.String, newID, currentTimeString}
 			csvRows = append(csvRows, row2)
-			row2Values = fmt.Sprintf(`, (%s)`, misc.SingleQuotedJoin(row2))
+			row2Values = fmt.Sprintf(`, (%s)`, misc.SingleQuoteLiteralJoin(row2))
 		}
 
-		quotedRudderIDs := misc.SingleQuotedJoin(rudderIDs)
+		quotedRudderIDs := misc.SingleQuoteLiteralJoin(rudderIDs)
 		sqlStatement := fmt.Sprintf(`SELECT merge_property_type, merge_property_value FROM %s WHERE rudder_id IN (%v)`, idr.mappingsTable(), quotedRudderIDs)
 		pkgLogger.Debugf(`IDR: Get all merge properties from mapping table with rudder_id's %v: %v`, quotedRudderIDs, sqlStatement)
 		var rows *sql.Rows
