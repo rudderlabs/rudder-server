@@ -89,10 +89,10 @@ type jobResponseT struct {
 
 //JobParametersT struct holds source id and destination id of a job
 type JobParametersT struct {
-	SourceID        string `json:"source_id"`
-	DestinationID   string `json:"destination_id"`
-	ReceivedAt      string `json:"received_at"`
-	RouterTransform string `json:"router_transform"`
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
+	ReceivedAt    string `json:"received_at"`
+	TransformAt   string `json:"transform_at"`
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -277,7 +277,7 @@ func (worker *workerT) workerProcess() {
 					worker.destinationJobs = worker.batch(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
-			} else if parameters.RouterTransform == "v1" {
+			} else if parameters.TransformAt == "router" {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
 

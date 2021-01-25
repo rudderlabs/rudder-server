@@ -953,12 +953,15 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		destStat.destTransform.Start()
 		startedAt = time.Now()
 
-		routerTransformVersion := "v0"
-		if val, ok := destination.DestinationDefinition.Config["routerTransform"].(bool); ok && val {
-			routerTransformVersion = "v1"
-			response = convertToTransformerResponse(eventsToTransform)
-		} else {
+		transformAt := "processor"
+		if val, ok := destination.DestinationDefinition.Config["transformAt"].(string); ok {
+			transformAt = val
+		}
+
+		if transformAt == "processor" {
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+		} else {
+			response = convertToTransformerResponse(eventsToTransform)
 		}
 
 		endedAt = time.Now()
@@ -1003,7 +1006,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       rudderID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v", "router_transform": "%v"}`, sourceID, destID, receivedAt, routerTransformVersion)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v", "transform_at": "%v"}`, sourceID, destID, receivedAt, transformAt)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
