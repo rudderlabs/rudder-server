@@ -133,7 +133,7 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %w", job.warehouse.Identifier, err)
 		return
 	}
-	job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}).SendTiming(time.Now().Sub(firstEventAt))
+	job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}).SendTiming(time.Since(firstEventAt))
 }
 
 func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {
