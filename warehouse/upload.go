@@ -390,20 +390,12 @@ func (job *UploadJobT) run() (err error) {
 
 		case ExportedData:
 			newStatus = nextUploadState.failed
-			skipPrevLoadedTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
-			previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
-			skipLoadForTables := append(skipPrevLoadedTableNames, previouslyFailedTables...)
-			skipLoadForTables = append(skipLoadForTables, currentJobSucceededTables...)
+			userTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 			// Export all other tables
 			loadTimeStat := job.timerStat("other_tables_load_time")
 			loadTimeStat.Start()
 
-			loadErrors := job.loadAllTablesExcept(skipLoadForTables)
-
-			if len(previouslyFailedTables) > 0 {
-				loadErrors = append(loadErrors, fmt.Errorf("skipping the following tables because they failed previously : %+v", previouslyFailedTables))
-				pkgLogger.Infof("%#v", previouslyFailedTables)
-			}
+			loadErrors := job.loadAllTablesExcept(userTableNames)
 
 			if len(loadErrors) > 0 {
 				err = warehouseutils.ConcatErrors(loadErrors)
@@ -520,31 +512,22 @@ func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int6
 	return tableUploadStatus
 }
 
-func (job *UploadJobT) getTablesToSkip() ([]string, []string) {
+func (job *UploadJobT) getTablesToSkip() (map[string]int64, map[string]bool) {
 	tableUploadStatuses := job.fetchPendingUploadTableStatus()
 	tableUploadStatus := getTableUploadStatusMap(tableUploadStatuses)
-	previouslyFailedTableMap := make(map[string]bool)
+	previouslyFailedTableMap := make(map[string]int64)
 	currentlySucceededTableMap := make(map[string]bool)
 	for uploadID, tableStatusMap := range tableUploadStatus {
 		for tableName, status := range tableStatusMap {
 			if uploadID < job.upload.ID && status == TableUploadExportingFailed { //Previous upload and table upload failed
-				previouslyFailedTableMap[tableName] = true
+				previouslyFailedTableMap[tableName] = uploadID
 			}
 			if uploadID == job.upload.ID && status == TableUploadExported { //Current upload and table upload succeeded
 				currentlySucceededTableMap[tableName] = true
 			}
 		}
 	}
-	previouslyFailedTables := make([]string, 0)
-	for skipTName := range previouslyFailedTableMap {
-		previouslyFailedTables = append(previouslyFailedTables, skipTName)
-	}
-
-	succeededTablesInCurrentJob := make([]string, 0)
-	for skipTName := range currentlySucceededTableMap {
-		succeededTablesInCurrentJob = append(succeededTablesInCurrentJob, skipTName)
-	}
-	return previouslyFailedTables, succeededTablesInCurrentJob
+	return previouslyFailedTableMap, currentlySucceededTableMap
 }
 
 func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err error) {
@@ -598,7 +581,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	return err
 }
 
-func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []error {
+func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 	uploadSchema := job.upload.Schema
 	var parallelLoads int
 	var ok bool
@@ -614,10 +597,19 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 
 	var alteredSchemaInAtleastOneTable bool
 	loadChan := make(chan struct{}, parallelLoads)
+	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for tableName := range uploadSchema {
-		if misc.ContainsString(skipPrevLoadedTableNames, tableName) {
+		if misc.ContainsString(skipLoadForTables, tableName) {
 			wg.Done()
 			continue
+		}
+		if _, ok := currentJobSucceededTables[tableName]; ok {
+			wg.Done()
+			continue
+		}
+		if prevJobID, ok := previouslyFailedTables[tableName]; ok {
+			loadErrors = append(loadErrors, fmt.Errorf("Skipping %s tables because it previously failed to load in an earlier job: %d", tableName, prevJobID))
+			wg.Done()
 		}
 		hasLoadFiles, err := job.hasLoadFiles(tableName)
 		if err != nil {
@@ -696,13 +688,21 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	return
 }
 
-func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr error) {
+func (job *UploadJobT) loadUserTables() ([]error, error) {
 	var loadTables bool
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 
 	var err error
+	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for _, tName := range userTables {
 		loadTables, err = job.shouldTableBeLoaded(tName)
+		if _, ok := currentJobSucceededTables[tName]; ok {
+			continue
+		}
+		if prevJobID, ok := previouslyFailedTables[tName]; ok {
+			err = fmt.Errorf("Skipping %s tables because it previously failed to load in an earlier job: %d", tName, prevJobID)
+			break
+		}
 		if err != nil {
 			break
 		}
