@@ -428,14 +428,6 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func checkAndIgnoreAlreadyExistError(err error) bool {
-	if err != nil {
-		// TODO: throw error if column already exists but of different type
-		return false
-	}
-	return true
-}
-
 func (pg *HandleT) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, pg.Namespace)
 	pkgLogger.Infof("PG: Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
@@ -455,16 +447,6 @@ func (pg *HandleT) createTable(name string, columns map[string]string) (err erro
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, name, columnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
-	return
-}
-
-func (pg *HandleT) tableExists(tableName string) (exists bool, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1
-   								 FROM   information_schema.tables
-   								 WHERE  table_schema = '%s'
-   								 AND    table_name = '%s'
-								   )`, pg.Namespace, tableName)
-	err = pg.Db.QueryRow(sqlStatement).Scan(&exists)
 	return
 }
 

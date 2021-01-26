@@ -26,28 +26,6 @@ func getTotalEventsUploaded(uploadID int64) (total int64, err error) {
 	return total, err
 }
 
-func getNumEventsPerTableUpload(uploadID int64) (map[string]int, error) {
-	eventsPerTableMap := make(map[string]int)
-
-	sqlStatement := fmt.Sprintf(`select table_name, total_events from wh_table_uploads where wh_upload_id=%d and total_events > 0`, uploadID)
-	rows, err := dbHandle.Query(sqlStatement)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var tName string
-		var totalEvents int
-		err := rows.Scan(&tName, &totalEvents)
-		if err != nil {
-			return nil, err
-		}
-		eventsPerTableMap[tName] = totalEvents
-	}
-	return eventsPerTableMap, nil
-}
-
 func areTableUploadsCreated(uploadID int64) bool {
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE wh_upload_id=%d`, warehouseutils.WarehouseTableUploadsTable, uploadID)
 	var count int

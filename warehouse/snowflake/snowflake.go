@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -21,9 +20,8 @@ import (
 )
 
 var (
-	warehouseUploadsTable string
-	stagingTablePrefix    string
-	pkgLogger             logger.LoggerI
+	stagingTablePrefix string
+	pkgLogger          logger.LoggerI
 )
 
 func init() {
@@ -32,7 +30,6 @@ func init() {
 }
 
 func loadConfig() {
-	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "RUDDER_STAGING_"
 }
 
@@ -120,7 +117,6 @@ var (
 	discardsTable           = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.DiscardsTable)
 	identityMergeRulesTable = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMergeRulesTable)
 	identityMappingsTable   = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMappingsTable)
-	aliasTable              = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.AliasTable)
 )
 
 type tableLoadRespT struct {

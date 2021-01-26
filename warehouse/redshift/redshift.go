@@ -17,7 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sts"
 
-	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -29,10 +28,9 @@ import (
 )
 
 var (
-	setVarCharMax         bool
-	warehouseUploadsTable string
-	stagingTablePrefix    string
-	pkgLogger             logger.LoggerI
+	setVarCharMax      bool
+	stagingTablePrefix string
+	pkgLogger          logger.LoggerI
 )
 
 func init() {
@@ -145,16 +143,6 @@ func (rs *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	return
 }
 
-func (rs *HandleT) tableExists(tableName string) (exists bool, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1
-   								 FROM   information_schema.tables
-   								 WHERE  table_schema = '%s'
-   								 AND    table_name = '%s'
-								   )`, rs.Namespace, tableName)
-	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
-	return
-}
-
 func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, rs.Namespace)
 	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
@@ -182,18 +170,6 @@ func (rs *HandleT) createSchema() (err error) {
 	pkgLogger.Infof("Creating schemaname in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
-}
-
-func checkAndIgnoreAlreadyExistError(err error) bool {
-	if err != nil {
-		if e, ok := err.(*pq.Error); ok {
-			if e.Code == "42701" {
-				return true
-			}
-		}
-		return false
-	}
-	return true
 }
 
 type S3ManifestEntryT struct {
