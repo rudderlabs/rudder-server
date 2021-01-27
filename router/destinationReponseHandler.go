@@ -2,8 +2,10 @@ package router
 
 import (
 	"fmt"
-	"github.com/tidwall/gjson"
 	"reflect"
+	"strings"
+
+	"github.com/tidwall/gjson"
 )
 
 //ResponseHandlerI - handle destination response
@@ -56,13 +58,21 @@ func getStringifiedVal(val interface{}) string {
 	}
 }
 
+func stripQuotes(str string) string {
+	if strings.HasPrefix(str, `"`) {
+		return str[1 : len(str)-1]
+	}
+
+	return str
+}
+
 func evalBody(body string, rules []map[string]interface{}) bool {
 	for _, rulesArr := range rules {
 		var brokeOutOfLoop bool
 		for k, v := range rulesArr {
 			stringifiedVal := getStringifiedVal(v)
 			result := gjson.Get(body, k)
-			if result.Raw != stringifiedVal {
+			if stripQuotes(result.Raw) != stringifiedVal {
 				brokeOutOfLoop = true
 				break
 			}
