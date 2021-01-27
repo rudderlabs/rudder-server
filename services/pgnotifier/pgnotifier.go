@@ -84,6 +84,13 @@ func New(connectionInfo string) (notifier PgNotifierT, err error) {
 	if err != nil {
 		return
 	}
+	enableConnTuning := config.GetBool("PgNotifier.enableConnTuning", false)
+	if enableConnTuning {
+		dbHandle.SetConnMaxLifetime(config.GetDuration("PgNotifier.maxConnLifeTimeInS", 1800) * time.Second)
+		dbHandle.SetConnMaxIdleTime(config.GetDuration("PgNotifier.maxIdleConnTimeInS", 1) * time.Second)
+		dbHandle.SetMaxOpenConns(config.GetInt("PgNotifier.maxOpenConns", 2))
+		dbHandle.SetMaxIdleConns(config.GetInt("PgNotifier.maxIdleConns", 2))
+	}
 	notifier = PgNotifierT{
 		dbHandle: dbHandle,
 		URI:      connectionInfo,
