@@ -62,7 +62,6 @@ type uploadStateT struct {
 	inProgress string
 	failed     string
 	completed  string
-	task       string
 	nextState  *uploadStateT
 }
 
@@ -1009,16 +1008,6 @@ func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, statu
 	}
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseutils.WarehouseStagingFilesTable)
 	_, err = dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), pq.Array(ids))
-	if err != nil {
-		panic(err)
-	}
-	return
-}
-
-func (job *UploadJobT) setStagingFilesError(ids []int64, status string, statusError error) (err error) {
-	pkgLogger.Errorf("[WH]: Failed processing staging files: %v", statusError.Error())
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseutils.WarehouseStagingFilesTable)
-	_, err = job.dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), pq.Array(ids))
 	if err != nil {
 		panic(err)
 	}

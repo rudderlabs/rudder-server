@@ -50,7 +50,6 @@ const (
 	DiscardsTable           = "rudder_discards"
 	IdentityMergeRulesTable = "rudder_identity_merge_rules"
 	IdentityMappingsTable   = "rudder_identity_mappings"
-	AliasTable              = "aliases"
 	SyncFrequency           = "syncFrequency"
 	SyncStartAt             = "syncStartAt"
 	ExcludeWindow           = "excludeWindow"

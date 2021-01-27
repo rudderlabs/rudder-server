@@ -25,12 +25,11 @@ import (
 )
 
 var (
-	stagingTablePrefix string
-	queryDebugLogs     string
-	blockSize          string
-	poolSize           string
-	pkgLogger          logger.LoggerI
-	disableNullable    bool
+	queryDebugLogs  string
+	blockSize       string
+	poolSize        string
+	pkgLogger       logger.LoggerI
+	disableNullable bool
 )
 var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
@@ -113,12 +112,6 @@ type credentialsT struct {
 	tlsConfigName string
 }
 
-var primaryKeyMap = map[string]string{
-	warehouseutils.UsersTable:      "id",
-	warehouseutils.IdentifiesTable: "id",
-	warehouseutils.DiscardsTable:   "row_id",
-}
-
 // connect connects to warehouse with provided credentials
 func connect(cred credentialsT) (*sql.DB, error) {
 	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s",
@@ -150,7 +143,6 @@ func init() {
 }
 
 func loadConfig() {
-	stagingTablePrefix = "rudder_staging_"
 	queryDebugLogs = config.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
 	blockSize = config.GetString("Warehouse.clickhouse.blockSize", "1000")
 	poolSize = config.GetString("Warehouse.clickhouse.poolSize", "10")
@@ -473,13 +465,6 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 
 	pkgLogger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
-	return
-}
-
-// tableExists will check if tableName exists in the current namespace which is the database name
-func (ch *HandleT) tableExists(tableName string) (exists bool, err error) {
-	sqlStatement := fmt.Sprintf(` EXISTS TABLE "%s"."%s"`, ch.Namespace, tableName)
-	err = ch.Db.QueryRow(sqlStatement).Scan(&exists)
 	return
 }
 

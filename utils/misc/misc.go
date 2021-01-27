@@ -41,10 +41,6 @@ var AppStartTime int64
 const (
 	// RFC3339Milli with milli sec precision
 	RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
-	//This is integer representation of Postgres version.
-	//For ex, integer representation of version 9.6.3 is 90603
-	//Minimum postgres version needed for rudder server is 10
-	minPostgresVersion = 100000
 )
 
 // ErrorStoreT : DS to store the app errors
