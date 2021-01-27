@@ -67,6 +67,8 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 			}
 			enableRouter = false
 			enableProcessor = false
+
+			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
 			processor.App.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
 		}
 	}

@@ -68,6 +68,8 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 			enableRouter = false
 			enableProcessor = false
 			enableGateway = (migrationMode != db.EXPORT)
+
+			embedded.App.Features().Migrator.PrepareJobsdbsForImport(&gatewayDB, &routerDB, &batchRouterDB)
 			embedded.App.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
 		}
 	}
