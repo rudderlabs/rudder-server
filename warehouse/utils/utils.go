@@ -190,13 +190,10 @@ func GetObjectFolder(provider string, location string) (folder string) {
 	switch provider {
 	case "S3":
 		folder = GetS3LocationFolder(location)
-		break
 	case "GCS":
 		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gcs"})
-		break
 	case "AZURE_BLOB":
 		folder = GetAzureBlobLocationFolder(location)
-		break
 	}
 	return
 }
@@ -207,13 +204,10 @@ func GetObjectLocation(provider string, location string) (folder string) {
 	switch provider {
 	case "S3":
 		folder, _ = GetS3Location(location)
-		break
 	case "GCS":
 		folder = GetGCSLocation(location, GCSLocationOptionsT{TLDFormat: "gcs"})
-		break
 	case "AZURE_BLOB":
 		folder = GetAzureBlobLocation(location)
-		break
 	}
 	return
 }

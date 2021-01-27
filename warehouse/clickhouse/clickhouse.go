@@ -252,6 +252,10 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider: warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config),
 			Config:   ch.Warehouse.Destination.Config,
 		})
+		if err != nil {
+			pkgLogger.Errorf("CH: Error in setting up a downloader for destionationID : %s Error : %v", ch.Warehouse.Destination.ID, err)
+			return nil, err
+		}
 		err = downloader.Download(objectFile, object)
 		if err != nil {
 			pkgLogger.Errorf("CH: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)

@@ -154,7 +154,7 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 	ch := make(chan struct{}, 1)
 	rruntime.Go(func() {
 		select {
-		case _ = <-ch:
+		case <-ch:
 			// do nothing
 		case <-time.After(longRunningUploadStatThresholdInMin):
 			pkgLogger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
@@ -750,8 +750,8 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	pkgLogger.Infof(`[WH]: Starting load for identity tables in namespace %s of destination %s:%s`, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 	errorMap := make(map[string]error)
 	// var generated bool
-	if generated, err := job.areIdentityTablesLoadFilesGenerated(); !generated {
-		err = job.resolveIdentities(populateHistoricIdentities)
+	if generated, _ := job.areIdentityTablesLoadFilesGenerated(); !generated {
+		err := job.resolveIdentities(populateHistoricIdentities)
 		if err != nil {
 			pkgLogger.Errorf(`SF: ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
@@ -854,7 +854,7 @@ func (job *UploadJobT) getUploadTimings() (timings []map[string]string) {
 	if err != nil {
 		return
 	}
-	err = json.Unmarshal(rawJSON, &timings)
+	json.Unmarshal(rawJSON, &timings)
 	return
 }
 
@@ -1051,7 +1051,7 @@ func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileI
 	var minID, maxID sql.NullInt64
 	err = job.dbHandle.QueryRow(stmt, pq.Array(stagingFileIDs)).Scan(&minID, &maxID)
 	if err != nil {
-		panic(err)
+		return 0, 0, fmt.Errorf("Error while querying for load_file_id range for uploadJob:%d with stagingFileIDs:%v : %w", job.upload.ID, stagingFileIDs, err)
 	}
 	return minID.Int64, maxID.Int64, nil
 }
@@ -1173,6 +1173,9 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	}
 
 	startLoadFileID, endLoadFileID, err = job.getLoadFileIDRange()
+	if err != nil {
+		panic(err)
+	}
 
 	if startLoadFileID == 0 || endLoadFileID == 0 {
 		err = fmt.Errorf("No load files generated")
