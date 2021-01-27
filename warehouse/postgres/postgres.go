@@ -170,6 +170,10 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider: warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config),
 			Config:   pg.Warehouse.Destination.Config,
 		})
+		if err != nil {
+			pkgLogger.Errorf("PG: Error in setting up a downloader for destionationID : %s Error : %v", pg.Warehouse.Destination.ID, err)
+			return nil, err
+		}
 		err = downloader.Download(objectFile, object)
 		if err != nil {
 			pkgLogger.Errorf("PG: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
@@ -483,7 +487,7 @@ func (pg *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		return err
 	}
 	pkgLogger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
-	err = pg.createTable(fmt.Sprintf(`%s`, tableName), columnMap)
+	err = pg.createTable(tableName, columnMap)
 	return err
 }
 

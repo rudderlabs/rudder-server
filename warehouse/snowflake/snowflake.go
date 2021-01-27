@@ -232,9 +232,10 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	sort.Strings(strkeys)
 	var sortedColumnNames string
+	//TODO: use strings.Join() instead
 	for index, key := range strkeys {
 		if index > 0 {
-			sortedColumnNames += fmt.Sprintf(`, `)
+			sortedColumnNames += `, `
 		}
 		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
 	}
@@ -284,14 +285,15 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	var columnNames, stagingColumnNames, columnsWithValues string
+	//TODO: use strings.Join() instead
 	for idx, str := range strkeys {
-		columnNames += fmt.Sprintf(`%s`, str)
+		columnNames += str
 		stagingColumnNames += fmt.Sprintf(`staging."%s"`, str)
 		columnsWithValues += fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, str)
 		if idx != len(strkeys)-1 {
-			columnNames += fmt.Sprintf(`,`)
-			stagingColumnNames += fmt.Sprintf(`,`)
-			columnsWithValues += fmt.Sprintf(`,`)
+			columnNames += `,`
+			stagingColumnNames += `,`
+			columnsWithValues += `,`
 		}
 	}
 
@@ -482,8 +484,8 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		columnsWithValues += fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName)
 		stagingColumnValues += fmt.Sprintf(`staging.%s`, colName)
 		if idx != len(columnNames)-1 {
-			columnsWithValues += fmt.Sprintf(`,`)
-			stagingColumnValues += fmt.Sprintf(`,`)
+			columnsWithValues += `,`
+			stagingColumnValues += `,`
 		}
 	}
 
@@ -534,7 +536,7 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 		return nil, fmt.Errorf("SF: snowflake connect error : (%v)", err)
 	}
 
-	alterStatement := fmt.Sprintf(`ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`)
+	alterStatement := `ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`
 	pkgLogger.Infof("SF: Altering session with abort_detached_query for snowflake: %v", alterStatement)
 	_, err = db.Exec(alterStatement)
 	if err != nil {
@@ -562,8 +564,7 @@ func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		return err
 	}
 
-	err = sf.createTable(fmt.Sprintf(`%s`, tableName), columnMap)
-	return err
+	return sf.createTable(tableName, columnMap)
 }
 
 func (sf *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {

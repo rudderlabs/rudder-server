@@ -208,7 +208,7 @@ func GetRudderID(event types.SingularEventT) (string, bool) {
 		}
 	}
 	userIDStr, ok := userID.(string)
-	return userIDStr, true
+	return userIDStr, ok
 }
 
 // ZipFiles compresses files[] into zip at filename
@@ -593,11 +593,12 @@ func MakeJSONArray(bytesArray [][]byte) []byte {
 
 func SingleQuoteLiteralJoin(slice []string) string {
 	var str string
+	//TODO: use strings.Join() instead
 	for index, key := range slice {
 		if index > 0 {
-			str += fmt.Sprintf(`, `)
+			str += `, `
 		}
-		str += fmt.Sprintf(`%s`, QuoteLiteral(key))
+		str += QuoteLiteral(key)
 	}
 	return str
 }
@@ -719,7 +720,7 @@ func GetMacAddress() string {
 
 func KeepProcessAlive() {
 	var ch chan int
-	_ = <-ch
+	<-ch
 }
 
 // GetOutboundIP returns preferred outbound ip of this machine
