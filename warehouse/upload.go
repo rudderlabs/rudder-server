@@ -53,6 +53,7 @@ const (
 	TableUploadUpdatedSchema        = "updated_schema"
 	TableUploadExporting            = "exporting_data"
 	TableUploadExportingFailed      = "exporting_data_failed"
+	UserTableUploadExportingFailed  = "exporting_user_tables_failed"
 	TableUploadExported             = "exported_data"
 )
 
@@ -519,7 +520,7 @@ func (job *UploadJobT) getTablesToSkip() (map[string]int64, map[string]bool) {
 	currentlySucceededTableMap := make(map[string]bool)
 	for uploadID, tableStatusMap := range tableUploadStatus {
 		for tableName, status := range tableStatusMap {
-			if uploadID < job.upload.ID && status == TableUploadExportingFailed { //Previous upload and table upload failed
+			if uploadID < job.upload.ID && (status == TableUploadExportingFailed || status == UserTableUploadExportingFailed) { //Previous upload and table upload failed
 				previouslyFailedTableMap[tableName] = uploadID
 			}
 			if uploadID == job.upload.ID && status == TableUploadExported { //Current upload and table upload succeeded
