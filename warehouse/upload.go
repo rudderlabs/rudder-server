@@ -41,6 +41,8 @@ const (
 	GeneratedStagingFileState               = "generated_staging_file"
 	PopulatingHistoricIdentitiesState       = "populating_historic_identities"
 	PopulatingHistoricIdentitiesStateFailed = "populating_historic_identities_failed"
+	FetchingRemoteSchemaFailed              = "fetching_remote_schema_failed"
+	InternalProcessingFailed                = "internal_processing_failed"
 )
 
 // Table Upload status
@@ -60,7 +62,6 @@ type uploadStateT struct {
 	inProgress string
 	failed     string
 	completed  string
-	task       string
 	nextState  *uploadStateT
 }
 
@@ -153,7 +154,7 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 	ch := make(chan struct{}, 1)
 	rruntime.Go(func() {
 		select {
-		case _ = <-ch:
+		case <-ch:
 			// do nothing
 		case <-time.After(longRunningUploadStatThresholdInMin):
 			pkgLogger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
@@ -241,13 +242,13 @@ func (job *UploadJobT) run() (err error) {
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
-		job.setUploadError(err, job.upload.Status)
+		job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
 
 	hasSchemaChanged, err := job.syncRemoteSchema()
 	if err != nil {
-		job.setUploadError(err, job.upload.Status)
+		job.setUploadError(err, FetchingRemoteSchemaFailed)
 		return err
 	}
 	if hasSchemaChanged {
@@ -259,7 +260,7 @@ func (job *UploadJobT) run() (err error) {
 	whManager := job.whManager
 	err = whManager.Setup(job.warehouse, job)
 	if err != nil {
-		job.setUploadError(err, job.upload.Status)
+		job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
 	defer whManager.Cleanup()
@@ -749,8 +750,8 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	pkgLogger.Infof(`[WH]: Starting load for identity tables in namespace %s of destination %s:%s`, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 	errorMap := make(map[string]error)
 	// var generated bool
-	if generated, err := job.areIdentityTablesLoadFilesGenerated(); !generated {
-		err = job.resolveIdentities(populateHistoricIdentities)
+	if generated, _ := job.areIdentityTablesLoadFilesGenerated(); !generated {
+		err := job.resolveIdentities(populateHistoricIdentities)
 		if err != nil {
 			pkgLogger.Errorf(`SF: ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
@@ -853,7 +854,7 @@ func (job *UploadJobT) getUploadTimings() (timings []map[string]string) {
 	if err != nil {
 		return
 	}
-	err = json.Unmarshal(rawJSON, &timings)
+	json.Unmarshal(rawJSON, &timings)
 	return
 }
 
@@ -1013,16 +1014,6 @@ func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, statu
 	return
 }
 
-func (job *UploadJobT) setStagingFilesError(ids []int64, status string, statusError error) (err error) {
-	pkgLogger.Errorf("[WH]: Failed processing staging files: %v", statusError.Error())
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseutils.WarehouseStagingFilesTable)
-	_, err = job.dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), pq.Array(ids))
-	if err != nil {
-		panic(err)
-	}
-	return
-}
-
 func (job *UploadJobT) hasLoadFiles(tableName string) (bool, error) {
 	sourceID := job.warehouse.Source.ID
 	destID := job.warehouse.Destination.ID
@@ -1060,7 +1051,7 @@ func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileI
 	var minID, maxID sql.NullInt64
 	err = job.dbHandle.QueryRow(stmt, pq.Array(stagingFileIDs)).Scan(&minID, &maxID)
 	if err != nil {
-		panic(err)
+		return 0, 0, fmt.Errorf("Error while querying for load_file_id range for uploadJob:%d with stagingFileIDs:%v : %w", job.upload.ID, stagingFileIDs, err)
 	}
 	return minID.Int64, maxID.Int64, nil
 }
@@ -1139,7 +1130,10 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			var loadFiles []loadFileUploadOutputT
 			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
-				// TODO: make it aborted
+				// Error handling during generating_load_files step:
+				// 1. any error returned by pgnotifier is set on corresponding staging_gile
+				// 2. any error effecting a batch/all of the staging files like saving load file records to wh db
+				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
 				if resp.Status == "aborted" {
 					pkgLogger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
 					job.setStagingFileErr(resp.JobID, fmt.Errorf(resp.Error))
@@ -1157,7 +1151,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				loadFiles = append(loadFiles, output...)
 				successfulStagingFileIDs = append(successfulStagingFileIDs, resp.JobID)
 			}
-			err = job.bulkInstertLoadFileRecords(loadFiles)
+			err = job.bulkInsertLoadFileRecords(loadFiles)
 			if err != nil {
 				saveLoadFileErrs = append(saveLoadFileErrs, err)
 			}
@@ -1179,6 +1173,9 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	}
 
 	startLoadFileID, endLoadFileID, err = job.getLoadFileIDRange()
+	if err != nil {
+		panic(err)
+	}
 
 	if startLoadFileID == 0 || endLoadFileID == 0 {
 		err = fmt.Errorf("No load files generated")
@@ -1188,6 +1185,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 }
 
 func (job *UploadJobT) setStagingFileSuccess(stagingFileIDs []int64) {
+	// using ANY instead of IN as WHERE clause filtering on primary key index uses index scan in both cases
+	// use IN for cases where filtering on composite indexes
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseutils.WarehouseStagingFilesTable)
 	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileSucceededState, timeutil.Now(), pq.Array(stagingFileIDs))
 	if err != nil {
@@ -1203,7 +1202,7 @@ func (job *UploadJobT) setStagingFileErr(stagingFileID int64, statusErr error) {
 	}
 }
 
-func (job *UploadJobT) bulkInstertLoadFileRecords(loadFiles []loadFileUploadOutputT) (err error) {
+func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutputT) (err error) {
 	//Using transactions for bulk copying
 	txn, err := dbHandle.Begin()
 	if err != nil {

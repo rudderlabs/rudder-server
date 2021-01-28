@@ -293,7 +293,6 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 type BQCredentialsT struct {
 	projectID   string
 	credentials string
-	location    string
 }
 
 func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {

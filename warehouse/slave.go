@@ -225,66 +225,6 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	return uploadLocation, err
 }
 
-func (job *PayloadT) markLoadFileUploadSuccess(tableName string, uploadLocation string, numEvents int) int64 {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, warehouseutils.WarehouseLoadFilesTable)
-	stmt, err := dbHandle.Prepare(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-	defer stmt.Close()
-
-	var fileID int64
-	err = stmt.QueryRow(job.StagingFileID, uploadLocation, job.SourceID, job.DestinationID, job.DestinationType, tableName, numEvents, timeutil.Now()).Scan(&fileID)
-	if err != nil {
-		panic(err)
-	}
-	return fileID
-}
-
-func (job *PayloadT) bulkCreateLoadFileRecords(loadFileUploadOutputs []loadFileUploadOutputT) (loadFileIDs []int64) {
-	columnsInInsert := []string{"staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at"}
-	currentTime := timeutil.Now()
-	valueReferences := make([]string, 0, len(loadFileUploadOutputs))
-	valueArgs := make([]interface{}, 0, len(loadFileUploadOutputs)*len(columnsInInsert))
-	for idx, loadFileUploadOutput := range loadFileUploadOutputs {
-		var valueRefsArr []string
-		for index := idx*len(columnsInInsert) + 1; index <= (idx+1)*len(columnsInInsert); index++ {
-			valueRefsArr = append(valueRefsArr, fmt.Sprintf(`$%d`, index))
-		}
-		valueReferences = append(valueReferences, fmt.Sprintf("(%s)", strings.Join(valueRefsArr, ",")))
-		valueArgs = append(valueArgs, job.StagingFileID)
-		valueArgs = append(valueArgs, loadFileUploadOutput.Location)
-		valueArgs = append(valueArgs, job.SourceID)
-		valueArgs = append(valueArgs, job.DestinationID)
-		valueArgs = append(valueArgs, job.DestinationType)
-		valueArgs = append(valueArgs, loadFileUploadOutput.TableName)
-		valueArgs = append(valueArgs, loadFileUploadOutput.TotalRows)
-		valueArgs = append(valueArgs, currentTime)
-	}
-
-	// sample cosntructed query
-	// INSERT INTO wh_load_files (staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8),($9,$10,$11,$12,$13,$14,$15,$16) RETURNING id
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at) VALUES %s RETURNING id`, warehouseutils.WarehouseLoadFilesTable, strings.Join(valueReferences, ","))
-
-	rows, err := dbHandle.Query(sqlStatement, valueArgs...)
-	if err != nil {
-		panic(err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var id int64
-		err := rows.Scan(&id)
-		if err != nil {
-			panic(err)
-		}
-		loadFileIDs = append(loadFileIDs, id)
-	}
-
-	return loadFileIDs
-}
-
 // Sort columns per table to maintain same order in load file (needed in case of csv load file)
 func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
 	sortedTableColumnMap := make(map[string][]string)
