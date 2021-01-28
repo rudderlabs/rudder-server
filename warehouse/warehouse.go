@@ -51,8 +51,8 @@ var (
 	inProgressMap                       map[string]bool
 	inRecoveryMap                       map[string]bool
 	inProgressMapLock                   sync.RWMutex
-	lastEventTimeMap                    map[string]int64
-	lastEventTimeMapLock                sync.RWMutex
+	lastProcessedMarkerMap              map[string]int64
+	lastProcessedMarkerMapLock          sync.RWMutex
 	warehouseMode                       string
 	warehouseSyncPreFetchCount          int
 	warehouseSyncFreqIgnore             bool
@@ -123,7 +123,7 @@ func loadConfig() {
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
-	lastEventTimeMap = map[string]int64{}
+	lastProcessedMarkerMap = map[string]int64{}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	host = config.GetEnv("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	user = config.GetEnv("WAREHOUSE_JOBS_DB_USER", "ubuntu")
@@ -467,24 +467,52 @@ func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 	return inProgressMap[warehouse.Identifier]
 }
 
-func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency string) bool {
+func getUploadFreqInS(syncFrequency string) int64 {
 	freqInS := uploadFreqInS
 	if syncFrequency != "" {
 		freqInMin, _ := strconv.ParseInt(syncFrequency, 10, 64)
 		freqInS = freqInMin * 60
 	}
-	lastEventTimeMapLock.Lock()
-	defer lastEventTimeMapLock.Unlock()
-	if lastExecTime, ok := lastEventTimeMap[warehouse.Identifier]; ok && timeutil.Now().Unix()-lastExecTime < freqInS {
+	return freqInS
+}
+
+func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency string) bool {
+	freqInS := getUploadFreqInS(syncFrequency)
+	lastProcessedMarkerMapLock.Lock()
+	defer lastProcessedMarkerMapLock.Unlock()
+	if lastExecTime, ok := lastProcessedMarkerMap[warehouse.Identifier]; ok && timeutil.Now().Unix()-lastExecTime < freqInS {
 		return true
 	}
 	return false
 }
 
-func setLastEventTime(warehouse warehouseutils.WarehouseT, lastEventAt time.Time) {
-	lastEventTimeMapLock.Lock()
-	defer lastEventTimeMapLock.Unlock()
-	lastEventTimeMap[warehouse.Identifier] = lastEventAt.Unix()
+func getLastStagingFileCreatedAt(warehouse warehouseutils.WarehouseT) time.Time {
+	stmt := fmt.Sprintf(`SELECT created_at from %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseStagingFilesTable, warehouse.Source.ID, warehouse.Destination.ID)
+	var createdAt sql.NullTime
+	err := dbHandle.QueryRow(stmt).Scan(&createdAt)
+	if err != nil {
+		pkgLogger.Errorf(`Error in getLastStagingFileCreatedAt: %v`, err)
+		return time.Now()
+	}
+	return createdAt.Time
+}
+
+func setLastProcessedMarker(warehouse warehouseutils.WarehouseT, lastEventAt time.Time) {
+	unixTime := lastEventAt.Unix()
+
+	freqInS := getUploadFreqInS(warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse))
+
+	lastStagingFileCreatedAt := getLastStagingFileCreatedAt(warehouse)
+	// set lastEvent to currentTime in cases where
+	// 1. if there is lag in creating staging files - last staging file is more than freqInS old
+	// 2. and if there is less than freqInS worth of data in pending staging files
+	if time.Now().Add(time.Duration(-freqInS)*time.Second).Sub(lastStagingFileCreatedAt) > 0 && lastStagingFileCreatedAt.Sub(lastEventAt) < time.Duration(freqInS)*time.Second {
+		unixTime = time.Now().Unix()
+	}
+
+	lastProcessedMarkerMapLock.Lock()
+	defer lastProcessedMarkerMapLock.Unlock()
+	lastProcessedMarkerMap[warehouse.Identifier] = unixTime
 }
 
 //TODO: Clean this up
@@ -615,7 +643,7 @@ func (wh *HandleT) processJobs(warehouse warehouseutils.WarehouseT) (err error) 
 
 	wh.uploadJobsQ <- uploadJob
 	enqueuedJobs = true
-	setLastEventTime(warehouse, uploadJob.upload.LastEventAt)
+	setLastProcessedMarker(warehouse, uploadJob.upload.LastEventAt)
 	return nil
 }
 
