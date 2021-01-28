@@ -322,6 +322,14 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	}
 	return schema
 }
+func JSONTimingsToMap(rawMsg json.RawMessage) []map[string]string {
+	var timings []map[string]string
+	err := json.Unmarshal(rawMsg, &timings)
+	if err != nil {
+		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(rawMsg), err))
+	}
+	return timings
+}
 
 func DestStat(statType string, statName string, id string) stats.RudderStats {
 	return stats.NewTaggedStat(fmt.Sprintf("warehouse.%s", statName), statType, stats.Tags{"destID": id})

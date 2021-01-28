@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -56,4 +57,29 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 	pkgLogger.Infof(`[WH Admin]: Querying warehouse: %s:%s`, warehouse.Type, warehouse.Destination.ID)
 	*reply, err = client.Query(s.SQLStatement)
 	return err
+}
+
+func (wh *WarehouseAdmin) QueryWhUploads(uploadReq WHUploadReqT, reply *interface{}) error {
+	var options []WHUploadOption
+	if uploadReq.SourceID != "" {
+		options = append(options, SetSourceID(uploadReq.SourceID))
+	}
+	if uploadReq.DestinationID != "" {
+		options = append(options, SetDestinationID(uploadReq.DestinationID))
+	}
+	if uploadReq.DestinationType != "" {
+		options = append(options, SetDestinationType(uploadReq.DestinationType))
+	}
+	if len(options) == 0 {
+		options = append(options, SetDefault())
+	}
+	res, err := GetWhUploads(options...)
+	fmt.Println(res)
+	if err != nil {
+		return err
+	}
+	var re interface{} = res
+	reply = &re
+
+	return nil
 }
