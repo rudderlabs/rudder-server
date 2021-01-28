@@ -23,6 +23,7 @@ var taggedClientsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
 var statsdServerURL string
 var instanceID string
+var kubeNamespace string
 var conn statsd.Option
 var taggedClientsMapLock sync.RWMutex
 var enabled bool
@@ -41,6 +42,7 @@ func init() {
 	statsEnabled = config.GetBool("enableStats", false)
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
 	instanceID = config.GetEnv("INSTANCE_ID", "")
+	kubeNamespace = config.GetEnv("KUBE_NAMESPACE", "default")
 	enabled = config.GetBool("RuntimeStats.enabled", true)
 	statsCollectionInterval = config.GetInt64("RuntimeStats.statsCollectionInterval", 10)
 	enableCPUStats = config.GetBool("RuntimeStats.enableCPUStats", true)
@@ -92,7 +94,7 @@ type RudderStatsT struct {
 func Setup() {
 	var err error
 	conn = statsd.Address(statsdServerURL)
-	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID))
+	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "namespace", kubeNamespace))
 	if err != nil {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
@@ -134,6 +136,7 @@ func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags) 
 func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
 	tagStr := StatType
 	tags["instanceName"] = instanceID
+	tags["namespace"] = kubeNamespace
 	for tagName, tagVal := range tags {
 		tagName = strings.ReplaceAll(tagName, ":", "-")
 		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
