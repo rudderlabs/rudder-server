@@ -93,7 +93,7 @@ func Setup() {
 	var err error
 	conn = statsd.Address(statsdServerURL)
 	//TODO: Add tags by calling a function...
-	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "namespace", getKubeNamespace()))
+	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), defaultTags())
 	if err != nil {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
@@ -134,8 +134,6 @@ func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags) 
 
 func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
 	tagStr := StatType
-	tags["instanceName"] = instanceID
-	addNamespaceTag(tags)
 	for tagName, tagVal := range tags {
 		tagName = strings.ReplaceAll(tagName, ":", "-")
 		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
@@ -154,7 +152,7 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 			tagVals = append(tagVals, tagName, tagVal)
 		}
 		var err error
-		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
 		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
 		if err != nil {
@@ -267,17 +265,15 @@ func StopRuntimeStats() {
 	close(rc.Done)
 }
 
-// Adds namespace tag in case KUBE_NAMESPACE env var is defined
-// namespace tag is used further to store request at corresponding influxdb
-// and separating requests at central grafana
-func addNamespaceTag(tags Tags) {
-	kubeNamespace := getKubeNamespace()
-	if len(kubeNamespace) > 0 {
-		tags["namespace"] = kubeNamespace
-	}
-}
-
 // returns value stored in KUBE_NAMESPACE env var
 func getKubeNamespace() string {
 	return config.GetEnv("KUBE_NAMESPACE", "")
+}
+
+// returns default Tags to the telegraf request
+func defaultTags() statsd.Option {
+	if len(getKubeNamespace()) > 0 {
+		return statsd.Tags("instanceName", instanceID, "namespace", getKubeNamespace())
+	}
+	return statsd.Tags("instanceName", instanceID)
 }
