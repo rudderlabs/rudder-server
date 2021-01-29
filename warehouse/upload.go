@@ -188,19 +188,6 @@ func (job *UploadJobT) initTableUploads() error {
 	return createTableUploads(job.upload.ID, tables)
 }
 
-func (job *UploadJobT) shouldTableBeLoaded(tableName string) (bool, error) {
-	tableUpload := NewTableUpload(job.upload.ID, tableName)
-	loaded, err := tableUpload.hasBeenLoaded()
-	if err != nil {
-		return false, err
-	}
-	hasLoadfiles, err := job.hasLoadFiles(tableName)
-	if err != nil {
-		return false, err
-	}
-	return !loaded && hasLoadfiles, nil
-}
-
 func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 	schemaHandle := SchemaHandleT{
 		warehouse:    job.warehouse,
@@ -690,13 +677,12 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 }
 
 func (job *UploadJobT) loadUserTables() ([]error, error) {
-	var loadTables bool
+	var hasLoadFiles bool
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 
 	var err error
 	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for _, tName := range userTables {
-		loadTables, err = job.shouldTableBeLoaded(tName)
 		if _, ok := currentJobSucceededTables[tName]; ok {
 			continue
 		}
@@ -704,10 +690,11 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 			err = fmt.Errorf("Skipping %s tables because it previously failed to load in an earlier job: %d", tName, prevJobID)
 			break
 		}
+		hasLoadFiles, err = job.hasLoadFiles(tName)
 		if err != nil {
 			break
 		}
-		if loadTables {
+		if hasLoadFiles {
 			// There is at least one table to load
 			break
 		}
@@ -717,7 +704,7 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 		return []error{err}, nil
 	}
 
-	if !loadTables {
+	if !hasLoadFiles {
 		return []error{}, nil
 	}
 
@@ -765,46 +752,50 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 
 	var alteredSchema bool
+	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for _, tableName := range identityTables {
+		if prevJobID, ok := previouslyFailedTables[tableName]; ok {
+			err := fmt.Errorf("Skipping %s tables because it previously failed to load in an earlier job: %d", tableName, prevJobID)
+			return []error{err}, nil
+		}
+	}
+
+	for _, tableName := range identityTables {
+		if _, loaded := currentJobSucceededTables[tableName]; loaded {
+			continue
+		}
+
+		errorMap[tableName] = nil
 		tableUpload := NewTableUpload(job.upload.ID, tableName)
-		loaded, err := tableUpload.hasBeenLoaded()
+
+		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
+		if tableSchemaDiff.Exists {
+			err := job.updateTableSchema(tableName, tableSchemaDiff)
+			if err != nil {
+				tableUpload.setError(TableUploadUpdatingSchemaFailed, err)
+				errorMap := map[string]error{tableName: err}
+				return job.processLoadTableResponse(errorMap)
+			}
+			job.setUpdatedTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
+			tableUpload.setStatus(TableUploadUpdatedSchema)
+			alteredSchema = true
+		}
+		err := tableUpload.setStatus(TableUploadExecuting)
 		if err != nil {
 			errorMap[tableName] = err
 			break
 		}
 
-		if !loaded {
-			errorMap[tableName] = nil
-			tableUpload := NewTableUpload(job.upload.ID, tableName)
+		switch tableName {
+		case job.identityMergeRulesTableName():
+			err = job.whManager.LoadIdentityMergeRulesTable()
+		case job.identityMappingsTableName():
+			err = job.whManager.LoadIdentityMappingsTable()
+		}
 
-			tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
-			if tableSchemaDiff.Exists {
-				job.updateTableSchema(tableName, tableSchemaDiff)
-				if err != nil {
-					tableUpload.setError(TableUploadUpdatingSchemaFailed, err)
-					errorMap := map[string]error{tableName: err}
-					return job.processLoadTableResponse(errorMap)
-				}
-				job.setUpdatedTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
-				tableUpload.setStatus(TableUploadUpdatedSchema)
-				alteredSchema = true
-			}
-
-			err := tableUpload.setStatus(TableUploadExecuting)
-			if err != nil {
-				errorMap[tableName] = err
-				break
-			}
-
-			if tableName == job.identityMergeRulesTableName() {
-				err = job.whManager.LoadIdentityMergeRulesTable()
-			} else if tableName == job.identityMappingsTableName() {
-				err = job.whManager.LoadIdentityMappingsTable()
-			}
-			if err != nil {
-				errorMap[tableName] = err
-				break
-			}
+		if err != nil {
+			errorMap[tableName] = err
+			break
 		}
 	}
 
