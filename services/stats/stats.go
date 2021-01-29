@@ -23,7 +23,6 @@ var taggedClientsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
 var statsdServerURL string
 var instanceID string
-var kubeNamespace string
 var conn statsd.Option
 var taggedClientsMapLock sync.RWMutex
 var enabled bool
@@ -42,7 +41,6 @@ func init() {
 	statsEnabled = config.GetBool("enableStats", false)
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
 	instanceID = config.GetEnv("INSTANCE_ID", "")
-	kubeNamespace = config.GetEnv("KUBE_NAMESPACE", "default")
 	enabled = config.GetBool("RuntimeStats.enabled", true)
 	statsCollectionInterval = config.GetInt64("RuntimeStats.statsCollectionInterval", 10)
 	enableCPUStats = config.GetBool("RuntimeStats.enableCPUStats", true)
@@ -94,7 +92,8 @@ type RudderStatsT struct {
 func Setup() {
 	var err error
 	conn = statsd.Address(statsdServerURL)
-	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "namespace", kubeNamespace))
+	//TODO: Add tags by calling a function...
+	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "namespace", getKubeNamespace()))
 	if err != nil {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
@@ -136,7 +135,7 @@ func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags) 
 func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
 	tagStr := StatType
 	tags["instanceName"] = instanceID
-	tags["namespace"] = kubeNamespace
+	addNamespaceTag(tags)
 	for tagName, tagVal := range tags {
 		tagName = strings.ReplaceAll(tagName, ":", "-")
 		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
@@ -266,4 +265,19 @@ func collectRuntimeStats(client *statsd.Client) {
 // StopRuntimeStats stops collection of runtime stats.
 func StopRuntimeStats() {
 	close(rc.Done)
+}
+
+// Adds namespace tag in case KUBE_NAMESPACE env var is defined
+// namespace tag is used further to store request at corresponding influxdb
+// and separating requests at central grafana
+func addNamespaceTag(tags Tags) {
+	kubeNamespace := getKubeNamespace()
+	if len(kubeNamespace) > 0 {
+		tags["namespace"] = kubeNamespace
+	}
+}
+
+// returns value stored in KUBE_NAMESPACE env var
+func getKubeNamespace() string {
+	return config.GetEnv("KUBE_NAMESPACE", "")
 }
