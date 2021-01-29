@@ -34,6 +34,7 @@ type JobMetadataT struct {
 	ReceivedAt       string `json:"receivedAt"`
 	CreatedAt        string `json:"createdAt"`
 	FirstAttemptedAt string `json:"firstAttemptedAt"`
+	TransformAt      string `json:"transformAt"`
 }
 
 //TransformMessageT is used to pass message to the transformer workers

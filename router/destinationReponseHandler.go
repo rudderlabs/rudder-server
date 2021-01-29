@@ -15,12 +15,30 @@ type ResponseHandlerI interface {
 
 //JSONResponseHandler handler for json response
 type JSONResponseHandler struct {
-	rules map[string]interface{}
+	abortRules     []map[string]interface{}
+	retryableRules []map[string]interface{}
 }
 
 //TXTResponseHandler handler for text response
 type TXTResponseHandler struct {
-	rules map[string]interface{}
+	abortRules     []map[string]interface{}
+	retryableRules []map[string]interface{}
+}
+
+func getRulesArrForKey(key string, rules map[string]interface{}) []map[string]interface{} {
+	rulesArr := []map[string]interface{}{}
+
+	rulesForKey, ok := rules[key].([]interface{})
+	if !ok {
+		return rulesArr
+	}
+	for _, value := range rulesForKey {
+		if rule, ok := value.(map[string]interface{}); ok {
+			rulesArr = append(rulesArr, rule)
+		}
+	}
+
+	return rulesArr
 }
 
 //New returns a destination response handler. Can be nil(Check before using this)
@@ -29,19 +47,23 @@ func New(responseRules map[string]interface{}) ResponseHandlerI {
 		return nil
 	}
 
-	if responseRules["responseType"].(string) == "JSON" {
-		if _, ok := responseRules["rules"]; !ok {
-			return nil
-		}
-		var rules map[string]interface{}
-		var ok bool
-		if rules, ok = responseRules["rules"].(map[string]interface{}); !ok {
-			return nil
-		}
-		return &JSONResponseHandler{rules: rules}
-	} else if responseRules["responseType"].(string) == "TXT" {
+	if _, ok := responseRules["rules"]; !ok {
+		return nil
+	}
 
-		return &TXTResponseHandler{rules: responseRules}
+	var rules map[string]interface{}
+	var ok bool
+	if rules, ok = responseRules["rules"].(map[string]interface{}); !ok {
+		return nil
+	}
+
+	abortRules := getRulesArrForKey("abortable", rules)
+	retryableRules := getRulesArrForKey("retryable", rules)
+
+	if responseRules["responseType"].(string) == "JSON" {
+		return &JSONResponseHandler{abortRules: abortRules, retryableRules: retryableRules}
+	} else if responseRules["responseType"].(string) == "TXT" {
+		return &TXTResponseHandler{abortRules: abortRules, retryableRules: retryableRules}
 	}
 
 	return nil
@@ -99,40 +121,16 @@ func (handler *JSONResponseHandler) IsSuccessStatus(respCode int, respBody strin
 		}
 	}()
 
-	if handler == nil || handler.rules == nil {
-		return respCode
-	}
-
 	//If it is not a 2xx, we don't need to look at the respBody, returning respCode
 	if !isSuccessStatus(respCode) {
 		return respCode
 	}
 
-	abortRulesArr, ok := handler.rules["abortable"].([]interface{})
-	if !ok {
-		return respCode
-	}
-	abortRules := []map[string]interface{}{}
-	for _, value := range abortRulesArr {
-		if rule, ok := value.(map[string]interface{}); ok {
-			abortRules = append(abortRules, rule)
-		}
-	}
-	if evalBody(respBody, abortRules) {
+	if evalBody(respBody, handler.abortRules) {
 		return 400 //Rudder abort code
 	}
 
-	retryableRulesArr, ok := handler.rules["retryable"].([]interface{})
-	if !ok {
-		return respCode
-	}
-	retryableRules := []map[string]interface{}{}
-	for _, value := range retryableRulesArr {
-		if rule, ok := value.(map[string]interface{}); ok {
-			retryableRules = append(retryableRules, rule)
-		}
-	}
-	if evalBody(respBody, retryableRules) {
+	if evalBody(respBody, handler.retryableRules) {
 		return 500 //Rudder retry code
 	}
 
@@ -149,10 +147,6 @@ func (handler *TXTResponseHandler) IsSuccessStatus(respCode int, respBody string
 			returnCode = respCode
 		}
 	}()
-
-	if handler == nil || handler.rules == nil {
-		return respCode
-	}
 
 	returnCode = respCode
 	return returnCode

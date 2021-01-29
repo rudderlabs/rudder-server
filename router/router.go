@@ -79,6 +79,7 @@ type HandleT struct {
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
 	destinationResponseHandler             ResponseHandlerI
+	saveDestinationResponse                bool
 }
 
 type jobResponseT struct {
@@ -263,7 +264,8 @@ func (worker *workerT) workerProcess() {
 				AttemptNum:       job.LastJobStatus.AttemptNum,
 				ReceivedAt:       parameters.ReceivedAt,
 				CreatedAt:        job.CreatedAt.Format(misc.RFC3339Milli),
-				FirstAttemptedAt: firstAttemptedAt}
+				FirstAttemptedAt: firstAttemptedAt,
+				TransformAt:      parameters.TransformAt}
 
 			worker.rt.configSubscriberLock.RLock()
 			destination := worker.rt.destinationsMap[parameters.DestinationID]
@@ -377,6 +379,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	var destinationResponseHandler ResponseHandlerI
 	worker.rt.configSubscriberLock.RLock()
 	destinationResponseHandler = worker.rt.destinationResponseHandler
+	saveDestinationResponse := worker.rt.saveDestinationResponse
 	worker.rt.configSubscriberLock.RUnlock()
 
 	/*
@@ -449,6 +452,10 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
 				}
 
+				if !saveDestinationResponse {
+					respBody = "Save destination response is disabled through config"
+				}
+
 				prevRespStatusCode = respStatusCode
 				attemptedToSendTheJob = true
 
@@ -498,10 +505,12 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					worker.rt.retryAttemptsStat.Increment()
 				}
 			}
-			//respBody for GA is GIF. Will pose problem when writing to DB.
-			if !isASCII(respBody) {
-				respBody = "Non-ASCII error response"
+
+			//Not saving payload to DB if transformAt is not "router"
+			if destinationJobMetadata.TransformAt != "router" {
+				payload = []byte(`Same as payload in router table. Use job_id for look up.`)
 			}
+
 			status := jobsdb.JobStatusT{
 				JobID:         destinationJobMetadata.JobID,
 				ExecTime:      time.Now(),
@@ -551,6 +560,8 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	worker.rt.trackRequestMetrics(reqMetric)
 }
 
+//This was used to decide whether destination response should be saved to status or not.
+//Now we are deciding based on destination definition config.
 func isASCII(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] > unicode.MaxASCII {
@@ -1222,6 +1233,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destinationDefinition backendco
 	rt.customDestinationManager = customDestinationManager.New(destName)
 
 	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
+	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
+		rt.saveDestinationResponse = value
+	}
 
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
@@ -1295,6 +1309,9 @@ func (rt *HandleT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == rt.destName {
 						rt.destinationsMap[destination.ID] = destination
 						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
+						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
+							rt.saveDestinationResponse = value
+						}
 					}
 				}
 			}
