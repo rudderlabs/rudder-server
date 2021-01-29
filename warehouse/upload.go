@@ -225,6 +225,49 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 	return hasSchemaChanged, nil
 }
 
+func (job *UploadJobT) getTotalRowsInStagingFiles() (total int64) {
+	sqlStatement := fmt.Sprintf(`SELECT sum(total_events)
+                                FROM %[1]s
+								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'`,
+		warehouseutils.WarehouseStagingFilesTable, job.upload.StartStagingFileID, job.upload.EndStagingFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
+	if err != nil {
+		pkgLogger.Errorf(`Error in getTotalRowsInStagingFiles: %v`, err)
+	}
+	return
+}
+
+func (job *UploadJobT) getTotalRowsInLoadFiles() (total int64) {
+	sqlStatement := fmt.Sprintf(`
+		WITH row_numbered_load_files as (
+			SELECT
+				total_events,
+				table_name,
+				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
+				FROM %[1]s
+				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
+		)
+		SELECT SUM(total_events)
+			FROM row_numbered_load_files
+			WHERE
+				row_number=1 AND table_name != '%[6]s'`,
+		warehouseutils.WarehouseLoadFilesTable, job.upload.StartLoadFileID, job.upload.EndLoadFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID, warehouseutils.DiscardsTable)
+	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
+	if err != nil {
+		pkgLogger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
+	}
+	return
+}
+
+func (job *UploadJobT) matchRowsInStagingAndLoadFiles() {
+	rowsInStagingFiles := job.getTotalRowsInStagingFiles()
+	rowsInLoadFiles := job.getTotalRowsInLoadFiles()
+	if (rowsInStagingFiles != rowsInLoadFiles) || rowsInStagingFiles == 0 || rowsInLoadFiles == 0 {
+		pkgLogger.Errorf(`Error: Rows count mismatch between staging and load files for upload:%d. rowsInStagingFiles: %d, rowsInLoadFiles: %d`, job.upload.ID, rowsInStagingFiles, rowsInLoadFiles)
+		job.counterStat("warehouse_staging_load_file_events_count_mismatched").Increment()
+	}
+}
+
 func (job *UploadJobT) run() (err error) {
 	timerStat := job.timerStat("upload_time")
 	timerStat.Start()
@@ -315,6 +358,8 @@ func (job *UploadJobT) run() (err error) {
 			if err != nil {
 				break
 			}
+
+			job.matchRowsInStagingAndLoadFiles()
 			job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
 
 			newStatus = nextUploadState.completed
@@ -682,10 +727,33 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 
 	pkgLogger.Infof(`[WH]: Starting load for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 	tableUpload.setStatus(TableUploadExecuting)
+
+	generateTableLoadCountVerificationsMetrics := config.GetBool("Warehouse.generateTableLoadCountMetrics", true)
+	var totalBeforeLoad, totalAfterLoad int64
+	if generateTableLoadCountVerificationsMetrics {
+		var countErr error
+		totalBeforeLoad, countErr = job.whManager.GetTotalCountInTable(tName)
+		if countErr != nil {
+			pkgLogger.Errorf(`Error getting total count in table:%s before load: %v`, tName, countErr)
+		}
+	}
+
 	err = job.whManager.LoadTable(tName)
 	if err != nil {
 		tableUpload.setError(TableUploadExportingFailed, err)
 		return
+	}
+
+	if generateTableLoadCountVerificationsMetrics {
+		var countErr error
+		totalAfterLoad, countErr = job.whManager.GetTotalCountInTable(tName)
+		if countErr != nil {
+			pkgLogger.Errorf(`Error getting total count in table:%s after load: %v`, tName, countErr)
+		}
+		job.counterStat(`pre_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(int(totalBeforeLoad))
+		eventsInTableUpload := tableUpload.getTotalEvents()
+		job.counterStat(`post_load_table_rows_estimate`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(int(totalBeforeLoad + eventsInTableUpload))
+		job.counterStat(`post_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(int(totalAfterLoad))
 	}
 
 	tableUpload.setStatus(TableUploadExported)

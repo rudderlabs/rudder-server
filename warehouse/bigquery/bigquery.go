@@ -473,6 +473,22 @@ func (bq *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
+func (bq *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s.%[2]s`, bq.Namespace, tableName)
+	it, err := bq.Db.Query(sqlStatement).Read(bq.BQContext)
+	var values []bigquery.Value
+	err = it.Next(&values)
+	if err == iterator.Done {
+		return 0, nil
+	}
+	if err != nil {
+		pkgLogger.Errorf("BQ: Error in processing totalRowsCount: %v", err)
+		return
+	}
+	total, _ = values[0].(int64)
+	return
+}
+
 func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace

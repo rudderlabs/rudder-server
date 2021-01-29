@@ -616,6 +616,15 @@ func (ch *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 	return
 }
 
+func (ch *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, ch.Namespace, tableName)
+	err = ch.Db.QueryRow(sqlStatement).Scan(&total)
+	if err != nil {
+		pkgLogger.Errorf(`CH: Error getting total count in table %s:%s`, ch.Namespace, tableName)
+	}
+	return
+}
+
 func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
