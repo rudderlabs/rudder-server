@@ -47,14 +47,15 @@ const (
 
 // Table Upload status
 const (
-	TableUploadExecuting            = "executing"
-	TableUploadUpdatingSchema       = "updating_schema"
-	TableUploadUpdatingSchemaFailed = "updating_schema_failed"
-	TableUploadUpdatedSchema        = "updated_schema"
-	TableUploadExporting            = "exporting_data"
-	TableUploadExportingFailed      = "exporting_data_failed"
-	UserTableUploadExportingFailed  = "exporting_user_tables_failed"
-	TableUploadExported             = "exported_data"
+	TableUploadExecuting               = "executing"
+	TableUploadUpdatingSchema          = "updating_schema"
+	TableUploadUpdatingSchemaFailed    = "updating_schema_failed"
+	TableUploadUpdatedSchema           = "updated_schema"
+	TableUploadExporting               = "exporting_data"
+	TableUploadExportingFailed         = "exporting_data_failed"
+	UserTableUploadExportingFailed     = "exporting_user_tables_failed"
+	IdentityTableUploadExportingFailed = "exporting_identities_failed"
+	TableUploadExported                = "exported_data"
 )
 
 var stateTransitions map[string]*uploadStateT
@@ -507,7 +508,9 @@ func (job *UploadJobT) getTablesToSkip() (map[string]int64, map[string]bool) {
 	currentlySucceededTableMap := make(map[string]bool)
 	for uploadID, tableStatusMap := range tableUploadStatus {
 		for tableName, status := range tableStatusMap {
-			if uploadID < job.upload.ID && (status == TableUploadExportingFailed || status == UserTableUploadExportingFailed) { //Previous upload and table upload failed
+			if uploadID < job.upload.ID && (status == TableUploadExportingFailed ||
+				status == UserTableUploadExportingFailed ||
+				status == IdentityTableUploadExportingFailed) { //Previous upload and table upload failed
 				previouslyFailedTableMap[tableName] = uploadID
 			}
 			if uploadID == job.upload.ID && status == TableUploadExported { //Current upload and table upload succeeded
@@ -602,6 +605,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 		hasLoadFiles, err := job.hasLoadFiles(tableName)
 		if err != nil {
 			loadErrors = append(loadErrors, err)
+			wg.Done()
 			continue
 		}
 		if !hasLoadFiles {
@@ -738,6 +742,16 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 
 func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (loadErrors []error, tableUploadErr error) {
 	pkgLogger.Infof(`[WH]: Starting load for identity tables in namespace %s of destination %s:%s`, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
+	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
+	for _, tableName := range identityTables {
+		if prevJobID, ok := previouslyFailedTables[tableName]; ok {
+			errMessage := fmt.Sprintf("Skipping %s tables because it previously failed to load in an earlier job: %d", tableName, prevJobID)
+			pkgLogger.Info(errMessage)
+			return []error{fmt.Errorf("%s", errMessage)}, nil
+		}
+	}
+
 	errorMap := make(map[string]error)
 	// var generated bool
 	if generated, _ := job.areIdentityTablesLoadFilesGenerated(); !generated {
@@ -749,17 +763,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 		}
 	}
 
-	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
-
 	var alteredSchema bool
-	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
-	for _, tableName := range identityTables {
-		if prevJobID, ok := previouslyFailedTables[tableName]; ok {
-			err := fmt.Errorf("Skipping %s tables because it previously failed to load in an earlier job: %d", tableName, prevJobID)
-			return []error{err}, nil
-		}
-	}
-
 	for _, tableName := range identityTables {
 		if _, loaded := currentJobSucceededTables[tableName]; loaded {
 			continue

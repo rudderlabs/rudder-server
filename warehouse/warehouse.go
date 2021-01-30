@@ -522,7 +522,9 @@ func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.Wareh
 
 		if !wh.canStartPendingUpload(pendingUpload, warehouse) {
 			pkgLogger.Debugf("[WH]: Skipping pending upload for %s since current time less than next retry time", warehouse.Identifier)
-			if pendingUpload.Status != TableUploadExportingFailed && pendingUpload.Status != UserTableUploadExportingFailed {
+			if pendingUpload.Status != TableUploadExportingFailed &&
+				pendingUpload.Status != UserTableUploadExportingFailed &&
+				pendingUpload.Status != IdentityTableUploadExportingFailed {
 				//If we don't process the first pending upload, it doesn't make sense to attempt the following jobs. Hence we return here.
 				return nil, fmt.Errorf("[WH]: Not a retriable job. Moving on to next unprocessed jobs")
 			}
