@@ -116,7 +116,8 @@ const (
 )
 
 var (
-	alwaysMarkExported = []string{warehouseutils.DiscardsTable}
+	alwaysMarkExported                               = []string{warehouseutils.DiscardsTable}
+	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{warehouseutils.SNOWFLAKE}
 )
 
 var maxParallelLoads map[string]int
@@ -291,8 +292,8 @@ func (job *UploadJobT) run() (err error) {
 
 		case GeneratedLoadFiles:
 			newStatus = nextUploadState.failed
-			// generate load files for all staging files(including succeeded) if hasSchemaChanged or set via toml/env
-			generateAll := hasSchemaChanged || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", false)
+			// generate load files for all staging files(including succeeded) if hasSchemaChanged or if its snowflake(to have all load files in same folder in bucket) or set via toml/env
+			generateAll := hasSchemaChanged || misc.ContainsString(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", false)
 			var startLoadFileID, endLoadFileID int64
 			startLoadFileID, endLoadFileID, err = job.createLoadFiles(generateAll)
 			if err != nil {
