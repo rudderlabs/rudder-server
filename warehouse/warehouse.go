@@ -67,6 +67,7 @@ var (
 	pkgLogger                           logger.LoggerI
 	numLoadFileUploadWorkers            int
 	slaveUploadTimeout                  time.Duration
+	runningMode                         string
 )
 
 var (
@@ -141,6 +142,7 @@ func loadConfig() {
 	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
 	slaveUploadTimeout = config.GetDuration("Warehouse.slaveUploadTimeoutInMin", time.Duration(10)) * time.Minute
 	numLoadFileUploadWorkers = config.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
+	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -888,7 +890,10 @@ func setupTables(dbHandle *sql.DB) {
 	}
 }
 
-func CheckPGHealth() bool {
+func CheckPGHealth(dbHandle *sql.DB) bool {
+	if dbHandle == nil {
+		return false
+	}
 	rows, err := dbHandle.Query(`SELECT 'Rudder Warehouse DB Health Check'::text as message`)
 	if err != nil {
 		pkgLogger.Error(err)
@@ -938,11 +943,26 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
-	var dbService string = "UP"
-	if !CheckPGHealth() {
-		dbService = "DOWN"
+	dbService := ""
+	pgNotifierService := ""
+
+	if runningMode != DegradedMode {
+		if !CheckPGHealth(notifier.GetDBHandle()) {
+			http.Error(w, "Cannot connect to pgNotifierService", http.StatusInternalServerError)
+			return
+		}
+		pgNotifierService = "UP"
 	}
-	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","warehouseMode":"%s","goroutines":"%d"}`, dbService, strings.ToUpper(warehouseMode), runtime.NumGoroutine())
+
+	if isMaster() {
+		if !CheckPGHealth(dbHandle) {
+			http.Error(w, "Cannot connect to dbService", http.StatusInternalServerError)
+			return
+		}
+		dbService = "UP"
+	}
+
+	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","pgNotifier":"%s","acceptingEvents":"TRUE","warehouseMode":"%s","goroutines":"%d"}`, dbService, pgNotifierService, strings.ToUpper(warehouseMode), runtime.NumGoroutine())
 	w.Write([]byte(healthVal))
 }
 
@@ -1024,12 +1044,13 @@ func Start() {
 	setupDB(psqlInfo)
 	defer startWebHandler()
 
-	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
-		rruntime.Go(func() {
-			minimalConfigSubscriber()
-		})
+		if isMaster() {
+			rruntime.Go(func() {
+				minimalConfigSubscriber()
+			})
+		}
 		return
 	}
 
