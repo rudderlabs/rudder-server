@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,17 +41,21 @@ const (
 	GeneratedStagingFileState               = "generated_staging_file"
 	PopulatingHistoricIdentitiesState       = "populating_historic_identities"
 	PopulatingHistoricIdentitiesStateFailed = "populating_historic_identities_failed"
+	FetchingRemoteSchemaFailed              = "fetching_remote_schema_failed"
+	InternalProcessingFailed                = "internal_processing_failed"
 )
 
 // Table Upload status
 const (
-	TableUploadExecuting            = "executing"
-	TableUploadUpdatingSchema       = "updating_schema"
-	TableUploadUpdatingSchemaFailed = "updating_schema_failed"
-	TableUploadUpdatedSchema        = "updated_schema"
-	TableUploadExporting            = "exporting_data"
-	TableUploadExportingFailed      = "exporting_data_failed"
-	TableUploadExported             = "exported_data"
+	TableUploadExecuting               = "executing"
+	TableUploadUpdatingSchema          = "updating_schema"
+	TableUploadUpdatingSchemaFailed    = "updating_schema_failed"
+	TableUploadUpdatedSchema           = "updated_schema"
+	TableUploadExporting               = "exporting_data"
+	TableUploadExportingFailed         = "exporting_data_failed"
+	UserTableUploadExportingFailed     = "exporting_user_tables_failed"
+	IdentityTableUploadExportingFailed = "exporting_identities_failed"
+	TableUploadExported                = "exported_data"
 )
 
 var stateTransitions map[string]*uploadStateT
@@ -60,7 +64,6 @@ type uploadStateT struct {
 	inProgress string
 	failed     string
 	completed  string
-	task       string
 	nextState  *uploadStateT
 }
 
@@ -153,7 +156,7 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 	ch := make(chan struct{}, 1)
 	rruntime.Go(func() {
 		select {
-		case _ = <-ch:
+		case <-ch:
 			// do nothing
 		case <-time.After(longRunningUploadStatThresholdInMin):
 			pkgLogger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
@@ -184,19 +187,6 @@ func (job *UploadJobT) initTableUploads() error {
 	}
 
 	return createTableUploads(job.upload.ID, tables)
-}
-
-func (job *UploadJobT) shouldTableBeLoaded(tableName string) (bool, error) {
-	tableUpload := NewTableUpload(job.upload.ID, tableName)
-	loaded, err := tableUpload.hasBeenLoaded()
-	if err != nil {
-		return false, err
-	}
-	hasLoadfiles, err := job.hasLoadFiles(tableName)
-	if err != nil {
-		return false, err
-	}
-	return !loaded && hasLoadfiles, nil
 }
 
 func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
@@ -241,13 +231,13 @@ func (job *UploadJobT) run() (err error) {
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
-		job.setUploadError(err, job.upload.Status)
+		job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
 
 	hasSchemaChanged, err := job.syncRemoteSchema()
 	if err != nil {
-		job.setUploadError(err, job.upload.Status)
+		job.setUploadError(err, FetchingRemoteSchemaFailed)
 		return err
 	}
 	if hasSchemaChanged {
@@ -259,7 +249,7 @@ func (job *UploadJobT) run() (err error) {
 	whManager := job.whManager
 	err = whManager.Setup(job.warehouse, job)
 	if err != nil {
-		job.setUploadError(err, job.upload.Status)
+		job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
 	defer whManager.Cleanup()
@@ -285,7 +275,7 @@ func (job *UploadJobT) run() (err error) {
 
 		case GeneratedUploadSchema:
 			newStatus = nextUploadState.failed
-			err := job.generateUploadSchema(schemaHandle)
+			err = job.generateUploadSchema(schemaHandle)
 			if err != nil {
 				break
 			}
@@ -293,7 +283,7 @@ func (job *UploadJobT) run() (err error) {
 
 		case CreatedTableUploads:
 			newStatus = nextUploadState.failed
-			err := job.initTableUploads()
+			err = job.initTableUploads()
 			if err != nil {
 				break
 			}
@@ -301,19 +291,20 @@ func (job *UploadJobT) run() (err error) {
 
 		case GeneratedLoadFiles:
 			newStatus = nextUploadState.failed
-			var loadFileIDs []int64
-			loadFileIDs, err = job.createLoadFiles()
+			// generate load files for all staging files(including succeeded) if hasSchemaChanged or set via toml/env
+			generateAll := hasSchemaChanged || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", false)
+			var startLoadFileID, endLoadFileID int64
+			startLoadFileID, endLoadFileID, err = job.createLoadFiles(generateAll)
 			if err != nil {
-				job.setStagingFilesStatus(warehouseutils.StagingFileFailedState, err)
+				job.setStagingFilesStatus(job.stagingFiles, warehouseutils.StagingFileFailedState, err)
 				break
 			}
 
-			err = job.setLoadFileIDs(loadFileIDs[0], loadFileIDs[len(loadFileIDs)-1])
+			err = job.setLoadFileIDs(startLoadFileID, endLoadFileID)
 			if err != nil {
 				break
 			}
-			job.setStagingFilesStatus(warehouseutils.StagingFileSucceededState, err)
-			job.recordLoadFileGenerationTimeStat(loadFileIDs[0], loadFileIDs[len(loadFileIDs)-1])
+			job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
 
 			newStatus = nextUploadState.completed
 
@@ -388,20 +379,12 @@ func (job *UploadJobT) run() (err error) {
 
 		case ExportedData:
 			newStatus = nextUploadState.failed
-			skipPrevLoadedTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
-			previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
-			skipLoadForTables := append(skipPrevLoadedTableNames, previouslyFailedTables...)
-			skipLoadForTables = append(skipLoadForTables, currentJobSucceededTables...)
-
+			userTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 			// Export all other tables
 			loadTimeStat := job.timerStat("other_tables_load_time")
 			loadTimeStat.Start()
 
-			loadErrors := job.loadAllTablesExcept(skipLoadForTables)
-
-			if len(previouslyFailedTables) > 0 {
-				loadErrors = append(loadErrors, fmt.Errorf("skipping the following tables because they failed previously : %+v", previouslyFailedTables))
-			}
+			loadErrors := job.loadAllTablesExcept(userTableNames)
 
 			if len(loadErrors) > 0 {
 				err = warehouseutils.ConcatErrors(loadErrors)
@@ -518,31 +501,24 @@ func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int6
 	return tableUploadStatus
 }
 
-func (job *UploadJobT) getTablesToSkip() ([]string, []string) {
+func (job *UploadJobT) getTablesToSkip() (map[string]int64, map[string]bool) {
 	tableUploadStatuses := job.fetchPendingUploadTableStatus()
 	tableUploadStatus := getTableUploadStatusMap(tableUploadStatuses)
-	previouslyFailedTableMap := make(map[string]bool)
+	previouslyFailedTableMap := make(map[string]int64)
 	currentlySucceededTableMap := make(map[string]bool)
 	for uploadID, tableStatusMap := range tableUploadStatus {
 		for tableName, status := range tableStatusMap {
-			if uploadID < job.upload.ID && status == TableUploadExportingFailed { //Previous upload and table upload failed
-				previouslyFailedTableMap[tableName] = true
+			if uploadID < job.upload.ID && (status == TableUploadExportingFailed ||
+				status == UserTableUploadExportingFailed ||
+				status == IdentityTableUploadExportingFailed) { //Previous upload and table upload failed
+				previouslyFailedTableMap[tableName] = uploadID
 			}
 			if uploadID == job.upload.ID && status == TableUploadExported { //Current upload and table upload succeeded
 				currentlySucceededTableMap[tableName] = true
 			}
 		}
 	}
-	previouslyFailedTables := make([]string, 0)
-	for skipTName := range previouslyFailedTableMap {
-		previouslyFailedTables = append(previouslyFailedTables, skipTName)
-	}
-
-	succeededTablesInCurrentJob := make([]string, 0)
-	for skipTName := range currentlySucceededTableMap {
-		succeededTablesInCurrentJob = append(succeededTablesInCurrentJob, skipTName)
-	}
-	return previouslyFailedTables, succeededTablesInCurrentJob
+	return previouslyFailedTableMap, currentlySucceededTableMap
 }
 
 func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err error) {
@@ -566,8 +542,10 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 		err = job.whManager.CreateTable(tName, tableSchemaDiff.ColumnMap)
 		if err != nil {
 			pkgLogger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
+			return err
 		}
-		return err
+		job.counterStat("tables_added").Increment()
+		return nil
 	}
 
 	for columnName, columnType := range tableSchemaDiff.ColumnMap {
@@ -576,6 +554,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 			pkgLogger.Errorf("Column %s already exists on %s.%s \nResponse: %v", columnName, job.warehouse.Namespace, tName, err)
 			break
 		}
+		job.counterStat("columns_added").Increment()
 	}
 
 	if err != nil {
@@ -593,7 +572,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	return err
 }
 
-func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []error {
+func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 	uploadSchema := job.upload.Schema
 	var parallelLoads int
 	var ok bool
@@ -609,14 +588,24 @@ func (job *UploadJobT) loadAllTablesExcept(skipPrevLoadedTableNames []string) []
 
 	var alteredSchemaInAtleastOneTable bool
 	loadChan := make(chan struct{}, parallelLoads)
+	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for tableName := range uploadSchema {
-		if misc.ContainsString(skipPrevLoadedTableNames, tableName) {
+		if misc.ContainsString(skipLoadForTables, tableName) {
 			wg.Done()
 			continue
+		}
+		if _, ok := currentJobSucceededTables[tableName]; ok {
+			wg.Done()
+			continue
+		}
+		if prevJobID, ok := previouslyFailedTables[tableName]; ok {
+			loadErrors = append(loadErrors, fmt.Errorf("Skipping %s tables because it previously failed to load in an earlier job: %d", tableName, prevJobID))
+			wg.Done()
 		}
 		hasLoadFiles, err := job.hasLoadFiles(tableName)
 		if err != nil {
 			loadErrors = append(loadErrors, err)
+			wg.Done()
 			continue
 		}
 		if !hasLoadFiles {
@@ -691,17 +680,28 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	return
 }
 
-func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr error) {
-	var loadTables bool
+func (job *UploadJobT) loadUserTables() ([]error, error) {
+	var hasLoadFiles bool
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 
 	var err error
+	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for _, tName := range userTables {
-		loadTables, err = job.shouldTableBeLoaded(tName)
+		if prevJobID, ok := previouslyFailedTables[tName]; ok {
+			err = fmt.Errorf("Skipping %s tables because it previously failed to load in an earlier job: %d", tName, prevJobID)
+			return []error{err}, nil
+		}
+	}
+
+	for _, tName := range userTables {
+		if _, ok := currentJobSucceededTables[tName]; ok {
+			continue
+		}
+		hasLoadFiles, err = job.hasLoadFiles(tName)
 		if err != nil {
 			break
 		}
-		if loadTables {
+		if hasLoadFiles {
 			// There is at least one table to load
 			break
 		}
@@ -711,7 +711,7 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 		return []error{err}, nil
 	}
 
-	if !loadTables {
+	if !hasLoadFiles {
 		return []error{}, nil
 	}
 
@@ -720,6 +720,7 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 
 	// Load all user tables
 	identityTableUpload := NewTableUpload(job.upload.ID, job.identifiesTableName())
+	identityTableUpload.setStatus(TableUploadExecuting)
 	alteredIdentitySchema, err := job.updateSchema(job.identifiesTableName())
 	if err != nil {
 		identityTableUpload.setError(TableUploadUpdatingSchemaFailed, err)
@@ -727,6 +728,7 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 	}
 
 	userTableUpload := NewTableUpload(job.upload.ID, job.usersTableName())
+	userTableUpload.setStatus(TableUploadExecuting)
 	alteredUserSchema, err := job.updateSchema(job.usersTableName())
 	if err != nil {
 		userTableUpload.setError(TableUploadUpdatingSchemaFailed, err)
@@ -743,10 +745,20 @@ func (job *UploadJobT) loadUserTables() (loadErrors []error, tableUploadErr erro
 
 func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (loadErrors []error, tableUploadErr error) {
 	pkgLogger.Infof(`[WH]: Starting load for identity tables in namespace %s of destination %s:%s`, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
+	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
+	for _, tableName := range identityTables {
+		if prevJobID, ok := previouslyFailedTables[tableName]; ok {
+			errMessage := fmt.Sprintf("Skipping %s tables because it previously failed to load in an earlier job: %d", tableName, prevJobID)
+			pkgLogger.Info(errMessage)
+			return []error{fmt.Errorf("%s", errMessage)}, nil
+		}
+	}
+
 	errorMap := make(map[string]error)
 	// var generated bool
-	if generated, err := job.areIdentityTablesLoadFilesGenerated(); !generated {
-		err = job.resolveIdentities(populateHistoricIdentities)
+	if generated, _ := job.areIdentityTablesLoadFilesGenerated(); !generated {
+		err := job.resolveIdentities(populateHistoricIdentities)
 		if err != nil {
 			pkgLogger.Errorf(`SF: ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
@@ -754,49 +766,43 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 		}
 	}
 
-	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
-
 	var alteredSchema bool
 	for _, tableName := range identityTables {
+		if _, loaded := currentJobSucceededTables[tableName]; loaded {
+			continue
+		}
+
+		errorMap[tableName] = nil
 		tableUpload := NewTableUpload(job.upload.ID, tableName)
-		loaded, err := tableUpload.hasBeenLoaded()
+
+		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
+		if tableSchemaDiff.Exists {
+			err := job.updateTableSchema(tableName, tableSchemaDiff)
+			if err != nil {
+				tableUpload.setError(TableUploadUpdatingSchemaFailed, err)
+				errorMap := map[string]error{tableName: err}
+				return job.processLoadTableResponse(errorMap)
+			}
+			job.setUpdatedTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
+			tableUpload.setStatus(TableUploadUpdatedSchema)
+			alteredSchema = true
+		}
+		err := tableUpload.setStatus(TableUploadExecuting)
 		if err != nil {
 			errorMap[tableName] = err
 			break
 		}
 
-		if !loaded {
-			errorMap[tableName] = nil
-			tableUpload := NewTableUpload(job.upload.ID, tableName)
+		switch tableName {
+		case job.identityMergeRulesTableName():
+			err = job.whManager.LoadIdentityMergeRulesTable()
+		case job.identityMappingsTableName():
+			err = job.whManager.LoadIdentityMappingsTable()
+		}
 
-			tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
-			if tableSchemaDiff.Exists {
-				job.updateTableSchema(tableName, tableSchemaDiff)
-				if err != nil {
-					tableUpload.setError(TableUploadUpdatingSchemaFailed, err)
-					errorMap := map[string]error{tableName: err}
-					return job.processLoadTableResponse(errorMap)
-				}
-				job.setUpdatedTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
-				tableUpload.setStatus(TableUploadUpdatedSchema)
-				alteredSchema = true
-			}
-
-			err := tableUpload.setStatus(TableUploadExecuting)
-			if err != nil {
-				errorMap[tableName] = err
-				break
-			}
-
-			if tableName == job.identityMergeRulesTableName() {
-				err = job.whManager.LoadIdentityMergeRulesTable()
-			} else if tableName == job.identityMappingsTableName() {
-				err = job.whManager.LoadIdentityMappingsTable()
-			}
-			if err != nil {
-				errorMap[tableName] = err
-				break
-			}
+		if err != nil {
+			errorMap[tableName] = err
+			break
 		}
 	}
 
@@ -849,7 +855,7 @@ func (job *UploadJobT) getUploadTimings() (timings []map[string]string) {
 	if err != nil {
 		return
 	}
-	err = json.Unmarshal(rawJSON, &timings)
+	json.Unmarshal(rawJSON, &timings)
 	return
 }
 
@@ -976,7 +982,11 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	}
 
 	metadata := make(map[string]string)
-	metadata["nextRetryTime"] = upload.LastAttemptAt.Add(durationBeforeNextAttempt(upload.Attempts)).Format(time.RFC3339)
+	lastAttempt := upload.LastAttemptAt
+	if lastAttempt.IsZero() {
+		lastAttempt = timeutil.Now()
+	}
+	metadata["nextRetryTime"] = lastAttempt.Add(durationBeforeNextAttempt(upload.Attempts)).Format(time.RFC3339)
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		metadataJSON = []byte("{}")
@@ -992,9 +1002,9 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	return state, err
 }
 
-func (job *UploadJobT) setStagingFilesStatus(status string, statusError error) (err error) {
+func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, status string, statusError error) (err error) {
 	var ids []int64
-	for _, stagingFile := range job.stagingFiles {
+	for _, stagingFile := range stagingFiles {
 		ids = append(ids, stagingFile.ID)
 	}
 	// TODO: json.Marshal error instead of quoteliteral
@@ -1003,16 +1013,6 @@ func (job *UploadJobT) setStagingFilesStatus(status string, statusError error) (
 	}
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseutils.WarehouseStagingFilesTable)
 	_, err = dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), pq.Array(ids))
-	if err != nil {
-		panic(err)
-	}
-	return
-}
-
-func (job *UploadJobT) setStagingFilesError(ids []int64, status string, statusError error) (err error) {
-	pkgLogger.Errorf("[WH]: Failed processing staging files: %v", statusError.Error())
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseutils.WarehouseStagingFilesTable)
-	_, err = job.dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), pq.Array(ids))
 	if err != nil {
 		panic(err)
 	}
@@ -1031,28 +1031,70 @@ func (job *UploadJobT) hasLoadFiles(tableName string) (bool, error) {
 	return count > 0, err
 }
 
-func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
+func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileID int64, err error) {
+	var stagingFileIDs []int64
+	for _, stagingFile := range job.stagingFiles {
+		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
+	}
+	stmt := fmt.Sprintf(`
+		SELECT
+			MIN(id), MAX(id)
+		FROM (
+			SELECT
+				ROW_NUMBER() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number,
+				t.id
+			FROM
+				%s t
+			WHERE
+				t.staging_file_id = ANY($1)
+		) grouped_load_files
+		WHERE
+			grouped_load_files.row_number = 1;
+	`, warehouseutils.WarehouseLoadFilesTable)
+
+	pkgLogger.Debugf(`Querying for load_file_id range for the uploadJob:%d with stagingFileIDs:%v Query:%v`, job.upload.ID, stagingFileIDs, stmt)
+	var minID, maxID sql.NullInt64
+	err = job.dbHandle.QueryRow(stmt, pq.Array(stagingFileIDs)).Scan(&minID, &maxID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("Error while querying for load_file_id range for uploadJob:%d with stagingFileIDs:%v : %w", job.upload.ID, stagingFileIDs, err)
+	}
+	return minID.Int64, maxID.Int64, nil
+}
+
+func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64, endLoadFileID int64, err error) {
 	destID := job.upload.DestinationID
 	destType := job.upload.DestinationType
 	stagingFiles := job.stagingFiles
-
-	job.setStagingFilesStatus(warehouseutils.StagingFileExecutingState, nil)
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", publishBatchSize, noOfWorkers, destType, destID)
 	uniqueLoadGenID := uuid.NewV4().String()
 
 	var wg sync.WaitGroup
-	var loadFileIDsLock sync.RWMutex
 
-	for i := 0; i < len(stagingFiles); i += publishBatchSize {
+	var toProcessStagingFiles []*StagingFileT
+	if generateAll {
+		toProcessStagingFiles = stagingFiles
+	} else {
+		// skip processing staging files marked succeeded
+		for _, stagingFile := range stagingFiles {
+			if stagingFile.Status != warehouseutils.StagingFileSucceededState {
+				toProcessStagingFiles = append(toProcessStagingFiles, stagingFile)
+			}
+		}
+	}
+
+	job.setStagingFilesStatus(toProcessStagingFiles, warehouseutils.StagingFileExecutingState, nil)
+
+	saveLoadFileErrs := []error{}
+	for i := 0; i < len(toProcessStagingFiles); i += publishBatchSize {
 		j := i + publishBatchSize
-		if j > len(stagingFiles) {
-			j = len(stagingFiles)
+		if j > len(toProcessStagingFiles) {
+			j = len(toProcessStagingFiles)
 		}
 
 		var messages []pgnotifier.MessageT
-		for _, stagingFile := range stagingFiles[i:j] {
+		for _, stagingFile := range toProcessStagingFiles[i:j] {
 			payload := PayloadT{
 				UploadID:            job.upload.ID,
 				StagingFileID:       stagingFile.ID,
@@ -1089,43 +1131,116 @@ func (job *UploadJobT) createLoadFiles() (loadFileIDs []int64, err error) {
 		batchEndIdx := j
 		rruntime.Go(func() {
 			responses := <-ch
-			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", stagingFiles[batchStartIdx].ID, stagingFiles[batchEndIdx-1].ID, destType, destID)
+			pkgLogger.Infof("[WH]: Received responses for staging files %d:%d for %s:%s from PgNotifier", toProcessStagingFiles[batchStartIdx].ID, toProcessStagingFiles[batchEndIdx-1].ID, destType, destID)
+			var loadFiles []loadFileUploadOutputT
+			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
-				// TODO: make it aborted
+				// Error handling during generating_load_files step:
+				// 1. any error returned by pgnotifier is set on corresponding staging_gile
+				// 2. any error effecting a batch/all of the staging files like saving load file records to wh db
+				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
 				if resp.Status == "aborted" {
 					pkgLogger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
+					job.setStagingFileErr(resp.JobID, fmt.Errorf(resp.Error))
 					continue
 				}
-				var payload map[string]interface{}
-				err = json.Unmarshal(resp.Payload, &payload)
+				var output []loadFileUploadOutputT
+				err = json.Unmarshal(resp.Output, &output)
 				if err != nil {
 					panic(err)
 				}
-				respIDs, ok := payload["LoadFileIDs"].([]interface{})
-				if !ok {
-					pkgLogger.Errorf("[WH]: No LoadFileIDS returned by wh worker")
+				if len(output) == 0 {
+					pkgLogger.Errorf("[WH]: No LoadFiles returned by wh worker")
 					continue
 				}
-				ids := make([]int64, len(respIDs))
-				for i := range respIDs {
-					ids[i] = int64(respIDs[i].(float64))
-				}
-				loadFileIDsLock.Lock()
-				loadFileIDs = append(loadFileIDs, ids...)
-				loadFileIDsLock.Unlock()
+				loadFiles = append(loadFiles, output...)
+				successfulStagingFileIDs = append(successfulStagingFileIDs, resp.JobID)
 			}
+			err = job.bulkInsertLoadFileRecords(loadFiles)
+			if err != nil {
+				saveLoadFileErrs = append(saveLoadFileErrs, err)
+			}
+			job.setStagingFileSuccess(successfulStagingFileIDs)
 			wg.Done()
 		})
 	}
 
 	wg.Wait()
 
-	if len(loadFileIDs) == 0 {
-		err = fmt.Errorf("No load files generated")
-		return loadFileIDs, err
+	if len(saveLoadFileErrs) > 0 {
+		pkgLogger.Errorf(`[WH]: Encountered errors in creating load file records in wh_load_files: %v`, err)
+		var errStrings []string
+		for _, saveLoadFileErr := range saveLoadFileErrs {
+			errStrings = append(errStrings, saveLoadFileErr.Error())
+		}
+		err = fmt.Errorf(strings.Join(errStrings, "\n"))
+		return startLoadFileID, endLoadFileID, err
 	}
-	sort.Slice(loadFileIDs, func(i, j int) bool { return loadFileIDs[i] < loadFileIDs[j] })
-	return loadFileIDs, nil
+
+	startLoadFileID, endLoadFileID, err = job.getLoadFileIDRange()
+	if err != nil {
+		panic(err)
+	}
+
+	if startLoadFileID == 0 || endLoadFileID == 0 {
+		err = fmt.Errorf("No load files generated")
+		return startLoadFileID, endLoadFileID, err
+	}
+	return startLoadFileID, endLoadFileID, nil
+}
+
+func (job *UploadJobT) setStagingFileSuccess(stagingFileIDs []int64) {
+	// using ANY instead of IN as WHERE clause filtering on primary key index uses index scan in both cases
+	// use IN for cases where filtering on composite indexes
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseutils.WarehouseStagingFilesTable)
+	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileSucceededState, timeutil.Now(), pq.Array(stagingFileIDs))
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (job *UploadJobT) setStagingFileErr(stagingFileID int64, statusErr error) {
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseutils.WarehouseStagingFilesTable)
+	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileFailedState, misc.QuoteLiteral(statusErr.Error()), timeutil.Now(), stagingFileID)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutputT) (err error) {
+	//Using transactions for bulk copying
+	txn, err := dbHandle.Begin()
+	if err != nil {
+		return
+	}
+
+	stmt, err := txn.Prepare(pq.CopyIn("wh_load_files", "staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at"))
+	if err != nil {
+		pkgLogger.Errorf(`[WH]: Error starting bulk copy using CopyIn: %v`, err)
+		return
+	}
+	defer stmt.Close()
+
+	for _, loadFile := range loadFiles {
+		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now())
+		if err != nil {
+			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for loadFules: %v Error: %v`, loadFile, err)
+			txn.Rollback()
+			return
+		}
+	}
+
+	_, err = stmt.Exec()
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error creating load file records: %v", err)
+		return
+	}
+	err = txn.Commit()
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error committing load file records txn: %v", err)
+		return
+	}
+	return
 }
 
 func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, err error) {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
@@ -142,6 +143,25 @@ func (c *context) Finish() {
 	c.asyncHelper.WaitWithTimeout(testTimeout)
 	c.mockCtrl.Finish()
 }
+
+var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
+	var (
+		gateway = &HandleT{}
+	)
+	var _ = DescribeTable("newDSIdx tests",
+		func(inputKey, value string) {
+			testValidBody := `{"batch":[{"anonymousId":"anon_id_1","event":"event_1_1"},{"anonymousId":"anon_id_2","event":"event_2_1"},{"anonymousId":"anon_id_3","event":"event_3_1"},{"anonymousId":"anon_id_1","event":"event_1_2"},{"anonymousId":"anon_id_2","event":"event_2_2"},{"anonymousId":"anon_id_1","event":"event_1_3"}]}`
+			response, payloadError := gateway.getUsersPayload([]byte(testValidBody))
+			key, err := misc.GetMD5UUID((inputKey))
+			Expect(string(response[key.String()])).To(Equal(value))
+			Expect(err).To(BeNil())
+			Expect(payloadError).To(BeNil())
+		},
+		Entry("Expected JSON for Key 1 Test 1 : ", ":anon_id_1", `{"batch":[{"anonymousId":"anon_id_1","event":"event_1_1"},{"anonymousId":"anon_id_1","event":"event_1_2"},{"anonymousId":"anon_id_1","event":"event_1_3"}]}`),
+		Entry("Expected JSON for Key 2 Test 1 : ", ":anon_id_2", `{"batch":[{"anonymousId":"anon_id_2","event":"event_2_1"},{"anonymousId":"anon_id_2","event":"event_2_2"}]}`),
+		Entry("Expected JSON for Key 3 Test 1 : ", ":anon_id_3", `{"batch":[{"anonymousId":"anon_id_3","event":"event_3_1"}]}`),
+	)
+})
 
 var _ = Describe("Gateway Enterprise", func() {
 	var c *context
@@ -318,7 +338,7 @@ var _ = Describe("Gateway", func() {
 		}
 
 		for handlerType, handler := range allHandlers(gateway) {
-			if handlerType != "batch" {
+			if !(handlerType == "batch" || handlerType == "import") {
 				assertSingleMessageHandler(handlerType, handler)
 			}
 		}
@@ -445,7 +465,7 @@ var _ = Describe("Gateway", func() {
 
 			It("should reject requests with both userId and anonymousId not present", func() {
 				validBody := `{"data": "valid-json"}`
-				if handlerType == "batch" {
+				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch": [{"data": "valid-json"}]}`
 				}
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 400, response.NonIdentifiableRequest+"\n")
@@ -466,7 +486,7 @@ var _ = Describe("Gateway", func() {
 					data[i] = 'a'
 				}
 				body := fmt.Sprintf(`{"data":"%s"}`, string(data))
-				if handlerType == "batch" {
+				if handlerType == "batch" || handlerType == "import" {
 					body = fmt.Sprintf(`{"batch":[%s]}`, body)
 				}
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(body)), 400, response.RequestBodyTooLarge+"\n")
@@ -474,7 +494,7 @@ var _ = Describe("Gateway", func() {
 
 			It("should reject requests with invalid write keys", func() {
 				validBody := `{"data":"valid-json"}`
-				if handlerType == "batch" {
+				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), 400, response.InvalidWriteKey+"\n")
@@ -482,7 +502,7 @@ var _ = Describe("Gateway", func() {
 
 			It("should reject requests with disabled write keys", func() {
 				validBody := `{"data":"valid-json"}`
-				if handlerType == "batch" {
+				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), 400, response.InvalidWriteKey+"\n")
@@ -565,6 +585,7 @@ func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 		"page":     gateway.webPageHandler,
 		"screen":   gateway.webScreenHandler,
 		"track":    gateway.webTrackHandler,
+		"import":   gateway.webImportHandler,
 	}
 }
 
