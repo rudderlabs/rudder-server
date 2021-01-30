@@ -74,7 +74,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	// Total loaded events in the upload
 	numUploadedEvents, err := getTotalEventsUploaded(job.upload.ID)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %w", job.warehouse.Identifier, err)
+		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
 	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
@@ -82,7 +82,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	// Total staged events in the upload
 	numStagedEvents, err := getTotalEventsStaged(job.upload.StartStagingFileID, job.upload.EndStagingFileID)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %w", job.warehouse.Identifier, err)
+		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
@@ -94,7 +94,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 	// Total successfully loaded events in the upload
 	numUploadedEvents, err := getTotalEventsUploaded(job.upload.ID)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %w", job.warehouse.Identifier, err)
+		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
 	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
@@ -102,7 +102,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 	// Total staged events in the upload
 	numStagedEvents, err := getTotalEventsStaged(job.upload.StartStagingFileID, job.upload.EndStagingFileID)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %w", job.warehouse.Identifier, err)
+		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
@@ -130,7 +130,7 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	// Delay for the oldest event in the batch
 	firstEventAt, err := getFirstStagedEventAt(job.upload.StartStagingFileID)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %w", job.warehouse.Identifier, err)
+		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
 	job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}).SendTiming(time.Since(firstEventAt))

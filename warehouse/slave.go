@@ -130,7 +130,8 @@ func (job *PayloadT) getDiscardsTable() string {
 
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 	job := jobRun.job
-	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
+	randomness := uuid.NewV4().String()
+	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 }
 
 func (job *PayloadT) getColumnName(columnName string) string {
@@ -204,7 +205,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 				return loadFileUploadOutputs, nil
 			}
 		case err := <-uploadErrorChan:
-			pkgLogger.Errorf("received error while uploading load file to bucket for staging file id %s, cancelling the context: err %w", job.StagingFileID, err)
+			pkgLogger.Errorf("received error while uploading load file to bucket for staging file id %s, cancelling the context: err %v", job.StagingFileID, err)
 			return []loadFileUploadOutputT{}, err
 		case <-time.After(slaveUploadTimeout):
 			return []loadFileUploadOutputT{}, fmt.Errorf("Load files upload timed out for staging file id: %v", jobRun.job.StagingFileID)
@@ -257,14 +258,14 @@ func (jobRun *JobRunT) cleanup() {
 	if jobRun.stagingFileReader != nil {
 		err := jobRun.stagingFileReader.Close()
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to close staging file: %w", err)
+			pkgLogger.Errorf("[WH]: Failed to close staging file: %v", err)
 		}
 	}
 
 	if jobRun.stagingFilePath != "" {
 		err := os.Remove(jobRun.stagingFilePath)
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to remove staging file: %w", err)
+			pkgLogger.Errorf("[WH]: Failed to remove staging file: %v", err)
 		}
 	}
 	if jobRun.outputFileWritersMap != nil {
@@ -410,7 +411,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 					err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, discardWriter)
 
 					if err != nil {
-						pkgLogger.Error("[WH]: Failed to write to discards: %w", err)
+						pkgLogger.Errorf("[WH]: Failed to write to discards: %v", err)
 					}
 					jobRun.tableEventCountMap[discardsTable]++
 					continue
@@ -427,7 +428,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 			if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
 				marshalledVal, err := json.Marshal(columnVal)
 				if err != nil {
-					pkgLogger.Errorf("[WH]: Error in marshalling []interface{} columnVal: %w", err)
+					pkgLogger.Errorf("[WH]: Error in marshalling []interface{} columnVal: %v", err)
 					eventLoader.AddEmptyColumn(columnName)
 					continue
 				}
@@ -440,7 +441,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 		// Completed parsing all columns, write single event to the file
 		eventData, err := eventLoader.WriteToString()
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to write event to string: %w", err)
+			pkgLogger.Errorf("[WH]: Failed to write event to string: %v", err)
 			return loadFileUploadOutputs, err
 		}
 		gzWriter.WriteGZ(eventData)
@@ -486,6 +487,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT) {
 		return
 	}
 	job.BatchID = claimedJob.BatchID
+	pkgLogger.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.ID)
 	loadFileOutputs, err := processStagingFile(job)
 	if err != nil {
 		handleErr(err, claimedJob)
@@ -520,8 +522,8 @@ func setupSlave() {
 						freeWorker(idx)
 						break
 					}
+					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 					rruntime.Go(func() {
-						pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 						processClaimedJob(claimedJob)
 						freeWorker(idx)
 					})
