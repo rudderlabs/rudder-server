@@ -515,20 +515,23 @@ type SnowflakeCredentialsT struct {
 }
 
 func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("%s:%s@%s/%s?warehouse=%s",
-		cred.username,
-		cred.password,
-		cred.account,
-		cred.dbName,
-		cred.whName)
-
-	if cred.schemaName != "" {
-		url += fmt.Sprintf("&schema=%s", cred.schemaName)
+	urlConfig := snowflake.Config{
+		Account:   cred.account,
+		User:      cred.username,
+		Password:  cred.password,
+		Database:  cred.dbName,
+		Schema:    cred.schemaName,
+		Warehouse: cred.whName,
 	}
 
 	var err error
+	dsn, err := snowflake.DSN(&urlConfig)
+	if err != nil {
+		return nil, fmt.Errorf("SF: Error costructing DSN to connect : (%v)", err)
+	}
+
 	var db *sql.DB
-	if db, err = sql.Open("snowflake", url); err != nil {
+	if db, err = sql.Open("snowflake", dsn); err != nil {
 		return nil, fmt.Errorf("SF: snowflake connect error : (%v)", err)
 	}
 
