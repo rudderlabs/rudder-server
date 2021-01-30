@@ -687,12 +687,15 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 	var err error
 	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for _, tName := range userTables {
-		if _, ok := currentJobSucceededTables[tName]; ok {
-			continue
-		}
 		if prevJobID, ok := previouslyFailedTables[tName]; ok {
 			err = fmt.Errorf("Skipping %s tables because it previously failed to load in an earlier job: %d", tName, prevJobID)
-			break
+			return []error{err}, nil
+		}
+	}
+
+	for _, tName := range userTables {
+		if _, ok := currentJobSucceededTables[tName]; ok {
+			continue
 		}
 		hasLoadFiles, err = job.hasLoadFiles(tName)
 		if err != nil {
