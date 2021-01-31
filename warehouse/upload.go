@@ -118,6 +118,7 @@ const (
 var (
 	alwaysMarkExported                               = []string{warehouseutils.DiscardsTable}
 	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{warehouseutils.SNOWFLAKE}
+	warehousesToVerifyLoadFilesFolder                = []string{warehouseutils.SNOWFLAKE}
 )
 
 var maxParallelLoads map[string]int
@@ -1255,6 +1256,18 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		err = fmt.Errorf("No load files generated")
 		return startLoadFileID, endLoadFileID, err
 	}
+
+	// verify if all load files are in same folder in object storage
+	if misc.ContainsString(warehousesToVerifyLoadFilesFolder, job.warehouse.Type) {
+		locations := job.GetAllLoadFileLocations(startLoadFileID, endLoadFileID)
+		for _, location := range locations {
+			if !strings.Contains(location, uniqueLoadGenID) {
+				err = fmt.Errorf(`All loadfiles do not contain the same uniqueLoadGenID: %s`, uniqueLoadGenID)
+				return
+			}
+		}
+	}
+
 	return startLoadFileID, endLoadFileID, nil
 }
 
@@ -1339,22 +1352,51 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 }
 
 func (job *UploadJobT) GetLoadFileLocations(tableName string) (locations []string) {
-	sqlStatement := fmt.Sprintf(`SELECT location from %[1]s right join (
-		SELECT  staging_file_id, MAX(id) AS id FROM wh_load_files
-		WHERE ( source_id='%[2]s'
-			AND destination_id='%[3]s'
-			AND table_name='%[4]s'
-			AND id >= %[5]v
-			AND id <= %[6]v)
-		GROUP BY staging_file_id ) uniqueStagingFiles
-		ON  wh_load_files.id = uniqueStagingFiles.id `,
-		warehouseutils.WarehouseLoadFilesTable,
-		job.warehouse.Source.ID,
-		job.warehouse.Destination.ID,
-		tableName,
-		job.upload.StartLoadFileID,
-		job.upload.EndLoadFileID,
-	)
+	sqlStatement := fmt.Sprintf(`
+		WITH row_numbered_load_files as (
+			SELECT
+				location,
+				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
+				FROM %[1]s
+				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s' AND table_name='%[6]s'
+		)
+		SELECT location
+			FROM row_numbered_load_files
+			WHERE
+				row_number=1`,
+		warehouseutils.WarehouseLoadFilesTable, job.upload.StartLoadFileID, job.upload.EndLoadFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID, tableName)
+
+	rows, err := dbHandle.Query(sqlStatement)
+	if err != nil {
+		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var location string
+		err := rows.Scan(&location)
+		if err != nil {
+			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+		}
+		locations = append(locations, location)
+	}
+	return
+}
+
+func (job *UploadJobT) GetAllLoadFileLocations(startID int64, endID int64) (locations []string) {
+	sqlStatement := fmt.Sprintf(`
+		WITH row_numbered_load_files as (
+			SELECT
+				location,
+				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
+				FROM %[1]s
+				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
+		)
+		SELECT location
+			FROM row_numbered_load_files
+			WHERE
+				row_number=1`,
+		warehouseutils.WarehouseLoadFilesTable, startID, endID, job.warehouse.Source.ID, job.warehouse.Destination.ID)
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
@@ -1373,22 +1415,19 @@ func (job *UploadJobT) GetLoadFileLocations(tableName string) (locations []strin
 }
 
 func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location string, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT location FROM %[1]s RIGHT JOIN (
-		SELECT  staging_file_id, MAX(id) AS id FROM %[1]s
-		WHERE ( source_id='%[2]s'
-			AND destination_id='%[3]s'
-			AND table_name='%[4]s'
-			AND id >= %[5]v
-			AND id <= %[6]v)
-		GROUP BY staging_file_id ) uniqueStagingFiles
-		ON  wh_load_files.id = uniqueStagingFiles.id `,
-		warehouseutils.WarehouseLoadFilesTable,
-		job.warehouse.Source.ID,
-		job.warehouse.Destination.ID,
-		tableName,
-		job.upload.StartLoadFileID,
-		job.upload.EndLoadFileID,
-	)
+	sqlStatement := fmt.Sprintf(`
+		WITH row_numbered_load_files as (
+			SELECT
+				location,
+				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
+				FROM %[1]s
+				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s' AND table_name='%[6]s'
+		)
+		SELECT location
+			FROM row_numbered_load_files
+			WHERE
+				row_number=1`,
+		warehouseutils.WarehouseLoadFilesTable, job.upload.StartLoadFileID, job.upload.EndLoadFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID, tableName)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
 	if err != nil && err != sql.ErrNoRows {
 		pkgLogger.Errorf(`[WH] Error querying for sample load file location: %v`, err)
