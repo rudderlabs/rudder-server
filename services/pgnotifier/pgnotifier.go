@@ -92,6 +92,10 @@ func New(connectionInfo string) (notifier PgNotifierT, err error) {
 	return
 }
 
+func (notifier PgNotifierT) GetDBHandle() *sql.DB {
+	return notifier.dbHandle
+}
+
 func (notifier PgNotifierT) AddTopic(topic string) (err error) {
 	stmt := fmt.Sprintf("DELETE FROM %s WHERE topic ='%s'", queueName, topic)
 	pkgLogger.Infof("PgNotifier: Deleting all jobs on topic: %s", topic)
@@ -118,8 +122,9 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 									SELECT id FROM %[1]s
 									WHERE status='%[3]s' OR status='%[4]s' OR (status='%[5]s' AND last_exec_time <= NOW() - INTERVAL '%[6]v seconds')
 									ORDER BY id
+									FOR UPDATE SKIP LOCKED
 									LIMIT %[7]v
-								)`,
+								) RETURNING id`,
 			queueName,
 			GetCurrentSQLTimestamp(),
 			WaitingState,
@@ -128,10 +133,22 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 			retriggerExecutingTimeLimitInS,
 			retriggerCount)
 		pkgLogger.Debugf("PgNotifier: triggering pending jobs: %v", stmt)
-		_, err := notifier.dbHandle.Exec(stmt)
+		rows, err := notifier.dbHandle.Query(stmt)
 		if err != nil {
 			panic(err)
 		}
+		var ids []int64
+		for rows.Next() {
+			var id int64
+			err := rows.Scan(&id)
+			if err != nil {
+				pkgLogger.Errorf("PgNotifier: Error scanning returned id from retriggered jobs: %v", err)
+				continue
+			}
+			ids = append(ids, id)
+		}
+		rows.Close()
+		pkgLogger.Debugf("PgNotifier: Retriggerd job ids: %v", ids)
 	}
 }
 
@@ -225,10 +242,24 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 						LIMIT 1
 						)
 						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState)
-	err := notifier.dbHandle.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
+
+	tx, err := notifier.dbHandle.Begin()
+	if err != nil {
+		return
+	}
+	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 
 	if err != nil {
 		pkgLogger.Debugf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
+		tx.Rollback()
+		return
+	}
+
+	err = tx.Commit()
+
+	if err != nil {
+		pkgLogger.Errorf("PgNotifier: Error commiting claim txn: %v", err)
+		tx.Rollback()
 		return
 	}
 

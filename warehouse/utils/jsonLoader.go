@@ -45,7 +45,7 @@ func (loader *jsonLoader) AddEmptyColumn(columnName string) {
 func (loader *jsonLoader) WriteToString() (string, error) {
 	jsonData, err := json.Marshal(loader.columnData)
 	if err != nil {
-		pkgLogger.Errorf(`[JSONWriter]: Error writing discardRow to buffer: %w`, err)
+		pkgLogger.Errorf(`[JSONWriter]: Error writing discardRow to buffer: %v`, err)
 		return "", err
 	}
 	return string(jsonData) + "\n", nil
