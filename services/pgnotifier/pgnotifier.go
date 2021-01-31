@@ -92,6 +92,10 @@ func New(connectionInfo string) (notifier PgNotifierT, err error) {
 	return
 }
 
+func (notifier PgNotifierT) GetDBHandle() *sql.DB {
+	return notifier.dbHandle
+}
+
 func (notifier PgNotifierT) AddTopic(topic string) (err error) {
 	stmt := fmt.Sprintf("DELETE FROM %s WHERE topic ='%s'", queueName, topic)
 	pkgLogger.Infof("PgNotifier: Deleting all jobs on topic: %s", topic)
