@@ -1,8 +1,8 @@
 package warehouse
 
 import (
+	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -59,27 +59,28 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 	return err
 }
 
-func (wh *WarehouseAdmin) QueryWhUploads(uploadReq WHUploadReqT, reply *interface{}) error {
-	var options []WHUploadOption
-	if uploadReq.SourceID != "" {
-		options = append(options, SetSourceID(uploadReq.SourceID))
-	}
-	if uploadReq.DestinationID != "" {
-		options = append(options, SetDestinationID(uploadReq.DestinationID))
-	}
-	if uploadReq.DestinationType != "" {
-		options = append(options, SetDestinationType(uploadReq.DestinationType))
-	}
-	if len(options) == 0 {
-		options = append(options, SetDefault())
-	}
-	res, err := GetWhUploads(options...)
-	fmt.Println(res)
+func (wh *WarehouseAdmin) QueryWhUploads(uploadsReq UploadsReqT, reply *[]byte) error {
+	res, err := uploadsReq.GetWhUploads()
 	if err != nil {
 		return err
 	}
-	var re interface{} = res
-	reply = &re
+	bytes, err := json.Marshal(res)
+	if err != nil {
+		return err
+	}
+	*reply = bytes
+	return nil
+}
 
+func (wh *WarehouseAdmin) QueryWhTables(tableUploadReq TableUploadReqT, reply *[]byte) error {
+	res, err := tableUploadReq.GetWhTableUploads()
+	if err != nil {
+		return err
+	}
+	bytes, err := json.Marshal(res)
+	if err != nil {
+		return err
+	}
+	*reply = bytes
 	return nil
 }

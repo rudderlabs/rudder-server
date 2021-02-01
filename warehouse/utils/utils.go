@@ -315,7 +315,7 @@ func GetS3Locations(locations []string) (s3Locations []string) {
 }
 
 func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
-	var schema map[string]map[string]string
+	schema := make(map[string]map[string]string)
 	err := json.Unmarshal(rawMsg, &schema)
 	if err != nil {
 		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(rawMsg), err))
@@ -323,7 +323,7 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	return schema
 }
 func JSONTimingsToMap(rawMsg json.RawMessage) []map[string]string {
-	var timings []map[string]string
+	timings := make([]map[string]string, 0)
 	err := json.Unmarshal(rawMsg, &timings)
 	if err != nil {
 		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(rawMsg), err))
