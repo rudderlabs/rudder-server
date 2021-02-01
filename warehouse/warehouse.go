@@ -80,7 +80,7 @@ const (
 	SlaveMode         = "slave"
 	MasterSlaveMode   = "master_and_slave"
 	EmbeddedMode      = "embedded"
-	PooledWHSlaveMode = "pooled_wh_slave"
+	PooledWHSlaveMode = "embedded_master"
 )
 
 const (

@@ -26,7 +26,7 @@ const (
 	MasterSlaveMode   = "master_and_slave"
 	SlaveMode         = "slave"
 	OffMode           = "off"
-	PooledWHSlaveMode = "pooled_wh_slave"
+	PooledWHSlaveMode = "embedded_master"
 )
 
 //TransformKey as package method to get the formatted env from a give string
