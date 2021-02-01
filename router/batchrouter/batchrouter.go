@@ -425,7 +425,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			errorResp = []byte(errorRespString)
 		}
 		//TODO : Check sub in Time.NOW and Use FirstAttemptTime from RT
-		timeElapsed := time.Now().Sub(firstAttemptedAt)
+		timeElapsed := time.Since(firstAttemptedAt)
 		if jobState == jobsdb.Failed.State && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
 			jobState = jobsdb.Aborted.State
 		} else {
