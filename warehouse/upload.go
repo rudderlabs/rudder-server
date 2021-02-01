@@ -602,6 +602,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 		if prevJobID, ok := previouslyFailedTables[tableName]; ok {
 			loadErrors = append(loadErrors, fmt.Errorf("Skipping %s tables because it previously failed to load in an earlier job: %d", tableName, prevJobID))
 			wg.Done()
+			continue
 		}
 		hasLoadFiles, err := job.hasLoadFiles(tableName)
 		if err != nil {
