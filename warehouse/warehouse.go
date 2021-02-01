@@ -918,7 +918,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getConnectionString() string {
-	if warehouseMode == config.EmbeddedMode || warehouseMode == config.PooledWHSlaveMode {
+	if !CheckForWarehouseEnvVars() {
 		return jobsdb.GetConnectionString()
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
@@ -939,6 +939,14 @@ func startWebHandler() {
 		pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
 	}
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
+}
+
+// CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present
+func CheckForWarehouseEnvVars() bool {
+	return config.IsEnvSet("WAREHOUSE_JOBS_DB_HOST") &&
+		config.IsEnvSet("WAREHOUSE_JOBS_DB_USER") &&
+		config.IsEnvSet("WAREHOUSE_JOBS_DB_DB_NAME") &&
+		config.IsEnvSet("WAREHOUSE_JOBS_DB_PASSWORD")
 }
 
 // This checks if gateway is running or not
