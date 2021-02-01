@@ -90,14 +90,15 @@ type UploadT struct {
 }
 
 type UploadJobT struct {
-	upload       *UploadT
-	dbHandle     *sql.DB
-	warehouse    warehouseutils.WarehouseT
-	whManager    manager.ManagerI
-	stagingFiles []*StagingFileT
-	pgNotifier   *pgnotifier.PgNotifierT
-	schemaHandle *SchemaHandleT
-	schemaLock   sync.Mutex
+	upload              *UploadT
+	dbHandle            *sql.DB
+	warehouse           warehouseutils.WarehouseT
+	whManager           manager.ManagerI
+	stagingFiles        []*StagingFileT
+	pgNotifier          *pgnotifier.PgNotifierT
+	schemaHandle        *SchemaHandleT
+	schemaLock          sync.Mutex
+	hasAllTablesSkipped bool
 }
 
 type UploadColumnT struct {
@@ -345,6 +346,7 @@ func (job *UploadJobT) run() (err error) {
 				if err != nil {
 					break
 				}
+				job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 				if len(loadErrors) > 0 {
 					err = warehouseutils.ConcatErrors(loadErrors)
@@ -368,6 +370,7 @@ func (job *UploadJobT) run() (err error) {
 					if err != nil {
 						break
 					}
+					job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 					if len(loadErrors) > 0 {
 						err = warehouseutils.ConcatErrors(loadErrors)
@@ -386,6 +389,7 @@ func (job *UploadJobT) run() (err error) {
 			loadTimeStat.Start()
 
 			loadErrors := job.loadAllTablesExcept(userTableNames)
+			job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 			if len(loadErrors) > 0 {
 				err = warehouseutils.ConcatErrors(loadErrors)
@@ -425,6 +429,16 @@ func (job *UploadJobT) run() (err error) {
 	}
 
 	return nil
+}
+
+func areAllTableSkipErrors(loadErrors []error) bool {
+	var skipErrCount int
+	for _, lErr := range loadErrors {
+		if _, ok := lErr.(*TableSkipError); ok {
+			skipErrCount++
+		}
+	}
+	return skipErrCount == len(loadErrors)
 }
 
 // TableUploadStatusT captures the status of each table upload along with its parent upload_job's info like destionation_id and namespace
@@ -573,6 +587,16 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	return err
 }
 
+//TableSkipError is a custom error type to capture if a table load is skipped because of a previously failed table load
+type TableSkipError struct {
+	tableName     string
+	previousJobID int64
+}
+
+func (tse *TableSkipError) Error() string {
+	return fmt.Sprintf("Skipping %s table because it previously failed to load in an earlier job: %d", tse.tableName, tse.previousJobID)
+}
+
 func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 	uploadSchema := job.upload.Schema
 	var parallelLoads int
@@ -600,7 +624,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 			continue
 		}
 		if prevJobID, ok := previouslyFailedTables[tableName]; ok {
-			loadErrors = append(loadErrors, fmt.Errorf("Skipping %s tables because it previously failed to load in an earlier job: %d", tableName, prevJobID))
+			loadErrors = append(loadErrors, &TableSkipError{tableName: tableName, previousJobID: prevJobID})
 			wg.Done()
 		}
 		hasLoadFiles, err := job.hasLoadFiles(tableName)
@@ -689,7 +713,7 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for _, tName := range userTables {
 		if prevJobID, ok := previouslyFailedTables[tName]; ok {
-			err = fmt.Errorf("Skipping %s tables because it previously failed to load in an earlier job: %d", tName, prevJobID)
+			err = &TableSkipError{tableName: tName, previousJobID: prevJobID}
 			return []error{err}, nil
 		}
 	}
@@ -750,9 +774,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for _, tableName := range identityTables {
 		if prevJobID, ok := previouslyFailedTables[tableName]; ok {
-			errMessage := fmt.Sprintf("Skipping %s tables because it previously failed to load in an earlier job: %d", tableName, prevJobID)
-			pkgLogger.Info(errMessage)
-			return []error{fmt.Errorf("%s", errMessage)}, nil
+			return []error{&TableSkipError{tableName: tableName, previousJobID: prevJobID}}, nil
 		}
 	}
 
@@ -946,7 +968,9 @@ func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
 	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
-	job.counterStat("warehouse_failed_uploads").Count(1)
+	if !job.hasAllTablesSkipped {
+		job.counterStat("warehouse_failed_uploads").Count(1)
+	}
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 
 	upload := job.upload
