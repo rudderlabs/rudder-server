@@ -17,7 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sts"
 
-	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -29,10 +28,9 @@ import (
 )
 
 var (
-	setVarCharMax         bool
-	warehouseUploadsTable string
-	stagingTablePrefix    string
-	pkgLogger             logger.LoggerI
+	setVarCharMax      bool
+	stagingTablePrefix string
+	pkgLogger          logger.LoggerI
 )
 
 func init() {
@@ -145,16 +143,6 @@ func (rs *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	return
 }
 
-func (rs *HandleT) tableExists(tableName string) (exists bool, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1
-   								 FROM   information_schema.tables
-   								 WHERE  table_schema = '%s'
-   								 AND    table_name = '%s'
-								   )`, rs.Namespace, tableName)
-	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
-	return
-}
-
 func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, rs.Namespace)
 	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
@@ -184,18 +172,6 @@ func (rs *HandleT) createSchema() (err error) {
 	return
 }
 
-func checkAndIgnoreAlreadyExistError(err error) bool {
-	if err != nil {
-		if e, ok := err.(*pq.Error); ok {
-			if e.Code == "42701" {
-				return true
-			}
-		}
-		return false
-	}
-	return true
-}
-
 type S3ManifestEntryT struct {
 	Url       string `json:"url"`
 	Mandatory bool   `json:"mandatory"`
@@ -213,7 +189,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		manifest.Entries = append(manifest.Entries, S3ManifestEntryT{Url: location, Mandatory: true})
 	}
 	pkgLogger.Infof("RS: Generated manifest for table:%s", tableName)
-	manifestJSON, err := json.Marshal(&manifest)
+	manifestJSON, _ := json.Marshal(&manifest)
 
 	manifestFolder := "rudder-redshift-manifests"
 	dirName := "/" + manifestFolder + "/"
@@ -234,7 +210,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		panic(err)
 	}
 	defer file.Close()
-	uploader, err := filemanager.New(&filemanager.SettingsT{
+	uploader, _ := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
 		Config:   misc.GetObjectStorageConfig("S3", rs.Warehouse.Destination.Config),
 	})
@@ -273,9 +249,10 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	sort.Strings(strkeys)
 	var sortedColumnNames string
+	//TODO: use strings.Join() instead
 	for index, key := range strkeys {
 		if index > 0 {
-			sortedColumnNames += fmt.Sprintf(`, `)
+			sortedColumnNames += `, `
 		}
 		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
 	}
@@ -346,8 +323,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	var quotedColumnNames string
-	quotedColumnNames = warehouseutils.DoubleQuoteAndJoinByComma(strkeys)
+	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(strkeys)
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)

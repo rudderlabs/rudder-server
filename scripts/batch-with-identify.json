@@ -1,0 +1,138 @@
+{
+  "batch": [
+    {
+      "anonymousId": "8d872292709c6fbe",
+      "channel": "mobile",
+      "context": {
+        "app": {
+          "build": "1",
+          "name": "AMTestProject",
+          "namespace": "com.rudderstack.android.rudderstack.sampleAndroidApp",
+          "version": "1.0"
+        },
+        "device": {
+          "id": "8d872292709c6fbe",
+          "manufacturer": "Google",
+          "model": "AOSP on IA Emulator",
+          "name": "generic_x86_arm",
+          "type": "android"
+        },
+        "library": {
+          "name": "com.rudderstack.android.sdk.core",
+          "version": "1.0.2"
+        },
+        "locale": "en-US",
+        "network": {
+          "carrier": "Android",
+          "bluetooth": false,
+          "cellular": true,
+          "wifi": true
+        },
+        "os": {
+          "name": "Android",
+          "version": "9"
+        },
+        "screen": {
+          "density": 420,
+          "height": 1794,
+          "width": 1080
+        },
+        "timezone": "Asia/Kolkata",
+        "traits": {
+          "address": {
+            "city": "Kolkata",
+            "country": "India",
+            "postalcode": "700096",
+            "state": "West bengal",
+            "street": "Park Street"
+          },
+          "age": "30",
+          "anonymousId": "8d872292709c6fbe",
+          "birthday": "2020-05-26",
+          "createdat": "18th March 2020",
+          "description": "Premium User for 3 years",
+          "email": "identify@test.com",
+          "firstname": "John",
+          "userId": "sample_user_id",
+          "lastname": "Sparrow",
+          "name": "John Sparrow",
+          "id": "sample_user_id",
+          "phone": "9876543210",
+          "username": "john_sparrow",
+          "quantity": "5",
+          "price": "56.0"
+        },
+        "userAgent": "Dalvik/2.1.0 (Linux; U; Android 9; AOSP on IA Emulator Build/PSR1.180720.117)"
+      },
+      "event": "identify",
+      "integrations": {
+        "All": true
+      },
+      "messageId": "1590431830865-3be680d6-7dcd-4b05-8460-f3acc30046d9",
+      "originalTimestamp": "2020-05-25T18:37:10.865Z",
+      "type": "identify",
+      "userId": "sample_user_id_2"
+    },
+    {
+      "anonymousId": "anon_id",
+      "channel": "android-sdk",
+      "context": {
+        "app": {
+          "build": "1",
+          "name": "RudderAndroidClient",
+          "namespace": "com.rudderlabs.android.sdk",
+          "version": "1.0"
+        },
+        "device": {
+          "id": "49e4bdd1c280bc00",
+          "manufacturer": "Google",
+          "model": "Android SDK built for x86",
+          "name": "generic_x86"
+        },
+        "locale": "en-US",
+        "network": {
+          "carrier": "Android"
+        },
+        "screen": {
+          "density": 420,
+          "height": 1794,
+          "width": 1080
+        },
+        "library": {
+          "name": "com.rudderstack.android.sdk.core"
+        },
+        "traits": {
+          "anonymousId": "49e4bdd1c280bc00"
+        },
+        "user_agent": "Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"
+      },
+      "event": "Demo Track",
+      "integrations": {
+        "All": true
+      },
+      "properties": {
+        "label": "Demo Label",
+        "category": "Demo Category",
+        "value": 5,
+        "testMap": {
+          "t1": "a",
+          "t2": 4
+        },
+        "floatVal": 4.501,
+        "testArray": [
+          {
+            "id": "elem1",
+            "value": "e1"
+          },
+          {
+            "id": "elem2",
+            "value": "e2"
+          }
+        ]
+      },
+      "type": "track",
+      "originalTimestamp": "2019-08-12T05:08:30.909Z",
+      "sentAt": "2019-08-12T05:08:30.909Z"
+    }
+  ]
+}

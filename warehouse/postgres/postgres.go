@@ -170,6 +170,10 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider: warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config),
 			Config:   pg.Warehouse.Destination.Config,
 		})
+		if err != nil {
+			pkgLogger.Errorf("PG: Error in setting up a downloader for destionationID : %s Error : %v", pg.Warehouse.Destination.ID, err)
+			return nil, err
+		}
 		err = downloader.Download(objectFile, object)
 		if err != nil {
 			pkgLogger.Errorf("PG: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
@@ -428,14 +432,6 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func checkAndIgnoreAlreadyExistError(err error) bool {
-	if err != nil {
-		// TODO: throw error if column already exists but of different type
-		return false
-	}
-	return true
-}
-
 func (pg *HandleT) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, pg.Namespace)
 	pkgLogger.Infof("PG: Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
@@ -458,16 +454,6 @@ func (pg *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (pg *HandleT) tableExists(tableName string) (exists bool, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1
-   								 FROM   information_schema.tables
-   								 WHERE  table_schema = '%s'
-   								 AND    table_name = '%s'
-								   )`, pg.Namespace, tableName)
-	err = pg.Db.QueryRow(sqlStatement).Scan(&exists)
-	return
-}
-
 func (pg *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s`, tableName, columnName, rudderDataTypesMapToPostgres[columnType])
 	pkgLogger.Infof("PG: Adding column in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
@@ -483,7 +469,7 @@ func (pg *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		return err
 	}
 	pkgLogger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
-	err = pg.createTable(fmt.Sprintf(`%s`, tableName), columnMap)
+	err = pg.createTable(tableName, columnMap)
 	return err
 }
 

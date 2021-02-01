@@ -130,7 +130,8 @@ func (job *PayloadT) getDiscardsTable() string {
 
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 	job := jobRun.job
-	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
+	randomness := uuid.NewV4().String()
+	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
 }
 
 func (job *PayloadT) getColumnName(columnName string) string {
@@ -204,7 +205,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 				return loadFileUploadOutputs, nil
 			}
 		case err := <-uploadErrorChan:
-			pkgLogger.Errorf("received error while uploading load file to bucket for staging file id %s, cancelling the context: err %w", job.StagingFileID, err)
+			pkgLogger.Errorf("received error while uploading load file to bucket for staging file id %s, cancelling the context: err %v", job.StagingFileID, err)
 			return []loadFileUploadOutputT{}, err
 		case <-time.After(slaveUploadTimeout):
 			return []loadFileUploadOutputT{}, fmt.Errorf("Load files upload timed out for staging file id: %v", jobRun.job.StagingFileID)
@@ -223,66 +224,6 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
 	uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
 	return uploadLocation, err
-}
-
-func (job *PayloadT) markLoadFileUploadSuccess(tableName string, uploadLocation string, numEvents int) int64 {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, warehouseutils.WarehouseLoadFilesTable)
-	stmt, err := dbHandle.Prepare(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-	defer stmt.Close()
-
-	var fileID int64
-	err = stmt.QueryRow(job.StagingFileID, uploadLocation, job.SourceID, job.DestinationID, job.DestinationType, tableName, numEvents, timeutil.Now()).Scan(&fileID)
-	if err != nil {
-		panic(err)
-	}
-	return fileID
-}
-
-func (job *PayloadT) bulkCreateLoadFileRecords(loadFileUploadOutputs []loadFileUploadOutputT) (loadFileIDs []int64) {
-	columnsInInsert := []string{"staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at"}
-	currentTime := timeutil.Now()
-	valueReferences := make([]string, 0, len(loadFileUploadOutputs))
-	valueArgs := make([]interface{}, 0, len(loadFileUploadOutputs)*len(columnsInInsert))
-	for idx, loadFileUploadOutput := range loadFileUploadOutputs {
-		var valueRefsArr []string
-		for index := idx*len(columnsInInsert) + 1; index <= (idx+1)*len(columnsInInsert); index++ {
-			valueRefsArr = append(valueRefsArr, fmt.Sprintf(`$%d`, index))
-		}
-		valueReferences = append(valueReferences, fmt.Sprintf("(%s)", strings.Join(valueRefsArr, ",")))
-		valueArgs = append(valueArgs, job.StagingFileID)
-		valueArgs = append(valueArgs, loadFileUploadOutput.Location)
-		valueArgs = append(valueArgs, job.SourceID)
-		valueArgs = append(valueArgs, job.DestinationID)
-		valueArgs = append(valueArgs, job.DestinationType)
-		valueArgs = append(valueArgs, loadFileUploadOutput.TableName)
-		valueArgs = append(valueArgs, loadFileUploadOutput.TotalRows)
-		valueArgs = append(valueArgs, currentTime)
-	}
-
-	// sample cosntructed query
-	// INSERT INTO wh_load_files (staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8),($9,$10,$11,$12,$13,$14,$15,$16) RETURNING id
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at) VALUES %s RETURNING id`, warehouseutils.WarehouseLoadFilesTable, strings.Join(valueReferences, ","))
-
-	rows, err := dbHandle.Query(sqlStatement, valueArgs...)
-	if err != nil {
-		panic(err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var id int64
-		err := rows.Scan(&id)
-		if err != nil {
-			panic(err)
-		}
-		loadFileIDs = append(loadFileIDs, id)
-	}
-
-	return loadFileIDs
 }
 
 // Sort columns per table to maintain same order in load file (needed in case of csv load file)
@@ -317,14 +258,14 @@ func (jobRun *JobRunT) cleanup() {
 	if jobRun.stagingFileReader != nil {
 		err := jobRun.stagingFileReader.Close()
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to close staging file: %w", err)
+			pkgLogger.Errorf("[WH]: Failed to close staging file: %v", err)
 		}
 	}
 
 	if jobRun.stagingFilePath != "" {
 		err := os.Remove(jobRun.stagingFilePath)
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to remove staging file: %w", err)
+			pkgLogger.Errorf("[WH]: Failed to remove staging file: %v", err)
 		}
 	}
 	if jobRun.outputFileWritersMap != nil {
@@ -470,7 +411,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 					err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, discardWriter)
 
 					if err != nil {
-						pkgLogger.Error("[WH]: Failed to write to discards: %w", err)
+						pkgLogger.Errorf("[WH]: Failed to write to discards: %v", err)
 					}
 					jobRun.tableEventCountMap[discardsTable]++
 					continue
@@ -487,7 +428,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 			if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
 				marshalledVal, err := json.Marshal(columnVal)
 				if err != nil {
-					pkgLogger.Errorf("[WH]: Error in marshalling []interface{} columnVal: %w", err)
+					pkgLogger.Errorf("[WH]: Error in marshalling []interface{} columnVal: %v", err)
 					eventLoader.AddEmptyColumn(columnName)
 					continue
 				}
@@ -500,7 +441,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 		// Completed parsing all columns, write single event to the file
 		eventData, err := eventLoader.WriteToString()
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to write event to string: %w", err)
+			pkgLogger.Errorf("[WH]: Failed to write event to string: %v", err)
 			return loadFileUploadOutputs, err
 		}
 		gzWriter.WriteGZ(eventData)
@@ -546,6 +487,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT) {
 		return
 	}
 	job.BatchID = claimedJob.BatchID
+	pkgLogger.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.ID)
 	loadFileOutputs, err := processStagingFile(job)
 	if err != nil {
 		handleErr(err, claimedJob)
@@ -580,8 +522,8 @@ func setupSlave() {
 						freeWorker(idx)
 						break
 					}
+					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 					rruntime.Go(func() {
-						pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 						processClaimedJob(claimedJob)
 						freeWorker(idx)
 					})

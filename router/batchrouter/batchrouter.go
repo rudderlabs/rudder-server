@@ -603,6 +603,7 @@ func (brt *HandleT) initWorkers() {
 								err := fmt.Errorf("BRT: Batch destiantion source not found in config for sourceID: %s", sourceID)
 								brt.setJobStatus(batchJobs, false, err, false)
 								wg.Done()
+								continue
 							}
 							rruntime.Go(func() {
 								switch {
