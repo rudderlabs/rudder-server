@@ -94,7 +94,9 @@ type RudderStatsT struct {
 func Setup() {
 	var err error
 	conn = statsd.Address(statsdServerURL)
-	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags("instanceName", instanceID, "namespace", kubeNamespace))
+
+	//TODO: Add tags by calling a function...
+	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), defaultTags())
 	if err != nil {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
@@ -155,7 +157,7 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 			tagVals = append(tagVals, tagName, tagVal)
 		}
 		var err error
-		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
 		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
 		if err != nil {
@@ -266,4 +268,17 @@ func collectRuntimeStats(client *statsd.Client) {
 // StopRuntimeStats stops collection of runtime stats.
 func StopRuntimeStats() {
 	close(rc.Done)
+}
+
+// returns value stored in KUBE_NAMESPACE env var
+func getKubeNamespace() string {
+	return config.GetEnv("KUBE_NAMESPACE", "")
+}
+
+// returns default Tags to the telegraf request
+func defaultTags() statsd.Option {
+	if len(getKubeNamespace()) > 0 {
+		return statsd.Tags("instanceName", instanceID, "namespace", getKubeNamespace())
+	}
+	return statsd.Tags("instanceName", instanceID)
 }
