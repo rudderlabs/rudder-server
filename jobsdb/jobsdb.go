@@ -766,7 +766,7 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 		if !minID.Valid || !maxID.Valid {
 			continue
 		}
-		
+
 		if idx < len(dsList)-1 && (jd.inProgressMigrationTargetDS == nil || jd.inProgressMigrationTargetDS.Index != ds.Index) {
 			//TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
 			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
@@ -3039,7 +3039,7 @@ func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 
 /*
 GetProcessed returns events of a given state. This does not update any state itself and
-relises on the caller to update it. That means that successive calls to GetProcessed("failed")
+realises on the caller to update it. That means that successive calls to GetProcessed("failed")
 can return the same set of events. It is the responsibility of the caller to call it from
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
