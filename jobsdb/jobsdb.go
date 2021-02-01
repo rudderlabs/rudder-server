@@ -3048,7 +3048,7 @@ func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 
 /*
 GetProcessed returns events of a given state. This does not update any state itself and
-relises on the caller to update it. That means that successive calls to GetProcessed("failed")
+realises on the caller to update it. That means that successive calls to GetProcessed("failed")
 can return the same set of events. It is the responsibility of the caller to call it from
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */

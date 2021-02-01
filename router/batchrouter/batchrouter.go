@@ -32,6 +32,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 var (
@@ -406,8 +407,25 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	jobStateCount := make(map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
+		var firstAttemptedAt time.Time
+		var firstAttemptedAtString string
+		if gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str != "" {
+			firstAttemptedAtString = gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str
+			firstAttemptedAt, err = time.Parse(misc.RFC3339Milli, firstAttemptedAtString)
+			if err != nil {
+				firstAttemptedAt = time.Now()
+				firstAttemptedAtString = time.Now().Format(misc.RFC3339Milli)
+			}
+		} else {
+			firstAttemptedAt = time.Now()
+			firstAttemptedAtString = time.Now().Format(misc.RFC3339Milli)
+		}
+		errorRespString, err := sjson.Set(string(errorResp), "firstAttemptedAt", firstAttemptedAtString)
+		if err == nil {
+			errorResp = []byte(errorRespString)
+		}
 		//TODO : Check sub in Time.NOW and Use FirstAttemptTime from RT
-		timeElapsed := time.Now().Sub(job.CreatedAt)
+		timeElapsed := time.Now().Sub(firstAttemptedAt)
 		if jobState == jobsdb.Failed.State && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
 			jobState = jobsdb.Aborted.State
 		} else {
