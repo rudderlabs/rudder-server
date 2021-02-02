@@ -77,10 +77,11 @@ var (
 
 // warehouses worker modes
 const (
-	MasterMode      = "master"
-	SlaveMode       = "slave"
-	MasterSlaveMode = "master_and_slave"
-	EmbeddedMode    = "embedded"
+	MasterMode        = "master"
+	SlaveMode         = "slave"
+	MasterSlaveMode   = "master_and_slave"
+	EmbeddedMode      = "embedded"
+	PooledWHSlaveMode = "embedded_master"
 )
 
 const (
@@ -967,7 +968,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getConnectionString() string {
-	if warehouseMode == config.EmbeddedMode {
+	if !CheckForWarehouseEnvVars() {
 		return jobsdb.GetConnectionString()
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
@@ -990,12 +991,24 @@ func startWebHandler() {
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
+// CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present
+func CheckForWarehouseEnvVars() bool {
+	return config.IsEnvSet("WAREHOUSE_JOBS_DB_HOST") &&
+		config.IsEnvSet("WAREHOUSE_JOBS_DB_USER") &&
+		config.IsEnvSet("WAREHOUSE_JOBS_DB_DB_NAME") &&
+		config.IsEnvSet("WAREHOUSE_JOBS_DB_PASSWORD")
+}
+
+// This checks if gateway is running or not
 func isStandAlone() bool {
-	return warehouseMode != EmbeddedMode
+	return warehouseMode != EmbeddedMode && warehouseMode != PooledWHSlaveMode
 }
 
 func isMaster() bool {
-	return warehouseMode == config.MasterMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
+	return warehouseMode == config.MasterMode ||
+		warehouseMode == config.MasterSlaveMode ||
+		warehouseMode == config.EmbeddedMode ||
+		warehouseMode == config.PooledWHSlaveMode
 }
 
 func isSlave() bool {
@@ -1027,7 +1040,6 @@ func setupDB(connInfo string) {
 		pkgLogger.Error(err)
 		panic(err)
 	}
-
 	setupTables(dbHandle)
 }
 
@@ -1041,6 +1053,7 @@ func Start() {
 
 	pkgLogger.Infof("WH: Starting Warehouse service...")
 	psqlInfo := getConnectionString()
+
 	setupDB(psqlInfo)
 	defer startWebHandler()
 
@@ -1053,7 +1066,6 @@ func Start() {
 		}
 		return
 	}
-
 	var err error
 	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {

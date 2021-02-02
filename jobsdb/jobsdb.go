@@ -407,6 +407,7 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("jobsdb")
 }
 
+// GetConnectionString Returns Jobs DB connection configuration
 func GetConnectionString() string {
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s",
@@ -766,7 +767,7 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 		if !minID.Valid || !maxID.Valid {
 			continue
 		}
-		
+
 		if idx < len(dsList)-1 && (jd.inProgressMigrationTargetDS == nil || jd.inProgressMigrationTargetDS.Index != ds.Index) {
 			//TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
 			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
