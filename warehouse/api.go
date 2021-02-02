@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ type UploadsReqT struct {
 	IncludeTablesInRes bool
 	From               time.Time
 	To                 time.Time
+	API                UploadAPIT
 }
 
 type UploadsResT struct {
@@ -43,6 +45,7 @@ type UploadResT struct {
 type TableUploadReqT struct {
 	UploadID int64
 	Name     string
+	API      UploadAPIT
 }
 
 type TableUploadResT struct {
@@ -55,7 +58,25 @@ type TableUploadResT struct {
 	LastExecAt time.Time `json:"lastExecAt"`
 }
 
-func (uploadsReq *UploadsReqT) validateUploadsReq() error {
+type UploadAPIT struct {
+	enabled  bool
+	dbHandle *sql.DB
+	log      logger.LoggerI
+}
+
+var UploadAPI UploadAPIT
+
+func InitWarehouseApis(dbHandle *sql.DB, log logger.LoggerI) {
+	UploadAPI = UploadAPIT{
+		enabled:  true,
+		dbHandle: dbHandle,
+		log:      log,
+	}
+}
+func (uploadsReq *UploadsReqT) validateReq() error {
+	if !uploadsReq.API.enabled || uploadsReq.API.log == nil || uploadsReq.API.dbHandle == nil {
+		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
+	}
 	if uploadsReq.From.IsZero() {
 		uploadsReq.From = time.Now().UTC()
 	}
@@ -69,7 +90,6 @@ func (uploadsReq *UploadsReqT) validateUploadsReq() error {
 }
 
 func (uploadsReq *UploadsReqT) generateQuery(selectFields string) string {
-
 	query := fmt.Sprintf(`select %s  from %s where created_at <= '%s' and created_at >= '%s'`, selectFields, warehouseutils.WarehouseUploadsTable, uploadsReq.From.Format(time.RFC3339), uploadsReq.To.Format(time.RFC3339))
 	if uploadsReq.SourceID != "" {
 		query = fmt.Sprintf(`%s and source_id = '%s' `, query, uploadsReq.SourceID)
@@ -84,19 +104,20 @@ func (uploadsReq *UploadsReqT) generateQuery(selectFields string) string {
 		query = fmt.Sprintf(`%s and status = '%s' `, query, uploadsReq.Status)
 	}
 	query = query + ` order by id desc`
+	uploadsReq.API.log.Info(query)
 	return query
 }
 
 func (uploadsReq UploadsReqT) GetWhUploads() (UploadsResT, error) {
-	err := uploadsReq.validateUploadsReq()
+	err := uploadsReq.validateReq()
 	if err != nil {
 		return UploadsResT{}, err
 	}
 	query := uploadsReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, schema, status, error, first_event_at, last_event_at, timings`)
-	pkgLogger.Debug(query)
-	rows, err := dbHandle.Query(query)
+	uploadsReq.API.log.Debug(query)
+	rows, err := uploadsReq.API.dbHandle.Query(query)
 	if err != nil {
-		pkgLogger.Errorf(err.Error())
+		uploadsReq.API.log.Errorf(err.Error())
 		return UploadsResT{}, err
 	}
 	uploads := make([]UploadResT, 0)
@@ -106,7 +127,7 @@ func (uploadsReq UploadsReqT) GetWhUploads() (UploadsResT, error) {
 		var timings json.RawMessage
 		err = rows.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.Namespace, &schema, &upload.Status, &upload.Error, &upload.FirstEventAt, &upload.LastEventAt, &timings)
 		if err != nil {
-			pkgLogger.Errorf(err.Error())
+			uploadsReq.API.log.Errorf(err.Error())
 			return UploadsResT{}, err
 		}
 		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
@@ -130,19 +151,33 @@ func (uploadsReq UploadsReqT) GetWhUploads() (UploadsResT, error) {
 }
 
 func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string {
-	query := fmt.Sprintf(`select %s from wh_table_uploads where wh_upload_id = %d`, selectFields, tableUploadReq.UploadID)
+	query := fmt.Sprintf(`select %s from %s where wh_upload_id = %d`, selectFields, warehouseutils.WarehouseTableUploadsTable, tableUploadReq.UploadID)
 	if len(strings.TrimSpace(tableUploadReq.Name)) > 0 {
 		query = fmt.Sprintf(`%s and table_name = %s`, query, tableUploadReq.Name)
 	}
 	return query
 }
 
+func (tableUploadReq TableUploadReqT) validateReq() error {
+	if !tableUploadReq.API.enabled || tableUploadReq.API.log == nil || tableUploadReq.API.dbHandle == nil {
+		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
+	}
+	if tableUploadReq.UploadID == 0 {
+		return errors.New(fmt.Sprint(`upload_id is empty or should be greater than 0 `))
+	}
+	return nil
+}
+
 func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]TableUploadResT, error) {
-	query := tableUploadReq.generateQuery(`id, wh_upload_id, table_name, total_events, status, error, last_exec_time`)
-	pkgLogger.Debug(query)
-	rows, err := dbHandle.Query(query)
+	err := tableUploadReq.validateReq()
 	if err != nil {
-		pkgLogger.Errorf(err.Error())
+		return []TableUploadResT{}, err
+	}
+	query := tableUploadReq.generateQuery(`id, wh_upload_id, table_name, total_events, status, error, last_exec_time`)
+	tableUploadReq.API.log.Debug(query)
+	rows, err := tableUploadReq.API.dbHandle.Query(query)
+	if err != nil {
+		tableUploadReq.API.log.Errorf(err.Error())
 		return []TableUploadResT{}, err
 	}
 	var tableUploads []TableUploadResT
@@ -152,7 +187,7 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]TableUploadResT, er
 		var lastExecTime sql.NullTime
 		err = rows.Scan(&tableUpload.ID, &tableUpload.UploadID, &tableUpload.Name, &count, &tableUpload.Status, &tableUpload.Error, &lastExecTime)
 		if err != nil {
-			pkgLogger.Errorf(err.Error())
+			tableUploadReq.API.log.Errorf(err.Error())
 			return []TableUploadResT{}, err
 		}
 		if count.Valid {

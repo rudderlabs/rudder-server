@@ -60,6 +60,7 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 }
 
 func (wh *WarehouseAdmin) QueryWhUploads(uploadsReq UploadsReqT, reply *[]byte) error {
+	uploadsReq.API = UploadAPI
 	res, err := uploadsReq.GetWhUploads()
 	if err != nil {
 		return err
@@ -73,6 +74,7 @@ func (wh *WarehouseAdmin) QueryWhUploads(uploadsReq UploadsReqT, reply *[]byte) 
 }
 
 func (wh *WarehouseAdmin) QueryWhTables(tableUploadReq TableUploadReqT, reply *[]byte) error {
+	tableUploadReq.API = UploadAPI
 	res, err := tableUploadReq.GetWhTableUploads()
 	if err != nil {
 		return err

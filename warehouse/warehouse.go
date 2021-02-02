@@ -1021,5 +1021,6 @@ func Start() {
 		rruntime.Go(func() {
 			runArchiver(dbHandle)
 		})
+		InitWarehouseApis(dbHandle, pkgLogger.Child("upload_api"))
 	}
 }
