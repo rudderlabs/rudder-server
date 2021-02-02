@@ -125,9 +125,16 @@ type UploaderI interface {
 	GetSchemaInWarehouse() SchemaT
 	GetTableSchemaInWarehouse(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
-	GetLoadFileLocations(tableName string) []string
+	GetLoadFileLocations(options GetLoadFileLocationsOptionsT) []string
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFileLocation(tableName string) (string, error)
+}
+
+type GetLoadFileLocationsOptionsT struct {
+	Table   string
+	StartID int64
+	EndID   int64
+	Limit   int64
 }
 
 func IDResolutionEnabled() bool {

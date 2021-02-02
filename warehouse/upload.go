@@ -3,7 +3,6 @@ package warehouse
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -255,7 +254,7 @@ func (job *UploadJobT) matchRowsInStagingAndLoadFiles() {
 	rowsInLoadFiles := job.getTotalRowsInLoadFiles()
 	if (rowsInStagingFiles != rowsInLoadFiles) || rowsInStagingFiles == 0 || rowsInLoadFiles == 0 {
 		pkgLogger.Errorf(`Error: Rows count mismatch between staging and load files for upload:%d. rowsInStagingFiles: %d, rowsInLoadFiles: %d`, job.upload.ID, rowsInStagingFiles, rowsInLoadFiles)
-		job.counterStat("warehouse_staging_load_file_events_count_mismatched").Increment()
+		job.guageStat("warehouse_staging_load_file_events_count_mismatched").Gauge(rowsInStagingFiles - rowsInLoadFiles)
 	}
 }
 
@@ -736,10 +735,10 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		if countErr != nil {
 			pkgLogger.Errorf(`Error getting total count in table:%s after load: %v`, tName, countErr)
 		}
-		job.counterStat(`pre_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(int(totalBeforeLoad))
+		job.guageStat(`pre_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
 		eventsInTableUpload := tableUpload.getTotalEvents()
-		job.counterStat(`post_load_table_rows_estimate`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(int(totalBeforeLoad + eventsInTableUpload))
-		job.counterStat(`post_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(int(totalAfterLoad))
+		job.guageStat(`post_load_table_rows_estimate`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + eventsInTableUpload))
+		job.guageStat(`post_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
 	}
 
 	tableUpload.setStatus(TableUploadExported)
@@ -1259,7 +1258,10 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 
 	// verify if all load files are in same folder in object storage
 	if misc.ContainsString(warehousesToVerifyLoadFilesFolder, job.warehouse.Type) {
-		locations := job.GetAllLoadFileLocations(startLoadFileID, endLoadFileID)
+		locations := job.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{
+			StartID: startLoadFileID,
+			EndID:   endLoadFileID,
+		})
 		for _, location := range locations {
 			if !strings.Contains(location, uniqueLoadGenID) {
 				err = fmt.Errorf(`All loadfiles do not contain the same uniqueLoadGenID: %s`, uniqueLoadGenID)
@@ -1351,52 +1353,40 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	return
 }
 
-func (job *UploadJobT) GetLoadFileLocations(tableName string) (locations []string) {
+func (job *UploadJobT) GetLoadFileLocations(options warehouseutils.GetLoadFileLocationsOptionsT) (locations []string) {
+	var tableFilterSQL string
+	if options.Table != "" {
+		tableFilterSQL = fmt.Sprintf(` AND table_name='%s'`, options.Table)
+	}
+
+	startID := options.StartID
+	endID := options.EndID
+	if startID == 0 || endID == 0 {
+		startID = job.upload.StartLoadFileID
+		endID = job.upload.EndLoadFileID
+	}
+
+	var limitSQL string
+	if options.Limit != 0 {
+		limitSQL = fmt.Sprintf(`LIMIT %d`, options.Limit)
+	}
+
 	sqlStatement := fmt.Sprintf(`
 		WITH row_numbered_load_files as (
 			SELECT
 				location,
 				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
 				FROM %[1]s
-				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s' AND table_name='%[6]s'
+				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s' %[6]s
 		)
 		SELECT location
 			FROM row_numbered_load_files
 			WHERE
-				row_number=1`,
-		warehouseutils.WarehouseLoadFilesTable, job.upload.StartLoadFileID, job.upload.EndLoadFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID, tableName)
+				row_number=1
+			%[7]s`,
+		warehouseutils.WarehouseLoadFilesTable, startID, endID, job.warehouse.Source.ID, job.warehouse.Destination.ID, tableFilterSQL, limitSQL)
 
-	rows, err := dbHandle.Query(sqlStatement)
-	if err != nil {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var location string
-		err := rows.Scan(&location)
-		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
-		}
-		locations = append(locations, location)
-	}
-	return
-}
-
-func (job *UploadJobT) GetAllLoadFileLocations(startID int64, endID int64) (locations []string) {
-	sqlStatement := fmt.Sprintf(`
-		WITH row_numbered_load_files as (
-			SELECT
-				location,
-				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
-				FROM %[1]s
-				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
-		)
-		SELECT location
-			FROM row_numbered_load_files
-			WHERE
-				row_number=1`,
-		warehouseutils.WarehouseLoadFilesTable, startID, endID, job.warehouse.Source.ID, job.warehouse.Destination.ID)
+	pkgLogger.Debugf(`Fetching loadFileLocations: %v`, sqlStatement)
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
@@ -1415,27 +1405,12 @@ func (job *UploadJobT) GetAllLoadFileLocations(startID int64, endID int64) (loca
 }
 
 func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location string, err error) {
-	sqlStatement := fmt.Sprintf(`
-		WITH row_numbered_load_files as (
-			SELECT
-				location,
-				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
-				FROM %[1]s
-				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s' AND table_name='%[6]s'
-		)
-		SELECT location
-			FROM row_numbered_load_files
-			WHERE
-				row_number=1`,
-		warehouseutils.WarehouseLoadFilesTable, job.upload.StartLoadFileID, job.upload.EndLoadFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID, tableName)
-	err = dbHandle.QueryRow(sqlStatement).Scan(&location)
-	if err != nil && err != sql.ErrNoRows {
-		pkgLogger.Errorf(`[WH] Error querying for sample load file location: %v`, err)
+	var locations []string
+	locations = job.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName, Limit: 1})
+	if len(locations) == 0 {
+		return "", fmt.Errorf(`No load file found for table:%s`, tableName)
 	}
-	if err == sql.ErrNoRows {
-		err = errors.New("Sample load file not found")
-	}
-	return location, err
+	return locations[0], nil
 }
 
 func (job *UploadJobT) GetSchemaInWarehouse() (schema warehouseutils.SchemaT) {

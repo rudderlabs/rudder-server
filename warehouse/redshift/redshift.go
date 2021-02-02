@@ -182,7 +182,7 @@ type S3ManifestT struct {
 }
 
 func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
-	csvObjectLocations := rs.Uploader.GetLoadFileLocations(tableName)
+	csvObjectLocations := rs.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
 	csvS3Locations := warehouseutils.GetS3Locations(csvObjectLocations)
 	var manifest S3ManifestT
 	for _, location := range csvS3Locations {

@@ -167,7 +167,7 @@ func partitionedTable(tableName string, partitionDate string) string {
 
 func (bq *HandleT) loadTable(tableName string, forceLoad bool) (partitionDate string, err error) {
 	pkgLogger.Infof("BQ: Starting load for table:%s\n", tableName)
-	locations := bq.Uploader.GetLoadFileLocations(tableName)
+	locations := bq.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
 	locations = warehouseutils.GetGCSLocations(locations, warehouseutils.GCSLocationOptionsT{})
 	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
 	gcsRef := bigquery.NewGCSReference(locations...)
