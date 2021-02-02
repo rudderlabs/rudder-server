@@ -501,6 +501,10 @@ func (jd *HandleT) readerSetup() {
 
 	jd.startBackupDSLoop()
 	jd.startMigrateDSLoop()
+
+	rruntime.Go(func() {
+		runArchiver(jd.tablePrefix, jd.dbHandle)
+	})
 }
 
 func (jd *HandleT) writerSetup() {
@@ -532,6 +536,10 @@ func (jd *HandleT) readerWriterSetup() {
 
 	jd.startBackupDSLoop()
 	jd.startMigrateDSLoop()
+
+	rruntime.Go(func() {
+		runArchiver(jd.tablePrefix, jd.dbHandle)
+	})
 }
 
 /*
