@@ -501,6 +501,10 @@ func (jd *HandleT) readerSetup() {
 
 	jd.startBackupDSLoop()
 	jd.startMigrateDSLoop()
+
+	rruntime.Go(func() {
+		runArchiver(jd.tablePrefix, jd.dbHandle)
+	})
 }
 
 func (jd *HandleT) writerSetup() {
@@ -532,6 +536,10 @@ func (jd *HandleT) readerWriterSetup() {
 
 	jd.startBackupDSLoop()
 	jd.startMigrateDSLoop()
+
+	rruntime.Go(func() {
+		runArchiver(jd.tablePrefix, jd.dbHandle)
+	})
 }
 
 /*
@@ -3138,4 +3146,11 @@ func (jd *HandleT) CheckPGHealth() bool {
 	}
 	defer rows.Close()
 	return true
+}
+
+func (jd *HandleT) GetLastJobID() int64 {
+	jd.dsListLock.RLock()
+	dsList := jd.getDSList(false)
+	jd.dsListLock.RUnlock()
+	return jd.GetMaxIDForDs(dsList[len(dsList)-1])
 }

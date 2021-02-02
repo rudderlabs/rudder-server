@@ -94,8 +94,6 @@ type RudderStatsT struct {
 func Setup() {
 	var err error
 	conn = statsd.Address(statsdServerURL)
-
-	//TODO: Add tags by calling a function...
 	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), defaultTags())
 	if err != nil {
 		// If nothing is listening on the target port, an error is returned and
@@ -137,8 +135,6 @@ func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags) 
 
 func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
 	tagStr := StatType
-	tags["instanceName"] = instanceID
-	tags["namespace"] = kubeNamespace
 	for tagName, tagVal := range tags {
 		tagName = strings.ReplaceAll(tagName, ":", "-")
 		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
