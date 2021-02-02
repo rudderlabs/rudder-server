@@ -1405,7 +1405,7 @@ func (job *UploadJobT) GetLoadFileLocations(options warehouseutils.GetLoadFileLo
 }
 
 func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location string, err error) {
-	var locations []string = job.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName, Limit: 1})
+	locations := job.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName, Limit: 1})
 	if len(locations) == 0 {
 		return "", fmt.Errorf(`No load file found for table:%s`, tableName)
 	}

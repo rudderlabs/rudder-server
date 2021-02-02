@@ -476,6 +476,9 @@ func (bq *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 func (bq *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s.%[2]s`, bq.Namespace, tableName)
 	it, err := bq.Db.Query(sqlStatement).Read(bq.BQContext)
+	if err !=nil {
+		return 0, err
+	}
 	var values []bigquery.Value
 	err = it.Next(&values)
 	if err == iterator.Done {
