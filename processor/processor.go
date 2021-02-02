@@ -3,7 +3,6 @@ package processor
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/dedup"
 	"math"
 	"reflect"
 	"sort"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/dedup"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -951,7 +952,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 		destStat.destTransform.Start()
 		startedAt = time.Now()
-		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+
+		transformAt := "processor"
+		if val, ok := destination.DestinationDefinition.Config["transformAt"].(string); ok {
+			transformAt = val
+		}
+
+		if transformAt == "processor" {
+			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+		} else {
+			response = convertToTransformerResponse(eventsToTransform)
+		}
+
 		endedAt = time.Now()
 		timeTaken = endedAt.Sub(startedAt).Seconds()
 		destStat.destTransform.End()
@@ -994,7 +1006,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       rudderID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v"}`, sourceID, destID, receivedAt)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v", "transform_at": "%v"}`, sourceID, destID, receivedAt, transformAt)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
@@ -1063,6 +1075,16 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
+}
+
+func convertToTransformerResponse(events []transformer.TransformerEventT) transformer.ResponseT {
+	var responses []transformer.TransformerResponseT
+	for _, event := range events {
+		resp := transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
+		responses = append(responses, resp)
+	}
+
+	return transformer.ResponseT{Events: responses}
 }
 
 func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList []*jobsdb.JobT, totalEvents int) {

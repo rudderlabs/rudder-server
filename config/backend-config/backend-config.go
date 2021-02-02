@@ -84,10 +84,11 @@ const (
 )
 
 type DestinationDefinitionT struct {
-	ID          string
-	Name        string
-	DisplayName string
-	Config      map[string]interface{}
+	ID            string
+	Name          string
+	DisplayName   string
+	Config        map[string]interface{}
+	ResponseRules map[string]interface{}
 }
 
 type SourceDefinitionT struct {
