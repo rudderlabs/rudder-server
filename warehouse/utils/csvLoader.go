@@ -44,7 +44,7 @@ func (loader *csvLoader) AddEmptyColumn(columnName string) {
 func (loader *csvLoader) WriteToString() (string, error) {
 	err := loader.csvWriter.Write(loader.csvRow)
 	if err != nil {
-		pkgLogger.Errorf(`[CSVWriter]: Error writing discardRow to buffer: %w`, err)
+		pkgLogger.Errorf(`[CSVWriter]: Error writing discardRow to buffer: %v`, err)
 		return "", err
 	}
 	loader.csvWriter.Flush()

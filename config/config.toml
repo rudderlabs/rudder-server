@@ -106,6 +106,9 @@ batchTimeoutInS = 2
 retrySleepInMS = 100
 disableEventDeliveryStatusUploads = false
 
+[Archiver]
+backupRowsBatchSize = 100
+
 [JobsDB]
 # Migration related parameters
 jobDoneMigrateThres = 0.8
@@ -119,6 +122,8 @@ addNewDSLoopSleepDurationInS = 5
 refreshDSListLoopSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
 backupRowsBatchSize = 1000
+archivalTimeInDays = 10
+archiverTickerTimeInMin = 1440
 
 [JobsDB.backup]
 enabled = true

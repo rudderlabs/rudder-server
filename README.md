@@ -1,6 +1,6 @@
-<p align="center"><a href="https://rudderstack.com"><img src="https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png" alt="RudderStack - An Open Source Customer Data Platform" height="90"/></a></p>
+<p align="center"><a href="https://rudderstack.com"><img src="https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png" alt="RudderStack - The smart customer data pipeline" height="90"/></a></p>
 <h1 align="center"></h1>
-<p align="center"><b>The warehouse-first customer data platform built for devs</b></p>
+<p align="center"><b>The smart customer data pipeline</b></p>
 
 <p align="center">
 	<a href="https://rudderstack.com"><img src="https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master" height="22"/></a>
@@ -10,20 +10,21 @@
 
 # What is RudderStack?
 
-[RudderStack](https://rudderstack.com/) is an **open source**, **warehouse-first** customer data platform built for developers. It builds your CDP on your data warehouse for you. RudderStack makes it easy to collect, unify, transform, and store your customer data as well as securely route it to a wide range of common, popular tools.
+[RudderStack](https://rudderstack.com/) is a **customer data pipeline tool** for collecting, routing and processing data from your websites, apps, cloud tools, and data warehouse.
 
-| We've launched **RudderStack Cloud Free** - a no time limit, no credit card required, completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to start building a better CDP for free, with RudderStack Cloud Free. |
+With RudderStack, you can build customer data pipelines that connect your whole customer data stack and then make them smarter by triggering enrichment and activation in customer tools based on analysis in your data warehouse. Its easy-to-use SDKs and event source integrations, Cloud Extract integrations, transformations, and expansive library of destination and warehouse integrations makes building customer data pipelines for both event streaming and cloud-to-warehouse ELT simple. 
+
+
+Questions? Please join our [Slack channel](https://resources.rudderstack.com/join-rudderstack-slack) for support on the product.
+
+| Try **RudderStack Cloud Free** - a free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to start building a smarter customer data pipeline today, with RudderStack Cloud. |
 |:------|
-
-
-
-Questions? Please join our [Slack channel](https://resources.rudderstack.com/join-rudderstack-slack) or read about us on [Product Hunt](https://www.producthunt.com/posts/rudderstack).
 
 # Why Use RudderStack?
 
-- **Developer-focused**: RudderStack integrates seamlessly with the tools that the developers already use and love. Also, its backend is written in Go, with a rich UI written in React.js.
+- **Developer-focused**: RudderStack is built API-first. So it integrates seamlessly with the tools that the developers already use and love. Its backend is written in Go, with a rich UI written in React.js.
 
-- **Data Warehouse-centric**: RudderStack treats your data warehouse as a first class citizen among destinations, with advanced features and configurable, near real-time sync.
+- **Warehouse-first**: RudderStack treats your data warehouse as a first class citizen among destinations, with advanced features and configurable, near real-time sync.
 
 - **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, **1mg**, **Nana**, **OnceHub**,  and dozens of large companies use RudderStack for collecting their events. **Note**: If you're using RudderStack and would like to add your name in this list, please submit a PR.
 
@@ -33,9 +34,9 @@ Questions? Please join our [Slack channel](https://resources.rudderstack.com/joi
 
 - **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
 
-- **Seamless Integration**: RudderStack currently supports integration with over 60 popular [destination platforms](https://docs.rudderstack.com/destinations-guides) such as Google Analytics, Amplitude, Hotjar, Mixpanel, Amazon S3, and more. Moreover, it also supports [data warehouse integrations](https://docs.rudderstack.com/data-warehouse-integration-guides) for Snowflake, Redshift, ClickHouse, PostgreSQL and Google BigQuery.
+- **Seamless Integration**: RudderStack currently supports integration with over 70 popular [destination platforms](https://docs.rudderstack.com/destinations-guides) such as Google Analytics, Amplitude, Hotjar, Mixpanel, Amazon S3, and more. Moreover, it also supports [data warehouse integrations](https://docs.rudderstack.com/data-warehouse-integration-guides) for Snowflake, Redshift, ClickHouse, PostgreSQL and Google BigQuery.
 
-- **Client-side SDK Support**: RudderStack offers client-side SDKs for [JavaScript](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-javascript-sdk), [Android](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-android-sdk), [iOS](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-ios-sdk), and [Unity](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/getting-started-with-unity-sdk).
+- **Client-side SDK Support**: RudderStack offers client-side SDKs for [JavaScript](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-javascript-sdk), [Android](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-android-sdk), [iOS](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/rudderstack-ios-sdk), and [Unity](https://docs.rudderstack.com/rudderstack-sdk-integration-guides/getting-started-with-unity-sdk), and more.
 
 - **User-specified Transformation**: RudderStack gives you the power to filter or transform your events before sending them to the desired destinations.
 

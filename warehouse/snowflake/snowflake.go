@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -21,9 +20,8 @@ import (
 )
 
 var (
-	warehouseUploadsTable string
-	stagingTablePrefix    string
-	pkgLogger             logger.LoggerI
+	stagingTablePrefix string
+	pkgLogger          logger.LoggerI
 )
 
 func init() {
@@ -32,7 +30,6 @@ func init() {
 }
 
 func loadConfig() {
-	warehouseUploadsTable = config.GetString("Warehouse.uploadsTable", "wh_uploads")
 	stagingTablePrefix = "RUDDER_STAGING_"
 }
 
@@ -120,7 +117,6 @@ var (
 	discardsTable           = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.DiscardsTable)
 	identityMergeRulesTable = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMergeRulesTable)
 	identityMappingsTable   = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.IdentityMappingsTable)
-	aliasTable              = warehouseutils.ToProviderCase(PROVIDER, warehouseutils.AliasTable)
 )
 
 type tableLoadRespT struct {
@@ -232,9 +228,10 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	sort.Strings(strkeys)
 	var sortedColumnNames string
+	//TODO: use strings.Join() instead
 	for index, key := range strkeys {
 		if index > 0 {
-			sortedColumnNames += fmt.Sprintf(`, `)
+			sortedColumnNames += `, `
 		}
 		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
 	}
@@ -284,14 +281,15 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	var columnNames, stagingColumnNames, columnsWithValues string
+	//TODO: use strings.Join() instead
 	for idx, str := range strkeys {
-		columnNames += fmt.Sprintf(`%s`, str)
+		columnNames += str
 		stagingColumnNames += fmt.Sprintf(`staging."%s"`, str)
 		columnsWithValues += fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, str)
 		if idx != len(strkeys)-1 {
-			columnNames += fmt.Sprintf(`,`)
-			stagingColumnNames += fmt.Sprintf(`,`)
-			columnsWithValues += fmt.Sprintf(`,`)
+			columnNames += `,`
+			stagingColumnNames += `,`
+			columnsWithValues += `,`
 		}
 	}
 
@@ -482,8 +480,8 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		columnsWithValues += fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName)
 		stagingColumnValues += fmt.Sprintf(`staging.%s`, colName)
 		if idx != len(columnNames)-1 {
-			columnsWithValues += fmt.Sprintf(`,`)
-			stagingColumnValues += fmt.Sprintf(`,`)
+			columnsWithValues += `,`
+			stagingColumnValues += `,`
 		}
 	}
 
@@ -517,24 +515,27 @@ type SnowflakeCredentialsT struct {
 }
 
 func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("%s:%s@%s/%s?warehouse=%s",
-		cred.username,
-		cred.password,
-		cred.account,
-		cred.dbName,
-		cred.whName)
-
-	if cred.schemaName != "" {
-		url += fmt.Sprintf("&schema=%s", cred.schemaName)
+	urlConfig := snowflake.Config{
+		Account:   cred.account,
+		User:      cred.username,
+		Password:  cred.password,
+		Database:  cred.dbName,
+		Schema:    cred.schemaName,
+		Warehouse: cred.whName,
 	}
 
 	var err error
+	dsn, err := snowflake.DSN(&urlConfig)
+	if err != nil {
+		return nil, fmt.Errorf("SF: Error costructing DSN to connect : (%v)", err)
+	}
+
 	var db *sql.DB
-	if db, err = sql.Open("snowflake", url); err != nil {
+	if db, err = sql.Open("snowflake", dsn); err != nil {
 		return nil, fmt.Errorf("SF: snowflake connect error : (%v)", err)
 	}
 
-	alterStatement := fmt.Sprintf(`ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`)
+	alterStatement := `ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`
 	pkgLogger.Infof("SF: Altering session with abort_detached_query for snowflake: %v", alterStatement)
 	_, err = db.Exec(alterStatement)
 	if err != nil {
@@ -545,7 +546,11 @@ func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 
 func (sf *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
-	if schemaExists, err = sf.schemaExists(sf.Namespace); err != nil && !schemaExists {
+	schemaExists, err = sf.schemaExists(sf.Namespace)
+	if err != nil {
+		return err
+	}
+	if !schemaExists {
 		err = sf.createSchema()
 	}
 	return err
@@ -558,8 +563,7 @@ func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		return err
 	}
 
-	err = sf.createTable(fmt.Sprintf(`%s`, tableName), columnMap)
-	return err
+	return sf.createTable(tableName, columnMap)
 }
 
 func (sf *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {

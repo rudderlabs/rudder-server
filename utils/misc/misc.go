@@ -41,10 +41,6 @@ var AppStartTime int64
 const (
 	// RFC3339Milli with milli sec precision
 	RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
-	//This is integer representation of Postgres version.
-	//For ex, integer representation of version 9.6.3 is 90603
-	//Minimum postgres version needed for rudder server is 10
-	minPostgresVersion = 100000
 )
 
 // ErrorStoreT : DS to store the app errors
@@ -208,7 +204,7 @@ func GetRudderID(event types.SingularEventT) (string, bool) {
 		}
 	}
 	userIDStr, ok := userID.(string)
-	return userIDStr, true
+	return userIDStr, ok
 }
 
 // ZipFiles compresses files[] into zip at filename
@@ -591,13 +587,14 @@ func MakeJSONArray(bytesArray [][]byte) []byte {
 	return joinedArray
 }
 
-func SingleQuotedJoin(slice []string) string {
+func SingleQuoteLiteralJoin(slice []string) string {
 	var str string
+	//TODO: use strings.Join() instead
 	for index, key := range slice {
 		if index > 0 {
-			str += fmt.Sprintf(`, `)
+			str += `, `
 		}
-		str += fmt.Sprintf(`'%s'`, key)
+		str += QuoteLiteral(key)
 	}
 	return str
 }
@@ -719,7 +716,7 @@ func GetMacAddress() string {
 
 func KeepProcessAlive() {
 	var ch chan int
-	_ = <-ch
+	<-ch
 }
 
 // GetOutboundIP returns preferred outbound ip of this machine

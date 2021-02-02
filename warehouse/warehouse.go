@@ -41,7 +41,6 @@ var (
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
 	WarehouseDestinations               []string
-	jobQueryBatchSize                   int
 	noOfWorkers                         int
 	noOfSlaveWorkerRoutines             int
 	slaveWorkerRoutineBusy              []bool //Busy-true
@@ -54,8 +53,8 @@ var (
 	inProgressMap                       map[string]bool
 	inRecoveryMap                       map[string]bool
 	inProgressMapLock                   sync.RWMutex
-	lastEventTimeMap                    map[string]int64
-	lastEventTimeMapLock                sync.RWMutex
+	lastProcessedMarkerMap              map[string]int64
+	lastProcessedMarkerMapLock          sync.RWMutex
 	warehouseMode                       string
 	warehouseSyncPreFetchCount          int
 	warehouseSyncFreqIgnore             bool
@@ -70,6 +69,7 @@ var (
 	pkgLogger                           logger.LoggerI
 	numLoadFileUploadWorkers            int
 	slaveUploadTimeout                  time.Duration
+	runningMode                         string
 )
 
 var (
@@ -79,10 +79,11 @@ var (
 
 // warehouses worker modes
 const (
-	MasterMode      = "master"
-	SlaveMode       = "slave"
-	MasterSlaveMode = "master_and_slave"
-	EmbeddedMode    = "embedded"
+	MasterMode        = "master"
+	SlaveMode         = "slave"
+	MasterSlaveMode   = "master_and_slave"
+	EmbeddedMode      = "embedded"
+	PooledWHSlaveMode = "embedded_master"
 )
 
 const (
@@ -117,7 +118,6 @@ func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
 	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
-	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
 	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
@@ -127,7 +127,7 @@ func loadConfig() {
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
-	lastEventTimeMap = map[string]int64{}
+	lastProcessedMarkerMap = map[string]int64{}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	host = config.GetEnv("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	user = config.GetEnv("WAREHOUSE_JOBS_DB_USER", "ubuntu")
@@ -145,6 +145,7 @@ func loadConfig() {
 	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
 	slaveUploadTimeout = config.GetDuration("Warehouse.slaveUploadTimeoutInMin", time.Duration(10)) * time.Minute
 	numLoadFileUploadWorkers = config.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
+	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -311,7 +312,7 @@ func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT
 }
 
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
-	sqlStatement := fmt.Sprintf(`SELECT id, location
+	sqlStatement := fmt.Sprintf(`SELECT id, location, status
                                 FROM %[1]s
 								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
 								ORDER BY id ASC`,
@@ -325,7 +326,7 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
 	var stagingFilesList []*StagingFileT
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location)
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
@@ -344,7 +345,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT id, location, first_event_at, last_event_at
+	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at
                                 FROM %[1]s
 								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
 								ORDER BY id ASC`,
@@ -359,7 +360,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	var firstEventAt, lastEventAt sql.NullTime
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &firstEventAt, &lastEventAt)
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
@@ -432,30 +433,55 @@ func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
 func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
 	inProgressMapLock.RLock()
 	defer inProgressMapLock.RUnlock()
-	if inProgressMap[warehouse.Identifier] {
-		return true
-	}
-	return false
+	return inProgressMap[warehouse.Identifier]
 }
 
-func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency string) bool {
+func getUploadFreqInS(syncFrequency string) int64 {
 	freqInS := uploadFreqInS
 	if syncFrequency != "" {
 		freqInMin, _ := strconv.ParseInt(syncFrequency, 10, 64)
 		freqInS = freqInMin * 60
 	}
-	lastEventTimeMapLock.Lock()
-	defer lastEventTimeMapLock.Unlock()
-	if lastExecTime, ok := lastEventTimeMap[warehouse.Identifier]; ok && timeutil.Now().Unix()-lastExecTime < freqInS {
+	return freqInS
+}
+
+func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency string) bool {
+	freqInS := getUploadFreqInS(syncFrequency)
+	lastProcessedMarkerMapLock.Lock()
+	defer lastProcessedMarkerMapLock.Unlock()
+	if lastExecTime, ok := lastProcessedMarkerMap[warehouse.Identifier]; ok && timeutil.Now().Unix()-lastExecTime < freqInS {
 		return true
 	}
 	return false
 }
 
-func setLastEventTime(warehouse warehouseutils.WarehouseT, lastEventAt time.Time) {
-	lastEventTimeMapLock.Lock()
-	defer lastEventTimeMapLock.Unlock()
-	lastEventTimeMap[warehouse.Identifier] = lastEventAt.Unix()
+func getLastStagingFileCreatedAt(warehouse warehouseutils.WarehouseT) time.Time {
+	stmt := fmt.Sprintf(`SELECT created_at from %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseStagingFilesTable, warehouse.Source.ID, warehouse.Destination.ID)
+	var createdAt sql.NullTime
+	err := dbHandle.QueryRow(stmt).Scan(&createdAt)
+	if err != nil {
+		pkgLogger.Errorf(`Error in getLastStagingFileCreatedAt: %v`, err)
+		return time.Now()
+	}
+	return createdAt.Time
+}
+
+func setLastProcessedMarker(warehouse warehouseutils.WarehouseT, lastEventAt time.Time) {
+	unixTime := lastEventAt.Unix()
+
+	freqInS := getUploadFreqInS(warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse))
+
+	lastStagingFileCreatedAt := getLastStagingFileCreatedAt(warehouse)
+	// set lastEvent to currentTime in cases where
+	// 1. if there is lag in creating staging files - last staging file is more than freqInS old
+	// 2. and if there is less than freqInS worth of data in pending staging files
+	if time.Now().Add(time.Duration(-freqInS)*time.Second).Sub(lastStagingFileCreatedAt) > 0 && lastStagingFileCreatedAt.Sub(lastEventAt) < time.Duration(freqInS)*time.Second {
+		unixTime = time.Now().Unix()
+	}
+
+	lastProcessedMarkerMapLock.Lock()
+	defer lastProcessedMarkerMapLock.Unlock()
+	lastProcessedMarkerMap[warehouse.Identifier] = unixTime
 }
 
 func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT) ([]*UploadJobT, error) {
@@ -516,7 +542,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 
 	stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to get pending staging files: %s with error %w", warehouse.Identifier, err)
+		pkgLogger.Errorf("[WH]: Failed to get pending staging files: %s with error %v", warehouse.Identifier, err)
 		return err
 	}
 	if len(stagingFilesList) == 0 {
@@ -527,11 +553,11 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	var uploadJobs []*UploadJobT
 	uploadJobs, err = wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to create upload jobs for %s for new staging files with error: %w", warehouse.Identifier, err)
+		pkgLogger.Errorf("[WH]: Failed to create upload jobs for %s for new staging files with error: %v", warehouse.Identifier, err)
 		return err
 	}
 
-	setLastEventTime(warehouse, uploadJobs[len(uploadJobs)-1].upload.LastEventAt)
+	setLastProcessedMarker(warehouse, uploadJobs[len(uploadJobs)-1].upload.LastEventAt)
 	return nil
 }
 
@@ -608,7 +634,7 @@ func (wh *HandleT) mainLoop() {
 			pkgLogger.Debugf("[WH] Processing Jobs for warehouse: %s", warehouse.Identifier)
 			err := wh.createJobs(warehouse)
 			if err != nil {
-				pkgLogger.Errorf("[WH] Failed to process warehouse Jobs: %w", err)
+				pkgLogger.Errorf("[WH] Failed to process warehouse Jobs: %v", err)
 			}
 		}
 		time.Sleep(mainLoopSleep)
@@ -784,7 +810,6 @@ func (wh *HandleT) setInterruptedDestinations() {
 		}
 		inRecoveryMap[destID] = true
 	}
-	return
 }
 
 func (wh *HandleT) Setup(whType string) {
@@ -898,8 +923,11 @@ func setupTables(dbHandle *sql.DB) {
 	}
 }
 
-func CheckPGHealth() bool {
-	rows, err := dbHandle.Query(fmt.Sprintf(`SELECT 'Rudder Warehouse DB Health Check'::text as message`))
+func CheckPGHealth(dbHandle *sql.DB) bool {
+	if dbHandle == nil {
+		return false
+	}
+	rows, err := dbHandle.Query(`SELECT 'Rudder Warehouse DB Health Check'::text as message`)
 	if err != nil {
 		pkgLogger.Error(err)
 		return false
@@ -931,7 +959,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pkgLogger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
-	schemaPayload, err := json.Marshal(stagingFile.Schema)
+	schemaPayload, _ := json.Marshal(stagingFile.Schema)
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, total_events, first_event_at, last_event_at, created_at, updated_at)
 									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`, warehouseutils.WarehouseStagingFilesTable)
 	stmt, err := dbHandle.Prepare(sqlStatement)
@@ -948,16 +976,31 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
-	var dbService string = "UP"
-	if !CheckPGHealth() {
-		dbService = "DOWN"
+	dbService := ""
+	pgNotifierService := ""
+
+	if runningMode != DegradedMode {
+		if !CheckPGHealth(notifier.GetDBHandle()) {
+			http.Error(w, "Cannot connect to pgNotifierService", http.StatusInternalServerError)
+			return
+		}
+		pgNotifierService = "UP"
 	}
-	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","acceptingEvents":"TRUE","warehouseMode":"%s","goroutines":"%d"}`, dbService, strings.ToUpper(warehouseMode), runtime.NumGoroutine())
+
+	if isMaster() {
+		if !CheckPGHealth(dbHandle) {
+			http.Error(w, "Cannot connect to dbService", http.StatusInternalServerError)
+			return
+		}
+		dbService = "UP"
+	}
+
+	healthVal := fmt.Sprintf(`{"server":"UP", "db":"%s","pgNotifier":"%s","acceptingEvents":"TRUE","warehouseMode":"%s","goroutines":"%d"}`, dbService, pgNotifierService, strings.ToUpper(warehouseMode), runtime.NumGoroutine())
 	w.Write([]byte(healthVal))
 }
 
 func getConnectionString() string {
-	if warehouseMode == config.EmbeddedMode {
+	if !CheckForWarehouseEnvVars() {
 		return jobsdb.GetConnectionString()
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
@@ -980,31 +1023,41 @@ func startWebHandler() {
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
+// CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present
+func CheckForWarehouseEnvVars() bool {
+	return config.IsEnvSet("WAREHOUSE_JOBS_DB_HOST") &&
+		config.IsEnvSet("WAREHOUSE_JOBS_DB_USER") &&
+		config.IsEnvSet("WAREHOUSE_JOBS_DB_DB_NAME") &&
+		config.IsEnvSet("WAREHOUSE_JOBS_DB_PASSWORD")
+}
+
+// This checks if gateway is running or not
 func isStandAlone() bool {
-	return warehouseMode != EmbeddedMode
+	return warehouseMode != EmbeddedMode && warehouseMode != PooledWHSlaveMode
 }
 
 func isMaster() bool {
-	return warehouseMode == config.MasterMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
+	return warehouseMode == config.MasterMode ||
+		warehouseMode == config.MasterSlaveMode ||
+		warehouseMode == config.EmbeddedMode ||
+		warehouseMode == config.PooledWHSlaveMode
 }
 
 func isSlave() bool {
 	return warehouseMode == config.SlaveMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
 }
 
-func Start() {
-	time.Sleep(1 * time.Second)
-	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
-	if !isStandAlone() && !db.IsNormalMode() {
-		pkgLogger.Infof("Skipping start of warehouse service...")
+func isStandAloneSlave() bool {
+	return warehouseMode == config.SlaveMode
+}
+
+func setupDB(connInfo string) {
+	if isStandAloneSlave() {
 		return
 	}
 
-	pkgLogger.Infof("WH: Starting Warehouse service...")
 	var err error
-	psqlInfo := getConnectionString()
-
-	dbHandle, err = sql.Open("postgres", psqlInfo)
+	dbHandle, err = sql.Open("postgres", connInfo)
 	if err != nil {
 		panic(err)
 	}
@@ -1019,20 +1072,33 @@ func Start() {
 		pkgLogger.Error(err)
 		panic(err)
 	}
-
 	setupTables(dbHandle)
+}
 
-	defer startWebHandler()
-
-	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
-	if runningMode == DegradedMode {
-		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
-		rruntime.Go(func() {
-			minimalConfigSubscriber()
-		})
+func Start() {
+	time.Sleep(1 * time.Second)
+	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
+	if !isStandAlone() && !db.IsNormalMode() {
+		pkgLogger.Infof("Skipping start of warehouse service...")
 		return
 	}
 
+	pkgLogger.Infof("WH: Starting Warehouse service...")
+	psqlInfo := getConnectionString()
+
+	setupDB(psqlInfo)
+	defer startWebHandler()
+
+	if runningMode == DegradedMode {
+		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
+		if isMaster() {
+			rruntime.Go(func() {
+				minimalConfigSubscriber()
+			})
+		}
+		return
+	}
+	var err error
 	notifier, err = pgnotifier.New(psqlInfo)
 	if err != nil {
 		panic(err)

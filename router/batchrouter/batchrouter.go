@@ -603,6 +603,7 @@ func (brt *HandleT) initWorkers() {
 								err := fmt.Errorf("BRT: Batch destiantion source not found in config for sourceID: %s", sourceID)
 								brt.setJobStatus(batchJobs, false, err, false)
 								wg.Done()
+								continue
 							}
 							rruntime.Go(func() {
 								switch {
@@ -844,8 +845,13 @@ func IsWarehouseDestination(destType string) bool {
 	return misc.Contains(warehouseDestinations, destType)
 }
 
+func isWarehouseMasterEnabled() bool {
+	return warehouseMode == config.EmbeddedMode ||
+		warehouseMode == config.PooledWHSlaveMode
+}
+
 func getWarehouseURL() (url string) {
-	if warehouseMode == config.EmbeddedMode {
+	if isWarehouseMasterEnabled() {
 		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
 	} else {
 		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")

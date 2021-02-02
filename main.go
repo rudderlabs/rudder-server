@@ -90,7 +90,7 @@ func startWarehouseService() {
 
 func canStartServer() bool {
 	pkgLogger.Info("warehousemode ", warehouseMode)
-	return warehouseMode == config.EmbeddedMode || warehouseMode == config.OffMode
+	return warehouseMode == config.EmbeddedMode || warehouseMode == config.OffMode || warehouseMode == config.PooledWHSlaveMode
 }
 
 func canStartWarehouse() bool {
