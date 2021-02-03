@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -401,7 +401,7 @@ func (job *UploadJobT) run() (err error) {
 
 			wg.Wait()
 			if len(loadErrors) > 0 {
-				err = warehouseutils.ConcatErrors(loadErrors)
+				err = multierror.Join(loadErrors, multierror.WithFormatter(warehouseutils.CommaErrorFormatter))
 				return
 			}
 
@@ -453,7 +453,7 @@ func (job *UploadJobT) exportUserTables() (err error) {
 		job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 		if len(loadErrors) > 0 {
-			err = warehouseutils.ConcatErrors(loadErrors)
+			err = multierror.Join(loadErrors, multierror.WithFormatter(warehouseutils.CommaErrorFormatter))
 			return
 		}
 	}
@@ -477,7 +477,7 @@ func (job *UploadJobT) exportIdentities() (err error) {
 			job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 			if len(loadErrors) > 0 {
-				err = warehouseutils.ConcatErrors(loadErrors)
+				err = multierror.Join(loadErrors, multierror.WithFormatter(warehouseutils.CommaErrorFormatter))
 				return
 			}
 		}
@@ -496,7 +496,7 @@ func (job *UploadJobT) exportRegularTales(specialTables []string) (err error) {
 	job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 	if len(loadErrors) > 0 {
-		err = warehouseutils.ConcatErrors(loadErrors)
+		err = multierror.Join(loadErrors, multierror.WithFormatter(warehouseutils.CommaErrorFormatter))
 		return
 	}
 
@@ -1267,12 +1267,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	wg.Wait()
 
 	if len(saveLoadFileErrs) > 0 {
+		err = multierror.Join(saveLoadFileErrs)
 		pkgLogger.Errorf(`[WH]: Encountered errors in creating load file records in wh_load_files: %v`, err)
-		var errStrings []string
-		for _, saveLoadFileErr := range saveLoadFileErrs {
-			errStrings = append(errStrings, saveLoadFileErr.Error())
-		}
-		err = fmt.Errorf(strings.Join(errStrings, "\n"))
 		return startLoadFileID, endLoadFileID, err
 	}
 

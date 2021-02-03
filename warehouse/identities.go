@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -335,7 +336,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		job.setUploadStatus(getInProgressState(ExportedData))
 		loadErrors, err := job.loadIdentityTables(true)
 		if len(loadErrors) > 0 {
-			job.setUploadError(warehouseutils.ConcatErrors(loadErrors), Aborted)
+			job.setUploadError(multierror.Join(loadErrors, multierror.WithFormatter(warehouseutils.CommaErrorFormatter)), Aborted)
 		}
 		job.setUploadStatus(ExportedData)
 		return

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/iancoleman/strcase"
+	"github.com/mkmik/multierror"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -485,16 +486,8 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	return columnKeys
 }
 
-func ConcatErrors(errors []error) (err error) {
-	errStr := ""
-	for idx, err := range errors {
-		errStr += err.Error()
-		if idx < len(errors)-1 {
-			errStr += ", "
-		}
-	}
-	err = fmt.Errorf(errStr)
-	return err
+var CommaErrorFormatter = func(errStrings []string) string {
+	return strings.Join(errStrings, ", ")
 }
 
 func IdentityMergeRulesTableName(warehouse WarehouseT) string {
