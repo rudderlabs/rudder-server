@@ -164,7 +164,6 @@ func (trans *HandleT) transformWorker() {
 			break
 		}
 
-		// Remove Assertion?
 		if !(resp.StatusCode == http.StatusOK ||
 			resp.StatusCode == http.StatusBadRequest ||
 			resp.StatusCode == http.StatusNotFound ||
@@ -172,28 +171,48 @@ func (trans *HandleT) transformWorker() {
 			trans.logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
 		}
 
-		var transformerResponses []TransformerResponseT
-		respData, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			panic(err)
-		}
-		if resp.StatusCode == http.StatusOK {
-			err = json.Unmarshal(respData, &transformerResponses)
-			//This is returned by our JS engine so should  be parsable
-			//but still handling it
-			if err != nil {
-				panic(err)
-			}
-		} else {
+		transformerResponses := job.getTransformerResponsesFromHTTPResponse(resp)
+		trans.responseQ <- &transformedMessageT{data: transformerResponses, index: job.index}
+	}
+}
+
+//Should not panic inside this
+func (job *transformMessageT) getTransformerResponsesFromHTTPResponse(resp *http.Response) (transformerResponses []TransformerResponseT) {
+	var (
+		statusCode int
+		trErr      error
+	)
+	defer func() {
+		if trErr != nil {
 			for _, transformEvent := range job.data {
-				resp := TransformerResponseT{StatusCode: resp.StatusCode, Error: string(respData), Metadata: transformEvent.Metadata}
+				resp := TransformerResponseT{StatusCode: statusCode, Error: trErr.Error(), Metadata: transformEvent.Metadata}
 				transformerResponses = append(transformerResponses, resp)
 			}
 		}
-		resp.Body.Close()
-
-		trans.responseQ <- &transformedMessageT{data: transformerResponses, index: job.index}
+	}()
+	respData, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	if err != nil {
+		statusCode = http.StatusUnsupportedMediaType
+		trErr = fmt.Errorf("Error while reading transformer response with Error : %w", err)
+		return
 	}
+
+	if resp.StatusCode != http.StatusOK {
+		statusCode = resp.StatusCode
+		trErr = fmt.Errorf("%s", string(respData))
+		return
+	}
+
+	err = json.Unmarshal(respData, &transformerResponses)
+	//This is returned by our JS engine so should  be parsable
+	//but still handling it
+	if err != nil {
+		statusCode = http.StatusUnsupportedMediaType
+		trErr = fmt.Errorf("Error while unmarshalling transformer response with Error : %w", err)
+		return
+	}
+	return
 }
 
 //Setup initializes this class
