@@ -402,7 +402,7 @@ func (job *UploadJobT) run() (err error) {
 			wg.Wait()
 			if len(loadErrors) > 0 {
 				err = multierror.Join(loadErrors)
-				return
+				break
 			}
 
 			newStatus = nextUploadState.completed
