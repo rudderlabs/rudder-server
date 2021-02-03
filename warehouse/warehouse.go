@@ -47,7 +47,6 @@ var (
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
 	mainLoopSleep                       time.Duration
-	workerRetrySleep                    time.Duration
 	stagingFilesBatchSize               int
 	crashRecoverWarehouses              []string
 	inProgressMap                       map[string]bool
@@ -123,7 +122,6 @@ func loadConfig() {
 	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
 	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
 	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 1) * time.Second
-	workerRetrySleep = config.GetDuration("Warehouse.workerRetrySleepInS", 5) * time.Second
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
@@ -157,28 +155,6 @@ func getActiveWorkerCount() int {
 	activeWorkerCountLock.Lock()
 	defer activeWorkerCountLock.Unlock()
 	return activeWorkerCount
-}
-
-func (wh *HandleT) waitAndLockAvailableWorker() {
-	// infinite loop to check for active workers count and retry if not
-	// break after handling
-	for {
-		// check number of workers actively enagaged
-		// if limit hit, sleep and check again
-		// activeWorkerCount is across all wh.destType's
-		activeWorkerCountLock.Lock()
-		activeWorkers := activeWorkerCount
-		if activeWorkers >= noOfWorkers {
-			activeWorkerCountLock.Unlock()
-			pkgLogger.Debugf("WH: Setting to sleep and waiting till activeWorkers are less than %d", noOfWorkers)
-			// TODO: add randomness to this ?
-			time.Sleep(workerRetrySleep)
-			continue
-		}
-		activeWorkerCount++
-		activeWorkerCountLock.Unlock()
-		break
-	}
 }
 
 func (wh *HandleT) releaseWorker() {
@@ -430,12 +406,6 @@ func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
 	}
 }
 
-func isDestInProgress(warehouse warehouseutils.WarehouseT) bool {
-	inProgressMapLock.RLock()
-	defer inProgressMapLock.RUnlock()
-	return inProgressMap[warehouse.Identifier]
-}
-
 func getUploadFreqInS(syncFrequency string) int64 {
 	freqInS := uploadFreqInS
 	if syncFrequency != "" {
@@ -645,7 +615,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 	var skipIdentifiersSQL string
 	if len(skipIdentifiers) > 0 {
-		skipIdentifiersSQL = fmt.Sprintf(`and concat(t.namespace, ':', t.destination_id) != ALL($1)`)
+		skipIdentifiersSQL = `and concat(t.destination_id, '_', t.namespace) != ALL($1)`
 	}
 
 	sqlStatement := fmt.Sprintf(`
