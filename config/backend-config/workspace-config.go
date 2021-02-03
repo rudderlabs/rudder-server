@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/tidwall/gjson"
 )
 
 type WorkspaceConfig struct {
@@ -160,6 +161,12 @@ func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]Work
 			return []WorkspaceRegulationT{}, false
 		}
 
+		//If statusCode is not 2xx, then returning empty regulations
+		if statusCode < 200 || statusCode >= 300 {
+			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch workspace regulations. statusCode: %v, error: %v", statusCode, err)
+			return []WorkspaceRegulationT{}, false
+		}
+
 		var workspaceRegulationsJSON WRegulationsT
 		err = json.Unmarshal(respBody, &workspaceRegulationsJSON)
 		if err != nil {
@@ -167,9 +174,13 @@ func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]Work
 			return []WorkspaceRegulationT{}, false
 		}
 
+		endExists := gjson.GetBytes(respBody, "end").Exists()
+		if !endExists {
+			pkgLogger.Errorf("[[ Workspace-config ]] No end key found in the workspace regulations response. Breaking the regulations fetch loop. Response: %v", string(respBody))
+		}
 		totalWorkspaceRegulations = append(totalWorkspaceRegulations, workspaceRegulationsJSON.WorkspaceRegulations...)
 
-		if workspaceRegulationsJSON.End {
+		if workspaceRegulationsJSON.End || !endExists {
 			break
 		}
 
@@ -204,6 +215,12 @@ func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceR
 			return []SourceRegulationT{}, false
 		}
 
+		//If statusCode is not 2xx, then returning empty regulations
+		if statusCode < 200 || statusCode >= 300 {
+			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch source regulations. statusCode: %v, error: %v", statusCode, err)
+			return []SourceRegulationT{}, false
+		}
+
 		var sourceRegulationsJSON SRegulationsT
 		err = json.Unmarshal(respBody, &sourceRegulationsJSON)
 		if err != nil {
@@ -211,9 +228,13 @@ func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceR
 			return []SourceRegulationT{}, false
 		}
 
+		endExists := gjson.GetBytes(respBody, "end").Exists()
+		if !endExists {
+			pkgLogger.Errorf("[[ Workspace-config ]] No end key found in the source regulations response. Breaking the regulations fetch loop. Response: %v", string(respBody))
+		}
 		totalSourceRegulations = append(totalSourceRegulations, sourceRegulationsJSON.SourceRegulations...)
 
-		if sourceRegulationsJSON.End {
+		if sourceRegulationsJSON.End || !endExists {
 			break
 		}
 
