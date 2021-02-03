@@ -143,10 +143,11 @@ type HandleT struct {
 	irh                                           *ImportRequestHandler
 }
 
-func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {
+func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
 	for sourceTag, count := range sourceStats {
 		tags := map[string]string{
-			"source": sourceTag,
+			"source":   sourceTag,
+			"writeKey": sourceTagMap[sourceTag],
 		}
 		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)
@@ -284,6 +285,12 @@ func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebReque
 	}
 }
 
+func (gateway *HandleT) getSourceTagFromWriteKey(writeKey string) string {
+	sourceName := gateway.getSourceNameForWriteKey(writeKey)
+	sourceTag := misc.GetTagName(writeKey, sourceName)
+	return sourceTag
+}
+
 func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
 	for breq := range userWebRequestWorker.batchRequestQ {
 		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
@@ -298,6 +305,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		var sourceFailStats = make(map[string]int)
 		var sourceFailEventStats = make(map[string]int)
 		var workspaceDropRequestStats = make(map[string]int)
+		var sourceTagMap = make(map[string]string)
 		var preDbStoreCount int
 		//Saving the event data read from req.request.Body to the splice.
 		//Using this to send event schema to the config backend.
@@ -305,8 +313,8 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		userWebRequestWorker.batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
 			writeKey := req.writeKey
-			sourceName := gateway.getSourceNameForWriteKey(writeKey)
-			sourceTag := misc.GetTagName(writeKey, sourceName)
+			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
+			sourceTagMap[sourceTag] = writeKey
 			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
 
 			ipAddr := req.ipAddr
@@ -455,16 +463,16 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		userWebRequestWorker.batchTimeStat.End()
 		gateway.batchSizeStat.Count(len(breq.batchRequest))
 		// update stats request wise
-		gateway.updateSourceStats(sourceStats, "gateway.write_key_requests")
-		gateway.updateSourceStats(sourceSuccessStats, "gateway.write_key_successful_requests")
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests")
+		gateway.updateSourceStats(sourceStats, "gateway.write_key_requests", sourceTagMap)
+		gateway.updateSourceStats(sourceSuccessStats, "gateway.write_key_successful_requests", sourceTagMap)
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", sourceTagMap)
 		if enableRateLimit {
-			gateway.updateSourceStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests")
+			gateway.updateSourceStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests", sourceTagMap)
 		}
 		// update stats event wise
-		gateway.updateSourceStats(sourceEventStats, "gateway.write_key_events")
-		gateway.updateSourceStats(sourceSuccessEventStats, "gateway.write_key_successful_events")
-		gateway.updateSourceStats(sourceFailEventStats, "gateway.write_key_failed_events")
+		gateway.updateSourceStats(sourceEventStats, "gateway.write_key_events", sourceTagMap)
+		gateway.updateSourceStats(sourceSuccessEventStats, "gateway.write_key_successful_events", sourceTagMap)
+		gateway.updateSourceStats(sourceFailEventStats, "gateway.write_key_failed_events", sourceTagMap)
 	}
 }
 
@@ -618,15 +626,14 @@ func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Req
 	if !ok || writeKey == "" {
 		err = errors.New(response.NoWriteKeyInBasicAuth)
 		misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests")
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{"noWriteKey": "noWriteKey"})
 		return []byte{}, "", err
 	}
 	payload, err := gateway.getPayloadFromRequest(r)
 	if err != nil {
-		sourceName := gateway.getSourceNameForWriteKey(writeKey)
-		sourceTag := misc.GetTagName(writeKey, sourceName)
+		sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests")
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey})
 		return []byte{}, writeKey, err
 	}
 	return payload, writeKey, err
@@ -958,8 +965,8 @@ func (gateway *HandleT) IncrementAckCount(count uint64) {
 }
 
 // UpdateSourceStats creates a new stat for every writekey and updates it with the corresponding count
-func (gateway *HandleT) UpdateSourceStats(sourceStats map[string]int, bucket string) {
-	gateway.updateSourceStats(sourceStats, bucket)
+func (gateway *HandleT) UpdateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
+	gateway.updateSourceStats(sourceStats, bucket, sourceTagMap)
 }
 
 // TrackRequestMetrics provides access to add request success/failure telemetry
