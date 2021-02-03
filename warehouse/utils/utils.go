@@ -485,18 +485,6 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	return columnKeys
 }
 
-func ConcatErrors(errors []error) (err error) {
-	errStr := ""
-	for idx, err := range errors {
-		errStr += err.Error()
-		if idx < len(errors)-1 {
-			errStr += ", "
-		}
-	}
-	err = fmt.Errorf(errStr)
-	return err
-}
-
 func IdentityMergeRulesTableName(warehouse WarehouseT) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMergeRulesTable, warehouse.Namespace, warehouse.Destination.ID)
 }
