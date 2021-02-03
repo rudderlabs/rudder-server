@@ -43,7 +43,7 @@ func Initialize() {
 
 func init() {
 	if err := godotenv.Load(); err != nil {
-		fmt.Println("ERROR: No .env file found")
+		fmt.Println("INFO: No .env file found.")
 	}
 
 	configPath := GetEnv("CONFIG_PATH", "./config/config.toml")
