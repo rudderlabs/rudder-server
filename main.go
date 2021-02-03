@@ -46,7 +46,7 @@ var version = "Not an official release. Get the latest release from the github r
 var major, minor, commit, buildDate, builtBy, gitURL, patch string
 
 // Test Function
-func readIOforResume(router router.HandleT) {
+func readIOforResume(router *router.HandleT) {
 	for {
 		var u string
 		_, err := fmt.Scanf("%v", &u)

@@ -166,10 +166,7 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 	lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
 	// start upload only if no upload has started in current window
 	// eg. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
-	if lastUploadExecTime.Before(prevScheduledTime) {
-		return true
-	}
-	return false
+	return lastUploadExecTime.Before(prevScheduledTime)
 }
 
 func durationBeforeNextAttempt(attempt int64) time.Duration { //Add state(retryable/non-retryable) as an argument to decide backoff etc)
@@ -188,6 +185,7 @@ func durationBeforeNextAttempt(attempt int64) time.Duration { //Add state(retrya
 }
 
 // Pending uploads should be retried with backoff
+// skipcq: SCC-U1000
 func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {

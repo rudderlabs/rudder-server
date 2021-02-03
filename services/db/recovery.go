@@ -71,6 +71,9 @@ func getRecoveryData() RecoveryDataT {
 
 func saveRecoveryData(recoveryData RecoveryDataT) {
 	recoveryDataJSON, err := json.MarshalIndent(&recoveryData, "", " ")
+	if err != nil {
+		panic(err)
+	}
 	storagePath := config.GetString("recovery.storagePath", "/tmp/recovery_data.json")
 	err = ioutil.WriteFile(storagePath, recoveryDataJSON, 0644)
 	if err != nil {

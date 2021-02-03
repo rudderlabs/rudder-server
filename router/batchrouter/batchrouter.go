@@ -359,7 +359,9 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 	}
 
 	jsonPayload, err := json.Marshal(&payload)
-
+	if err != nil {
+		brt.logger.Errorf("BRT: Failed to marshal WH staging file payload error:%v", err)
+	}
 	uri := fmt.Sprintf(`%s/v1/process`, warehouseURL)
 	_, err = brt.netHandle.Post(uri, "application/json; charset=utf-8",
 		bytes.NewBuffer(jsonPayload))
@@ -432,7 +434,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
 			if jobState == jobsdb.Failed.State && isWarehouse && postToWarehouseErr {
 				warehouseServiceFailedTimeLock.RLock()
-				if time.Now().Sub(warehouseServiceFailedTime) > warehouseServiceMaxRetryTimeinHr {
+				if time.Since(warehouseServiceFailedTime) > warehouseServiceMaxRetryTimeinHr {
 					jobState = jobsdb.Aborted.State
 				}
 				warehouseServiceFailedTimeLock.RUnlock()
@@ -540,7 +542,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 			"destType":    brt.destType,
 			"destination": destinationTag,
 		})
-		eventDeliveryTimeStat.SendTiming(time.Now().Sub(receivedTime))
+		eventDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 	}
 }
 
@@ -780,6 +782,9 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
 
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
+		if err != nil {
+			panic(err)
+		}
 		jsonFile, err := os.Create(jsonPath)
 		if err != nil {
 			panic(err)
@@ -883,7 +888,7 @@ func (brt *HandleT) collectMetrics() {
 	if diagnostics.EnableBatchRouterMetric {
 		for {
 			select {
-			case _ = <-brt.diagnosisTicker.C:
+			case <-brt.diagnosisTicker.C:
 				brt.batchRequestsMetricLock.RLock()
 				var diagnosisProperties map[string]interface{}
 				success := 0

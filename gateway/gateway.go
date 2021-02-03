@@ -158,8 +158,7 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 	gateway.userWebRequestWorkers = make([]*userWebRequestWorkerT, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
 		gateway.logger.Debug("User Web Request Worker Started", i)
-		var userWebRequestWorker *userWebRequestWorkerT
-		userWebRequestWorker = &userWebRequestWorkerT{
+		userWebRequestWorker := &userWebRequestWorkerT{
 			webRequestQ:    make(chan *webRequestT, maxUserWebRequestBatchSize),
 			batchRequestQ:  make(chan *batchWebRequestT),
 			reponseQ:       make(chan map[uuid.UUID]string),
@@ -479,10 +478,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	if !misc.Contains(enabledWriteKeysSourceMap, writeKey) {
-		return false
-	}
-	return true
+	return misc.Contains(enabledWriteKeysSourceMap, writeKey)
 }
 
 func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {

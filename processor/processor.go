@@ -833,8 +833,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				}
 				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 				for _, destType := range enabledDestTypes {
-					var enabledDestinationsList []backendconfig.DestinationT
-					enabledDestinationsList = getEnabledDestinations(writeKey, destType)
+					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
 					enabledDestinationsMap[destType] = enabledDestinationsList
 
 					// Adding a singular event multiple times if there are multiple destinations of same type

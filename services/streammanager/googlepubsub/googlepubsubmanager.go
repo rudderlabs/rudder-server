@@ -19,7 +19,7 @@ type Config struct {
 	EventToTopicMap []map[string]string `json:"eventToTopicMap"`
 }
 
-type pubsubClient struct {
+type PubsubClient struct {
 	Pbs      *pubsub.Client
 	TopicMap map[string]*pubsub.Topic
 }
@@ -31,7 +31,7 @@ func init() {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}) (*pubsubClient, error) {
+func NewProducer(destinationConfig interface{}) (*PubsubClient, error) {
 	var config Config
 	ctx := context.Background()
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -55,13 +55,12 @@ func NewProducer(destinationConfig interface{}) (*pubsubClient, error) {
 		topic.PublishSettings.DelayThreshold = 0
 		topicMap[s["to"]] = topic
 	}
-	var pbsClient *pubsubClient
-	pbsClient = &pubsubClient{client, topicMap}
+	pbsClient := &PubsubClient{client, topicMap}
 	return pbsClient, nil
 }
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
-	pbs, ok := producer.(*pubsubClient)
+	pbs, ok := producer.(*PubsubClient)
 	ctx := context.Background()
 	if !ok {
 		respStatus = "Failure"
@@ -99,8 +98,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			responseMessage = "[GooglePubSub] error :: empty topic id string"
 			return 400, respStatus, responseMessage
 		}
-		var topic *pubsub.Topic
-		topic = pbs.TopicMap[topicIdString]
+		topic := pbs.TopicMap[topicIdString]
 		if topic == nil {
 			statusCode = 400
 			responseMessage = "[GooglePubSub] error :: Topic not found in project"
@@ -128,7 +126,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 //CloseProducer closes a given producer
 func CloseProducer(producer interface{}) error {
-	pbs, ok := producer.(*pubsubClient)
+	pbs, ok := producer.(*PubsubClient)
 	if ok {
 		var err error
 		if pbs != nil {
@@ -149,7 +147,6 @@ func getError(err error) (statusCode int) {
 	switch status.Code(err) {
 	case codes.Canceled:
 		statusCode = 499
-		break
 	case codes.Unknown:
 	case codes.InvalidArgument:
 	case codes.FailedPrecondition:
@@ -158,34 +155,24 @@ func getError(err error) (statusCode int) {
 	case codes.Unimplemented:
 	case codes.DataLoss:
 		statusCode = 400
-		break
 	case codes.DeadlineExceeded:
 		statusCode = 504
-		break
 	case codes.NotFound:
 		statusCode = 404
-		break
 	case codes.AlreadyExists:
 		statusCode = 409
-		break
 	case codes.PermissionDenied:
 		statusCode = 403
-		break
 	case codes.ResourceExhausted:
 		statusCode = 429
-		break
 	case codes.Internal:
 		statusCode = 500
-		break
 	case codes.Unavailable:
 		statusCode = 503
-		break
 	case codes.Unauthenticated:
 		statusCode = 401
-		break
 	default:
 		statusCode = 400
-		break
 	}
 	return statusCode
 }

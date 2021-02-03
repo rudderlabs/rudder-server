@@ -41,7 +41,7 @@ function autoSave(store: any, save: any) {
 export class DestinationsListStore implements IDestinationsListStore {
   @observable public destinations: IDestinationStore[] = [];
   @observable public rootStore: IRootStore;
-  @observable public firstLoad: boolean = false;
+  @observable public firstLoad = false;
 
   constructor(rootStore: IRootStore) {
     this.rootStore = rootStore;

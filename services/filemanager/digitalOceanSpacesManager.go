@@ -102,7 +102,10 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string) ([]*SpacesObj
 
 	getRegionSession := session.Must(session.NewSession())
 	region, err := SpacesManager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
-
+	if err != nil {
+		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %w", manager.Config.Bucket, err)
+		return SpacesObjects, err
+	}
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),

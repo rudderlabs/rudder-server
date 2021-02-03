@@ -49,12 +49,7 @@ func createTableUploads(uploadID int64, tableNames []string) (err error) {
 			valueRefsArr = append(valueRefsArr, fmt.Sprintf(`$%d`, index))
 		}
 		valueReferences = append(valueReferences, fmt.Sprintf("(%s)", strings.Join(valueRefsArr, ",")))
-		valueArgs = append(valueArgs, uploadID)
-		valueArgs = append(valueArgs, tName)
-		valueArgs = append(valueArgs, "waiting")
-		valueArgs = append(valueArgs, "{}")
-		valueArgs = append(valueArgs, currentTime)
-		valueArgs = append(valueArgs, currentTime)
+		valueArgs = append(valueArgs, uploadID, tName, "waiting", "{}", currentTime, currentTime)
 	}
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_upload_id, table_name, status, error, created_at, updated_at) VALUES %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, warehouseutils.WarehouseTableUploadsTable, strings.Join(valueReferences, ","), tableUploadsUniqueConstraintName)

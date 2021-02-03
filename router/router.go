@@ -171,7 +171,7 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 	ch := make(chan struct{}, 1)
 	rruntime.Go(func() {
 		select {
-		case _ = <-ch:
+		case <-ch:
 			// do nothing
 		case <-time.After(worker.rt.netClientTimeout * 2):
 			worker.rt.logger.Infof("[%s Router] Delivery to destination exceeded the 2 * configured timeout ", worker.rt.destName)
@@ -558,7 +558,7 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	} else {
 		reqMetric.RequestRetries = reqMetric.RequestRetries + 1
 	}
-	reqMetric.RequestCompletedTime = time.Now().Sub(*diagnosisStartTime)
+	reqMetric.RequestCompletedTime = time.Since(*diagnosisStartTime)
 	worker.rt.trackRequestMetrics(reqMetric)
 }
 
@@ -620,7 +620,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		worker.rt.failedEventsChan <- *status
 
 		if respStatusCode >= 500 || respStatusCode == 429 {
-			timeElapsed := time.Now().Sub(firstAttemptedAtTime)
+			timeElapsed := time.Since(firstAttemptedAtTime)
 			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
 				addToFailedMap = false
@@ -689,7 +689,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 						"destination": destinationTag,
 					})
 
-				eventsDeliveryTimeStat.SendTiming(time.Now().Sub(receivedTime))
+				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 			}
 		}
 	}
@@ -812,8 +812,7 @@ func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
 func (rt *HandleT) initWorkers() {
 	rt.workers = make([]*workerT, rt.noOfWorkers)
 	for i := 0; i < rt.noOfWorkers; i++ {
-		var worker *workerT
-		worker = &workerT{
+		worker := &workerT{
 			channel:          make(chan *jobsdb.JobT, noOfJobsPerChannel),
 			failedJobIDMap:   make(map[string]int64),
 			retryForJobMap:   make(map[int64]time.Time),
@@ -910,7 +909,7 @@ func (worker *workerT) canBackoff(job *jobsdb.JobT, userID string) (shouldBackof
 	// if the same job has failed before, check for next retry time
 	worker.retryForJobMapMutex.RLock()
 	defer worker.retryForJobMapMutex.RUnlock()
-	if nextRetryTime, ok := worker.retryForJobMap[job.JobID]; ok && nextRetryTime.Sub(time.Now()) > 0 {
+	if nextRetryTime, ok := worker.retryForJobMap[job.JobID]; ok && time.Until(nextRetryTime) > 0 {
 		worker.rt.logger.Debugf("[%v Router] :: Less than next retry time: %v", worker.rt.destName, nextRetryTime)
 		return true
 	}
@@ -1039,7 +1038,7 @@ func (rt *HandleT) collectMetrics() {
 	if diagnostics.EnableRouterMetric {
 		for {
 			select {
-			case _ = <-rt.diagnosisTicker.C:
+			case <-rt.diagnosisTicker.C:
 				rt.requestsMetricLock.RLock()
 				var diagnosisProperties map[string]interface{}
 				retries := 0
