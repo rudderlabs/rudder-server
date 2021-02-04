@@ -29,6 +29,7 @@ type ManagerI interface {
 	IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error)
 	TestConnection(warehouse warehouseutils.WarehouseT) error
 	DownloadIdentityRules(*misc.GZipWriter) error
+	GetTotalCountInTable(tableName string) (int64, error)
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
 }
 
