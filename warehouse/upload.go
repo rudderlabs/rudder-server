@@ -99,6 +99,7 @@ type UploadJobT struct {
 	schemaHandle        *SchemaHandleT
 	schemaLock          sync.Mutex
 	hasAllTablesSkipped bool
+	tableUploadStatuses []*TableUploadStatusT
 }
 
 type UploadColumnT struct {
@@ -524,7 +525,9 @@ type TableUploadStatusT struct {
 }
 
 func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
-	//TODO: Get only tables' status of current uploadJob
+	if job.tableUploadStatuses != nil {
+		return job.tableUploadStatuses
+	}
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 			%[1]s.id,
@@ -574,7 +577,7 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 		}
 		tableUploadStatuses = append(tableUploadStatuses, &tableUploadStatus)
 	}
-
+	job.tableUploadStatuses = tableUploadStatuses
 	return tableUploadStatuses
 }
 
