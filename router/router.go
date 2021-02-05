@@ -619,7 +619,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 		worker.rt.failedEventsChan <- *status
 
-		if respStatusCode >= 500 || respStatusCode == 429 {
+		if respStatusCode >= 500 {
 			timeElapsed := time.Now().Sub(firstAttemptedAtTime)
 			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
@@ -633,6 +633,10 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 				worker.retryForJobMap[destinationJobMetadata.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
 				worker.retryForJobMapMutex.Unlock()
 			}
+		} else if respStatusCode == 429 {
+			worker.retryForJobMapMutex.Lock()
+			worker.retryForJobMap[destinationJobMetadata.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
+			worker.retryForJobMapMutex.Unlock()
 		} else {
 			status.JobState = jobsdb.Aborted.State
 			addToFailedMap = false

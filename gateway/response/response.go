@@ -85,7 +85,7 @@ func GetStatus(key string) string {
 		return status.message
 	}
 
-	return ""
+	return key
 }
 
 func GetStatusCode(key string) int {

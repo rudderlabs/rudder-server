@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -114,33 +115,34 @@ type userWebRequestWorkerT struct {
 
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
-	application                                   app.Interface
-	webRequestQ                                   chan *webRequestT
-	userWorkerBatchRequestQ                       chan *userWorkerBatchRequestT
-	batchUserWorkerBatchRequestQ                  chan *batchUserWorkerBatchRequestT
-	jobsDB                                        jobsdb.JobsDB
-	ackCount                                      uint64
-	recvCount                                     uint64
-	backendConfig                                 backendconfig.BackendConfig
-	rateLimiter                                   ratelimiter.RateLimiter
-	stats                                         stats.Stats
-	batchSizeStat                                 stats.RudderStats
-	requestSizeStat                               stats.RudderStats
-	dbWritesStat                                  stats.RudderStats
-	dbWorkersBufferFullStat, dbWorkersTimeOutStat stats.RudderStats
-	trackSuccessCount                             int
-	trackFailureCount                             int
-	requestMetricLock                             sync.RWMutex
-	diagnosisTicker                               *time.Ticker
-	webRequestBatchCount                          uint64
-	userWebRequestWorkers                         []*userWebRequestWorkerT
-	webhookHandler                                *webhook.HandleT
-	suppressUserHandler                           types.SuppressUserI
-	eventSchemaHandler                            types.EventSchemasI
-	versionHandler                                func(w http.ResponseWriter, r *http.Request)
-	logger                                        logger.LoggerI
-	rrh                                           *RegularRequestHandler
-	irh                                           *ImportRequestHandler
+	application                                                app.Interface
+	webRequestQ                                                chan *webRequestT
+	userWorkerBatchRequestQ                                    chan *userWorkerBatchRequestT
+	batchUserWorkerBatchRequestQ                               chan *batchUserWorkerBatchRequestT
+	jobsDB                                                     jobsdb.JobsDB
+	ackCount                                                   uint64
+	recvCount                                                  uint64
+	backendConfig                                              backendconfig.BackendConfig
+	rateLimiter                                                ratelimiter.RateLimiter
+	stats                                                      stats.Stats
+	batchSizeStat                                              stats.RudderStats
+	requestSizeStat                                            stats.RudderStats
+	dbWritesStat                                               stats.RudderStats
+	dbWorkersBufferFullStat, dbWorkersTimeOutStat              stats.RudderStats
+	trackSuccessCount                                          int
+	trackFailureCount                                          int
+	requestMetricLock                                          sync.RWMutex
+	diagnosisTicker                                            *time.Ticker
+	webRequestBatchCount                                       uint64
+	userWebRequestWorkers                                      []*userWebRequestWorkerT
+	webhookHandler                                             *webhook.HandleT
+	suppressUserHandler                                        types.SuppressUserI
+	eventSchemaHandler                                         types.EventSchemasI
+	versionHandler                                             func(w http.ResponseWriter, r *http.Request)
+	logger                                                     logger.LoggerI
+	rrh                                                        *RegularRequestHandler
+	irh                                                        *ImportRequestHandler
+	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyJobsDB
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
@@ -593,6 +595,92 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
+type pendingEventsRequestPayload struct {
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
+}
+
+func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.logger.LogRequest(r)
+	atomic.AddUint64(&gateway.recvCount, 1)
+	var errorMessage string
+	defer func() {
+		if errorMessage != "" {
+			gateway.logger.Debug(errorMessage)
+			http.Error(w, response.GetStatus(errorMessage), 400)
+		}
+	}()
+
+	payload, _, err := gateway.getPayloadAndWriteKey(w, r)
+	if err != nil {
+		errorMessage = err.Error()
+		return
+	}
+
+	if !gjson.ValidBytes(payload) {
+		errorMessage = response.GetStatus(response.InvalidJSON)
+		return
+	}
+
+	var reqPayload pendingEventsRequestPayload
+	err = json.Unmarshal(payload, &reqPayload)
+	if err != nil {
+		errorMessage = err.Error()
+		return
+	}
+
+	if reqPayload.SourceID == "" {
+		errorMessage = "Empty source id"
+		return
+	}
+
+	gwParameterFilters := []jobsdb.ParameterFilterT{
+		{
+			Name:     "source_id",
+			Value:    reqPayload.SourceID,
+			Optional: false,
+		},
+	}
+
+	var rtParameterFilters []jobsdb.ParameterFilterT
+	if reqPayload.DestinationID == "" {
+		rtParameterFilters = gwParameterFilters
+	} else {
+		rtParameterFilters = []jobsdb.ParameterFilterT{
+			{
+				Name:     "source_id",
+				Value:    reqPayload.SourceID,
+				Optional: false,
+			},
+			{
+				Name:     "destination_id",
+				Value:    reqPayload.DestinationID,
+				Optional: false,
+			},
+		}
+	}
+
+	var excludeGateway bool
+	excludeGatewayStr := r.URL.Query().Get("exclude_gateway")
+	if excludeGatewayStr != "" {
+		val, err := strconv.ParseBool(excludeGatewayStr)
+		if err == nil {
+			excludeGateway = val
+		}
+	}
+
+	var gwPendingCount, rtPendingCount int64
+	if !excludeGateway {
+		gwPendingCount = gateway.readonlyGatewayDB.GetPendingJobsCount([]string{CustomVal}, -1, gwParameterFilters)
+	}
+	rtPendingCount = gateway.readonlyRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
+	//brtPendingCount := gateway.readonlyBatchRouterDB.GetPendingJobsCount(nil, -1, nil)
+
+	totalPendingCount := gwPendingCount + rtPendingCount
+
+	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", totalPendingCount)))
+}
+
 //ProcessRequest throws a webRequest into the queue and waits for the response before returning
 func (rrh *RegularRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
 	done := make(chan string, 1)
@@ -619,7 +707,7 @@ func (gateway *HandleT) ProcessWebRequest(w *http.ResponseWriter, r *http.Reques
 	return gateway.rrh.ProcessRequest(gateway, w, r, reqType, payload, writeKey)
 }
 
-func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Request, reqType string) ([]byte, string, error) {
+func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Request) ([]byte, string, error) {
 	var sourceFailStats = make(map[string]int)
 	var err error
 	writeKey, _, ok := r.BasicAuth()
@@ -653,7 +741,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 			http.Error(w, response.GetStatus(errorMessage), 400)
 		}
 	}()
-	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
+	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r)
 	if err != nil {
 		errorMessage = err.Error()
 		return
@@ -888,6 +976,8 @@ func (gateway *HandleT) StartWebHandler() {
 		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys))
 	}
 
+	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler))
+
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
@@ -980,6 +1070,12 @@ func (gateway *HandleT) GetWebhookSourceDefName(writeKey string) (name string, o
 	defer configSubscriberLock.RUnlock()
 	name, ok = enabledWriteKeyWebhookMap[writeKey]
 	return
+}
+
+func (gateway *HandleT) SetReadonlyDBs(readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyJobsDB) {
+	gateway.readonlyGatewayDB = readonlyGatewayDB
+	gateway.readonlyRouterDB = readonlyRouterDB
+	gateway.readonlyBatchRouterDB = readonlyBatchRouterDB
 }
 
 /*
