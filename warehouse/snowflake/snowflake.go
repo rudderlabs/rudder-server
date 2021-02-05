@@ -164,6 +164,10 @@ func (sf *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	var count int
 	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s'`, sf.Namespace)
 	err = sf.Db.QueryRow(sqlStatement).Scan(&count)
+	// ignore err if no results for query
+	if err == sql.ErrNoRows {
+		err = nil
+	}
 	exists = count > 0
 	return
 }
