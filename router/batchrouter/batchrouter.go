@@ -300,6 +300,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		return StorageUploadOutput{
 			Error:       err,
 			JournalOpID: opID,
+			LocalFilePaths: []string{gzipFilePath},
 		}
 	}
 
