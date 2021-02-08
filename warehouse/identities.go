@@ -340,6 +340,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 		if len(loadErrors) > 0 {
 			job.setUploadError(multierror.Join(loadErrors), Aborted)
+			return
 		}
 		job.setUploadStatus(ExportedData)
 	})
