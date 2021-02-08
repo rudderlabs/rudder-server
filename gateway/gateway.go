@@ -774,7 +774,7 @@ func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respon
 		interimErrorMessage := <-done
 		interimMsgs = append(interimMsgs, interimErrorMessage)
 	}
-	errorMessage = strings.Join(interimMsgs[:], "\n")
+	errorMessage = strings.Join(interimMsgs[:], "")
 
 	return errorMessage
 }
