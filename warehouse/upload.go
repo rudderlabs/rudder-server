@@ -4,11 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -98,6 +98,7 @@ type UploadJobT struct {
 	schemaHandle        *SchemaHandleT
 	schemaLock          sync.Mutex
 	hasAllTablesSkipped bool
+	tableUploadStatuses []*TableUploadStatusT
 }
 
 type UploadColumnT struct {
@@ -298,6 +299,10 @@ func (job *UploadJobT) run() (err error) {
 		return err
 	}
 	defer whManager.Cleanup()
+
+	userTables := []string{job.identifiesTableName(), job.usersTableName()}
+	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
+
 	var newStatus string
 	var nextUploadState *uploadStateT
 	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
@@ -379,82 +384,78 @@ func (job *UploadJobT) run() (err error) {
 			}
 			newStatus = nextUploadState.completed
 
-		case ExportedUserTables:
-			newStatus = nextUploadState.failed
-			uploadSchema := job.upload.Schema
-			if _, ok := uploadSchema[job.identifiesTableName()]; ok {
-
-				loadTimeStat := job.timerStat("user_tables_load_time")
-				loadTimeStat.Start()
-				var loadErrors []error
-				loadErrors, err = job.loadUserTables()
-				if err != nil {
-					break
-				}
-				job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
-
-				if len(loadErrors) > 0 {
-					err = warehouseutils.ConcatErrors(loadErrors)
-					break
-				}
-				loadTimeStat.End()
-			}
-			newStatus = nextUploadState.completed
-
-		case ExportedIdentities:
-			newStatus = nextUploadState.failed
-			// Load Identitties if enabled
-			uploadSchema := job.upload.Schema
-			if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
-				if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {
-					loadTimeStat := job.timerStat("identity_tables_load_time")
-					loadTimeStat.Start()
-
-					var loadErrors []error
-					loadErrors, err = job.loadIdentityTables(false)
-					if err != nil {
-						break
-					}
-					job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
-
-					if len(loadErrors) > 0 {
-						err = warehouseutils.ConcatErrors(loadErrors)
-						break
-					}
-					loadTimeStat.End()
-				}
-			}
-			newStatus = nextUploadState.completed
-
 		case ExportedData:
 			newStatus = nextUploadState.failed
-			userTableNames := []string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
-			// Export all other tables
-			loadTimeStat := job.timerStat("other_tables_load_time")
-			loadTimeStat.Start()
+			_, currentJobSucceededTables := job.getTablesToSkip()
 
-			loadErrors := job.loadAllTablesExcept(userTableNames)
-			job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
+			var loadErrors []error
+			var loadErrorLock sync.Mutex
 
+			var wg sync.WaitGroup
+			wg.Add(3)
+
+			rruntime.Go(func() {
+				var succeededUserTableCount int
+				for _, userTable := range userTables {
+					if _, ok := currentJobSucceededTables[userTable]; ok {
+						succeededUserTableCount++
+					}
+				}
+				if succeededUserTableCount >= len(userTables) {
+					wg.Done()
+					return
+				}
+				err = job.exportUserTables()
+				if err != nil {
+					loadErrorLock.Lock()
+					loadErrors = append(loadErrors, err)
+					loadErrorLock.Unlock()
+				}
+				wg.Done()
+			})
+
+			rruntime.Go(func() {
+				var succeededIdentityTableCount int
+				for _, identityTable := range identityTables {
+					if _, ok := currentJobSucceededTables[identityTable]; ok {
+						succeededIdentityTableCount++
+					}
+				}
+				if succeededIdentityTableCount >= len(identityTables) {
+					wg.Done()
+					return
+				}
+				err = job.exportIdentities()
+				if err != nil {
+					loadErrorLock.Lock()
+					loadErrors = append(loadErrors, err)
+					loadErrorLock.Unlock()
+				}
+				wg.Done()
+			})
+
+			rruntime.Go(func() {
+				specialTables := append(userTables, identityTables...)
+				err = job.exportRegularTables(specialTables)
+				if err != nil {
+					loadErrorLock.Lock()
+					loadErrors = append(loadErrors, err)
+					loadErrorLock.Unlock()
+				}
+				wg.Done()
+			})
+
+			wg.Wait()
 			if len(loadErrors) > 0 {
-				err = warehouseutils.ConcatErrors(loadErrors)
+				err = multierror.Join(loadErrors)
 				break
 			}
 
-			loadTimeStat.End()
-			job.generateUploadSuccessMetrics()
 			newStatus = nextUploadState.completed
 
 		default:
 			// If unknown state, start again
 			newStatus = Waiting
-		}
-
-		pkgLogger.Debugf("[WH] Upload: %d, Next state: %s", job.upload.ID, newStatus)
-		job.setUploadStatus(newStatus)
-
-		if newStatus == ExportedData {
-			break
 		}
 
 		if err != nil {
@@ -466,6 +467,13 @@ func (job *UploadJobT) run() (err error) {
 			break
 		}
 
+		pkgLogger.Debugf("[WH] Upload: %d, Next state: %s", job.upload.ID, newStatus)
+		job.setUploadStatus(newStatus)
+
+		if newStatus == ExportedData {
+			break
+		}
+
 		nextUploadState = getNextUploadState(newStatus)
 	}
 
@@ -474,6 +482,72 @@ func (job *UploadJobT) run() (err error) {
 	}
 
 	return nil
+}
+
+func (job *UploadJobT) exportUserTables() (err error) {
+	uploadSchema := job.upload.Schema
+	if _, ok := uploadSchema[job.identifiesTableName()]; ok {
+
+		loadTimeStat := job.timerStat("user_tables_load_time")
+		loadTimeStat.Start()
+		defer loadTimeStat.End()
+		var loadErrors []error
+		loadErrors, err = job.loadUserTables()
+		if err != nil {
+			return
+		}
+		job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
+
+		if len(loadErrors) > 0 {
+			err = multierror.Join(loadErrors)
+			return
+		}
+	}
+	return
+}
+
+func (job *UploadJobT) exportIdentities() (err error) {
+	// Load Identitties if enabled
+	uploadSchema := job.upload.Schema
+	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
+		if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {
+			loadTimeStat := job.timerStat("identity_tables_load_time")
+			loadTimeStat.Start()
+			defer loadTimeStat.End()
+
+			var loadErrors []error
+			loadErrors, err = job.loadIdentityTables(false)
+			if err != nil {
+				return
+			}
+			job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
+
+			if len(loadErrors) > 0 {
+				err = multierror.Join(loadErrors)
+				return
+			}
+		}
+	}
+	return
+}
+
+func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
+	//[]string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
+	// Export all other tables
+	loadTimeStat := job.timerStat("other_tables_load_time")
+	loadTimeStat.Start()
+	defer loadTimeStat.End()
+
+	loadErrors := job.loadAllTablesExcept(specialTables)
+	job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
+
+	if len(loadErrors) > 0 {
+		err = multierror.Join(loadErrors)
+		return
+	}
+
+	job.generateUploadSuccessMetrics()
+	return
 }
 
 func areAllTableSkipErrors(loadErrors []error) bool {
@@ -496,7 +570,9 @@ type TableUploadStatusT struct {
 }
 
 func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
-	//TODO: Get only tables' status of current uploadJob
+	if job.tableUploadStatuses != nil {
+		return job.tableUploadStatuses
+	}
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 			%[1]s.id,
@@ -546,7 +622,7 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 		}
 		tableUploadStatuses = append(tableUploadStatuses, &tableUploadStatus)
 	}
-
+	job.tableUploadStatuses = tableUploadStatuses
 	return tableUploadStatuses
 }
 
@@ -1262,12 +1338,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	wg.Wait()
 
 	if len(saveLoadFileErrs) > 0 {
+		err = multierror.Join(saveLoadFileErrs)
 		pkgLogger.Errorf(`[WH]: Encountered errors in creating load file records in wh_load_files: %v`, err)
-		var errStrings []string
-		for _, saveLoadFileErr := range saveLoadFileErrs {
-			errStrings = append(errStrings, saveLoadFileErr.Error())
-		}
-		err = fmt.Errorf(strings.Join(errStrings, "\n"))
 		return startLoadFileID, endLoadFileID, err
 	}
 
@@ -1536,20 +1608,6 @@ func initializeStateMachine() {
 	}
 	stateTransitions[CreatedRemoteSchema] = createRemoteSchemaState
 
-	exportUserTablesState := &uploadStateT{
-		inProgress: "exporting_user_tables",
-		failed:     "exporting_user_tables_failed",
-		completed:  ExportedUserTables,
-	}
-	stateTransitions[ExportedUserTables] = exportUserTablesState
-
-	loadIdentitiesState := &uploadStateT{
-		inProgress: "exporting_identities",
-		failed:     "exporting_identities_failed",
-		completed:  ExportedIdentities,
-	}
-	stateTransitions[ExportedIdentities] = loadIdentitiesState
-
 	exportDataState := &uploadStateT{
 		inProgress: "exporting_data",
 		failed:     "exporting_data_failed",
@@ -1567,9 +1625,7 @@ func initializeStateMachine() {
 	createTableUploadsState.nextState = generateLoadFilesState
 	generateLoadFilesState.nextState = updateTableUploadCountsState
 	updateTableUploadCountsState.nextState = createRemoteSchemaState
-	createRemoteSchemaState.nextState = exportUserTablesState
-	exportUserTablesState.nextState = loadIdentitiesState
-	loadIdentitiesState.nextState = exportDataState
+	createRemoteSchemaState.nextState = exportDataState
 	exportDataState.nextState = nil
 	abortState.nextState = nil
 }
