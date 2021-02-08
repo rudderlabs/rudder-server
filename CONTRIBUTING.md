@@ -1,13 +1,12 @@
 # Contributing to RudderStack #
 
-Thanks for taking the time and for your help improving this project!
+Thanks for taking the time and for your help in improving this project!
 
 ## Getting Help ##
 
-If you have a question about rudder or have encountered problems using it,
-start by asking a question on [discord][discord].
+If you have a question about RudderStack or have encountered problems using it, start by asking a question on our [Slack](https://resources.rudderstack.com/join-rudderstack-slack) channel.
 
-## Rudder Labs Contributor Agreement ##
+## RudderStack Contributor Agreement ##
 
 To contribute to this project, we need you to sign to [Contributor License Agreement (“CLA”)][CLA] for the first commit you make. By agreeing to the [CLA][CLA]
 we can add you to list of approved contributors and review the changes proposed by you.
@@ -97,7 +96,5 @@ We look forward to your feedback on improving this project.
 
 <!----variable's---->
 
-[discord]: https://discordapp.com/invite/xNEdEGw
 [issue]: https://github.com/rudderlabs/rudder-server/issues/new
-[slack]: https://rudderlabs.slack.com/
 [CLA]: https://rudderlabs.wufoo.com/forms/rudderlabs-contributor-license-agreement
