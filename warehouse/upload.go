@@ -391,7 +391,7 @@ func (job *UploadJobT) run() (err error) {
 
 			rruntime.Go(func() {
 				specialTables := append(userTables, identityTables...)
-				err = job.exportRegularTales(specialTables)
+				err = job.exportRegularTables(specialTables)
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
@@ -413,19 +413,19 @@ func (job *UploadJobT) run() (err error) {
 			newStatus = Waiting
 		}
 
-		pkgLogger.Debugf("[WH] Upload: %d, Next state: %s", job.upload.ID, newStatus)
-		job.setUploadStatus(newStatus)
-
-		if newStatus == ExportedData {
-			break
-		}
-
 		if err != nil {
 			pkgLogger.Errorf("[WH] Upload: %d, TargetState: %s, NewState: %s, Error: %v", job.upload.ID, targetStatus, newStatus, err.Error())
 			state, err := job.setUploadError(err, newStatus)
 			if err == nil && state == Aborted {
 				job.generateUploadAbortedMetrics()
 			}
+			break
+		}
+
+		pkgLogger.Debugf("[WH] Upload: %d, Next state: %s", job.upload.ID, newStatus)
+		job.setUploadStatus(newStatus)
+
+		if newStatus == ExportedData {
 			break
 		}
 
@@ -486,7 +486,7 @@ func (job *UploadJobT) exportIdentities() (err error) {
 	return
 }
 
-func (job *UploadJobT) exportRegularTales(specialTables []string) (err error) {
+func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 	//[]string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 	// Export all other tables
 	loadTimeStat := job.timerStat("other_tables_load_time")
