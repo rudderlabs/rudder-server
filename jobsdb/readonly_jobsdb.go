@@ -301,13 +301,13 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 		sqlStatement = fmt.Sprintf("select sum(jsonb_array_length(batch)) from (%s) t", sqlStatement)
 	}
 
-	pkgLogger.Debug(sqlStatement)
+	jd.logger.Debug(sqlStatement)
 
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	var count sql.NullInt64
 	err := row.Scan(&count)
 	if err != nil && err != sql.ErrNoRows {
-		pkgLogger.Errorf("Returning 0 because failed to fetch unprocessed count from dataset: %v. Err: %w", ds, err)
+		jd.logger.Errorf("Returning 0 because failed to fetch unprocessed count from dataset: %v. Err: %w", ds, err)
 		return 0
 	}
 
@@ -315,7 +315,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 		return int64(count.Int64)
 	}
 
-	pkgLogger.Errorf("Returning 0 because unprocessed count is invalid")
+	jd.logger.Errorf("Returning 0 because unprocessed count is invalid")
 	return 0
 }
 
@@ -417,13 +417,13 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 		sqlStatement = fmt.Sprintf("select sum(jsonb_array_length(batch)) from (%s) t", sqlStatement)
 	}
 
-	pkgLogger.Debug(sqlStatement)
+	jd.logger.Debug(sqlStatement)
 
 	row := jd.dbHandle.QueryRow(sqlStatement, time.Now())
 	var count sql.NullInt64
 	err := row.Scan(&count)
 	if err != nil && err != sql.ErrNoRows {
-		pkgLogger.Errorf("Returning 0 because failed to fetch processed count from dataset: %v. Err: %w", ds, err)
+		jd.logger.Errorf("Returning 0 because failed to fetch processed count from dataset: %v. Err: %w", ds, err)
 		return 0
 	}
 
@@ -431,6 +431,6 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 		return int64(count.Int64)
 	}
 
-	pkgLogger.Errorf("Returning 0 because processed count is invalid")
+	jd.logger.Errorf("Returning 0 because processed count is invalid")
 	return 0
 }
