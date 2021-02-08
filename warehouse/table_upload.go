@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -83,6 +84,13 @@ func (tableUpload *TableUploadT) setStatus(status string) (err error) {
 	pkgLogger.Debugf("[WH]: Setting table upload status: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, execValues...)
 	return err
+}
+
+func (tableUpload *TableUploadT) getTotalEvents() int64 {
+	sqlStatement := fmt.Sprintf(`SELECT total_events FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, tableUpload.uploadID, tableUpload.tableName)
+	var total sql.NullInt64
+	dbHandle.QueryRow(sqlStatement).Scan(&total)
+	return total.Int64
 }
 
 func (tableUpload *TableUploadT) setError(status string, statusError error) (err error) {

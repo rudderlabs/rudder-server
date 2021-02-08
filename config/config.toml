@@ -106,6 +106,9 @@ batchTimeoutInS = 2
 retrySleepInMS = 100
 disableEventDeliveryStatusUploads = false
 
+[Archiver]
+backupRowsBatchSize = 100
+
 [JobsDB]
 # Migration related parameters
 jobDoneMigrateThres = 0.8
@@ -119,6 +122,8 @@ addNewDSLoopSleepDurationInS = 5
 refreshDSListLoopSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
 backupRowsBatchSize = 1000
+archivalTimeInDays = 10
+archiverTickerTimeInMin = 1440
 
 [JobsDB.backup]
 enabled = true
@@ -128,8 +133,8 @@ enabled=true
 pathPrefix=""
 
 [JobsDB.backup.rt]
-enabled=false
-failedOnly=false
+enabled=true
+failedOnly=true
 
 [JobsDB.backup.batch_rt]
 enabled=false
@@ -178,6 +183,7 @@ warehouseServiceMaxRetryTimeinHr = 3
 # Below config variables are supported per destination type too
 noOfWorkers = 8
 maxFailedCountForJob = 128
+retryTimeWindowInMins = 180
 
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave

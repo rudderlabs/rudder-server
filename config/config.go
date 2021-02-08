@@ -19,12 +19,14 @@ var (
 	whSchemaVersion string
 )
 
+// Rudder server supported config constants
 const (
-	EmbeddedMode    = "embedded"
-	MasterMode      = "master"
-	MasterSlaveMode = "master_and_slave"
-	SlaveMode       = "slave"
-	OffMode         = "off"
+	EmbeddedMode      = "embedded"
+	MasterMode        = "master"
+	MasterSlaveMode   = "master_and_slave"
+	SlaveMode         = "slave"
+	OffMode           = "off"
+	PooledWHSlaveMode = "embedded_master"
 )
 
 //TransformKey as package method to get the formatted env from a give string
@@ -41,7 +43,7 @@ func Initialize() {
 
 func init() {
 	if err := godotenv.Load(); err != nil {
-		fmt.Println("ERROR: No .env file found")
+		fmt.Println("INFO: No .env file found.")
 	}
 
 	configPath := GetEnv("CONFIG_PATH", "./config/config.toml")
@@ -146,6 +148,12 @@ func IsSet(key string) bool {
 	}
 
 	return viper.IsSet(key)
+}
+
+// IsEnvSet checks if an environment variable is set
+func IsEnvSet(key string) bool {
+	_, exists := os.LookupEnv(key)
+	return exists
 }
 
 // GetEnv returns the environment value stored in key variable

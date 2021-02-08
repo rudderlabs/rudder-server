@@ -223,7 +223,7 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations := ch.Uploader.GetLoadFileLocations(tableName)
+	objectLocations := ch.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		object, err := warehouseutils.GetObjectName(objectLocation, ch.Warehouse.Destination.Config, ch.ObjectStorage)
@@ -613,6 +613,15 @@ func (ch *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 }
 
 func (ch *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+	return
+}
+
+func (ch *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, ch.Namespace, tableName)
+	err = ch.Db.QueryRow(sqlStatement).Scan(&total)
+	if err != nil {
+		pkgLogger.Errorf(`CH: Error getting total count in table %s:%s`, ch.Namespace, tableName)
+	}
 	return
 }
 

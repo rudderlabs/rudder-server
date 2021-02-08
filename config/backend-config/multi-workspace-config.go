@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/tidwall/gjson"
 )
 
 //MultiWorkspaceConfig is a struct to hold variables necessary for supporting multiple workspaces.
@@ -189,6 +190,12 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(worksp
 			return []WorkspaceRegulationT{}, false
 		}
 
+		//If statusCode is not 2xx, then returning empty regulations
+		if statusCode < 200 || statusCode >= 300 {
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspace regulations. statusCode: %v, error: %v", statusCode, err)
+			return []WorkspaceRegulationT{}, false
+		}
+
 		var workspaceRegulationsJSON WRegulationsT
 		err = json.Unmarshal(respBody, &workspaceRegulationsJSON)
 		if err != nil {
@@ -196,9 +203,13 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(worksp
 			return []WorkspaceRegulationT{}, false
 		}
 
+		endExists := gjson.GetBytes(respBody, "end").Exists()
+		if !endExists {
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] No end key found in the hosted workspace regulations response. Breaking the regulations fetch loop. Response: %v", string(respBody))
+		}
 		totalWorkspaceRegulations = append(totalWorkspaceRegulations, workspaceRegulationsJSON.WorkspaceRegulations...)
 
-		if workspaceRegulationsJSON.End {
+		if workspaceRegulationsJSON.End || !endExists {
 			break
 		}
 
@@ -234,6 +245,12 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getSourceRegulations(workspace
 			return []SourceRegulationT{}, false
 		}
 
+		//If statusCode is not 2xx, then returning empty regulations
+		if statusCode < 200 || statusCode >= 300 {
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted source regulations. statusCode: %v, error: %v", statusCode, err)
+			return []SourceRegulationT{}, false
+		}
+
 		var sourceRegulationsJSON SRegulationsT
 		err = json.Unmarshal(respBody, &sourceRegulationsJSON)
 		if err != nil {
@@ -241,9 +258,13 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getSourceRegulations(workspace
 			return []SourceRegulationT{}, false
 		}
 
+		endExists := gjson.GetBytes(respBody, "end").Exists()
+		if !endExists {
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] No end key found in the hosted source regulations response. Breaking the regulations fetch loop. Response: %v", string(respBody))
+		}
 		totalSourceRegulations = append(totalSourceRegulations, sourceRegulationsJSON.SourceRegulations...)
 
-		if sourceRegulationsJSON.End {
+		if sourceRegulationsJSON.End || !endExists {
 			break
 		}
 

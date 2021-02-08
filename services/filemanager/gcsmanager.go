@@ -90,7 +90,9 @@ func (manager *GCSManager) GetObjectNameFromLocation(location string) (string, e
 
 //TODO complete this
 func (manager *GCSManager) GetDownloadKeyFromFileLocation(location string) string {
-	return location
+	locationSlice := strings.Split(location, "storage.googleapis.com/"+manager.Config.Bucket+"/")
+	pkgLogger.Debug("Location: ", location, "downloadKey: ", locationSlice[len(locationSlice)-1])
+	return locationSlice[len(locationSlice)-1]
 }
 
 type GCSManager struct {

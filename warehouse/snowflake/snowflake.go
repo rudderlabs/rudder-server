@@ -830,6 +830,15 @@ func (sf *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
+func (sf *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, sf.Namespace, tableName)
+	err = sf.Db.QueryRow(sqlStatement).Scan(&total)
+	if err != nil {
+		pkgLogger.Errorf(`SF: Error getting total count in table %s:%s`, sf.Namespace, tableName)
+	}
+	return
+}
+
 func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace

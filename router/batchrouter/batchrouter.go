@@ -32,6 +32,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 var (
@@ -70,6 +71,7 @@ type HandleT struct {
 	logger                  logger.LoggerI
 	noOfWorkers             int
 	maxFailedCountForJob    int
+	retryTimeWindow         time.Duration
 }
 
 type BatchDestinationT struct {
@@ -300,6 +302,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		return StorageUploadOutput{
 			Error:       err,
 			JournalOpID: opID,
+			LocalFilePaths: []string{gzipFilePath},
 		}
 	}
 
@@ -405,8 +408,25 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	jobStateCount := make(map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
+		var firstAttemptedAt time.Time
+		firstAttemptedAtString := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str
+		if firstAttemptedAtString != "" {
+			firstAttemptedAt, err = time.Parse(misc.RFC3339Milli, firstAttemptedAtString)
+			if err != nil {
+				firstAttemptedAt = time.Now()
+				firstAttemptedAtString = firstAttemptedAt.Format(misc.RFC3339Milli)
+			}
+		} else {
+			firstAttemptedAt = time.Now()
+			firstAttemptedAtString = firstAttemptedAt.Format(misc.RFC3339Milli)
+		}
+		errorRespString, err := sjson.Set(string(errorResp), "firstAttemptedAt", firstAttemptedAtString)
+		if err == nil {
+			errorResp = []byte(errorRespString)
+		}
 
-		if jobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
+		timeElapsed := time.Since(firstAttemptedAt)
+		if jobState == jobsdb.Failed.State && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
 			jobState = jobsdb.Aborted.State
 		} else {
 			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
@@ -600,7 +620,7 @@ func (brt *HandleT) initWorkers() {
 							}
 							if !ok {
 								// TODO: Should not happen. Handle this
-								err := fmt.Errorf("BRT: Batch destiantion source not found in config for sourceID: %s", sourceID)
+								err := fmt.Errorf("BRT: Batch destination source not found in config for sourceID: %s", sourceID)
 								brt.setJobStatus(batchJobs, false, err, false)
 								wg.Done()
 								continue
@@ -845,8 +865,13 @@ func IsWarehouseDestination(destType string) bool {
 	return misc.Contains(warehouseDestinations, destType)
 }
 
+func isWarehouseMasterEnabled() bool {
+	return warehouseMode == config.EmbeddedMode ||
+		warehouseMode == config.PooledWHSlaveMode
+}
+
 func getWarehouseURL() (url string) {
-	if warehouseMode == config.EmbeddedMode {
+	if isWarehouseMasterEnabled() {
 		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
 	} else {
 		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
@@ -918,6 +943,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 	brt.maxFailedCountForJob = getBatchRouterConfigInt("maxFailedCountForJob", destType, 128)
+	brt.retryTimeWindow = getBatchRouterConfigDuration("retryTimeWindowInMins", destType, time.Duration(180)) * time.Minute
 
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
