@@ -679,8 +679,14 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		wh.configSubscriberLock.RUnlock()
 
 		if !ok {
-			// TODO: Do not panic but raise an alert?
-			panic("Warehouse not found")
+			uploadJob := UploadJobT{
+				upload:   &upload,
+				dbHandle: wh.dbHandle,
+			}
+			err := fmt.Errorf("Unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
+			uploadJob.setUploadError(err, Aborted)
+			pkgLogger.Errorf("%v", err)
+			continue
 		}
 
 		stagingFilesList, err := wh.getStagingFiles(warehouse, upload.StartStagingFileID, upload.EndStagingFileID)
