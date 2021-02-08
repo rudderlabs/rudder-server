@@ -301,6 +301,8 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 		sqlStatement = fmt.Sprintf("select sum(jsonb_array_length(batch)) from (%s) t", sqlStatement)
 	}
 
+	pkgLogger.Debug(sqlStatement)
+
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	var count sql.NullInt64
 	err := row.Scan(&count)
@@ -414,6 +416,8 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	if jd.tablePrefix == "gw" {
 		sqlStatement = fmt.Sprintf("select sum(jsonb_array_length(batch)) from (%s) t", sqlStatement)
 	}
+
+	pkgLogger.Debug(sqlStatement)
 
 	row := jd.dbHandle.QueryRow(sqlStatement, time.Now())
 	var count sql.NullInt64
