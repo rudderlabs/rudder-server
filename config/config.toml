@@ -133,8 +133,8 @@ enabled=true
 pathPrefix=""
 
 [JobsDB.backup.rt]
-enabled=false
-failedOnly=false
+enabled=true
+failedOnly=true
 
 [JobsDB.backup.batch_rt]
 enabled=false
