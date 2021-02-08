@@ -315,7 +315,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 		return int64(count.Int64)
 	}
 
-	jd.logger.Errorf("Returning 0 because unprocessed count is invalid")
+	jd.logger.Errorf("Returning 0 because unprocessed count is invalid for query: %s", sqlStatement)
 	return 0
 }
 
@@ -431,6 +431,6 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 		return int64(count.Int64)
 	}
 
-	jd.logger.Errorf("Returning 0 because processed count is invalid")
+	jd.logger.Errorf("Returning 0 because processed count is invalid for query: %s", sqlStatement)
 	return 0
 }
