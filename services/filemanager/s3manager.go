@@ -23,7 +23,7 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	getRegionSession := session.Must(session.NewSession())
 	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
 	if err != nil {
-		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %w", manager.Config.Bucket, err)
+		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
 		return UploadOutput{}, err
 	}
 	var uploadSession *session.Session
@@ -75,7 +75,7 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 	getRegionSession := session.Must(session.NewSession())
 	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
 	if err != nil {
-		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %w", manager.Config.Bucket, err)
+		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
 		return err
 	}
 	var sess *session.Session
@@ -127,7 +127,7 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error
 	getRegionSession := session.Must(session.NewSession())
 	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
 	if err != nil {
-		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %w", manager.Config.Bucket, err)
+		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
 		return s3Objects, err
 	}
 	var sess *session.Session

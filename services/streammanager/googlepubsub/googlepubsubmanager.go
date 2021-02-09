@@ -80,7 +80,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if err != nil {
 		respStatus = "Failure"
 		responseMessage = "[GooglePubSub] error  :: " + err.Error()
-		pkgLogger.Errorf("[GooglePubSub] error  :: %w", err)
+		pkgLogger.Errorf("[GooglePubSub] error  :: %v", err)
 		statusCode := 400
 		return statusCode, respStatus, responseMessage
 	}

@@ -336,7 +336,7 @@ func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUse
 func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) (resp []byte) {
 	defer func() {
 		if r := recover(); r != nil {
-			pkgLogger.Error(fmt.Errorf("failed to enhance response: %w", r))
+			pkgLogger.Error(fmt.Errorf("failed to enhance response: %v", r))
 			resp = []byte(`{}`)
 			return
 		}

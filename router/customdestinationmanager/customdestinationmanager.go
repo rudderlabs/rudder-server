@@ -173,7 +173,7 @@ func (customManager *CustomManagerT) onConfigChange(destination backendconfig.De
 	}
 
 	if err := customManager.newClient(destination.ID); err != nil {
-		pkgLogger.Errorf("[CDM %s] DestID: %s, Error while creating new customer client: %w", customManager.destType, destination.ID, err)
+		pkgLogger.Errorf("[CDM %s] DestID: %s, Error while creating new customer client: %v", customManager.destType, destination.ID, err)
 		return err
 	}
 	pkgLogger.Infof("[CDM %s] DestID: %s, Created new client", customManager.destType, destination.ID)
