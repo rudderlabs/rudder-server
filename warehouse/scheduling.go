@@ -2,10 +2,8 @@ package warehouse
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -182,39 +180,4 @@ func durationBeforeNextAttempt(attempt int64) time.Duration { //Add state(retrya
 		d = b.NextBackOff()
 	}
 	return d
-}
-
-// Pending uploads should be retried with backoff
-// Unused code. skipcq: SCC-U1000
-func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutils.WarehouseT) bool {
-	// can be set from rudder-cli to force uploads always
-	if startUploadAlways {
-		return true
-	}
-
-	// if not in failed status, retry without delay.
-	hasUploadFailed := strings.Contains(upload.Status, "failed")
-	if !hasUploadFailed {
-		return true
-	}
-
-	var metadata map[string]string
-	err := json.Unmarshal(upload.Metadata, &metadata)
-	if err != nil {
-		metadata = make(map[string]string)
-	}
-
-	nextRetryTimeStr, ok := metadata["nextRetryTime"]
-	if !ok {
-		return true
-	}
-
-	nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr)
-	if err != nil {
-		pkgLogger.Errorf("Unable to parse time from %s", nextRetryTimeStr)
-		return true //TODO: Review this carefully
-	}
-
-	canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
-	return canStart
 }

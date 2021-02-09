@@ -61,13 +61,6 @@ func createTableUploads(uploadID int64, tableNames []string) (err error) {
 	return err
 }
 
-// Unused code. skipcq: SCC-U1000
-func (tableUpload *TableUploadT) getStatus() (status string, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s' ORDER BY id DESC`, warehouseutils.WarehouseTableUploadsTable, tableUpload.uploadID, tableUpload.tableName)
-	err = dbHandle.QueryRow(sqlStatement).Scan(&status)
-	return status, err
-}
-
 func (tableUpload *TableUploadT) setStatus(status string) (err error) {
 	// set last_exec_time only if status is executing
 	execValues := []interface{}{status, timeutil.Now(), tableUpload.uploadID, tableUpload.tableName}
@@ -98,16 +91,6 @@ func (tableUpload *TableUploadT) setError(status string, statusError error) (err
 	pkgLogger.Debugf("[WH]: Setting table upload error: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), misc.QuoteLiteral(statusError.Error()), uploadID, tableName)
 	return err
-}
-
-// Unused code. skipcq: SCC-U1000
-func (tableUpload *TableUploadT) hasBeenLoaded() (bool, error) {
-	status, err := tableUpload.getStatus()
-	if err != nil {
-		return false, err
-	}
-
-	return (status == ExportedData), nil
 }
 
 func (tableUpload *TableUploadT) updateTableEventsCount(job *UploadJobT) (err error) {

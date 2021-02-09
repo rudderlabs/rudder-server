@@ -12,7 +12,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode"
 
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -117,17 +116,14 @@ type workerT struct {
 }
 
 var (
-	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel            int
-	failedEventsCacheSize                                                   int
-	// Unused code. skipcq: SCC-U1000
-	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
-	// Unused code. skipcq: SCC-U1000
-	testSinkURL                                                             string
-	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout                      time.Duration
-	noOfJobsToBatchInAWorker                                                int
-	pkgLogger                                                               logger.LoggerI
-	Diagnostics                                                             diagnostics.DiagnosticsI = diagnostics.Diagnostics
-	fixedLoopSleep                                                          time.Duration
+	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel  int
+	failedEventsCacheSize                                         int
+	readSleep, minSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
+	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout            time.Duration
+	noOfJobsToBatchInAWorker                                      int
+	pkgLogger                                                     logger.LoggerI
+	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	fixedLoopSleep                                                time.Duration
 )
 
 type requestMetric struct {
@@ -156,10 +152,8 @@ func loadConfig() {
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	noOfJobsToBatchInAWorker = config.GetInt("Router.noOfJobsToBatchInAWorker", 20)
 	jobsBatchTimeout = config.GetDuration("Router.jobsBatchTimeoutInSec", time.Duration(5)) * time.Second
-	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(60)) * time.Second
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
-	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
 	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
@@ -563,18 +557,6 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	worker.rt.trackRequestMetrics(reqMetric)
 }
 
-//This was used to decide whether destination response should be saved to status or not.
-//Now we are deciding based on destination definition config.
-// Unused code. skipcq: SCC-U1000
-func isASCII(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] > unicode.MaxASCII {
-			return false
-		}
-	}
-	return true
-}
-
 func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
 	//Enhancing status.ErrorResponse with firstAttemptedAt
 	firstAttemptedAtTime := time.Now()
@@ -791,8 +773,8 @@ func (rt *HandleT) addToFailedList(jobStatus jobsdb.JobStatusT) {
 
 func (rt *HandleT) readFailedJobStatusChan() {
 	for jobStatus := range rt.failedEventsChan {
-			rt.addToFailedList(jobStatus)
-		}
+		rt.addToFailedList(jobStatus)
+	}
 }
 
 func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
