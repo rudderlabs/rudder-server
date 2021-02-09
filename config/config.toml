@@ -162,6 +162,11 @@ noOfWorkers = 64
 allowAbortedUserJobsCountForProcessing=1
 maxFailedCountForJob = 3
 retryTimeWindowInMins = 180
+    [Router.MARKETO]
+    noOfWorkers = 8
+    [Router.throttler.MARKETO]
+    limit = 45
+    timeWindowInS = 20
     [Router.BRAZE]
     forceHTTP1=true
     httpTimeoutInS=120
