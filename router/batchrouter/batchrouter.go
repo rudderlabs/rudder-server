@@ -550,126 +550,123 @@ func (brt *HandleT) initWorkers() {
 	for i := 0; i < brt.noOfWorkers; i++ {
 		rruntime.Go(func() {
 			func() {
-				for {
-					select {
-					case batchDest := <-brt.processQ:
-						toQuery := jobQueryBatchSize
-						parameterFilters := []jobsdb.ParameterFilterT{
-							{
-								Name:     "destination_id",
-								Value:    batchDest.Destination.ID,
-								Optional: false,
+				for batchDest := range brt.processQ {
+					toQuery := jobQueryBatchSize
+					parameterFilters := []jobsdb.ParameterFilterT{
+						{
+							Name:     "destination_id",
+							Value:    batchDest.Destination.ID,
+							Optional: false,
+						},
+					}
+					brtQueryStat := stats.NewStat("batch_router.jobsdb_query_time", stats.TimerType)
+					brtQueryStat.Start()
+					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
+
+					retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, parameterFilters)
+					toQuery -= len(retryList)
+					waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, parameterFilters) //Jobs send to waiting state
+					toQuery -= len(waitList)
+					unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, parameterFilters)
+					brtQueryStat.End()
+
+					combinedList := append(waitList, append(unprocessedList, retryList...)...)
+					if len(combinedList) == 0 {
+						brt.logger.Debugf("BRT: DB Read Complete. No BRT Jobs to process for parameter Filters: %v", parameterFilters)
+						setDestInProgress(batchDest.Destination.ID, false)
+						continue
+					}
+					brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, waitList: %v unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
+
+					var statusList []*jobsdb.JobStatusT
+
+					jobsBySource := make(map[string][]*jobsdb.JobT)
+					for _, job := range combinedList {
+						sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
+						if _, ok := jobsBySource[sourceID]; !ok {
+							jobsBySource[sourceID] = []*jobsdb.JobT{}
+						}
+						jobsBySource[sourceID] = append(jobsBySource[sourceID], job)
+
+						status := jobsdb.JobStatusT{
+							JobID:         job.JobID,
+							AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+							JobState:      jobsdb.Executing.State,
+							ExecTime:      time.Now(),
+							RetryTime:     time.Now(),
+							ErrorCode:     "",
+							ErrorResponse: []byte(`{}`), // check
+						}
+						statusList = append(statusList, &status)
+					}
+
+					//Mark the jobs as executing
+					brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
+					brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
+
+					var wg sync.WaitGroup
+					wg.Add(len(jobsBySource))
+
+					for sourceID, jobs := range jobsBySource {
+						source, ok := funk.Find(batchDest.Sources, func(s backendconfig.SourceT) bool {
+							return s.ID == sourceID
+						}).(backendconfig.SourceT)
+						batchJobs := BatchJobsT{
+							Jobs: jobs,
+							BatchDestination: &DestinationT{
+								Destination: batchDest.Destination,
+								Source:      source,
 							},
 						}
-						brtQueryStat := stats.NewStat("batch_router.jobsdb_query_time", stats.TimerType)
-						brtQueryStat.Start()
-						brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
-
-						retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, parameterFilters)
-						toQuery -= len(retryList)
-						waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, parameterFilters) //Jobs send to waiting state
-						toQuery -= len(waitList)
-						unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, parameterFilters)
-						brtQueryStat.End()
-
-						combinedList := append(waitList, append(unprocessedList, retryList...)...)
-						if len(combinedList) == 0 {
-							brt.logger.Debugf("BRT: DB Read Complete. No BRT Jobs to process for parameter Filters: %v", parameterFilters)
-							setDestInProgress(batchDest.Destination.ID, false)
+						if !ok {
+							// TODO: Should not happen. Handle this
+							err := fmt.Errorf("BRT: Batch destination source not found in config for sourceID: %s", sourceID)
+							brt.setJobStatus(batchJobs, false, err, false)
+							wg.Done()
 							continue
 						}
-						brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, waitList: %v unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
-
-						var statusList []*jobsdb.JobStatusT
-
-						jobsBySource := make(map[string][]*jobsdb.JobT)
-						for _, job := range combinedList {
-							sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
-							if _, ok := jobsBySource[sourceID]; !ok {
-								jobsBySource[sourceID] = []*jobsdb.JobT{}
-							}
-							jobsBySource[sourceID] = append(jobsBySource[sourceID], job)
-
-							status := jobsdb.JobStatusT{
-								JobID:         job.JobID,
-								AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-								JobState:      jobsdb.Executing.State,
-								ExecTime:      time.Now(),
-								RetryTime:     time.Now(),
-								ErrorCode:     "",
-								ErrorResponse: []byte(`{}`), // check
-							}
-							statusList = append(statusList, &status)
-						}
-
-						//Mark the jobs as executing
-						brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
-						brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
-
-						var wg sync.WaitGroup
-						wg.Add(len(jobsBySource))
-
-						for sourceID, jobs := range jobsBySource {
-							source, ok := funk.Find(batchDest.Sources, func(s backendconfig.SourceT) bool {
-								return s.ID == sourceID
-							}).(backendconfig.SourceT)
-							batchJobs := BatchJobsT{
-								Jobs: jobs,
-								BatchDestination: &DestinationT{
-									Destination: batchDest.Destination,
-									Source:      source,
-								},
-							}
-							if !ok {
-								// TODO: Should not happen. Handle this
-								err := fmt.Errorf("BRT: Batch destination source not found in config for sourceID: %s", sourceID)
-								brt.setJobStatus(batchJobs, false, err, false)
-								wg.Done()
-								continue
-							}
-							rruntime.Go(func() {
-								switch {
-								case misc.ContainsString(objectStorageDestinations, brt.destType):
-									destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
-									destUploadStat.Start()
-									output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
-									brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, false)
-									brt.setJobStatus(batchJobs, false, output.Error, false)
-									misc.RemoveFilePaths(output.LocalFilePaths...)
-									if output.JournalOpID > 0 {
-										brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
-									}
-									if output.Error == nil {
-										brt.recordUploadStats(*batchJobs.BatchDestination, output)
-									}
-
-									destUploadStat.End()
-								case misc.ContainsString(warehouseDestinations, brt.destType):
-									objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config)
-									destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
-									destUploadStat.Start()
-									output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
-									postToWarehouseErr := false
-									if output.Error == nil && output.Key != "" {
-										output.Error = brt.postToWarehouse(batchJobs, output)
-										if output.Error != nil {
-											postToWarehouseErr = true
-										}
-										warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
-										warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
-									}
-									brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, true)
-									brt.setJobStatus(batchJobs, true, output.Error, postToWarehouseErr)
-									misc.RemoveFilePaths(output.LocalFilePaths...)
-									destUploadStat.End()
+						rruntime.Go(func() {
+							switch {
+							case misc.ContainsString(objectStorageDestinations, brt.destType):
+								destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+								destUploadStat.Start()
+								output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
+								brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, false)
+								brt.setJobStatus(batchJobs, false, output.Error, false)
+								misc.RemoveFilePaths(output.LocalFilePaths...)
+								if output.JournalOpID > 0 {
+									brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
 								}
-								wg.Done()
-							})
-						}
+								if output.Error == nil {
+									brt.recordUploadStats(*batchJobs.BatchDestination, output)
+								}
 
-						wg.Wait()
-						setDestInProgress(batchDest.Destination.ID, false)
+								destUploadStat.End()
+							case misc.ContainsString(warehouseDestinations, brt.destType):
+								objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config)
+								destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
+								destUploadStat.Start()
+								output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
+								postToWarehouseErr := false
+								if output.Error == nil && output.Key != "" {
+									output.Error = brt.postToWarehouse(batchJobs, output)
+									if output.Error != nil {
+										postToWarehouseErr = true
+									}
+									warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
+									warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
+								}
+								brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, true)
+								brt.setJobStatus(batchJobs, true, output.Error, postToWarehouseErr)
+								misc.RemoveFilePaths(output.LocalFilePaths...)
+								destUploadStat.End()
+							}
+							wg.Done()
+						})
 					}
+
+					wg.Wait()
+					setDestInProgress(batchDest.Destination.ID, false)
 				}
 			}()
 		})
@@ -886,31 +883,28 @@ func getWarehouseURL() (url string) {
 
 func (brt *HandleT) collectMetrics() {
 	if diagnostics.EnableBatchRouterMetric {
-		for {
-			select {
-			case <-brt.diagnosisTicker.C:
-				brt.batchRequestsMetricLock.RLock()
-				var diagnosisProperties map[string]interface{}
-				success := 0
-				failed := 0
-				for _, batchReqMetric := range brt.batchRequestsMetric {
-					success = success + batchReqMetric.batchRequestSuccess
-					failed = failed + batchReqMetric.batchRequestFailed
-				}
-				if len(brt.batchRequestsMetric) > 0 {
-					diagnosisProperties = map[string]interface{}{
-						brt.destType: map[string]interface{}{
-							diagnostics.BatchRouterSuccess: success,
-							diagnostics.BatchRouterFailed:  failed,
-						},
-					}
-
-					Diagnostics.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
-				}
-
-				brt.batchRequestsMetric = nil
-				brt.batchRequestsMetricLock.RUnlock()
+		for range brt.diagnosisTicker.C {
+			brt.batchRequestsMetricLock.RLock()
+			var diagnosisProperties map[string]interface{}
+			success := 0
+			failed := 0
+			for _, batchReqMetric := range brt.batchRequestsMetric {
+				success = success + batchReqMetric.batchRequestSuccess
+				failed = failed + batchReqMetric.batchRequestFailed
 			}
+			if len(brt.batchRequestsMetric) > 0 {
+				diagnosisProperties = map[string]interface{}{
+					brt.destType: map[string]interface{}{
+						diagnostics.BatchRouterSuccess: success,
+						diagnostics.BatchRouterFailed:  failed,
+					},
+				}
+
+				Diagnostics.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
+			}
+
+			brt.batchRequestsMetric = nil
+			brt.batchRequestsMetricLock.RUnlock()
 		}
 	}
 }

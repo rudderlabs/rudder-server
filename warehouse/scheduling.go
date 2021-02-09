@@ -185,7 +185,7 @@ func durationBeforeNextAttempt(attempt int64) time.Duration { //Add state(retrya
 }
 
 // Pending uploads should be retried with backoff
-// skipcq: SCC-U1000
+// Unused code. skipcq: SCC-U1000
 func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {

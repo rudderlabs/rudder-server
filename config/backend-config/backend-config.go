@@ -228,7 +228,7 @@ func MakePostRequest(url string, endpoint string, data interface{}) (response []
 
 	body, err := IoUtil.ReadAll(resp.Body)
 	if err != nil {
-		pkgLogger.Errorf("ConfigBackend: Error parsing response body, Error: %s", err.Error())
+		pkgLogger.Errorf("ConfigBackend: Error parsing response body, Error:: %w", err)
 	}
 	defer resp.Body.Close()
 

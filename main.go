@@ -46,6 +46,7 @@ var version = "Not an official release. Get the latest release from the github r
 var major, minor, commit, buildDate, builtBy, gitURL, patch string
 
 // Test Function
+// Unused code. skipcq: SCC-U1000
 func readIOforResume(router *router.HandleT) {
 	for {
 		var u string

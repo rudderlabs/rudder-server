@@ -93,7 +93,7 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 	jsonConfig, err := json.Marshal(destinationConfig)
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
-		pkgLogger.Errorf("Error while unmarshalling dest config %v", err)
+		return nil, fmt.Errorf("Error while unmarshalling dest config :: %w", err)
 	}
 	hostName := destConfig.HostName + ":" + destConfig.Port
 	isSslEnabled := destConfig.SslEnabled
@@ -150,7 +150,7 @@ func NewProducerForConfluentCloud(destinationConfig interface{}) (sarama.SyncPro
 	var destConfig = ConfluentCloudConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
-		pkgLogger.Errorf("Error while marshalling destination config %v", err)
+		return nil, fmt.Errorf("[Confluent Cloud] Error while marshalling destination config :: %w", err)
 	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 
@@ -232,11 +232,11 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	var config = Config{}
 	jsonConfig, err := json.Marshal(destConfig)
 	if err != nil {
-		return makeErrorResponse(err)
+		panic(err)
 	}
 	err = json.Unmarshal(jsonConfig, &config)
 	if err != nil {
-		return makeErrorResponse(err)
+		panic(err)
 	}
 	//pkgLogger.Infof("Created Producer %v\n", producer)
 

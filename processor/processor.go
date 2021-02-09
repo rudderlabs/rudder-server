@@ -60,7 +60,6 @@ type HandleT struct {
 	transformEventsByTimeMutex     sync.RWMutex
 	destTransformEventsByTimeTaken transformRequestPQ
 	userTransformEventsByTimeTaken transformRequestPQ
-	statJobs                       stats.RudderStats
 	statDBR                        stats.RudderStats
 	statDBW                        stats.RudderStats
 	statLoopTime                   stats.RudderStats
@@ -71,7 +70,6 @@ type HandleT struct {
 	statListSort                   stats.RudderStats
 	marshalSingularEvents          stats.RudderStats
 	destProcessing                 stats.RudderStats
-	statNumDests                   stats.RudderStats
 	statNumRequests                stats.RudderStats
 	statNumEvents                  stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
@@ -1053,7 +1051,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
 		if len(uniqueMessageIds) > 0 {
 			var dedupedMessageIdsAcrossJobs []string
-			for k, _ := range uniqueMessageIds {
+			for k := range uniqueMessageIds {
 				dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
 			}
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)

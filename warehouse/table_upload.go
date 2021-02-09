@@ -61,6 +61,7 @@ func createTableUploads(uploadID int64, tableNames []string) (err error) {
 	return err
 }
 
+// Unused code. skipcq: SCC-U1000
 func (tableUpload *TableUploadT) getStatus() (status string, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s' ORDER BY id DESC`, warehouseutils.WarehouseTableUploadsTable, tableUpload.uploadID, tableUpload.tableName)
 	err = dbHandle.QueryRow(sqlStatement).Scan(&status)
@@ -99,6 +100,7 @@ func (tableUpload *TableUploadT) setError(status string, statusError error) (err
 	return err
 }
 
+// Unused code. skipcq: SCC-U1000
 func (tableUpload *TableUploadT) hasBeenLoaded() (bool, error) {
 	status, err := tableUpload.getStatus()
 	if err != nil {
