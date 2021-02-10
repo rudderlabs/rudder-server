@@ -11,6 +11,7 @@ import (
 // MigratorFeature handles migration of nodes during cluster's scale up/down.
 type MigratorFeature interface {
 	Setup(*jobsdb.HandleT, *jobsdb.HandleT, *jobsdb.HandleT, func(), func())
+	PrepareJobsdbsForImport(*jobsdb.HandleT, *jobsdb.HandleT, *jobsdb.HandleT)
 }
 
 // MigratorFeatureSetup is a function that initializes a Migrator feature, based on application instance

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"math"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
@@ -40,24 +39,15 @@ func (jd *HandleT) GetLastJobIDBeforeImport() int64 {
 	return lastJobIDBeforeNewImports
 }
 
+//getDsForNewEvents always returns the jobs_1 table to which all the new events are written.
+//In place migration is not supported anymore, so this should suffice.
 func (jd *HandleT) getDsForNewEvents(dsList []dataSetT) dataSetT {
-	dsListLen := len(dsList)
-	var ds dataSetT
-	if jd.isEmpty(dsList[dsListLen-1]) {
-		ds = dsList[dsListLen-1]
-	} else {
-		ds = jd.addNewDS(appendToDsList, dataSetT{})
-	}
-
-	seqNoForNewDS := int64(jd.migrationState.toVersion)*int64(math.Pow10(13)) + 1
-	jd.updateSequenceNumber(ds, seqNoForNewDS)
-	jd.logger.Infof("[[ %sJobsDB Import ]] New dataSet %s is prepared with start sequence : %d", jd.GetTablePrefix(), ds, seqNoForNewDS)
-	return ds
+	return dataSetT{JobTable: fmt.Sprintf("%s_jobs_1", jd.tablePrefix), JobStatusTable: fmt.Sprintf("%s_job_status_1", jd.tablePrefix), Index: "1"}
 }
 
 //StoreJobsAndCheckpoint is used to write the jobs to _tables
 func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint MigrationCheckpointT) {
-	queryStat := stats.NewTaggedStat("store_imported_jobs_and_statuses", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix,})
+	queryStat := stats.NewTaggedStat("store_imported_jobs_and_statuses", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -153,4 +143,30 @@ func (jd *HandleT) GetMaxIDForDs(ds dataSetT) int64 {
 	}
 	return int64(0)
 
+}
+
+//UpdateSequenceNumberOfLatestDS updates (if not already updated) the sequence number of the right most dataset to the seq no provided.
+func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {
+	jd.dsListLock.RLock()
+	defer jd.dsListLock.RUnlock()
+
+	dsList := jd.getDSList(false)
+	dsListLen := len(dsList)
+	var ds dataSetT
+	if jd.isEmpty(dsList[dsListLen-1]) {
+		ds = dsList[dsListLen-1]
+	} else {
+		ds = jd.addNewDS(appendToDsList, dataSetT{})
+	}
+
+	var serialInt sql.NullInt64
+	sqlStatement := fmt.Sprintf(`SELECT nextval(pg_get_serial_sequence('%s', 'job_id'))`, ds.JobTable)
+	row := jd.dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&serialInt)
+	jd.assertError(err)
+
+	if serialInt.Int64 < seqNoForNewDS {
+		jd.updateSequenceNumber(ds, seqNoForNewDS)
+		jd.logger.Infof("DataSet(%s)'s sequence number updated to : %d", ds, seqNoForNewDS)
+	}
 }
