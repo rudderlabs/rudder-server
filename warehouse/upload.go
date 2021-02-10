@@ -218,7 +218,8 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 	return hasSchemaChanged, nil
 }
 
-func (job *UploadJobT) getTotalRowsInStagingFiles() (total int64) {
+func (job *UploadJobT) getTotalRowsInStagingFiles() int64 {
+	var total sql.NullInt64
 	sqlStatement := fmt.Sprintf(`SELECT sum(total_events)
                                 FROM %[1]s
 								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'`,
@@ -227,10 +228,11 @@ func (job *UploadJobT) getTotalRowsInStagingFiles() (total int64) {
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInStagingFiles: %v`, err)
 	}
-	return
+	return total.Int64
 }
 
-func (job *UploadJobT) getTotalRowsInLoadFiles() (total int64) {
+func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
+	var total sql.NullInt64
 	sqlStatement := fmt.Sprintf(`
 		WITH row_numbered_load_files as (
 			SELECT
@@ -249,7 +251,7 @@ func (job *UploadJobT) getTotalRowsInLoadFiles() (total int64) {
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
 	}
-	return
+	return total.Int64
 }
 
 func (job *UploadJobT) matchRowsInStagingAndLoadFiles() {
@@ -863,7 +865,6 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 			return []error{err}, nil
 		}
 	}
-
 	for _, tName := range userTables {
 		if _, ok := currentJobSucceededTables[tName]; ok {
 			continue
@@ -877,7 +878,6 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 			break
 		}
 	}
-
 	if err != nil {
 		return []error{err}, nil
 	}
@@ -897,15 +897,16 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 		identityTableUpload.setError(TableUploadUpdatingSchemaFailed, err)
 		return job.processLoadTableResponse(map[string]error{job.identifiesTableName(): err})
 	}
-
-	userTableUpload := NewTableUpload(job.upload.ID, job.usersTableName())
-	userTableUpload.setStatus(TableUploadExecuting)
-	alteredUserSchema, err := job.updateSchema(job.usersTableName())
-	if err != nil {
-		userTableUpload.setError(TableUploadUpdatingSchemaFailed, err)
-		return job.processLoadTableResponse(map[string]error{job.usersTableName(): err})
+	var alteredUserSchema bool
+	if _, ok := job.upload.Schema[job.usersTableName()]; ok {
+		userTableUpload := NewTableUpload(job.upload.ID, job.usersTableName())
+		userTableUpload.setStatus(TableUploadExecuting)
+		alteredUserSchema, err = job.updateSchema(job.usersTableName())
+		if err != nil {
+			userTableUpload.setError(TableUploadUpdatingSchemaFailed, err)
+			return job.processLoadTableResponse(map[string]error{job.usersTableName(): err})
+		}
 	}
-
 	errorMap := job.whManager.LoadUserTables()
 
 	if alteredIdentitySchema || alteredUserSchema {
@@ -1197,9 +1198,9 @@ func (job *UploadJobT) hasLoadFiles(tableName string) (bool, error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s
 								WHERE ( %[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.table_name='%[4]s' AND %[1]s.id >= %[5]v AND %[1]s.id <= %[6]v)`,
 		warehouseutils.WarehouseLoadFilesTable, sourceID, destID, tableName, job.upload.StartLoadFileID, job.upload.EndLoadFileID)
-	var count int64
+	var count sql.NullInt64
 	err := dbHandle.QueryRow(sqlStatement).Scan(&count)
-	return count > 0, err
+	return count.Int64 > 0, err
 }
 
 func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileID int64, err error) {
