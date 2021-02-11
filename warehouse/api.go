@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/controlplane"
+	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"google.golang.org/grpc"
 	"strings"
 	"time"
 )
@@ -23,23 +27,23 @@ type UploadsReqT struct {
 }
 
 type UploadsResT struct {
-	Uploads []UploadResT `json:uploads`
+	Uploads []UploadResT `json:"uploads,omitempty"`
 }
 
 type UploadResT struct {
-	ID              int64                  `json:"id"`
-	Namespace       string                 `json:"namespace"`
-	SourceID        string                 `json:"source_id"`
-	DestinationID   string                 `json:"destination_id"`
-	DestinationType string                 `json:"destination_type"`
-	Status          string                 `json:"status"`
-	Schema          warehouseutils.SchemaT `json:"schema"`
-	Error           json.RawMessage        `json:"error"`
-	Timings         []map[string]string    `json:"timings"`
-	Metadata        json.RawMessage        `json:"metadata"`
-	FirstEventAt    time.Time              `json:"first_event_at"`
-	LastEventAt     time.Time              `json:"last_event_at"`
-	Tables          []TableUploadResT      `json:"tables;omitempty"`
+	ID              int64             `json:"id"`
+	Namespace       string            `json:"namespace"`
+	SourceID        string            `json:"source_id"`
+	DestinationID   string            `json:"destination_id"`
+	DestinationType string            `json:"destination_type"`
+	Status          string            `json:"status"`
+	Schema          string            `json:"schema"`
+	Error           string            `json:"error"`
+	Timings         string            `json:"timings"`
+	Metadata        string            `json:"metadata"`
+	FirstEventAt    time.Time         `json:"first_event_at"`
+	LastEventAt     time.Time         `json:"last_event_at"`
+	Tables          []TableUploadResT `json:"tables,omitempty"`
 }
 
 type TableUploadReqT struct {
@@ -55,13 +59,14 @@ type TableUploadResT struct {
 	Error      string    `json:"error"`
 	Status     string    `json:"status"`
 	Count      int64     `json:"count"`
-	LastExecAt time.Time `json:"lastExecAt"`
+	LastExecAt time.Time `json:"last_exec_at"`
 }
 
 type UploadAPIT struct {
-	enabled  bool
-	dbHandle *sql.DB
-	log      logger.LoggerI
+	enabled           bool
+	dbHandle          *sql.DB
+	log               logger.LoggerI
+	connectionManager *controlplane.ConnectionManager
 }
 
 var UploadAPI UploadAPIT
@@ -71,7 +76,21 @@ func InitWarehouseApis(dbHandle *sql.DB, log logger.LoggerI) {
 		enabled:  true,
 		dbHandle: dbHandle,
 		log:      log,
+		connectionManager: &controlplane.ConnectionManager{
+			AuthInfo: controlplane.AuthInfo{
+				Service:        "warehouse",
+				WorkspaceToken: config.GetWorkspaceToken(),
+				InstanceID:     config.GetEnv("instance_id", "1"),
+			},
+			RetryInterval: 0,
+			UseTLS:        false,
+			Logger:        log,
+			RegisterService: func(srv *grpc.Server) {
+				proto.RegisterWarehouseServer(srv, &warehousegrpc{})
+			},
+		},
 	}
+
 }
 func (uploadsReq *UploadsReqT) validateReq() error {
 	if !uploadsReq.API.enabled || uploadsReq.API.log == nil || uploadsReq.API.dbHandle == nil {
@@ -113,7 +132,7 @@ func (uploadsReq UploadsReqT) GetWhUploads() (UploadsResT, error) {
 	if err != nil {
 		return UploadsResT{}, err
 	}
-	query := uploadsReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, schema, status, error, first_event_at, last_event_at, timings`)
+	query := uploadsReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, schema, status, error, first_event_at, last_event_at, timings, metadata`)
 	uploadsReq.API.log.Debug(query)
 	rows, err := uploadsReq.API.dbHandle.Query(query)
 	if err != nil {
@@ -123,15 +142,16 @@ func (uploadsReq UploadsReqT) GetWhUploads() (UploadsResT, error) {
 	uploads := make([]UploadResT, 0)
 	for rows.Next() {
 		var upload UploadResT
-		var schema json.RawMessage
+		var schema string
 		var timings json.RawMessage
-		err = rows.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.Namespace, &schema, &upload.Status, &upload.Error, &upload.FirstEventAt, &upload.LastEventAt, &timings)
+		var metadata json.RawMessage
+		err = rows.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.Namespace, &schema, &upload.Status, &upload.Error, &upload.FirstEventAt, &upload.LastEventAt, &timings, &metadata)
 		if err != nil {
 			uploadsReq.API.log.Errorf(err.Error())
 			return UploadsResT{}, err
 		}
-		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
-		upload.Timings = warehouseutils.JSONTimingsToMap(timings)
+		upload.Schema = string(schema)
+		upload.Timings = string(timings)
 		upload.Tables = make([]TableUploadResT, 0)
 		uploads = append(uploads, upload)
 	}

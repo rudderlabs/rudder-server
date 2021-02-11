@@ -1,0 +1,57 @@
+syntax = "proto3";
+package proto;
+import "google/protobuf/timestamp.proto";
+
+
+option go_package = ".;proto";
+
+
+service Warehouse {
+  rpc GetWHUploads (GetWHUploadsRequest) returns (GetWHUploadsResponse);
+  rpc GetWHTablesForUploadID (GetWHTablesForUploadIDRequest) returns (WHTableStatus);
+}
+
+
+message GetWHTablesForUploadIDRequest {
+  int64 wh_upload_id = 1;
+}
+
+message GetWHUploadsRequest{
+  string source_id = 1;
+  string destination_id = 2;
+  string destination_type = 3;
+  string status = 4;
+  bool include_tables_in_res = 5;
+  google.protobuf.Timestamp from = 6;
+  google.protobuf.Timestamp to = 7;
+}
+
+message GetWHUploadsResponse{
+  repeated WHUpload uploads = 1;
+}
+
+message WHUpload {
+  int64 id = 1;
+  string source_id = 2;
+  string destination_id = 3;
+  string namespace = 4;
+  string error=5;
+  string status =6;
+  string schema =7;
+  google.protobuf.Timestamp first_event_at=8;
+  google.protobuf.Timestamp last_event_at=9;
+  string metadata = 10;
+  string timings = 11;
+  repeated WHTableStatus tables = 12;
+}
+
+message WHTableStatus {
+  int64 id=1;
+  int64 upload_id=2;
+  string name=3;
+  string status=4;
+  string error=5;
+  google.protobuf.Timestamp last_exec_at=6;
+  int64 count=7;
+  google.protobuf.Timestamp first_scheduled_time=8;
+}
