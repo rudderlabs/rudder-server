@@ -190,7 +190,12 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 
 }
 
-func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+type loadTableResp struct {
+	name string
+	tx   *sql.Tx
+}
+
+func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (tableResp loadTableResp, err error) {
 	pkgLogger.Infof("PG: Starting load for table:%s", tableName)
 
 	// sort column names
@@ -209,7 +214,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 	// create temporary table
-	stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
+	stagingTableName := fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.Replace(uuid.NewV4().String(), "-", "", -1))
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%[2]s" (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
 	pkgLogger.Debugf("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
@@ -313,7 +318,11 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		txn.Rollback()
 		return
 	}
-
+	tableResp.name = stagingTableName
+	if skipTempTableDelete {
+		tableResp.tx = txn
+		return
+	}
 	if err = txn.Commit(); err != nil {
 		pkgLogger.Errorf("PG: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		return
@@ -326,7 +335,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	pkgLogger.Infof("PG: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
+	identifyStagingTableResp, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -365,10 +374,10 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 												(
 													SELECT user_id, %[4]s FROM %[3]s
 												)
-											)`, pg.Namespace, warehouseutils.UsersTable, identifyStagingTable, strings.Join(userColNames, ","), unionStagingTableName)
+											)`, pg.Namespace, warehouseutils.UsersTable, identifyStagingTableResp.name, strings.Join(userColNames, ","), unionStagingTableName)
 
 	pkgLogger.Infof("PG: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
-	_, err = pg.Db.Exec(sqlStatement)
+	_, err = identifyStagingTableResp.tx.Exec(sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -387,14 +396,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	)
 
 	pkgLogger.Debugf("PG: Creating staging table for users: %s\n", sqlStatement)
-	_, err = pg.Db.Exec(sqlStatement)
-	if err != nil {
-		errorMap[warehouseutils.UsersTable] = err
-		return
-	}
-
-	// BEGIN TRANSACTION
-	tx, err := pg.Db.Begin()
+	_, err = identifyStagingTableResp.tx.Exec(sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -403,32 +405,34 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	primaryKey := "id"
 	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
 	pkgLogger.Infof("PG: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
-	_, err = tx.Exec(sqlStatement)
+	_, err = identifyStagingTableResp.tx.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
-		tx.Rollback()
+		identifyStagingTableResp.tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
-	_, err = tx.Exec(sqlStatement)
+	_, err = identifyStagingTableResp.tx.Exec(sqlStatement)
 
 	if err != nil {
 		pkgLogger.Errorf("PG: Error inserting into users table from staging table: %v\n", err)
-		tx.Rollback()
+		identifyStagingTableResp.tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
-	err = tx.Commit()
+	err = identifyStagingTableResp.tx.Commit()
 	if err != nil {
 		pkgLogger.Errorf("PG: Error in transaction commit for users table: %v\n", err)
-		tx.Rollback()
+		identifyStagingTableResp.tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
+	pkgLogger.Infof("PG: Complete load for table:%s", warehouseutils.IdentifiesTable)
+	pkgLogger.Infof("PG: Complete load for table:%s", warehouseutils.UsersTable)
 	return
 }
 
