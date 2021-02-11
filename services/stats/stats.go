@@ -21,6 +21,7 @@ const (
 var client *statsd.Client
 var taggedClientsMap = make(map[string]*statsd.Client)
 var statsEnabled bool
+var statsTagsFormat string
 var statsdServerURL string
 var instanceID string
 var conn statsd.Option
@@ -39,6 +40,7 @@ var DefaultStats Stats
 
 func init() {
 	statsEnabled = config.GetBool("enableStats", false)
+	statsTagsFormat = config.GetString("statsTagsFormat", "influxdb")
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
 	instanceID = config.GetEnv("INSTANCE_ID", "")
 	enabled = config.GetBool("RuntimeStats.enabled", true)
@@ -152,7 +154,7 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 			tagVals = append(tagVals, tagName, tagVal)
 		}
 		var err error
-		taggedClient, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
+		taggedClient, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags(), statsd.Tags(tagVals...), statsd.SampleRate(samplingRate))
 		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
 		if err != nil {
@@ -263,6 +265,17 @@ func collectRuntimeStats(client *statsd.Client) {
 // StopRuntimeStats stops collection of runtime stats.
 func StopRuntimeStats() {
 	close(rc.Done)
+}
+
+func getTagsFormat() statsd.TagFormat {
+	switch statsTagsFormat {
+	case "datadog":
+		return statsd.Datadog
+	case "influxdb":
+		return statsd.InfluxDB
+	default:
+		return statsd.InfluxDB
+	}
 }
 
 // returns value stored in KUBE_NAMESPACE env var
