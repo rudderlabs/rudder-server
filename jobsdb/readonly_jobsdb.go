@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
@@ -25,8 +24,6 @@ type ReadonlyHandleT struct {
 	dbHandle    *sql.DB
 	tablePrefix string
 	logger      logger.LoggerI
-	datasetList []dataSetT
-	dsListLock  sync.RWMutex
 }
 
 /*
@@ -110,19 +107,9 @@ func (jd *ReadonlyHandleT) getAllTableNames() []string {
 /*
 Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
-Caller must have the dsListLock readlocked
 */
-func (jd *ReadonlyHandleT) getDSList(refreshFromDB bool) []dataSetT {
-
-	if !refreshFromDB {
-		return jd.datasetList
-	}
-
-	//At this point we MUST have write-locked dsListLock
-	//since we are modiying the list
-
-	//Reset the global list
-	jd.datasetList = nil
+func (jd *ReadonlyHandleT) getDSList() []dataSetT {
+	datasetList := []dataSetT{}
 
 	//Read the table names from PG
 	tableNames := jd.getAllTableNames()
@@ -176,12 +163,12 @@ func (jd *ReadonlyHandleT) getDSList(refreshFromDB bool) []dataSetT {
 		jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobNameMap", dnum))
 		jobStatusName, ok := jobStatusNameMap[dnum]
 		jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobStatusNameMap", dnum))
-		jd.datasetList = append(jd.datasetList,
+		datasetList = append(datasetList,
 			dataSetT{JobTable: jobName,
 				JobStatusTable: jobStatusName, Index: dnum})
 	}
 
-	return jd.datasetList
+	return datasetList
 }
 
 func (jd *ReadonlyHandleT) checkValidJobState(stateFilters []string) {
@@ -250,10 +237,7 @@ func (jd *ReadonlyHandleT) getUnprocessedCount(customValFilters []string, parame
 	queryStat.Start()
 	defer queryStat.End()
 
-	jd.dsListLock.Lock()
-	defer jd.dsListLock.Unlock()
-
-	dsList := jd.getDSList(true)
+	dsList := jd.getDSList()
 	var totalCount int64
 	for _, ds := range dsList {
 		count := jd.getUnprocessedJobsDSCount(ds, customValFilters, parameterFilters)
@@ -343,10 +327,7 @@ func (jd *ReadonlyHandleT) getProcessedCount(stateFilter []string, customValFilt
 	queryStat.Start()
 	defer queryStat.End()
 
-	jd.dsListLock.Lock()
-	defer jd.dsListLock.Unlock()
-
-	dsList := jd.getDSList(true)
+	dsList := jd.getDSList()
 	var totalCount int64
 	for _, ds := range dsList {
 		count := jd.getProcessedJobsDSCount(ds, stateFilter, customValFilters, parameterFilters)
