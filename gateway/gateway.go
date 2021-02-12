@@ -529,7 +529,7 @@ func (gateway *HandleT) eventSchemaWebHandler(wrappedFunc func(http.ResponseWrit
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !enableEventSchemasFeature {
 			gateway.logger.Debug("EventSchemas feature is disabled. You can enabled it through enableEventSchemasFeature flag in config.toml")
-			http.Error(w, "EventSchemas feature is disabled", 400)
+			http.Error(w, response.MakeResponse("EventSchemas feature is disabled"), 400)
 			return
 		}
 		wrappedFunc(w, r)
@@ -862,6 +862,7 @@ func (gateway *HandleT) StartWebHandler() {
 
 	gateway.logger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
+	srvMux.Use(headerMiddleware)
 	srvMux.HandleFunc("/v1/batch", gateway.stat(gateway.webBatchHandler))
 	srvMux.HandleFunc("/v1/identify", gateway.stat(gateway.webIdentifyHandler))
 	srvMux.HandleFunc("/v1/track", gateway.stat(gateway.webTrackHandler))
@@ -909,6 +910,17 @@ func (gateway *HandleT) StartWebHandler() {
 		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
 	}
 	gateway.logger.Fatal(srv.ListenAndServe())
+}
+
+//Currently sets the content-type only for eventSchemas, health responses.
+//Note : responses via http.Error aren't affected. They default to text/plain
+func headerMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/schemas") || strings.HasPrefix(r.URL.Path, "/health"){
+			w.Header().Add("Content-Type", "application/json; charset=utf-8")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Gets the config from config backend and extracts enabled writekeys

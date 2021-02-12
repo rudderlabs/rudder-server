@@ -425,27 +425,14 @@ func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency 
 	return false
 }
 
-func getLastStagingFileCreatedAt(warehouse warehouseutils.WarehouseT) time.Time {
-	stmt := fmt.Sprintf(`SELECT created_at from %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseStagingFilesTable, warehouse.Source.ID, warehouse.Destination.ID)
-	var createdAt sql.NullTime
-	err := dbHandle.QueryRow(stmt).Scan(&createdAt)
-	if err != nil {
-		pkgLogger.Errorf(`Error in getLastStagingFileCreatedAt: %v`, err)
-		return time.Now()
-	}
-	return createdAt.Time
-}
-
 func setLastProcessedMarker(warehouse warehouseutils.WarehouseT, lastEventAt time.Time) {
 	unixTime := lastEventAt.Unix()
 
 	freqInS := getUploadFreqInS(warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse))
+	freqDuration := time.Duration(freqInS) * time.Second
 
-	lastStagingFileCreatedAt := getLastStagingFileCreatedAt(warehouse)
-	// set lastEvent to currentTime in cases where
-	// 1. if there is lag in creating staging files - last staging file is more than freqInS old
-	// 2. and if there is less than freqInS worth of data in pending staging files
-	if time.Now().Add(time.Duration(-freqInS)*time.Second).Sub(lastStagingFileCreatedAt) > 0 && lastStagingFileCreatedAt.Sub(lastEventAt) < time.Duration(freqInS)*time.Second {
+	hasLagInCreatingStagingFiles := time.Since(lastEventAt) >= freqDuration
+	if hasLagInCreatingStagingFiles {
 		unixTime = time.Now().Unix()
 	}
 
