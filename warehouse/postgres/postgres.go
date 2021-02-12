@@ -320,6 +320,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	tableResp.name = stagingTableName
 	if skipTempTableDelete {
+		txn.Exec(`SAVEPOINT IDENTIFY_LOADED`)
 		tableResp.tx = txn
 		return
 	}
@@ -342,6 +343,12 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 
 	if len(pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
+		err = identifyStagingTableResp.tx.Commit()
+		if err != nil {
+			errorMap[warehouseutils.IdentifiesTable] = err
+			pkgLogger.Errorf("PG: Error while committing transaction as there was error while loading staging table:%s: %v", identifyStagingTableResp.name, err)
+		}
+
 		return
 	}
 	errorMap[warehouseutils.UsersTable] = nil
@@ -380,6 +387,12 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	_, err = identifyStagingTableResp.tx.Exec(sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
+		_, err := identifyStagingTableResp.tx.Exec(`ROLLBACK to savepoint IDENTIFY_LOADED`)
+		if err != nil {
+			identifyStagingTableResp.tx.Rollback()
+			return
+		}
+		identifyStagingTableResp.tx.Commit()
 		return
 	}
 
@@ -399,6 +412,12 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	_, err = identifyStagingTableResp.tx.Exec(sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
+		_, err := identifyStagingTableResp.tx.Exec(`ROLLBACK to savepoint IDENTIFY_LOADED`)
+		if err != nil {
+			identifyStagingTableResp.tx.Rollback()
+			return
+		}
+		identifyStagingTableResp.tx.Commit()
 		return
 	}
 
@@ -408,8 +427,13 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	_, err = identifyStagingTableResp.tx.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
-		identifyStagingTableResp.tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
+		_, err := identifyStagingTableResp.tx.Exec(`ROLLBACK to savepoint IDENTIFY_LOADED`)
+		if err != nil {
+			identifyStagingTableResp.tx.Rollback()
+			return
+		}
+		identifyStagingTableResp.tx.Commit()
 		return
 	}
 
@@ -419,16 +443,26 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	if err != nil {
 		pkgLogger.Errorf("PG: Error inserting into users table from staging table: %v\n", err)
-		identifyStagingTableResp.tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
+		_, err := identifyStagingTableResp.tx.Exec(`ROLLBACK to savepoint IDENTIFY_LOADED`)
+		if err != nil {
+			identifyStagingTableResp.tx.Rollback()
+			return
+		}
+		identifyStagingTableResp.tx.Commit()
 		return
 	}
 
 	err = identifyStagingTableResp.tx.Commit()
 	if err != nil {
 		pkgLogger.Errorf("PG: Error in transaction commit for users table: %v\n", err)
-		identifyStagingTableResp.tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
+		_, err := identifyStagingTableResp.tx.Exec(`ROLLBACK to savepoint IDENTIFY_LOADED`)
+		if err != nil {
+			identifyStagingTableResp.tx.Rollback()
+			return
+		}
+		identifyStagingTableResp.tx.Commit()
 		return
 	}
 	pkgLogger.Infof("PG: Complete load for table:%s", warehouseutils.IdentifiesTable)
