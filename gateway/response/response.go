@@ -102,7 +102,7 @@ func GetResponse(key string) string {
 	if status, ok := statusMap[key]; ok {
 		return fmt.Sprintf(`{"msg": "%s"}`, status.message)
 	}
-	return "{}"
+	return fmt.Sprintf(`{"msg": "%s"}`, key)
 }
 
 func MakeResponse(msg string) string {
