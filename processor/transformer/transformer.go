@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -52,9 +53,10 @@ type TransformerEventT struct {
 
 //transformMessageT is used to pass message to the transformer workers
 type transformMessageT struct {
-	index int
-	data  []TransformerEventT
-	url   string
+	index           int
+	data            []TransformerEventT
+	url             string
+	transformString string
 }
 
 type transformedMessageT struct {
@@ -78,7 +80,7 @@ type HandleT struct {
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
-	Transform(clientEvents []TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT
+	Transform(clientEvents []TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool, transformString string) ResponseT
 }
 
 //NewTransformer creates a new transformer
@@ -113,8 +115,14 @@ type TransformerResponseT struct {
 }
 
 func (trans *HandleT) transformWorker() {
-	tr := &http.Transport{}
-	client := &http.Client{Transport: tr}
+	//tr := &http.Transport{}
+	//client := &http.Client{Transport: tr}
+	retryClient := retryablehttp.NewClient()
+	retryClient.RetryMax = maxRetry
+	retryClient.RetryWaitMax = time.Duration(10 * time.Second)
+
+	client := retryClient.StandardClient() // *http.Client
+
 	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
 
 	for job := range trans.requestQ {
@@ -123,46 +131,43 @@ func (trans *HandleT) transformWorker() {
 		if err != nil {
 			panic(err)
 		}
-		retryCount := 0
+		//retryCount := maxRetry
 		var resp *http.Response
 		//We should rarely have error communicating with our JS
-		reqFailed := false
+		//reqFailed := false
 
-		for {
-			transformRequestTimerStat.Start()
-			resp, err = client.Post(job.url, "application/json; charset=utf-8",
-				bytes.NewBuffer(rawJSON))
-			if err != nil {
-				transformRequestTimerStat.End()
-				reqFailed = true
-				trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
-				if retryCount > maxRetry {
-					panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err))
-				}
-				retryCount++
-				time.Sleep(retrySleep)
-				//Refresh the connection
-				continue
-			}
-			if reqFailed {
-				trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
-			}
-
-			// perform version compatability check only on success
-			if resp.StatusCode == http.StatusOK {
-				transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
-				if convErr != nil {
-					transformerAPIVersion = 0
-				}
-				if supportedTransformerAPIVersion != transformerAPIVersion {
-					trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url)
-					panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url))
-				}
-			}
-
+		transformRequestTimerStat.Start()
+		resp, err = client.Post(job.url, "application/json; charset=utf-8",
+			bytes.NewBuffer(rawJSON))
+		if err != nil {
 			transformRequestTimerStat.End()
-			break
+			//reqFailed = true
+			//trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
+			//if retryCount > maxRetry {
+			panic(fmt.Errorf("Crashing the Server as JS HTTP connection error: URL: %v Error: %+v after %v retries", job.url, err, maxRetry))
+			//}
+			//retryCount++
+			//time.Sleep(retrySleep)
+			//Refresh the connection
+			//continue
 		}
+		// if reqFailed {
+		// 	trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
+		// }
+
+		// perform version compatability check only on success
+		if resp.StatusCode == http.StatusOK {
+			transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
+			if convErr != nil {
+				transformerAPIVersion = 0
+			}
+			if supportedTransformerAPIVersion != transformerAPIVersion {
+				trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url)
+				panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url))
+			}
+		}
+
+		transformRequestTimerStat.End()
 
 		if !(resp.StatusCode == http.StatusOK ||
 			resp.StatusCode == http.StatusBadRequest ||
@@ -195,22 +200,27 @@ func (job *transformMessageT) getTransformerResponsesFromHTTPResponse(resp *http
 	if err != nil {
 		statusCode = http.StatusUnsupportedMediaType
 		trErr = fmt.Errorf("Error while reading transformer response with Error : %w", err)
-		return
+		//Add a logger to print the job.data body???
+		panic(trErr)
 	}
-
-	if resp.StatusCode != http.StatusOK {
-		statusCode = resp.StatusCode
-		trErr = fmt.Errorf("%s", string(respData))
+	statusCode = resp.StatusCode
+	trErr = fmt.Errorf("%s", string(respData))
+	if statusCode != http.StatusOK && job.transformString == UserTransformerStage {
 		return
+	} else if statusCode != http.StatusOK && statusCode != http.StatusNotFound && job.transformString == DestTransformerStage {
+		panic(trErr)
 	}
 
 	err = json.Unmarshal(respData, &transformerResponses)
 	//This is returned by our JS engine so should  be parsable
 	//but still handling it
-	if err != nil {
+	if err != nil && job.transformString == UserTransformerStage {
 		statusCode = http.StatusUnsupportedMediaType
 		trErr = fmt.Errorf("Error while unmarshalling transformer response with Error : %w", err)
 		return
+	} else if err != nil {
+		trErr = fmt.Errorf("Error while unmarshalling transformer response at Destination Transformer with Error : %w", err)
+		panic(trErr)
 	}
 	return
 }
@@ -276,7 +286,7 @@ func GetVersion() (transformerBuildVersion string) {
 //instance is shared between both user specific transformation
 //code and destination transformation code.
 func (trans *HandleT) Transform(clientEvents []TransformerEventT,
-	url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT {
+	url string, batchSize int, breakIntoBatchWhenUserChanges bool, transformString string) ResponseT {
 
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
@@ -333,7 +343,7 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 
 		select {
 		//In case of batch event, index is the next Index
-		case reqQ <- &transformMessageT{index: inputIdx, data: toSendData, url: url}:
+		case reqQ <- &transformMessageT{index: inputIdx, data: toSendData, url: url, transformString: transformString}:
 			totalSent++
 			toSendData = nil
 			if inputIdx == len(clientEvents) {

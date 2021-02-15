@@ -920,13 +920,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				// This way all the events of a user session are never broken into separate batches
 				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
 				destStat.sessionTransform.Start()
-				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, true)
+				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, true, "user_transformer")
 				destStat.sessionTransform.End()
 			} else {
 				// We need not worry about breaking up a single user sessions in this case
 				destStat.userTransform.Start()
 				startedAt = time.Now()
-				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, false)
+				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, false, "user_transformer")
 				endedAt = time.Now()
 				timeTaken = endedAt.Sub(startedAt).Seconds()
 				destStat.userTransform.End()
@@ -959,7 +959,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 
 		if transformAt == "processor" {
-			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false, "dest_transformer")
 		} else {
 			response = convertToTransformerResponse(eventsToTransform)
 		}
