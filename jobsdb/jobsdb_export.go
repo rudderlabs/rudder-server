@@ -269,9 +269,7 @@ func (jd *HandleT) getNonExportedJobsCountDS(ds dataSetT) int64 {
 	queryStat.Start()
 	defer queryStat.End()
 
-	var sqlStatement string
-
-	sqlStatement = fmt.Sprintf(`
+	sqlStatement := fmt.Sprintf(`
 		SELECT count(*) FROM (
 			SELECT DISTINCT ON (%[1]s.job_id)
 				%[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val,

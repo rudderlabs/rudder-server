@@ -35,7 +35,7 @@ function autoSave(store: any, save: any) {
 export class SourcesListStore implements ISourcesListStore {
   @observable public sources: ISourceStore[] = [];
   @observable public rootStore: IRootStore;
-  @observable public firstLoad: boolean = false;
+  @observable public firstLoad = false;
 
   constructor(rootStore: IRootStore) {
     this.rootStore = rootStore;

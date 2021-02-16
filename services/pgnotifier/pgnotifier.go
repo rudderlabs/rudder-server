@@ -219,6 +219,9 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 					var output json.RawMessage
 					var jobID int64
 					err = rows.Scan(&jobID, &output, &status, &error)
+					if err != nil {
+						panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", stmt, err))
+					}
 					responses = append(responses, ResponseT{
 						JobID:  jobID,
 						Output: output,

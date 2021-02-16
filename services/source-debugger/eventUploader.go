@@ -101,8 +101,7 @@ func Setup() {
 
 func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 	// Upload to a Config Backend
-	var res map[string][]EventUploadT
-	res = make(map[string][]EventUploadT)
+	res := make(map[string][]EventUploadT)
 	for _, event := range eventBuffer {
 		batchedEvent := EventUploadBatchT{}
 		err := json.Unmarshal([]byte(event.eventBatch), &batchedEvent)

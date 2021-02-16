@@ -112,8 +112,8 @@ export class DestinationStore implements IDestinationStore {
 
       const excludeKeysForDestination =
         destinationDefinitionConfig['excludeKeys'];
-      for (var j in excludeKeysForDestination) {
-        unset(filteredConfig, excludeKeysForDestination[j]);
+      for (var i in excludeKeysForDestination) {
+        unset(filteredConfig, excludeKeysForDestination[i]);
       }
     }
 

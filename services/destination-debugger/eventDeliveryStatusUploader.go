@@ -102,8 +102,7 @@ func Setup() {
 
 func uploadJobs(deliveryStatusesBuffer []*DeliveryStatusT) {
 	// Upload to a Config Backend
-	var res map[string][]*DeliveryStatusT
-	res = make(map[string][]*DeliveryStatusT)
+	res := make(map[string][]*DeliveryStatusT)
 	for _, job := range deliveryStatusesBuffer {
 		var arr []*DeliveryStatusT
 		if value, ok := res[job.DestinationID]; ok {
