@@ -23,6 +23,8 @@ const (
 	EMBEDDED  = "EMBEDDED"
 )
 
+const SupportedTransformerAPIVersion = 2
+
 // App holds the main application's configuration and state
 type App struct {
 	options  *Options

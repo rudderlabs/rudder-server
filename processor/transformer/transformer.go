@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -27,7 +28,6 @@ const (
 	UserTransformerStage = "user_transformer"
 	DestTransformerStage = "dest_transformer"
 )
-const supportedTransformerAPIVersion = 1
 
 type MetadataT struct {
 	SourceID        string `json:"sourceId"`
@@ -154,9 +154,9 @@ func (trans *HandleT) transformWorker() {
 				if convErr != nil {
 					transformerAPIVersion = 0
 				}
-				if supportedTransformerAPIVersion != transformerAPIVersion {
-					trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url)
-					panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url))
+				if app.SupportedTransformerAPIVersion != transformerAPIVersion {
+					trans.logger.Errorf("Incompatible processor transformer version: Expected: %d Received: %d, URL: %v", app.SupportedTransformerAPIVersion, transformerAPIVersion, job.url)
+					panic(fmt.Errorf("Incompatible processor transformer version: Expected: %d Received: %d, URL: %v", app.SupportedTransformerAPIVersion, transformerAPIVersion, job.url))
 				}
 			}
 

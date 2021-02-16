@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -83,8 +85,6 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 		return []types.DestinationJobT{}
 	}
 
-	pkgLogger.Infof("router transform url %s", url)
-
 	for {
 		trans.transformRequestTimerStat.Start()
 		resp, err = trans.client.Post(url, "application/json; charset=utf-8",
@@ -103,6 +103,18 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 		}
 		if reqFailed {
 			trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
+		}
+
+		// perform version compatability check only on success
+		if resp.StatusCode == http.StatusOK {
+			transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
+			if convErr != nil {
+				transformerAPIVersion = 0
+			}
+			if app.SupportedTransformerAPIVersion != transformerAPIVersion {
+				trans.logger.Errorf("Incompatible router transformer version: Expected: %d Received: %d, URL: %v", app.SupportedTransformerAPIVersion, transformerAPIVersion, url)
+				panic(fmt.Errorf("Incompatible router transformer version: Expected: %d Received: %d, URL: %v", app.SupportedTransformerAPIVersion, transformerAPIVersion, url))
+			}
 		}
 
 		trans.transformRequestTimerStat.End()
