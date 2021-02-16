@@ -90,15 +90,15 @@ func NewTransformer() *HandleT {
 
 var (
 	maxChanSize, numTransformWorker, maxRetry int
-	retrySleep                                time.Duration
-	pkgLogger                                 logger.LoggerI
+	//retrySleep                                time.Duration
+	pkgLogger logger.LoggerI
 )
 
 func loadConfig() {
 	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
 	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
 	maxRetry = config.GetInt("Processor.maxRetry", 30)
-	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	//retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 }
 
 func init() {
