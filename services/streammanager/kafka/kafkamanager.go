@@ -232,11 +232,11 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	var config = Config{}
 	jsonConfig, err := json.Marshal(destConfig)
 	if err != nil {
-		panic(err)
+		return makeErrorResponse(err) //returning 500 for retrying, in case of bad config
 	}
 	err = json.Unmarshal(jsonConfig, &config)
 	if err != nil {
-		panic(err)
+		return makeErrorResponse(err) //returning 500 for retrying, in case of bad config
 	}
 	//pkgLogger.Infof("Created Producer %v\n", producer)
 

@@ -198,6 +198,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			pkgLogger.Errorf(`IDR: Error opeining downloaded load file at %s: %v`, loadFileName, err)
 			return
 		}
+		defer gzipFile.Close()
 
 		var gzipReader *gzip.Reader
 		gzipReader, err = gzip.NewReader(gzipFile)
@@ -205,6 +206,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			pkgLogger.Errorf(`IDR: Error reading downloaded load file at %s: %v`, loadFileName, err)
 			return
 		}
+		defer gzipReader.Close()
 
 		csvReader := csv.NewReader(gzipReader)
 		for {
@@ -215,8 +217,6 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 					break
 				} else {
 					pkgLogger.Errorf("IDR: Error while reading csv file for loading in staging table locally:%s: %v", mergeRulesStagingTable, err)
-					gzipReader.Close()
-					gzipFile.Close()
 					return
 				}
 			}
@@ -232,10 +232,9 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			_, err = stmt.Exec(recordInterface[:]...)
 			if err != nil {
 				pkgLogger.Errorf("IDR: Error while adding rowID to merge_rules table: %v", err)
+				return
 			}
 		}
-		gzipReader.Close()
-		gzipFile.Close()
 	}
 
 	_, err = stmt.Exec()

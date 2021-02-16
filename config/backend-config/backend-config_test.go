@@ -1,12 +1,8 @@
 package backendconfig
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
-
-	"net/http"
-	"net/http/httptest"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
@@ -102,68 +98,6 @@ var _ = Describe("BackendConfig", func() {
 		pkgLogger = originalLogger
 	})
 
-	Context("MakePostRequest method", func() {
-		var mockHttp *mock_sysUtils.MockHttpI
-		BeforeEach(func() {
-			mockHttp = mock_sysUtils.NewMockHttpI(ctrl)
-			Http = mockHttp
-		})
-		It("Expect to execute request with the correct body and headers and return successful response", func() {
-			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-				username, pass, ok := req.BasicAuth()
-				Expect(username).To(Equal("testToken"))
-				Expect(pass).To(Equal(""))
-				Expect(ok).To(BeTrue())
-				Expect(req.Header.Get("Content-Type")).To(Equal("application/json"))
-				rw.WriteHeader(http.StatusAccepted)
-				rw.Write([]byte("test body"))
-			}))
-
-			defer server.Close()
-
-			testRequestDataSON, _ := json.Marshal(testRequestData)
-			testRequest, _ := http.NewRequest("POST", server.URL, bytes.NewBuffer(testRequestDataSON))
-			mockHttp.EXPECT().NewRequest("POST", server.URL+"/test", bytes.NewBuffer(testRequestDataSON)).Return(testRequest, nil).Times(1)
-
-			mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).Times(1)
-			workspaceToken = "testToken"
-			body, ok := MakePostRequest(server.URL, "/test", testRequestData)
-			Expect(string(body)).To(Equal("test body"))
-			Expect(ok).To(BeTrue())
-		})
-		It("Expect to make the correct actions if fail to send the request", func() {
-			testRequest, _ := http.NewRequest("GET", "", nil)
-			mockHttp.EXPECT().NewRequest("POST", "", gomock.Any()).Return(testRequest, nil)
-			mockLogger.EXPECT().Errorf("ConfigBackend: Failed to execute request: %s, Error: %s", "", gomock.Any()).Times(1)
-			body, ok := MakePostRequest("", "", testRequestData)
-			Expect(body).To(Equal([]byte{}))
-			Expect(ok).To(BeFalse())
-		})
-		It("Expect to make the correct actions if fail to create the request", func() {
-			mockHttp.EXPECT().NewRequest("POST", "http://rudderstack.com/test", gomock.Any()).Return(nil, errors.New("TestError"))
-			mockLogger.EXPECT().Errorf("ConfigBackend: Failed to make request: %s, Error: %s", "http://rudderstack.com/test", "TestError").Times(1)
-			body, ok := MakePostRequest("http://rudderstack.com", "/test", testRequestData)
-			Expect(body).To(Equal([]byte{}))
-			Expect(ok).To(BeFalse())
-		})
-		It("Expect to make the correct actions if request return non 200 or 202 status code", func() {
-			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-				rw.WriteHeader(http.StatusNotFound)
-				rw.Write([]byte("Not found"))
-			}))
-			defer server.Close()
-
-			testRequestDataSON, _ := json.Marshal(testRequestData)
-			testRequest, _ := http.NewRequest("POST", server.URL, bytes.NewBuffer(testRequestDataSON))
-			mockHttp.EXPECT().NewRequest("POST", server.URL+"/test", bytes.NewBuffer(testRequestDataSON)).Return(testRequest, nil).Times(1)
-
-			mockLogger.EXPECT().Errorf("ConfigBackend: Got error response %d", http.StatusNotFound).Times(1)
-			mockLogger.EXPECT().Debugf("ConfigBackend: Successful %s", "Not found").Times(1)
-			body, ok := MakePostRequest(server.URL, "/test", testRequestData)
-			Expect(string(body)).To(Equal("Not found"))
-			Expect(ok).To(BeTrue())
-		})
-	})
 	Context("configUpdate method", func() {
 		var (
 			statConfigBackendError stats.RudderStats
