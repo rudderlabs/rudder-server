@@ -265,15 +265,10 @@ func StopRuntimeStats() {
 	close(rc.Done)
 }
 
-// returns value stored in KUBE_NAMESPACE env var
-func getKubeNamespace() string {
-	return config.GetEnv("KUBE_NAMESPACE", "")
-}
-
 // returns default Tags to the telegraf request
 func defaultTags() statsd.Option {
-	if len(getKubeNamespace()) > 0 {
-		return statsd.Tags("instanceName", instanceID, "namespace", getKubeNamespace())
+	if len(config.GetKubeNamespace()) > 0 {
+		return statsd.Tags("instanceName", instanceID, "namespace", config.GetKubeNamespace())
 	}
 	return statsd.Tags("instanceName", instanceID)
 }

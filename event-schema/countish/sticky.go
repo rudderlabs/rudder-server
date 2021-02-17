@@ -88,5 +88,4 @@ func (s *StickySampler) Observe(key string) {
 		}
 	}
 	s.S[key]++
-	return
 }

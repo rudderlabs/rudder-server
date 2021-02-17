@@ -12,7 +12,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode"
 
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -42,7 +41,6 @@ type HandleT struct {
 	jobsDB                                 *jobsdb.HandleT
 	netHandle                              *NetHandleT
 	destName                               string
-	destCategory                           string
 	workers                                []*workerT
 	perfStats                              *misc.PerfStats
 	successCount                           uint64
@@ -118,15 +116,14 @@ type workerT struct {
 }
 
 var (
-	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel            int
-	failedEventsCacheSize                                                   int
-	readSleep, minSleep, maxSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
-	testSinkURL                                                             string
-	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout                      time.Duration
-	noOfJobsToBatchInAWorker                                                int
-	pkgLogger                                                               logger.LoggerI
-	Diagnostics                                                             diagnostics.DiagnosticsI = diagnostics.Diagnostics
-	fixedLoopSleep                                                          time.Duration
+	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel  int
+	failedEventsCacheSize                                         int
+	readSleep, minSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
+	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout            time.Duration
+	noOfJobsToBatchInAWorker                                      int
+	pkgLogger                                                     logger.LoggerI
+	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	fixedLoopSleep                                                time.Duration
 )
 
 type requestMetric struct {
@@ -155,10 +152,8 @@ func loadConfig() {
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	noOfJobsToBatchInAWorker = config.GetInt("Router.noOfJobsToBatchInAWorker", 20)
 	jobsBatchTimeout = config.GetDuration("Router.jobsBatchTimeoutInSec", time.Duration(5)) * time.Second
-	maxSleep = config.GetDuration("Router.maxSleepInS", time.Duration(60)) * time.Second
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
-	testSinkURL = config.GetEnv("TEST_SINK_URL", "http://localhost:8181")
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
 	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
@@ -171,7 +166,7 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 	ch := make(chan struct{}, 1)
 	rruntime.Go(func() {
 		select {
-		case _ = <-ch:
+		case <-ch:
 			// do nothing
 		case <-time.After(worker.rt.netClientTimeout * 2):
 			worker.rt.logger.Infof("[%s Router] Delivery to destination exceeded the 2 * configured timeout ", worker.rt.destName)
@@ -341,7 +336,7 @@ func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUse
 func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) (resp []byte) {
 	defer func() {
 		if r := recover(); r != nil {
-			pkgLogger.Error(fmt.Errorf("failed to enhance response: %w", r))
+			pkgLogger.Error(fmt.Errorf("failed to enhance response: %v", r))
 			resp = []byte(`{}`)
 			return
 		}
@@ -558,19 +553,8 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	} else {
 		reqMetric.RequestRetries = reqMetric.RequestRetries + 1
 	}
-	reqMetric.RequestCompletedTime = time.Now().Sub(*diagnosisStartTime)
+	reqMetric.RequestCompletedTime = time.Since(*diagnosisStartTime)
 	worker.rt.trackRequestMetrics(reqMetric)
-}
-
-//This was used to decide whether destination response should be saved to status or not.
-//Now we are deciding based on destination definition config.
-func isASCII(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] > unicode.MaxASCII {
-			return false
-		}
-	}
-	return true
 }
 
 func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
@@ -620,7 +604,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		worker.rt.failedEventsChan <- *status
 
 		if respStatusCode >= 500 || respStatusCode == 429 {
-			timeElapsed := time.Now().Sub(firstAttemptedAtTime)
+			timeElapsed := time.Since(firstAttemptedAtTime)
 			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
 				addToFailedMap = false
@@ -689,7 +673,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 						"destination": destinationTag,
 					})
 
-				eventsDeliveryTimeStat.SendTiming(time.Now().Sub(receivedTime))
+				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 			}
 		}
 	}
@@ -788,11 +772,8 @@ func (rt *HandleT) addToFailedList(jobStatus jobsdb.JobStatusT) {
 }
 
 func (rt *HandleT) readFailedJobStatusChan() {
-	for {
-		select {
-		case jobStatus := <-rt.failedEventsChan:
-			rt.addToFailedList(jobStatus)
-		}
+	for jobStatus := range rt.failedEventsChan {
+		rt.addToFailedList(jobStatus)
 	}
 }
 
@@ -812,8 +793,7 @@ func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
 func (rt *HandleT) initWorkers() {
 	rt.workers = make([]*workerT, rt.noOfWorkers)
 	for i := 0; i < rt.noOfWorkers; i++ {
-		var worker *workerT
-		worker = &workerT{
+		worker := &workerT{
 			channel:          make(chan *jobsdb.JobT, noOfJobsPerChannel),
 			failedJobIDMap:   make(map[string]int64),
 			retryForJobMap:   make(map[int64]time.Time),
@@ -910,7 +890,7 @@ func (worker *workerT) canBackoff(job *jobsdb.JobT, userID string) (shouldBackof
 	// if the same job has failed before, check for next retry time
 	worker.retryForJobMapMutex.RLock()
 	defer worker.retryForJobMapMutex.RUnlock()
-	if nextRetryTime, ok := worker.retryForJobMap[job.JobID]; ok && nextRetryTime.Sub(time.Now()) > 0 {
+	if nextRetryTime, ok := worker.retryForJobMap[job.JobID]; ok && time.Until(nextRetryTime) > 0 {
 		worker.rt.logger.Debugf("[%v Router] :: Less than next retry time: %v", worker.rt.destName, nextRetryTime)
 		return true
 	}
@@ -1037,37 +1017,34 @@ func (rt *HandleT) statusInsertLoop() {
 
 func (rt *HandleT) collectMetrics() {
 	if diagnostics.EnableRouterMetric {
-		for {
-			select {
-			case _ = <-rt.diagnosisTicker.C:
-				rt.requestsMetricLock.RLock()
-				var diagnosisProperties map[string]interface{}
-				retries := 0
-				aborted := 0
-				success := 0
-				var compTime time.Duration
-				for _, reqMetric := range rt.requestsMetric {
-					retries = retries + reqMetric.RequestRetries
-					aborted = aborted + reqMetric.RequestAborted
-					success = success + reqMetric.RequestSuccess
-					compTime = compTime + reqMetric.RequestCompletedTime
-				}
-				if len(rt.requestsMetric) > 0 {
-					diagnosisProperties = map[string]interface{}{
-						rt.destName: map[string]interface{}{
-							diagnostics.RouterAborted:       aborted,
-							diagnostics.RouterRetries:       retries,
-							diagnostics.RouterSuccess:       success,
-							diagnostics.RouterCompletedTime: (compTime / time.Duration(len(rt.requestsMetric))) / time.Millisecond,
-						},
-					}
-
-					Diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
-				}
-
-				rt.requestsMetric = nil
-				rt.requestsMetricLock.RUnlock()
+		for range rt.diagnosisTicker.C {
+			rt.requestsMetricLock.RLock()
+			var diagnosisProperties map[string]interface{}
+			retries := 0
+			aborted := 0
+			success := 0
+			var compTime time.Duration
+			for _, reqMetric := range rt.requestsMetric {
+				retries = retries + reqMetric.RequestRetries
+				aborted = aborted + reqMetric.RequestAborted
+				success = success + reqMetric.RequestSuccess
+				compTime = compTime + reqMetric.RequestCompletedTime
 			}
+			if len(rt.requestsMetric) > 0 {
+				diagnosisProperties = map[string]interface{}{
+					rt.destName: map[string]interface{}{
+						diagnostics.RouterAborted:       aborted,
+						diagnostics.RouterRetries:       retries,
+						diagnostics.RouterSuccess:       success,
+						diagnostics.RouterCompletedTime: (compTime / time.Duration(len(rt.requestsMetric))) / time.Millisecond,
+					},
+				}
+
+				Diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
+			}
+
+			rt.requestsMetric = nil
+			rt.requestsMetricLock.RUnlock()
 		}
 	}
 }

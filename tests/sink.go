@@ -232,6 +232,7 @@ func redisLoop() {
 	}
 }
 
+// skipcq: SCC-compile
 func main() {
 	fmt.Println("Starting test sink server")
 

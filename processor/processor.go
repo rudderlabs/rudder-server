@@ -60,7 +60,6 @@ type HandleT struct {
 	transformEventsByTimeMutex     sync.RWMutex
 	destTransformEventsByTimeTaken transformRequestPQ
 	userTransformEventsByTimeTaken transformRequestPQ
-	statJobs                       stats.RudderStats
 	statDBR                        stats.RudderStats
 	statDBW                        stats.RudderStats
 	statLoopTime                   stats.RudderStats
@@ -71,7 +70,6 @@ type HandleT struct {
 	statListSort                   stats.RudderStats
 	marshalSingularEvents          stats.RudderStats
 	destProcessing                 stats.RudderStats
-	statNumDests                   stats.RudderStats
 	statNumRequests                stats.RudderStats
 	statNumEvents                  stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
@@ -833,8 +831,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				}
 				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 				for _, destType := range enabledDestTypes {
-					var enabledDestinationsList []backendconfig.DestinationT
-					enabledDestinationsList = getEnabledDestinations(writeKey, destType)
+					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
 					enabledDestinationsMap[destType] = enabledDestinationsList
 
 					// Adding a singular event multiple times if there are multiple destinations of same type
@@ -1054,7 +1051,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
 		if len(uniqueMessageIds) > 0 {
 			var dedupedMessageIdsAcrossJobs []string
-			for k, _ := range uniqueMessageIds {
+			for k := range uniqueMessageIds {
 				dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
 			}
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)

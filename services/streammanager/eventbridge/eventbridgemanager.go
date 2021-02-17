@@ -78,7 +78,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	// send request to event bridge
 	putEventsOutput, err := ebc.PutEvents(&requestInput)
 	if err != nil {
-		pkgLogger.Errorf("[EventBridge] Error while sending event :: %w", err)
+		pkgLogger.Errorf("[EventBridge] Error while sending event :: %v", err)
 
 		// set default status code as 500
 		statusCode := 500

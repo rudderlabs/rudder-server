@@ -98,11 +98,14 @@ type SpacesObject struct {
 }
 
 func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string) ([]*SpacesObject, error) {
-	SpacesObjects := make([]*SpacesObject, 0)
+	spacesObjects := make([]*SpacesObject, 0)
 
 	getRegionSession := session.Must(session.NewSession())
 	region, err := SpacesManager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
-
+	if err != nil {
+		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
+		return spacesObjects, err
+	}
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
@@ -118,14 +121,14 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string) ([]*SpacesObj
 		// Delimiter: aws.String("/"),
 	})
 	if err != nil {
-		return SpacesObjects, err
+		return spacesObjects, err
 	}
 
 	for _, item := range resp.Contents {
-		SpacesObjects = append(SpacesObjects, &SpacesObject{*item.Key, *item.LastModified})
+		spacesObjects = append(spacesObjects, &SpacesObject{*item.Key, *item.LastModified})
 	}
 
-	return SpacesObjects, nil
+	return spacesObjects, nil
 }
 
 type DOSpacesManager struct {

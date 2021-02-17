@@ -198,6 +198,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			pkgLogger.Errorf(`IDR: Error opeining downloaded load file at %s: %v`, loadFileName, err)
 			return
 		}
+		defer gzipFile.Close()
 
 		var gzipReader *gzip.Reader
 		gzipReader, err = gzip.NewReader(gzipFile)
@@ -205,6 +206,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			pkgLogger.Errorf(`IDR: Error reading downloaded load file at %s: %v`, loadFileName, err)
 			return
 		}
+		defer gzipReader.Close()
 
 		csvReader := csv.NewReader(gzipReader)
 		for {
@@ -215,8 +217,6 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 					break
 				} else {
 					pkgLogger.Errorf("IDR: Error while reading csv file for loading in staging table locally:%s: %v", mergeRulesStagingTable, err)
-					gzipReader.Close()
-					gzipFile.Close()
 					return
 				}
 			}
@@ -230,9 +230,11 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			rowID++
 			recordInterface[4] = rowID
 			_, err = stmt.Exec(recordInterface[:]...)
+			if err != nil {
+				pkgLogger.Errorf("IDR: Error while adding rowID to merge_rules table: %v", err)
+				return
+			}
 		}
-		gzipReader.Close()
-		gzipFile.Close()
 	}
 
 	_, err = stmt.Exec()
@@ -368,6 +370,10 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 			Provider: warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config),
 			Config:   idr.Warehouse.Destination.Config,
 		})
+		if err != nil {
+			pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.Warehouse.Destination.DestinationDefinition.Name, err)
+			return nil, err
+		}
 		err = downloader.Download(objectFile, objectName)
 		if err != nil {
 			pkgLogger.Errorf("IDR: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
@@ -392,6 +398,10 @@ func (idr *HandleT) uploadFile(filePath string, txn *sql.Tx, tableName string, t
 		Provider: warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config),
 		Config:   idr.Warehouse.Destination.Config,
 	})
+	if err != nil {
+		pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.Warehouse.Destination.DestinationDefinition.Name, err)
+		return err
+	}
 	output, err := uploader.Upload(outputFile, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.Warehouse.Source.ID, tableName)
 	if err != nil {
 		return

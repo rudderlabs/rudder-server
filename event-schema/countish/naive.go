@@ -5,23 +5,23 @@ type Counter interface {
 	ItemsAboveThreshold(float64) []Entry
 }
 
-type naiveSampler struct {
+type NaiveSampler struct {
 	vals map[string]uint64
 	N    uint64
 }
 
-func NewNaiveSampler() *naiveSampler {
-	return &naiveSampler{
+func NewNaiveSampler() *NaiveSampler {
+	return &NaiveSampler{
 		vals: make(map[string]uint64),
 	}
 }
 
-func (ns *naiveSampler) Observe(key string) {
+func (ns *NaiveSampler) Observe(key string) {
 	ns.vals[key]++
 	ns.N++
 }
 
-func (ns *naiveSampler) ItemsAboveThreshold(val float64) []Entry {
+func (ns *NaiveSampler) ItemsAboveThreshold(val float64) []Entry {
 	count := uint64(val * float64(ns.N))
 	var entries []Entry
 	for key, val := range ns.vals {

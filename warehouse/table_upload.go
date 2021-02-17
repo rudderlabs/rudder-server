@@ -49,12 +49,7 @@ func createTableUploads(uploadID int64, tableNames []string) (err error) {
 			valueRefsArr = append(valueRefsArr, fmt.Sprintf(`$%d`, index))
 		}
 		valueReferences = append(valueReferences, fmt.Sprintf("(%s)", strings.Join(valueRefsArr, ",")))
-		valueArgs = append(valueArgs, uploadID)
-		valueArgs = append(valueArgs, tName)
-		valueArgs = append(valueArgs, "waiting")
-		valueArgs = append(valueArgs, "{}")
-		valueArgs = append(valueArgs, currentTime)
-		valueArgs = append(valueArgs, currentTime)
+		valueArgs = append(valueArgs, uploadID, tName, "waiting", "{}", currentTime, currentTime)
 	}
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (wh_upload_id, table_name, status, error, created_at, updated_at) VALUES %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, warehouseutils.WarehouseTableUploadsTable, strings.Join(valueReferences, ","), tableUploadsUniqueConstraintName)
@@ -64,12 +59,6 @@ func createTableUploads(uploadID int64, tableNames []string) (err error) {
 		pkgLogger.Errorf(`Failed created entries in wh_table_uploads for upload:%d : %v`, uploadID, err)
 	}
 	return err
-}
-
-func (tableUpload *TableUploadT) getStatus() (status string, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT status from %s WHERE wh_upload_id=%d AND table_name='%s' ORDER BY id DESC`, warehouseutils.WarehouseTableUploadsTable, tableUpload.uploadID, tableUpload.tableName)
-	err = dbHandle.QueryRow(sqlStatement).Scan(&status)
-	return status, err
 }
 
 func (tableUpload *TableUploadT) setStatus(status string) (err error) {
@@ -102,15 +91,6 @@ func (tableUpload *TableUploadT) setError(status string, statusError error) (err
 	pkgLogger.Debugf("[WH]: Setting table upload error: %v", sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), misc.QuoteLiteral(statusError.Error()), uploadID, tableName)
 	return err
-}
-
-func (tableUpload *TableUploadT) hasBeenLoaded() (bool, error) {
-	status, err := tableUpload.getStatus()
-	if err != nil {
-		return false, err
-	}
-
-	return (status == ExportedData), nil
 }
 
 func (tableUpload *TableUploadT) updateTableEventsCount(job *UploadJobT) (err error) {

@@ -58,6 +58,7 @@ func (jd *HandleT) deleteSetupCheckpoint(operationType MigrationOp) {
 	if found {
 		sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE id = %d`, jd.getCheckpointTableName(), migrationCheckpoint.ID)
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
+		jd.assertError(err)
 		_, err = stmt.Exec()
 		jd.assertError(err)
 	}

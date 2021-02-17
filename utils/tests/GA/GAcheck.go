@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"io/ioutil"
 	"log"
 	"math"
@@ -39,7 +40,12 @@ var (
 		//"rudderlabs":       "GA",
 		"AM": "google_analytics",
 	}
+	pkgLogger 	   logger.LoggerI
 )
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("tests")
+}
 
 func check(e error) {
 	if e != nil {
@@ -51,7 +57,6 @@ func main() {
 	fmt.Println("starting..")
 	done := make(chan bool)
 	sendToDest = make(map[string]bool)
-
 	numberOfUsers := flag.Int("nu", 1, "number of user threads that does the send, default is 1")
 	numberOfEventPtr := flag.String("n", "one", "number of events in a batch, default is one")
 	eventPtr := flag.String("event", "Track", "give the event name you want the jobs for, default is track")
@@ -175,7 +180,9 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 				check(err)
 
 				err = json.Unmarshal(gaJSONData, &unmarshalleGAData)
-
+				if err!= nil {
+					pkgLogger.Errorf("Error while unmarshalling GA JSON data : %v", err)
+				}
 				//fmt.Println(unmarshalleGAData)
 				//fmt.Println("sendToDest ", sendToDest[itgr.Value().(string)], "netMapping", netMapping["type"].Value())
 				if sendToDest[itgr.Value().(string)] {
@@ -364,6 +371,9 @@ func generateData(payload *[]byte, path string, value interface{}) []byte {
 func sendToRudder(jsonPayload string) {
 	fmt.Println("sending to rudder...")
 	req, err := http.NewRequest("POST", "http://localhost:8080/hello", bytes.NewBuffer([]byte(jsonPayload)))
+	if err != nil {
+		check(err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}

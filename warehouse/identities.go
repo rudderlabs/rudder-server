@@ -335,10 +335,13 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 
 		job.setUploadStatus(getInProgressState(ExportedData))
 		loadErrors, err := job.loadIdentityTables(true)
+		if err != nil {
+			pkgLogger.Errorf(`[WH]: Identity table upload errors: %v`, err)
+		}
 		if len(loadErrors) > 0 {
 			job.setUploadError(multierror.Join(loadErrors), Aborted)
+			return
 		}
 		job.setUploadStatus(ExportedData)
-		return
 	})
 }
