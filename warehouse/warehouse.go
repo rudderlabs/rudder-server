@@ -1017,7 +1017,8 @@ func Start() {
 		return
 	}
 	var err error
-	notifier, err = pgnotifier.New(psqlInfo)
+	workspaceIdentifier := misc.GetMD5Hash(config.GetWorkspaceToken())
+	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
 		panic(err)
 	}
