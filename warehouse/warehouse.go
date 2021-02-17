@@ -1017,7 +1017,7 @@ func Start() {
 		return
 	}
 	var err error
-	workspaceIdentifier := misc.GetMD5Hash(config.GetWorkspaceToken())
+	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
 	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
 		panic(err)
