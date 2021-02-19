@@ -193,6 +193,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		panic(err)
 	}
 
+	var dedupedIDMergeRuleJobs int
 	eventsFound := false
 	identifier := connectionString(*batchJobs.BatchDestination)
 	for _, job := range batchJobs.Jobs {
@@ -205,6 +206,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 			encounteredMergeRuleMapLock.Lock()
 			if _, ok := encounteredMergeRuleMap[identifier][ruleIdentifier]; ok {
 				encounteredMergeRuleMapLock.Unlock()
+				dedupedIDMergeRuleJobs++
 				continue
 			} else {
 				encounteredMergeRuleMap[identifier][ruleIdentifier] = true
@@ -300,8 +302,8 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	if err != nil {
 		brt.logger.Errorf("BRT: Error uploading to %s: Error: %v", provider, err)
 		return StorageUploadOutput{
-			Error:       err,
-			JournalOpID: opID,
+			Error:          err,
+			JournalOpID:    opID,
 			LocalFilePaths: []string{gzipFilePath},
 		}
 	}
@@ -313,7 +315,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		JournalOpID:    opID,
 		FirstEventAt:   firstEventAt,
 		LastEventAt:    lastEventAt,
-		TotalEvents:    len(batchJobs.Jobs),
+		TotalEvents:    len(batchJobs.Jobs) - dedupedIDMergeRuleJobs,
 	}
 }
 
