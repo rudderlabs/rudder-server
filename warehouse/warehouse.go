@@ -272,9 +272,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 			}
 		}
 		if val, ok := allSources.ConnectionFlags.Services["warehouse"]; ok {
-			fmt.Println("flags", allSources.ConnectionFlags)
 			if UploadAPI.connectionManager != nil {
-				fmt.Println("applied")
 				UploadAPI.connectionManager.Apply(allSources.ConnectionFlags.URL, val)
 			}
 

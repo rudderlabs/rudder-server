@@ -3,7 +3,6 @@ package warehouse
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/ptypes"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
@@ -39,9 +38,31 @@ func (w *warehousegrpc) GetWHUploads(context context.Context, request *proto.Get
 		return protoRes, err
 	}
 	bytes, err := json.Marshal(res)
+	if err != nil {
+		return protoRes, err
+	}
 	err = jsonpb.UnmarshalString(string(bytes), protoRes)
-	fmt.Println(err)
-	fmt.Println(protoRes)
+	if err != nil {
+		return protoRes, err
+	}
+	return protoRes, nil
+}
+
+func (w *warehousegrpc) GetWHTables(ctx context.Context, request *proto.GetWHTablesRequest) (*proto.GetWHTablesResponse, error) {
+	tableReq := TableUploadReqT{
+		UploadID: request.GetWhUploadId(),
+		API:      UploadAPI,
+	}
+	protoRes := &proto.GetWHTablesResponse{}
+	res, err := tableReq.GetWhTableUploads()
+	if err != nil {
+		return protoRes, err
+	}
+	bytes, err := json.Marshal(res)
+	if err != nil {
+		return protoRes, err
+	}
+	err = jsonpb.UnmarshalString(string(bytes), protoRes)
 	if err != nil {
 		return protoRes, err
 	}

@@ -19,7 +19,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type WarehouseClient interface {
 	GetWHUploads(ctx context.Context, in *GetWHUploadsRequest, opts ...grpc.CallOption) (*GetWHUploadsResponse, error)
-	GetWHTablesForUploadID(ctx context.Context, in *GetWHTablesForUploadIDRequest, opts ...grpc.CallOption) (*WHTableStatus, error)
+	GetWHTables(ctx context.Context, in *GetWHTablesRequest, opts ...grpc.CallOption) (*GetWHTablesResponse, error)
 }
 
 type warehouseClient struct {
@@ -39,9 +39,9 @@ func (c *warehouseClient) GetWHUploads(ctx context.Context, in *GetWHUploadsRequ
 	return out, nil
 }
 
-func (c *warehouseClient) GetWHTablesForUploadID(ctx context.Context, in *GetWHTablesForUploadIDRequest, opts ...grpc.CallOption) (*WHTableStatus, error) {
-	out := new(WHTableStatus)
-	err := c.cc.Invoke(ctx, "/proto.Warehouse/GetWHTablesForUploadID", in, out, opts...)
+func (c *warehouseClient) GetWHTables(ctx context.Context, in *GetWHTablesRequest, opts ...grpc.CallOption) (*GetWHTablesResponse, error) {
+	out := new(GetWHTablesResponse)
+	err := c.cc.Invoke(ctx, "/proto.Warehouse/GetWHTables", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (c *warehouseClient) GetWHTablesForUploadID(ctx context.Context, in *GetWHT
 // for forward compatibility
 type WarehouseServer interface {
 	GetWHUploads(context.Context, *GetWHUploadsRequest) (*GetWHUploadsResponse, error)
-	GetWHTablesForUploadID(context.Context, *GetWHTablesForUploadIDRequest) (*WHTableStatus, error)
+	GetWHTables(context.Context, *GetWHTablesRequest) (*GetWHTablesResponse, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -64,8 +64,8 @@ type UnimplementedWarehouseServer struct {
 func (UnimplementedWarehouseServer) GetWHUploads(context.Context, *GetWHUploadsRequest) (*GetWHUploadsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetWHUploads not implemented")
 }
-func (UnimplementedWarehouseServer) GetWHTablesForUploadID(context.Context, *GetWHTablesForUploadIDRequest) (*WHTableStatus, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetWHTablesForUploadID not implemented")
+func (UnimplementedWarehouseServer) GetWHTables(context.Context, *GetWHTablesRequest) (*GetWHTablesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetWHTables not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
 
@@ -98,20 +98,20 @@ func _Warehouse_GetWHUploads_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Warehouse_GetWHTablesForUploadID_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetWHTablesForUploadIDRequest)
+func _Warehouse_GetWHTables_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetWHTablesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(WarehouseServer).GetWHTablesForUploadID(ctx, in)
+		return srv.(WarehouseServer).GetWHTables(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/proto.Warehouse/GetWHTablesForUploadID",
+		FullMethod: "/proto.Warehouse/GetWHTables",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WarehouseServer).GetWHTablesForUploadID(ctx, req.(*GetWHTablesForUploadIDRequest))
+		return srv.(WarehouseServer).GetWHTables(ctx, req.(*GetWHTablesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -128,8 +128,8 @@ var Warehouse_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Warehouse_GetWHUploads_Handler,
 		},
 		{
-			MethodName: "GetWHTablesForUploadID",
-			Handler:    _Warehouse_GetWHTablesForUploadID_Handler,
+			MethodName: "GetWHTables",
+			Handler:    _Warehouse_GetWHTables_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

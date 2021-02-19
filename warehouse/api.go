@@ -46,6 +46,9 @@ type UploadResT struct {
 	Tables          []TableUploadResT `json:"tables,omitempty"`
 }
 
+type TablesResT struct {
+	Tables []TableUploadResT `json:"tables,omitempty"`
+}
 type TableUploadReqT struct {
 	UploadID int64
 	Name     string
@@ -53,7 +56,7 @@ type TableUploadReqT struct {
 }
 
 type TableUploadResT struct {
-	ID         int64     `json: "id"`
+	ID         int64     `json:"id"`
 	UploadID   int64     `json:"upload_id"`
 	Name       string    `json:"name"`
 	Error      string    `json:"error"`
@@ -93,6 +96,7 @@ func InitWarehouseApis(dbHandle *sql.DB, log logger.LoggerI) {
 
 }
 func (uploadsReq *UploadsReqT) validateReq() error {
+	fmt.Println(uploadsReq)
 	if !uploadsReq.API.enabled || uploadsReq.API.log == nil || uploadsReq.API.dbHandle == nil {
 		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
 	}
@@ -160,8 +164,13 @@ func (uploadsReq UploadsReqT) GetWhUploads() (UploadsResT, error) {
 			tableUploadReq := TableUploadReqT{
 				UploadID: upload.ID,
 				Name:     "",
+				API:      uploadsReq.API,
 			}
-			uploads[index].Tables, err = tableUploadReq.GetWhTableUploads()
+			tablesRes, err := tableUploadReq.GetWhTableUploads()
+			if err != nil {
+				return UploadsResT{}, err
+			}
+			uploads[index].Tables = tablesRes.Tables
 
 		}
 	}
@@ -179,6 +188,7 @@ func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string 
 }
 
 func (tableUploadReq TableUploadReqT) validateReq() error {
+	fmt.Println(tableUploadReq)
 	if !tableUploadReq.API.enabled || tableUploadReq.API.log == nil || tableUploadReq.API.dbHandle == nil {
 		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
 	}
@@ -188,17 +198,17 @@ func (tableUploadReq TableUploadReqT) validateReq() error {
 	return nil
 }
 
-func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]TableUploadResT, error) {
+func (tableUploadReq TableUploadReqT) GetWhTableUploads() (TablesResT, error) {
 	err := tableUploadReq.validateReq()
 	if err != nil {
-		return []TableUploadResT{}, err
+		return TablesResT{}, err
 	}
 	query := tableUploadReq.generateQuery(`id, wh_upload_id, table_name, total_events, status, error, last_exec_time`)
 	tableUploadReq.API.log.Debug(query)
 	rows, err := tableUploadReq.API.dbHandle.Query(query)
 	if err != nil {
 		tableUploadReq.API.log.Errorf(err.Error())
-		return []TableUploadResT{}, err
+		return TablesResT{}, err
 	}
 	var tableUploads []TableUploadResT
 	for rows.Next() {
@@ -208,7 +218,7 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]TableUploadResT, er
 		err = rows.Scan(&tableUpload.ID, &tableUpload.UploadID, &tableUpload.Name, &count, &tableUpload.Status, &tableUpload.Error, &lastExecTime)
 		if err != nil {
 			tableUploadReq.API.log.Errorf(err.Error())
-			return []TableUploadResT{}, err
+			return TablesResT{}, err
 		}
 		if count.Valid {
 			tableUpload.Count = count.Int64
@@ -218,5 +228,5 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]TableUploadResT, er
 		}
 		tableUploads = append(tableUploads, tableUpload)
 	}
-	return tableUploads, nil
+	return TablesResT{Tables: tableUploads}, nil
 }
