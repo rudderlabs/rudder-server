@@ -457,7 +457,7 @@ var _ = Describe("Processor", func() {
 			}
 
 			// We expect one transform call to destination A, after callUnprocessed.
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), "user_transformer").Times(1).After(callUnprocessed).
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), "_transformer").Times(1).After(callUnprocessed).
 				DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledA, transformExpectations[DestinationIDEnabledA]))
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
