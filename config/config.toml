@@ -50,7 +50,6 @@ routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
 enableStats = true
-canLogPayload = true
 
 [Http]
 ReadTimeOutInSec = 0
