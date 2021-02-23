@@ -114,7 +114,7 @@ backupRowsBatchSize = 100
 # Migration related parameters
 jobDoneMigrateThres = 0.8
 jobStatusMigrateThres = 5
-maxDSSize = 10
+maxDSSize = 100000
 maxMigrateOnce = 10
 maxMigrateDSProbe = 10
 maxTableSizeInMB = 300
@@ -184,7 +184,6 @@ uploadFreqInS = 30
 warehouseServiceMaxRetryTimeinHr = 3
 # Below config variables are supported per destination type too
 noOfWorkers = 8
-<<<<<<< Updated upstream
 maxFailedCountForJob = 128
 retryTimeWindowInMins = 180
 
@@ -234,7 +233,7 @@ sessionInactivityThresholdInS = 120
 maxChanSize = 2048
 processSessions = false
 numTransformWorker = 8
-maxRetry = 10
+maxRetry = 30
 retrySleepInMS = 100
 errReadLoopSleepInS = 30
 errDBReadBatchSize = 10000
