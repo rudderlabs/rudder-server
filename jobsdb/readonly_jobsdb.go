@@ -3,8 +3,6 @@ package jobsdb
 import (
 	"database/sql"
 	"fmt"
-	"sort"
-	"strings"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
@@ -13,8 +11,12 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
+//NOTE: Module name for logging: jobsdb.readonly-<prefix>
+//To enable this module logging using rudder-cli, do the following
+//rudder-cli logging -m=jobsdb.readonly-<prefix> -l=DEBUG
+
 /*
-JobsDB interface contains public methods to access JobsDB data
+ReadonlyJobsDB interface contains public methods to access JobsDB data
 */
 type ReadonlyJobsDB interface {
 	GetPendingJobsCount(customValFilters []string, count int, parameterFilters []ParameterFilterT) int64
@@ -65,149 +67,11 @@ func (jd *ReadonlyHandleT) assert(cond bool, errorString string) {
 }
 
 /*
-Function to sort table suffixes. We should not have any use case
-for having > 2 len suffixes (e.g. 1_1_1 - see comment below)
-but this sort handles the general case
-*/
-func (jd *ReadonlyHandleT) sortDnumList(dnumList []string) {
-	sort.Slice(dnumList, func(i, j int) bool {
-		src := strings.Split(dnumList[i], "_")
-		dst := strings.Split(dnumList[j], "_")
-		comparison, err := dsComparitor(src, dst)
-		jd.assertError(err)
-		return comparison
-	})
-}
-
-//Function to get all table names form Postgres
-func (jd *ReadonlyHandleT) getAllTableNames() []string {
-	//Read the table names from PG
-	stmt, err := jd.dbHandle.Prepare(`SELECT tablename
-                                        FROM pg_catalog.pg_tables
-                                        WHERE schemaname != 'pg_catalog' AND
-                                        schemaname != 'information_schema'`)
-	jd.assertError(err)
-	defer stmt.Close()
-
-	rows, err := stmt.Query()
-	jd.assertError(err)
-	defer rows.Close()
-
-	tableNames := []string{}
-	for rows.Next() {
-		var tbName string
-		err = rows.Scan(&tbName)
-		jd.assertError(err)
-		tableNames = append(tableNames, tbName)
-	}
-
-	return tableNames
-}
-
-/*
 Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
 */
 func (jd *ReadonlyHandleT) getDSList() []dataSetT {
-	datasetList := []dataSetT{}
-
-	//Read the table names from PG
-	tableNames := jd.getAllTableNames()
-
-	//Tables are of form jobs_ and job_status_. Iterate
-	//through them and sort them to produce and
-	//ordered list of datasets
-
-	jobNameMap := map[string]string{}
-	jobStatusNameMap := map[string]string{}
-	dnumList := []string{}
-
-	for _, t := range tableNames {
-		if strings.HasPrefix(t, jd.tablePrefix+"_jobs_") {
-			dnum := t[len(jd.tablePrefix+"_jobs_"):]
-			jobNameMap[dnum] = t
-			dnumList = append(dnumList, dnum)
-			continue
-		}
-		if strings.HasPrefix(t, jd.tablePrefix+"_job_status_") {
-			dnum := t[len(jd.tablePrefix+"_job_status_"):]
-			jobStatusNameMap[dnum] = t
-			continue
-		}
-	}
-
-	jd.sortDnumList(dnumList)
-
-	//If any service has crashed while creating DS, this may happen. Handling such case gracefully.
-	if len(jobNameMap) != len(jobStatusNameMap) {
-		jd.assert(len(jobNameMap) == len(jobStatusNameMap)+1, fmt.Sprintf("Length of jobNameMap(%d) - length of jobStatusNameMap(%d) is more than 1", len(jobNameMap), len(jobStatusNameMap)))
-		deletedDNum := removeExtraKey(jobNameMap, jobStatusNameMap)
-		//remove deletedDNum from dnumList
-		var idx int
-		var dnum string
-		var foundDeletedDNum bool
-		for idx, dnum = range dnumList {
-			if dnum == deletedDNum {
-				foundDeletedDNum = true
-				break
-			}
-		}
-		if foundDeletedDNum {
-			dnumList = remove(dnumList, idx)
-		}
-	}
-
-	//Create the structure
-	for _, dnum := range dnumList {
-		jobName, ok := jobNameMap[dnum]
-		jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobNameMap", dnum))
-		jobStatusName, ok := jobStatusNameMap[dnum]
-		jd.assert(ok, fmt.Sprintf("dnum %s is not found in jobStatusNameMap", dnum))
-		datasetList = append(datasetList,
-			dataSetT{JobTable: jobName,
-				JobStatusTable: jobStatusName, Index: dnum})
-	}
-
-	return datasetList
-}
-
-func (jd *ReadonlyHandleT) checkValidJobState(stateFilters []string) {
-	jobStateMap := make(map[string]jobStateT)
-	for _, js := range jobStates {
-		jobStateMap[js.State] = js
-	}
-	for _, st := range stateFilters {
-		js, ok := jobStateMap[st]
-		jd.assert(ok, fmt.Sprintf("state %s is not found in jobStates: %v", st, jobStates))
-		jd.assert(js.isValid, fmt.Sprintf("jobState : %v is not valid", js))
-	}
-}
-
-func (jd *ReadonlyHandleT) constructQuery(paramKey string, paramList []string, queryType string) string {
-	jd.assert(queryType == "OR" || queryType == "AND", fmt.Sprintf("queryType:%s is neither OR nor AND", queryType))
-	var queryList []string
-	for _, p := range paramList {
-		queryList = append(queryList, "("+paramKey+"='"+p+"')")
-	}
-	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
-}
-
-func (jd *ReadonlyHandleT) constructParameterJSONQuery(table string, parameterFilters []ParameterFilterT) string {
-	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
-	var allKeyValues, mandatoryKeyValues, opNullConditions []string
-	for _, parameter := range parameterFilters {
-		allKeyValues = append(allKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
-		if parameter.Optional {
-			opNullConditions = append(opNullConditions, fmt.Sprintf(`%s.parameters -> '%s' IS NULL`, table, parameter.Name))
-		} else {
-			mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
-		}
-	}
-	opQuery := ""
-	if len(opNullConditions) > 0 {
-		opQuery += fmt.Sprintf(` OR (%s.parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
-	}
-	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
+	return getDSList(jd, jd.dbHandle, jd.tablePrefix)
 }
 
 /*
@@ -273,12 +137,12 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 											 WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable, selectColumn)
 
 	if len(customValFilters) > 0 {
-		sqlStatement += " AND " + jd.constructQuery(fmt.Sprintf("%s.custom_val", ds.JobTable),
+		sqlStatement += " AND " + constructQuery(jd, fmt.Sprintf("%s.custom_val", ds.JobTable),
 			customValFilters, "OR")
 	}
 
 	if len(parameterFilters) > 0 {
-		sqlStatement += " AND " + jd.constructParameterJSONQuery(ds.JobTable, parameterFilters)
+		sqlStatement += " AND " + constructParameterJSONQuery(jd, ds.JobTable, parameterFilters)
 	}
 
 	if jd.tablePrefix == "gw" {
@@ -343,7 +207,7 @@ parameterFilters do a AND query on values included in the map
 */
 func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []string,
 	customValFilters []string, parameterFilters []ParameterFilterT) int64 {
-	jd.checkValidJobState(stateFilters)
+	checkValidJobState(jd, stateFilters)
 
 	var queryStat stats.RudderStats
 	statName := ""
@@ -360,20 +224,20 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	var stateQuery, customValQuery, sourceQuery string
 
 	if len(stateFilters) > 0 {
-		stateQuery = " AND " + jd.constructQuery("job_state", stateFilters, "OR")
+		stateQuery = " AND " + constructQuery(jd, "job_state", stateFilters, "OR")
 	} else {
 		stateQuery = ""
 	}
 	if len(customValFilters) > 0 {
 		customValQuery = " AND " +
-			jd.constructQuery(fmt.Sprintf("%s.custom_val", ds.JobTable),
+			constructQuery(jd, fmt.Sprintf("%s.custom_val", ds.JobTable),
 				customValFilters, "OR")
 	} else {
 		customValQuery = ""
 	}
 
 	if len(parameterFilters) > 0 {
-		sourceQuery += " AND " + jd.constructParameterJSONQuery(ds.JobTable, parameterFilters)
+		sourceQuery += " AND " + constructParameterJSONQuery(jd, ds.JobTable, parameterFilters)
 	} else {
 		sourceQuery = ""
 	}
