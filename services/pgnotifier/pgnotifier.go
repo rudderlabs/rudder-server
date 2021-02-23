@@ -170,9 +170,10 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 								WHERE id IN (
 									SELECT id FROM %[1]s
 									WHERE status='%[3]s' OR status='%[4]s' OR (status='%[5]s' AND last_exec_time <= NOW() - INTERVAL '%[6]v seconds')
+									AND workspace='%[7]s'
 									ORDER BY id
 									FOR UPDATE SKIP LOCKED
-									LIMIT %[7]v
+									LIMIT %[8]v
 								) RETURNING id`,
 			queueName,
 			GetCurrentSQLTimestamp(),
@@ -180,6 +181,7 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 			FailedState,
 			ExecutingState,
 			retriggerExecutingTimeLimitInS,
+			notifier.workspaceIdentifier,
 			retriggerCount)
 		pkgLogger.Debugf("PgNotifier: triggering pending jobs: %v", stmt)
 		rows, err := notifier.dbHandle.Query(stmt)
