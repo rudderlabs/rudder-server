@@ -11,7 +11,8 @@ import (
 
 //Throttler is an interface for throttling functions
 type Throttler interface {
-	LimitReached(key string) bool
+	CheckLimitReached(destID string, userID string) bool
+	Inc(destID string, userID string)
 	IsEnabled() bool
 }
 
@@ -88,7 +89,7 @@ func (throttler *HandleT) SetUp(destName string) {
 }
 
 //LimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
-func (throttler *HandleT) LimitReached(destID string, userID string) bool {
+func (throttler *HandleT) CheckLimitReached(destID string, userID string) bool {
 	destKey := fmt.Sprintf(`%s_%s`, throttler.destinationName, destID)
 	userKey := fmt.Sprintf(`%s_%s_%s`, throttler.destinationName, destID, userID)
 
@@ -114,18 +115,19 @@ func (throttler *HandleT) LimitReached(destID string, userID string) bool {
 		}
 	}
 
-	limitReached := destLevelLimitReached || userLevelLimitReached
+	return destLevelLimitReached || userLevelLimitReached
+}
 
-	if !limitReached {
-		if throttler.destLimiter.enabled {
-			throttler.destLimiter.ratelimiter.Inc(destKey)
-		}
-		if throttler.userLimiter.enabled {
-			throttler.userLimiter.ratelimiter.Inc(userKey)
-		}
+func (throttler *HandleT) Inc(destID string, userID string) {
+	destKey := fmt.Sprintf(`%s_%s`, throttler.destinationName, destID)
+	userKey := fmt.Sprintf(`%s_%s_%s`, throttler.destinationName, destID, userID)
+
+	if throttler.destLimiter.enabled {
+		throttler.destLimiter.ratelimiter.Inc(destKey)
 	}
-
-	return limitReached
+	if throttler.userLimiter.enabled {
+		throttler.userLimiter.ratelimiter.Inc(userKey)
+	}
 }
 
 func (throttler *HandleT) IsEnabled() bool {
