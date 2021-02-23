@@ -464,10 +464,12 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				routerResponseStat.Count(len(destinationJob.JobMetadataArray))
 
 				if isSuccessStatus(respStatusCode) {
-					if getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
-						if !saveDestinationResponse {
+					if saveDestinationResponse {
+						if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
 							respBody = "Save destination response is disabled through config"
 						}
+					} else {
+						respBody = "Save destination response is disabled through config"
 					}
 
 					eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
