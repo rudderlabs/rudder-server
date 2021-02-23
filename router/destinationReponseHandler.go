@@ -17,12 +17,14 @@ type ResponseHandlerI interface {
 type JSONResponseHandler struct {
 	abortRules     []map[string]interface{}
 	retryableRules []map[string]interface{}
+	throttledRules []map[string]interface{}
 }
 
 //TXTResponseHandler handler for text response
 type TXTResponseHandler struct {
 	abortRules     []map[string]interface{}
 	retryableRules []map[string]interface{}
+	throttledRules []map[string]interface{}
 }
 
 func getRulesArrForKey(key string, rules map[string]interface{}) []map[string]interface{} {
@@ -59,11 +61,12 @@ func New(responseRules map[string]interface{}) ResponseHandlerI {
 
 	abortRules := getRulesArrForKey("abortable", rules)
 	retryableRules := getRulesArrForKey("retryable", rules)
+	throttledRules := getRulesArrForKey("throttled", rules)
 
 	if responseRules["responseType"].(string) == "JSON" {
-		return &JSONResponseHandler{abortRules: abortRules, retryableRules: retryableRules}
+		return &JSONResponseHandler{abortRules: abortRules, retryableRules: retryableRules, throttledRules: throttledRules}
 	} else if responseRules["responseType"].(string) == "TXT" {
-		return &TXTResponseHandler{abortRules: abortRules, retryableRules: retryableRules}
+		return &TXTResponseHandler{abortRules: abortRules, retryableRules: retryableRules, throttledRules: throttledRules}
 	}
 
 	return nil
@@ -132,6 +135,10 @@ func (handler *JSONResponseHandler) IsSuccessStatus(respCode int, respBody strin
 
 	if evalBody(respBody, handler.retryableRules) {
 		return 500 //Rudder retry code
+	}
+
+	if evalBody(respBody, handler.throttledRules) {
+		return 429 //Rudder throttle code
 	}
 
 	return respCode
