@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/tidwall/gjson"
 )
 
 //MultiWorkspaceConfig is a struct to hold variables necessary for supporting multiple workspaces.
@@ -78,7 +79,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %w, retrying after %v", err, t)
+		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %v, retrying after %v", err, t)
 	})
 
 	if err != nil {
@@ -127,7 +128,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetRegulations() (RegulationsT
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspaces with error: %w, retrying after %v", err, t)
+		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspaces with error: %v, retrying after %v", err, t)
 	})
 
 	if err != nil {
@@ -181,11 +182,17 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(worksp
 
 		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspace regulations with error: %w, retrying after %v", err, t)
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspace regulations with error: %v, retrying after %v", err, t)
 		})
 
 		if err != nil {
 			pkgLogger.Error("Error sending request to the server", err)
+			return []WorkspaceRegulationT{}, false
+		}
+
+		//If statusCode is not 2xx, then returning empty regulations
+		if statusCode < 200 || statusCode >= 300 {
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspace regulations. statusCode: %v, error: %v", statusCode, err)
 			return []WorkspaceRegulationT{}, false
 		}
 
@@ -196,9 +203,13 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(worksp
 			return []WorkspaceRegulationT{}, false
 		}
 
+		endExists := gjson.GetBytes(respBody, "end").Exists()
+		if !endExists {
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] No end key found in the hosted workspace regulations response. Breaking the regulations fetch loop. Response: %v", string(respBody))
+		}
 		totalWorkspaceRegulations = append(totalWorkspaceRegulations, workspaceRegulationsJSON.WorkspaceRegulations...)
 
-		if workspaceRegulationsJSON.End {
+		if workspaceRegulationsJSON.End || !endExists {
 			break
 		}
 
@@ -226,11 +237,17 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getSourceRegulations(workspace
 
 		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted source regulations with error: %w, retrying after %v", err, t)
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted source regulations with error: %v, retrying after %v", err, t)
 		})
 
 		if err != nil {
 			pkgLogger.Error("Error sending request to the server", err)
+			return []SourceRegulationT{}, false
+		}
+
+		//If statusCode is not 2xx, then returning empty regulations
+		if statusCode < 200 || statusCode >= 300 {
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted source regulations. statusCode: %v, error: %v", statusCode, err)
 			return []SourceRegulationT{}, false
 		}
 
@@ -241,9 +258,13 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getSourceRegulations(workspace
 			return []SourceRegulationT{}, false
 		}
 
+		endExists := gjson.GetBytes(respBody, "end").Exists()
+		if !endExists {
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] No end key found in the hosted source regulations response. Breaking the regulations fetch loop. Response: %v", string(respBody))
+		}
 		totalSourceRegulations = append(totalSourceRegulations, sourceRegulationsJSON.SourceRegulations...)
 
-		if sourceRegulationsJSON.End {
+		if sourceRegulationsJSON.End || !endExists {
 			break
 		}
 

@@ -1,7 +1,6 @@
 package warehouseutils_test
 
 import (
-	"fmt"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -128,7 +127,7 @@ var _ = Describe("Utils", func() {
 	Describe("Test DoubleQuoteAndJoinByComma", func() {
 		It("should correctly apply double quotes and join by Commna ", func() {
 			values := []string{"column1", "column2", "column3", "column4", "column5", "column6", "column7"}
-			Expect(DoubleQuoteAndJoinByComma(values)).To(Equal(fmt.Sprintf("%s", `"column1","column2","column3","column4","column5","column6","column7"`)))
+			Expect(DoubleQuoteAndJoinByComma(values)).To(Equal(`"column1","column2","column3","column4","column5","column6","column7"`))
 		})
 	})
 

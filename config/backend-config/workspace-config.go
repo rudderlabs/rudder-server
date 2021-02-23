@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/tidwall/gjson"
 )
 
 type WorkspaceConfig struct {
@@ -70,7 +71,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (ConfigT, bool) {
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %w, retrying after %v", err, t)
+		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 
 	if err != nil {
@@ -152,11 +153,17 @@ func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]Work
 
 		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch workspace regulations from API with error: %w, retrying after %v", err, t)
+			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch workspace regulations from API with error: %v, retrying after %v", err, t)
 		})
 
 		if err != nil {
 			pkgLogger.Error("Error sending request to the server", err)
+			return []WorkspaceRegulationT{}, false
+		}
+
+		//If statusCode is not 2xx, then returning empty regulations
+		if statusCode < 200 || statusCode >= 300 {
+			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch workspace regulations. statusCode: %v, error: %v", statusCode, err)
 			return []WorkspaceRegulationT{}, false
 		}
 
@@ -167,9 +174,13 @@ func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]Work
 			return []WorkspaceRegulationT{}, false
 		}
 
+		endExists := gjson.GetBytes(respBody, "end").Exists()
+		if !endExists {
+			pkgLogger.Errorf("[[ Workspace-config ]] No end key found in the workspace regulations response. Breaking the regulations fetch loop. Response: %v", string(respBody))
+		}
 		totalWorkspaceRegulations = append(totalWorkspaceRegulations, workspaceRegulationsJSON.WorkspaceRegulations...)
 
-		if workspaceRegulationsJSON.End {
+		if workspaceRegulationsJSON.End || !endExists {
 			break
 		}
 
@@ -197,10 +208,16 @@ func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceR
 
 		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch source regulations from API with error: %w, retrying after %v", err, t)
+			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch source regulations from API with error: %v, retrying after %v", err, t)
 		})
 		if err != nil {
 			pkgLogger.Error("Error sending request to the server", err)
+			return []SourceRegulationT{}, false
+		}
+
+		//If statusCode is not 2xx, then returning empty regulations
+		if statusCode < 200 || statusCode >= 300 {
+			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch source regulations. statusCode: %v, error: %v", statusCode, err)
 			return []SourceRegulationT{}, false
 		}
 
@@ -211,9 +228,13 @@ func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceR
 			return []SourceRegulationT{}, false
 		}
 
+		endExists := gjson.GetBytes(respBody, "end").Exists()
+		if !endExists {
+			pkgLogger.Errorf("[[ Workspace-config ]] No end key found in the source regulations response. Breaking the regulations fetch loop. Response: %v", string(respBody))
+		}
 		totalSourceRegulations = append(totalSourceRegulations, sourceRegulationsJSON.SourceRegulations...)
 
-		if sourceRegulationsJSON.End {
+		if sourceRegulationsJSON.End || !endExists {
 			break
 		}
 

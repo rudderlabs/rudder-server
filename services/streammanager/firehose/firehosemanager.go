@@ -71,7 +71,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if err != nil {
 		respStatus = "Failure"
 		responseMessage = "[FireHose] error :: " + err.Error()
-		pkgLogger.Errorf("[FireHose] error  :: %w", err)
+		pkgLogger.Errorf("[FireHose] error  :: %v", err)
 		statusCode := 400
 		return statusCode, respStatus, responseMessage
 	}
@@ -79,7 +79,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if err != nil {
 		respStatus = "Failure"
 		responseMessage = "[FireHose] error  :: " + err.Error()
-		pkgLogger.Errorf("[FireHose] error  :: %w", err)
+		pkgLogger.Errorf("[FireHose] error  :: %v", err)
 		statusCode := 400
 		return statusCode, respStatus, responseMessage
 	}
@@ -96,7 +96,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if err != nil {
 		respStatus = "Failure"
 		responseMessage = "[FireHose] error  :: " + err.Error()
-		pkgLogger.Errorf("[FireHose] error  :: %w", err)
+		pkgLogger.Errorf("[FireHose] error  :: %v", err)
 		statusCode := 400
 		return statusCode, respStatus, responseMessage
 	}

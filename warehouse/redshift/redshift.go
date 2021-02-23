@@ -182,7 +182,7 @@ type S3ManifestT struct {
 }
 
 func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
-	csvObjectLocations := rs.Uploader.GetLoadFileLocations(tableName)
+	csvObjectLocations := rs.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
 	csvS3Locations := warehouseutils.GetS3Locations(csvObjectLocations)
 	var manifest S3ManifestT
 	for _, location := range csvS3Locations {
@@ -694,6 +694,15 @@ func (rs *HandleT) LoadIdentityMappingsTable() (err error) {
 }
 
 func (rs *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+	return
+}
+
+func (rs *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, rs.Namespace, tableName)
+	err = rs.Db.QueryRow(sqlStatement).Scan(&total)
+	if err != nil {
+		pkgLogger.Errorf(`RS: Error getting total count in table %s:%s`, rs.Namespace, tableName)
+	}
 	return
 }
 

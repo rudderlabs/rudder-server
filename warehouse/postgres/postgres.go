@@ -141,7 +141,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 }
 
 func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations := pg.Uploader.GetLoadFileLocations(tableName)
+	objectLocations := pg.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		object, err := warehouseutils.GetObjectName(objectLocation, pg.Warehouse.Destination.Config, pg.ObjectStorage)
@@ -589,6 +589,15 @@ func (pg *HandleT) LoadIdentityMappingsTable() (err error) {
 }
 
 func (pg *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+	return
+}
+
+func (pg *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, pg.Namespace, tableName)
+	err = pg.Db.QueryRow(sqlStatement).Scan(&total)
+	if err != nil {
+		pkgLogger.Errorf(`PG: Error getting total count in table %s:%s`, pg.Namespace, tableName)
+	}
 	return
 }
 

@@ -23,16 +23,17 @@ import (
 )
 
 var (
-	maxProcess                       int
-	gwDBRetention, routerDBRetention time.Duration
-	enableProcessor, enableRouter    bool
-	objectStorageDestinations        []string
-	warehouseDestinations            []string
-	moduleLoadLock                   sync.Mutex
-	routerLoaded                     bool
-	processorLoaded                  bool
-	pkgLogger                        logger.LoggerI
-	Diagnostics                      diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	maxProcess                                                 int
+	gwDBRetention, routerDBRetention                           time.Duration
+	enableProcessor, enableRouter                              bool
+	objectStorageDestinations                                  []string
+	warehouseDestinations                                      []string
+	moduleLoadLock                                             sync.Mutex
+	routerLoaded                                               bool
+	processorLoaded                                            bool
+	pkgLogger                                                  logger.LoggerI
+	Diagnostics                                                diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyHandleT
 )
 
 //AppHandler to be implemented by different app type objects.
@@ -89,6 +90,10 @@ func rudderCoreBaseSetup() {
 
 	//Reload Config
 	loadConfig()
+
+	readonlyGatewayDB.Setup("gw")
+	readonlyRouterDB.Setup("rt")
+	readonlyBatchRouterDB.Setup("brt")
 
 	runtime.GOMAXPROCS(maxProcess)
 }
@@ -155,7 +160,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 					if !ok {
 						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
 						var router router.HandleT
-						router.Setup(routerDB, destination.DestinationDefinition.Name)
+						router.Setup(routerDB, destination.DestinationDefinition)
 						dstToRouter[destination.DestinationDefinition.Name] = &router
 					}
 				}

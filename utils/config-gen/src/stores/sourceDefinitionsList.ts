@@ -35,7 +35,7 @@ export class SourceDefinitionsListStore implements ISourceDefinitionsListStore {
   public async getFilteredSourceDefinitions() {
     const filteredSourcesArr = [] as Array<object>;
     const acceptedSources = Object.keys(markdown);
-    this.sourceDefinitions.map((source: any) => {
+    this.sourceDefinitions.forEach((source: ISourceDefintion) => {
       if (acceptedSources.includes(source.name)) {
         filteredSourcesArr.push(source)
       }

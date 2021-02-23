@@ -35,6 +35,18 @@ func (m *MockMigratorFeature) EXPECT() *MockMigratorFeatureMockRecorder {
 	return m.recorder
 }
 
+// PrepareJobsdbsForImport mocks base method
+func (m *MockMigratorFeature) PrepareJobsdbsForImport(arg0, arg1, arg2 *jobsdb.HandleT) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "PrepareJobsdbsForImport", arg0, arg1, arg2)
+}
+
+// PrepareJobsdbsForImport indicates an expected call of PrepareJobsdbsForImport
+func (mr *MockMigratorFeatureMockRecorder) PrepareJobsdbsForImport(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PrepareJobsdbsForImport", reflect.TypeOf((*MockMigratorFeature)(nil).PrepareJobsdbsForImport), arg0, arg1, arg2)
+}
+
 // Setup mocks base method
 func (m *MockMigratorFeature) Setup(arg0, arg1, arg2 *jobsdb.HandleT, arg3, arg4 func()) {
 	m.ctrl.T.Helper()

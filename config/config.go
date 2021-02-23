@@ -43,7 +43,7 @@ func Initialize() {
 
 func init() {
 	if err := godotenv.Load(); err != nil {
-		fmt.Println("ERROR: No .env file found")
+		fmt.Println("INFO: No .env file found.")
 	}
 
 	configPath := GetEnv("CONFIG_PATH", "./config/config.toml")
@@ -228,6 +228,11 @@ func GetWorkspaceToken() string {
 	}
 
 	return GetEnv("CONFIG_BACKEND_TOKEN", "")
+}
+
+// returns value stored in KUBE_NAMESPACE env var
+func GetKubeNamespace() string {
+	return GetEnv("KUBE_NAMESPACE", "")
 }
 
 func SetWHSchemaVersion(version string) {

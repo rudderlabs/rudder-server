@@ -125,9 +125,16 @@ type UploaderI interface {
 	GetSchemaInWarehouse() SchemaT
 	GetTableSchemaInWarehouse(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
-	GetLoadFileLocations(tableName string) []string
+	GetLoadFileLocations(options GetLoadFileLocationsOptionsT) []string
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFileLocation(tableName string) (string, error)
+}
+
+type GetLoadFileLocationsOptionsT struct {
+	Table   string
+	StartID int64
+	EndID   int64
+	Limit   int64
 }
 
 func IDResolutionEnabled() bool {
@@ -483,18 +490,6 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	}
 	sort.Strings(columnKeys)
 	return columnKeys
-}
-
-func ConcatErrors(errors []error) (err error) {
-	errStr := ""
-	for idx, err := range errors {
-		errStr += err.Error()
-		if idx < len(errors)-1 {
-			errStr += ", "
-		}
-	}
-	err = fmt.Errorf(errStr)
-	return err
 }
 
 func IdentityMergeRulesTableName(warehouse WarehouseT) string {

@@ -164,6 +164,10 @@ func (sf *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	var count int
 	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s'`, sf.Namespace)
 	err = sf.Db.QueryRow(sqlStatement).Scan(&count)
+	// ignore err if no results for query
+	if err == sql.ErrNoRows {
+		err = nil
+	}
 	exists = count > 0
 	return
 }
@@ -824,6 +828,15 @@ func (sf *HandleT) LoadUserTables() map[string]error {
 func (sf *HandleT) LoadTable(tableName string) error {
 	_, err := sf.loadTable(tableName, sf.Uploader.GetTableSchemaInUpload(tableName), nil, false)
 	return err
+}
+
+func (sf *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, sf.Namespace, tableName)
+	err = sf.Db.QueryRow(sqlStatement).Scan(&total)
+	if err != nil {
+		pkgLogger.Errorf(`SF: Error getting total count in table %s:%s`, sf.Namespace, tableName)
+	}
+	return
 }
 
 func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {

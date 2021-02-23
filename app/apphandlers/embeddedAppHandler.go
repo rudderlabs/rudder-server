@@ -68,6 +68,8 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 			enableRouter = false
 			enableProcessor = false
 			enableGateway = (migrationMode != db.EXPORT)
+
+			embedded.App.Features().Migrator.PrepareJobsdbsForImport(&gatewayDB, &routerDB, &batchRouterDB)
 			embedded.App.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
 		}
 	}
@@ -81,6 +83,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 
 		rateLimiter.SetUp()
 		gateway.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
+		gateway.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
