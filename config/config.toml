@@ -50,6 +50,7 @@ routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
 enableStats = true
+canLogPayload = true
 
 [Http]
 ReadTimeOutInSec = 0
@@ -113,7 +114,7 @@ backupRowsBatchSize = 100
 # Migration related parameters
 jobDoneMigrateThres = 0.8
 jobStatusMigrateThres = 5
-maxDSSize = 100000
+maxDSSize = 10
 maxMigrateOnce = 10
 maxMigrateDSProbe = 10
 maxTableSizeInMB = 300
@@ -157,6 +158,7 @@ kafkaWriteTimeoutInSec = 2
 kafkaDialTimeoutInSec = 10
 minRetryBackoffInS = 10
 maxRetryBackoffInS = 300
+samplingSize = 50
 # Below config variables are supported per destination type too
 noOfWorkers = 64
 allowAbortedUserJobsCountForProcessing=1
@@ -182,6 +184,7 @@ uploadFreqInS = 30
 warehouseServiceMaxRetryTimeinHr = 3
 # Below config variables are supported per destination type too
 noOfWorkers = 8
+<<<<<<< Updated upstream
 maxFailedCountForJob = 128
 retryTimeWindowInMins = 180
 
@@ -231,7 +234,7 @@ sessionInactivityThresholdInS = 120
 maxChanSize = 2048
 processSessions = false
 numTransformWorker = 8
-maxRetry = 30
+maxRetry = 10
 retrySleepInMS = 100
 errReadLoopSleepInS = 30
 errDBReadBatchSize = 10000

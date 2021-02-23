@@ -124,6 +124,7 @@ var (
 	pkgLogger                                                     logger.LoggerI
 	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                time.Duration
+	samplingSize                                                  int
 )
 
 type requestMetric struct {
@@ -148,6 +149,7 @@ func isJobTerminated(status int) bool {
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
+	samplingSize = config.GetInt("Router.samplingSize", 50)
 	readSleep = config.GetDuration("Router.readSleepInMS", time.Duration(1000)) * time.Millisecond
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	noOfJobsToBatchInAWorker = config.GetInt("Router.noOfJobsToBatchInAWorker", 20)
@@ -949,11 +951,11 @@ func (rt *HandleT) statusInsertLoop() {
 		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
 			statusStat.Start()
 			var statusList []*jobsdb.JobStatusT
-			for _, resp := range responseList {
+			for index, resp := range responseList {
 				statusList = append(statusList, resp.status)
 
 				//tracking router errors
-				if diagnostics.EnableDestinationFailuresMetric {
+				if diagnostics.EnableDestinationFailuresMetric && index%samplingSize == 0 {
 					if resp.status.JobState == jobsdb.Failed.State || resp.status.JobState == jobsdb.Aborted.State {
 						var event string
 						if resp.status.JobState == jobsdb.Failed.State {
