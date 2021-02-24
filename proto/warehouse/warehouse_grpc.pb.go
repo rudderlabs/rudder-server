@@ -19,6 +19,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type WarehouseClient interface {
 	GetWHUploads(ctx context.Context, in *GetWHUploadsRequest, opts ...grpc.CallOption) (*GetWHUploadsResponse, error)
+	GetWHUpload(ctx context.Context, in *GetWHUploadRequest, opts ...grpc.CallOption) (*GetWHUploadResponse, error)
 	GetWHTables(ctx context.Context, in *GetWHTablesRequest, opts ...grpc.CallOption) (*GetWHTablesResponse, error)
 }
 
@@ -39,6 +40,15 @@ func (c *warehouseClient) GetWHUploads(ctx context.Context, in *GetWHUploadsRequ
 	return out, nil
 }
 
+func (c *warehouseClient) GetWHUpload(ctx context.Context, in *GetWHUploadRequest, opts ...grpc.CallOption) (*GetWHUploadResponse, error) {
+	out := new(GetWHUploadResponse)
+	err := c.cc.Invoke(ctx, "/proto.Warehouse/GetWHUpload", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *warehouseClient) GetWHTables(ctx context.Context, in *GetWHTablesRequest, opts ...grpc.CallOption) (*GetWHTablesResponse, error) {
 	out := new(GetWHTablesResponse)
 	err := c.cc.Invoke(ctx, "/proto.Warehouse/GetWHTables", in, out, opts...)
@@ -53,6 +63,7 @@ func (c *warehouseClient) GetWHTables(ctx context.Context, in *GetWHTablesReques
 // for forward compatibility
 type WarehouseServer interface {
 	GetWHUploads(context.Context, *GetWHUploadsRequest) (*GetWHUploadsResponse, error)
+	GetWHUpload(context.Context, *GetWHUploadRequest) (*GetWHUploadResponse, error)
 	GetWHTables(context.Context, *GetWHTablesRequest) (*GetWHTablesResponse, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
@@ -63,6 +74,9 @@ type UnimplementedWarehouseServer struct {
 
 func (UnimplementedWarehouseServer) GetWHUploads(context.Context, *GetWHUploadsRequest) (*GetWHUploadsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetWHUploads not implemented")
+}
+func (UnimplementedWarehouseServer) GetWHUpload(context.Context, *GetWHUploadRequest) (*GetWHUploadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetWHUpload not implemented")
 }
 func (UnimplementedWarehouseServer) GetWHTables(context.Context, *GetWHTablesRequest) (*GetWHTablesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetWHTables not implemented")
@@ -98,6 +112,24 @@ func _Warehouse_GetWHUploads_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Warehouse_GetWHUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetWHUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WarehouseServer).GetWHUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.Warehouse/GetWHUpload",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WarehouseServer).GetWHUpload(ctx, req.(*GetWHUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Warehouse_GetWHTables_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetWHTablesRequest)
 	if err := dec(in); err != nil {
@@ -126,6 +158,10 @@ var Warehouse_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetWHUploads",
 			Handler:    _Warehouse_GetWHUploads_Handler,
+		},
+		{
+			MethodName: "GetWHUpload",
+			Handler:    _Warehouse_GetWHUpload_Handler,
 		},
 		{
 			MethodName: "GetWHTables",

@@ -2,7 +2,6 @@ package warehouse
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/config"
@@ -21,15 +20,25 @@ type UploadsReqT struct {
 	DestinationType    string
 	Status             string
 	IncludeTablesInRes bool
-	From               time.Time
-	To                 time.Time
+	Page               int64
+	Size               int64
 	API                UploadAPIT
 }
 
-type UploadsResT struct {
-	Uploads []UploadResT `json:"uploads,omitempty"`
+type UploadReqT struct {
+	UploadId int64
+	API      UploadAPIT
 }
 
+type UploadsResT struct {
+	Uploads    []UploadResT     `json:"uploads"`
+	Pagination UploadPagination `json:"pagination"`
+}
+
+type UploadPagination struct {
+	Page int64 `json:"page"`
+	Size int64 `json:"size"`
+}
 type UploadResT struct {
 	ID              int64             `json:"id"`
 	Namespace       string            `json:"namespace"`
@@ -37,10 +46,9 @@ type UploadResT struct {
 	DestinationID   string            `json:"destination_id"`
 	DestinationType string            `json:"destination_type"`
 	Status          string            `json:"status"`
-	Schema          string            `json:"schema"`
 	Error           string            `json:"error"`
-	Timings         string            `json:"timings"`
-	Metadata        string            `json:"metadata"`
+	Duration        int64             `json:"duration"`
+	nextRetryTime   string            `json:"NextRetryTime"`
 	FirstEventAt    time.Time         `json:"first_event_at"`
 	LastEventAt     time.Time         `json:"last_event_at"`
 	Tables          []TableUploadResT `json:"tables,omitempty"`
@@ -96,47 +104,71 @@ func InitWarehouseApis(dbHandle *sql.DB, log logger.LoggerI) {
 
 }
 func (uploadsReq *UploadsReqT) validateReq() error {
-	fmt.Println(uploadsReq)
 	if !uploadsReq.API.enabled || uploadsReq.API.log == nil || uploadsReq.API.dbHandle == nil {
 		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
 	}
-	if uploadsReq.From.IsZero() {
-		uploadsReq.From = time.Now().UTC()
+	if uploadsReq.Page < 1 {
+		uploadsReq.Page = 1
 	}
-	if uploadsReq.To.IsZero() {
-		uploadsReq.To = uploadsReq.From.Add(-24 * time.Hour)
-	}
-	if uploadsReq.From.Before(uploadsReq.To) {
-		return errors.New(fmt.Sprintf(`from should be greater than to. from: %s, to: %s`, uploadsReq.From, uploadsReq.To))
+	if uploadsReq.Size < 1 {
+		uploadsReq.Size = 10
 	}
 	return nil
 }
 
 func (uploadsReq *UploadsReqT) generateQuery(selectFields string) string {
-	query := fmt.Sprintf(`select %s  from %s where created_at <= '%s' and created_at >= '%s'`, selectFields, warehouseutils.WarehouseUploadsTable, uploadsReq.From.Format(time.RFC3339), uploadsReq.To.Format(time.RFC3339))
+	query := fmt.Sprintf(`select %s  from %s `, selectFields, warehouseutils.WarehouseUploadsTable)
+	whereClauseAdded := false
 	if uploadsReq.SourceID != "" {
-		query = fmt.Sprintf(`%s and source_id = '%s' `, query, uploadsReq.SourceID)
+		whereClauseAdded = true
+		query = fmt.Sprintf(`%s where source_id = '%s' `, query, uploadsReq.SourceID)
 	}
 	if uploadsReq.DestinationID != "" {
-		query = fmt.Sprintf(`%s and destination_id = '%s' `, query, uploadsReq.DestinationID)
+		if whereClauseAdded {
+			query = fmt.Sprintf(`%s and destination_id = '%s' `, query, uploadsReq.DestinationID)
+		} else {
+			query = fmt.Sprintf(`%s where destination_id = '%s' `, query, uploadsReq.DestinationID)
+			whereClauseAdded = true
+		}
+
 	}
 	if uploadsReq.DestinationType != "" {
-		query = fmt.Sprintf(`%s and destination_type = '%s' `, query, uploadsReq.DestinationType)
+		if whereClauseAdded {
+			query = fmt.Sprintf(`%s and destination_type = '%s' `, query, uploadsReq.DestinationType)
+		} else {
+			query = fmt.Sprintf(`%s where destination_type = '%s' `, query, uploadsReq.DestinationType)
+			whereClauseAdded = true
+		}
+
 	}
 	if uploadsReq.Status != "" {
-		query = fmt.Sprintf(`%s and status = '%s' `, query, uploadsReq.Status)
+		if whereClauseAdded {
+			query = fmt.Sprintf(`%s and status = '%s' `, query, uploadsReq.Status)
+		} else {
+			query = fmt.Sprintf(`%s where status = '%s' `, query, uploadsReq.Status)
+			whereClauseAdded = true
+		}
+
+	} else {
+		if whereClauseAdded {
+			query = fmt.Sprintf(`%s and status != '%s' `, query, "waiting")
+		} else {
+			query = fmt.Sprintf(`%s where status != '%s' `, query, "waiting")
+			whereClauseAdded = true
+		}
 	}
-	query = query + ` order by id desc`
+
+	query = query + fmt.Sprintf(` order by id desc limit %d offset %d`, uploadsReq.Size, (uploadsReq.Page-1)*uploadsReq.Size)
 	uploadsReq.API.log.Info(query)
 	return query
 }
 
-func (uploadsReq UploadsReqT) GetWhUploads() (UploadsResT, error) {
+func (uploadsReq *UploadsReqT) GetWhUploads() (UploadsResT, error) {
 	err := uploadsReq.validateReq()
 	if err != nil {
 		return UploadsResT{}, err
 	}
-	query := uploadsReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, schema, status, error, first_event_at, last_event_at, timings, metadata`)
+	query := uploadsReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, timings->0, timings->-1, metadata->>'nextRetryTime'`)
 	uploadsReq.API.log.Debug(query)
 	rows, err := uploadsReq.API.dbHandle.Query(query)
 	if err != nil {
@@ -146,16 +178,18 @@ func (uploadsReq UploadsReqT) GetWhUploads() (UploadsResT, error) {
 	uploads := make([]UploadResT, 0)
 	for rows.Next() {
 		var upload UploadResT
-		var schema string
-		var timings json.RawMessage
-		var metadata json.RawMessage
-		err = rows.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.Namespace, &schema, &upload.Status, &upload.Error, &upload.FirstEventAt, &upload.LastEventAt, &timings, &metadata)
+		var firstTimingObject sql.NullString
+		var lastTimingObject sql.NullString
+		var nextRetryTimeStr sql.NullString
+		err = rows.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.Namespace, &upload.Status, &upload.Error, &upload.FirstEventAt, &upload.LastEventAt, &firstTimingObject, &lastTimingObject, &nextRetryTimeStr)
 		if err != nil {
 			uploadsReq.API.log.Errorf(err.Error())
 			return UploadsResT{}, err
 		}
-		upload.Schema = string(schema)
-		upload.Timings = string(timings)
+		_, firstTime := warehouseutils.TimingFromJSONString(firstTimingObject)
+		_, lastTime := warehouseutils.TimingFromJSONString(lastTimingObject)
+		upload.nextRetryTime = nextRetryTimeStr.String
+		upload.Duration = int64(lastTime.Sub(firstTime) / time.Second)
 		upload.Tables = make([]TableUploadResT, 0)
 		uploads = append(uploads, upload)
 	}
@@ -176,6 +210,10 @@ func (uploadsReq UploadsReqT) GetWhUploads() (UploadsResT, error) {
 	}
 	return UploadsResT{
 		Uploads: uploads,
+		Pagination: UploadPagination{
+			Page: uploadsReq.Page,
+			Size: uploadsReq.Size,
+		},
 	}, nil
 }
 
@@ -188,11 +226,56 @@ func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string 
 }
 
 func (tableUploadReq TableUploadReqT) validateReq() error {
-	fmt.Println(tableUploadReq)
 	if !tableUploadReq.API.enabled || tableUploadReq.API.log == nil || tableUploadReq.API.dbHandle == nil {
 		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
 	}
 	if tableUploadReq.UploadID == 0 {
+		return errors.New(fmt.Sprint(`upload_id is empty or should be greater than 0 `))
+	}
+	return nil
+}
+func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
+	return fmt.Sprintf(`select %s from %s  where id = %d`, selectedFields, warehouseutils.WarehouseUploadsTable, uploadReq.UploadId)
+}
+
+func (uploadReq UploadReqT) GetWHUpload() (UploadResT, error) {
+	err := uploadReq.validateReq()
+	if err != nil {
+		return UploadResT{}, err
+	}
+	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, timings->0, timings->-1, metadata->>'nextRetryTime'`)
+	uploadReq.API.log.Debug(query)
+	var upload UploadResT
+	var firstTimingObject sql.NullString
+	var lastTimingObject sql.NullString
+	var nextRetryTimeStr sql.NullString
+	row := uploadReq.API.dbHandle.QueryRow(query)
+	err = row.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.Namespace, &upload.Status, &upload.Error, &upload.FirstEventAt, &upload.LastEventAt, &firstTimingObject, &lastTimingObject, &nextRetryTimeStr)
+	if err != nil {
+		uploadReq.API.log.Errorf(err.Error())
+		return UploadResT{}, err
+	}
+	_, firstTime := warehouseutils.TimingFromJSONString(firstTimingObject)
+	_, lastTime := warehouseutils.TimingFromJSONString(lastTimingObject)
+	upload.nextRetryTime = nextRetryTimeStr.String
+	upload.Duration = int64(lastTime.Sub(firstTime) / time.Second)
+	tableUploadReq := TableUploadReqT{
+		UploadID: upload.ID,
+		Name:     "",
+		API:      uploadReq.API,
+	}
+	tablesRes, err := tableUploadReq.GetWhTableUploads()
+	if err != nil {
+		return UploadResT{}, err
+	}
+	upload.Tables = tablesRes.Tables
+	return upload, nil
+}
+func (uploadReq UploadReqT) validateReq() error {
+	if !uploadReq.API.enabled || uploadReq.API.log == nil || uploadReq.API.dbHandle == nil {
+		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
+	}
+	if uploadReq.UploadId < 1 {
 		return errors.New(fmt.Sprint(`upload_id is empty or should be greater than 0 `))
 	}
 	return nil

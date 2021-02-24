@@ -8,12 +8,14 @@ option go_package = ".;proto";
 
 service Warehouse {
   rpc GetWHUploads (GetWHUploadsRequest) returns (GetWHUploadsResponse);
+  rpc GetWHUpload (GetWHUploadRequest) returns (GetWHUploadResponse);
   rpc GetWHTables (GetWHTablesRequest) returns (GetWHTablesResponse);
 }
 
 
 message GetWHTablesRequest {
-  int64 wh_upload_id = 1;
+  int64 upload_id = 1;
+  string table_name = 2;
 }
 
 message GetWHUploadsRequest{
@@ -22,17 +24,24 @@ message GetWHUploadsRequest{
   string destination_type = 3;
   string status = 4;
   bool include_tables_in_res = 5;
-  google.protobuf.Timestamp from = 6;
-  google.protobuf.Timestamp to = 7;
+  int64 page=6;
+  int64 size=7;
 }
-
+message GetWHUploadRequest{
+  int64 upload_id=1;
+}
+message Pagination {
+  int64 page=1;
+  int64 size=2;
+}
 message GetWHUploadsResponse{
-  repeated WHUpload uploads = 1;
+  repeated GetWHUploadResponse uploads = 1;
+  Pagination pagination =2;
 }
 message GetWHTablesResponse {
   repeated WHTable tables = 1;
 }
-message WHUpload {
+message GetWHUploadResponse {
   int64 id = 1;
   string source_id = 2;
   string destination_id = 3;
@@ -40,12 +49,11 @@ message WHUpload {
   string namespace = 5;
   string error = 6;
   string status = 7;
-  string schema = 8;
-  google.protobuf.Timestamp first_event_at = 9;
-  google.protobuf.Timestamp last_event_at = 10;
-  string metadata = 11;
-  string timings = 12;
-  repeated WHTable tables = 13;
+  google.protobuf.Timestamp first_event_at = 8;
+  google.protobuf.Timestamp last_event_at = 9;
+  string next_retry_time = 10;
+  int64 duration = 11;
+  repeated WHTable tables = 12;
 }
 
 message WHTable {

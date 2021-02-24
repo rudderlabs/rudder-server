@@ -3,10 +3,9 @@ package warehouse
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/ptypes"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
-	"time"
 )
 
 type warehousegrpc struct {
@@ -14,22 +13,14 @@ type warehousegrpc struct {
 }
 
 func (w *warehousegrpc) GetWHUploads(context context.Context, request *proto.GetWHUploadsRequest) (*proto.GetWHUploadsResponse, error) {
-	from, err := ptypes.Timestamp(request.From)
-	if err != nil {
-		from = time.Time{}
-	}
-	to, err := ptypes.Timestamp(request.To)
-	if err != nil {
-		to = time.Time{}
-	}
 	uploadsReq := UploadsReqT{
 		SourceID:           request.SourceId,
 		DestinationID:      request.DestinationId,
 		DestinationType:    request.DestinationType,
 		Status:             request.Status,
 		IncludeTablesInRes: request.IncludeTablesInRes,
-		From:               from,
-		To:                 to,
+		Page:               request.Page,
+		Size:               request.Size,
 		API:                UploadAPI,
 	}
 	protoRes := &proto.GetWHUploadsResponse{}
@@ -45,12 +36,35 @@ func (w *warehousegrpc) GetWHUploads(context context.Context, request *proto.Get
 	if err != nil {
 		return protoRes, err
 	}
+	fmt.Println(protoRes)
+	return protoRes, nil
+}
+
+func (w *warehousegrpc) GetWHUpload(context context.Context, request *proto.GetWHUploadRequest) (*proto.GetWHUploadResponse, error) {
+	uploadReq := UploadReqT{
+		UploadId: request.UploadId,
+		API:      UploadAPI,
+	}
+	protoRes := &proto.GetWHUploadResponse{}
+	res, err := uploadReq.GetWHUpload()
+	if err != nil {
+		return protoRes, err
+	}
+	bytes, err := json.Marshal(res)
+	if err != nil {
+		return protoRes, err
+	}
+	err = jsonpb.UnmarshalString(string(bytes), protoRes)
+	if err != nil {
+		return protoRes, err
+	}
+	fmt.Println(protoRes)
 	return protoRes, nil
 }
 
 func (w *warehousegrpc) GetWHTables(ctx context.Context, request *proto.GetWHTablesRequest) (*proto.GetWHTablesResponse, error) {
 	tableReq := TableUploadReqT{
-		UploadID: request.GetWhUploadId(),
+		UploadID: request.GetUploadId(),
 		API:      UploadAPI,
 	}
 	protoRes := &proto.GetWHTablesResponse{}
