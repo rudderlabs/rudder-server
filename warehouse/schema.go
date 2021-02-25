@@ -272,8 +272,9 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 		}
 	}
 
-	if _, ok := consolidatedSchema["users"]; ok && (sh.warehouse.Namespace == "www_cb_2__ca" || sh.warehouse.Namespace == "www_crateandbarrel_ca") {
+	if _, ok := consolidatedSchema["users"]; ok && (sh.warehouse.Namespace == "www_crateandbarrel_ca") {
 		consolidatedSchema["users"]["id"] = "int"
+		consolidatedSchema["users"]["context_screen_density"] = "float"
 	}
 
 	return consolidatedSchema
