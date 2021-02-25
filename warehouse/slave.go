@@ -386,7 +386,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 				eventLoader.AddEmptyColumn(columnName)
 				continue
 			}
-			if tableName == "users" && columnName == "id" && columnInfo.ColumnType == "string" {
+			if tableName == "users" && columnName == "id" && columnInfo.ColumnType == "string" && (job.SourceID == "1oFL4VVv22Chh3DBPOGa9loS1nf" || job.SourceID == "1oFL66ChmT7ML8KuLC11B7b5arY") {
 				columnInfo.ColumnType = "int"
 			}
 
