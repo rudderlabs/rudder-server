@@ -46,7 +46,7 @@ require (
 	github.com/pelletier/go-toml v1.6.0 // indirect
 	github.com/pkg/browser v0.0.0-20180916011732-0a3d74bf9ce4 // indirect
 	github.com/rs/cors v1.7.0
-	github.com/rudderlabs/analytics-go v3.3.0+incompatible
+	github.com/rudderlabs/analytics-go v3.3.1+incompatible
 	github.com/satori/go.uuid v1.2.0
 	github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c // indirect
 	github.com/segmentio/ksuid v1.0.2
