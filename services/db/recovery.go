@@ -60,9 +60,9 @@ func getRecoveryData() RecoveryDataT {
 	var recoveryData RecoveryDataT
 	err = json.Unmarshal(data, &recoveryData)
 	if err != nil {
-		pkgLogger.Errorf("Failed to Unmarshall %s. Error:  %w", storagePath, err)
+		pkgLogger.Errorf("Failed to Unmarshall %s. Error:  %v", storagePath, err)
 		if renameErr := os.Rename(storagePath, fmt.Sprintf("%s.bkp", storagePath)); renameErr != nil {
-			pkgLogger.Errorf("Failed to back up: %s. Error: %w", storagePath, err)
+			pkgLogger.Errorf("Failed to back up: %s. Error: %v", storagePath, err)
 		}
 		recoveryData = RecoveryDataT{Mode: normalMode}
 	}
@@ -71,6 +71,9 @@ func getRecoveryData() RecoveryDataT {
 
 func saveRecoveryData(recoveryData RecoveryDataT) {
 	recoveryDataJSON, err := json.MarshalIndent(&recoveryData, "", " ")
+	if err != nil {
+		panic(err)
+	}
 	storagePath := config.GetString("recovery.storagePath", "/tmp/recovery_data.json")
 	err = ioutil.WriteFile(storagePath, recoveryDataJSON, 0644)
 	if err != nil {

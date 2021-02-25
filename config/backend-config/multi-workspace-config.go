@@ -79,7 +79,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %w, retrying after %v", err, t)
+		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %v, retrying after %v", err, t)
 	})
 
 	if err != nil {
@@ -128,7 +128,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetRegulations() (RegulationsT
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspaces with error: %w, retrying after %v", err, t)
+		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspaces with error: %v, retrying after %v", err, t)
 	})
 
 	if err != nil {
@@ -182,7 +182,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(worksp
 
 		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspace regulations with error: %w, retrying after %v", err, t)
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspace regulations with error: %v, retrying after %v", err, t)
 		})
 
 		if err != nil {
@@ -237,7 +237,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getSourceRegulations(workspace
 
 		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted source regulations with error: %w, retrying after %v", err, t)
+			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted source regulations with error: %v, retrying after %v", err, t)
 		})
 
 		if err != nil {

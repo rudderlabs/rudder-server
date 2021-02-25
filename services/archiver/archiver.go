@@ -59,6 +59,10 @@ func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHan
 	}
 
 	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		pkgLogger.Errorf("[Archiver]: Failed to create tmp DIR")
+		return
+	}
 	backupPathDirName := "/rudder-archives/"
 	pathPrefix := strcase.ToKebab(tableName)
 
@@ -75,6 +79,9 @@ func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHan
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanager.GetProviderConfigFromEnv(),
 	})
+	if err != nil {
+		pkgLogger.Errorf("[Archiver]: Error in creating a file manager for :%s: , %v", config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
+	}
 
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
 		DbHandle:      dbHandle,

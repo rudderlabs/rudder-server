@@ -45,6 +45,10 @@ func (ops *PagerDuty) Alert(message string) {
 
 	body, err := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
+	if err != nil {
+		pkgLogger.Errorf("Alert: Failed to read response body: %s", err.Error())
+		return
+	}
 
 	pkgLogger.Infof("Alert: Successful %s", string(body))
 }

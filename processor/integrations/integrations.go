@@ -18,10 +18,8 @@ import (
 )
 
 var (
-	destTransformURL, userTransformURL string
-	customDestination                  []string
-	whSchemaVersion                    string
-	postParametersTFields              []string
+	destTransformURL      string
+	postParametersTFields []string
 )
 
 func init() {
@@ -48,15 +46,18 @@ const (
 )
 
 // PostParametersT is a struct for holding all the values from transformerResponse and use them to publish an event to a destination
+// optional is a custom tag introduced by us and is handled by GetMandatoryJSONFieldNames. Its intentionally added
+// after two commas because the tag that comes after the first comma should be known by json parser
 type PostParametersT struct {
-	Type          string                 `json:"type"`
-	URL           string                 `json:"endpoint"`
-	RequestMethod string                 `json:"method"`
-	UserID        string                 `json:"userId,,optional"`
-	Headers       map[string]interface{} `json:"headers"`
-	QueryParams   map[string]interface{} `json:"params"`
-	Body          map[string]interface{} `json:"body"`
-	Files         map[string]interface{} `json:"files"`
+	Type          string `json:"type"`
+	URL           string `json:"endpoint"`
+	RequestMethod string `json:"method"`
+	//Invalid tag used in struct. skipcq: SCC-SA5008
+	UserID      string                 `json:"userId,,optional"`
+	Headers     map[string]interface{} `json:"headers"`
+	QueryParams map[string]interface{} `json:"params"`
+	Body        map[string]interface{} `json:"body"`
+	Files       map[string]interface{} `json:"files"`
 }
 
 // GetPostInfo parses the transformer response

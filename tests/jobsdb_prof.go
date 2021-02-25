@@ -82,7 +82,7 @@ func storeProcess(jd *jobsdb.HandleT) {
 		time.Sleep(storeSleep)
 		var jobList []*jobsdb.JobT
 		for i := 0; i < batchSize; i++ {
-			id, _ := uuid.NewV4()
+			id := uuid.NewV4()
 			uuidWriteMap[id] = true
 			newJob := jobsdb.JobT{
 				UUID:         id,
@@ -121,10 +121,10 @@ func readProcess(jd *jobsdb.HandleT) {
 		start := time.Now()
 
 		toQuery := numQuery
-		retryList := jd.GetToRetry([]string{endPoint}, toQuery)
+		retryList := jd.GetToRetry([]string{endPoint}, toQuery, []jobsdb.ParameterFilterT{})
 		toQuery -= len(retryList)
 
-		unprocessedList := jd.GetUnprocessed([]string{endPoint}, toQuery)
+		unprocessedList := jd.GetUnprocessed([]string{endPoint}, toQuery, []jobsdb.ParameterFilterT{})
 
 		elapsed := time.Since(start)
 		totalReadTime += float64(elapsed.Seconds())
@@ -169,7 +169,7 @@ func readProcess(jd *jobsdb.HandleT) {
 		}
 
 		start = time.Now()
-		jd.UpdateJobStatus(statusList)
+		jd.UpdateJobStatus(statusList, []string{}, []jobsdb.ParameterFilterT{})
 		elapsed = time.Since(start)
 		totalUpdateTime += float64(elapsed.Seconds())
 
@@ -183,6 +183,7 @@ func readProcess(jd *jobsdb.HandleT) {
 	wg.Done()
 }
 
+// skipcq: SCC-compile
 func main() {
 	var jd jobsdb.HandleT
 

@@ -71,7 +71,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (ConfigT, bool) {
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %w, retrying after %v", err, t)
+		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 
 	if err != nil {
@@ -153,7 +153,7 @@ func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]Work
 
 		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch workspace regulations from API with error: %w, retrying after %v", err, t)
+			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch workspace regulations from API with error: %v, retrying after %v", err, t)
 		})
 
 		if err != nil {
@@ -208,7 +208,7 @@ func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceR
 
 		backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch source regulations from API with error: %w, retrying after %v", err, t)
+			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch source regulations from API with error: %v, retrying after %v", err, t)
 		})
 		if err != nil {
 			pkgLogger.Error("Error sending request to the server", err)

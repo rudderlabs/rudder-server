@@ -83,8 +83,6 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 		return []types.DestinationJobT{}
 	}
 
-	pkgLogger.Infof("router transform url %s", url)
-
 	for {
 		trans.transformRequestTimerStat.Start()
 		resp, err = trans.client.Post(url, "application/json; charset=utf-8",
