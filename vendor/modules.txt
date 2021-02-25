@@ -317,7 +317,7 @@ github.com/pkg/errors
 github.com/rcrowley/go-metrics
 # github.com/rs/cors v1.7.0
 github.com/rs/cors
-# github.com/rudderlabs/analytics-go v3.2.1+incompatible
+# github.com/rudderlabs/analytics-go v3.3.0+incompatible
 github.com/rudderlabs/analytics-go
 # github.com/satori/go.uuid v1.2.0
 github.com/satori/go.uuid
