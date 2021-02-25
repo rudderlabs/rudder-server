@@ -960,10 +960,10 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	}
 	errorByState := e[state]
 	// increment attempts for errored stage
-	if attempt, ok := errorByState["attempt"]; ok {
-		errorByState["attempt"] = int(attempt.(float64)) + 1
+	if attempt, ok := errorByState["Attempt"]; ok {
+		errorByState["Attempt"] = int(attempt.(float64)) + 1
 	} else {
-		errorByState["attempt"] = 1
+		errorByState["Attempt"] = 1
 	}
 	// append errors for errored stage
 	if errList, ok := errorByState["errors"]; ok {
@@ -972,7 +972,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 		errorByState["errors"] = []string{statusError.Error()}
 	}
 	// abort after configured retry attempts
-	if errorByState["attempt"].(int) > minRetryAttempts {
+	if errorByState["Attempt"].(int) > minRetryAttempts {
 		firstTiming := job.getUploadFirstAttemptTime()
 		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
 			job.counterStat("upload_aborted").Count(1)

@@ -36,7 +36,6 @@ func (w *warehousegrpc) GetWHUploads(context context.Context, request *proto.Get
 	if err != nil {
 		return protoRes, err
 	}
-	fmt.Println(protoRes)
 	return protoRes, nil
 }
 

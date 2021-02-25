@@ -451,7 +451,7 @@ func (wh *HandleT) getPendingUploads(warehouse warehouseutils.WarehouseT) ([]Upl
 		_, upload.FirstAttemptAt = warehouseutils.TimingFromJSONString(firstTiming)
 		var lastStatus string
 		lastStatus, upload.LastAttemptAt = warehouseutils.TimingFromJSONString(lastTiming)
-		upload.Attempts = gjson.Get(string(upload.Error), fmt.Sprintf(`%s.attempt`, lastStatus)).Int()
+		upload.Attempts = gjson.Get(string(upload.Error), fmt.Sprintf(`%s.Attempt`, lastStatus)).Int()
 
 		uploads = append(uploads, upload)
 	}
@@ -506,7 +506,7 @@ func (wh *HandleT) getUploadJobsForPendingUploads(warehouse warehouseutils.Wareh
 		if !wh.canStartPendingUpload(pendingUpload, warehouse) {
 			pkgLogger.Debugf("[WH]: Skipping pending upload for %s since current time less than next retry time", warehouse.Identifier)
 			if pendingUpload.Status != TableUploadExportingFailed {
-				//If we don't process the first pending upload, it doesn't make sense to attempt the following jobs. Hence we return here.
+				//If we don't process the first pending upload, it doesn't make sense to Attempt the following jobs. Hence we return here.
 				return nil, fmt.Errorf("[WH]: Not a retriable job. Moving on to next unprocessed jobs")
 			}
 			continue

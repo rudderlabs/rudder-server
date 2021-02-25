@@ -33,6 +33,7 @@ message GetWHUploadRequest{
 message Pagination {
   int64 page=1;
   int64 size=2;
+  int64 count=3;
 }
 message GetWHUploadsResponse{
   repeated GetWHUploadResponse uploads = 1;
@@ -48,12 +49,13 @@ message GetWHUploadResponse {
   string destination_type = 4;
   string namespace = 5;
   string error = 6;
-  string status = 7;
-  google.protobuf.Timestamp first_event_at = 8;
-  google.protobuf.Timestamp last_event_at = 9;
-  string next_retry_time = 10;
-  int64 duration = 11;
-  repeated WHTable tables = 12;
+  int64 attempt =  7;
+  string status = 8;
+  google.protobuf.Timestamp first_event_at = 9;
+  google.protobuf.Timestamp last_event_at = 10;
+  string next_retry_time = 11;
+  int64 duration = 12;
+  repeated WHTable tables = 13;
 }
 
 message WHTable {
