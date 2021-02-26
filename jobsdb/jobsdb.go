@@ -2403,7 +2403,7 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	for rows.Next() {
 		err = rows.Scan(&opID, &opType, &opDone, &opPayload)
 		jd.assertError(err)
-		jd.assert(opDone == false, "opDone is true")
+		jd.assert(!opDone, "opDone is true")
 		count++
 	}
 	jd.assert(count <= 1, fmt.Sprintf("count:%d > 1", count))
