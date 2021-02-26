@@ -76,6 +76,7 @@ var partitionKeyMap = map[string]string{
 func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 	var schema []*bigquery.FieldSchema
 	for columnName, columnType := range columns {
+		pkgLogger.Infof(`BQ: adding schema config for column: %s, type: %v, mappedType: %v`, columnName, columnType, dataTypesMap[columnType])
 		schema = append(schema, &bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]})
 	}
 	return schema
