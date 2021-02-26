@@ -692,6 +692,9 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.MessageIDs = userTransformedEvent.Metadata.MessageIDs
 		eventMetadata.MessageID = userTransformedEvent.Metadata.MessageID
 		eventMetadata.JobID = userTransformedEvent.Metadata.JobID
+		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
+		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
+		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
 		updatedEvent := transformer.TransformerEventT{
 			Message:     userTransformedEvent.Output,
 			Metadata:    eventMetadata,
