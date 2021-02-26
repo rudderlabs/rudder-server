@@ -42,6 +42,9 @@ func init() {
 // Migrate migrates database schema using migration SQL scripts.
 func (m *Migrator) Migrate(migrationsDir string) error {
 	destinationDriver, err := m.getDestinationDriver()
+	if err != nil {
+		return fmt.Errorf("Error while getting destination driver for migrator: %w", err)
+	}
 
 	path := filepath.Join("/", migrationsDir)
 	sourceDriver, err := httpfs.New(MigrationAssets, path)

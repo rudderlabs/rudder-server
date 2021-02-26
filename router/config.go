@@ -25,6 +25,7 @@ func getRouterConfigInt(key string, destType string, defaultValue int) int {
 	}
 }
 
+//skipcq: SCC-U1000
 func getRouterConfigInt64(key string, destType string, defaultValue int64) int64 {
 
 	destOverrideFound := config.IsSet("Router." + destType + "." + key)
@@ -35,6 +36,7 @@ func getRouterConfigInt64(key string, destType string, defaultValue int64) int64
 	}
 }
 
+//skipcq: SCC-U1000
 func getRouterConfigFloat64(key string, destType string, defaultValue float64) float64 {
 
 	destOverrideFound := config.IsSet("Router." + destType + "." + key)
@@ -45,6 +47,7 @@ func getRouterConfigFloat64(key string, destType string, defaultValue float64) f
 	}
 }
 
+//skipcq: SCC-U1000
 func getRouterConfigString(key string, destType string, defaultValue string) string {
 
 	destOverrideFound := config.IsSet("Router." + destType + "." + key)

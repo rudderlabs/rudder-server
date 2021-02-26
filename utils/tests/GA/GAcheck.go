@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"io/ioutil"
 	"log"
 	"math"
@@ -15,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
@@ -40,7 +41,7 @@ var (
 		//"rudderlabs":       "GA",
 		"AM": "google_analytics",
 	}
-	pkgLogger 	   logger.LoggerI
+	pkgLogger logger.LoggerI
 )
 
 func init() {
@@ -180,9 +181,11 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 				check(err)
 
 				err = json.Unmarshal(gaJSONData, &unmarshalleGAData)
-				if err!= nil {
+				if err != nil {
 					pkgLogger.Errorf("Error while unmarshalling GA JSON data : %v", err)
 				}
+				check(err)
+
 				//fmt.Println(unmarshalleGAData)
 				//fmt.Println("sendToDest ", sendToDest[itgr.Value().(string)], "netMapping", netMapping["type"].Value())
 				if sendToDest[itgr.Value().(string)] {

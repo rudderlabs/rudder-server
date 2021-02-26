@@ -164,7 +164,6 @@ type HandleT struct {
 	isStatNewDSPeriodInitialized  bool
 	statDropDSPeriod              stats.RudderStats
 	isStatDropDSPeriodInitialized bool
-	jobsdbQueryTimeStat           stats.RudderStats
 	migrationState                MigrationState
 	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.LoggerI
@@ -309,15 +308,6 @@ const (
 	//ReadWrite : Reader and Writer of this jobsdb instance
 	ReadWrite OwnerType = ""
 )
-
-func getValidStates() (validStates []string) {
-	for _, js := range jobStates {
-		if js.isValid {
-			validStates = append(validStates, js.State)
-		}
-	}
-	return
-}
 
 func getValidTerminalStates() (validTerminalStates []string) {
 	for _, js := range jobStates {
@@ -787,20 +777,6 @@ func (jd *HandleT) createTableNames(dsIdx string) (string, string) {
 	return jobTable, jobStatusTable
 }
 
-func (jd *HandleT) addNewDSonSetup(idx string) dataSetT {
-	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-
-	queryStat.Start()
-	defer queryStat.End()
-
-	ds := jd.createDS(true, idx)
-
-	jd.statNewDSPeriod.Start()
-	jd.isStatNewDSPeriodInitialized = true
-
-	return ds
-}
-
 func (jd *HandleT) addNewDS(newDSType string, insertBeforeDS dataSetT) dataSetT {
 	jd.logger.Infof("Creating new DS of type %s before ds %s for %s jobsdb", newDSType, insertBeforeDS.Index, jd.tablePrefix)
 	var newDSIdx string
@@ -1161,20 +1137,6 @@ func (jd *HandleT) renameDS(ds dataSetT, allowMissing bool) {
 		sqlStatement = fmt.Sprintf(`ALTER TABLE %s RENAME TO %s`, ds.JobTable, renamedJobTable)
 	}
 	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
-}
-
-func (jd *HandleT) terminateQueries() {
-	connInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=disable",
-		host, port, user, password)
-	db, err := sql.Open("postgres", connInfo)
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
-
-	sqlStatement := fmt.Sprintf("SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid()", dbname)
-	_, err = db.Exec(sqlStatement)
 	jd.assertError(err)
 }
 

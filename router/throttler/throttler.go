@@ -25,7 +25,6 @@ type Limiter struct {
 type Settings struct {
 	limit                  int
 	timeWindowInS          int
-	userLevelThrottling    bool
 	userLevelLimit         int
 	userLevelTimeWindowInS int
 }

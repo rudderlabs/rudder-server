@@ -274,13 +274,13 @@ func UnZipSingleFile(outputfile string, filename string) {
 	defer r.Close()
 	inputfile := r.File[0]
 	// Make File
-	err = os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
+	os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
 	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
 	if err != nil {
 		panic(err)
 	}
-	rc, err := inputfile.Open()
-	_, err = io.Copy(outFile, rc)
+	rc, _ := inputfile.Open()
+	io.Copy(outFile, rc)
 	outFile.Close()
 	rc.Close()
 }

@@ -110,6 +110,7 @@ func (fc *FrequencyCounter) Observe(key string) {
 }
 
 // If we add counter support per key, change accordingly
+// skipcp: SCC-U1000
 func getCounterSupport(key string) float64 {
 	return counterSupport
 }

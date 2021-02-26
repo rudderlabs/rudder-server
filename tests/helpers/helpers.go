@@ -132,7 +132,7 @@ func SendGroupRequest(userNameForBasicAuth, jsonPayload string) int {
 
 // SendRequest sends jsonPayload to gateway server with userNameForBasicAuth in basic auth
 func SendRequest(endPoint, userNameForBasicAuth, jsonPayload string) int {
-	req, err := http.NewRequest("POST", serverIP+endPoint, bytes.NewBuffer([]byte(jsonPayload)))
+	req, _ := http.NewRequest("POST", serverIP+endPoint, bytes.NewBuffer([]byte(jsonPayload)))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetBasicAuth(userNameForBasicAuth, "")
 

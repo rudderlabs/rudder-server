@@ -95,7 +95,6 @@ var (
 
 var (
 	Log               *zap.SugaredLogger
-	log               = NewLogger()
 	levelConfig       map[string]int
 	loggerLevelsCache map[string]int
 	levelConfigLock   sync.RWMutex
