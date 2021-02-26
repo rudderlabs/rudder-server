@@ -7,8 +7,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/router/drain"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type RouterAdmin struct {
@@ -345,7 +345,7 @@ func (r *RouterRpcHandler) SetDrainJobsConfig(dHandle drain.DrainConfig, reply *
 
 	_, err = drain.SetDrainJobIDs(dHandle.MinDrainJobID, dHandle.MaxDrainJobID, dHandle.DrainDestinationID)
 	if err == nil {
-		*reply = fmt.Sprintf("Drain config updated")
+		*reply = "Drain config updated"
 	}
 	return err
 }
