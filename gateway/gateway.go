@@ -825,7 +825,7 @@ func (gateway *HandleT) collectMetrics() {
 	if diagnostics.EnableGatewayMetric {
 		for {
 			select {
-			case _ = <-gateway.diagnosisTicker.C:
+			case <-gateway.diagnosisTicker.C:
 				gateway.requestMetricLock.RLock()
 				if gateway.trackSuccessCount > 0 || gateway.trackFailureCount > 0 {
 					Diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
