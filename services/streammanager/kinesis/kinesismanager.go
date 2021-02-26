@@ -39,7 +39,13 @@ func NewProducer(destinationConfig interface{}) (kinesis.Kinesis, error) {
 	config := Config{}
 
 	jsonConfig, err := json.Marshal(destinationConfig)
+	if err != nil {
+		return kinesis.Kinesis{}, fmt.Errorf("[KinesisManager] Error while marshalling destination config %+v. Error: %w", destinationConfig, err)
+	}
 	err = json.Unmarshal(jsonConfig, &config)
+	if err != nil {
+		return kinesis.Kinesis{}, fmt.Errorf("[KinesisManager] Error while unmarshalling destination config. Error: %w", err)
+	}
 
 	var s *session.Session
 	if config.AccessKeyID == "" || config.AccessKey == "" {
@@ -68,12 +74,23 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	config := Config{}
 
 	jsonConfig, err := json.Marshal(destConfig)
+	if err != nil {
+		outErr := fmt.Errorf("[KinesisManager] Error while Marshalling destination config %+v Error: %w", destConfig, err)
+		return GetStatusCodeFromError(err), outErr.Error(), outErr.Error()
+	}
 	err = json.Unmarshal(jsonConfig, &config)
+	if err != nil {
+		outErr := fmt.Errorf("[KinesisManager] Error while Unmarshalling destination config: %w", err)
+		return GetStatusCodeFromError(err), outErr.Error(), outErr.Error()
+	}
 
 	streamName := aws.String(config.Stream)
 
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
+	if err != nil {
+		return GetStatusCodeFromError(err), err.Error(), err.Error()
+	}
 	var userID string
 	if userID, ok = parsedJSON.Get("userId").Value().(string); !ok {
 		userID = fmt.Sprintf("%v", parsedJSON.Get("userId").Value())

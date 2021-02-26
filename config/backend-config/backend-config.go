@@ -41,7 +41,6 @@ var (
 	LastRegulationSync                    string
 	maxRegulationsPerRequest              int
 	configEnvReplacementEnabled           bool
-	configEnvHandler                      types.ConfigEnvI
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig

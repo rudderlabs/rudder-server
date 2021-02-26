@@ -91,6 +91,9 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 
 	var destConfig = Config{}
 	jsonConfig, err := json.Marshal(destinationConfig)
+	if err != nil {
+		return nil, fmt.Errorf("[Confluent Cloud] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
+	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
 		return nil, fmt.Errorf("Error while unmarshalling dest config :: %w", err)
@@ -121,7 +124,13 @@ func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProd
 
 	var destConfig = AzureEventHubConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
+	if err != nil {
+		return nil, fmt.Errorf("[Confluent Cloud] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
+	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
+	if err != nil {
+		return nil, fmt.Errorf("[Confluent Cloud] Error while UnMarshaling destination Config %+v, with Error : %w", destinationConfig, err)
+	}
 
 	hostName := destConfig.BootstrapServer
 	hosts := []string{hostName}
