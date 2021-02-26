@@ -994,6 +994,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			destID := destEvent.Metadata.DestinationID
 			rudderID := destEvent.Metadata.RudderID
 			receivedAt := destEvent.Metadata.ReceivedAt
+			messageId := destEvent.Metadata.MessageID
+			jobId := destEvent.Metadata.JobID
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
 			if rudderID == "" {
@@ -1003,7 +1005,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       rudderID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v", "transform_at": "%v"}`, sourceID, destID, receivedAt, transformAt)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v", "transform_at": "%v", "message_id" : "%v" , "job_id" : "%v"}`, sourceID, destID, receivedAt, transformAt, messageId, jobId)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
