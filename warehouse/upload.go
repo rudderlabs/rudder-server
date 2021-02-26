@@ -678,6 +678,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	if tableSchemaDiff.TableToBeCreated {
+		pkgLogger.Infof(`Creating table:%s with schema: %v`, tableSchemaDiff.ColumnMap)
 		err = job.whManager.CreateTable(tName, tableSchemaDiff.ColumnMap)
 		if err != nil {
 			pkgLogger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)

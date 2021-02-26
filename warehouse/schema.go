@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"reflect"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"reflect"
 )
 
 type SchemaHandleT struct {
@@ -295,6 +296,7 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 		diff.TableToBeCreated = true
 		diff.ColumnMap = uploadSchema[tableName]
 		diff.UpdatedSchema = uploadSchema[tableName]
+		pkgLogger.Infof(`getTableSchemaDiff: tableName: %s, columnMap: %v`, tableName, diff.ColumnMap)
 		return diff
 	}
 

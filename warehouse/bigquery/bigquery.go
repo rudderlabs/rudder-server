@@ -81,8 +81,9 @@ func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 	return schema
 }
 func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
+	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s with schema: %v", tableName, bq.Namespace, bq.ProjectID, columnMap)
 	sampleSchema := getTableSchema(columnMap)
+	pkgLogger.Infof(`BQ: Table schema to be created for table:%s %v`, tableName, sampleSchema)
 	metaData := &bigquery.TableMetadata{
 		Schema:           sampleSchema,
 		TimePartitioning: &bigquery.TimePartitioning{},
@@ -476,7 +477,7 @@ func (bq *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 func (bq *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s.%[2]s`, bq.Namespace, tableName)
 	it, err := bq.Db.Query(sqlStatement).Read(bq.BQContext)
-	if err !=nil {
+	if err != nil {
 		return 0, err
 	}
 	var values []bigquery.Value
