@@ -35,6 +35,7 @@ const (
 	UserID                 = "user_id"
 	ErrorCode              = "error_code"
 	ErrorResponse          = "error_response"
+	BatchFailure           = "batch_failure"
 )
 
 var (

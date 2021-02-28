@@ -157,7 +157,6 @@ kafkaWriteTimeoutInSec = 2
 kafkaDialTimeoutInSec = 10
 minRetryBackoffInS = 10
 maxRetryBackoffInS = 300
-samplingSize = 50
 # Below config variables are supported per destination type too
 noOfWorkers = 64
 allowAbortedUserJobsCountForProcessing=1
@@ -280,7 +279,7 @@ enableStackTrace=false
 [Diagnostics]
 enableDiagnostics = true
 gatewayTimePeriodInS = 60
-routerTimePeriodInS = 60
+routerTimePeriodInS = 2
 batchRouterTimePeriodInS = 600
 enableServerStartMetric = true
 enableConfigIdentifyMetric = true

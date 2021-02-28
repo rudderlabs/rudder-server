@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -52,8 +53,10 @@ type HandleT struct {
 	toClearFailJobIDMutex                  sync.Mutex
 	toClearFailJobIDMap                    map[int][]string
 	requestsMetricLock                     sync.RWMutex
+	failureMetricLock                      sync.RWMutex
 	diagnosisTicker                        *time.Ticker
 	requestsMetric                         []requestMetric
+	failuresMetric                         map[string][]failureMetric
 	customDestinationManager               customdestinationmanager.DestinationManager
 	generatorThrottler                     *throttler.HandleT
 	throttler                              *throttler.HandleT
@@ -124,7 +127,6 @@ var (
 	pkgLogger                                                     logger.LoggerI
 	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                time.Duration
-	samplingSize                                                  int
 )
 
 type requestMetric struct {
@@ -132,6 +134,14 @@ type requestMetric struct {
 	RequestAborted       int
 	RequestSuccess       int
 	RequestCompletedTime time.Duration
+}
+
+type failureMetric struct {
+	RouterDestination string          `json:"router_destination"`
+	UserId            string          `json:"user_id"`
+	RouterAttemptNum  int             `json:"router_attempt_num"`
+	ErrorCode         string          `json:"error_code"`
+	ErrorResponse     json.RawMessage `json:"error_response"`
 }
 
 func isSuccessStatus(status int) bool {
@@ -149,7 +159,6 @@ func isJobTerminated(status int) bool {
 func loadConfig() {
 	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
 	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
-	samplingSize = config.GetInt("Router.samplingSize", 50)
 	readSleep = config.GetDuration("Router.readSleepInMS", time.Duration(1000)) * time.Millisecond
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	noOfJobsToBatchInAWorker = config.GetInt("Router.noOfJobsToBatchInAWorker", 20)
@@ -951,11 +960,11 @@ func (rt *HandleT) statusInsertLoop() {
 		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
 			statusStat.Start()
 			var statusList []*jobsdb.JobStatusT
-			for index, resp := range responseList {
+			for _, resp := range responseList {
 				statusList = append(statusList, resp.status)
 
 				//tracking router errors
-				if diagnostics.EnableDestinationFailuresMetric && index%samplingSize == 0 {
+				if diagnostics.EnableDestinationFailuresMetric {
 					if resp.status.JobState == jobsdb.Failed.State || resp.status.JobState == jobsdb.Aborted.State {
 						var event string
 						if resp.status.JobState == jobsdb.Failed.State {
@@ -963,13 +972,22 @@ func (rt *HandleT) statusInsertLoop() {
 						} else {
 							event = diagnostics.RouterAborted
 						}
-						Diagnostics.Track(event, map[string]interface{}{
-							diagnostics.RouterDestination: rt.destName,
-							diagnostics.UserID:            resp.userID,
-							diagnostics.RouterAttemptNum:  resp.status.AttemptNum,
-							diagnostics.ErrorCode:         resp.status.ErrorCode,
-							diagnostics.ErrorResponse:     resp.status.ErrorResponse,
+						// Diagnostics.Track(event, map[string]interface{}{
+						// 	diagnostics.RouterDestination: rt.destName,
+						// 	diagnostics.UserID:            resp.userID,
+						// 	diagnostics.RouterAttemptNum:  resp.status.AttemptNum,
+						// 	diagnostics.ErrorCode:         resp.status.ErrorCode,
+						// 	diagnostics.ErrorResponse:     resp.status.ErrorResponse,
+						// })
+						rt.failureMetricLock.Lock()
+						rt.failuresMetric[event] = append(rt.failuresMetric[event], failureMetric{
+							RouterDestination: rt.destName,
+							UserId:            resp.userID,
+							RouterAttemptNum:  resp.status.AttemptNum,
+							ErrorCode:         resp.status.ErrorCode,
+							ErrorResponse:     resp.status.ErrorResponse,
 						})
+						rt.failureMetricLock.Unlock()
 					}
 				}
 			}
@@ -1047,6 +1065,20 @@ func (rt *HandleT) collectMetrics() {
 
 			rt.requestsMetric = nil
 			rt.requestsMetricLock.RUnlock()
+
+			rt.failureMetricLock.RLock()
+			for key, values := range rt.failuresMetric {
+				stringValue := ""
+				for index, value := range values {
+					marshalledValue, err := json.Marshal(value)
+					if err != nil {
+						stringValue, _ = sjson.SetRaw(stringValue, fmt.Sprintf("batch_failure.%v", index), string(marshalledValue))
+					}
+				}
+				Diagnostics.Track(key, map[string]interface{}{diagnostics.BatchFailure: stringValue})
+			}
+			rt.failuresMetric = nil
+			rt.failureMetricLock.RUnlock()
 		}
 	}
 }
