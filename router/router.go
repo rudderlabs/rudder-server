@@ -972,13 +972,7 @@ func (rt *HandleT) statusInsertLoop() {
 						} else {
 							event = diagnostics.RouterAborted
 						}
-						// Diagnostics.Track(event, map[string]interface{}{
-						// 	diagnostics.RouterDestination: rt.destName,
-						// 	diagnostics.UserID:            resp.userID,
-						// 	diagnostics.RouterAttemptNum:  resp.status.AttemptNum,
-						// 	diagnostics.ErrorCode:         resp.status.ErrorCode,
-						// 	diagnostics.ErrorResponse:     resp.status.ErrorResponse,
-						// })
+
 						rt.failureMetricLock.Lock()
 						rt.failuresMetric[event] = append(rt.failuresMetric[event], failureMetric{
 							RouterDestination: rt.destName,

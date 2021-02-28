@@ -279,7 +279,7 @@ enableStackTrace=false
 [Diagnostics]
 enableDiagnostics = true
 gatewayTimePeriodInS = 60
-routerTimePeriodInS = 2
+routerTimePeriodInS = 60
 batchRouterTimePeriodInS = 600
 enableServerStartMetric = true
 enableConfigIdentifyMetric = true
