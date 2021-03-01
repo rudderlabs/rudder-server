@@ -10,7 +10,7 @@ import (
 
 func (manager *MinioManager) ObjectUrl(objectName string) string {
 	var protocol = "http"
-	if manager.Config.UseSSL == true {
+	if manager.Config.UseSSL {
 		protocol = "https"
 	}
 	return protocol + "://" + manager.Config.EndPoint + "/" + manager.Config.Bucket + "/" + objectName
