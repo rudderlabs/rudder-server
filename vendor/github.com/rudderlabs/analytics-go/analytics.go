@@ -313,8 +313,10 @@ func (c *client) getNodePayload(msgs []message) map[int][]message {
 	nodePayload := make(map[int][]message)
 	totalNodes := c.totalNodes
 	for _, msg := range msgs {
+		userId := gjson.GetBytes(msg.json, "userId").String()
 		anonymousId := gjson.GetBytes(msg.json, "anonymousId").String()
-		hashInt := crc32.ChecksumIEEE([]byte(anonymousId))
+		rudderId := userId + ":" + anonymousId
+		hashInt := crc32.ChecksumIEEE([]byte(rudderId))
 		nodePayload[int(hashInt)%totalNodes] = append(nodePayload[int(hashInt)%totalNodes], msg)
 	}
 	return nodePayload
@@ -449,7 +451,7 @@ func (c *client) upload(b []byte, targetNode string) error {
 	req.Header.Add("User-Agent", "analytics-go (version: "+Version+")")
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Content-Length", string(len(b)))
-	if !c.noProxySupport {
+	if !c.NoProxySupport {
 		req.Header.Add("RS-targetNode", targetNode)
 		req.Header.Add("RS-nodeCount", strconv.Itoa(c.totalNodes))
 		req.Header.Add("RS-userAgent", "serverSDK")

@@ -453,7 +453,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 		delete(inRecoveryMap, warehouse.Destination.ID)
 	}
 
-	if !wh.canStartUpload(warehouse) {
+	if !wh.canCreateUpload(warehouse) {
 		pkgLogger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded", warehouse.Identifier)
 		return nil
 	}

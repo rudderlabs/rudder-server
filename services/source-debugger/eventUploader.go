@@ -178,15 +178,6 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 	}
 }
 
-func getKeys(dataMap map[string]interface{}) []string {
-	keys := make([]string, 0, len(dataMap))
-	for k := range dataMap {
-		keys = append(keys, k)
-	}
-
-	return keys
-}
-
 func handleEvents() {
 	for {
 		select {

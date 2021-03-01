@@ -424,6 +424,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 
 			stmt, err := txn.Prepare(pq.CopyIn(EVENT_MODELS_TABLE, "uuid", "write_key", "event_type", "event_model_identifier", "schema", "metadata", "private_data", "last_seen", "total_count"))
 			assertTxnError(err, txn)
+			//skipcq: SCC-SA9001
 			defer stmt.Close()
 			for eventModelID, eventModel := range updatedEventModels {
 				metadataJSON := getMetadataJSON(eventModel.reservoirSample, eventModel.UUID)
@@ -452,6 +453,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 
 			stmt, err := txn.Prepare(pq.CopyIn(SCHEMA_VERSIONS_TABLE, "uuid", "event_model_id", "schema_hash", "schema", "metadata", "private_data", "first_seen", "last_seen", "total_count"))
 			assertTxnError(err, txn)
+			//skipcq: SCC-SA9001
 			defer stmt.Close()
 			for _, sv := range schemaVersionsInCache {
 				metadataJSON := getMetadataJSON(sv.reservoirSample, sv.SchemaHash)
