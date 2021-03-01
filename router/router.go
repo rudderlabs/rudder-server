@@ -1001,6 +1001,12 @@ func (rt *HandleT) statusInsertLoop() {
 					return statusList[i].JobID < statusList[j].JobID
 				})
 				//Update the status
+				if rt.abortedJobs != nil {
+					rt.procErrorMutex.RLock()
+					rt.errorDB.Store(rt.abortedJobs)
+					rt.abortedJobs = nil
+					rt.procErrorMutex.RUnlock()
+				}
 				rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
 			}
 
@@ -1032,18 +1038,6 @@ func (rt *HandleT) statusInsertLoop() {
 			lastUpdate = time.Now()
 			countStat.Count(len(responseList))
 			statusStat.End()
-		}
-	}
-
-}
-
-func (rt *HandleT) storeInProcError() {
-	for range rt.diagnosisTicker.C {
-		if rt.abortedJobs != nil {
-			rt.procErrorMutex.RLock()
-			rt.errorDB.Store(rt.abortedJobs)
-			rt.abortedJobs = nil
-			rt.procErrorMutex.RUnlock()
 		}
 	}
 
