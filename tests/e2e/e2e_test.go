@@ -142,7 +142,7 @@ var _ = Describe("E2E", func() {
 
 				i := 0
 				// copy c's keys into k
-				for s, _ := range c {
+				for s := range c {
 					keys[i] = s
 					i++
 				}
@@ -216,7 +216,7 @@ var _ = Describe("E2E", func() {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + numOfTestEvents))
 			jobs := helpers.GetLatestJobs(dbHandle, routerDBPrefix, numOfTestEvents)
-			for index, _ := range jobs {
+			for index := range jobs {
 				if index == 0 {
 					continue
 				}
