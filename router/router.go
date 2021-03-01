@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -39,7 +40,7 @@ type HandleT struct {
 	requestQ                               chan *jobsdb.JobT
 	responseQ                              chan jobResponseT
 	jobsDB                                 *jobsdb.HandleT
-	errorDB                                *jobsdb.HandleT
+	errorDB                                jobsdb.JobsDB
 	netHandle                              *NetHandleT
 	destName                               string
 	workers                                []*workerT
@@ -288,7 +289,7 @@ func (worker *workerT) workerProcess() {
 					worker.processDestinationJobs()
 				}
 			} else {
-				destinationJob := types.DestinationJobT{Message: job.EventPayload, JobMetadataArray: []types.JobMetadataT{jobMetadata}, Destination: destination}
+				destinationJob := types.DestinationJobT{Message: job.EventPayload, JobMetadataArray: []types.JobMetadataT{jobMetadata}, Destination: destination, JobT: job}
 				worker.destinationJobs = append(worker.destinationJobs, destinationJob)
 				worker.processDestinationJobs()
 			}
@@ -616,6 +617,8 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 				status.JobState = jobsdb.Aborted.State
 				addToFailedMap = false
 				worker.rt.procErrorMutex.Lock()
+				updatedParams, _ := sjson.Set(string(job.Parameters), "stage", "router")
+				job.Parameters = json.RawMessage(updatedParams)
 				worker.rt.abortedJobs = append(worker.rt.abortedJobs, job)
 				worker.rt.procErrorMutex.Unlock()
 				worker.rt.eventsAbortedStat.Increment()
@@ -634,6 +637,8 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		} else {
 			status.JobState = jobsdb.Aborted.State
 			worker.rt.procErrorMutex.Lock()
+			updatedParams, _ := sjson.Set(string(job.Parameters), "stage", "router")
+			job.Parameters = json.RawMessage(updatedParams)
 			worker.rt.abortedJobs = append(worker.rt.abortedJobs, job)
 			worker.rt.procErrorMutex.Unlock()
 			addToFailedMap = false
@@ -1034,10 +1039,12 @@ func (rt *HandleT) statusInsertLoop() {
 
 func (rt *HandleT) storeInProcError() {
 	for range rt.diagnosisTicker.C {
-		rt.procErrorMutex.RLock()
-		rt.errorDB.Store(rt.abortedJobs)
-		rt.abortedJobs = nil
-		rt.procErrorMutex.RUnlock()
+		if rt.abortedJobs != nil {
+			rt.procErrorMutex.RLock()
+			rt.errorDB.Store(rt.abortedJobs)
+			rt.abortedJobs = nil
+			rt.procErrorMutex.RUnlock()
+		}
 	}
 
 }
@@ -1239,7 +1246,7 @@ func init() {
 }
 
 //Setup initializes this module
-func (rt *HandleT) Setup(jobsDB, errorDB *jobsdb.HandleT, destinationDefinition backendconfig.DestinationDefinitionT) {
+func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT) {
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
