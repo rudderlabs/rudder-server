@@ -135,7 +135,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 			statusCode = 404
 		}
 		for _, routerJob := range transformMessage.Data {
-			resp := types.DestinationJobT{Message: routerJob.Message, JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata}, Destination: routerJob.Destination, Batched: false, StatusCode: statusCode, Error: string(respData)}
+			resp := types.DestinationJobT{Message: routerJob.Message, JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata}, Destination: routerJob.Destination, Batched: false, StatusCode: statusCode, Error: string(respData), JobT: routerJob.JobT}
 			destinationJobs = append(destinationJobs, resp)
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 //RouterJobT holds the router job and its related metadata
@@ -11,6 +12,7 @@ type RouterJobT struct {
 	Message     json.RawMessage            `json:"message"`
 	JobMetadata JobMetadataT               `json:"metadata"`
 	Destination backendconfig.DestinationT `json:"destination"`
+	JobT        *jobsdb.JobT               `json:"jobsT"`
 }
 
 //DestinationJobT holds the job to be sent to destination
@@ -22,6 +24,7 @@ type DestinationJobT struct {
 	Batched          bool                       `json:"batched"`
 	StatusCode       int                        `json:"statusCode"`
 	Error            string                     `json:"error"`
+	JobT             *jobsdb.JobT               `json:"jobsT"`
 }
 
 //JobMetadataT holds the job metadata
