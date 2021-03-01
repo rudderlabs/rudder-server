@@ -1323,9 +1323,6 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rruntime.Go(func() {
 		rt.backendConfigSubscriber()
 	})
-	rruntime.Go(func() {
-		rt.storeInProcError()
-	})
 	adminInstance.registerRouter(destName, rt)
 }
 
