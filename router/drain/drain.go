@@ -2,9 +2,10 @@ package drain
 
 import (
 	"fmt"
+	"sync"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"sync"
 )
 
 type DrainI interface {
@@ -78,12 +79,12 @@ func FlushDrainJobConfig(destID string) string {
 	defer drainHandler.drainUpdateLock.Unlock()
 
 	if destID == "" {
-		reply = fmt.Sprintf("Pass all/<dest-id>")
+		reply = "Pass all/<dest-id>"
 		return reply
 	}
 	if destID == "all" {
 		drainHandler.DrainConfigs = nil
-		reply = fmt.Sprintf("Flushed all DrainConfig")
+		reply = "Flushed all DrainConfig"
 		pkgLogger.Info(reply)
 		return reply
 	}
