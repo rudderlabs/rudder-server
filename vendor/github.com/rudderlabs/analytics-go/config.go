@@ -81,7 +81,7 @@ type Config struct {
 
 	//This variable will disable checking for the cluster-info end point and
 	//split the payload at node level for multi node setup
-	noProxySupport bool
+	NoProxySupport bool
 }
 
 // This constant sets the default endpoint to which client instances send

@@ -70,7 +70,6 @@ var (
 	sourceIDToNameMap                                           map[string]string
 	configSubscriberLock                                        sync.RWMutex
 	maxReqSize                                                  int
-	enableDedup                                                 bool
 	enableRateLimit                                             bool
 	enableSuppressUserFeature                                   bool
 	enableEventSchemasFeature                                   bool
@@ -116,7 +115,6 @@ type userWebRequestWorkerT struct {
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
 	application                                                app.Interface
-	webRequestQ                                                chan *webRequestT
 	userWorkerBatchRequestQ                                    chan *userWorkerBatchRequestT
 	batchUserWorkerBatchRequestQ                               chan *batchUserWorkerBatchRequestT
 	jobsDB                                                     jobsdb.JobsDB
@@ -827,7 +825,7 @@ func (gateway *HandleT) collectMetrics() {
 	if diagnostics.EnableGatewayMetric {
 		for {
 			select {
-			case _ = <-gateway.diagnosisTicker.C:
+			case <-gateway.diagnosisTicker.C:
 				gateway.requestMetricLock.RLock()
 				if gateway.trackSuccessCount > 0 || gateway.trackFailureCount > 0 {
 					Diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
@@ -1002,7 +1000,7 @@ func (gateway *HandleT) StartWebHandler() {
 //Note : responses via http.Error aren't affected. They default to text/plain
 func headerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/schemas") || strings.HasPrefix(r.URL.Path, "/health"){
+		if strings.HasPrefix(r.URL.Path, "/schemas") || strings.HasPrefix(r.URL.Path, "/health") {
 			w.Header().Add("Content-Type", "application/json; charset=utf-8")
 		}
 		next.ServeHTTP(w, r)

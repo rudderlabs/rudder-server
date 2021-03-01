@@ -62,7 +62,7 @@ func loadConfig() {
 }
 
 // newClient delegates the call to the appropriate manager
-func (customManager *CustomManagerT) newClient(destID string) (error) {
+func (customManager *CustomManagerT) newClient(destID string) error {
 
 	destConfig := customManager.latestConfig[destID].Config
 	var customDestination *CustomDestination
@@ -146,7 +146,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 
 func (customManager *CustomManagerT) close(destination backendconfig.DestinationT) {
 	destID := destination.ID
-	customDestination, _ := customManager.destinationsMap[destID]
+	customDestination := customManager.destinationsMap[destID]
 	switch customManager.managerType {
 	case STREAM:
 		streammanager.CloseProducer(customDestination.Client, customManager.destType)

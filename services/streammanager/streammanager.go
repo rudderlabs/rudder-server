@@ -78,7 +78,7 @@ func Produce(jsonData json.RawMessage, destType string, producer interface{}, co
 	case "GOOGLEPUBSUB":
 		return googlepubsub.Produce(jsonData, producer, config)
 	default:
-		return 404, "No provider configured for StreamManager", ""
+		return 404, "No provider configured for StreamManager", "No provider configured for StreamManager"
 	}
 
 }
