@@ -161,10 +161,10 @@ func (wh *HandleT) canCreateUpload(warehouse warehouseutils.WarehouseT) bool {
 		return !uploadFrequencyExceeded(warehouse, syncFrequency)
 	}
 	prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
-	lastUploadExecTime := wh.getLastUploadCreatedAt(warehouse)
+	lastUploadCreatedAt := wh.getLastUploadCreatedAt(warehouse)
 	// start upload only if no upload has started in current window
 	// eg. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
-	return lastUploadExecTime.Before(prevScheduledTime)
+	return lastUploadCreatedAt.Before(prevScheduledTime)
 }
 
 func durationBeforeNextAttempt(attempt int64) time.Duration { //Add state(retryable/non-retryable) as an argument to decide backoff etc)
