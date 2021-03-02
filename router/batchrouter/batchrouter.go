@@ -383,7 +383,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		batchJobState string
 		errorResp     []byte
 	)
-
+	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
 	if err != nil {
 		brt.logger.Errorf("BRT: Error uploading to object storage: %v %v", err, batchJobs.BatchDestination.Source.ID)
@@ -434,22 +434,18 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 
 		timeElapsed := time.Since(firstAttemptedAt)
 		if jobState == jobsdb.Failed.State && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
-			brt.abortedEventLock.Lock()
 			updatedParams, _ := sjson.Set(string(job.Parameters), "stage", "batch_router")
 			job.Parameters = json.RawMessage(updatedParams)
-			brt.abortedEvents = append(brt.abortedEvents, job)
-			brt.abortedEventLock.Unlock()
+			abortedEvents = append(abortedEvents, job)
 			jobState = jobsdb.Aborted.State
 		} else {
 			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
 			if jobState == jobsdb.Failed.State && isWarehouse && postToWarehouseErr {
 				warehouseServiceFailedTimeLock.RLock()
 				if time.Since(warehouseServiceFailedTime) > warehouseServiceMaxRetryTimeinHr {
-					brt.abortedEventLock.Lock()
 					updatedParams, _ := sjson.Set(string(job.Parameters), "stage", "batch_router")
 					job.Parameters = json.RawMessage(updatedParams)
-					brt.abortedEvents = append(brt.abortedEvents, job)
-					brt.abortedEventLock.Unlock()
+					abortedEvents = append(abortedEvents, job)
 					jobState = jobsdb.Aborted.State
 				}
 				warehouseServiceFailedTimeLock.RUnlock()
@@ -486,10 +482,8 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		},
 	}
 	//Mark the status of the jobs
-	brt.abortedEventLock.RLock()
-	if brt.abortedEvents != nil {
-		brt.errorDB.Store(brt.abortedEvents)
-		brt.abortedEvents = nil
+	if abortedEvents != nil {
+		brt.errorDB.Store(abortedEvents)
 	}
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 
