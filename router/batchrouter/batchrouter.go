@@ -64,8 +64,6 @@ type HandleT struct {
 	netHandle               *http.Client
 	processQ                chan BatchDestinationT
 	jobsDB                  *jobsdb.HandleT
-	abortedEvents           []*jobsdb.JobT
-	abortedEventLock        sync.RWMutex
 	errorDB                 jobsdb.JobsDB
 	isEnabled               bool
 	batchRequestsMetricLock sync.RWMutex
