@@ -418,7 +418,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	failedUserIDsMap := make(map[string]struct{})
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
-		payload := []byte(`{}`)
+		payload := []byte{}
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
 			payload = destinationJob.Message
 			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, destinationJob) {
@@ -514,7 +514,14 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 			//Not saving payload to DB if transformAt is not "router"
 			if destinationJobMetadata.TransformAt != "router" {
-				payload = []byte(`Same as payload in router table. Use job_id for look up.`)
+				payload = []byte{}
+			}
+
+			var errorResponse []byte
+			if len(payload) > 0 {
+				errorResponse = worker.enhanceResponse([]byte{}, "payload", string(payload))
+			} else {
+				errorResponse = []byte(`{}`)
 			}
 
 			status := jobsdb.JobStatusT{
@@ -523,7 +530,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				RetryTime:     time.Now(),
 				AttemptNum:    attemptNum,
 				ErrorCode:     strconv.Itoa(respStatusCode),
-				ErrorResponse: worker.enhanceResponse([]byte{}, "payload", string(payload)),
+				ErrorResponse: errorResponse,
 			}
 
 			worker.postStatusOnResponseQ(respStatusCode, respBody, &destinationJobMetadata, &status)
