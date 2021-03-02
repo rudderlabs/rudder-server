@@ -122,10 +122,10 @@ func (throttler *HandleT) Inc(destID string, userID string) {
 	destKey := fmt.Sprintf(`%s_%s`, throttler.destinationName, destID)
 	userKey := fmt.Sprintf(`%s_%s_%s`, throttler.destinationName, destID, userID)
 
-	if throttler.destLimiter.enabled {
+	if throttler.destLimiter.enabled && destID != "" {
 		throttler.destLimiter.ratelimiter.Inc(destKey)
 	}
-	if throttler.userLimiter.enabled {
+	if throttler.userLimiter.enabled && userID != "" {
 		throttler.userLimiter.ratelimiter.Inc(userKey)
 	}
 }

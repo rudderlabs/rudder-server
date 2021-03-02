@@ -55,8 +55,8 @@ type HandleT struct {
 	diagnosisTicker                        *time.Ticker
 	requestsMetric                         []requestMetric
 	customDestinationManager               customdestinationmanager.DestinationManager
-	generatorThrottler                     *throttler.HandleT
-	throttler                              *throttler.HandleT
+	generatorThrottler                     throttler.Throttler
+	throttler                              throttler.Throttler
 	throttlerMutex                         sync.RWMutex
 	guaranteeUserEventOrder                bool
 	netClientTimeout                       time.Duration
@@ -423,13 +423,18 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			payload = destinationJob.Message
 			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, destinationJob) {
 				diagnosisStartTime := time.Now()
+				sourceID := destinationJob.JobMetadataArray[0].SourceID
+				destinationID := destinationJob.JobMetadataArray[0].DestinationID
+				userID := ""
+				if len(destinationJob.JobMetadataArray) == 1 {
+					userID = destinationJob.JobMetadataArray[0].UserID
+				}
+				worker.rt.generatorThrottler.Inc(destinationID, userID)
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
 				ch := worker.trackStuckDelivery()
 				if worker.rt.customDestinationManager != nil {
-					sourceID := destinationJob.JobMetadataArray[0].SourceID
-					destinationID := destinationJob.JobMetadataArray[0].DestinationID
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
 							panic(fmt.Errorf("Different sources are grouped together"))
@@ -730,7 +735,10 @@ func (worker *workerT) handleThrottle(job *jobsdb.JobT, parameters JobParameters
 		return false
 	}
 	worker.rt.throttlerMutex.Lock()
-	toThrottle := worker.rt.throttler.LimitReached(parameters.DestinationID, userID)
+	toThrottle := worker.rt.throttler.CheckLimitReached(parameters.DestinationID, userID)
+	if !toThrottle {
+		worker.rt.throttler.Inc(parameters.DestinationID, userID)
+	}
 	worker.rt.throttlerMutex.Unlock()
 	if toThrottle {
 		// block other jobs of same user if userEventOrdering is required.
@@ -911,7 +919,7 @@ func (rt *HandleT) canThrottle(parameters *JobParametersT, userID string) (canBe
 	}
 
 	//No need of locks here, because this is used only by a single goroutine (generatorLoop)
-	return rt.generatorThrottler.LimitReached(parameters.DestinationID, userID)
+	return rt.generatorThrottler.CheckLimitReached(parameters.DestinationID, userID)
 }
 
 // ResetSleep  this makes the workers reset their sleep
