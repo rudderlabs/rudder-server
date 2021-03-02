@@ -75,6 +75,7 @@ type TableUploadResT struct {
 	Status     string    `json:"status"`
 	Count      int32     `json:"count"`
 	LastExecAt time.Time `json:"last_exec_at"`
+	Duration   int32     `json:"duration"`
 }
 
 type UploadAPIT struct {
@@ -302,7 +303,7 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 	if err != nil {
 		return []*proto.WHTable{}, err
 	}
-	query := tableUploadReq.generateQuery(`id, wh_upload_id, table_name, total_events, status, error, last_exec_time`)
+	query := tableUploadReq.generateQuery(`id, wh_upload_id, table_name, total_events, status, error, last_exec_time, updated_at`)
 	tableUploadReq.API.log.Debug(query)
 	rows, err := tableUploadReq.API.dbHandle.Query(query)
 	if err != nil {
@@ -313,8 +314,8 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 	for rows.Next() {
 		var tableUpload proto.WHTable
 		var count sql.NullInt32
-		var lastExecTime sql.NullTime
-		err = rows.Scan(&tableUpload.Id, &tableUpload.UploadId, &tableUpload.Name, &count, &tableUpload.Status, &tableUpload.Error, &lastExecTime)
+		var lastExecTime, updatedAt sql.NullTime
+		err = rows.Scan(&tableUpload.Id, &tableUpload.UploadId, &tableUpload.Name, &count, &tableUpload.Status, &tableUpload.Error, &lastExecTime, &updatedAt)
 		if err != nil {
 			tableUploadReq.API.log.Errorf(err.Error())
 			return []*proto.WHTable{}, err
@@ -324,6 +325,7 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 		}
 		if lastExecTime.Valid {
 			tableUpload.LastExecAt = timestamppb.New(lastExecTime.Time)
+			tableUpload.Duration = int32(updatedAt.Time.Sub(lastExecTime.Time) / time.Second)
 		}
 		tableUploads = append(tableUploads, &tableUpload)
 	}
