@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"github.com/golang/protobuf/jsonpb"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 )
@@ -19,8 +20,8 @@ func (w *warehousegrpc) GetWHUploads(context context.Context, request *proto.Get
 		DestinationType:    request.DestinationType,
 		Status:             request.Status,
 		IncludeTablesInRes: request.IncludeTablesInRes,
-		Page:               request.Page,
-		Size:               request.Size,
+		Limit:              request.Limit,
+		Offset:             request.Offset,
 		API:                UploadAPI,
 	}
 	protoRes := &proto.GetWHUploadsResponse{}
@@ -80,5 +81,4 @@ func (w *warehousegrpc) GetWHTables(ctx context.Context, request *proto.GetWHTab
 		return protoRes, err
 	}
 	return protoRes, nil
-
 }
