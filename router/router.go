@@ -974,13 +974,8 @@ func (rt *HandleT) statusInsertLoop() {
 						}
 
 						rt.failureMetricLock.Lock()
-						rt.failuresMetric[event] = append(rt.failuresMetric[event], failureMetric{
-							RouterDestination: rt.destName,
-							UserId:            resp.userID,
-							RouterAttemptNum:  resp.status.AttemptNum,
-							ErrorCode:         resp.status.ErrorCode,
-							ErrorResponse:     resp.status.ErrorResponse,
-						})
+						failureMetricVal := failureMetric{RouterDestination: rt.destName, UserId: resp.userID, RouterAttemptNum: resp.status.AttemptNum, ErrorCode: resp.status.ErrorCode, ErrorResponse: resp.status.ErrorResponse}
+						rt.failuresMetric[event] = append(rt.failuresMetric[event], failureMetricVal)
 						rt.failureMetricLock.Unlock()
 					}
 				}
@@ -1065,13 +1060,14 @@ func (rt *HandleT) collectMetrics() {
 				stringValue := ""
 				for index, value := range values {
 					marshalledValue, err := json.Marshal(value)
-					if err != nil {
+					if err == nil {
 						stringValue, _ = sjson.SetRaw(stringValue, fmt.Sprintf("batch_failure.%v", index), string(marshalledValue))
 					}
 				}
 				Diagnostics.Track(key, map[string]interface{}{diagnostics.BatchFailure: stringValue})
 			}
-			rt.failuresMetric = nil
+			rt.failuresMetric = make(map[string][]failureMetric)
+
 			rt.failureMetricLock.RUnlock()
 		}
 	}
@@ -1261,6 +1257,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destinationDefinition backendco
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customDestinationManager.New(destName)
+	rt.failuresMetric = make(map[string][]failureMetric)
 
 	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
