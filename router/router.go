@@ -471,10 +471,10 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				if isSuccessStatus(respStatusCode) {
 					if saveDestinationResponse {
 						if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
-							respBody = "Save destination response is disabled through config"
+							respBody = ""
 						}
 					} else {
-						respBody = "Save destination response is disabled through config"
+						respBody = ""
 					}
 
 					eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
@@ -588,7 +588,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	if isSuccessStatus(respStatusCode) {
 		atomic.AddUint64(&worker.rt.successCount, 1)
 		status.JobState = jobsdb.Succeeded.State
-		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "reason", respBody)
+		if respBody != "" {
+			status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "reason", respBody)
+		}
 		worker.rt.logger.Debugf("[%v Router] :: sending success status to response", worker.rt.destName)
 		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID}
 
