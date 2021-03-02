@@ -2,47 +2,49 @@ syntax = "proto3";
 package proto;
 import "google/protobuf/timestamp.proto";
 
-
 option go_package = ".;proto";
 
-
 service Warehouse {
-  rpc GetWHUploads (GetWHUploadsRequest) returns (GetWHUploadsResponse);
-  rpc GetWHUpload (GetWHUploadRequest) returns (GetWHUploadResponse);
-  rpc GetWHTables (GetWHTablesRequest) returns (GetWHTablesResponse);
+  rpc GetWHUploads (WHUploadsRequest) returns (WHUploadsResponse);
+  rpc GetWHUpload (WHUploadRequest) returns (WHUploadResponse);
 }
 
-
-message GetWHTablesRequest {
-  int64 upload_id = 1;
-  string table_name = 2;
-}
-
-message GetWHUploadsRequest{
-  string source_id = 1;
-  string destination_id = 2;
-  string destination_type = 3;
-  string status = 4;
-  bool include_tables_in_res = 5;
-  int32 limit=6;
-  int32 offset=7;
-}
-message GetWHUploadRequest{
-  int64 upload_id=1;
-}
 message Pagination {
   int32 total=1;
   int32 limit=2;
   int32 offset=3;
 }
-message GetWHUploadsResponse{
-  repeated GetWHUploadResponse uploads = 1;
+
+message WHTable {
+  int64 id=1;
+  int64 upload_id=2;
+  string name=3;
+  string status=4;
+  string error=5;
+  google.protobuf.Timestamp last_exec_at=6;
+  int32 count=7;
+  google.protobuf.Timestamp first_scheduled_time=8;
+}
+
+message WHUploadsRequest{
+  string source_id = 1;
+  string destination_id = 2;
+  string destination_type = 3;
+  string status = 4;
+  int32 limit=5;
+  int32 offset=6;
+}
+
+message WHUploadsResponse{
+  repeated WHUploadResponse uploads = 1;
   Pagination pagination =2;
 }
-message GetWHTablesResponse {
-  repeated WHTable tables = 1;
+
+message WHUploadRequest{
+  int64 upload_id=1;
 }
-message GetWHUploadResponse {
+
+message WHUploadResponse {
   int64 id = 1;
   string source_id = 2;
   string destination_id = 3;
@@ -56,15 +58,4 @@ message GetWHUploadResponse {
   string next_retry_time = 11;
   int32 duration = 12;
   repeated WHTable tables = 13;
-}
-
-message WHTable {
-  int64 id=1;
-  int64 upload_id=2;
-  string name=3;
-  string status=4;
-  string error=5;
-  google.protobuf.Timestamp last_exec_at=6;
-  int32 count=7;
-  google.protobuf.Timestamp first_scheduled_time=8;
 }

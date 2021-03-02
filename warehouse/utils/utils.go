@@ -156,6 +156,40 @@ func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.
 	return // zero values
 }
 
+func GetFirstTiming(str sql.NullString) (status string, recordedTime time.Time) {
+	timingsMap := gjson.Parse(str.String).Array()
+	if len(timingsMap) > 0 {
+		for s, t := range timingsMap[0].Map() {
+			return s, t.Time()
+		}
+	}
+	return // zero values
+}
+
+func GetLastTiming(str sql.NullString) (status string, recordedTime time.Time) {
+	timingsMap := gjson.Parse(str.String).Array()
+	if len(timingsMap) > 0 {
+		for s, t := range timingsMap[len(timingsMap)-1].Map() {
+			return s, t.Time()
+		}
+	}
+	return // zero values
+}
+
+func GetLastFailedStatus(str sql.NullString) (status string) {
+	timingsMap := gjson.Parse(str.String).Array()
+	if len(timingsMap) > 0 {
+		for index := len(timingsMap) - 1; index >= 0; index-- {
+			for s := range timingsMap[index].Map() {
+				if strings.Contains(s, "failed") {
+					return s
+				}
+			}
+		}
+	}
+	return // zero values
+}
+
 func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
 	sqlStatement := fmt.Sprintf(`SELECT namespace FROM %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC`, WarehouseSchemasTable, source.ID, destination.ID)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace)

@@ -14,17 +14,17 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type UploadsReqT struct {
-	SourceID           string
-	DestinationID      string
-	DestinationType    string
-	Status             string
-	IncludeTablesInRes bool
-	Limit              int32
-	Offset             int32
-	API                UploadAPIT
+	SourceID        string
+	DestinationID   string
+	DestinationType string
+	Status          string
+	Limit           int32
+	Offset          int32
+	API             UploadAPIT
 }
 
 type UploadReqT struct {
@@ -158,17 +158,17 @@ func (uploadsReq *UploadsReqT) generateQuery(selectFields string) string {
 	return query
 }
 
-func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes UploadsResT, err error) {
-	uploads := make([]UploadResT, 0)
+func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsResponse, err error) {
+	uploads := make([]*proto.WHUploadResponse, 0)
 
-	uploadsRes = UploadsResT{
+	uploadsRes = &proto.WHUploadsResponse{
 		Uploads: uploads,
 	}
 	err = uploadsReq.validateReq()
 	if err != nil {
 		return
 	}
-	uploadsRes.Pagination = UploadPagination{
+	uploadsRes.Pagination = &proto.Pagination{
 		Limit:  uploadsReq.Limit,
 		Offset: uploadsReq.Offset,
 	}
@@ -183,17 +183,20 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes UploadsResT, err error
 		return
 	}
 	for rows.Next() {
-		var upload UploadResT
+		var upload proto.WHUploadResponse
 		var nextRetryTimeStr sql.NullString
 		var uploadError string
 		var timingsObject sql.NullString
 		var totalUploads int32
-		err = rows.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &upload.FirstEventAt, &upload.LastEventAt, &timingsObject, &nextRetryTimeStr, &totalUploads)
+		var firstEventAt, lastEventAt sql.NullTime
+		err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &timingsObject, &nextRetryTimeStr, &totalUploads)
 		if err != nil {
 			uploadsReq.API.log.Errorf(err.Error())
-			return UploadsResT{}, err
+			return &proto.WHUploadsResponse{}, err
 		}
 		uploadsRes.Pagination.Total = totalUploads
+		upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
+		upload.LastEventAt = timestamppb.New(lastEventAt.Time)
 		gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
 			upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 			return true
@@ -208,28 +211,10 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes UploadsResT, err error
 		}
 		upload.NextRetryTime = nextRetryTimeStr.String
 		upload.Duration = int32(lastTime.Sub(firstTime) / time.Second)
-		upload.Tables = make([]TableUploadResT, 0)
-		uploads = append(uploads, upload)
-	}
-
-	if uploadsReq.IncludeTablesInRes {
-		for index, upload := range uploads {
-			tableUploadReq := TableUploadReqT{
-				UploadID: upload.ID,
-				Name:     "",
-				API:      uploadsReq.API,
-			}
-			var tablesRes TablesResT
-			tablesRes, err = tableUploadReq.GetWhTableUploads()
-			if err != nil {
-				return
-			}
-			uploads[index].Tables = tablesRes.Tables
-
-		}
+		upload.Tables = make([]*proto.WHTable, 0)
+		uploads = append(uploads, &upload)
 	}
 	uploadsRes.Uploads = uploads
-
 	return
 }
 
@@ -255,38 +240,51 @@ func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
 	return fmt.Sprintf(`select %s from %s  where id = %d`, selectedFields, warehouseutils.WarehouseUploadsTable, uploadReq.UploadId)
 }
 
-func (uploadReq UploadReqT) GetWHUpload() (UploadResT, error) {
+func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	err := uploadReq.validateReq()
 	if err != nil {
-		return UploadResT{}, err
+		return &proto.WHUploadResponse{}, err
 	}
-	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, timings->0, timings->-1, metadata->>'nextRetryTime'`)
+	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, timings, metadata->>'nextRetryTime'`)
 	uploadReq.API.log.Debug(query)
-	var upload UploadResT
-	var firstTimingObject sql.NullString
-	var lastTimingObject sql.NullString
+	var upload proto.WHUploadResponse
 	var nextRetryTimeStr sql.NullString
+	var firstEventAt, lastEventAt sql.NullTime
+	var timingsObject sql.NullString
+	var uploadError string
 	row := uploadReq.API.dbHandle.QueryRow(query)
-	err = row.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.Namespace, &upload.Status, &upload.Error, &upload.FirstEventAt, &upload.LastEventAt, &firstTimingObject, &lastTimingObject, &nextRetryTimeStr)
+	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &timingsObject, &nextRetryTimeStr)
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
-		return UploadResT{}, err
+		return &proto.WHUploadResponse{}, err
 	}
-	_, firstTime := warehouseutils.TimingFromJSONString(firstTimingObject)
-	_, lastTime := warehouseutils.TimingFromJSONString(lastTimingObject)
+	upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
+	upload.LastEventAt = timestamppb.New(lastEventAt.Time)
+	gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
+		upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
+		return true
+	})
+	_, firstTime := warehouseutils.GetFirstTiming(timingsObject)
+	_, lastTime := warehouseutils.GetLastTiming(timingsObject)
+	lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
+	errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
+	errors := gjson.Get(uploadError, errorPath).Array()
+	if len(errors) > 0 {
+		upload.Error = errors[len(errors)-1].String()
+	}
 	upload.NextRetryTime = nextRetryTimeStr.String
 	upload.Duration = int32(lastTime.Sub(firstTime) / time.Second)
 	tableUploadReq := TableUploadReqT{
-		UploadID: upload.ID,
+		UploadID: upload.Id,
 		Name:     "",
 		API:      uploadReq.API,
 	}
-	tablesRes, err := tableUploadReq.GetWhTableUploads()
+	tables, err := tableUploadReq.GetWhTableUploads()
 	if err != nil {
-		return UploadResT{}, err
+		return &proto.WHUploadResponse{}, err
 	}
-	upload.Tables = tablesRes.Tables
-	return upload, nil
+	upload.Tables = tables
+	return &upload, nil
 }
 
 func (uploadReq UploadReqT) validateReq() error {
@@ -299,35 +297,35 @@ func (uploadReq UploadReqT) validateReq() error {
 	return nil
 }
 
-func (tableUploadReq TableUploadReqT) GetWhTableUploads() (TablesResT, error) {
+func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, error) {
 	err := tableUploadReq.validateReq()
 	if err != nil {
-		return TablesResT{}, err
+		return []*proto.WHTable{}, err
 	}
 	query := tableUploadReq.generateQuery(`id, wh_upload_id, table_name, total_events, status, error, last_exec_time`)
 	tableUploadReq.API.log.Debug(query)
 	rows, err := tableUploadReq.API.dbHandle.Query(query)
 	if err != nil {
 		tableUploadReq.API.log.Errorf(err.Error())
-		return TablesResT{}, err
+		return []*proto.WHTable{}, err
 	}
-	var tableUploads []TableUploadResT
+	var tableUploads []*proto.WHTable
 	for rows.Next() {
-		var tableUpload TableUploadResT
+		var tableUpload proto.WHTable
 		var count sql.NullInt32
 		var lastExecTime sql.NullTime
-		err = rows.Scan(&tableUpload.ID, &tableUpload.UploadID, &tableUpload.Name, &count, &tableUpload.Status, &tableUpload.Error, &lastExecTime)
+		err = rows.Scan(&tableUpload.Id, &tableUpload.UploadId, &tableUpload.Name, &count, &tableUpload.Status, &tableUpload.Error, &lastExecTime)
 		if err != nil {
 			tableUploadReq.API.log.Errorf(err.Error())
-			return TablesResT{}, err
+			return []*proto.WHTable{}, err
 		}
 		if count.Valid {
 			tableUpload.Count = count.Int32
 		}
 		if lastExecTime.Valid {
-			tableUpload.LastExecAt = lastExecTime.Time
+			tableUpload.LastExecAt = timestamppb.New(lastExecTime.Time)
 		}
-		tableUploads = append(tableUploads, tableUpload)
+		tableUploads = append(tableUploads, &tableUpload)
 	}
-	return TablesResT{Tables: tableUploads}, nil
+	return tableUploads, nil
 }
