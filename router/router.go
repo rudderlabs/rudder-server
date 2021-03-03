@@ -343,7 +343,7 @@ func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) (resp []b
 	}()
 
 	var existingResponse string
-	if len(rawMsg) != 0 {
+	if len(rawMsg) > 2 {
 		str := string(rawMsg)
 		existingResponse = str[:len(str)-1]
 	}
