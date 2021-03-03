@@ -246,19 +246,20 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	if err != nil {
 		return &proto.WHUploadResponse{}, err
 	}
-	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, timings, metadata->>'nextRetryTime'`)
+	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, created_at, first_event_at, last_event_at, timings, metadata->>'nextRetryTime'`)
 	uploadReq.API.log.Debug(query)
 	var upload proto.WHUploadResponse
 	var nextRetryTimeStr sql.NullString
-	var firstEventAt, lastEventAt sql.NullTime
+	var firstEventAt, lastEventAt, createdAt sql.NullTime
 	var timingsObject sql.NullString
 	var uploadError string
 	row := uploadReq.API.dbHandle.QueryRow(query)
-	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &timingsObject, &nextRetryTimeStr)
+	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &createdAt, &firstEventAt, &lastEventAt, &timingsObject, &nextRetryTimeStr)
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadResponse{}, err
 	}
+	upload.CreatedAt = timestamppb.New(createdAt.Time)
 	upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 	upload.LastEventAt = timestamppb.New(lastEventAt.Time)
 	gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {

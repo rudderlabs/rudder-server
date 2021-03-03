@@ -53,9 +53,10 @@ message WHUploadResponse {
   string error = 6;
   int32 attempt =  7;
   string status = 8;
-  google.protobuf.Timestamp first_event_at = 9;
-  google.protobuf.Timestamp last_event_at = 10;
-  string next_retry_time = 11;
-  int32 duration = 12;
-  repeated WHTable tables = 13;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp first_event_at = 10;
+  google.protobuf.Timestamp last_event_at = 11;
+  string next_retry_time = 12;
+  int32 duration = 13;
+  repeated WHTable tables = 14;
 }
