@@ -554,7 +554,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
 	}
 	if respBody != "" {
-		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "reason", respBody)
+		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "response", respBody)
 	}
 
 	if isSuccessStatus(respStatusCode) {
