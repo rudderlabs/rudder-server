@@ -68,7 +68,6 @@ type HandleT struct {
 	batchInputCountStat                    stats.RudderStats
 	batchOutputCountStat                   stats.RudderStats
 	batchInputOutputDiffCountStat          stats.RudderStats
-	retryAttemptsStat                      stats.RudderStats
 	eventsAbortedStat                      stats.RudderStats
 	noOfWorkers                            int
 	allowAbortedUserJobsCountForProcessing int
@@ -417,7 +416,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 	failedUserIDsMap := make(map[string]struct{})
 	for _, destinationJob := range worker.destinationJobs {
-		var attemptedToSendTheJob bool
 		payload := []byte(`{}`)
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
 			payload = destinationJob.Message
@@ -450,18 +448,9 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				}
 
 				prevRespStatusCode = respStatusCode
-				attemptedToSendTheJob = true
 
 				worker.deliveryTimeStat.End()
 				// END: request to destination endpoint
-
-				destinationTag := misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name)
-				routerResponseStat := stats.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
-					"destType":       worker.rt.destName,
-					"respStatusCode": strconv.Itoa(respStatusCode),
-					"destination":    destinationTag,
-				})
-				routerResponseStat.Count(len(destinationJob.JobMetadataArray))
 
 				if isSuccessStatus(respStatusCode) {
 					if saveDestinationResponse {
@@ -471,13 +460,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					} else {
 						respBody = "Save destination response is disabled through config"
 					}
-
-					eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
-						"module":      "router",
-						"destType":    worker.rt.destName,
-						"destination": destinationTag,
-					})
-					eventsDeliveredStat.Count(len(destinationJob.JobMetadataArray))
 				}
 
 				worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
@@ -500,12 +482,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			handledJobMetadatas[destinationJobMetadata.JobID] = &destinationJobMetadata
 
 			attemptNum := destinationJobMetadata.AttemptNum
-			if attemptedToSendTheJob {
-				attemptNum++
-				if destinationJobMetadata.AttemptNum > 0 {
-					worker.rt.retryAttemptsStat.Increment()
-				}
-			}
 
 			//Not saving payload to DB if transformAt is not "router"
 			if destinationJobMetadata.TransformAt != "router" {
@@ -524,6 +500,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			worker.postStatusOnResponseQ(respStatusCode, respBody, &destinationJobMetadata, &status)
 
 			worker.sendEventDeliveryStat(&destinationJobMetadata, &status, &destinationJob.Destination)
+
+			worker.sendRouterResponseCountStat(&destinationJobMetadata, &status, &destinationJob.Destination)
 
 			worker.sendDestinationResponseToConfigBackend(destinationJob.Message, &destinationJobMetadata, &status)
 		}
@@ -607,6 +585,11 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 		worker.rt.failedEventsChan <- *status
 
+		worker.rt.eventsAbortedStat = stats.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
+			"destType": worker.rt.destName,
+			"destId":   destinationJobMetadata.DestinationID,
+		})
+
 		if respStatusCode >= 500 {
 			timeElapsed := time.Since(firstAttemptedAtTime)
 			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
@@ -668,21 +651,40 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	}
 }
 
+func (worker *workerT) sendRouterResponseCountStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
+	destinationTag := misc.GetTagName(destination.ID, destination.Name)
+	routerResponseStat := stats.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
+		"destType":       worker.rt.destName,
+		"respStatusCode": status.ErrorCode,
+		"destination":    destinationTag,
+		"attempt_number": strconv.Itoa(status.AttemptNum),
+	})
+	routerResponseStat.Count(1)
+}
+
 func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
 	if destinationJobMetadata.ReceivedAt != "" {
 		if status.JobState == jobsdb.Succeeded.State {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
+			destinationTag := misc.GetTagName(destination.ID, destination.Name)
 			if err == nil {
-				destinationTag := misc.GetTagName(destination.ID, destination.Name)
 				eventsDeliveryTimeStat := stats.NewTaggedStat(
 					"event_delivery_time", stats.TimerType, map[string]string{
-						"module":      "router",
-						"destType":    worker.rt.destName,
-						"destination": destinationTag,
+						"module":         "router",
+						"destType":       worker.rt.destName,
+						"destination":    destinationTag,
+						"attempt_number": strconv.Itoa(status.AttemptNum),
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 			}
+			eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
+				"module":         "router",
+				"destType":       worker.rt.destName,
+				"destination":    destinationTag,
+				"attempt_number": strconv.Itoa(status.AttemptNum),
+			})
+			eventsDeliveredStat.Count(1)
 		}
 	}
 }
@@ -1263,13 +1265,6 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destinationDefinition backendco
 		"destType": rt.destName,
 	})
 	rt.batchInputOutputDiffCountStat = stats.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-
-	rt.retryAttemptsStat = stats.NewTaggedStat(`router_retry_attempts`, stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-	rt.eventsAbortedStat = stats.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
 		"destType": rt.destName,
 	})
 

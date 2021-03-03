@@ -149,7 +149,7 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[string]int, destType string, isWarehouse bool) {
+func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[string]map[string]int, destType string, isWarehouse bool) {
 	tags := map[string]string{
 		"module":        "batch_router",
 		"destType":      destType,
@@ -158,10 +158,12 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[strin
 		"sourceId":      misc.GetTagName(batchDestination.Source.ID, batchDestination.Source.Name),
 	}
 
-	for jobState, count := range jobStateCount {
-		tags["job_state"] = jobState
-		if count > 0 {
-			stats.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
+	for jobState, countMap := range jobStateCount {
+		for _, count := range countMap {
+			tags["job_state"] = jobState
+			if count > 0 {
+				stats.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
+			}
 		}
 	}
 }
@@ -409,7 +411,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		warehouseServiceFailedTimeLock.Unlock()
 	}
 
-	jobStateCount := make(map[string]int)
+	jobStateCount := make(map[string]map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 		var firstAttemptedAt time.Time
@@ -452,7 +454,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			ErrorResponse: errorResp,
 		}
 		statusList = append(statusList, &status)
-		jobStateCount[jobState] = jobStateCount[jobState] + 1
+		jobStateCount[jobState]["attempt_num"] = jobStateCount[jobState]["attempt_num"] + 1
 	}
 
 	//tracking batch router errors
