@@ -2,6 +2,8 @@ package warehouse
 
 import (
 	"context"
+	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 )
@@ -31,4 +33,8 @@ func (w *warehousegrpc) GetWHUpload(context context.Context, request *proto.WHUp
 	}
 	res, err := uploadReq.GetWHUpload()
 	return res, err
+}
+
+func (w *warehousegrpc) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error) {
+	return wrapperspb.Bool(UploadAPI.enabled), nil
 }
