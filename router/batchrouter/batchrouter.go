@@ -572,7 +572,7 @@ func (brt *HandleT) initWorkers() {
 					unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, parameterFilters)
 					brtQueryStat.End()
 
-					combinedList := append(waitList, append(unprocessedList, retryList...)...)
+					combinedList := append(retryList, append(waitList, unprocessedList...)...)
 					if len(combinedList) == 0 {
 						brt.logger.Debugf("BRT: DB Read Complete. No BRT Jobs to process for parameter Filters: %v", parameterFilters)
 						setDestInProgress(batchDest.Destination.ID, false)
