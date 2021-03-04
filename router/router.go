@@ -1058,13 +1058,18 @@ func (rt *HandleT) collectMetrics() {
 			rt.failureMetricLock.RLock()
 			for key, values := range rt.failuresMetric {
 				stringValue := ""
-				for index, value := range values {
-					marshalledValue, err := json.Marshal(value)
-					if err == nil {
-						stringValue, _ = sjson.SetRaw(stringValue, fmt.Sprintf("batch_failure.%v", index), string(marshalledValue))
-					}
+				errorMap := make(map[string]int)
+				for _, value := range values {
+					errorMap[string(value.ErrorResponse)] = errorMap[string(value.ErrorResponse)] + 1
 				}
-				Diagnostics.Track(key, map[string]interface{}{diagnostics.BatchFailure: stringValue})
+				for key, val := range errorMap {
+					stringValue, _ = sjson.SetRaw(stringValue, key, strconv.Itoa(val))
+				}
+				Diagnostics.Track(key, map[string]interface{}{
+					diagnostics.RouterDestination: rt.destName,
+					diagnostics.Count:             len(values),
+					diagnostics.ErrorCountMap:     stringValue,
+				})
 			}
 			rt.failuresMetric = make(map[string][]failureMetric)
 

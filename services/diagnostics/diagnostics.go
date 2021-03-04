@@ -36,6 +36,9 @@ const (
 	ErrorCode              = "error_code"
 	ErrorResponse          = "error_response"
 	BatchFailure           = "batch_failure"
+	DestinationID          = "destID"
+	Count                  = "count"
+	ErrorCountMap          = "stringified_error_count_map"
 )
 
 var (
