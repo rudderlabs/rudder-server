@@ -1055,6 +1055,8 @@ func (rt *HandleT) collectMetrics() {
 			rt.requestsMetric = nil
 			rt.requestsMetricLock.RUnlock()
 
+			//This lock will ensure we dont send out Track Request while filling up the
+			//failureMetric struct
 			rt.failureMetricLock.RLock()
 			for key, values := range rt.failuresMetric {
 				stringValue := ""
