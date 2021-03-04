@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -159,8 +160,9 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[strin
 	}
 
 	for jobState, countMap := range jobStateCount {
-		for _, count := range countMap {
+		for attempt, count := range countMap {
 			tags["job_state"] = jobState
+			tags["attempt"] = attempt
 			if count > 0 {
 				stats.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
 			}
@@ -444,9 +446,10 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 				warehouseServiceFailedTimeLock.RUnlock()
 			}
 		}
+		attemptNum := job.LastJobStatus.AttemptNum + 1
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
-			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+			AttemptNum:    attemptNum,
 			JobState:      jobState,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
@@ -454,7 +457,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			ErrorResponse: errorResp,
 		}
 		statusList = append(statusList, &status)
-		jobStateCount[jobState]["attempt_num"] = jobStateCount[jobState]["attempt_num"] + 1
+		jobStateCount[jobState][strconv.Itoa(attemptNum)] = jobStateCount[jobState][strconv.Itoa(attemptNum)] + 1
 	}
 
 	//tracking batch router errors
