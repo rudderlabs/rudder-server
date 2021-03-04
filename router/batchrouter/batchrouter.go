@@ -565,11 +565,11 @@ func (brt *HandleT) initWorkers() {
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
-					retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, parameterFilters)
+					retryList := brt.jobsDB.GetToRetry([]string{}, toQuery, parameterFilters)
 					toQuery -= len(retryList)
-					waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, parameterFilters) //Jobs send to waiting state
+					waitList := brt.jobsDB.GetWaiting([]string{}, toQuery, parameterFilters) //Jobs send to waiting state
 					toQuery -= len(waitList)
-					unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, parameterFilters)
+					unprocessedList := brt.jobsDB.GetUnprocessed([]string{}, toQuery, parameterFilters)
 					brtQueryStat.End()
 
 					combinedList := append(waitList, append(unprocessedList, retryList...)...)
