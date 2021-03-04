@@ -406,6 +406,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					userID = destinationJob.JobMetadataArray[0].UserID
 				}
 				worker.rt.generatorThrottler.Inc(destinationID, userID)
+				worker.rt.throttler.Inc(destinationID, userID)
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
@@ -713,9 +714,6 @@ func (worker *workerT) handleThrottle(job *jobsdb.JobT, parameters JobParameters
 	}
 	worker.rt.throttlerMutex.Lock()
 	toThrottle := worker.rt.throttler.CheckLimitReached(parameters.DestinationID, userID)
-	if !toThrottle {
-		worker.rt.throttler.Inc(parameters.DestinationID, userID)
-	}
 	worker.rt.throttlerMutex.Unlock()
 	if toThrottle {
 		// block other jobs of same user if userEventOrdering is required.
