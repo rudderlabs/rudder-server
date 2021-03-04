@@ -99,7 +99,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
 				InstanceID:     config.GetEnv("instance_id", "1"),
 			},
 			RetryInterval: 0,
-			UseTLS:        false,
+			UseTLS:        true,
 			Logger:        log,
 			RegisterService: func(srv *grpc.Server) {
 				proto.RegisterWarehouseServer(srv, &warehousegrpc{})
