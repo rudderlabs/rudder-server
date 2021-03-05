@@ -113,6 +113,9 @@ type userWebRequestWorkerT struct {
 	bufferFullStat, timeOutStat stats.RudderStats
 }
 
+type eventTypeStatsT map[string]int
+type sourceEventStatsT map[string]eventTypeStatsT
+
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
 	application                                                app.Interface
@@ -153,6 +156,20 @@ func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket str
 		}
 		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)
+	}
+}
+
+func (gateway *HandleT) updateSourceEventStats(sourceEventStats sourceEventStatsT, bucket string, sourceTagMap map[string]string) {
+	for eventType, statsPerEventType := range sourceEventStats {
+		for sourceTag, count := range statsPerEventType {
+			tags := map[string]string{
+				"source":    sourceTag,
+				"writeKey":  sourceTagMap[sourceTag],
+				"eventType": eventType,
+			}
+			sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
+			sourceStatsD.Count(count)
+		}
 	}
 }
 
@@ -292,19 +309,30 @@ func (gateway *HandleT) getSourceTagFromWriteKey(writeKey string) string {
 	return sourceTag
 }
 
+func incrementEventTypeStats(sourceEventStats sourceEventStatsT, sourceTag string, countByEventType map[string]int) {
+	for eventType, count := range countByEventType {
+		_, found := sourceEventStats[eventType]
+		if found {
+			misc.IncrementMapByKey(sourceEventStats[eventType], sourceTag, count)
+		} else {
+			sourceEventStats[eventType] = map[string]int{sourceTag: count}
+		}
+	}
+}
+
 func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
 	for breq := range userWebRequestWorker.batchRequestQ {
 		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
 		var jobList []*jobsdb.JobT
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
 		var jobWriteKeyMap = make(map[uuid.UUID]string)
-		var jobEventCountMap = make(map[uuid.UUID]int)
+		var jobEventCountMap = make(map[uuid.UUID]map[string]int)
 		var sourceStats = make(map[string]int)
-		var sourceEventStats = make(map[string]int)
+		var sourceEventStats = sourceEventStatsT{}
 		var sourceSuccessStats = make(map[string]int)
-		var sourceSuccessEventStats = make(map[string]int)
+		var sourceSuccessEventStats = sourceEventStatsT{}
 		var sourceFailStats = make(map[string]int)
-		var sourceFailEventStats = make(map[string]int)
+		var sourceFailEventStats = sourceEventStatsT{}
 		var workspaceDropRequestStats = make(map[string]int)
 		var sourceTagMap = make(map[string]string)
 		var preDbStoreCount int
@@ -344,13 +372,25 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				body, _ = sjson.SetBytes(body, "type", req.reqType)
 				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
 			}
-			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
-			misc.IncrementMapByKey(sourceEventStats, sourceTag, totalEventsInReq)
+
+			batchObject := gjson.GetBytes(body, "batch")
+			totalEventsInReq := make(map[string]int)
+			var index int
+			batchObject.ForEach(func(_, _ gjson.Result) bool {
+				eventType := gjson.GetBytes(body, fmt.Sprintf(`batch.%v.type`, index)).String()
+				misc.IncrementMapByKey(totalEventsInReq, eventType, 1)
+				index++
+				return true
+			})
+
+			incrementEventTypeStats(sourceEventStats, sourceTag, totalEventsInReq)
+
 			if len(body) > maxReqSize {
 				req.done <- response.GetStatus(response.RequestBodyTooLarge)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
+				incrementEventTypeStats(sourceFailEventStats, sourceTag, totalEventsInReq)
+
 				continue
 			}
 
@@ -361,12 +401,12 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				req.done <- response.GetStatus(response.InvalidWriteKey)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
+				incrementEventTypeStats(sourceFailEventStats, sourceTag, totalEventsInReq)
 				continue
 			}
 
 			// set anonymousId if not set in payload
-			var index int
+			index = 0
 			result := gjson.GetBytes(body, "batch")
 
 			var notIdentifiable bool
@@ -448,10 +488,10 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			err, found := errorMessagesMap[job.UUID]
 			if found {
 				misc.IncrementMapByKey(sourceFailStats, jobWriteKeyMap[job.UUID], 1)
-				misc.IncrementMapByKey(sourceFailEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
+				incrementEventTypeStats(sourceFailEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
 			} else {
 				misc.IncrementMapByKey(sourceSuccessStats, jobWriteKeyMap[job.UUID], 1)
-				misc.IncrementMapByKey(sourceSuccessEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
+				incrementEventTypeStats(sourceSuccessEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
 			}
 			jobIDReqMap[job.UUID].done <- err
 		}
@@ -471,9 +511,10 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			gateway.updateSourceStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests", sourceTagMap)
 		}
 		// update stats event wise
-		gateway.updateSourceStats(sourceEventStats, "gateway.write_key_events", sourceTagMap)
-		gateway.updateSourceStats(sourceSuccessEventStats, "gateway.write_key_successful_events", sourceTagMap)
-		gateway.updateSourceStats(sourceFailEventStats, "gateway.write_key_failed_events", sourceTagMap)
+
+		gateway.updateSourceEventStats(sourceEventStats, "gateway.write_key_events", sourceTagMap)
+		gateway.updateSourceEventStats(sourceSuccessEventStats, "gateway.write_key_successful_events", sourceTagMap)
+		gateway.updateSourceEventStats(sourceFailEventStats, "gateway.write_key_failed_events", sourceTagMap)
 	}
 }
 
@@ -1002,7 +1043,7 @@ func (gateway *HandleT) StartWebHandler() {
 //Note : responses via http.Error aren't affected. They default to text/plain
 func headerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/schemas") || strings.HasPrefix(r.URL.Path, "/health"){
+		if strings.HasPrefix(r.URL.Path, "/schemas") || strings.HasPrefix(r.URL.Path, "/health") {
 			w.Header().Add("Content-Type", "application/json; charset=utf-8")
 		}
 		next.ServeHTTP(w, r)
