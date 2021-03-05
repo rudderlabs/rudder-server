@@ -78,7 +78,7 @@ enableSuppressUserFeature = true
 allowPartialWriteWithErrors = true
 allowReqsWithoutUserIDAndAnonymousID = false
     [Gateway.Stats]
-    captureEventName=true
+    captureEventName=false
 
 [EventSchemas]
 enableEventSchemasFeature = false
