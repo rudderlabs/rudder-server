@@ -70,7 +70,6 @@ var (
 	sourceIDToNameMap                                           map[string]string
 	configSubscriberLock                                        sync.RWMutex
 	maxReqSize                                                  int
-	enableDedup                                                 bool
 	enableRateLimit                                             bool
 	enableSuppressUserFeature                                   bool
 	enableEventSchemasFeature                                   bool
@@ -119,7 +118,6 @@ type sourceEventStatsT map[string]eventTypeStatsT
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
 	application                                                app.Interface
-	webRequestQ                                                chan *webRequestT
 	userWorkerBatchRequestQ                                    chan *userWorkerBatchRequestT
 	batchUserWorkerBatchRequestQ                               chan *batchUserWorkerBatchRequestT
 	jobsDB                                                     jobsdb.JobsDB
