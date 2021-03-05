@@ -1420,7 +1420,6 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 		errCode == dbErrorMap["Invalid Escape Sequence"] || errCode == dbErrorMap["Invalid Escape Character"] {
 		return errors.New("Invalid JSON")
 	}
-	jd.assertError(err)
 	return
 }
 
