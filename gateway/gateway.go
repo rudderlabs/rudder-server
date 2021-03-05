@@ -75,6 +75,7 @@ var (
 	enableEventSchemasFeature                                   bool
 	diagnosisTickerTime                                         time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                        bool
+	statsCaptureEventName                                       bool
 	pkgLogger                                                   logger.LoggerI
 	Diagnostics                                                 diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
@@ -114,6 +115,7 @@ type userWebRequestWorkerT struct {
 
 type eventTypeStatsT map[string]int
 type sourceEventStatsT map[string]eventTypeStatsT
+type sourceEventStatsDetailedT map[string]sourceEventStatsT
 
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
@@ -167,6 +169,23 @@ func (gateway *HandleT) updateSourceEventStats(sourceEventStats sourceEventStats
 			}
 			sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
 			sourceStatsD.Count(count)
+		}
+	}
+}
+
+func (gateway *HandleT) updateSourceEventStatsDetailed(sourceEventStatsDetailed sourceEventStatsDetailedT, bucket string, sourceTagMap map[string]string) {
+	for eventName, statsPerEventName := range sourceEventStatsDetailed {
+		for eventType, statsPerEventType := range statsPerEventName {
+			for sourceTag, count := range statsPerEventType {
+				tags := map[string]string{
+					"source":    sourceTag,
+					"writeKey":  sourceTagMap[sourceTag],
+					"eventType": eventType,
+					"eventName": eventName,
+				}
+				sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
+				sourceStatsD.Count(count)
+			}
 		}
 	}
 }
@@ -318,6 +337,16 @@ func incrementEventTypeStats(sourceEventStats sourceEventStatsT, sourceTag strin
 	}
 }
 
+func incrementEventStatsDetailed(sourceEventStatsDetailed sourceEventStatsDetailedT, sourceTag string, countByEventTypeAndName map[string]map[string]int) {
+	for eventName, countByEventType := range countByEventTypeAndName {
+		_, found := sourceEventStatsDetailed[eventName]
+		if !found {
+			sourceEventStatsDetailed[eventName] = sourceEventStatsT{}
+		}
+		incrementEventTypeStats(sourceEventStatsDetailed[eventName], sourceTag, countByEventType)
+	}
+}
+
 func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
 	for breq := range userWebRequestWorker.batchRequestQ {
 		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
@@ -325,12 +354,16 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		var jobIDReqMap = make(map[uuid.UUID]*webRequestT)
 		var jobWriteKeyMap = make(map[uuid.UUID]string)
 		var jobEventCountMap = make(map[uuid.UUID]map[string]int)
+		var jobEventCountByNameMap = make(map[uuid.UUID]map[string]map[string]int)
 		var sourceStats = make(map[string]int)
 		var sourceEventStats = sourceEventStatsT{}
-		var sourceSuccessStats = make(map[string]int)
 		var sourceSuccessEventStats = sourceEventStatsT{}
-		var sourceFailStats = make(map[string]int)
 		var sourceFailEventStats = sourceEventStatsT{}
+		var sourceEventStatsDetailed = sourceEventStatsDetailedT{}
+		var sourceSuccessEventStatsDetailed = sourceEventStatsDetailedT{}
+		var sourceFailEventStatsDetailed = sourceEventStatsDetailedT{}
+		var sourceSuccessStats = make(map[string]int)
+		var sourceFailStats = make(map[string]int)
 		var workspaceDropRequestStats = make(map[string]int)
 		var sourceTagMap = make(map[string]string)
 		var preDbStoreCount int
@@ -373,21 +406,44 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 			batchObject := gjson.GetBytes(body, "batch")
 			totalEventsInReq := make(map[string]int)
+
+			totalEventsInReqByEventName := make(map[string]map[string]int)
 			var index int
 			batchObject.ForEach(func(_, _ gjson.Result) bool {
 				eventType := gjson.GetBytes(body, fmt.Sprintf(`batch.%v.type`, index)).String()
-				misc.IncrementMapByKey(totalEventsInReq, eventType, 1)
+				if statsCaptureEventName {
+					eventName := gjson.GetBytes(body, fmt.Sprintf(`batch.%v.event`, index)).String()
+					if eventName == "" {
+						eventName = eventType
+					}
+					_, found := totalEventsInReqByEventName[eventName]
+					if found {
+						misc.IncrementMapByKey(totalEventsInReqByEventName[eventName], eventType, 1)
+					} else {
+						totalEventsInReqByEventName[eventName] = map[string]int{eventType: 1}
+					}
+				} else {
+					misc.IncrementMapByKey(totalEventsInReq, eventType, 1)
+				}
 				index++
 				return true
 			})
 
-			incrementEventTypeStats(sourceEventStats, sourceTag, totalEventsInReq)
+			if statsCaptureEventName {
+				incrementEventStatsDetailed(sourceEventStatsDetailed, sourceTag, totalEventsInReqByEventName)
+			} else {
+				incrementEventTypeStats(sourceEventStats, sourceTag, totalEventsInReq)
+			}
 
 			if len(body) > maxReqSize {
 				req.done <- response.GetStatus(response.RequestBodyTooLarge)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-				incrementEventTypeStats(sourceFailEventStats, sourceTag, totalEventsInReq)
+				if statsCaptureEventName {
+					incrementEventStatsDetailed(sourceFailEventStatsDetailed, sourceTag, totalEventsInReqByEventName)
+				} else {
+					incrementEventTypeStats(sourceFailEventStats, sourceTag, totalEventsInReq)
+				}
 
 				continue
 			}
@@ -399,7 +455,11 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				req.done <- response.GetStatus(response.InvalidWriteKey)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-				incrementEventTypeStats(sourceFailEventStats, sourceTag, totalEventsInReq)
+				if statsCaptureEventName {
+					incrementEventStatsDetailed(sourceFailEventStatsDetailed, sourceTag, totalEventsInReqByEventName)
+				} else {
+					incrementEventTypeStats(sourceFailEventStats, sourceTag, totalEventsInReq)
+				}
 				continue
 			}
 
@@ -467,6 +527,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			jobIDReqMap[newJob.UUID] = req
 			jobWriteKeyMap[newJob.UUID] = sourceTag
 			jobEventCountMap[newJob.UUID] = totalEventsInReq
+			jobEventCountByNameMap[newJob.UUID] = totalEventsInReqByEventName
 		}
 
 		errorMessagesMap := make(map[uuid.UUID]string)
@@ -486,10 +547,18 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			err, found := errorMessagesMap[job.UUID]
 			if found {
 				misc.IncrementMapByKey(sourceFailStats, jobWriteKeyMap[job.UUID], 1)
-				incrementEventTypeStats(sourceFailEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
+				if statsCaptureEventName {
+					incrementEventStatsDetailed(sourceEventStatsDetailed, jobWriteKeyMap[job.UUID], jobEventCountByNameMap[job.UUID])
+				} else {
+					incrementEventTypeStats(sourceFailEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
+				}
 			} else {
 				misc.IncrementMapByKey(sourceSuccessStats, jobWriteKeyMap[job.UUID], 1)
-				incrementEventTypeStats(sourceSuccessEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
+				if statsCaptureEventName {
+					incrementEventStatsDetailed(sourceSuccessEventStatsDetailed, jobWriteKeyMap[job.UUID], jobEventCountByNameMap[job.UUID])
+				} else {
+					incrementEventTypeStats(sourceSuccessEventStats, jobWriteKeyMap[job.UUID], jobEventCountMap[job.UUID])
+				}
 			}
 			jobIDReqMap[job.UUID].done <- err
 		}
@@ -510,9 +579,15 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		}
 		// update stats event wise
 
-		gateway.updateSourceEventStats(sourceEventStats, "gateway.write_key_events", sourceTagMap)
-		gateway.updateSourceEventStats(sourceSuccessEventStats, "gateway.write_key_successful_events", sourceTagMap)
-		gateway.updateSourceEventStats(sourceFailEventStats, "gateway.write_key_failed_events", sourceTagMap)
+		if statsCaptureEventName {
+			gateway.updateSourceEventStatsDetailed(sourceEventStatsDetailed, "gateway.write_key_events", sourceTagMap)
+			gateway.updateSourceEventStatsDetailed(sourceSuccessEventStatsDetailed, "gateway.write_key_successful_events", sourceTagMap)
+			gateway.updateSourceEventStatsDetailed(sourceFailEventStatsDetailed, "gateway.write_key_failed_events", sourceTagMap)
+		} else {
+			gateway.updateSourceEventStats(sourceEventStats, "gateway.write_key_events", sourceTagMap)
+			gateway.updateSourceEventStats(sourceSuccessEventStats, "gateway.write_key_successful_events", sourceTagMap)
+			gateway.updateSourceEventStats(sourceFailEventStats, "gateway.write_key_failed_events", sourceTagMap)
+		}
 	}
 }
 

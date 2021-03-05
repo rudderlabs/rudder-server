@@ -31,6 +31,8 @@ func loadConfig() {
 	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
 	// EventSchemas feature. false by default
 	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
+	// Capture event name as a tag in event level stats
+	statsCaptureEventName = config.GetBool("Gateway.Stats.captureEventName", false)
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.

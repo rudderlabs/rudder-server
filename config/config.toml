@@ -77,6 +77,8 @@ enableRateLimit = false
 enableSuppressUserFeature = true
 allowPartialWriteWithErrors = true
 allowReqsWithoutUserIDAndAnonymousID = false
+    [Gateway.Stats]
+    captureEventName=true
 
 [EventSchemas]
 enableEventSchemasFeature = false
