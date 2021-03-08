@@ -432,8 +432,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 
 		timeElapsed := time.Since(firstAttemptedAt)
 		if jobState == jobsdb.Failed.State && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
-			updatedParams, _ := sjson.Set(string(job.Parameters), "stage", "batch_router")
-			job.Parameters = json.RawMessage(updatedParams)
+			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 			abortedEvents = append(abortedEvents, job)
 			jobState = jobsdb.Aborted.State
 		} else {
@@ -441,8 +440,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			if jobState == jobsdb.Failed.State && isWarehouse && postToWarehouseErr {
 				warehouseServiceFailedTimeLock.RLock()
 				if time.Since(warehouseServiceFailedTime) > warehouseServiceMaxRetryTimeinHr {
-					updatedParams, _ := sjson.Set(string(job.Parameters), "stage", "batch_router")
-					job.Parameters = json.RawMessage(updatedParams)
+					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					abortedEvents = append(abortedEvents, job)
 					jobState = jobsdb.Aborted.State
 				}
@@ -479,10 +477,12 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			Optional: false,
 		},
 	}
-	//Mark the status of the jobs
+
+	//Store the aborted jobs to errorDB
 	if abortedEvents != nil {
 		brt.errorDB.Store(abortedEvents)
 	}
+	//Mark the status of the jobs
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 
 	sendDestStatusStats(batchJobs.BatchDestination, jobStateCount, brt.destType, isWarehouse)

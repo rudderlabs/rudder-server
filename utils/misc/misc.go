@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	uuid "github.com/satori/go.uuid"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
@@ -901,4 +902,14 @@ func GetTagName(id string, names ...string) string {
 		truncatedNames += TruncateStr(name, 15) + "_"
 	}
 	return truncatedNames + TailTruncateStr(id, 6)
+}
+
+//UpdateJSONWithNewKeyVal enhances the json passed with key, val
+func UpdateJSONWithNewKeyVal(params []byte, key, val string) []byte {
+	updatedParams, err := sjson.SetBytes(params, key, val)
+	if err != nil {
+		return params
+	}
+
+	return updatedParams
 }

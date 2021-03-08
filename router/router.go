@@ -24,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -265,12 +264,13 @@ func (worker *workerT) workerProcess() {
 				ReceivedAt:       parameters.ReceivedAt,
 				CreatedAt:        job.CreatedAt.Format(misc.RFC3339Milli),
 				FirstAttemptedAt: firstAttemptedAt,
-				TransformAt:      parameters.TransformAt}
+				TransformAt:      parameters.TransformAt,
+				JobT:             job}
 
 			worker.rt.configSubscriberLock.RLock()
 			destination := worker.rt.destinationsMap[parameters.DestinationID]
 			worker.rt.configSubscriberLock.RUnlock()
-			jobMetadata.JobT = job
+
 			if worker.rt.enableBatching {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
@@ -615,8 +615,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
 				addToFailedMap = false
-				updatedParams, _ := sjson.Set(string(destinationJobMetadata.JobT.Parameters), "stage", "router")
-				destinationJobMetadata.JobT.Parameters = json.RawMessage(updatedParams)
+				destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
 				worker.rt.eventsAbortedStat.Increment()
 				worker.retryForJobMapMutex.Lock()
 				delete(worker.retryForJobMap, destinationJobMetadata.JobID)
@@ -632,8 +631,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			worker.retryForJobMapMutex.Unlock()
 		} else {
 			status.JobState = jobsdb.Aborted.State
-			updatedParams, _ := sjson.Set(string(destinationJobMetadata.JobT.Parameters), "stage", "router")
-			destinationJobMetadata.JobT.Parameters = json.RawMessage(updatedParams)
+			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
 			addToFailedMap = false
 			worker.rt.eventsAbortedStat.Increment()
 		}
@@ -998,10 +996,11 @@ func (rt *HandleT) statusInsertLoop() {
 				sort.Slice(statusList, func(i, j int) bool {
 					return statusList[i].JobID < statusList[j].JobID
 				})
-				//Update the status
+				//Store the aborted jobs to errorDB
 				if routerAbortedJobs != nil {
 					rt.errorDB.Store(routerAbortedJobs)
 				}
+				//Update the status
 				rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
 			}
 
