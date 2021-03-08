@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -53,8 +54,10 @@ type HandleT struct {
 	toClearFailJobIDMutex                  sync.Mutex
 	toClearFailJobIDMap                    map[int][]string
 	requestsMetricLock                     sync.RWMutex
+	failureMetricLock                      sync.RWMutex
 	diagnosisTicker                        *time.Ticker
 	requestsMetric                         []requestMetric
+	failuresMetric                         map[string][]failureMetric
 	customDestinationManager               customdestinationmanager.DestinationManager
 	generatorThrottler                     *throttler.HandleT
 	throttler                              *throttler.HandleT
@@ -133,6 +136,14 @@ type requestMetric struct {
 	RequestAborted       int
 	RequestSuccess       int
 	RequestCompletedTime time.Duration
+}
+
+type failureMetric struct {
+	RouterDestination string          `json:"router_destination"`
+	UserId            string          `json:"user_id"`
+	RouterAttemptNum  int             `json:"router_attempt_num"`
+	ErrorCode         string          `json:"error_code"`
+	ErrorResponse     json.RawMessage `json:"error_response"`
 }
 
 func isSuccessStatus(status int) bool {
@@ -979,13 +990,11 @@ func (rt *HandleT) statusInsertLoop() {
 						} else {
 							event = diagnostics.RouterAborted
 						}
-						Diagnostics.Track(event, map[string]interface{}{
-							diagnostics.RouterDestination: rt.destName,
-							diagnostics.UserID:            resp.userID,
-							diagnostics.RouterAttemptNum:  resp.status.AttemptNum,
-							diagnostics.ErrorCode:         resp.status.ErrorCode,
-							diagnostics.ErrorResponse:     resp.status.ErrorResponse,
-						})
+
+						rt.failureMetricLock.Lock()
+						failureMetricVal := failureMetric{RouterDestination: rt.destName, UserId: resp.userID, RouterAttemptNum: resp.status.AttemptNum, ErrorCode: resp.status.ErrorCode, ErrorResponse: resp.status.ErrorResponse}
+						rt.failuresMetric[event] = append(rt.failuresMetric[event], failureMetricVal)
+						rt.failureMetricLock.Unlock()
 					}
 				}
 			}
@@ -1067,6 +1076,31 @@ func (rt *HandleT) collectMetrics() {
 
 			rt.requestsMetric = nil
 			rt.requestsMetricLock.RUnlock()
+
+			//This lock will ensure we dont send out Track Request while filling up the
+			//failureMetric struct
+			rt.failureMetricLock.RLock()
+			for key, values := range rt.failuresMetric {
+				var stringValue string
+				var err error
+				errorMap := make(map[string]int)
+				for _, value := range values {
+					errorMap[string(value.ErrorResponse)] = errorMap[string(value.ErrorResponse)] + 1
+				}
+				for k, v := range errorMap {
+					stringValue, err = sjson.Set(stringValue, k, v)
+					if err != nil {
+						stringValue = ""
+					}
+				}
+				Diagnostics.Track(key, map[string]interface{}{
+					diagnostics.RouterDestination: rt.destName,
+					diagnostics.Count:             len(values),
+					diagnostics.ErrorCountMap:     stringValue,
+				})
+			}
+			rt.failuresMetric = make(map[string][]failureMetric)
+			rt.failureMetricLock.RUnlock()
 		}
 	}
 }
@@ -1256,6 +1290,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customDestinationManager.New(destName)
+	rt.failuresMetric = make(map[string][]failureMetric)
 
 	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
