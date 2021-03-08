@@ -129,9 +129,9 @@ func (uploadsReq *UploadsReqT) getUploadsCount() (int32, error) {
 }
 
 var statusMap = map[string]string{
-	"success": "exported_data",
-	"waiting": "waiting",
-	"aborted": "aborted",
+	"success": ExportedData,
+	"waiting": Waiting,
+	"aborted": Aborted,
 	"failed":  "%failed%",
 }
 
@@ -204,41 +204,25 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		})
 		_, firstTime := warehouseutils.GetFirstTiming(timingsObject)
 		_, lastTime := warehouseutils.GetLastTiming(timingsObject)
-		lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
-		errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
-		errors := gjson.Get(uploadError, errorPath).Array()
-		if len(errors) > 0 {
-			upload.Error = errors[len(errors)-1].String()
+		if upload.Status != ExportedData {
+			lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
+			errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
+			errors := gjson.Get(uploadError, errorPath).Array()
+			if len(errors) > 0 {
+				upload.Error = errors[len(errors)-1].String()
+			}
 		}
-		upload.NextRetryTime = nextRetryTimeStr.String
+		if upload.Status != ExportedData && nextRetryTimeStr.Valid {
+			if nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr.String); err == nil {
+				upload.NextRetryTime = timestamppb.New(nextRetryTime)
+			}
+		}
 		upload.Duration = int32(lastTime.Sub(firstTime) / time.Second)
 		upload.Tables = make([]*proto.WHTable, 0)
 		uploads = append(uploads, &upload)
 	}
 	uploadsRes.Uploads = uploads
 	return
-}
-
-func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string {
-	query := fmt.Sprintf(`select %s from %s where wh_upload_id = %d`, selectFields, warehouseutils.WarehouseTableUploadsTable, tableUploadReq.UploadID)
-	if len(strings.TrimSpace(tableUploadReq.Name)) > 0 {
-		query = fmt.Sprintf(`%s and table_name = %s`, query, tableUploadReq.Name)
-	}
-	return query
-}
-
-func (tableUploadReq TableUploadReqT) validateReq() error {
-	if !tableUploadReq.API.enabled || tableUploadReq.API.log == nil || tableUploadReq.API.dbHandle == nil {
-		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
-	}
-	if tableUploadReq.UploadID == 0 {
-		return errors.New(fmt.Sprint(`upload_id is empty or should be greater than 0 `))
-	}
-	return nil
-}
-
-func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
-	return fmt.Sprintf(`select %s from %s  where id = %d`, selectedFields, warehouseutils.WarehouseUploadsTable, uploadReq.UploadId)
 }
 
 func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
@@ -268,13 +252,21 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	})
 	_, firstTime := warehouseutils.GetFirstTiming(timingsObject)
 	_, lastTime := warehouseutils.GetLastTiming(timingsObject)
-	lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
-	errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
-	errors := gjson.Get(uploadError, errorPath).Array()
-	if len(errors) > 0 {
-		upload.Error = errors[len(errors)-1].String()
+
+	// do not return error on successful upload
+	if upload.Status != ExportedData {
+		lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
+		errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
+		errors := gjson.Get(uploadError, errorPath).Array()
+		if len(errors) > 0 {
+			upload.Error = errors[len(errors)-1].String()
+		}
 	}
-	upload.NextRetryTime = nextRetryTimeStr.String
+	if upload.Status != ExportedData && nextRetryTimeStr.Valid {
+		if nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr.String); err == nil {
+			upload.NextRetryTime = timestamppb.New(nextRetryTime)
+		}
+	}
 	upload.Duration = int32(lastTime.Sub(firstTime) / time.Second)
 	tableUploadReq := TableUploadReqT{
 		UploadID: upload.Id,
@@ -287,16 +279,6 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	}
 	upload.Tables = tables
 	return &upload, nil
-}
-
-func (uploadReq UploadReqT) validateReq() error {
-	if !uploadReq.API.enabled || uploadReq.API.log == nil || uploadReq.API.dbHandle == nil {
-		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
-	}
-	if uploadReq.UploadId < 1 {
-		return errors.New(fmt.Sprint(`upload_id is empty or should be greater than 0 `))
-	}
-	return nil
 }
 
 func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, error) {
@@ -324,6 +306,10 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 		if count.Valid {
 			tableUpload.Count = count.Int32
 		}
+		// do not return error on successful upload
+		if tableUpload.Status == ExportedData {
+			tableUpload.Error = ""
+		}
 		if lastExecTime.Valid {
 			tableUpload.LastExecAt = timestamppb.New(lastExecTime.Time)
 			tableUpload.Duration = int32(updatedAt.Time.Sub(lastExecTime.Time) / time.Second)
@@ -331,4 +317,36 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 		tableUploads = append(tableUploads, &tableUpload)
 	}
 	return tableUploads, nil
+}
+
+func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string {
+	query := fmt.Sprintf(`select %s from %s where wh_upload_id = %d`, selectFields, warehouseutils.WarehouseTableUploadsTable, tableUploadReq.UploadID)
+	if len(strings.TrimSpace(tableUploadReq.Name)) > 0 {
+		query = fmt.Sprintf(`%s and table_name = %s`, query, tableUploadReq.Name)
+	}
+	return query
+}
+
+func (tableUploadReq TableUploadReqT) validateReq() error {
+	if !tableUploadReq.API.enabled || tableUploadReq.API.log == nil || tableUploadReq.API.dbHandle == nil {
+		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
+	}
+	if tableUploadReq.UploadID == 0 {
+		return errors.New(fmt.Sprint(`upload_id is empty or should be greater than 0 `))
+	}
+	return nil
+}
+
+func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
+	return fmt.Sprintf(`select %s from %s  where id = %d`, selectedFields, warehouseutils.WarehouseUploadsTable, uploadReq.UploadId)
+}
+
+func (uploadReq UploadReqT) validateReq() error {
+	if !uploadReq.API.enabled || uploadReq.API.log == nil || uploadReq.API.dbHandle == nil {
+		return errors.New(fmt.Sprint(`warehouse api's are not initialized`))
+	}
+	if uploadReq.UploadId < 1 {
+		return errors.New(fmt.Sprint(`upload_id is empty or should be greater than 0 `))
+	}
+	return nil
 }

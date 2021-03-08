@@ -261,7 +261,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 			if UploadAPI.connectionManager != nil {
 				UploadAPI.connectionManager.Apply(allSources.ConnectionFlags.URL, val)
 			}
-
 		}
 		pkgLogger.Debug("[WH] Unlocking config sub lock: %s", wh.destType)
 		wh.configSubscriberLock.Unlock()
@@ -784,6 +783,11 @@ func minimalConfigSubscriber() {
 				}
 			}
 		}
+		if val, ok := sources.ConnectionFlags.Services["warehouse"]; ok {
+			if UploadAPI.connectionManager != nil {
+				UploadAPI.connectionManager.Apply(sources.ConnectionFlags.URL, val)
+			}
+		}
 	}
 }
 
@@ -1013,12 +1017,14 @@ func Start() {
 	setupDB(psqlInfo)
 	defer startWebHandler()
 
+	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
+		rruntime.Go(func() {
+			minimalConfigSubscriber()
+		})
 		if isMaster() {
-			rruntime.Go(func() {
-				minimalConfigSubscriber()
-			})
+			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 		}
 		return
 	}
