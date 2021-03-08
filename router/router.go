@@ -1059,13 +1059,17 @@ func (rt *HandleT) collectMetrics() {
 			//failureMetric struct
 			rt.failureMetricLock.RLock()
 			for key, values := range rt.failuresMetric {
-				stringValue := ""
+				var stringValue string
+				var err error
 				errorMap := make(map[string]int)
 				for _, value := range values {
 					errorMap[string(value.ErrorResponse)] = errorMap[string(value.ErrorResponse)] + 1
 				}
-				for key, val := range errorMap {
-					stringValue, _ = sjson.SetRaw(stringValue, key, strconv.Itoa(val))
+				for k, v := range errorMap {
+					stringValue, err = sjson.Set(stringValue, k, v)
+					if err != nil {
+						stringValue = ""
+					}
 				}
 				Diagnostics.Track(key, map[string]interface{}{
 					diagnostics.RouterDestination: rt.destName,
@@ -1074,7 +1078,6 @@ func (rt *HandleT) collectMetrics() {
 				})
 			}
 			rt.failuresMetric = make(map[string][]failureMetric)
-
 			rt.failureMetricLock.RUnlock()
 		}
 	}
