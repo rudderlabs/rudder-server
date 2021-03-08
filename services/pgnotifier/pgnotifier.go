@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -25,6 +26,11 @@ var (
 	pkgLogger                      logger.LoggerI
 )
 
+var (
+	pgNotifierDBhost, pgNotifierDBuser, pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode string
+	pgNotifierDBport                                                                                int
+)
+
 const (
 	WaitingState   = "waiting"
 	ExecutingState = "executing"
@@ -34,6 +40,7 @@ const (
 )
 
 func init() {
+	loadPGNotifierConfig()
 	queueName = "pg_notifier_queue"
 	maxAttempt = config.GetInt("PgNotifier.maxAttempt", 3)
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
@@ -44,8 +51,9 @@ func init() {
 }
 
 type PgNotifierT struct {
-	URI      string
-	dbHandle *sql.DB
+	URI                 string
+	dbHandle            *sql.DB
+	workspaceIdentifier string
 }
 
 type MessageT struct {
@@ -59,9 +67,10 @@ type NotificationT struct {
 }
 
 type ResponseT struct {
-	Status  string
-	Payload json.RawMessage
-	Error   string
+	JobID  int64
+	Status string
+	Output json.RawMessage
+	Error  string
 }
 
 type ClaimT struct {
@@ -77,26 +86,54 @@ type ClaimResponseT struct {
 	Err     error
 }
 
-func New(connectionInfo string) (notifier PgNotifierT, err error) {
+func loadPGNotifierConfig() {
+	pgNotifierDBhost = config.GetEnv("PGNOTIFIER_DB_HOST", "localhost")
+	pgNotifierDBuser = config.GetEnv("PGNOTIFIER_DB_USER", "ubuntu")
+	pgNotifierDBname = config.GetEnv("PGNOTIFIER_DB_NAME", "ubuntu")
+	pgNotifierDBport, _ = strconv.Atoi(config.GetEnv("PGNOTIFIER_DB_PORT", "5432"))
+	pgNotifierDBpassword = config.GetEnv("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
+	pgNotifierDBsslmode = config.GetEnv("PGNOTIFIER_DB_SSL_MODE", "disable")
+}
+
+//New Given default connection info return pg notifiew object from it
+func New(workspaceIdentifier string, fallbackConnectionInfo string) (notifier PgNotifierT, err error) {
+
+	// by default connection info is fallback connection info
+	connectionInfo := fallbackConnectionInfo
+
+	// if PG Notifier variables are defined then use get values provided in env vars
+	if CheckForPGNotifierEnvVars() {
+		connectionInfo = GetPGNotifierConnectionString()
+	}
 	pkgLogger.Infof("PgNotifier: Initializing PgNotifier...")
 	dbHandle, err := sql.Open("postgres", connectionInfo)
 	if err != nil {
 		return
 	}
 	notifier = PgNotifierT{
-		dbHandle: dbHandle,
-		URI:      connectionInfo,
+		dbHandle:            dbHandle,
+		URI:                 connectionInfo,
+		workspaceIdentifier: workspaceIdentifier,
 	}
 	err = notifier.setupQueue()
 	return
 }
 
+func (notifier PgNotifierT) GetDBHandle() *sql.DB {
+	return notifier.dbHandle
+}
+
 func (notifier PgNotifierT) AddTopic(topic string) (err error) {
-	stmt := fmt.Sprintf("DELETE FROM %s WHERE topic ='%s'", queueName, topic)
-	pkgLogger.Infof("PgNotifier: Deleting all jobs on topic: %s", topic)
-	_, err = notifier.dbHandle.Exec(stmt)
-	if err != nil {
-		return
+
+	// clean up all jobs in pgnotifier for same workspace
+	// additional safety check to not delete all jobs with empty workspaceIdentifier
+	if notifier.workspaceIdentifier != "" {
+		stmt := fmt.Sprintf("DELETE FROM %s WHERE workspace='%s' AND topic ='%s'", queueName, notifier.workspaceIdentifier, topic)
+		pkgLogger.Infof("PgNotifier: Deleting all jobs on topic: %s", topic)
+		_, err = notifier.dbHandle.Exec(stmt)
+		if err != nil {
+			return
+		}
 	}
 	err = notifier.createTrigger(topic)
 	if err != nil {
@@ -108,6 +145,23 @@ func (notifier PgNotifierT) AddTopic(topic string) (err error) {
 	return
 }
 
+// CheckForPGNotifierEnvVars Checks if all the required Env Variables for PG Notifier are present
+func CheckForPGNotifierEnvVars() bool {
+	return config.IsEnvSet("PGNOTIFIER_DB_HOST") &&
+		config.IsEnvSet("PGNOTIFIER_DB_USER") &&
+		config.IsEnvSet("PGNOTIFIER_DB_NAME") &&
+		config.IsEnvSet("PGNOTIFIER_DB_PASSWORD")
+}
+
+// GetPGNotifierConnectionString Returns PG Notifier DB Connection Configuration
+func GetPGNotifierConnectionString() string {
+	pkgLogger.Debugf("WH: All Env variables required for separate PG Notifier are set... Check pg notifier says True...")
+	return fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=%s",
+		pgNotifierDBhost, pgNotifierDBport, pgNotifierDBuser,
+		pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode)
+}
+
 func (notifier *PgNotifierT) triggerPending(topic string) {
 	for {
 		time.Sleep(retriggerInterval)
@@ -116,21 +170,36 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 								WHERE id IN (
 									SELECT id FROM %[1]s
 									WHERE status='%[3]s' OR status='%[4]s' OR (status='%[5]s' AND last_exec_time <= NOW() - INTERVAL '%[6]v seconds')
+									AND workspace='%[7]s'
 									ORDER BY id
-									LIMIT %[7]v
-								)`,
+									FOR UPDATE SKIP LOCKED
+									LIMIT %[8]v
+								) RETURNING id`,
 			queueName,
 			GetCurrentSQLTimestamp(),
 			WaitingState,
 			FailedState,
 			ExecutingState,
 			retriggerExecutingTimeLimitInS,
+			notifier.workspaceIdentifier,
 			retriggerCount)
 		pkgLogger.Debugf("PgNotifier: triggering pending jobs: %v", stmt)
-		_, err := notifier.dbHandle.Exec(stmt)
+		rows, err := notifier.dbHandle.Query(stmt)
 		if err != nil {
 			panic(err)
 		}
+		var ids []int64
+		for rows.Next() {
+			var id int64
+			err := rows.Scan(&id)
+			if err != nil {
+				pkgLogger.Errorf("PgNotifier: Error scanning returned id from retriggered jobs: %v", err)
+				continue
+			}
+			ids = append(ids, id)
+		}
+		rows.Close()
+		pkgLogger.Debugf("PgNotifier: Retriggerd job ids: %v", ids)
 	}
 }
 
@@ -148,20 +217,24 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				panic(err)
 			}
 			if count == 0 {
-				stmt = fmt.Sprintf(`SELECT payload, status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
+				stmt = fmt.Sprintf(`SELECT payload->'StagingFileID', payload->'Output', status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
 				rows, err := notifier.dbHandle.Query(stmt)
 				if err != nil {
 					panic(err)
 				}
 				responses := []ResponseT{}
 				for rows.Next() {
-					var payload json.RawMessage
-					var status, error string
-					err = rows.Scan(&payload, &status, &error)
+					var status, jobError, output sql.NullString
+					var jobID int64
+					err = rows.Scan(&jobID, &output, &status, &jobError)
+					if err != nil {
+						panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", stmt, err))
+					}
 					responses = append(responses, ResponseT{
-						Status:  status,
-						Payload: payload,
-						Error:   error,
+						JobID:  jobID,
+						Output: []byte(output.String),
+						Status: status.String,
+						Error:  jobError.String,
 					})
 				}
 				rows.Close()
@@ -194,8 +267,8 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT
 									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), misc.QuoteLiteral(response.Err.Error()), id)
 			_, err = notifier.dbHandle.Exec(stmt)
 		} else {
-			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = '%[4]s' WHERE id = %[5]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), response.Payload, id)
-			_, err = notifier.dbHandle.Exec(stmt)
+			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = $1 WHERE id = %[4]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), id)
+			_, err = notifier.dbHandle.Exec(stmt, response.Payload)
 		}
 
 		if err != nil {
@@ -222,10 +295,24 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 						LIMIT 1
 						)
 						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState)
-	err := notifier.dbHandle.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
+
+	tx, err := notifier.dbHandle.Begin()
+	if err != nil {
+		return
+	}
+	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
 
 	if err != nil {
 		pkgLogger.Debugf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
+		tx.Rollback()
+		return
+	}
+
+	err = tx.Commit()
+
+	if err != nil {
+		pkgLogger.Errorf("PgNotifier: Error commiting claim txn: %v", err)
+		tx.Rollback()
 		return
 	}
 
@@ -250,7 +337,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "topic", "payload"))
+	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "topic", "payload", "workspace"))
 	if err != nil {
 		return
 	}
@@ -259,7 +346,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 	batchID := uuid.NewV4().String()
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(messages), queueName, batchID)
 	for _, message := range messages {
-		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload))
+		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload), notifier.workspaceIdentifier)
 		if err != nil {
 			return
 		}
@@ -408,6 +495,12 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 		return
 	}
 
+	sqlStmt = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS workspace VARCHAR(64)`, queueName)
+	_, err = notifier.dbHandle.Exec(sqlStmt)
+	if err != nil {
+		return
+	}
+
 	// create index on status
 	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_idx ON %[1]s (status);`, queueName)
 	_, err = notifier.dbHandle.Exec(sqlStmt)
@@ -417,6 +510,13 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 
 	// create index on batch_id
 	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_batch_id_idx ON %[1]s (batch_id);`, queueName)
+	_, err = notifier.dbHandle.Exec(sqlStmt)
+	if err != nil {
+		return
+	}
+
+	// create index on workspace, topic
+	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_workspace_topic_idx ON %[1]s (workspace, topic);`, queueName)
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
 		return

@@ -167,7 +167,7 @@ func partitionedTable(tableName string, partitionDate string) string {
 
 func (bq *HandleT) loadTable(tableName string, forceLoad bool) (partitionDate string, err error) {
 	pkgLogger.Infof("BQ: Starting load for table:%s\n", tableName)
-	locations := bq.Uploader.GetLoadFileLocations(tableName)
+	locations := bq.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
 	locations = warehouseutils.GetGCSLocations(locations, warehouseutils.GCSLocationOptionsT{})
 	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
 	gcsRef := bigquery.NewGCSReference(locations...)
@@ -293,7 +293,6 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 type BQCredentialsT struct {
 	projectID   string
 	credentials string
-	location    string
 }
 
 func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
@@ -471,6 +470,25 @@ func (bq *HandleT) LoadIdentityMappingsTable() (err error) {
 }
 
 func (bq *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+	return
+}
+
+func (bq *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s.%[2]s`, bq.Namespace, tableName)
+	it, err := bq.Db.Query(sqlStatement).Read(bq.BQContext)
+	if err !=nil {
+		return 0, err
+	}
+	var values []bigquery.Value
+	err = it.Next(&values)
+	if err == iterator.Done {
+		return 0, nil
+	}
+	if err != nil {
+		pkgLogger.Errorf("BQ: Error in processing totalRowsCount: %v", err)
+		return
+	}
+	total, _ = values[0].(int64)
 	return
 }
 

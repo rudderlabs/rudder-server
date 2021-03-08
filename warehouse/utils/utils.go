@@ -50,7 +50,6 @@ const (
 	DiscardsTable           = "rudder_discards"
 	IdentityMergeRulesTable = "rudder_identity_merge_rules"
 	IdentityMappingsTable   = "rudder_identity_mappings"
-	AliasTable              = "aliases"
 	SyncFrequency           = "syncFrequency"
 	SyncStartAt             = "syncStartAt"
 	ExcludeWindow           = "excludeWindow"
@@ -126,9 +125,16 @@ type UploaderI interface {
 	GetSchemaInWarehouse() SchemaT
 	GetTableSchemaInWarehouse(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
-	GetLoadFileLocations(tableName string) []string
+	GetLoadFileLocations(options GetLoadFileLocationsOptionsT) []string
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFileLocation(tableName string) (string, error)
+}
+
+type GetLoadFileLocationsOptionsT struct {
+	Table   string
+	StartID int64
+	EndID   int64
+	Limit   int64
 }
 
 func IDResolutionEnabled() bool {
@@ -225,13 +231,10 @@ func GetObjectFolder(provider string, location string) (folder string) {
 	switch provider {
 	case "S3":
 		folder = GetS3LocationFolder(location)
-		break
 	case "GCS":
 		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gcs"})
-		break
 	case "AZURE_BLOB":
 		folder = GetAzureBlobLocationFolder(location)
-		break
 	}
 	return
 }
@@ -242,13 +245,10 @@ func GetObjectLocation(provider string, location string) (folder string) {
 	switch provider {
 	case "S3":
 		folder, _ = GetS3Location(location)
-		break
 	case "GCS":
 		folder = GetGCSLocation(location, GCSLocationOptionsT{TLDFormat: "gcs"})
-		break
 	case "AZURE_BLOB":
 		folder = GetAzureBlobLocation(location)
-		break
 	}
 	return
 }
@@ -532,18 +532,6 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	}
 	sort.Strings(columnKeys)
 	return columnKeys
-}
-
-func ConcatErrors(errors []error) (err error) {
-	errStr := ""
-	for idx, err := range errors {
-		errStr += err.Error()
-		if idx < len(errors)-1 {
-			errStr += ", "
-		}
-	}
-	err = fmt.Errorf(errStr)
-	return err
 }
 
 func IdentityMergeRulesTableName(warehouse WarehouseT) string {

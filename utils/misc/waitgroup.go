@@ -54,7 +54,6 @@ func (wg *WaitGroup) WaitForAll() []error {
 		select {
 		case err := <-wg.errChan:
 			errList = append(errList, err)
-			break
 		case <-wg.doneChan:
 			return errList
 		}

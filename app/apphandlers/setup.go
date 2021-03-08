@@ -23,16 +23,17 @@ import (
 )
 
 var (
-	maxProcess                       int
-	gwDBRetention, routerDBRetention time.Duration
-	enableProcessor, enableRouter    bool
-	objectStorageDestinations        []string
-	warehouseDestinations            []string
-	moduleLoadLock                   sync.Mutex
-	routerLoaded                     bool
-	processorLoaded                  bool
-	pkgLogger                        logger.LoggerI
-	Diagnostics                      diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	maxProcess                                                 int
+	gwDBRetention, routerDBRetention                           time.Duration
+	enableProcessor, enableRouter                              bool
+	objectStorageDestinations                                  []string
+	warehouseDestinations                                      []string
+	moduleLoadLock                                             sync.Mutex
+	routerLoaded                                               bool
+	processorLoaded                                            bool
+	pkgLogger                                                  logger.LoggerI
+	Diagnostics                                                diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyHandleT
 )
 
 //AppHandler to be implemented by different app type objects.
@@ -90,6 +91,10 @@ func rudderCoreBaseSetup() {
 	//Reload Config
 	loadConfig()
 
+	readonlyGatewayDB.Setup("gw")
+	readonlyRouterDB.Setup("rt")
+	readonlyBatchRouterDB.Setup("brt")
+
 	runtime.GOMAXPROCS(maxProcess)
 }
 
@@ -112,7 +117,7 @@ func StartProcessor(clearDB *bool, enableProcessor bool, gatewayDB, routerDB, ba
 }
 
 //StartRouter atomically starts router process if not already started
-func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
+func StartRouter(enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
 
@@ -121,13 +126,13 @@ func StartRouter(enableRouter bool, routerDB, batchRouterDB *jobsdb.HandleT) {
 	}
 
 	if enableRouter {
-		go monitorDestRouters(routerDB, batchRouterDB)
+		go monitorDestRouters(routerDB, batchRouterDB, procErrorDB)
 		routerLoaded = true
 	}
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
+func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT) {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
@@ -147,7 +152,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 					if !ok {
 						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
 						var brt batchrouter.HandleT
-						brt.Setup(batchRouterDB, destination.DestinationDefinition.Name)
+						brt.Setup(batchRouterDB, procErrorDB, destination.DestinationDefinition.Name)
 						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 					}
 				} else {
@@ -155,7 +160,7 @@ func monitorDestRouters(routerDB, batchRouterDB *jobsdb.HandleT) {
 					if !ok {
 						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
 						var router router.HandleT
-						router.Setup(routerDB, destination.DestinationDefinition.Name)
+						router.Setup(routerDB, procErrorDB, destination.DestinationDefinition)
 						dstToRouter[destination.DestinationDefinition.Name] = &router
 					}
 				}

@@ -62,7 +62,7 @@ func loadConfig() {
 }
 
 // newClient delegates the call to the appropriate manager
-func (customManager *CustomManagerT) newClient(destID string) (*CustomDestination, error) {
+func (customManager *CustomManagerT) newClient(destID string) error {
 
 	destConfig := customManager.latestConfig[destID].Config
 	var customDestination *CustomDestination
@@ -87,11 +87,9 @@ func (customManager *CustomManagerT) newClient(destID string) (*CustomDestinatio
 		}
 		customManager.destinationsMap[destID] = customDestination
 	default:
-		return nil, fmt.Errorf("No provider configured for Custom Destination Manager")
+		return fmt.Errorf("No provider configured for Custom Destination Manager")
 	}
-
-	return customDestination, err
-
+	return err
 }
 
 func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client interface{}, config interface{}) (int, string) {
@@ -132,7 +130,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 	if !ok {
 		destLock.RUnlock()
 		destLock.Lock()
-		_, err := customManager.newClient(destID)
+		err := customManager.newClient(destID)
 		destLock.Unlock()
 		if err != nil {
 			return 400, fmt.Sprintf("[CDM %s] Unable to create client for %s", customManager.destType, destID)
@@ -148,7 +146,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 
 func (customManager *CustomManagerT) close(destination backendconfig.DestinationT) {
 	destID := destination.ID
-	customDestination, _ := customManager.destinationsMap[destID]
+	customDestination := customManager.destinationsMap[destID]
 	switch customManager.managerType {
 	case STREAM:
 		streammanager.CloseProducer(customDestination.Client, customManager.destType)
@@ -174,9 +172,8 @@ func (customManager *CustomManagerT) onConfigChange(destination backendconfig.De
 		customManager.close(destination)
 	}
 
-	customDestination, err := customManager.newClient(destination.ID)
-	if err != nil {
-		pkgLogger.Errorf("[CDM %s] DestID: %s, Error while creating new customer client: %w", customManager.destType, destination.ID, err)
+	if err := customManager.newClient(destination.ID); err != nil {
+		pkgLogger.Errorf("[CDM %s] DestID: %s, Error while creating new customer client: %v", customManager.destType, destination.ID, err)
 		return err
 	}
 	pkgLogger.Infof("[CDM %s] DestID: %s, Created new client", customManager.destType, destination.ID)

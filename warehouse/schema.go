@@ -288,6 +288,9 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 	var currentTableSchema map[string]string
 	var ok bool
 	if currentTableSchema, ok = currentSchema[tableName]; !ok {
+		if _, ok := uploadSchema[tableName]; !ok {
+			return
+		}
 		diff.Exists = true
 		diff.TableToBeCreated = true
 		diff.ColumnMap = uploadSchema[tableName]

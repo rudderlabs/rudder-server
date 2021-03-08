@@ -61,7 +61,7 @@ var _ = Describe("workspace-config", func() {
 			configFromFile = false
 			configBackendURL = "http://rudderstack.com"
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(nil, errors.New("TestError")).AnyTimes()
-			mockLogger.EXPECT().Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %w, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", gomock.Eq(errors.New("TestError")), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Eq(errors.New("TestError"))).Times(1)
 			config, ok := backendConfig.Get()
 			Expect(config).To(Equal(ConfigT{}))
@@ -74,7 +74,7 @@ var _ = Describe("workspace-config", func() {
 			Http = mockHttp
 			testRequest, _ := http.NewRequest("GET", "", nil)
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).AnyTimes()
-			mockLogger.EXPECT().Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %w, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", gomock.Any(), gomock.Any()).AnyTimes()
 			mockLogger.EXPECT().Error("Error sending request to the server", gomock.Any()).Times(1)
 			config, ok := backendConfig.Get()
 			Expect(config).To(Equal(ConfigT{}))

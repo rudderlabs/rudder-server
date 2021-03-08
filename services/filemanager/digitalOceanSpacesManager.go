@@ -2,6 +2,7 @@ package filemanager
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -22,11 +23,14 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 	}
 
 	region := misc.GetSpacesLocation(manager.Config.EndPoint)
-	uploadSession := session.New(&aws.Config{
+	uploadSession, err := session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
 		Endpoint:    aws.String(manager.Config.EndPoint),
 	})
+	if err != nil {
+		return UploadOutput{}, fmt.Errorf("Encountered error while creating digitalOcean Session : %w", err)
+	}
 
 	s3Client := s3.New(uploadSession)
 	splitFileName := strings.Split(file.Name(), "/")
@@ -48,7 +52,7 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 		Key:    aws.String(fileName),
 		Body:   file,
 	}
-	_, err := s3Client.PutObject(&uploadInput)
+	_, err = s3Client.PutObject(&uploadInput)
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -59,14 +63,17 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 func (manager *DOSpacesManager) Download(output *os.File, key string) error {
 
 	region := misc.GetSpacesLocation(manager.Config.EndPoint)
-	downloadSession := session.New(&aws.Config{
+	downloadSession, err := session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
 		Endpoint:    aws.String(manager.Config.EndPoint),
 	})
+	if err != nil {
+		return fmt.Errorf("Encountered error while creating digitalOcean Session : %w", err)
+	}
 
 	downloader := SpacesManager.NewDownloader(downloadSession)
-	_, err := downloader.Download(output,
+	_, err = downloader.Download(output,
 		&s3.GetObjectInput{
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
@@ -98,11 +105,14 @@ type SpacesObject struct {
 }
 
 func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string) ([]*SpacesObject, error) {
-	SpacesObjects := make([]*SpacesObject, 0)
+	spacesObjects := make([]*SpacesObject, 0)
 
 	getRegionSession := session.Must(session.NewSession())
 	region, err := SpacesManager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
-
+	if err != nil {
+		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
+		return spacesObjects, err
+	}
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
@@ -118,14 +128,14 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string) ([]*SpacesObj
 		// Delimiter: aws.String("/"),
 	})
 	if err != nil {
-		return SpacesObjects, err
+		return spacesObjects, err
 	}
 
 	for _, item := range resp.Contents {
-		SpacesObjects = append(SpacesObjects, &SpacesObject{*item.Key, *item.LastModified})
+		spacesObjects = append(spacesObjects, &SpacesObject{*item.Key, *item.LastModified})
 	}
 
-	return SpacesObjects, nil
+	return spacesObjects, nil
 }
 
 type DOSpacesManager struct {

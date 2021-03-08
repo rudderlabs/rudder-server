@@ -13,7 +13,7 @@ services:
     depends_on:
       - db
       - d-transformer
-    image: rudderlabs/rudder-server:latest
+    image: rudderlabs/rudder-server:1-alpine
     entrypoint: sh -c '/wait-for db:5432 -- /rudder-server'
     ports:
       - "8080:8080"

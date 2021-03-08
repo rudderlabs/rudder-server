@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -53,6 +54,18 @@ func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.RudderSt
 	return stats.NewTaggedStat(name, stats.CountType, tags)
 }
 
+func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.RudderStats {
+	tags := map[string]string{
+		"module":      moduleName,
+		"destType":    job.warehouse.Type,
+		"warehouseID": job.warehouseID(),
+	}
+	for _, extraTag := range extraTags {
+		tags[extraTag.name] = extraTag.value
+	}
+	return stats.NewTaggedStat(name, stats.GaugeType, tags)
+}
+
 func (jobRun *JobRunT) timerStat(name string) stats.RudderStats {
 	return stats.NewTaggedStat(name, stats.TimerType, map[string]string{
 		"module":      moduleName,
@@ -73,7 +86,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	// Total loaded events in the upload
 	numUploadedEvents, err := getTotalEventsUploaded(job.upload.ID)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %w", job.warehouse.Identifier, err)
+		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
 	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
@@ -81,7 +94,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	// Total staged events in the upload
 	numStagedEvents, err := getTotalEventsStaged(job.upload.StartStagingFileID, job.upload.EndStagingFileID)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %w", job.warehouse.Identifier, err)
+		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
@@ -93,7 +106,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 	// Total successfully loaded events in the upload
 	numUploadedEvents, err := getTotalEventsUploaded(job.upload.ID)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %w", job.warehouse.Identifier, err)
+		pkgLogger.Errorf("[WH]: Failed to generate load metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
 	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
@@ -101,7 +114,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 	// Total staged events in the upload
 	numStagedEvents, err := getTotalEventsStaged(job.upload.StartStagingFileID, job.upload.EndStagingFileID)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %w", job.warehouse.Identifier, err)
+		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
@@ -110,22 +123,29 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 }
 
 func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
-	// add metric to record total loaded rows to standard tables
-	// adding metric for all event tables might result in too many metrics
-	tablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
-	if !misc.Contains(tablesToRecordEventsMetric, strings.ToLower(tableName)) {
-		tableName = "others"
-	} else {
+	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
+	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
+		// record total events synced (ignoring additional row synced to event table for eg.track call)
 		job.counterStat(`event_delivery`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
 	}
+
+	skipMetricTagForEachEventTable := config.GetBool("Warehouse.skipMetricTagForEachEventTable", false)
+	if skipMetricTagForEachEventTable {
+		standardTablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
+		if !misc.Contains(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
+			// club all event table metric tags under one tag to avoid too many tags
+			tableName = "others"
+		}
+	}
+
 	job.counterStat(`rows_synced`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
 	firstEventAt, err := getFirstStagedEventAt(job.upload.StartStagingFileID)
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %w", job.warehouse.Identifier, err)
+		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
-	job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}).SendTiming(time.Now().Sub(firstEventAt))
+	job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}).SendTiming(time.Since(firstEventAt))
 }
 
 func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {

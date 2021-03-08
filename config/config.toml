@@ -106,6 +106,9 @@ batchTimeoutInS = 2
 retrySleepInMS = 100
 disableEventDeliveryStatusUploads = false
 
+[Archiver]
+backupRowsBatchSize = 100
+
 [JobsDB]
 # Migration related parameters
 jobDoneMigrateThres = 0.8
@@ -119,6 +122,8 @@ addNewDSLoopSleepDurationInS = 5
 refreshDSListLoopSleepDurationInS = 5
 backupCheckSleepDurationIns = 5
 backupRowsBatchSize = 1000
+archivalTimeInDays = 10
+archiverTickerTimeInMin = 1440
 
 [JobsDB.backup]
 enabled = true
@@ -128,8 +133,8 @@ enabled=true
 pathPrefix=""
 
 [JobsDB.backup.rt]
-enabled=false
-failedOnly=false
+enabled=true
+failedOnly=true
 
 [JobsDB.backup.batch_rt]
 enabled=false
@@ -157,12 +162,18 @@ noOfWorkers = 64
 allowAbortedUserJobsCountForProcessing=1
 maxFailedCountForJob = 3
 retryTimeWindowInMins = 180
+    [Router.MARKETO]
+    noOfWorkers = 8
+    [Router.throttler.MARKETO]
+    limit = 45
+    timeWindowInS = 20
     [Router.BRAZE]
     forceHTTP1=true
     httpTimeoutInS=120
     httpMaxIdleConnsPerHost=32
     # settings similar to below one can be used to throttle router
     # sending events to downstream destinations
+    # NOTE: Its a good practice to set timeWindowInS as high as possible. This will prevent blowup of status table.
     # [Router.throttler.AM]
     # limit = 1000
     # timeWindowInS =          1
@@ -178,6 +189,7 @@ warehouseServiceMaxRetryTimeinHr = 3
 # Below config variables are supported per destination type too
 noOfWorkers = 8
 maxFailedCountForJob = 128
+retryTimeWindowInMins = 180
 
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
@@ -266,7 +278,7 @@ fileJsonFormat=false
 logFileLocation="/tmp/rudder_log.log"
 logFileSize = 100 # in MB
 enableTimestamp=true
-enableFileNameInLog=false
+enableFileNameInLog=true
 enableStackTrace=false
 #moduleLevels="processor.transformer=ERROR:batchrouter=ERROR:pgnotifier=ERROR:warehouse=ERROR:enterprise.migrator=ERROR"
 

@@ -58,6 +58,7 @@ func (jd *HandleT) deleteSetupCheckpoint(operationType MigrationOp) {
 	if found {
 		sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE id = %d`, jd.getCheckpointTableName(), migrationCheckpoint.ID)
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
+		jd.assertError(err)
 		_, err = stmt.Exec()
 		jd.assertError(err)
 	}
@@ -98,6 +99,7 @@ func (jd *HandleT) CheckpointInTxn(txHandler transactionHandler, migrationCheckp
 	var mcID int64
 
 	stmt, err = txHandler.Prepare(sqlStatement)
+	//skipcq: SCC-SA5001
 	defer stmt.Close()
 	if err != nil {
 		return mcID, err
@@ -293,6 +295,7 @@ func (jd *HandleT) GetCheckpoints(migrationType MigrationOp, status string) []Mi
 	return migrationCheckpoints
 }
 
+//skipcq: SCC-U1000
 func (migrationCheckpoint MigrationCheckpointT) getLastJobID() int64 {
 	if migrationCheckpoint.StartSeq == 0 {
 		return int64(0)

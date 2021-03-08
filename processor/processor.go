@@ -3,7 +3,6 @@ package processor
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/dedup"
 	"math"
 	"reflect"
 	"sort"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/dedup"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -59,7 +60,6 @@ type HandleT struct {
 	transformEventsByTimeMutex     sync.RWMutex
 	destTransformEventsByTimeTaken transformRequestPQ
 	userTransformEventsByTimeTaken transformRequestPQ
-	statJobs                       stats.RudderStats
 	statDBR                        stats.RudderStats
 	statDBW                        stats.RudderStats
 	statLoopTime                   stats.RudderStats
@@ -70,7 +70,6 @@ type HandleT struct {
 	statListSort                   stats.RudderStats
 	marshalSingularEvents          stats.RudderStats
 	destProcessing                 stats.RudderStats
-	statNumDests                   stats.RudderStats
 	statNumRequests                stats.RudderStats
 	statNumEvents                  stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
@@ -686,11 +685,16 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 	}
 }
 
-func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, metadata transformer.MetadataT, destination backendconfig.DestinationT) []transformer.TransformerEventT {
+func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, commonMetaData transformer.MetadataT, destination backendconfig.DestinationT) []transformer.TransformerEventT {
 	var eventsToTransform []transformer.TransformerEventT
 	for _, userTransformedEvent := range response.Events {
-		eventMetadata := metadata
+		eventMetadata := commonMetaData
 		eventMetadata.MessageIDs = userTransformedEvent.Metadata.MessageIDs
+		eventMetadata.MessageID = userTransformedEvent.Metadata.MessageID
+		eventMetadata.JobID = userTransformedEvent.Metadata.JobID
+		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
+		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
+		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
 		updatedEvent := transformer.TransformerEventT{
 			Message:     userTransformedEvent.Output,
 			Metadata:    eventMetadata,
@@ -701,7 +705,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, me
 	return eventsToTransform
 }
 
-func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, metadata transformer.MetadataT, eventsByMessageID map[string]types.SingularEventT, stage string) []*jobsdb.JobT {
+func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventT, stage string) []*jobsdb.JobT {
 	var failedEventsToStore []*jobsdb.JobT
 	for _, failedEvent := range response.FailedEvents {
 		var messages []types.SingularEventT
@@ -730,16 +734,16 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, metadata
 		newFailedJob := jobsdb.JobT{
 			UUID:         id,
 			EventPayload: payload,
-			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "error": %s, "status_code": "%v", "stage": "%s"}`, metadata.SourceID, metadata.DestinationID, string(marshalledErr), failedEvent.StatusCode, stage)),
+			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "error": %s, "status_code": "%v", "stage": "%s"}`, commonMetaData.SourceID, commonMetaData.DestinationID, string(marshalledErr), failedEvent.StatusCode, stage)),
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
-			CustomVal:    metadata.DestinationType,
+			CustomVal:    commonMetaData.DestinationType,
 			UserID:       failedEvent.Metadata.RudderID,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
 		procErrorStat := stats.NewTaggedStat("proc_error_counts", stats.CountType, stats.Tags{
-			"destName":   metadata.DestinationType,
+			"destName":   commonMetaData.DestinationType,
 			"statusCode": strconv.Itoa(failedEvent.StatusCode),
 			"stage":      stage,
 		})
@@ -832,8 +836,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				}
 				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 				for _, destType := range enabledDestTypes {
-					var enabledDestinationsList []backendconfig.DestinationT
-					enabledDestinationsList = getEnabledDestinations(writeKey, destType)
+					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
 					enabledDestinationsMap[destType] = enabledDestinationsList
 
 					// Adding a singular event multiple times if there are multiple destinations of same type
@@ -898,7 +901,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 		destination := eventList[0].Destination
-		metadata := transformer.MetadataT{SourceID: sourceID, DestinationID: destID, DestinationType: destination.DestinationDefinition.Name}
+		commonMetaData := transformer.MetadataT{SourceID: sourceID, DestinationID: destID, DestinationType: destination.DestinationDefinition.Name}
 
 		destStat := proc.destStats[destID]
 		destStat.numEvents.Count(len(eventList))
@@ -932,8 +935,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: timeTaken, Index: -1}, &proc.userTransformEventsByTimeTaken)
 			}
 
-			eventsToTransform = proc.getDestTransformerEvents(response, metadata, destination)
-			failedJobs := proc.getFailedEventJobs(response, metadata, eventsByMessageID, transformer.UserTransformerStage)
+			eventsToTransform = proc.getDestTransformerEvents(response, commonMetaData, destination)
+			failedJobs := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
@@ -951,7 +954,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 		destStat.destTransform.Start()
 		startedAt = time.Now()
-		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+
+		transformAt := "processor"
+		if val, ok := destination.DestinationDefinition.Config["transformAt"].(string); ok {
+			transformAt = val
+		}
+
+		if transformAt == "processor" {
+			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+		} else {
+			response = convertToTransformerResponse(eventsToTransform)
+		}
+
 		endedAt = time.Now()
 		timeTaken = endedAt.Sub(startedAt).Seconds()
 		destStat.destTransform.End()
@@ -961,7 +975,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
 		destStat.numOutputEvents.Count(len(destTransformEventList))
 
-		failedJobs := proc.getFailedEventJobs(response, metadata, eventsByMessageID, transformer.DestTransformerStage)
+		failedJobs := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage)
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 		}
@@ -985,6 +999,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			destID := destEvent.Metadata.DestinationID
 			rudderID := destEvent.Metadata.RudderID
 			receivedAt := destEvent.Metadata.ReceivedAt
+			messageId := destEvent.Metadata.MessageID
+			jobId := destEvent.Metadata.JobID
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
 			if rudderID == "" {
@@ -994,7 +1010,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       rudderID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v"}`, sourceID, destID, receivedAt)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v", "transform_at": "%v", "message_id" : "%v" , "gateway_job_id" : "%v"}`, sourceID, destID, receivedAt, transformAt, messageId, jobId)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
@@ -1042,7 +1058,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
 		if len(uniqueMessageIds) > 0 {
 			var dedupedMessageIdsAcrossJobs []string
-			for k, _ := range uniqueMessageIds {
+			for k := range uniqueMessageIds {
 				dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
 			}
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
@@ -1063,6 +1079,16 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
+}
+
+func convertToTransformerResponse(events []transformer.TransformerEventT) transformer.ResponseT {
+	var responses []transformer.TransformerResponseT
+	for _, event := range events {
+		resp := transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
+		responses = append(responses, resp)
+	}
+
+	return transformer.ResponseT{Events: responses}
 }
 
 func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList []*jobsdb.JobT, totalEvents int) {

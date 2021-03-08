@@ -35,6 +35,8 @@ const (
 	UserID                 = "user_id"
 	ErrorCode              = "error_code"
 	ErrorResponse          = "error_response"
+	Count                  = "count"
+	ErrorCountMap          = "error_count_map"
 )
 
 var (

@@ -6,23 +6,23 @@ import (
 
 const LOADED_AT_COLUMN = "loaded_at"
 
-// jsonLoader is only for BQ now. Treat this is as custom BQ loader.
+// JsonLoader is only for BQ now. Treat this is as custom BQ loader.
 // If more warehouses are added in future, change this accordingly.
-type jsonLoader struct {
+type JsonLoader struct {
 	destType   string
 	columnData map[string]interface{}
 }
 
-func NewJSONLoader(destType string) *jsonLoader {
-	loader := &jsonLoader{destType: destType}
+func NewJSONLoader(destType string) *JsonLoader {
+	loader := &JsonLoader{destType: destType}
 	loader.columnData = make(map[string]interface{})
 	return loader
 }
 
-func (loader *jsonLoader) IsLoadTimeColumn(columnName string) bool {
+func (loader *JsonLoader) IsLoadTimeColumn(columnName string) bool {
 	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN) || columnName == ToProviderCase(loader.destType, LOADED_AT_COLUMN)
 }
-func (loader *jsonLoader) GetLoadTimeFomat(columnName string) string {
+func (loader *JsonLoader) GetLoadTimeFomat(columnName string) string {
 
 	switch columnName {
 	case ToProviderCase(loader.destType, UUID_TS_COLUMN):
@@ -33,19 +33,19 @@ func (loader *jsonLoader) GetLoadTimeFomat(columnName string) string {
 	return ""
 }
 
-func (loader *jsonLoader) AddColumn(columnName string, val interface{}) {
+func (loader *JsonLoader) AddColumn(columnName string, val interface{}) {
 	providerColumnName := ToProviderCase(loader.destType, columnName)
 	loader.columnData[providerColumnName] = val
 }
 
-func (loader *jsonLoader) AddEmptyColumn(columnName string) {
+func (loader *JsonLoader) AddEmptyColumn(columnName string) {
 	loader.AddColumn(columnName, nil)
 }
 
-func (loader *jsonLoader) WriteToString() (string, error) {
+func (loader *JsonLoader) WriteToString() (string, error) {
 	jsonData, err := json.Marshal(loader.columnData)
 	if err != nil {
-		pkgLogger.Errorf(`[JSONWriter]: Error writing discardRow to buffer: %w`, err)
+		pkgLogger.Errorf(`[JSONWriter]: Error writing discardRow to buffer: %v`, err)
 		return "", err
 	}
 	return string(jsonData) + "\n", nil

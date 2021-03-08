@@ -63,16 +63,18 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			startRouterFunc := func() {
-				StartRouter(enableRouter, &routerDB, &batchRouterDB)
+				StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			enableRouter = false
 			enableProcessor = false
+
+			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
 			processor.App.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
 		}
 	}
 
 	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
-	StartRouter(enableRouter, &routerDB, &batchRouterDB)
+	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB)
 
 	startHealthWebHandler()
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI

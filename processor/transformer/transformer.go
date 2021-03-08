@@ -240,7 +240,7 @@ func GetVersion() (transformerBuildVersion string) {
 		bodyBytes, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			pkgLogger.Errorf("Unable to read response into bytes with error : %s", err.Error())
-			transformerBuildVersion = fmt.Sprintf("Unable to read response from transformer.")
+			transformerBuildVersion = "Unable to read response from transformer."
 			return
 		}
 		transformerBuildVersion = string(bodyBytes)

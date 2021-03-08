@@ -46,6 +46,8 @@ func (gatewayApp *GatewayApp) StartRudderCore(options *app.Options) {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			enableGateway = (migrationMode != db.EXPORT)
 		}
+
+		gatewayApp.App.Features().Migrator.PrepareJobsdbsForImport(&gatewayDB, nil, nil)
 	}
 
 	if enableGateway {
@@ -54,6 +56,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(options *app.Options) {
 
 		rateLimiter.SetUp()
 		gateway.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, gatewayApp.VersionHandler)
+		gateway.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI

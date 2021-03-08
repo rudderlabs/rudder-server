@@ -25,12 +25,11 @@ import (
 )
 
 var (
-	stagingTablePrefix string
-	queryDebugLogs     string
-	blockSize          string
-	poolSize           string
-	pkgLogger          logger.LoggerI
-	disableNullable    bool
+	queryDebugLogs  string
+	blockSize       string
+	poolSize        string
+	pkgLogger       logger.LoggerI
+	disableNullable bool
 )
 var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
@@ -113,12 +112,6 @@ type credentialsT struct {
 	tlsConfigName string
 }
 
-var primaryKeyMap = map[string]string{
-	warehouseutils.UsersTable:      "id",
-	warehouseutils.IdentifiesTable: "id",
-	warehouseutils.DiscardsTable:   "row_id",
-}
-
 // connect connects to warehouse with provided credentials
 func connect(cred credentialsT) (*sql.DB, error) {
 	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s",
@@ -150,7 +143,6 @@ func init() {
 }
 
 func loadConfig() {
-	stagingTablePrefix = "rudder_staging_"
 	queryDebugLogs = config.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
 	blockSize = config.GetString("Warehouse.clickhouse.blockSize", "1000")
 	poolSize = config.GetString("Warehouse.clickhouse.poolSize", "10")
@@ -231,7 +223,7 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations := ch.Uploader.GetLoadFileLocations(tableName)
+	objectLocations := ch.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		object, err := warehouseutils.GetObjectName(objectLocation, ch.Warehouse.Destination.Config, ch.ObjectStorage)
@@ -260,6 +252,10 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider: warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config),
 			Config:   ch.Warehouse.Destination.Config,
 		})
+		if err != nil {
+			pkgLogger.Errorf("CH: Error in setting up a downloader for destionationID : %s Error : %v", ch.Warehouse.Destination.ID, err)
+			return nil, err
+		}
 		err = downloader.Download(objectFile, object)
 		if err != nil {
 			pkgLogger.Errorf("CH: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
@@ -476,13 +472,6 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	return
 }
 
-// tableExists will check if tableName exists in the current namespace which is the database name
-func (ch *HandleT) tableExists(tableName string) (exists bool, err error) {
-	sqlStatement := fmt.Sprintf(` EXISTS TABLE "%s"."%s"`, ch.Namespace, tableName)
-	err = ch.Db.QueryRow(sqlStatement).Scan(&exists)
-	return
-}
-
 // AddColumn adds column:columnName with dataType columnType to the tableName
 func (ch *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[columnType], false))
@@ -624,6 +613,15 @@ func (ch *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 }
 
 func (ch *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+	return
+}
+
+func (ch *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, ch.Namespace, tableName)
+	err = ch.Db.QueryRow(sqlStatement).Scan(&total)
+	if err != nil {
+		pkgLogger.Errorf(`CH: Error getting total count in table %s:%s`, ch.Namespace, tableName)
+	}
 	return
 }
 

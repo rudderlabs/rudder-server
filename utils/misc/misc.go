@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	uuid "github.com/satori/go.uuid"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
@@ -41,10 +42,6 @@ var AppStartTime int64
 const (
 	// RFC3339Milli with milli sec precision
 	RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
-	//This is integer representation of Postgres version.
-	//For ex, integer representation of version 9.6.3 is 90603
-	//Minimum postgres version needed for rudder server is 10
-	minPostgresVersion = 100000
 )
 
 // ErrorStoreT : DS to store the app errors
@@ -83,9 +80,9 @@ func getErrorStore() (ErrorStoreT, error) {
 
 	err = json.Unmarshal(data, &errorStore)
 	if err != nil {
-		pkgLogger.Errorf("Failed to Unmarshall %s. Error:  %w", errorStorePath, err)
+		pkgLogger.Errorf("Failed to Unmarshall %s. Error:  %v", errorStorePath, err)
 		if renameErr := os.Rename(errorStorePath, fmt.Sprintf("%s.bkp", errorStorePath)); renameErr != nil {
-			pkgLogger.Errorf("Failed to back up: %s. Error: %w", errorStorePath, err)
+			pkgLogger.Errorf("Failed to back up: %s. Error: %v", errorStorePath, err)
 		}
 		errorStore = ErrorStoreT{Errors: []RudderError{}}
 	}
@@ -208,7 +205,7 @@ func GetRudderID(event types.SingularEventT) (string, bool) {
 		}
 	}
 	userIDStr, ok := userID.(string)
-	return userIDStr, true
+	return userIDStr, ok
 }
 
 // ZipFiles compresses files[] into zip at filename
@@ -278,13 +275,13 @@ func UnZipSingleFile(outputfile string, filename string) {
 	defer r.Close()
 	inputfile := r.File[0]
 	// Make File
-	err = os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
+	os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
 	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
 	if err != nil {
 		panic(err)
 	}
-	rc, err := inputfile.Open()
-	_, err = io.Copy(outFile, rc)
+	rc, _ := inputfile.Open()
+	io.Copy(outFile, rc)
 	outFile.Close()
 	rc.Close()
 }
@@ -593,11 +590,12 @@ func MakeJSONArray(bytesArray [][]byte) []byte {
 
 func SingleQuoteLiteralJoin(slice []string) string {
 	var str string
+	//TODO: use strings.Join() instead
 	for index, key := range slice {
 		if index > 0 {
-			str += fmt.Sprintf(`, `)
+			str += `, `
 		}
-		str += fmt.Sprintf(`%s`, QuoteLiteral(key))
+		str += QuoteLiteral(key)
 	}
 	return str
 }
@@ -719,7 +717,7 @@ func GetMacAddress() string {
 
 func KeepProcessAlive() {
 	var ch chan int
-	_ = <-ch
+	<-ch
 }
 
 // GetOutboundIP returns preferred outbound ip of this machine
@@ -904,4 +902,14 @@ func GetTagName(id string, names ...string) string {
 		truncatedNames += TruncateStr(name, 15) + "_"
 	}
 	return truncatedNames + TailTruncateStr(id, 6)
+}
+
+//UpdateJSONWithNewKeyVal enhances the json passed with key, val
+func UpdateJSONWithNewKeyVal(params []byte, key, val string) []byte {
+	updatedParams, err := sjson.SetBytes(params, key, val)
+	if err != nil {
+		return params
+	}
+
+	return updatedParams
 }

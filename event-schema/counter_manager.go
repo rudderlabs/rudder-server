@@ -53,7 +53,7 @@ func getFrequencyCounter(schemaHash string, key string) *FrequencyCounter {
 }
 
 func getSchemaVersionCounters(schemaHash string) map[string][]*CounterItem {
-	schemaVersionCounters, _ := countersCache[schemaHash]
+	schemaVersionCounters := countersCache[schemaHash]
 	counters := make(map[string][]*CounterItem)
 
 	for key, fc := range schemaVersionCounters {

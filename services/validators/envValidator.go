@@ -29,10 +29,10 @@ func init() {
 
 func createWorkspaceTable(dbHandle *sql.DB) {
 	//Create table to store workspace token
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS workspace (
+	sqlStatement := `CREATE TABLE IF NOT EXISTS workspace (
 		token TEXT PRIMARY KEY,
 		created_at TIMESTAMP NOT NULL,
-		parameters JSONB);`)
+		parameters JSONB);`
 
 	_, err := dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -43,7 +43,7 @@ func createWorkspaceTable(dbHandle *sql.DB) {
 func insertTokenIfNotExists(dbHandle *sql.DB) {
 	//Read entries, if there are no entries insert hashed current workspace token
 	var totalCount int
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM workspace`)
+	sqlStatement := `SELECT COUNT(*) FROM workspace`
 	row := dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&totalCount)
 	if err != nil {
@@ -55,8 +55,8 @@ func insertTokenIfNotExists(dbHandle *sql.DB) {
 	}
 
 	//There are no entries in the table, hash current workspace token and insert
-	sqlStatement = fmt.Sprintf(`INSERT INTO workspace (token, created_at)
-									   VALUES ($1, $2)`)
+	sqlStatement = `INSERT INTO workspace (token, created_at)
+									   VALUES ($1, $2)`
 	stmt, err := dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
@@ -117,7 +117,7 @@ func setWHSchemaVersionIfNotExists(dbHandle *sql.DB) {
 }
 
 func getWorkspaceFromDB(dbHandle *sql.DB) string {
-	sqlStatement := fmt.Sprintf(`SELECT token FROM workspace order by created_at desc limit 1`)
+	sqlStatement := `SELECT token FROM workspace order by created_at desc limit 1`
 	var token string
 	row := dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&token)

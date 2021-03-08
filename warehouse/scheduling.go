@@ -2,10 +2,8 @@ package warehouse
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -95,10 +93,10 @@ func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time)
 	return timeutil.StartOfDay(now).Add(time.Minute * time.Duration(allStartTimes[pos]))
 }
 
-// getLastUploadStartTime returns the start time of the last upload
-func (wh *HandleT) getLastUploadStartTime(warehouse warehouseutils.WarehouseT) time.Time {
+// getLastUploadCreatedAt returns the start time of the last upload
+func (wh *HandleT) getLastUploadCreatedAt(warehouse warehouseutils.WarehouseT) time.Time {
 	var t sql.NullTime
-	sqlStatement := fmt.Sprintf(`select last_exec_at from %s where source_id='%s' and destination_id='%s' order by id desc limit 1`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID)
+	sqlStatement := fmt.Sprintf(`select created_at from %s where source_id='%s' and destination_id='%s' order by id desc limit 1`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID)
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&t)
 	if err != nil && err != sql.ErrNoRows {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
@@ -142,8 +140,8 @@ func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTim
 	return false
 }
 
-// canStartUpload indicates if a upload can be started now for the warehouse based on its configured schedule
-func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
+// canCreateUpload indicates if a upload can be started now for the warehouse based on its configured schedule
+func (wh *HandleT) canCreateUpload(warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {
 		return true
@@ -163,13 +161,10 @@ func (wh *HandleT) canStartUpload(warehouse warehouseutils.WarehouseT) bool {
 		return !uploadFrequencyExceeded(warehouse, syncFrequency)
 	}
 	prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
-	lastUploadExecTime := wh.getLastUploadStartTime(warehouse)
+	lastUploadCreatedAt := wh.getLastUploadCreatedAt(warehouse)
 	// start upload only if no upload has started in current window
 	// eg. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
-	if lastUploadExecTime.Before(prevScheduledTime) {
-		return true
-	}
-	return false
+	return lastUploadCreatedAt.Before(prevScheduledTime)
 }
 
 func durationBeforeNextAttempt(attempt int64) time.Duration { //Add state(retryable/non-retryable) as an argument to decide backoff etc)
@@ -185,38 +180,4 @@ func durationBeforeNextAttempt(attempt int64) time.Duration { //Add state(retrya
 		d = b.NextBackOff()
 	}
 	return d
-}
-
-// Pending uploads should be retried with backoff
-func (wh *HandleT) canStartPendingUpload(upload UploadT, warehouse warehouseutils.WarehouseT) bool {
-	// can be set from rudder-cli to force uploads always
-	if startUploadAlways {
-		return true
-	}
-
-	// if not in failed status, retry without delay.
-	hasUploadFailed := strings.Contains(upload.Status, "failed")
-	if !hasUploadFailed {
-		return true
-	}
-
-	var metadata map[string]string
-	err := json.Unmarshal(upload.Metadata, &metadata)
-	if err != nil {
-		metadata = make(map[string]string)
-	}
-
-	nextRetryTimeStr, ok := metadata["nextRetryTime"]
-	if !ok {
-		return true
-	}
-
-	nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr)
-	if err != nil {
-		pkgLogger.Errorf("Unable to parse time from %s", nextRetryTimeStr)
-		return true //TODO: Review this carefully
-	}
-
-	canStart := nextRetryTime.Sub(timeutil.Now()) <= 0
-	return canStart
 }
