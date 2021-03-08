@@ -59,8 +59,8 @@ type HandleT struct {
 	requestsMetric                         []requestMetric
 	failuresMetric                         map[string][]failureMetric
 	customDestinationManager               customdestinationmanager.DestinationManager
-	generatorThrottler                     *throttler.HandleT
-	throttler                              *throttler.HandleT
+	generatorThrottler                     throttler.Throttler
+	throttler                              throttler.Throttler
 	throttlerMutex                         sync.RWMutex
 	guaranteeUserEventOrder                bool
 	netClientTimeout                       time.Duration
@@ -347,34 +347,10 @@ func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUse
 }
 
 //rawMsg passed must be a valid JSON
-func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) (resp []byte) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Error(fmt.Errorf("failed to enhance response: %v", r))
-			resp = []byte(`{}`)
-			return
-		}
-	}()
-
-	var existingResponse string
-	if len(rawMsg) != 0 {
-		str := string(rawMsg)
-		existingResponse = str[:len(str)-1]
-	}
-
-	if existingResponse == "" {
-		existingResponse = fmt.Sprintf(`{%s: %v}`, strconv.Quote(key), strconv.Quote(val))
-	} else {
-		existingResponse = fmt.Sprintf(`%s,%s: %v}`, existingResponse, strconv.Quote(key), strconv.Quote(val))
-	}
-
-	resp = []byte(existingResponse)
-
-	//if not valid json returning empty
-	if !gjson.ValidBytes(resp) {
-		pkgLogger.Error(fmt.Errorf("Invalid json: %s", string(resp)))
-		resp = []byte(`{}`)
-		return resp
+func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) []byte {
+	resp, err := sjson.SetBytes(rawMsg, key, val)
+	if err != nil {
+		return []byte(`{}`)
 	}
 
 	return resp
@@ -432,18 +408,23 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	failedUserIDsMap := make(map[string]struct{})
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
-		payload := []byte(`{}`)
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
-			payload = destinationJob.Message
 			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, destinationJob) {
 				diagnosisStartTime := time.Now()
+				sourceID := destinationJob.JobMetadataArray[0].SourceID
+				destinationID := destinationJob.JobMetadataArray[0].DestinationID
+				//Batched jobs and router transformed jobs can have more than 1 metadatas. So, don't increment userID.
+				userID := ""
+				if len(destinationJob.JobMetadataArray) == 1 {
+					userID = destinationJob.JobMetadataArray[0].UserID
+				}
+				worker.rt.generatorThrottler.Inc(destinationID, userID)
+				worker.rt.throttler.Inc(destinationID, userID)
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
 				ch := worker.trackStuckDelivery()
 				if worker.rt.customDestinationManager != nil {
-					sourceID := destinationJob.JobMetadataArray[0].SourceID
-					destinationID := destinationJob.JobMetadataArray[0].DestinationID
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
 							panic(fmt.Errorf("Different sources are grouped together"))
@@ -480,10 +461,10 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				if isSuccessStatus(respStatusCode) {
 					if saveDestinationResponse {
 						if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
-							respBody = "Save destination response is disabled through config"
+							respBody = ""
 						}
 					} else {
-						respBody = "Save destination response is disabled through config"
+						respBody = ""
 					}
 
 					eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
@@ -521,21 +502,16 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				}
 			}
 
-			//Not saving payload to DB if transformAt is not "router"
-			if destinationJobMetadata.TransformAt != "router" {
-				payload = []byte(`Same as payload in router table. Use job_id for look up.`)
-			}
-
 			status := jobsdb.JobStatusT{
 				JobID:         destinationJobMetadata.JobID,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				AttemptNum:    attemptNum,
 				ErrorCode:     strconv.Itoa(respStatusCode),
-				ErrorResponse: worker.enhanceResponse([]byte{}, "payload", string(payload)),
+				ErrorResponse: []byte(`{}`),
 			}
 
-			worker.postStatusOnResponseQ(respStatusCode, respBody, &destinationJobMetadata, &status)
+			worker.postStatusOnResponseQ(respStatusCode, respBody, destinationJob.Message, &destinationJobMetadata, &status)
 
 			worker.sendEventDeliveryStat(&destinationJobMetadata, &status, &destinationJob.Destination)
 
@@ -556,7 +532,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				ErrorResponse: []byte(`{}`),
 			}
 
-			worker.postStatusOnResponseQ(500, "transformer failed to handle this job", &routerJob.JobMetadata, &status)
+			worker.postStatusOnResponseQ(500, "transformer failed to handle this job", nil, &routerJob.JobMetadata, &status)
 		}
 	}
 
@@ -575,7 +551,7 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	worker.rt.trackRequestMetrics(reqMetric)
 }
 
-func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
+func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
 	//Enhancing status.ErrorResponse with firstAttemptedAt
 	firstAttemptedAtTime := time.Now()
 	if destinationJobMetadata.FirstAttemptedAt != "" {
@@ -585,12 +561,19 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		}
 
 	}
+
 	status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
+	//Saving payload to DB only if router job undergoes batching or dest transform.
+	if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
+		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+	}
+	if respBody != "" {
+		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "response", respBody)
+	}
 
 	if isSuccessStatus(respStatusCode) {
 		atomic.AddUint64(&worker.rt.successCount, 1)
 		status.JobState = jobsdb.Succeeded.State
-		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "reason", respBody)
 		worker.rt.logger.Debugf("[%v Router] :: sending success status to response", worker.rt.destName)
 		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
 
@@ -611,7 +594,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
 		worker.failedJobs++
 		atomic.AddUint64(&worker.rt.failCount, 1)
-		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "reason", respBody)
 
 		//addToFailedMap is used to decide whether the jobID has to be added to the failedJobIDMap.
 		//If the job is aborted then there is no point in adding it to the failedJobIDMap.
@@ -746,7 +728,7 @@ func (worker *workerT) handleThrottle(job *jobsdb.JobT, parameters JobParameters
 		return false
 	}
 	worker.rt.throttlerMutex.Lock()
-	toThrottle := worker.rt.throttler.LimitReached(parameters.DestinationID, userID)
+	toThrottle := worker.rt.throttler.CheckLimitReached(parameters.DestinationID, userID)
 	worker.rt.throttlerMutex.Unlock()
 	if toThrottle {
 		// block other jobs of same user if userEventOrdering is required.
@@ -927,7 +909,7 @@ func (rt *HandleT) canThrottle(parameters *JobParametersT, userID string) (canBe
 	}
 
 	//No need of locks here, because this is used only by a single goroutine (generatorLoop)
-	return rt.generatorThrottler.LimitReached(parameters.DestinationID, userID)
+	return rt.generatorThrottler.CheckLimitReached(parameters.DestinationID, userID)
 }
 
 // ResetSleep  this makes the workers reset their sleep
