@@ -277,7 +277,7 @@ fileJsonFormat=false
 logFileLocation="/tmp/rudder_log.log"
 logFileSize = 100 # in MB
 enableTimestamp=true
-enableFileNameInLog=false
+enableFileNameInLog=true
 enableStackTrace=false
 #moduleLevels="processor.transformer=ERROR:batchrouter=ERROR:pgnotifier=ERROR:warehouse=ERROR:enterprise.migrator=ERROR"
 
