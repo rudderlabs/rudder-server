@@ -33,8 +33,7 @@ func DownloadObjectFromS3(location string, destConfig interface{}, file *os.File
 	if err != nil {
 		panic(err)
 	}
-	var sess *session.Session
-	sess = session.Must(session.NewSession(&aws.Config{
+	sess := session.Must(session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(accessKeyID, accessKey, ""),
 	}))

@@ -22,7 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -44,19 +43,6 @@ var (
 
 var version = "Not an official release. Get the latest release from the github repo."
 var major, minor, commit, buildDate, builtBy, gitURL, patch string
-
-// Test Function
-func readIOforResume(router router.HandleT) {
-	for {
-		var u string
-		_, err := fmt.Scanf("%v", &u)
-		fmt.Println("from stdin ", u)
-		if err != nil {
-			panic(err)
-		}
-		router.ResetSleep()
-	}
-}
 
 func loadConfig() {
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")

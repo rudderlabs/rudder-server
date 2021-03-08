@@ -167,6 +167,10 @@ func downloadTestFileForBatchDestination(testObjectKey string, provider string, 
 	}
 	testFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.csv.gz", tmpDirPath, rudderConnectionTestingFolder, destination.ID, uuid.NewV4(), time.Now().Unix())
 	err = os.MkdirAll(filepath.Dir(testFilePath), os.ModePerm)
+	if err != nil {
+		pkgLogger.Errorf("DCT: Failed to create directory at path %s: err %v", testFilePath, err)
+		panic(err)
+	}
 	testFile, err := os.Create(testFilePath)
 	if err != nil {
 		panic(err)

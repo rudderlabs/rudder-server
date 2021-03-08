@@ -101,8 +101,7 @@ func Setup() {
 
 func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 	// Upload to a Config Backend
-	var res map[string][]EventUploadT
-	res = make(map[string][]EventUploadT)
+	res := make(map[string][]EventUploadT)
 	for _, event := range eventBuffer {
 		batchedEvent := EventUploadBatchT{}
 		err := json.Unmarshal([]byte(event.eventBatch), &batchedEvent)
@@ -177,15 +176,6 @@ func uploadEvents(eventBuffer []*GatewayEventBatchT) {
 		resp.StatusCode == http.StatusBadRequest) {
 		pkgLogger.Errorf("Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
 	}
-}
-
-func getKeys(dataMap map[string]interface{}) []string {
-	keys := make([]string, 0, len(dataMap))
-	for k := range dataMap {
-		keys = append(keys, k)
-	}
-
-	return keys
 }
 
 func handleEvents() {

@@ -91,8 +91,13 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 
 	var destConfig = Config{}
 	jsonConfig, err := json.Marshal(destinationConfig)
+	if err != nil {
+		return nil, fmt.Errorf("[Confluent Cloud] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
+	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
-
+	if err != nil {
+		return nil, fmt.Errorf("Error while unmarshalling dest config :: %w", err)
+	}
 	hostName := destConfig.HostName + ":" + destConfig.Port
 	isSslEnabled := destConfig.SslEnabled
 
@@ -119,7 +124,13 @@ func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProd
 
 	var destConfig = AzureEventHubConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
+	if err != nil {
+		return nil, fmt.Errorf("[Confluent Cloud] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
+	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
+	if err != nil {
+		return nil, fmt.Errorf("[Confluent Cloud] Error while UnMarshaling destination Config %+v, with Error : %w", destinationConfig, err)
+	}
 
 	hostName := destConfig.BootstrapServer
 	hosts := []string{hostName}
@@ -147,6 +158,9 @@ func NewProducerForConfluentCloud(destinationConfig interface{}) (sarama.SyncPro
 
 	var destConfig = ConfluentCloudConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
+	if err != nil {
+		return nil, fmt.Errorf("[Confluent Cloud] Error while marshalling destination config :: %w", err)
+	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 
 	if err != nil {
@@ -226,8 +240,13 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	var config = Config{}
 	jsonConfig, err := json.Marshal(destConfig)
+	if err != nil {
+		return makeErrorResponse(err) //returning 500 for retrying, in case of bad config
+	}
 	err = json.Unmarshal(jsonConfig, &config)
-
+	if err != nil {
+		return makeErrorResponse(err) //returning 500 for retrying, in case of bad config
+	}
 	//pkgLogger.Infof("Created Producer %v\n", producer)
 
 	topic := config.Topic
@@ -236,26 +255,31 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	data := parsedJSON.Get("message").Value().(interface{})
 	timestamp := time.Now()
 	value, err := json.Marshal(data)
+	if err != nil {
+		return makeErrorResponse(err)
+	}
 	userID := parsedJSON.Get("userId").Value().(string)
 	message := prepareMessage(topic, userID, value, timestamp)
 
-	var returnMessage string
-	var statusCode int
-	var errorMessage string
 	partition, offset, err := kafkaProducer.SendMessage(message)
 	if err != nil {
-		returnMessage = fmt.Sprintf("%s error occured.", err.Error())
-		statusCode = GetStatusCodeFromError(err) //400
-		errorMessage = err.Error()
-		pkgLogger.Error(returnMessage)
-	} else {
-		returnMessage = fmt.Sprintf("Message delivered at Offset: %v , Partition: %v for topic: %s", offset, partition, topic)
-		//pkgLogger.Info(returnMessage)
-		statusCode = 200
-		errorMessage = returnMessage
+		return makeErrorResponse(err)
 	}
+
+	returnMessage := fmt.Sprintf("Message delivered at Offset: %v , Partition: %v for topic: %s", offset, partition, topic)
+	//pkgLogger.Info(returnMessage)
+	statusCode := 200
+	errorMessage := returnMessage
 	//producer.Close()
 
+	return statusCode, returnMessage, errorMessage
+}
+
+func makeErrorResponse(err error) (int, string, string) {
+	returnMessage := fmt.Sprintf("%s error occured.", err.Error())
+	statusCode := GetStatusCodeFromError(err) //400
+	errorMessage := err.Error()
+	pkgLogger.Error(returnMessage)
 	return statusCode, returnMessage, errorMessage
 }
 

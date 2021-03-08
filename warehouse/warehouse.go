@@ -348,7 +348,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	return stagingFilesList, nil
 }
 
-func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) UploadT {
+func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, metadata, first_event_at, last_event_at, created_at, updated_at)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`, warehouseutils.WarehouseUploadsTable)
 	pkgLogger.Infof("WH: %s: Creating record in %s table: %v", wh.destType, warehouseutils.WarehouseUploadsTable, sqlStatement)
@@ -378,21 +378,6 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	if err != nil {
 		panic(err)
 	}
-
-	upload := UploadT{
-		ID:                 uploadID,
-		Namespace:          warehouse.Namespace,
-		SourceID:           warehouse.Source.ID,
-		DestinationID:      warehouse.Destination.ID,
-		DestinationType:    wh.destType,
-		StartStagingFileID: startJSONID,
-		EndStagingFileID:   endJSONID,
-		Status:             Waiting,
-		FirstEventAt:       firstEventAt,
-		LastEventAt:        lastEventAt,
-	}
-
-	return upload
 }
 
 func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
@@ -425,38 +410,14 @@ func uploadFrequencyExceeded(warehouse warehouseutils.WarehouseT, syncFrequency 
 	return false
 }
 
-func getLastStagingFileCreatedAt(warehouse warehouseutils.WarehouseT) time.Time {
-	stmt := fmt.Sprintf(`SELECT created_at from %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseStagingFilesTable, warehouse.Source.ID, warehouse.Destination.ID)
-	var createdAt sql.NullTime
-	err := dbHandle.QueryRow(stmt).Scan(&createdAt)
-	if err != nil {
-		pkgLogger.Errorf(`Error in getLastStagingFileCreatedAt: %v`, err)
-		return time.Now()
-	}
-	return createdAt.Time
-}
-
-func setLastProcessedMarker(warehouse warehouseutils.WarehouseT, lastEventAt time.Time) {
-	unixTime := lastEventAt.Unix()
-
-	freqInS := getUploadFreqInS(warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse))
-
-	lastStagingFileCreatedAt := getLastStagingFileCreatedAt(warehouse)
-	// set lastEvent to currentTime in cases where
-	// 1. if there is lag in creating staging files - last staging file is more than freqInS old
-	// 2. and if there is less than freqInS worth of data in pending staging files
-	if time.Now().Add(time.Duration(-freqInS)*time.Second).Sub(lastStagingFileCreatedAt) > 0 && lastStagingFileCreatedAt.Sub(lastEventAt) < time.Duration(freqInS)*time.Second {
-		unixTime = time.Now().Unix()
-	}
-
+func setLastProcessedMarker(warehouse warehouseutils.WarehouseT) {
 	lastProcessedMarkerMapLock.Lock()
 	defer lastProcessedMarkerMapLock.Unlock()
-	lastProcessedMarkerMap[warehouse.Identifier] = unixTime
+	lastProcessedMarkerMap[warehouse.Identifier] = time.Now().Unix()
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT) ([]*UploadJobT, error) {
+func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT) {
 	count := 0
-	var uploadJobs []*UploadJobT
 	// Process staging files in batches of stagingFilesBatchSize
 	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
 	// Then we create 10 new entries in wh_uploads table each with 100 staging files
@@ -466,25 +427,12 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.War
 			lastIndex = len(stagingFilesList)
 		}
 
-		upload := wh.initUpload(warehouse, stagingFilesList[count:lastIndex])
-
-		job := UploadJobT{
-			upload:       &upload,
-			stagingFiles: stagingFilesList[count:lastIndex],
-			warehouse:    warehouse,
-			whManager:    whManager,
-			dbHandle:     wh.dbHandle,
-			pgNotifier:   &wh.notifier,
-		}
-
-		uploadJobs = append(uploadJobs, &job)
+		wh.initUpload(warehouse, stagingFilesList[count:lastIndex])
 		count += stagingFilesBatchSize
 		if count >= len(stagingFilesList) {
 			break
 		}
 	}
-
-	return uploadJobs, nil
 }
 
 func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
@@ -505,7 +453,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 		delete(inRecoveryMap, warehouse.Destination.ID)
 	}
 
-	if !wh.canStartUpload(warehouse) {
+	if !wh.canCreateUpload(warehouse) {
 		pkgLogger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded", warehouse.Identifier)
 		return nil
 	}
@@ -520,14 +468,8 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 		return nil
 	}
 
-	var uploadJobs []*UploadJobT
-	uploadJobs, err = wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to create upload jobs for %s for new staging files with error: %v", warehouse.Identifier, err)
-		return err
-	}
-
-	setLastProcessedMarker(warehouse, uploadJobs[len(uploadJobs)-1].upload.LastEventAt)
+	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList)
+	setLastProcessedMarker(warehouse)
 	return nil
 }
 
@@ -1075,7 +1017,8 @@ func Start() {
 		return
 	}
 	var err error
-	notifier, err = pgnotifier.New(psqlInfo)
+	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
+	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
 		panic(err)
 	}

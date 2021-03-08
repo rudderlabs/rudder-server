@@ -41,14 +41,12 @@ func NewTransformer() *HandleT {
 }
 
 var (
-	maxChanSize, numTransformWorker, maxRetry int
-	retrySleep                                time.Duration
-	pkgLogger                                 logger.LoggerI
+	maxRetry   int
+	retrySleep time.Duration
+	pkgLogger  logger.LoggerI
 )
 
 func loadConfig() {
-	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
-	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
 	maxRetry = config.GetInt("Processor.maxRetry", 30)
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 }
@@ -82,8 +80,6 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 		//Unexpected transformType returning empty
 		return []types.DestinationJobT{}
 	}
-
-	pkgLogger.Infof("router transform url %s", url)
 
 	for {
 		trans.transformRequestTimerStat.Start()

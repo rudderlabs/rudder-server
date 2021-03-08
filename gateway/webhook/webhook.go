@@ -36,7 +36,6 @@ type webhookT struct {
 	request    *http.Request
 	writer     *http.ResponseWriter
 	done       chan<- webhookErrorRespT
-	reqType    string
 	sourceType string
 	writeKey   string
 }

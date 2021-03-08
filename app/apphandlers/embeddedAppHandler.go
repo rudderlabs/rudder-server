@@ -63,7 +63,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			startRouterFunc := func() {
-				StartRouter(enableRouter, &routerDB, &batchRouterDB)
+				StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -75,7 +75,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	}
 
 	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
-	StartRouter(enableRouter, &routerDB, &batchRouterDB)
+	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB)
 
 	if enableGateway {
 		var gateway gateway.HandleT
@@ -83,6 +83,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 
 		rateLimiter.SetUp()
 		gateway.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
+		gateway.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI

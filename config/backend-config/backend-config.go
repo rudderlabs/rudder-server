@@ -3,10 +3,6 @@ package backendconfig
 //go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"net/http"
 	"reflect"
 	"sort"
 	"sync"
@@ -45,7 +41,6 @@ var (
 	LastRegulationSync                    string
 	maxRegulationsPerRequest              int
 	configEnvReplacementEnabled           bool
-	configEnvHandler                      types.ConfigEnvI
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
@@ -201,40 +196,6 @@ func loadConfig() {
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
 	maxRegulationsPerRequest = config.GetInt("BackendConfig.maxRegulationsPerRequest", 1000)
 	configEnvReplacementEnabled = config.GetBool("BackendConfig.envReplacementEnabled", true)
-}
-
-func MakePostRequest(url string, endpoint string, data interface{}) (response []byte, ok bool) {
-	client := &http.Client{}
-	backendURL := fmt.Sprintf("%s%s", url, endpoint)
-	dataJSON, _ := json.Marshal(data)
-	request, err := Http.NewRequest("POST", backendURL, bytes.NewBuffer(dataJSON))
-	if err != nil {
-		pkgLogger.Errorf("ConfigBackend: Failed to make request: %s, Error: %s", backendURL, err.Error())
-		return []byte{}, false
-	}
-
-	request.SetBasicAuth(workspaceToken, "")
-	request.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(request)
-	// Not handling errors when sending alert to victorops
-	if err != nil {
-		pkgLogger.Errorf("ConfigBackend: Failed to execute request: %s, Error: %s", backendURL, err.Error())
-		return []byte{}, false
-	}
-	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		pkgLogger.Errorf("ConfigBackend: Got error response %d", resp.StatusCode)
-	}
-
-	body, err := IoUtil.ReadAll(resp.Body)
-	defer resp.Body.Close()
-
-	pkgLogger.Debugf("ConfigBackend: Successful %s", string(body))
-	return body, true
-}
-
-func MakeBackendPostRequest(endpoint string, data interface{}) (response []byte, ok bool) {
-	return MakePostRequest(configBackendURL, endpoint, data)
 }
 
 func init() {

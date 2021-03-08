@@ -51,8 +51,9 @@ func init() {
 }
 
 type PgNotifierT struct {
-	URI      string
-	dbHandle *sql.DB
+	URI                 string
+	dbHandle            *sql.DB
+	workspaceIdentifier string
 }
 
 type MessageT struct {
@@ -95,7 +96,7 @@ func loadPGNotifierConfig() {
 }
 
 //New Given default connection info return pg notifiew object from it
-func New(fallbackConnectionInfo string) (notifier PgNotifierT, err error) {
+func New(workspaceIdentifier string, fallbackConnectionInfo string) (notifier PgNotifierT, err error) {
 
 	// by default connection info is fallback connection info
 	connectionInfo := fallbackConnectionInfo
@@ -110,8 +111,9 @@ func New(fallbackConnectionInfo string) (notifier PgNotifierT, err error) {
 		return
 	}
 	notifier = PgNotifierT{
-		dbHandle: dbHandle,
-		URI:      connectionInfo,
+		dbHandle:            dbHandle,
+		URI:                 connectionInfo,
+		workspaceIdentifier: workspaceIdentifier,
 	}
 	err = notifier.setupQueue()
 	return
@@ -122,11 +124,16 @@ func (notifier PgNotifierT) GetDBHandle() *sql.DB {
 }
 
 func (notifier PgNotifierT) AddTopic(topic string) (err error) {
-	stmt := fmt.Sprintf("DELETE FROM %s WHERE topic ='%s'", queueName, topic)
-	pkgLogger.Infof("PgNotifier: Deleting all jobs on topic: %s", topic)
-	_, err = notifier.dbHandle.Exec(stmt)
-	if err != nil {
-		return
+
+	// clean up all jobs in pgnotifier for same workspace
+	// additional safety check to not delete all jobs with empty workspaceIdentifier
+	if notifier.workspaceIdentifier != "" {
+		stmt := fmt.Sprintf("DELETE FROM %s WHERE workspace='%s' AND topic ='%s'", queueName, notifier.workspaceIdentifier, topic)
+		pkgLogger.Infof("PgNotifier: Deleting all jobs on topic: %s", topic)
+		_, err = notifier.dbHandle.Exec(stmt)
+		if err != nil {
+			return
+		}
 	}
 	err = notifier.createTrigger(topic)
 	if err != nil {
@@ -163,9 +170,10 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 								WHERE id IN (
 									SELECT id FROM %[1]s
 									WHERE status='%[3]s' OR status='%[4]s' OR (status='%[5]s' AND last_exec_time <= NOW() - INTERVAL '%[6]v seconds')
+									AND workspace='%[7]s'
 									ORDER BY id
 									FOR UPDATE SKIP LOCKED
-									LIMIT %[7]v
+									LIMIT %[8]v
 								) RETURNING id`,
 			queueName,
 			GetCurrentSQLTimestamp(),
@@ -173,6 +181,7 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 			FailedState,
 			ExecutingState,
 			retriggerExecutingTimeLimitInS,
+			notifier.workspaceIdentifier,
 			retriggerCount)
 		pkgLogger.Debugf("PgNotifier: triggering pending jobs: %v", stmt)
 		rows, err := notifier.dbHandle.Query(stmt)
@@ -215,15 +224,17 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				}
 				responses := []ResponseT{}
 				for rows.Next() {
-					var status, error string
-					var output json.RawMessage
+					var status, jobError, output sql.NullString
 					var jobID int64
-					err = rows.Scan(&jobID, &output, &status, &error)
+					err = rows.Scan(&jobID, &output, &status, &jobError)
+					if err != nil {
+						panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", stmt, err))
+					}
 					responses = append(responses, ResponseT{
 						JobID:  jobID,
-						Output: output,
-						Status: status,
-						Error:  error,
+						Output: []byte(output.String),
+						Status: status.String,
+						Error:  jobError.String,
 					})
 				}
 				rows.Close()
@@ -326,7 +337,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "topic", "payload"))
+	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "topic", "payload", "workspace"))
 	if err != nil {
 		return
 	}
@@ -335,7 +346,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 	batchID := uuid.NewV4().String()
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(messages), queueName, batchID)
 	for _, message := range messages {
-		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload))
+		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload), notifier.workspaceIdentifier)
 		if err != nil {
 			return
 		}
@@ -484,6 +495,12 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 		return
 	}
 
+	sqlStmt = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS workspace VARCHAR(64)`, queueName)
+	_, err = notifier.dbHandle.Exec(sqlStmt)
+	if err != nil {
+		return
+	}
+
 	// create index on status
 	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_idx ON %[1]s (status);`, queueName)
 	_, err = notifier.dbHandle.Exec(sqlStmt)
@@ -493,6 +510,13 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 
 	// create index on batch_id
 	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_batch_id_idx ON %[1]s (batch_id);`, queueName)
+	_, err = notifier.dbHandle.Exec(sqlStmt)
+	if err != nil {
+		return
+	}
+
+	// create index on workspace, topic
+	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_workspace_topic_idx ON %[1]s (workspace, topic);`, queueName)
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
 		return
