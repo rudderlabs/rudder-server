@@ -36,7 +36,7 @@ const (
 	ErrorCode              = "error_code"
 	ErrorResponse          = "error_response"
 	Count                  = "count"
-	ErrorCountMap          = "stringified_error_count_map"
+	ErrorCountMap          = "error_count_map"
 )
 
 var (
