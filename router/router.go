@@ -515,7 +515,11 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 			worker.sendEventDeliveryStat(&destinationJobMetadata, &status, &destinationJob.Destination)
 
-			worker.sendDestinationResponseToConfigBackend(destinationJob.Message, &destinationJobMetadata, &status)
+			payload := destinationJob.Message
+			if destinationJob.Message == nil {
+				payload = destinationJobMetadata.JobT.EventPayload
+			}
+			worker.sendDestinationResponseToConfigBackend(payload, &destinationJobMetadata, &status)
 		}
 	}
 
