@@ -1131,7 +1131,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	var retryList, unprocessedList []*jobsdb.JobT
 	var totalRetryEvents, totalUnprocessedEvents int
 
-	unTruncatedRetryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
+	unTruncatedRetryList := proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{gateway.CustomVal}, Count: toQuery})
 	retryList, totalRetryEvents = getTruncatedEventList(unTruncatedRetryList, maxEventsToProcess)
 
 	if len(unTruncatedRetryList) >= dbReadBatchSize || totalRetryEvents >= maxEventsToProcess {
@@ -1139,7 +1139,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	} else {
 		eventsLeftToProcess := maxEventsToProcess - totalRetryEvents
 		toQuery = misc.MinInt(eventsLeftToProcess, dbReadBatchSize)
-		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
+		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{gateway.CustomVal}, Count: toQuery})
 		unprocessedList, totalUnprocessedEvents = getTruncatedEventList(unTruncatedUnProcessedList, eventsLeftToProcess)
 	}
 
@@ -1224,7 +1224,7 @@ func (proc *HandleT) mainLoop() {
 
 func (proc *HandleT) crashRecover() {
 	for {
-		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize, nil)
+		execList := proc.gatewayDB.GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gateway.CustomVal}, Count: dbReadBatchSize})
 
 		if len(execList) == 0 {
 			break

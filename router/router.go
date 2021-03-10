@@ -1146,13 +1146,13 @@ func (rt *HandleT) generatorLoop() {
 		}
 
 		toQuery := jobQueryBatchSize
-		retryList := rt.jobsDB.GetToRetry([]string{rt.destName}, toQuery, nil)
+		retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
 		toQuery -= len(retryList)
-		throttledList := rt.jobsDB.GetThrottled([]string{rt.destName}, toQuery, nil)
+		throttledList := rt.jobsDB.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
 		toQuery -= len(throttledList)
-		waitList := rt.jobsDB.GetWaiting([]string{rt.destName}, toQuery, nil) //Jobs send to waiting state
+		waitList := rt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery}) //Jobs send to waiting state
 		toQuery -= len(waitList)
-		unprocessedList := rt.jobsDB.GetUnprocessed([]string{rt.destName}, toQuery, nil)
+		unprocessedList := rt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
 
 		combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
 
@@ -1245,7 +1245,7 @@ func destIDExtractor(body []byte) func() string {
 }
 
 func (rt *HandleT) crashRecover() {
-	rt.jobsDB.DeleteExecuting([]string{rt.destName}, -1, nil)
+	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})
 }
 
 func init() {

@@ -240,7 +240,7 @@ var _ = Describe("Processor", func() {
 			}
 
 			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
 		})
@@ -289,7 +289,7 @@ var _ = Describe("Processor", func() {
 			}
 
 			// GetExecuting is called in a loop until all executing jobs have been updated. Each executing job should be updated to failed status
-			var executingCall1 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(executingJobsList[0:2]).Times(1)
+			var executingCall1 = c.mockGatewayJobsDB.EXPECT().GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(executingJobsList[0:2]).Times(1)
 			var updateCall1 = c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(2), gatewayCustomVal, nil).After(executingCall1).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(executingJobsList[0], statuses[0], jobsdb.Failed.State, "", "{}", 2)
@@ -297,13 +297,13 @@ var _ = Describe("Processor", func() {
 				})
 
 			// second loop iteration
-			var executingCall2 = c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).After(updateCall1).Return(executingJobsList[2:]).Times(1)
+			var executingCall2 = c.mockGatewayJobsDB.EXPECT().GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).After(updateCall1).Return(executingJobsList[2:]).Times(1)
 			var updateCall2 = c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(1), gatewayCustomVal, nil).After(executingCall2).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(executingJobsList[2], statuses[0], jobsdb.Failed.State, "", "{}", 1)
 				})
 
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
 		})
@@ -313,7 +313,7 @@ var _ = Describe("Processor", func() {
 		var clearDB = false
 		BeforeEach(func() {
 			// crash recovery check
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
 		})
 
 		It("should only send proper stats, if not pending jobs are returned", func() {
@@ -326,8 +326,8 @@ var _ = Describe("Processor", func() {
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
 
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
 
 			var didWork = processor.handlePendingGatewayJobs()
 			Expect(didWork).To(Equal(false))
@@ -444,8 +444,8 @@ var _ = Describe("Processor", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callRetry)
 
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledA: {
@@ -607,8 +607,8 @@ var _ = Describe("Processor", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callRetry)
 
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledB: {
@@ -798,8 +798,8 @@ var _ = Describe("Processor", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize-len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callRetry)
 
 			callUpdateJobs := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callListSortEnd).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
@@ -1011,8 +1011,8 @@ var _ = Describe("Processor", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1).After(callDBRTime)
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1).After(callDBRTime)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize-len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callRetry)
 			callUpdateJobs := c.mockGatewayJobsDB.EXPECT().UpdateJobStatus(gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callListSortEnd).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
@@ -1188,13 +1188,13 @@ var _ = Describe("Processor", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{}
 
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1)
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callRetry)
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Return(transformer.ResponseT{
@@ -1299,13 +1299,13 @@ var _ = Describe("Processor", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{}
 
-			c.mockGatewayJobsDB.EXPECT().GetExecuting(gatewayCustomVal, c.dbReadBatchSize, nil).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gatewayCustomVal, c.dbReadBatchSize, nil).Return(toRetryJobsList).Times(1)
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gatewayCustomVal, c.dbReadBatchSize-len(toRetryJobsList), nil).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callRetry)
 
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
