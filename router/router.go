@@ -406,7 +406,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 	failedUserIDsMap := make(map[string]struct{})
 	for _, destinationJob := range worker.destinationJobs {
-		payload := []byte(`{}`)
 		var attemptedToSendTheJob bool
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
 			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, destinationJob) {
