@@ -150,7 +150,7 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[string]map[string]int, destType string, isWarehouse bool) {
+func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[string]map[string]int, destType string, isWarehouse bool) {
 	tags := map[string]string{
 		"module":        "batch_router",
 		"destType":      destType,
@@ -159,10 +159,10 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[strin
 		"sourceId":      misc.GetTagName(batchDestination.Source.ID, batchDestination.Source.Name),
 	}
 
-	for jobState, countMap := range jobStateCount {
-		for attempt, count := range countMap {
+	for jobState, countByAttemptMap := range jobStateCounts {
+		for attempt, count := range countByAttemptMap {
 			tags["job_state"] = jobState
-			tags["attempt"] = attempt
+			tags["attempt_number"] = attempt
 			if count > 0 {
 				stats.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
 			}
@@ -413,7 +413,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		warehouseServiceFailedTimeLock.Unlock()
 	}
 
-	jobStateCount := make(map[string]map[string]int)
+	jobStateCounts := make(map[string]map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 		var firstAttemptedAt time.Time
@@ -457,7 +457,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			ErrorResponse: errorResp,
 		}
 		statusList = append(statusList, &status)
-		jobStateCount[jobState][strconv.Itoa(attemptNum)] = jobStateCount[jobState][strconv.Itoa(attemptNum)] + 1
+		jobStateCounts[jobState][strconv.Itoa(attemptNum)] = jobStateCounts[jobState][strconv.Itoa(attemptNum)] + 1
 	}
 
 	//tracking batch router errors
@@ -480,7 +480,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	//Mark the status of the jobs
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 
-	sendDestStatusStats(batchJobs.BatchDestination, jobStateCount, brt.destType, isWarehouse)
+	sendDestStatusStats(batchJobs.BatchDestination, jobStateCounts, brt.destType, isWarehouse)
 }
 
 func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {

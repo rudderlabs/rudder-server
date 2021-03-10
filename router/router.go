@@ -417,6 +417,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	failedUserIDsMap := make(map[string]struct{})
 	for _, destinationJob := range worker.destinationJobs {
 		payload := []byte(`{}`)
+		var attemptedToSendTheJob bool
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
 			payload = destinationJob.Message
 			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, destinationJob) {
@@ -448,6 +449,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				}
 
 				prevRespStatusCode = respStatusCode
+				attemptedToSendTheJob = true
 
 				worker.deliveryTimeStat.End()
 				// END: request to destination endpoint
@@ -482,6 +484,9 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			handledJobMetadatas[destinationJobMetadata.JobID] = &destinationJobMetadata
 
 			attemptNum := destinationJobMetadata.AttemptNum
+			if attemptedToSendTheJob {
+				attemptNum++
+			}
 
 			//Not saving payload to DB if transformAt is not "router"
 			if destinationJobMetadata.TransformAt != "router" {
@@ -501,7 +506,9 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 			worker.sendEventDeliveryStat(&destinationJobMetadata, &status, &destinationJob.Destination)
 
-			worker.sendRouterResponseCountStat(&destinationJobMetadata, &status, &destinationJob.Destination)
+			if attemptedToSendTheJob {
+				worker.sendRouterResponseCountStat(&destinationJobMetadata, &status, &destinationJob.Destination)
+			}
 
 			worker.sendDestinationResponseToConfigBackend(destinationJob.Message, &destinationJobMetadata, &status)
 		}
