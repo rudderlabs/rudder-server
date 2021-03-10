@@ -63,7 +63,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			startRouterFunc := func() {
-				StartRouter(enableRouter, &routerDB, &batchRouterDB)
+				StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -75,7 +75,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	}
 
 	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
-	StartRouter(enableRouter, &routerDB, &batchRouterDB)
+	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB)
 
 	if enableGateway {
 		var gateway gateway.HandleT

@@ -173,6 +173,7 @@ retryTimeWindowInMins = 180
     httpMaxIdleConnsPerHost=32
     # settings similar to below one can be used to throttle router
     # sending events to downstream destinations
+    # NOTE: Its a good practice to set timeWindowInS as high as possible. This will prevent blowup of status table.
     # [Router.throttler.AM]
     # limit = 1000
     # timeWindowInS =          1
@@ -277,7 +278,7 @@ fileJsonFormat=false
 logFileLocation="/tmp/rudder_log.log"
 logFileSize = 100 # in MB
 enableTimestamp=true
-enableFileNameInLog=false
+enableFileNameInLog=true
 enableStackTrace=false
 #moduleLevels="processor.transformer=ERROR:batchrouter=ERROR:pgnotifier=ERROR:warehouse=ERROR:enterprise.migrator=ERROR"
 
