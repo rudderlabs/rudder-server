@@ -457,6 +457,9 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			ErrorResponse: errorResp,
 		}
 		statusList = append(statusList, &status)
+		if jobStateCounts[jobState] == nil {
+			jobStateCounts[jobState] = make(map[string]int)
+		}
 		jobStateCounts[jobState][strconv.Itoa(attemptNum)] = jobStateCounts[jobState][strconv.Itoa(attemptNum)] + 1
 	}
 
