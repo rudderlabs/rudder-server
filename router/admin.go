@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -15,13 +16,22 @@ type RouterAdmin struct {
 	handles map[string]*HandleT
 }
 
+type SqlRunner struct {
+	dbHandle     *sql.DB
+	jobTableName string
+}
+
 var adminInstance *RouterAdmin
 var routerJobsTableName, routerJobStatusTableName string
+var rtReadOnlyJobsDB jobsdb.ReadonlyHandleT
+var brtReadOnlyJobsDB jobsdb.ReadonlyHandleT
 
 func init() {
 	adminInstance = &RouterAdmin{
 		handles: make(map[string]*HandleT),
 	}
+	rtReadOnlyJobsDB.Setup("rt")
+	brtReadOnlyJobsDB.Setup("batch_rt")
 	admin.RegisterStatusHandler("routers", adminInstance)
 	admin.RegisterAdminHandler("Router", &RouterRpcHandler{jobsDBPrefix: "rt"})
 	admin.RegisterAdminHandler("BatchRouter", &RouterRpcHandler{jobsDBPrefix: "batch_rt"})
@@ -147,6 +157,46 @@ func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) (err error)
 	// Since we try to execute each query independently once we are connected to db
 	// this tries to captures errors that happened on all the execution paths
 	return completeErr
+}
+
+func getReadOnlyJobsDB(prefix string) jobsdb.ReadonlyHandleT {
+	if prefix == "rt" {
+		return rtReadOnlyJobsDB
+	}
+	return brtReadOnlyJobsDB
+}
+
+func (r *RouterRpcHandler) GetDSJobCount(dsName string, result *string) (err error) {
+	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
+	dbHandle := readOnlyJobsDB.DbHandle
+	dsListArr := make([]string, 0)
+	var totalCount int
+	if dsName != "" {
+		dsListArr = append(dsListArr, r.jobsDBPrefix+"_jobs_"+dsName)
+	} else {
+		dsList := readOnlyJobsDB.GetDSList()
+		for _, ds := range dsList {
+			dsListArr = append(dsListArr, ds.JobTable)
+		}
+	}
+	for _, tableName := range dsListArr {
+		runner := &SqlRunner{dbHandle: dbHandle, jobTableName: tableName}
+		count, err := runner.getTableRowCount()
+		if err == nil {
+			totalCount = totalCount + int(count)
+		}
+	}
+	*result = strconv.Itoa(totalCount)
+	return nil
+}
+
+func (r *RouterRpcHandler) GetDSList(dsName string, result *string) (err error) {
+	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
+	dsList := readOnlyJobsDB.GetDSList()
+	for _, ds := range dsList {
+		*result = *result + ds.JobTable + "\n"
+	}
+	return nil
 }
 
 /*
@@ -375,4 +425,23 @@ func (r *RouterRpcHandler) FlushDrainJobsConfig(destID string, reply *string) (e
 
 	*reply = drain.FlushDrainJobConfig(destID)
 	return err
+}
+
+func runSQL(runner *SqlRunner, query string, reciever interface{}) error {
+	row := runner.dbHandle.QueryRow(query)
+	err := row.Scan(reciever)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil //"Zero rows found"
+		}
+	}
+	return err
+}
+
+func (r *SqlRunner) getTableRowCount() (int, error) {
+	var numRows int
+	var err error
+	totalRowsStmt := fmt.Sprintf(`select count(*) from %s`, r.jobTableName)
+	err = runSQL(r, totalRowsStmt, &numRows)
+	return numRows, err
 }

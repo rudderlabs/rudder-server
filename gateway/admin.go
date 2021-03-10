@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -34,7 +35,8 @@ func (g *GatewayAdmin) Status() interface{} {
 }
 
 type GatewayRPCHandler struct {
-	jobsDB jobsdb.JobsDB
+	jobsDB         jobsdb.JobsDB
+	readOnlyJobsDB jobsdb.ReadonlyHandleT
 }
 
 type SqlRunner struct {
@@ -195,6 +197,37 @@ func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) (err error
 	}
 
 	return completeErr
+}
+
+func (g *GatewayRPCHandler) GetDSList(emptyInput string, result *string) (err error) {
+	dsList := g.readOnlyJobsDB.GetDSList()
+	for _, ds := range dsList {
+		*result = *result + ds.JobTable + "\n"
+	}
+	return nil
+}
+
+func (g *GatewayRPCHandler) GetDSJobCount(dsName string, result *string) (err error) {
+	dbHandle := g.readOnlyJobsDB.DbHandle
+	dsListArr := make([]string, 0)
+	var totalCount int
+	if dsName != "" {
+		dsListArr = append(dsListArr, prefix+dsName)
+	} else {
+		dsList := g.readOnlyJobsDB.GetDSList()
+		for _, ds := range dsList {
+			dsListArr = append(dsListArr, ds.JobTable)
+		}
+	}
+	for _, tableName := range dsListArr {
+		runner := &SqlRunner{dbHandle: dbHandle, jobTableName: tableName}
+		count, err := runner.getTableRowCount()
+		if err == nil {
+			totalCount = totalCount + int(count)
+		}
+	}
+	*result = strconv.Itoa(totalCount)
+	return nil
 }
 
 func runSQL(runner *SqlRunner, query string, reciever interface{}) error {

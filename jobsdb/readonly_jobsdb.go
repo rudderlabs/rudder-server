@@ -20,10 +20,11 @@ ReadonlyJobsDB interface contains public methods to access JobsDB data
 */
 type ReadonlyJobsDB interface {
 	GetPendingJobsCount(customValFilters []string, count int, parameterFilters []ParameterFilterT) int64
+	GetDSList() []dataSetT
 }
 
 type ReadonlyHandleT struct {
-	dbHandle    *sql.DB
+	DbHandle    *sql.DB
 	tablePrefix string
 	logger      logger.LoggerI
 }
@@ -37,10 +38,10 @@ func (jd *ReadonlyHandleT) Setup(tablePrefix string) {
 	psqlInfo := GetConnectionString()
 	jd.tablePrefix = tablePrefix
 
-	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
+	jd.DbHandle, err = sql.Open("postgres", psqlInfo)
 	jd.assertError(err)
 
-	err = jd.dbHandle.Ping()
+	err = jd.DbHandle.Ping()
 	jd.assertError(err)
 
 	jd.logger.Infof("Readonly user connected to %s DB", tablePrefix)
@@ -50,7 +51,7 @@ func (jd *ReadonlyHandleT) Setup(tablePrefix string) {
 TearDown releases all the resources
 */
 func (jd *ReadonlyHandleT) TearDown() {
-	jd.dbHandle.Close()
+	jd.DbHandle.Close()
 }
 
 //Some helper functions
@@ -70,8 +71,8 @@ func (jd *ReadonlyHandleT) assert(cond bool, errorString string) {
 Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
 */
-func (jd *ReadonlyHandleT) getDSList() []dataSetT {
-	return getDSList(jd, jd.dbHandle, jd.tablePrefix)
+func (jd *ReadonlyHandleT) GetDSList() []dataSetT {
+	return getDSList(jd, jd.DbHandle, jd.tablePrefix)
 }
 
 /*
@@ -101,7 +102,7 @@ func (jd *ReadonlyHandleT) getUnprocessedCount(customValFilters []string, parame
 	queryStat.Start()
 	defer queryStat.End()
 
-	dsList := jd.getDSList()
+	dsList := jd.GetDSList()
 	var totalCount int64
 	for _, ds := range dsList {
 		count := jd.getUnprocessedJobsDSCount(ds, customValFilters, parameterFilters)
@@ -151,7 +152,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 
 	jd.logger.Debug(sqlStatement)
 
-	row := jd.dbHandle.QueryRow(sqlStatement)
+	row := jd.DbHandle.QueryRow(sqlStatement)
 	var count sql.NullInt64
 	err := row.Scan(&count)
 	if err != nil && err != sql.ErrNoRows {
@@ -191,7 +192,7 @@ func (jd *ReadonlyHandleT) getProcessedCount(stateFilter []string, customValFilt
 	queryStat.Start()
 	defer queryStat.End()
 
-	dsList := jd.getDSList()
+	dsList := jd.GetDSList()
 	var totalCount int64
 	for _, ds := range dsList {
 		count := jd.getProcessedJobsDSCount(ds, stateFilter, customValFilters, parameterFilters)
@@ -264,7 +265,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 
 	jd.logger.Debug(sqlStatement)
 
-	row := jd.dbHandle.QueryRow(sqlStatement, time.Now())
+	row := jd.DbHandle.QueryRow(sqlStatement, time.Now())
 	var count sql.NullInt64
 	err := row.Scan(&count)
 	if err != nil && err != sql.ErrNoRows {
