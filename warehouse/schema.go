@@ -144,9 +144,6 @@ func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseuti
 		currentMergedSchema = warehouseutils.SchemaT{}
 	}
 
-	usersTableName := warehouseutils.ToProviderCase(warehouseType, "users")
-	identifiesTableName := warehouseutils.ToProviderCase(warehouseType, "identifies")
-
 	setColumnTypeFromExistingSchema := func(refSchema warehouseutils.SchemaT, tableName, refTableName, columnName, refColumnName, columnType string) bool {
 		columnTypeInDB, ok := refSchema[refTableName][refColumnName]
 		if !ok {
@@ -160,33 +157,36 @@ func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseuti
 		return true
 	}
 
+	usersTableName := warehouseutils.ToProviderCase(warehouseType, "users")
+	identifiesTableName := warehouseutils.ToProviderCase(warehouseType, "identifies")
+
 	for _, schema := range schemaList {
 		for tableName, columnMap := range schema {
 			if currentMergedSchema[tableName] == nil {
 				currentMergedSchema[tableName] = make(map[string]string)
 			}
+			var toInferFromIdentifies bool
+			var refSchema warehouseutils.SchemaT
+			if tableName == usersTableName {
+				if _, ok := currentSchema[identifiesTableName]; ok {
+					toInferFromIdentifies = true
+					refSchema = currentSchema
+				} else if _, ok := currentMergedSchema[identifiesTableName]; ok { // also check in identifies of currentMergedSchema if identifies table not present in warehouse
+					toInferFromIdentifies = true
+					refSchema = currentMergedSchema
+				}
+			}
 			for columnName, columnType := range columnMap {
 				// if column already has a type in db, use that
 				// check for data type in identifies for users table before check in users table
 				// to ensure same data type is set for the same column in both users and identifies
-				if tableName == usersTableName {
-					var toInferFromIdentifies bool
-					var refSchema warehouseutils.SchemaT
-					if _, ok := currentSchema[identifiesTableName]; ok {
-						toInferFromIdentifies = true
-						refSchema = currentSchema
-					} else if _, ok := currentMergedSchema[identifiesTableName]; ok { // also check in identifies of currentMergedSchema if identifies table not present in warehouse
-						toInferFromIdentifies = true
-						refSchema = currentMergedSchema
+				if tableName == usersTableName && toInferFromIdentifies {
+					refColumnName := columnName
+					if columnName == warehouseutils.ToProviderCase(warehouseType, "id") {
+						refColumnName = warehouseutils.ToProviderCase(warehouseType, "user_id")
 					}
-					if toInferFromIdentifies {
-						refColumnName := columnName
-						if columnName == warehouseutils.ToProviderCase(warehouseType, "id") {
-							refColumnName = warehouseutils.ToProviderCase(warehouseType, "user_id")
-						}
-						if setColumnTypeFromExistingSchema(refSchema, tableName, identifiesTableName, columnName, refColumnName, columnType) {
-							continue
-						}
+					if setColumnTypeFromExistingSchema(refSchema, tableName, identifiesTableName, columnName, refColumnName, columnType) {
+						continue
 					}
 				}
 
