@@ -546,6 +546,14 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	worker.rt.trackRequestMetrics(reqMetric)
 }
 
+func (worker *workerT) updateAbortedMetrics(destinationID string) {
+	worker.rt.eventsAbortedStat = stats.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
+		"destType": worker.rt.destName,
+		"destId":   destinationID,
+	})
+	worker.rt.eventsAbortedStat.Increment()
+}
+
 func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
 	//Enhancing status.ErrorResponse with firstAttemptedAt
 	firstAttemptedAtTime := time.Now()
@@ -592,17 +600,12 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 		worker.rt.failedEventsChan <- *status
 
-		worker.rt.eventsAbortedStat = stats.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
-			"destType": worker.rt.destName,
-			"destId":   destinationJobMetadata.DestinationID,
-		})
-
 		if respStatusCode >= 500 {
 			timeElapsed := time.Since(firstAttemptedAtTime)
 			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
 				addToFailedMap = false
-				worker.rt.eventsAbortedStat.Increment()
+				worker.updateAbortedMetrics(destinationJobMetadata.DestinationID)
 				worker.retryForJobMapMutex.Lock()
 				delete(worker.retryForJobMap, destinationJobMetadata.JobID)
 				worker.retryForJobMapMutex.Unlock()
@@ -618,7 +621,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		} else {
 			status.JobState = jobsdb.Aborted.State
 			addToFailedMap = false
-			worker.rt.eventsAbortedStat.Increment()
+			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID)
 		}
 
 		if worker.rt.guaranteeUserEventOrder {
