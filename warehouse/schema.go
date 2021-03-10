@@ -147,8 +147,8 @@ func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseuti
 	usersTableName := warehouseutils.ToProviderCase(warehouseType, "users")
 	identifiesTableName := warehouseutils.ToProviderCase(warehouseType, "identifies")
 
-	setColumnTypeFromExistingSchema := func(tableName, refTableName, columnName, refColumnName, columnType string) bool {
-		if columnTypeInDB, ok := currentSchema[refTableName][refColumnName]; ok {
+	setColumnTypeFromExistingSchema := func(refSchema warehouseutils.SchemaT, tableName, refTableName, columnName, refColumnName, columnType string) bool {
+		if columnTypeInDB, ok := refSchema[refTableName][refColumnName]; ok {
 			if columnTypeInDB == "string" && columnType == "text" {
 				currentMergedSchema[tableName][columnName] = columnType
 				return true
@@ -166,25 +166,32 @@ func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseuti
 			}
 			for columnName, columnType := range columnMap {
 				// if column already has a type in db, use that
-				if len(currentSchema) > 0 {
-					// check for data type in identifies for users table before check in users table
-					// to ensure same data type is set for the same column in both users and identifies
-					if tableName == usersTableName {
-						if _, ok := currentSchema[identifiesTableName]; ok {
-							refColumnName := columnName
-							if columnName == warehouseutils.ToProviderCase(warehouseType, "id") {
-								refColumnName = warehouseutils.ToProviderCase(warehouseType, "user_id")
-							}
-							if setColumnTypeFromExistingSchema(tableName, identifiesTableName, columnName, refColumnName, columnType) {
-								continue
-							}
-						}
+				// check for data type in identifies for users table before check in users table
+				// to ensure same data type is set for the same column in both users and identifies
+				if tableName == usersTableName {
+					var toInferFromIdentifies bool
+					var refSchema warehouseutils.SchemaT
+					if _, ok := currentSchema[identifiesTableName]; ok {
+						toInferFromIdentifies = true
+						refSchema = currentSchema
+					} else if _, ok := currentMergedSchema[identifiesTableName]; ok { // also check in identifies of currentMergedSchema if identifies table not present in warehouse
+						toInferFromIdentifies = true
+						refSchema = currentMergedSchema
 					}
-
-					if _, ok := currentSchema[tableName]; ok {
-						if setColumnTypeFromExistingSchema(tableName, tableName, columnName, columnName, columnType) {
+					if toInferFromIdentifies {
+						refColumnName := columnName
+						if columnName == warehouseutils.ToProviderCase(warehouseType, "id") {
+							refColumnName = warehouseutils.ToProviderCase(warehouseType, "user_id")
+						}
+						if setColumnTypeFromExistingSchema(refSchema, tableName, identifiesTableName, columnName, refColumnName, columnType) {
 							continue
 						}
+					}
+				}
+
+				if _, ok := currentSchema[tableName]; ok {
+					if setColumnTypeFromExistingSchema(currentSchema, tableName, tableName, columnName, columnName, columnType) {
+						continue
 					}
 				}
 				// check if we already set the columnType in currentMergedSchema

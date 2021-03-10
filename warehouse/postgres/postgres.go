@@ -360,10 +360,10 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[5]s as (
 												(
-													SELECT id, %[4]s FROM "%[1]s"."%[2]s" WHERE id in (SELECT user_id FROM %[3]s)
+													SELECT id, %[4]s FROM "%[1]s"."%[2]s" WHERE id in (SELECT user_id FROM %[3]s WHERE user_id IS NOT NULL)
 												) UNION
 												(
-													SELECT user_id, %[4]s FROM %[3]s
+													SELECT user_id, %[4]s FROM %[3]s  WHERE user_id IS NOT NULL
 												)
 											)`, pg.Namespace, warehouseutils.UsersTable, identifyStagingTable, strings.Join(userColNames, ","), unionStagingTableName)
 
