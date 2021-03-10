@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"reflect"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"reflect"
 )
 
 type SchemaHandleT struct {
@@ -138,27 +139,60 @@ func (sHandle *SchemaHandleT) fetchSchemaFromWarehouse() (schemaInWarehouse ware
 	return schemaInWarehouse, nil
 }
 
-func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT) warehouseutils.SchemaT {
+func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {
 	if len(currentMergedSchema) == 0 {
 		currentMergedSchema = warehouseutils.SchemaT{}
 	}
+
+	setColumnTypeFromExistingSchema := func(refSchema warehouseutils.SchemaT, tableName, refTableName, columnName, refColumnName, columnType string) bool {
+		columnTypeInDB, ok := refSchema[refTableName][refColumnName]
+		if !ok {
+			return false
+		}
+		if columnTypeInDB == "string" && columnType == "text" {
+			currentMergedSchema[tableName][columnName] = columnType
+			return true
+		}
+		currentMergedSchema[tableName][columnName] = columnTypeInDB
+		return true
+	}
+
+	usersTableName := warehouseutils.ToProviderCase(warehouseType, "users")
+	identifiesTableName := warehouseutils.ToProviderCase(warehouseType, "identifies")
+
 	for _, schema := range schemaList {
 		for tableName, columnMap := range schema {
 			if currentMergedSchema[tableName] == nil {
 				currentMergedSchema[tableName] = make(map[string]string)
 			}
+			var toInferFromIdentifies bool
+			var refSchema warehouseutils.SchemaT
+			if tableName == usersTableName {
+				if _, ok := currentSchema[identifiesTableName]; ok {
+					toInferFromIdentifies = true
+					refSchema = currentSchema
+				} else if _, ok := currentMergedSchema[identifiesTableName]; ok { // also check in identifies of currentMergedSchema if identifies table not present in warehouse
+					toInferFromIdentifies = true
+					refSchema = currentMergedSchema
+				}
+			}
 			for columnName, columnType := range columnMap {
 				// if column already has a type in db, use that
-				if len(currentSchema) > 0 {
-					if _, ok := currentSchema[tableName]; ok {
-						if columnTypeInDB, ok := currentSchema[tableName][columnName]; ok {
-							if columnTypeInDB == "string" && columnType == "text" {
-								currentMergedSchema[tableName][columnName] = columnType
-								continue
-							}
-							currentMergedSchema[tableName][columnName] = columnTypeInDB
-							continue
-						}
+				// check for data type in identifies for users table before check in users table
+				// to ensure same data type is set for the same column in both users and identifies
+				if tableName == usersTableName && toInferFromIdentifies {
+					refColumnName := columnName
+					if columnName == warehouseutils.ToProviderCase(warehouseType, "id") {
+						refColumnName = warehouseutils.ToProviderCase(warehouseType, "user_id")
+					}
+					if setColumnTypeFromExistingSchema(refSchema, tableName, identifiesTableName, columnName, refColumnName, columnType) {
+						continue
+					}
+				}
+
+				if _, ok := currentSchema[tableName]; ok {
+					if setColumnTypeFromExistingSchema(currentSchema, tableName, tableName, columnName, columnName, columnType) {
+						continue
 					}
 				}
 				// check if we already set the columnType in currentMergedSchema
@@ -252,7 +286,7 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 		}
 		rows.Close()
 
-		consolidatedSchema = mergeSchema(schemaInLocalDB, schemas, consolidatedSchema)
+		consolidatedSchema = mergeSchema(schemaInLocalDB, schemas, consolidatedSchema, sh.warehouse.Type)
 
 		count += stagingFilesSchemaPaginationSize
 		if count >= len(sh.stagingFiles) {
