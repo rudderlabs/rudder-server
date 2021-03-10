@@ -148,15 +148,16 @@ func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseuti
 	identifiesTableName := warehouseutils.ToProviderCase(warehouseType, "identifies")
 
 	setColumnTypeFromExistingSchema := func(refSchema warehouseutils.SchemaT, tableName, refTableName, columnName, refColumnName, columnType string) bool {
-		if columnTypeInDB, ok := refSchema[refTableName][refColumnName]; ok {
-			if columnTypeInDB == "string" && columnType == "text" {
-				currentMergedSchema[tableName][columnName] = columnType
-				return true
-			}
-			currentMergedSchema[tableName][columnName] = columnTypeInDB
+		columnTypeInDB, ok := refSchema[refTableName][refColumnName]
+		if !ok {
+			return false
+		}
+		if columnTypeInDB == "string" && columnType == "text" {
+			currentMergedSchema[tableName][columnName] = columnType
 			return true
 		}
-		return false
+		currentMergedSchema[tableName][columnName] = columnTypeInDB
+		return true
 	}
 
 	for _, schema := range schemaList {
