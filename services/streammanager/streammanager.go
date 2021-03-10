@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/googlepubsub"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
+	"github.com/rudderlabs/rudder-server/services/streammanager/personalize"
 )
 
 // NewProducer delegates the call to the appropriate based on parameter destination for creating producer
@@ -36,6 +37,9 @@ func NewProducer(destinationConfig interface{}, destType string) (interface{}, e
 	case "GOOGLEPUBSUB":
 		producer, err := googlepubsub.NewProducer(destinationConfig)
 		return producer, err
+	case "PERSONALIZE":
+		producer, err := personalize.NewProducer(destinationConfig)
+		return producer, err
 	default:
 		return nil, fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
 	}
@@ -46,7 +50,7 @@ func NewProducer(destinationConfig interface{}, destType string) (interface{}, e
 func CloseProducer(producer interface{}, destType string) error {
 
 	switch destType {
-	case "KINESIS", "FIREHOSE", "EVENTBRIDGE":
+	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE":
 		return nil
 	case "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD":
 		err := kafka.CloseProducer(producer)
@@ -77,6 +81,8 @@ func Produce(jsonData json.RawMessage, destType string, producer interface{}, co
 		return eventbridge.Produce(jsonData, producer, config)
 	case "GOOGLEPUBSUB":
 		return googlepubsub.Produce(jsonData, producer, config)
+	case "PERSONALIZE":
+		return personalize.Produce(jsonData, producer, config)
 	default:
 		return 404, "No provider configured for StreamManager", ""
 	}
