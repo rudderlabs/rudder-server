@@ -50,6 +50,7 @@ routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
 enableStats = true
+statsTagsFormat = "influxdb" # influxdb or datadog
 
 [Http]
 ReadTimeOutInSec = 0
