@@ -230,15 +230,15 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	if err != nil {
 		return &proto.WHUploadResponse{}, err
 	}
-	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, created_at, first_event_at, last_event_at, timings, metadata->>'nextRetryTime'`)
+	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, created_at, first_event_at, last_event_at, last_exec_at, timings, metadata->>'nextRetryTime'`)
 	uploadReq.API.log.Debug(query)
 	var upload proto.WHUploadResponse
 	var nextRetryTimeStr sql.NullString
-	var firstEventAt, lastEventAt, createdAt sql.NullTime
+	var firstEventAt, lastEventAt, createdAt, lastExecAt sql.NullTime
 	var timingsObject sql.NullString
 	var uploadError string
 	row := uploadReq.API.dbHandle.QueryRow(query)
-	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &createdAt, &firstEventAt, &lastEventAt, &timingsObject, &nextRetryTimeStr)
+	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &createdAt, &firstEventAt, &lastEventAt, &lastExecAt, &timingsObject, &nextRetryTimeStr)
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadResponse{}, err
@@ -246,6 +246,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	upload.CreatedAt = timestamppb.New(createdAt.Time)
 	upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 	upload.LastEventAt = timestamppb.New(lastEventAt.Time)
+	upload.LastExecAt = timestamppb.New(lastExecAt.Time)
 	gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
 		upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 		return true
@@ -305,6 +306,10 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 		}
 		if count.Valid {
 			tableUpload.Count = count.Int32
+		}
+		// do not include rudder_discards table if no events are present
+		if strings.ToLower(tableUpload.Name) == warehouseutils.DiscardsTable && !count.Valid {
+			continue
 		}
 		// do not return error on successful upload
 		if tableUpload.Status == ExportedData {
