@@ -145,6 +145,12 @@ func (bq *HandleT) CreateSchema() (err error) {
 		Location: location,
 	}
 	err = ds.Create(bq.BQContext, meta)
+	if err != nil {
+		if e, ok := err.(*googleapi.Error); ok && e.Code == 409 {
+			pkgLogger.Debugf("BQ: Create schema %s failed as schema already exists", bq.Namespace)
+			return nil
+		}
+	}
 	return
 }
 
@@ -476,7 +482,7 @@ func (bq *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 func (bq *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s.%[2]s`, bq.Namespace, tableName)
 	it, err := bq.Db.Query(sqlStatement).Read(bq.BQContext)
-	if err !=nil {
+	if err != nil {
 		return 0, err
 	}
 	var values []bigquery.Value
