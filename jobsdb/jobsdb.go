@@ -1238,11 +1238,11 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 	queryStat.Start()
 	defer queryStat.End()
 	//Unprocessed jobs
-	unprocessedList := jd.getUnprocessedJobsDS(srcDS, false, 0, GetQueryParamsT{CustomValFilters: []string{}})
+	unprocessedList := jd.getUnprocessedJobsDS(srcDS, false, 0, GetQueryParamsT{})
 
 	//Jobs which haven't finished processing
 	retryList := jd.getProcessedJobsDS(srcDS, true,
-		0, GetQueryParamsT{StateFilters: getValidNonTerminalStates(), CustomValFilters: []string{}})
+		0, GetQueryParamsT{StateFilters: getValidNonTerminalStates()})
 	jobsToMigrate := append(unprocessedList, retryList...)
 	noJobsMigrated = len(jobsToMigrate)
 	//Copy the jobs over. Second parameter (true) makes sure job_id is copied over
