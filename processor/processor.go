@@ -74,7 +74,6 @@ type HandleT struct {
 	statNumEvents                  stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
 	statBatchDestNumOutputEvents   stats.RudderStats
-	statEventType                  stats.RudderStats
 	destStats                      map[string]*DestStatT
 	userToSessionIDMap             map[string]string
 	userJobPQ                      pqT
