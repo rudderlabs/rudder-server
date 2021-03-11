@@ -55,7 +55,10 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	}
 	input := personalizeevents.PutEventsInput{}
 	bytes := []byte(jsonData)
-	json.Unmarshal(bytes, &input)
+	err := json.Unmarshal(bytes, &input)
+	if err != nil {
+		return 400, err.Error(), "Could not unmarshal jsonData according to putEvents input structure"
+	}
 	res, err := client.PutEvents(&input)
 	if err != nil {
 		pkgLogger.Errorf("Personalize Error while sending event :: %w", err)
