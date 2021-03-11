@@ -113,19 +113,24 @@ type credentialsT struct {
 }
 
 // connect connects to warehouse with provided credentials
-func connect(cred credentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s",
+func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
+	var dbNameParam string
+	if includeDBInConn {
+		dbNameParam = fmt.Sprintf(`database=%s`, cred.dbName)
+	}
+
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s",
 		cred.host,
 		cred.port,
 		cred.user,
 		cred.password,
-		cred.dbName,
 		blockSize,
 		poolSize,
 		queryDebugLogs,
 		cred.secure,
 		cred.skipVerify,
 		cred.tlsConfigName,
+		dbNameParam,
 	)
 
 	var err error
@@ -395,8 +400,36 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	return
 }
 
+func (ch *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT 1`)
+	_, err = ch.Db.Exec(sqlStatement)
+	if err != nil {
+		if exception, ok := err.(*clickhouse.Exception); ok && exception.Code == 81 {
+			pkgLogger.Debugf("CH: No database found while checking for schema: %s from  destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // createSchema creates a database in clickhouse
 func (ch *HandleT) createSchema() (err error) {
+	var schemaExists bool
+	schemaExists, err = ch.schemaExists(ch.Namespace)
+	if err != nil {
+		pkgLogger.Errorf("CH: Error checking if database: %s exists: %v", ch.Namespace, err)
+		return err
+	}
+	if schemaExists {
+		pkgLogger.Infof("CH: Skipping creating database: %s since it already exists", ch.Namespace)
+		return
+	}
+	dbHandle, err := connect(ch.getConnectionCredentials(), false)
+	if err != nil {
+		return err
+	}
+	defer dbHandle.Close()
 	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
@@ -404,7 +437,7 @@ func (ch *HandleT) createSchema() (err error) {
 	}
 	sqlStatement := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS "%s" %s`, ch.Namespace, clusterClause)
 	pkgLogger.Infof("CH: Creating database in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
-	_, err = ch.Db.Exec(sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement)
 	return
 }
 
@@ -495,7 +528,7 @@ func (ch *HandleT) AlterColumn(tableName string, columnName string, columnType s
 // TestConnection is used destination connection tester to test the clickhouse connection
 func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	ch.Warehouse = warehouse
-	ch.Db, err = connect(ch.getConnectionCredentials())
+	ch.Db, err = connect(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return
 	}
@@ -519,7 +552,7 @@ func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config)
 	ch.Uploader = uploader
 
-	ch.Db, err = connect(ch.getConnectionCredentials())
+	ch.Db, err = connect(ch.getConnectionCredentials(), true)
 	return err
 }
 
@@ -531,7 +564,7 @@ func (ch *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
-	dbHandle, err := connect(ch.getConnectionCredentials())
+	dbHandle, err := connect(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return
 	}
@@ -544,11 +577,15 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
+		if exception, ok := err.(*clickhouse.Exception); ok && exception.Code == 81 {
+			pkgLogger.Infof("CH: No database found while fetching schema: %s from  destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
+			return schema, nil
+		}
 		pkgLogger.Errorf("CH: Error in fetching schema from clickhouse destination:%v, query: %v", ch.Warehouse.Destination.ID, sqlStatement)
 		return
 	}
 	if err == sql.ErrNoRows {
-		pkgLogger.Infof("CH: No rows, while fetching schema from  destination:%v, query: %v", ch.Warehouse.Identifier, sqlStatement)
+		pkgLogger.Infof("CH: No rows, while fetching schema: %s from destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
 		return schema, nil
 	}
 	defer rows.Close()
@@ -628,7 +665,7 @@ func (ch *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
-	dbHandle, err := connect(ch.getConnectionCredentials())
+	dbHandle, err := connect(ch.getConnectionCredentials(), true)
 	if err != nil {
 		return client.Client{}, err
 	}

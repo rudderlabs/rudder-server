@@ -552,12 +552,14 @@ func (sf *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
 	schemaExists, err = sf.schemaExists(sf.Namespace)
 	if err != nil {
+		pkgLogger.Errorf("SF: Error checking if schema: %s exists: %v", sf.Namespace, err)
 		return err
 	}
-	if !schemaExists {
-		err = sf.createSchema()
+	if schemaExists {
+		pkgLogger.Infof("SF: Skipping creating schema: %s since it already exists", sf.Namespace)
+		return
 	}
-	return err
+	return sf.createSchema()
 }
 
 func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
