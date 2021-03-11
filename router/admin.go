@@ -190,6 +190,30 @@ func (r *RouterRpcHandler) GetDSJobCount(dsName string, result *string) (err err
 	return nil
 }
 
+func (r *RouterRpcHandler) GetDSJobStatusCount(dsName string, result *string) (err error) {
+	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
+	dbHandle := readOnlyJobsDB.DbHandle
+	dsListArr := make([]string, 0)
+	var totalCount int
+	if dsName != "" {
+		dsListArr = append(dsListArr, r.jobsDBPrefix+"_jobs_status_"+dsName)
+	} else {
+		dsList := readOnlyJobsDB.GetDSList()
+		for _, ds := range dsList {
+			dsListArr = append(dsListArr, ds.JobStatusTable)
+		}
+	}
+	for _, tableName := range dsListArr {
+		runner := &SqlRunner{dbHandle: dbHandle, jobTableName: tableName}
+		count, err := runner.getTableRowCount()
+		if err == nil {
+			totalCount = totalCount + int(count)
+		}
+	}
+	*result = strconv.Itoa(totalCount)
+	return nil
+}
+
 func (r *RouterRpcHandler) GetDSList(dsName string, result *string) (err error) {
 	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
 	dsList := readOnlyJobsDB.GetDSList()

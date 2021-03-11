@@ -230,6 +230,29 @@ func (g *GatewayRPCHandler) GetDSJobCount(dsName string, result *string) (err er
 	return nil
 }
 
+func (g *GatewayRPCHandler) GetDSJobStatusCount(dsName string, result *string) (err error) {
+	dbHandle := g.readOnlyJobsDB.DbHandle
+	dsListArr := make([]string, 0)
+	var totalCount int
+	if dsName != "" {
+		dsListArr = append(dsListArr, prefix+"status_"+dsName)
+	} else {
+		dsList := g.readOnlyJobsDB.GetDSList()
+		for _, ds := range dsList {
+			dsListArr = append(dsListArr, ds.JobStatusTable)
+		}
+	}
+	for _, tableName := range dsListArr {
+		runner := &SqlRunner{dbHandle: dbHandle, jobTableName: tableName}
+		count, err := runner.getTableRowCount()
+		if err == nil {
+			totalCount = totalCount + int(count)
+		}
+	}
+	*result = strconv.Itoa(totalCount)
+	return nil
+}
+
 func runSQL(runner *SqlRunner, query string, reciever interface{}) error {
 	row := runner.dbHandle.QueryRow(query)
 	err := row.Scan(reciever)

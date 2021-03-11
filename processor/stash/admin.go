@@ -75,6 +75,29 @@ func (s *StashRpcHandler) GetDSJobCount(dsName string, result *string) (err erro
 	} else {
 		dsList := s.readOnlyJobsDB.GetDSList()
 		for _, ds := range dsList {
+			dsListArr = append(dsListArr, ds.JobStatusTable)
+		}
+	}
+	for _, tableName := range dsListArr {
+		runner := &SqlRunner{dbHandle: dbHandle, jobTableName: tableName}
+		count, err := runner.getTableRowCount()
+		if err == nil {
+			totalCount = totalCount + int(count)
+		}
+	}
+	*result = strconv.Itoa(totalCount)
+	return nil
+}
+
+func (s *StashRpcHandler) GetDSJobStatusCount(dsName string, result *string) (err error) {
+	dbHandle := s.readOnlyJobsDB.DbHandle
+	dsListArr := make([]string, 0)
+	var totalCount int
+	if dsName != "" {
+		dsListArr = append(dsListArr, "proc_error_job_status_"+dsName)
+	} else {
+		dsList := s.readOnlyJobsDB.GetDSList()
+		for _, ds := range dsList {
 			dsListArr = append(dsListArr, ds.JobTable)
 		}
 	}
