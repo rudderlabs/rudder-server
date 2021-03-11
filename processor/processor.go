@@ -74,6 +74,7 @@ type HandleT struct {
 	statNumEvents                  stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
 	statBatchDestNumOutputEvents   stats.RudderStats
+	statEventType                  stats.RudderStats
 	destStats                      map[string]*DestStatT
 	userToSessionIDMap             map[string]string
 	userJobPQ                      pqT
@@ -279,6 +280,7 @@ var (
 	enableEventSchemasFeature           bool
 	enableDedup                         bool
 	transformTimesPQLength              int
+	captureEventNameStats               bool
 )
 
 func loadConfig() {
@@ -301,6 +303,8 @@ func loadConfig() {
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
 	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
 	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
+	// Capture event name as a tag in event level stats
+	captureEventNameStats = config.GetBool("Processor.Stats.captureEventName", false)
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -753,6 +757,40 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 	return failedEventsToStore
 }
 
+func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, writeKey string) {
+	var eventType string
+	var eventName string
+	if val, ok := event["type"]; ok {
+		eventType = val.(string)
+		tags := map[string]string{
+			"writeKey":   writeKey,
+			"event_type": eventType,
+		}
+		statEventType := proc.stats.NewSampledTaggedStat("processor.event_type", stats.CountType, tags)
+		statEventType.Count(1)
+		if captureEventNameStats {
+			if eventType != "track" {
+				eventName = eventType
+			} else {
+				if val, ok := event["event"]; ok {
+					eventName = val.(string)
+				} else {
+					eventName = eventType
+				}
+			}
+			tags_detailed := map[string]string{
+				"writeKey":   writeKey,
+				"event_type": eventType,
+				"event_name": eventName,
+			}
+			statEventTypeDetailed := proc.stats.NewSampledTaggedStat("processor.event_type_detailed", stats.CountType, tags_detailed)
+			statEventTypeDetailed.Count(1)
+
+		}
+	}
+
+}
+
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 
 	proc.pStatsJobs.Start()
@@ -817,6 +855,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
 					continue
 				}
+
+				proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
+
 				uniqueMessageIds[messageId] = struct{}{}
 				//We count this as one, not destination specific ones
 				totalEvents++
