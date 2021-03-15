@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -14,11 +15,6 @@ import (
 
 type RouterAdmin struct {
 	handles map[string]*HandleT
-}
-
-type SqlRunner struct {
-	dbHandle     *sql.DB
-	jobTableName string
 }
 
 var adminInstance *RouterAdmin
@@ -94,6 +90,34 @@ type LatestJobStatusCounts struct {
 	Rank  int
 }
 
+type SqlRunner struct {
+	dbHandle           *sql.DB
+	jobTableName       string
+	jobStatusTableName string
+}
+
+type DSPair struct {
+	jobTableName       string
+	jobStatusTableName string
+}
+
+type SourceEvents struct {
+	Count int
+	Name  string
+	ID    string
+}
+
+type EventStatusDetailed struct {
+	Status        string
+	SourceID      string
+	DestinationID string
+	CustomVal     string
+	Count         int
+}
+
+type EventStatusStats struct {
+	StatsNums []EventStatusDetailed
+}
 type DSStats struct {
 	JobCountsByStateAndDestination []JobCountsByStateAndDestination
 	ErrorCodeCountsByDestination   []ErrorCodeCountsByDestination
@@ -166,27 +190,49 @@ func getReadOnlyJobsDB(prefix string) jobsdb.ReadonlyHandleT {
 	return brtReadOnlyJobsDB
 }
 
-func (r *RouterRpcHandler) GetDSJobCount(dsName string, result *string) (err error) {
+func (r *RouterRpcHandler) GetDSJobCount(arg string, result *string) (err error) {
 	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
 	dbHandle := readOnlyJobsDB.DbHandle
-	dsListArr := make([]string, 0)
-	var totalCount int
-	if dsName != "" {
-		dsListArr = append(dsListArr, r.jobsDBPrefix+"_jobs_"+dsName)
+	dsListArr := make([]DSPair, 0)
+	argList := strings.Split(arg, ":")
+	if argList[0] != "" {
+		dsListArr = append(dsListArr, DSPair{jobTableName: r.jobsDBPrefix + "_jobs_" + argList[0], jobStatusTableName: r.jobsDBPrefix + "_job_status_" + argList[0]})
+	} else if argList[1] != "" {
+		maxCount, err := strconv.Atoi(argList[1])
+		if err != nil {
+			return err
+		}
+		dsList := readOnlyJobsDB.GetDSList()
+		for index, ds := range dsList {
+			if index < maxCount {
+				dsListArr = append(dsListArr, DSPair{jobTableName: ds.JobTable, jobStatusTableName: ds.JobStatusTable})
+			}
+		}
 	} else {
 		dsList := readOnlyJobsDB.GetDSList()
-		for _, ds := range dsList {
-			dsListArr = append(dsListArr, ds.JobTable)
+		dsListArr = append(dsListArr, DSPair{jobTableName: dsList[0].JobTable, jobStatusTableName: dsList[0].JobStatusTable})
+	}
+	eventStatusDetailed := make([]EventStatusDetailed, 0)
+	for _, dsPair := range dsListArr {
+		runner := &SqlRunner{dbHandle: dbHandle, jobTableName: dsPair.jobTableName, jobStatusTableName: dsPair.jobStatusTableName}
+		sqlStatement := fmt.Sprintf(`SELECT COUNT(*) as count, %[2]s.job_state,%[1]s.parameters->'source_id' as source,%[1]s.custom_val,
+									%[1]s.parameters->'destination_id' as destination FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id 
+									GROUP BY %[2]s.job_state,%[1]s.parameters->'source_id',%[1]s.custom_val,%[1]s.parameters->'destination_id';`, dsPair.jobTableName, dsPair.jobStatusTableName)
+
+		row, _ := runner.dbHandle.Query(sqlStatement)
+		defer row.Close()
+		for row.Next() {
+			event := EventStatusDetailed{}
+			_ = row.Scan(&event.Count, &event.Status, &event.SourceID, &event.CustomVal, &event.DestinationID)
+			eventStatusDetailed = append(eventStatusDetailed, event)
 		}
 	}
-	for _, tableName := range dsListArr {
-		runner := &SqlRunner{dbHandle: dbHandle, jobTableName: tableName}
-		count, err := runner.getTableRowCount()
-		if err == nil {
-			totalCount = totalCount + int(count)
-		}
+	response, err := json.MarshalIndent(EventStatusStats{eventStatusDetailed}, "", " ")
+	if err != nil {
+		*result = ""
+		return err
 	}
-	*result = strconv.Itoa(totalCount)
+	*result = string(response)
 	return nil
 }
 
@@ -194,9 +240,8 @@ func (r *RouterRpcHandler) GetDSJobStatusCount(dsName string, result *string) (e
 	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
 	dbHandle := readOnlyJobsDB.DbHandle
 	dsListArr := make([]string, 0)
-	var totalCount int
 	if dsName != "" {
-		dsListArr = append(dsListArr, r.jobsDBPrefix+"_jobs_status_"+dsName)
+		dsListArr = append(dsListArr, r.jobsDBPrefix+"status_"+dsName)
 	} else {
 		dsList := readOnlyJobsDB.GetDSList()
 		for _, ds := range dsList {
@@ -205,12 +250,22 @@ func (r *RouterRpcHandler) GetDSJobStatusCount(dsName string, result *string) (e
 	}
 	for _, tableName := range dsListArr {
 		runner := &SqlRunner{dbHandle: dbHandle, jobTableName: tableName}
-		count, err := runner.getTableRowCount()
+		sqlStatement := ""
+		rows, err := runner.dbHandle.Query(sqlStatement)
+		defer rows.Close()
 		if err == nil {
-			totalCount = totalCount + int(count)
+			var jobId string
+			_ = rows.Scan(&jobId)
+			*result = *result + jobId
 		}
 	}
-	*result = strconv.Itoa(totalCount)
+	return nil
+}
+
+func (r *RouterRpcHandler) GetDSUnprocessedJobCount(dsName string, result *string) (err error) {
+	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
+	totalCount := readOnlyJobsDB.GetUnprocessedCount(nil, nil)
+	*result = strconv.Itoa(int(totalCount))
 	return nil
 }
 

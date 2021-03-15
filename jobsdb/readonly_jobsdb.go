@@ -21,6 +21,7 @@ ReadonlyJobsDB interface contains public methods to access JobsDB data
 type ReadonlyJobsDB interface {
 	GetPendingJobsCount(customValFilters []string, count int, parameterFilters []ParameterFilterT) int64
 	GetDSList() []dataSetT
+	GetUnprocessedCount(customValFilters []string, parameterFilters []ParameterFilterT) int64
 }
 
 type ReadonlyHandleT struct {
@@ -83,7 +84,7 @@ GetPendingJobsCount returns the count of pending events. Pending events are
 those whose jobs don't have a state or whose jobs status is neither succeeded nor aborted
 */
 func (jd *ReadonlyHandleT) GetPendingJobsCount(customValFilters []string, count int, parameterFilters []ParameterFilterT) int64 {
-	unProcessedCount := jd.getUnprocessedCount(customValFilters, parameterFilters)
+	unProcessedCount := jd.GetUnprocessedCount(customValFilters, parameterFilters)
 	nonSucceededCount := jd.getNonSucceededJobsCount(customValFilters, parameterFilters)
 	return unProcessedCount + nonSucceededCount
 }
@@ -92,7 +93,7 @@ func (jd *ReadonlyHandleT) GetPendingJobsCount(customValFilters []string, count 
 GetUnprocessedCount returns the number of unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *ReadonlyHandleT) getUnprocessedCount(customValFilters []string, parameterFilters []ParameterFilterT) int64 {
+func (jd *ReadonlyHandleT) GetUnprocessedCount(customValFilters []string, parameterFilters []ParameterFilterT) int64 {
 	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {

@@ -211,3 +211,14 @@ func StartServer() {
 	srvMux.Handle(rpc.DefaultRPCPath, instance.rpcServer)
 	http.Serve(l, srvMux)
 }
+
+// func RunSQLQuery(argString string, reply string) {
+// 	args := strings.Split(argString, ":")
+// 	switch args[0]{
+// 	case :
+// 	case :
+
+// 	default :
+// 	}
+// 	}
+// }
