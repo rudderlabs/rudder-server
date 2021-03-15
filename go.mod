@@ -3,9 +3,9 @@ module github.com/rudderlabs/rudder-server
 go 1.13
 
 require (
-	cloud.google.com/go/bigquery v1.4.0
-	cloud.google.com/go/pubsub v1.2.0
-	cloud.google.com/go/storage v1.6.0
+	cloud.google.com/go/bigquery v1.8.0
+	cloud.google.com/go/pubsub v1.3.1
+	cloud.google.com/go/storage v1.10.0
 	github.com/Azure/azure-pipeline-go v0.2.2 // indirect
 	github.com/Azure/azure-storage-blob-go v0.8.0
 	github.com/Azure/go-autorest/autorest/adal v0.8.1 // indirect
@@ -29,10 +29,10 @@ require (
 	github.com/gofrs/uuid v3.2.0+incompatible // indirect
 	github.com/golang-migrate/migrate/v4 v4.11.0
 	github.com/golang/mock v1.4.4
-	github.com/golang/protobuf v1.3.4 // indirect
-	github.com/google/uuid v1.1.1 // indirect
+	github.com/golang/protobuf v1.4.3
 	github.com/gorilla/mux v1.7.4
 	github.com/hashicorp/go-retryablehttp v0.6.6
+	github.com/hashicorp/yamux v0.0.0-20200609203250-aecfd211c9ce
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334
 	github.com/jeremywohl/flatten v1.0.1
 	github.com/joho/godotenv v1.3.0
@@ -50,8 +50,6 @@ require (
 	github.com/satori/go.uuid v1.2.0
 	github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c // indirect
 	github.com/segmentio/ksuid v1.0.2
-	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749 // indirect
-	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546 // indirect
 	github.com/snowflakedb/gosnowflake v1.3.4
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/afero v1.2.2 // indirect
@@ -66,12 +64,10 @@ require (
 	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
 	go.uber.org/multierr v1.5.0 // indirect
 	go.uber.org/zap v1.14.0
-	golang.org/x/net v0.0.0-20200226121028-0de0cce0169b // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
-	golang.org/x/tools v0.0.0-20200226224502-204d844ad48d // indirect
-	google.golang.org/api v0.19.0
-	google.golang.org/genproto v0.0.0-20200226201735-46b91f19d98c // indirect
-	google.golang.org/grpc v1.27.1
+	google.golang.org/api v0.39.0
+	google.golang.org/grpc v1.34.0
+	google.golang.org/protobuf v1.25.0
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
 	gopkg.in/ini.v1 v1.52.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0

@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -56,4 +57,32 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 	pkgLogger.Infof(`[WH Admin]: Querying warehouse: %s:%s`, warehouse.Type, warehouse.Destination.ID)
 	*reply, err = client.Query(s.SQLStatement)
 	return err
+}
+
+func (wh *WarehouseAdmin) QueryWhUploads(uploadsReq UploadsReqT, reply *[]byte) error {
+	uploadsReq.API = UploadAPI
+	res, err := uploadsReq.GetWhUploads()
+	if err != nil {
+		return err
+	}
+	bytes, err := json.Marshal(res)
+	if err != nil {
+		return err
+	}
+	*reply = bytes
+	return nil
+}
+
+func (wh *WarehouseAdmin) QueryWhTables(tableUploadReq TableUploadReqT, reply *[]byte) error {
+	tableUploadReq.API = UploadAPI
+	res, err := tableUploadReq.GetWhTableUploads()
+	if err != nil {
+		return err
+	}
+	bytes, err := json.Marshal(res)
+	if err != nil {
+		return err
+	}
+	*reply = bytes
+	return nil
 }
