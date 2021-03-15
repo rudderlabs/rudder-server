@@ -157,10 +157,17 @@ func getActiveWorkerCount() int {
 	return activeWorkerCount
 }
 
-func (wh *HandleT) releaseWorker() {
+func (wh *HandleT) decrementActiveWorkers() {
 	// decrement number of workers actively engaged
 	activeWorkerCountLock.Lock()
 	activeWorkerCount--
+	activeWorkerCountLock.Unlock()
+}
+
+func (wh *HandleT) incrementActiveWorkers() {
+	// increment number of workers actively engaged
+	activeWorkerCountLock.Lock()
+	activeWorkerCount++
 	activeWorkerCountLock.Unlock()
 }
 
@@ -170,11 +177,13 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 		for {
 			uploadJob := <-workerChan
 			setDestInProgress(uploadJob.warehouse, true)
+			wh.incrementActiveWorkers()
 			err := wh.handleUploadJob(uploadJob)
 			if err != nil {
 				pkgLogger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
 			}
 			setDestInProgress(uploadJob.warehouse, false)
+			wh.decrementActiveWorkers()
 		}
 	})
 	return workerChan
@@ -184,8 +193,6 @@ func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	// Process the upload job
 	err = uploadJob.run()
 	wh.recordDeliveryStatus(uploadJob.warehouse.Destination.ID, uploadJob.upload.ID)
-	wh.releaseWorker()
-
 	return
 }
 

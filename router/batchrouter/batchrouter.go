@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -150,7 +151,7 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[string]int, destType string, isWarehouse bool) {
+func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[string]map[string]int, destType string, isWarehouse bool) {
 	tags := map[string]string{
 		"module":        "batch_router",
 		"destType":      destType,
@@ -159,10 +160,13 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[strin
 		"sourceId":      misc.GetTagName(batchDestination.Source.ID, batchDestination.Source.Name),
 	}
 
-	for jobState, count := range jobStateCount {
-		tags["job_state"] = jobState
-		if count > 0 {
-			stats.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
+	for jobState, countByAttemptMap := range jobStateCounts {
+		for attempt, count := range countByAttemptMap {
+			tags["job_state"] = jobState
+			tags["attempt_number"] = attempt
+			if count > 0 {
+				stats.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
+			}
 		}
 	}
 }
@@ -410,7 +414,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		warehouseServiceFailedTimeLock.Unlock()
 	}
 
-	jobStateCount := make(map[string]int)
+	jobStateCounts := make(map[string]map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 		var firstAttemptedAt time.Time
@@ -447,9 +451,10 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 				warehouseServiceFailedTimeLock.RUnlock()
 			}
 		}
+		attemptNum := job.LastJobStatus.AttemptNum + 1
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
-			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+			AttemptNum:    attemptNum,
 			JobState:      jobState,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
@@ -457,7 +462,10 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			ErrorResponse: errorResp,
 		}
 		statusList = append(statusList, &status)
-		jobStateCount[jobState] = jobStateCount[jobState] + 1
+		if jobStateCounts[jobState] == nil {
+			jobStateCounts[jobState] = make(map[string]int)
+		}
+		jobStateCounts[jobState][strconv.Itoa(attemptNum)] = jobStateCounts[jobState][strconv.Itoa(attemptNum)] + 1
 	}
 
 	//tracking batch router errors
@@ -485,7 +493,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	//Mark the status of the jobs
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 
-	sendDestStatusStats(batchJobs.BatchDestination, jobStateCount, brt.destType, isWarehouse)
+	sendDestStatusStats(batchJobs.BatchDestination, jobStateCounts, brt.destType, isWarehouse)
 }
 
 func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {
@@ -575,11 +583,11 @@ func (brt *HandleT) initWorkers() {
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
-					retryList := brt.jobsDB.GetToRetry([]string{}, toQuery, parameterFilters)
+					retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					toQuery -= len(retryList)
-					waitList := brt.jobsDB.GetWaiting([]string{}, toQuery, parameterFilters) //Jobs send to waiting state
+					waitList := brt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true}) //Jobs send to waiting state
 					toQuery -= len(waitList)
-					unprocessedList := brt.jobsDB.GetUnprocessed([]string{}, toQuery, parameterFilters)
+					unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					brtQueryStat.End()
 
 					combinedList := append(retryList, append(waitList, unprocessedList...)...)
@@ -843,7 +851,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 func (brt *HandleT) crashRecover() {
 
 	for {
-		execList := brt.jobsDB.GetExecuting([]string{brt.destType}, jobQueryBatchSize, nil)
+		execList := brt.jobsDB.GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: jobQueryBatchSize})
 
 		if len(execList) == 0 {
 			break
