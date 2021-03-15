@@ -462,6 +462,23 @@ func (bq *HandleT) Cleanup() {
 }
 
 func (bq *HandleT) LoadIdentityMergeRulesTable() (err error) {
+	identityMergeRulesTable := warehouseutils.IdentityMergeRulesWarehouseTableName(PROVIDER)
+	pkgLogger.Infof("BQ: Starting load for table:%s\n", identityMergeRulesTable)
+
+	pkgLogger.Infof("BQ: Fetching load file location for %s", identityMergeRulesTable)
+
+	var location string
+	location, err = bq.Uploader.GetSingleLoadFileLocation(identityMergeRulesTable)
+	if err != nil {
+		return err
+	}
+	location = warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
+	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", identityMergeRulesTable, bq.Namespace, bq.ProjectID, location)
+	gcsRef := bigquery.NewGCSReference(location)
+	gcsRef.SourceFormat = bigquery.JSON
+	gcsRef.MaxBadRecords = 0
+	gcsRef.IgnoreUnknownValues = false
+
 	return
 }
 
@@ -476,7 +493,7 @@ func (bq *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 func (bq *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s.%[2]s`, bq.Namespace, tableName)
 	it, err := bq.Db.Query(sqlStatement).Read(bq.BQContext)
-	if err !=nil {
+	if err != nil {
 		return 0, err
 	}
 	var values []bigquery.Value

@@ -496,6 +496,10 @@ func IdentityMergeRulesTableName(warehouse WarehouseT) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMergeRulesTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
+func IdentityMergeRulesWarehouseTableName(provider string) string {
+	return ToProviderCase(provider, IdentityMergeRulesTable)
+}
+
 func IdentityMappingsTableName(warehouse WarehouseT) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMappingsTable, warehouse.Namespace, warehouse.Destination.ID)
 }
