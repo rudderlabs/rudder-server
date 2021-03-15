@@ -56,7 +56,7 @@ func (wh *HandleT) recordDeliveryStatus(destID string, uploadID int64) {
 		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", errorResp, err))
 	}
 	if stateErr, ok := errJSON[status]; ok {
-		if attempt, ok := stateErr["attempt"]; ok {
+		if attempt, ok := stateErr["Attempt"]; ok {
 			if floatAttempt, ok := attempt.(float64); ok {
 				attemptNum = attemptNum + int(floatAttempt)
 			}

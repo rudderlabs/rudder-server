@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -64,6 +65,7 @@ type HandleT struct {
 	netHandle               *http.Client
 	processQ                chan BatchDestinationT
 	jobsDB                  *jobsdb.HandleT
+	errorDB                 jobsdb.JobsDB
 	isEnabled               bool
 	batchRequestsMetricLock sync.RWMutex
 	diagnosisTicker         *time.Ticker
@@ -149,7 +151,7 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[string]int, destType string, isWarehouse bool) {
+func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[string]map[string]int, destType string, isWarehouse bool) {
 	tags := map[string]string{
 		"module":        "batch_router",
 		"destType":      destType,
@@ -158,10 +160,13 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCount map[strin
 		"sourceId":      misc.GetTagName(batchDestination.Source.ID, batchDestination.Source.Name),
 	}
 
-	for jobState, count := range jobStateCount {
-		tags["job_state"] = jobState
-		if count > 0 {
-			stats.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
+	for jobState, countByAttemptMap := range jobStateCounts {
+		for attempt, count := range countByAttemptMap {
+			tags["job_state"] = jobState
+			tags["attempt_number"] = attempt
+			if count > 0 {
+				stats.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
+			}
 		}
 	}
 }
@@ -380,7 +385,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		batchJobState string
 		errorResp     []byte
 	)
-
+	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
 	if err != nil {
 		brt.logger.Errorf("BRT: Error uploading to object storage: %v %v", err, batchJobs.BatchDestination.Source.ID)
@@ -409,7 +414,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		warehouseServiceFailedTimeLock.Unlock()
 	}
 
-	jobStateCount := make(map[string]int)
+	jobStateCounts := make(map[string]map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
 		var firstAttemptedAt time.Time
@@ -431,20 +436,25 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 
 		timeElapsed := time.Since(firstAttemptedAt)
 		if jobState == jobsdb.Failed.State && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
+			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
+			abortedEvents = append(abortedEvents, job)
 			jobState = jobsdb.Aborted.State
 		} else {
 			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
 			if jobState == jobsdb.Failed.State && isWarehouse && postToWarehouseErr {
 				warehouseServiceFailedTimeLock.RLock()
 				if time.Since(warehouseServiceFailedTime) > warehouseServiceMaxRetryTimeinHr {
+					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
+					abortedEvents = append(abortedEvents, job)
 					jobState = jobsdb.Aborted.State
 				}
 				warehouseServiceFailedTimeLock.RUnlock()
 			}
 		}
+		attemptNum := job.LastJobStatus.AttemptNum + 1
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
-			AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+			AttemptNum:    attemptNum,
 			JobState:      jobState,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
@@ -452,7 +462,10 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			ErrorResponse: errorResp,
 		}
 		statusList = append(statusList, &status)
-		jobStateCount[jobState] = jobStateCount[jobState] + 1
+		if jobStateCounts[jobState] == nil {
+			jobStateCounts[jobState] = make(map[string]int)
+		}
+		jobStateCounts[jobState][strconv.Itoa(attemptNum)] = jobStateCounts[jobState][strconv.Itoa(attemptNum)] + 1
 	}
 
 	//tracking batch router errors
@@ -472,10 +485,15 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			Optional: false,
 		},
 	}
+
+	//Store the aborted jobs to errorDB
+	if abortedEvents != nil {
+		brt.errorDB.Store(abortedEvents)
+	}
 	//Mark the status of the jobs
 	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 
-	sendDestStatusStats(batchJobs.BatchDestination, jobStateCount, brt.destType, isWarehouse)
+	sendDestStatusStats(batchJobs.BatchDestination, jobStateCounts, brt.destType, isWarehouse)
 }
 
 func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {
@@ -565,14 +583,14 @@ func (brt *HandleT) initWorkers() {
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
-					retryList := brt.jobsDB.GetToRetry([]string{brt.destType}, toQuery, parameterFilters)
+					retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					toQuery -= len(retryList)
-					waitList := brt.jobsDB.GetWaiting([]string{brt.destType}, toQuery, parameterFilters) //Jobs send to waiting state
+					waitList := brt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true}) //Jobs send to waiting state
 					toQuery -= len(waitList)
-					unprocessedList := brt.jobsDB.GetUnprocessed([]string{brt.destType}, toQuery, parameterFilters)
+					unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					brtQueryStat.End()
 
-					combinedList := append(waitList, append(unprocessedList, retryList...)...)
+					combinedList := append(retryList, append(waitList, unprocessedList...)...)
 					if len(combinedList) == 0 {
 						brt.logger.Debugf("BRT: DB Read Complete. No BRT Jobs to process for parameter Filters: %v", parameterFilters)
 						setDestInProgress(batchDest.Destination.ID, false)
@@ -833,7 +851,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 func (brt *HandleT) crashRecover() {
 
 	for {
-		execList := brt.jobsDB.GetExecuting([]string{brt.destType}, jobQueryBatchSize, nil)
+		execList := brt.jobsDB.GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: jobQueryBatchSize})
 
 		if len(execList) == 0 {
 			break
@@ -934,13 +952,14 @@ func init() {
 }
 
 //Setup initializes this module
-func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, destType string) {
+func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destType string) {
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.destType = destType
 	brt.jobsDB = jobsDB
+	brt.errorDB = errorDB
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 	brt.maxFailedCountForJob = getBatchRouterConfigInt("maxFailedCountForJob", destType, 128)

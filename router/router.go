@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -39,6 +40,7 @@ type HandleT struct {
 	requestQ                               chan *jobsdb.JobT
 	responseQ                              chan jobResponseT
 	jobsDB                                 *jobsdb.HandleT
+	errorDB                                jobsdb.JobsDB
 	netHandle                              *NetHandleT
 	destName                               string
 	workers                                []*workerT
@@ -52,11 +54,13 @@ type HandleT struct {
 	toClearFailJobIDMutex                  sync.Mutex
 	toClearFailJobIDMap                    map[int][]string
 	requestsMetricLock                     sync.RWMutex
+	failureMetricLock                      sync.RWMutex
 	diagnosisTicker                        *time.Ticker
 	requestsMetric                         []requestMetric
+	failuresMetric                         map[string][]failureMetric
 	customDestinationManager               customdestinationmanager.DestinationManager
-	generatorThrottler                     *throttler.HandleT
-	throttler                              *throttler.HandleT
+	generatorThrottler                     throttler.Throttler
+	throttler                              throttler.Throttler
 	throttlerMutex                         sync.RWMutex
 	guaranteeUserEventOrder                bool
 	netClientTimeout                       time.Duration
@@ -68,7 +72,6 @@ type HandleT struct {
 	batchInputCountStat                    stats.RudderStats
 	batchOutputCountStat                   stats.RudderStats
 	batchInputOutputDiffCountStat          stats.RudderStats
-	retryAttemptsStat                      stats.RudderStats
 	eventsAbortedStat                      stats.RudderStats
 	noOfWorkers                            int
 	allowAbortedUserJobsCountForProcessing int
@@ -86,6 +89,7 @@ type jobResponseT struct {
 	status *jobsdb.JobStatusT
 	worker *workerT
 	userID string
+	JobT   *jobsdb.JobT
 }
 
 //JobParametersT struct holds source id and destination id of a job
@@ -131,6 +135,14 @@ type requestMetric struct {
 	RequestAborted       int
 	RequestSuccess       int
 	RequestCompletedTime time.Duration
+}
+
+type failureMetric struct {
+	RouterDestination string          `json:"router_destination"`
+	UserId            string          `json:"user_id"`
+	RouterAttemptNum  int             `json:"router_attempt_num"`
+	ErrorCode         string          `json:"error_code"`
+	ErrorResponse     json.RawMessage `json:"error_response"`
 }
 
 func isSuccessStatus(status int) bool {
@@ -262,7 +274,8 @@ func (worker *workerT) workerProcess() {
 				ReceivedAt:       parameters.ReceivedAt,
 				CreatedAt:        job.CreatedAt.Format(misc.RFC3339Milli),
 				FirstAttemptedAt: firstAttemptedAt,
-				TransformAt:      parameters.TransformAt}
+				TransformAt:      parameters.TransformAt,
+				JobT:             job}
 
 			worker.rt.configSubscriberLock.RLock()
 			destination := worker.rt.destinationsMap[parameters.DestinationID]
@@ -333,34 +346,10 @@ func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUse
 }
 
 //rawMsg passed must be a valid JSON
-func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) (resp []byte) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Error(fmt.Errorf("failed to enhance response: %v", r))
-			resp = []byte(`{}`)
-			return
-		}
-	}()
-
-	var existingResponse string
-	if len(rawMsg) != 0 {
-		str := string(rawMsg)
-		existingResponse = str[:len(str)-1]
-	}
-
-	if existingResponse == "" {
-		existingResponse = fmt.Sprintf(`{%s: %v}`, strconv.Quote(key), strconv.Quote(val))
-	} else {
-		existingResponse = fmt.Sprintf(`%s,%s: %v}`, existingResponse, strconv.Quote(key), strconv.Quote(val))
-	}
-
-	resp = []byte(existingResponse)
-
-	//if not valid json returning empty
-	if !gjson.ValidBytes(resp) {
-		pkgLogger.Error(fmt.Errorf("Invalid json: %s", string(resp)))
-		resp = []byte(`{}`)
-		return resp
+func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) []byte {
+	resp, err := sjson.SetBytes(rawMsg, key, val)
+	if err != nil {
+		return []byte(`{}`)
 	}
 
 	return resp
@@ -418,18 +407,23 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	failedUserIDsMap := make(map[string]struct{})
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
-		payload := []byte(`{}`)
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
-			payload = destinationJob.Message
 			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, destinationJob) {
 				diagnosisStartTime := time.Now()
+				sourceID := destinationJob.JobMetadataArray[0].SourceID
+				destinationID := destinationJob.JobMetadataArray[0].DestinationID
+				//Batched jobs and router transformed jobs can have more than 1 metadatas. So, don't increment userID.
+				userID := ""
+				if len(destinationJob.JobMetadataArray) == 1 {
+					userID = destinationJob.JobMetadataArray[0].UserID
+				}
+				worker.rt.generatorThrottler.Inc(destinationID, userID)
+				worker.rt.throttler.Inc(destinationID, userID)
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
 				ch := worker.trackStuckDelivery()
 				if worker.rt.customDestinationManager != nil {
-					sourceID := destinationJob.JobMetadataArray[0].SourceID
-					destinationID := destinationJob.JobMetadataArray[0].DestinationID
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
 							panic(fmt.Errorf("Different sources are grouped together"))
@@ -455,29 +449,14 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				worker.deliveryTimeStat.End()
 				// END: request to destination endpoint
 
-				destinationTag := misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name)
-				routerResponseStat := stats.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
-					"destType":       worker.rt.destName,
-					"respStatusCode": strconv.Itoa(respStatusCode),
-					"destination":    destinationTag,
-				})
-				routerResponseStat.Count(len(destinationJob.JobMetadataArray))
-
 				if isSuccessStatus(respStatusCode) {
 					if saveDestinationResponse {
 						if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
-							respBody = "Save destination response is disabled through config"
+							respBody = ""
 						}
 					} else {
-						respBody = "Save destination response is disabled through config"
+						respBody = ""
 					}
-
-					eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
-						"module":      "router",
-						"destType":    worker.rt.destName,
-						"destination": destinationTag,
-					})
-					eventsDeliveredStat.Count(len(destinationJob.JobMetadataArray))
 				}
 
 				worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
@@ -502,14 +481,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			attemptNum := destinationJobMetadata.AttemptNum
 			if attemptedToSendTheJob {
 				attemptNum++
-				if destinationJobMetadata.AttemptNum > 0 {
-					worker.rt.retryAttemptsStat.Increment()
-				}
-			}
-
-			//Not saving payload to DB if transformAt is not "router"
-			if destinationJobMetadata.TransformAt != "router" {
-				payload = []byte(`Same as payload in router table. Use job_id for look up.`)
 			}
 
 			status := jobsdb.JobStatusT{
@@ -518,14 +489,21 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				RetryTime:     time.Now(),
 				AttemptNum:    attemptNum,
 				ErrorCode:     strconv.Itoa(respStatusCode),
-				ErrorResponse: worker.enhanceResponse([]byte{}, "payload", string(payload)),
+				ErrorResponse: []byte(`{}`),
 			}
 
-			worker.postStatusOnResponseQ(respStatusCode, respBody, &destinationJobMetadata, &status)
+			worker.postStatusOnResponseQ(respStatusCode, respBody, destinationJob.Message, &destinationJobMetadata, &status)
 
 			worker.sendEventDeliveryStat(&destinationJobMetadata, &status, &destinationJob.Destination)
 
-			worker.sendDestinationResponseToConfigBackend(destinationJob.Message, &destinationJobMetadata, &status)
+			if attemptedToSendTheJob {
+				worker.sendRouterResponseCountStat(&destinationJobMetadata, &status, &destinationJob.Destination)
+			}
+			payload := destinationJob.Message
+			if destinationJob.Message == nil {
+				payload = destinationJobMetadata.JobT.EventPayload
+			}
+			worker.sendDestinationResponseToConfigBackend(payload, &destinationJobMetadata, &status)
 		}
 	}
 
@@ -542,7 +520,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				ErrorResponse: []byte(`{}`),
 			}
 
-			worker.postStatusOnResponseQ(500, "transformer failed to handle this job", &routerJob.JobMetadata, &status)
+			worker.postStatusOnResponseQ(500, "transformer failed to handle this job", nil, &routerJob.JobMetadata, &status)
 		}
 	}
 
@@ -561,7 +539,15 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	worker.rt.trackRequestMetrics(reqMetric)
 }
 
-func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
+func (worker *workerT) updateAbortedMetrics(destinationID string) {
+	worker.rt.eventsAbortedStat = stats.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
+		"destType": worker.rt.destName,
+		"destId":   destinationID,
+	})
+	worker.rt.eventsAbortedStat.Increment()
+}
+
+func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
 	//Enhancing status.ErrorResponse with firstAttemptedAt
 	firstAttemptedAtTime := time.Now()
 	if destinationJobMetadata.FirstAttemptedAt != "" {
@@ -571,14 +557,21 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		}
 
 	}
+
 	status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
+	//Saving payload to DB only if router job undergoes batching or dest transform.
+	if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
+		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+	}
+	if respBody != "" {
+		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "response", respBody)
+	}
 
 	if isSuccessStatus(respStatusCode) {
 		atomic.AddUint64(&worker.rt.successCount, 1)
 		status.JobState = jobsdb.Succeeded.State
-		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "reason", respBody)
 		worker.rt.logger.Debugf("[%v Router] :: sending success status to response", worker.rt.destName)
-		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID}
+		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
 
 		if worker.rt.guaranteeUserEventOrder {
 			//Removing the user from aborted user map
@@ -597,7 +590,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
 		worker.failedJobs++
 		atomic.AddUint64(&worker.rt.failCount, 1)
-		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "reason", respBody)
 
 		//addToFailedMap is used to decide whether the jobID has to be added to the failedJobIDMap.
 		//If the job is aborted then there is no point in adding it to the failedJobIDMap.
@@ -612,7 +604,8 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
 				addToFailedMap = false
-				worker.rt.eventsAbortedStat.Increment()
+				worker.updateAbortedMetrics(destinationJobMetadata.DestinationID)
+				destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
 				worker.retryForJobMapMutex.Lock()
 				delete(worker.retryForJobMap, destinationJobMetadata.JobID)
 				worker.retryForJobMapMutex.Unlock()
@@ -627,8 +620,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			worker.retryForJobMapMutex.Unlock()
 		} else {
 			status.JobState = jobsdb.Aborted.State
+			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
 			addToFailedMap = false
-			worker.rt.eventsAbortedStat.Increment()
+			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID)
 		}
 
 		if worker.rt.guaranteeUserEventOrder {
@@ -664,25 +658,44 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			}
 		}
 		worker.rt.logger.Debugf("[%v Router] :: sending failed/aborted state as response", worker.rt.destName)
-		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID}
+		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
 	}
+}
+
+func (worker *workerT) sendRouterResponseCountStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
+	destinationTag := misc.GetTagName(destination.ID, destination.Name)
+	routerResponseStat := stats.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
+		"destType":       worker.rt.destName,
+		"respStatusCode": status.ErrorCode,
+		"destination":    destinationTag,
+		"attempt_number": strconv.Itoa(status.AttemptNum),
+	})
+	routerResponseStat.Count(1)
 }
 
 func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
 	if destinationJobMetadata.ReceivedAt != "" {
 		if status.JobState == jobsdb.Succeeded.State {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
+			destinationTag := misc.GetTagName(destination.ID, destination.Name)
 			if err == nil {
-				destinationTag := misc.GetTagName(destination.ID, destination.Name)
 				eventsDeliveryTimeStat := stats.NewTaggedStat(
 					"event_delivery_time", stats.TimerType, map[string]string{
-						"module":      "router",
-						"destType":    worker.rt.destName,
-						"destination": destinationTag,
+						"module":         "router",
+						"destType":       worker.rt.destName,
+						"destination":    destinationTag,
+						"attempt_number": strconv.Itoa(status.AttemptNum),
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 			}
+			eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
+				"module":         "router",
+				"destType":       worker.rt.destName,
+				"destination":    destinationTag,
+				"attempt_number": strconv.Itoa(status.AttemptNum),
+			})
+			eventsDeliveredStat.Count(1)
 		}
 	}
 }
@@ -716,7 +729,7 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 			JobState:      jobsdb.Waiting.State,
 			ErrorResponse: []byte(resp), // check
 		}
-		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
+		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 		return true
 	}
 	if previousFailedJobID != job.JobID {
@@ -730,7 +743,7 @@ func (worker *workerT) handleThrottle(job *jobsdb.JobT, parameters JobParameters
 		return false
 	}
 	worker.rt.throttlerMutex.Lock()
-	toThrottle := worker.rt.throttler.LimitReached(parameters.DestinationID, userID)
+	toThrottle := worker.rt.throttler.CheckLimitReached(parameters.DestinationID, userID)
 	worker.rt.throttlerMutex.Unlock()
 	if toThrottle {
 		// block other jobs of same user if userEventOrdering is required.
@@ -749,7 +762,7 @@ func (worker *workerT) handleThrottle(job *jobsdb.JobT, parameters JobParameters
 			JobState:      jobsdb.Throttled.State,
 			ErrorResponse: []byte(`{}`), // check
 		}
-		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID}
+		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 		return true
 	}
 	return false
@@ -911,7 +924,7 @@ func (rt *HandleT) canThrottle(parameters *JobParametersT, userID string) (canBe
 	}
 
 	//No need of locks here, because this is used only by a single goroutine (generatorLoop)
-	return rt.generatorThrottler.LimitReached(parameters.DestinationID, userID)
+	return rt.generatorThrottler.CheckLimitReached(parameters.DestinationID, userID)
 }
 
 // ResetSleep  this makes the workers reset their sleep
@@ -934,6 +947,7 @@ func (rt *HandleT) Disable() {
 func (rt *HandleT) statusInsertLoop() {
 
 	var responseList []jobResponseT
+
 	//Wait for the responses from statusQ
 	lastUpdate := time.Now()
 
@@ -953,12 +967,16 @@ func (rt *HandleT) statusInsertLoop() {
 			//Ideally should sleep for duration maxStatusUpdateWait-(time.Now()-lastUpdate)
 			//but approx is good enough at the cost of reduced computation.
 		}
-
 		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
 			statusStat.Start()
 			var statusList []*jobsdb.JobStatusT
+			var routerAbortedJobs []*jobsdb.JobT
 			for _, resp := range responseList {
 				statusList = append(statusList, resp.status)
+
+				if resp.status.JobState == jobsdb.Aborted.State {
+					routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
+				}
 
 				//tracking router errors
 				if diagnostics.EnableDestinationFailuresMetric {
@@ -969,13 +987,11 @@ func (rt *HandleT) statusInsertLoop() {
 						} else {
 							event = diagnostics.RouterAborted
 						}
-						Diagnostics.Track(event, map[string]interface{}{
-							diagnostics.RouterDestination: rt.destName,
-							diagnostics.UserID:            resp.userID,
-							diagnostics.RouterAttemptNum:  resp.status.AttemptNum,
-							diagnostics.ErrorCode:         resp.status.ErrorCode,
-							diagnostics.ErrorResponse:     resp.status.ErrorResponse,
-						})
+
+						rt.failureMetricLock.Lock()
+						failureMetricVal := failureMetric{RouterDestination: rt.destName, UserId: resp.userID, RouterAttemptNum: resp.status.AttemptNum, ErrorCode: resp.status.ErrorCode, ErrorResponse: resp.status.ErrorResponse}
+						rt.failuresMetric[event] = append(rt.failuresMetric[event], failureMetricVal)
+						rt.failureMetricLock.Unlock()
 					}
 				}
 			}
@@ -986,6 +1002,10 @@ func (rt *HandleT) statusInsertLoop() {
 				sort.Slice(statusList, func(i, j int) bool {
 					return statusList[i].JobID < statusList[j].JobID
 				})
+				//Store the aborted jobs to errorDB
+				if routerAbortedJobs != nil {
+					rt.errorDB.Store(routerAbortedJobs)
+				}
 				//Update the status
 				rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
 			}
@@ -1053,6 +1073,31 @@ func (rt *HandleT) collectMetrics() {
 
 			rt.requestsMetric = nil
 			rt.requestsMetricLock.RUnlock()
+
+			//This lock will ensure we dont send out Track Request while filling up the
+			//failureMetric struct
+			rt.failureMetricLock.RLock()
+			for key, values := range rt.failuresMetric {
+				var stringValue string
+				var err error
+				errorMap := make(map[string]int)
+				for _, value := range values {
+					errorMap[string(value.ErrorResponse)] = errorMap[string(value.ErrorResponse)] + 1
+				}
+				for k, v := range errorMap {
+					stringValue, err = sjson.Set(stringValue, k, v)
+					if err != nil {
+						stringValue = ""
+					}
+				}
+				Diagnostics.Track(key, map[string]interface{}{
+					diagnostics.RouterDestination: rt.destName,
+					diagnostics.Count:             len(values),
+					diagnostics.ErrorCountMap:     stringValue,
+				})
+			}
+			rt.failuresMetric = make(map[string][]failureMetric)
+			rt.failureMetricLock.RUnlock()
 		}
 	}
 }
@@ -1112,13 +1157,13 @@ func (rt *HandleT) generatorLoop() {
 		}
 
 		toQuery := jobQueryBatchSize
-		retryList := rt.jobsDB.GetToRetry([]string{rt.destName}, toQuery, nil)
+		retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
 		toQuery -= len(retryList)
-		throttledList := rt.jobsDB.GetThrottled([]string{rt.destName}, toQuery, nil)
+		throttledList := rt.jobsDB.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
 		toQuery -= len(throttledList)
-		waitList := rt.jobsDB.GetWaiting([]string{rt.destName}, toQuery, nil) //Jobs send to waiting state
+		waitList := rt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery}) //Jobs send to waiting state
 		toQuery -= len(waitList)
-		unprocessedList := rt.jobsDB.GetUnprocessed([]string{rt.destName}, toQuery, nil)
+		unprocessedList := rt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
 
 		combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
 
@@ -1211,7 +1256,7 @@ func destIDExtractor(body []byte) func() string {
 }
 
 func (rt *HandleT) crashRecover() {
-	rt.jobsDB.DeleteExecuting([]string{rt.destName}, -1, nil)
+	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})
 }
 
 func init() {
@@ -1220,12 +1265,13 @@ func init() {
 }
 
 //Setup initializes this module
-func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destinationDefinition backendconfig.DestinationDefinitionT) {
+func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT) {
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	rt.jobsDB = jobsDB
+	rt.errorDB = errorDB
 	rt.destName = destName
 	rt.netClientTimeout = getRouterConfigDuration("httpTimeoutInS", destName, 30) * time.Second
 	rt.crashRecover()
@@ -1241,6 +1287,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destinationDefinition backendco
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customDestinationManager.New(destName)
+	rt.failuresMetric = make(map[string][]failureMetric)
 
 	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
@@ -1263,13 +1310,6 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, destinationDefinition backendco
 		"destType": rt.destName,
 	})
 	rt.batchInputOutputDiffCountStat = stats.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-
-	rt.retryAttemptsStat = stats.NewTaggedStat(`router_retry_attempts`, stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-	rt.eventsAbortedStat = stats.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
 		"destType": rt.destName,
 	})
 

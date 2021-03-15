@@ -63,7 +63,7 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			startRouterFunc := func() {
-				StartRouter(enableRouter, &routerDB, &batchRouterDB)
+				StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB)
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -74,7 +74,7 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 	}
 
 	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
-	StartRouter(enableRouter, &routerDB, &batchRouterDB)
+	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB)
 
 	startHealthWebHandler()
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI

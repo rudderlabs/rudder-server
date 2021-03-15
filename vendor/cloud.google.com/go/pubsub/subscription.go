@@ -320,7 +320,7 @@ type DeadLetterPolicy struct {
 }
 
 func (dlp *DeadLetterPolicy) toProto() *pb.DeadLetterPolicy {
-	if dlp == nil {
+	if dlp == nil || dlp.DeadLetterTopic == "" {
 		return nil
 	}
 	return &pb.DeadLetterPolicy{
@@ -419,7 +419,7 @@ var minAckDeadline = 10 * time.Second
 // DefaultReceiveSettings holds the default values for ReceiveSettings.
 var DefaultReceiveSettings = ReceiveSettings{
 	MaxExtension:           60 * time.Minute,
-	MaxExtensionPeriod:     -1,
+	MaxExtensionPeriod:     0,
 	MaxOutstandingMessages: 1000,
 	MaxOutstandingBytes:    1e9, // 1G
 	NumGoroutines:          1,
@@ -472,7 +472,8 @@ type SubscriptionConfigToUpdate struct {
 	// If non-zero, Expiration is changed.
 	ExpirationPolicy optional.Duration
 
-	// If non-nil, DeadLetterPolicy is changed.
+	// If non-nil, DeadLetterPolicy is changed. To remove dead lettering from
+	// a subscription, use the zero value for this struct.
 	//
 	// It is EXPERIMENTAL and a part of a closed alpha that may not be
 	// accessible to all users.

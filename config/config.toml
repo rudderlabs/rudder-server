@@ -50,6 +50,7 @@ routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
 enableStats = true
+statsTagsFormat = "influxdb" # influxdb or datadog
 
 [Http]
 ReadTimeOutInSec = 0
@@ -173,6 +174,7 @@ retryTimeWindowInMins = 180
     httpMaxIdleConnsPerHost=32
     # settings similar to below one can be used to throttle router
     # sending events to downstream destinations
+    # NOTE: Its a good practice to set timeWindowInS as high as possible. This will prevent blowup of status table.
     # [Router.throttler.AM]
     # limit = 1000
     # timeWindowInS =          1
@@ -242,6 +244,8 @@ errReadLoopSleepInS = 30
 errDBReadBatchSize = 10000
 noOfErrStashWorkers = 2
 maxFailedCountForErrJob = 3
+    [Processor.Stats]
+    captureEventName = false
 
 [Dedup]
 enableDedup = false
@@ -277,7 +281,7 @@ fileJsonFormat=false
 logFileLocation="/tmp/rudder_log.log"
 logFileSize = 100 # in MB
 enableTimestamp=true
-enableFileNameInLog=false
+enableFileNameInLog=true
 enableStackTrace=false
 #moduleLevels="processor.transformer=ERROR:batchrouter=ERROR:pgnotifier=ERROR:warehouse=ERROR:enterprise.migrator=ERROR"
 
