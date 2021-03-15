@@ -26,6 +26,7 @@ func raw_connect(host string, port string, protocol string) bool {
 func main() {
 	protocol := "tcp"
 	udp := flag.Bool("u", false, "check for udp")
+	timeout := flag.Int("t", 60, "Timeout in seconds")
 	flag.Parse()
 	if *udp == true {
 		protocol = "udp"
@@ -36,13 +37,12 @@ func main() {
 	host := hostportArray[0]
 	port := hostportArray[1]
 	index := 0
-	for index = 1; index < 60; index++ {
+	for index = 1; index < *timeout; index++ {
 		connected := raw_connect(host, port, protocol)
 		if connected {
 			os.Exit(0)
 		}
 		time.Sleep(time.Duration(1 * time.Second))
-		index++
 	}
 	os.Exit(1)
 }
