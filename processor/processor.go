@@ -757,6 +757,12 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 }
 
 func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, writeKey string) {
+	//Any panics in this function are captured and ignore sending the stat
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+		}
+	}()
 	var eventType string
 	var eventName string
 	if val, ok := event["type"]; ok {
@@ -784,12 +790,9 @@ func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, 
 			}
 			statEventTypeDetailed := proc.stats.NewSampledTaggedStat("processor.event_type_detailed", stats.CountType, tags_detailed)
 			statEventTypeDetailed.Count(1)
-
 		}
 	}
-
 }
-
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 
 	proc.pStatsJobs.Start()
