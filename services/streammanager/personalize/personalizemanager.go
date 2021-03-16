@@ -59,20 +59,16 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if err != nil {
 		return 400, err.Error(), "Could not unmarshal jsonData according to putEvents input structure"
 	}
-	res, err := client.PutEvents(&input)
-	if err != nil {
+	_, Err := client.PutEvents(&input)
+	if Err != nil {
 		pkgLogger.Errorf("Personalize Error while sending event :: %w", err)
 		// set default status code as 500
 		statusCode := 500
 		// fetching status code from response
-		if reqErr, ok := err.(awserr.RequestFailure); ok {
+		if reqErr, ok := Err.(awserr.RequestFailure); ok {
 			statusCode = reqErr.StatusCode()
 		}
 		return statusCode, err.Error(), err.Error()
-	} else {
-		responseMessage := fmt.Sprintf("Message delivered with Record information %v", res)
-		fmt.Printf(responseMessage)
-		respStatus = "Success"
-		return 200, respStatus, responseMessage
 	}
+	return 200, "Success", "success"
 }
