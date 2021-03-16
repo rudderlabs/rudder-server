@@ -15,6 +15,21 @@ func raw_connect(host string, port string, protocol string) bool {
 	if err != nil {
 		fmt.Println("Connecting error:", err)
 	}
+	// When using UDP do a quick check to see if something is listening on the
+	// given port to return an error as soon as possible.
+	if protocol == "udp" {
+		for i := 0; i < 2; i++ {
+			_, err = conn.Write(nil)
+			time.Sleep(1 * time.Second)
+			fmt.Println("UDP error:", err)
+			if err != nil {
+				_ = conn.Close()
+				conn = nil
+				return false
+			}
+		}
+	}
+
 	if conn != nil {
 		defer conn.Close()
 		fmt.Println("Opened", net.JoinHostPort(host, port))
