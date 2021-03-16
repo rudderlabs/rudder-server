@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 	"google.golang.org/grpc"
@@ -201,8 +202,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 			upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 			return true
 		})
-		_, firstTime := warehouseutils.GetFirstTiming(timingsObject)
-		_, lastTime := warehouseutils.GetLastTiming(timingsObject)
+		// set error only for failed uploads. skip for retried and then successful uploads
 		if upload.Status != ExportedData {
 			lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
 			errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
@@ -211,12 +211,21 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 				upload.Error = errors[len(errors)-1].String()
 			}
 		}
-		if upload.Status != ExportedData && nextRetryTimeStr.Valid {
+		// set nextRetryTime for non-aborted failed uploads
+		if upload.Status != ExportedData && upload.Status != Aborted && nextRetryTimeStr.Valid {
 			if nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr.String); err == nil {
 				upload.NextRetryTime = timestamppb.New(nextRetryTime)
 			}
 		}
-		upload.Duration = int32(lastTime.Sub(firstTime) / time.Second)
+		// set duration as time between first and last recorded timings
+		// for ongoing/retrying uploads set diff between first and current time
+		_, firstTime := warehouseutils.GetFirstTiming(timingsObject)
+		if upload.Status == ExportedData || upload.Status == Aborted {
+			_, lastTime := warehouseutils.GetLastTiming(timingsObject)
+			upload.Duration = int32(lastTime.Sub(firstTime) / time.Second)
+		} else {
+			upload.Duration = int32(timeutil.Now().Sub(firstTime) / time.Second)
+		}
 		upload.Tables = make([]*proto.WHTable, 0)
 		uploads = append(uploads, &upload)
 	}
@@ -250,9 +259,6 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 		upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 		return true
 	})
-	_, firstTime := warehouseutils.GetFirstTiming(timingsObject)
-	_, lastTime := warehouseutils.GetLastTiming(timingsObject)
-
 	// do not return error on successful upload
 	if upload.Status != ExportedData {
 		lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
@@ -262,12 +268,21 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 			upload.Error = errors[len(errors)-1].String()
 		}
 	}
-	if upload.Status != ExportedData && nextRetryTimeStr.Valid {
+	// set nextRetryTime for non-aborted failed uploads
+	if upload.Status != ExportedData && upload.Status != Aborted && nextRetryTimeStr.Valid {
 		if nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr.String); err == nil {
 			upload.NextRetryTime = timestamppb.New(nextRetryTime)
 		}
 	}
-	upload.Duration = int32(lastTime.Sub(firstTime) / time.Second)
+	// set duration as time between first and last recorded timings
+	// for ongoing/retrying uploads set diff between first and current time
+	_, firstTime := warehouseutils.GetFirstTiming(timingsObject)
+	if upload.Status == ExportedData || upload.Status == Aborted {
+		_, lastTime := warehouseutils.GetLastTiming(timingsObject)
+		upload.Duration = int32(lastTime.Sub(firstTime) / time.Second)
+	} else {
+		upload.Duration = int32(timeutil.Now().Sub(firstTime) / time.Second)
+	}
 	tableUploadReq := TableUploadReqT{
 		UploadID: upload.Id,
 		Name:     "",
