@@ -2,7 +2,10 @@ package jobsdb
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
@@ -22,12 +25,45 @@ type ReadonlyJobsDB interface {
 	GetPendingJobsCount(customValFilters []string, count int, parameterFilters []ParameterFilterT) int64
 	GetDSList() []dataSetT
 	GetUnprocessedCount(customValFilters []string, parameterFilters []ParameterFilterT) int64
+	GetJobSummaryCount(arg string, prefix string) (string, error)
+	GetLatestFailedJobs(arg string, prefix string) (string, error)
+	GetJobIDsForUser(args []string) (string, error)
 }
 
 type ReadonlyHandleT struct {
 	DbHandle    *sql.DB
 	tablePrefix string
 	logger      logger.LoggerI
+}
+
+type DSPair struct {
+	JobTableName       string
+	JobStatusTableName string
+}
+
+type EventStatusDetailed struct {
+	Status        string
+	SourceID      string
+	DestinationID string
+	CustomVal     string
+	Count         int
+}
+
+type EventStatusStats struct {
+	StatsNums []EventStatusDetailed
+}
+
+type FailedJobs struct {
+	JobID         int
+	UserID        string
+	CustomVal     string
+	ExecTime      time.Time
+	ErrorCode     string
+	ErrorResponse string
+}
+
+type FailedJobsStats struct {
+	FailedNums []FailedJobs
 }
 
 /*
@@ -280,4 +316,202 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 
 	jd.logger.Debugf("Returning 0 because processed count is invalid. This could be because there are no jobs in non terminal state. Jobs table: %s. Query: %s", ds.JobTable, sqlStatement)
 	return 0
+}
+
+func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string, error) {
+	dsListArr := make([]DSPair, 0)
+	argList := strings.Split(arg, ":")
+	if argList[0] != "" {
+		dsListArr = append(dsListArr, DSPair{JobTableName: prefix + argList[0], JobStatusTableName: "gw_job_" + "status_" + argList[0]})
+	} else if argList[1] != "" {
+		maxCount, err := strconv.Atoi(argList[1])
+		if err != nil {
+			return "", err
+		}
+		dsList := jd.GetDSList()
+		for index, ds := range dsList {
+			if index < maxCount {
+				dsListArr = append(dsListArr, DSPair{JobTableName: ds.JobTable, JobStatusTableName: ds.JobStatusTable})
+			}
+		}
+	} else {
+		dsList := jd.GetDSList()
+		dsListArr = append(dsListArr, DSPair{JobTableName: dsList[0].JobTable, JobStatusTableName: dsList[0].JobStatusTable})
+	}
+	eventStatusDetailed := make([]EventStatusDetailed, 0)
+	eventStatusMap := make(map[string][]EventStatusDetailed)
+	for _, dsPair := range dsListArr {
+		sqlStatement := fmt.Sprintf(`SELECT COUNT(*), 
+     					%[1]s.parameters->'source_id' as source, 
+     					%[1]s.custom_val ,%[1]s.parameters->'destination_id' as destination, 
+     					job_latest_state.job_state
+						FROM %[1]s 
+     					LEFT JOIN 
+      					(SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[2]s 
+						WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id)) AS job_latest_state
+     					ON %[1]s.job_id=job_latest_state.job_id GROUP BY job_latest_state.job_state,%[1]s.parameters->'source_id',%[1]s.parameters->'destination_id', %[1]s.custom_val;`, dsPair.JobTableName, dsPair.JobStatusTableName)
+		row, err := jd.DbHandle.Query(sqlStatement)
+		if err != nil {
+			return "", err
+		}
+		defer row.Close()
+		for row.Next() {
+			event := EventStatusDetailed{}
+			var destinationID sql.NullString
+			var status sql.NullString
+			err = row.Scan(&event.Count, &event.SourceID, &event.CustomVal, &destinationID, &status)
+			if err != nil {
+				return "", err
+			}
+			if destinationID.Valid {
+				event.DestinationID = destinationID.String
+			}
+			if status.Valid {
+				event.Status = status.String
+			}
+			if val, ok := eventStatusMap[event.SourceID+":"+event.DestinationID]; ok {
+				val = append(val, event)
+			} else {
+				eventStatusMap[event.SourceID+":"+event.DestinationID] = make([]EventStatusDetailed, 0)
+				eventStatusMap[event.SourceID+":"+event.DestinationID] = append(eventStatusMap[event.SourceID+":"+event.DestinationID], event)
+			}
+		}
+	}
+	for _, val := range eventStatusMap {
+		eventStatusDetailed = append(eventStatusDetailed, val...)
+	}
+	response, err := json.MarshalIndent(EventStatusStats{eventStatusDetailed}, "", " ")
+	if err != nil {
+		return "", err
+	}
+	return string(response), nil
+}
+
+func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg string, prefix string) (string, error) {
+	var dsList DSPair
+	argList := strings.Split(arg, ":")
+	if argList[0] != "" {
+		dsList = DSPair{JobTableName: prefix + argList[0], JobStatusTableName: "gw_job_" + "status_" + argList[0]}
+	} else {
+		dsListTotal := jd.GetDSList()
+		dsList = DSPair{JobTableName: dsListTotal[0].JobTable, JobStatusTableName: dsListTotal[0].JobStatusTable}
+	}
+	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.user_id, %[1]s.custom_val,
+					job_latest_state.exec_time,
+					job_latest_state.error_code, job_latest_state.error_response
+					FROM %[1]s,
+					(SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[2]s WHERE id IN
+					(SELECT MAX(id) from %[2]s GROUP BY job_id) AND (job_state = 'failed'))
+					AS job_latest_state
+ 					WHERE %[1]s.job_id=job_latest_state.job_id
+  					`, dsList.JobTableName, dsList.JobStatusTableName)
+	if argList[1] != "" {
+		sqlStatement = sqlStatement + fmt.Sprintf(`AND %[1]s.custom_val = '%[2]s'`, dsList.JobTableName, argList[1])
+	}
+	sqlStatement = sqlStatement + fmt.Sprintf(`ORDER BY %[1]s.job_id desc LIMIT 5;`, dsList.JobTableName)
+	row, err := jd.DbHandle.Query(sqlStatement)
+	if err != nil {
+		return "", err
+	}
+	failedJobsDetiled := make([]FailedJobs, 0)
+
+	defer row.Close()
+	for row.Next() {
+		event := FailedJobs{}
+		var statusCode sql.NullString
+		err = row.Scan(&event.JobID, &event.UserID, &event.CustomVal, &event.ExecTime, &statusCode, &event.ErrorResponse)
+		if err != nil {
+			return "", err
+		}
+		if statusCode.Valid {
+			event.ErrorCode = statusCode.String
+		}
+		failedJobsDetiled = append(failedJobsDetiled, event)
+	}
+	response, err := json.MarshalIndent(FailedJobsStats{failedJobsDetiled}, "", " ")
+	if err != nil {
+		return "", err
+	}
+	return string(response), nil
+}
+
+func (jd *ReadonlyHandleT) GetJobIDStatus(job_id string, prefix string) (string, error) {
+	dsListTotal := jd.GetDSList()
+	var response []byte
+	for _, dsPair := range dsListTotal {
+		var min, max sql.NullInt32
+		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobStatusTable)
+		row := jd.DbHandle.QueryRow(sqlStatement)
+		err := row.Scan(&min, &max)
+		if err != nil {
+			return "", err
+		}
+		if !min.Valid || !max.Valid {
+			continue
+		}
+		jobId, err := strconv.Atoi(job_id)
+		if jobId < int(min.Int32) || jobId > int(max.Int32) {
+			continue
+		}
+		sqlStatement = fmt.Sprintf(`SELECT error_code , error_response , exec_time from %[1]s where job_id = %[2]s;`, dsPair.JobStatusTable, job_id)
+		var statusCode sql.NullString
+		event := FailedJobs{}
+		rows, err := jd.DbHandle.Query(sqlStatement)
+		defer rows.Close()
+		if err != nil {
+			return "", err
+		}
+		for rows.Next() {
+			err = rows.Scan(&statusCode, &event.ErrorResponse, &event.ExecTime)
+			response, err = json.MarshalIndent(event, "", " ")
+			if err != nil {
+				return "", err
+			}
+		}
+	}
+	return string(response), nil
+}
+
+func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
+	dsListTotal := jd.GetDSList()
+	var response string
+	for _, dsPair := range dsListTotal {
+		jobId1, err := strconv.Atoi(args[2])
+		if err != nil {
+			return "", err
+		}
+		_, err = strconv.Atoi(args[3])
+		if err != nil {
+			return "", err
+		}
+		userID := args[4]
+		var min, max sql.NullInt32
+		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobStatusTable)
+		row := jd.DbHandle.QueryRow(sqlStatement)
+		err = row.Scan(&min, &max)
+		if err != nil {
+			return "", err
+		}
+		if !min.Valid || !max.Valid {
+			continue
+		}
+		if jobId1 < int(min.Int32) || jobId1 > int(max.Int32) {
+			continue
+		}
+		sqlStatement = fmt.Sprintf(`select job_id from %[1]s where job_id <= %[2]s and job_id >= %[3]s and user_id = %[4]s;`, dsPair.JobTable, args[2], args[3], userID)
+		rows, err := jd.DbHandle.Query(sqlStatement)
+		defer rows.Close()
+		if err != nil {
+			return "", err
+		}
+		for rows.Next() {
+			var jobID string
+			err = rows.Scan(&jobID)
+			if err != nil {
+				return "", err
+			}
+			response = response + jobID + "\n"
+		}
+	}
+	return response, nil
 }
