@@ -69,14 +69,10 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			statusCode = reqErr.StatusCode()
 		}
 		return statusCode, err.Error(), err.Error()
-	}
-	if res != nil {
+	} else {
 		responseMessage := fmt.Sprintf("Message delivered with Record information %v", res)
+		fmt.Printf(responseMessage)
 		respStatus = "Success"
 		return 200, respStatus, responseMessage
-	} else {
-		respStatus = "Failure"
-		responseMessage := "[Personalize] error  :: Delivery Stream not found"
-		return 400, respStatus, responseMessage
 	}
 }
