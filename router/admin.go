@@ -206,11 +206,10 @@ func (r *RouterRpcHandler) GetDSList(dsName string, result *string) (err error) 
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
+
 	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
-	dsList := readOnlyJobsDB.GetDSList()
-	for _, ds := range dsList {
-		*result = *result + ds.JobTable + "\n"
-	}
+	response, err := readOnlyJobsDB.GetDSListString()
+	*result = string(response)
 	return nil
 }
 

@@ -23,7 +23,6 @@ ReadonlyJobsDB interface contains public methods to access JobsDB data
 */
 type ReadonlyJobsDB interface {
 	GetPendingJobsCount(customValFilters []string, count int, parameterFilters []ParameterFilterT) int64
-	GetDSList() []dataSetT
 	GetUnprocessedCount(customValFilters []string, parameterFilters []ParameterFilterT) int64
 	GetJobSummaryCount(arg string, prefix string) (string, error)
 	GetLatestFailedJobs(arg string, prefix string) (string, error)
@@ -119,7 +118,7 @@ func (jd *ReadonlyHandleT) assert(cond bool, errorString string) {
 Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
 */
-func (jd *ReadonlyHandleT) GetDSList() []dataSetT {
+func (jd *ReadonlyHandleT) getDSList() []dataSetT {
 	return getDSList(jd, jd.DbHandle, jd.tablePrefix)
 }
 
@@ -150,7 +149,7 @@ func (jd *ReadonlyHandleT) GetUnprocessedCount(customValFilters []string, parame
 	queryStat.Start()
 	defer queryStat.End()
 
-	dsList := jd.GetDSList()
+	dsList := jd.getDSList()
 	var totalCount int64
 	for _, ds := range dsList {
 		count := jd.getUnprocessedJobsDSCount(ds, customValFilters, parameterFilters)
@@ -240,7 +239,7 @@ func (jd *ReadonlyHandleT) getProcessedCount(stateFilter []string, customValFilt
 	queryStat.Start()
 	defer queryStat.End()
 
-	dsList := jd.GetDSList()
+	dsList := jd.getDSList()
 	var totalCount int64
 	for _, ds := range dsList {
 		count := jd.getProcessedJobsDSCount(ds, stateFilter, customValFilters, parameterFilters)
@@ -385,14 +384,14 @@ func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string
 		if err != nil {
 			return "", err
 		}
-		dsList := jd.GetDSList()
+		dsList := jd.getDSList()
 		for index, ds := range dsList {
 			if index < maxCount {
 				dsListArr = append(dsListArr, DSPair{JobTableName: ds.JobTable, JobStatusTableName: ds.JobStatusTable})
 			}
 		}
 	} else {
-		dsList := jd.GetDSList()
+		dsList := jd.getDSList()
 		dsListArr = append(dsListArr, DSPair{JobTableName: dsList[0].JobTable, JobStatusTableName: dsList[0].JobStatusTable})
 	}
 	eventStatusDetailed := make([]EventStatusDetailed, 0)
@@ -452,7 +451,7 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg string, prefix string) (strin
 		jobPrefix := getJobPrefix(argList[0])
 		dsList = DSPair{JobTableName: jobPrefix + argList[0], JobStatusTableName: statusPrefix + argList[0]}
 	} else {
-		dsListTotal := jd.GetDSList()
+		dsListTotal := jd.getDSList()
 		dsList = DSPair{JobTableName: dsListTotal[0].JobTable, JobStatusTableName: dsListTotal[0].JobStatusTable}
 	}
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.user_id, %[1]s.custom_val,
@@ -495,7 +494,7 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg string, prefix string) (strin
 }
 
 func (jd *ReadonlyHandleT) GetJobIDStatus(job_id string, prefix string) (string, error) {
-	dsListTotal := jd.GetDSList()
+	dsListTotal := jd.getDSList()
 	var response []byte
 	for _, dsPair := range dsListTotal {
 		var min, max sql.NullInt32
@@ -538,7 +537,7 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(job_id string, prefix string) (string,
 }
 
 func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
-	dsListTotal := jd.GetDSList()
+	dsListTotal := jd.getDSList()
 	var response string
 	for _, dsPair := range dsListTotal {
 		jobId1, err := strconv.Atoi(args[2])
@@ -614,4 +613,13 @@ func (jd *ReadonlyHandleT) GetFailedStatusErrorCodeCountsByDestination(args []st
 		return "", err
 	}
 	return string(response), nil
+}
+
+func (jd *ReadonlyHandleT) GetDSListString() (string, error) {
+	var response string
+	dsList := jd.getDSList()
+	for _, ds := range dsList {
+		response = response + ds.JobTable + "\n"
+	}
+	return response, nil
 }

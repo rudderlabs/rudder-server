@@ -205,10 +205,8 @@ func (g *GatewayRPCHandler) GetDSList(emptyInput string, result *string) (err er
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
-	dsList := g.readOnlyJobsDB.GetDSList()
-	for _, ds := range dsList {
-		*result = *result + ds.JobTable + "\n"
-	}
+	response, err := g.readOnlyJobsDB.GetDSListString()
+	*result = string(response)
 	return nil
 }
 

@@ -59,10 +59,8 @@ func (s *StashRpcHandler) GetDSList(dsName string, result *string) (err error) {
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
-	dsList := s.readOnlyJobsDB.GetDSList()
-	for _, ds := range dsList {
-		*result = *result + ds.JobTable + "\n"
-	}
+	response, err := s.readOnlyJobsDB.GetDSListString()
+	*result = string(response)
 	return nil
 }
 
