@@ -28,6 +28,7 @@ type ReadonlyJobsDB interface {
 	GetJobSummaryCount(arg string, prefix string) (string, error)
 	GetLatestFailedJobs(arg string, prefix string) (string, error)
 	GetJobIDsForUser(args []string) (string, error)
+	GetFailedStatusErrorCodeCountsByDestination(args []string) (string, error)
 }
 
 type ReadonlyHandleT struct {
@@ -62,6 +63,16 @@ type FailedJobs struct {
 	ErrorResponse string
 }
 
+type ErrorCodeCountsByDestination struct {
+	Count         int
+	ErrorCode     string
+	Destination   string
+	DestinationID string
+}
+
+type ErrorCodeCountStats struct {
+	ErrorCodeCounts []ErrorCodeCountsByDestination
+}
 type FailedJobsStats struct {
 	FailedNums []FailedJobs
 }
@@ -318,11 +329,57 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	return 0
 }
 
+func getStatusPrefix(jobPrefix string) string {
+	var response string
+	switch jobPrefix {
+	case "gw_jobs_":
+		response = "gw_job_status_"
+	case "proc_error_jobs_":
+		response = "proc_error_job_status_"
+	case "gw":
+		response = "gw_job_status_"
+	case "proc_error":
+		response = "proc_error_job_status_"
+	case "rt":
+		response = "rt_job_status_"
+	case "brt":
+		response = "batch_rt_job_status_"
+	case "batch_rt":
+		response = "batch_rt_job_status_"
+	}
+
+	return response
+}
+
+func getJobPrefix(prefix string) string {
+	var response string
+	switch prefix {
+	case "gw_jobs_":
+		response = "gw_jobs_"
+	case "proc_error_jobs_":
+		response = "proc_error_jobs_"
+	case "gw":
+		response = "gw_jobs_"
+	case "proc_error":
+		response = "proc_error_jobs_"
+	case "rt":
+		response = "rt_jobs_"
+	case "brt":
+		response = "batch_rt_jobs_"
+	case "batch_rt":
+		response = "batch_rt_jobs_"
+	}
+
+	return response
+}
+
 func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string, error) {
 	dsListArr := make([]DSPair, 0)
 	argList := strings.Split(arg, ":")
 	if argList[0] != "" {
-		dsListArr = append(dsListArr, DSPair{JobTableName: prefix + argList[0], JobStatusTableName: "gw_job_" + "status_" + argList[0]})
+		statusPrefix := getStatusPrefix(argList[0])
+		jobPrefix := getJobPrefix(argList[0])
+		dsListArr = append(dsListArr, DSPair{JobTableName: jobPrefix + argList[0], JobStatusTableName: statusPrefix + argList[0]})
 	} else if argList[1] != "" {
 		maxCount, err := strconv.Atoi(argList[1])
 		if err != nil {
@@ -391,7 +448,9 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg string, prefix string) (strin
 	var dsList DSPair
 	argList := strings.Split(arg, ":")
 	if argList[0] != "" {
-		dsList = DSPair{JobTableName: prefix + argList[0], JobStatusTableName: "gw_job_" + "status_" + argList[0]}
+		statusPrefix := getStatusPrefix(argList[0])
+		jobPrefix := getJobPrefix(argList[0])
+		dsList = DSPair{JobTableName: jobPrefix + argList[0], JobStatusTableName: statusPrefix + argList[0]}
 	} else {
 		dsListTotal := jd.GetDSList()
 		dsList = DSPair{JobTableName: dsListTotal[0].JobTable, JobStatusTableName: dsListTotal[0].JobStatusTable}
@@ -485,6 +544,9 @@ func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
 			return "", err
 		}
 		userID := args[4]
+		if userID == "" {
+			return "", nil
+		}
 		var min, max sql.NullInt32
 		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobStatusTable)
 		row := jd.DbHandle.QueryRow(sqlStatement)
@@ -498,7 +560,7 @@ func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
 		if jobId1 < int(min.Int32) || jobId1 > int(max.Int32) {
 			continue
 		}
-		sqlStatement = fmt.Sprintf(`select job_id from %[1]s where job_id <= %[2]s and job_id >= %[3]s and user_id = %[4]s;`, dsPair.JobTable, args[2], args[3], userID)
+		sqlStatement = fmt.Sprintf(`SELECT job_id FROM %[1]s WHERE job_id >= %[2]s AND job_id <= %[3]s AND user_id = '%[4]s';`, dsPair.JobTable, args[2], args[3], userID)
 		rows, err := jd.DbHandle.Query(sqlStatement)
 		defer rows.Close()
 		if err != nil {
@@ -514,4 +576,36 @@ func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
 		}
 	}
 	return response, nil
+}
+
+func (jd *ReadonlyHandleT) GetFailedStatusErrorCodeCountsByDestination(args []string) (string, error) {
+	var response []byte
+	statusPrefix := getStatusPrefix(args[0])
+	jobPrefix := getJobPrefix(args[0])
+	dsList := DSPair{JobTableName: jobPrefix + args[2], JobStatusTableName: statusPrefix + args[2]}
+	sqlStatement := fmt.Sprintf(`select count(*), a.error_code, a.custom_val, a.d from
+	(select count(*), rt.job_id, st.error_code as error_code, rt.custom_val as custom_val,
+		rt.parameters -> 'destination_id' as d from %[1]s rt inner join %[2]s st
+		on st.job_id=rt.job_id where st.job_state in ('failed', 'aborted')
+		group by rt.job_id, st.error_code, rt.custom_val, rt.parameters -> 'destination_id')
+	as  a group by a.custom_val, a.error_code, a.d order by a.custom_val;`, dsList.JobTableName, dsList.JobStatusTableName)
+	rows, err := jd.DbHandle.Query(sqlStatement)
+	defer rows.Close()
+	if err != nil {
+		return "", err
+	}
+	errorcount := ErrorCodeCountStats{}
+	for rows.Next() {
+		result := ErrorCodeCountsByDestination{}
+		err = rows.Scan(&result.Count, &result.ErrorCode, &result.Destination, &result.DestinationID)
+		if err != nil {
+			return "", err
+		}
+		errorcount.ErrorCodeCounts = append(errorcount.ErrorCodeCounts, result)
+	}
+	response, err = json.MarshalIndent(errorcount, "", " ")
+	if err != nil {
+		return "", err
+	}
+	return string(response), nil
 }

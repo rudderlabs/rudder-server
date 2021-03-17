@@ -30,6 +30,7 @@ func (p *PackageAdmin) SomeAdminFunction(arg *string, reply *string) error {
 package admin
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -49,9 +50,15 @@ func init() {
 }
 
 func (handler *MiscHandler) RunSQLQuery(argString string, reply *string) error {
+	var err error
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
 	args := strings.Split(argString, ":")
 	var response string
-	var err error
 	var readOnlyJobsDB jobsdb.ReadonlyHandleT
 	if args[0] == "brt" {
 		args[0] = "batch_rt"
@@ -60,6 +67,8 @@ func (handler *MiscHandler) RunSQLQuery(argString string, reply *string) error {
 	switch args[1] {
 	case "Jobs between JobID's of a User":
 		response, err = readOnlyJobsDB.GetJobIDsForUser(args)
+	case "Error Code Count By Destination":
+		response, err = readOnlyJobsDB.GetFailedStatusErrorCodeCountsByDestination(args)
 	}
 	*reply = string(response)
 	return err
