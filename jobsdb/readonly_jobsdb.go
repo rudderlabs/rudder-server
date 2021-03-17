@@ -426,8 +426,8 @@ func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string
 			if status.Valid {
 				event.Status = status.String
 			}
-			if val, ok := eventStatusMap[event.SourceID+":"+event.DestinationID]; ok {
-				val = append(val, event)
+			if _, ok := eventStatusMap[event.SourceID+":"+event.DestinationID]; ok {
+				eventStatusMap[event.SourceID+":"+event.DestinationID] = append(eventStatusMap[event.SourceID+":"+event.DestinationID], event)
 			} else {
 				eventStatusMap[event.SourceID+":"+event.DestinationID] = make([]EventStatusDetailed, 0)
 				eventStatusMap[event.SourceID+":"+event.DestinationID] = append(eventStatusMap[event.SourceID+":"+event.DestinationID], event)
@@ -509,6 +509,9 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(job_id string, prefix string) (string,
 			continue
 		}
 		jobId, err := strconv.Atoi(job_id)
+		if err != nil {
+			return "", err
+		}
 		if jobId < int(min.Int32) || jobId > int(max.Int32) {
 			continue
 		}
@@ -522,6 +525,9 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(job_id string, prefix string) (string,
 		}
 		for rows.Next() {
 			err = rows.Scan(&statusCode, &event.ErrorResponse, &event.ExecTime)
+			if err != nil {
+				return "", nil
+			}
 			response, err = json.MarshalIndent(event, "", " ")
 			if err != nil {
 				return "", err

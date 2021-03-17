@@ -39,9 +39,8 @@ type GatewayRPCHandler struct {
 }
 
 type SqlRunner struct {
-	dbHandle           *sql.DB
-	jobTableName       string
-	jobStatusTableName string
+	dbHandle     *sql.DB
+	jobTableName string
 }
 
 type SourceEvents struct {
