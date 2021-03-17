@@ -9,8 +9,7 @@ import (
 )
 
 type StashRpcHandler struct {
-	jobsDB         jobsdb.JobsDB
-	readOnlyJobsDB jobsdb.ReadonlyHandleT
+	ReadOnlyJobsDB jobsdb.ReadonlyJobsDB
 }
 
 var prefix = "proc_error_jobs_"
@@ -59,7 +58,7 @@ func (s *StashRpcHandler) GetDSList(dsName string, result *string) (err error) {
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
-	response, err := s.readOnlyJobsDB.GetDSListString()
+	response, err := s.ReadOnlyJobsDB.GetDSListString()
 	*result = string(response)
 	return nil
 }
@@ -71,7 +70,7 @@ func (s *StashRpcHandler) GetDSFailedJobs(arg string, result *string) (err error
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
-	response, err := s.readOnlyJobsDB.GetLatestFailedJobs(arg, prefix)
+	response, err := s.ReadOnlyJobsDB.GetLatestFailedJobs(arg, prefix)
 	*result = string(response)
 	return err
 }
@@ -83,7 +82,7 @@ func (s *StashRpcHandler) GetJobIDStatus(arg string, result *string) (err error)
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
-	response, err := s.readOnlyJobsDB.GetJobIDStatus(arg, prefix)
+	response, err := s.ReadOnlyJobsDB.GetJobIDStatus(arg, prefix)
 	*result = string(response)
 	return err
 }
@@ -131,7 +130,7 @@ func (s *StashRpcHandler) GetDSJobCount(arg string, result *string) (err error) 
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
-	response, err := s.readOnlyJobsDB.GetJobSummaryCount(arg, prefix)
+	response, err := s.ReadOnlyJobsDB.GetJobSummaryCount(arg, prefix)
 	*result = string(response)
 	return nil
 }

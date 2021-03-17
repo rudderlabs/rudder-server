@@ -28,6 +28,8 @@ type ReadonlyJobsDB interface {
 	GetLatestFailedJobs(arg string, prefix string) (string, error)
 	GetJobIDsForUser(args []string) (string, error)
 	GetFailedStatusErrorCodeCountsByDestination(args []string) (string, error)
+	GetDSListString() (string, error)
+	GetJobIDStatus(job_id string, prefix string) (string, error)
 }
 
 type ReadonlyHandleT struct {

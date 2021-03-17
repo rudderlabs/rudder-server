@@ -11,24 +11,23 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+func RegisterAdminHandlers(readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyJobsDB) {
+	admin.RegisterAdminHandler("Router", &RouterRpcHandler{jobsDBPrefix: "rt", readonlyRouterDB: readonlyRouterDB})
+	admin.RegisterAdminHandler("BatchRouter", &RouterRpcHandler{jobsDBPrefix: "batch_rt", readonlyBatchRouterDB: readonlyBatchRouterDB})
+}
+
 type RouterAdmin struct {
 	handles map[string]*HandleT
 }
 
 var adminInstance *RouterAdmin
 var routerJobsTableName, routerJobStatusTableName string
-var rtReadOnlyJobsDB jobsdb.ReadonlyHandleT
-var brtReadOnlyJobsDB jobsdb.ReadonlyHandleT
 
 func init() {
 	adminInstance = &RouterAdmin{
 		handles: make(map[string]*HandleT),
 	}
-	rtReadOnlyJobsDB.Setup("rt")
-	brtReadOnlyJobsDB.Setup("batch_rt")
 	admin.RegisterStatusHandler("routers", adminInstance)
-	admin.RegisterAdminHandler("Router", &RouterRpcHandler{jobsDBPrefix: "rt"})
-	admin.RegisterAdminHandler("BatchRouter", &RouterRpcHandler{jobsDBPrefix: "batch_rt"})
 }
 
 func (ra *RouterAdmin) registerRouter(name string, handle *HandleT) {
@@ -60,7 +59,9 @@ func (ra *RouterAdmin) Status() interface{} {
 }
 
 type RouterRpcHandler struct {
-	jobsDBPrefix string
+	jobsDBPrefix          string
+	readonlyRouterDB      jobsdb.ReadonlyJobsDB
+	readonlyBatchRouterDB jobsdb.ReadonlyJobsDB
 }
 
 type JobCountsByStateAndDestination struct {
@@ -153,11 +154,11 @@ func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) (err error)
 	return completeErr
 }
 
-func getReadOnlyJobsDB(prefix string) jobsdb.ReadonlyHandleT {
+func (r *RouterRpcHandler) getReadOnlyJobsDB(prefix string) jobsdb.ReadonlyJobsDB {
 	if prefix == "rt" {
-		return rtReadOnlyJobsDB
+		return r.readonlyRouterDB
 	}
-	return brtReadOnlyJobsDB
+	return r.readonlyBatchRouterDB
 }
 
 func (r *RouterRpcHandler) GetDSJobCount(arg string, result *string) (err error) {
@@ -167,7 +168,7 @@ func (r *RouterRpcHandler) GetDSJobCount(arg string, result *string) (err error)
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
-	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
+	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
 	response, err := readOnlyJobsDB.GetJobSummaryCount(arg, r.jobsDBPrefix)
 	*result = string(response)
 	return nil
@@ -180,7 +181,7 @@ func (r *RouterRpcHandler) GetDSFailedJobs(arg string, result *string) (err erro
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
-	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
+	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
 	response, err := readOnlyJobsDB.GetLatestFailedJobs(arg, r.jobsDBPrefix)
 	*result = string(response)
 	return nil
@@ -193,7 +194,7 @@ func (r *RouterRpcHandler) GetJobIDStatus(arg string, result *string) (err error
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
-	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
+	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
 	response, err := readOnlyJobsDB.GetJobIDStatus(arg, r.jobsDBPrefix)
 	*result = string(response)
 	return err
@@ -207,7 +208,7 @@ func (r *RouterRpcHandler) GetDSList(dsName string, result *string) (err error) 
 		}
 	}()
 
-	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
+	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
 	response, err := readOnlyJobsDB.GetDSListString()
 	*result = string(response)
 	return nil

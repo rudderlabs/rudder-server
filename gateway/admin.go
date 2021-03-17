@@ -35,7 +35,7 @@ func (g *GatewayAdmin) Status() interface{} {
 
 type GatewayRPCHandler struct {
 	jobsDB         jobsdb.JobsDB
-	readOnlyJobsDB jobsdb.ReadonlyHandleT
+	readOnlyJobsDB jobsdb.ReadonlyJobsDB
 }
 
 type SqlRunner struct {

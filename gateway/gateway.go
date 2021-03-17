@@ -1118,10 +1118,8 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.rrh = &RegularRequestHandler{}
 
 	gateway.webhookHandler = webhook.Setup(gateway)
-	var readonlyGatewayDB jobsdb.ReadonlyHandleT
-	readonlyGatewayDB.Setup("gw")
 	gatewayAdmin := GatewayAdmin{handle: gateway}
-	gatewayRPCHandler := GatewayRPCHandler{jobsDB: gateway.jobsDB, readOnlyJobsDB: readonlyGatewayDB}
+	gatewayRPCHandler := GatewayRPCHandler{jobsDB: gateway.jobsDB, readOnlyJobsDB: gateway.readonlyGatewayDB}
 
 	admin.RegisterStatusHandler("Gateway", &gatewayAdmin)
 	admin.RegisterAdminHandler("Gateway", &gatewayRPCHandler)

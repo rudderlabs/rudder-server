@@ -34,6 +34,10 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+func RegisterAdminHandlers(readonlyProcErrorDB jobsdb.ReadonlyJobsDB) {
+	admin.RegisterAdminHandler("ProcErrors", &stash.StashRpcHandler{ReadOnlyJobsDB: readonlyProcErrorDB})
+}
+
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
 	backendConfig                  backendconfig.BackendConfig
