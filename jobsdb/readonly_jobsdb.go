@@ -519,10 +519,10 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(job_id string, prefix string) (string,
 		var statusCode sql.NullString
 		event := FailedJobs{}
 		rows, err := jd.DbHandle.Query(sqlStatement)
-		defer rows.Close()
 		if err != nil {
 			return "", err
 		}
+		defer rows.Close()
 		for rows.Next() {
 			err = rows.Scan(&statusCode, &event.ErrorResponse, &event.ExecTime)
 			if err != nil {
@@ -568,10 +568,10 @@ func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
 		}
 		sqlStatement = fmt.Sprintf(`SELECT job_id FROM %[1]s WHERE job_id >= %[2]s AND job_id <= %[3]s AND user_id = '%[4]s';`, dsPair.JobTable, args[2], args[3], userID)
 		rows, err := jd.DbHandle.Query(sqlStatement)
-		defer rows.Close()
 		if err != nil {
 			return "", err
 		}
+		defer rows.Close()
 		for rows.Next() {
 			var jobID string
 			err = rows.Scan(&jobID)
@@ -596,10 +596,10 @@ func (jd *ReadonlyHandleT) GetFailedStatusErrorCodeCountsByDestination(args []st
 		group by rt.job_id, st.error_code, rt.custom_val, rt.parameters -> 'destination_id')
 	as  a group by a.custom_val, a.error_code, a.d order by a.custom_val;`, dsList.JobTableName, dsList.JobStatusTableName)
 	rows, err := jd.DbHandle.Query(sqlStatement)
-	defer rows.Close()
 	if err != nil {
 		return "", err
 	}
+	defer rows.Close()
 	errorcount := ErrorCodeCountStats{}
 	for rows.Next() {
 		result := ErrorCodeCountsByDestination{}
