@@ -75,9 +75,6 @@ type Admin struct {
 var instance Admin
 var pkgLogger logger.LoggerI
 
-type MiscHandler struct {
-}
-
 func init() {
 	instance = Admin{
 		statushandlers: make(map[string]PackageStatusHandler),
@@ -85,9 +82,6 @@ func init() {
 	}
 	instance.rpcServer.Register(instance)
 	pkgLogger = logger.NewLogger().Child("admin")
-	miscHandler := &MiscHandler{}
-	RegisterAdminHandler("Misc", miscHandler)
-
 }
 
 // Status reports overall server status by fetching status of all registered admin handlers

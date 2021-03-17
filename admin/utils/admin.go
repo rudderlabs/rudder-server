@@ -38,8 +38,6 @@ import (
 )
 
 type MiscHandler struct {
-	jobsDB         jobsdb.JobsDB
-	readOnlyJobsDB jobsdb.ReadonlyHandleT
 }
 
 var miscHandler *MiscHandler

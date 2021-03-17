@@ -13,23 +13,6 @@ type StashRpcHandler struct {
 	readOnlyJobsDB jobsdb.ReadonlyHandleT
 }
 
-type SqlRunner struct {
-	dbHandle           *sql.DB
-	jobTableName       string
-	jobStatusTableName string
-}
-
-type DSPair struct {
-	jobTableName       string
-	jobStatusTableName string
-}
-
-type SourceEvents struct {
-	Count int
-	Name  string
-	ID    string
-}
-
 var prefix = "proc_error_jobs_"
 
 /*
@@ -104,25 +87,6 @@ func (s *StashRpcHandler) GetJobIDStatus(arg string, result *string) (err error)
 	}()
 	response, err := s.readOnlyJobsDB.GetJobIDStatus(arg, prefix)
 	*result = string(response)
-	return err
-}
-
-func (r *SqlRunner) getTableRowCount() (int, error) {
-	var numRows int
-	var err error
-	totalRowsStmt := fmt.Sprintf(`select count(*) from %s`, r.jobTableName)
-	err = runSQL(r, totalRowsStmt, &numRows)
-	return numRows, err
-}
-
-func runSQL(runner *SqlRunner, query string, reciever interface{}) error {
-	row := runner.dbHandle.QueryRow(query)
-	err := row.Scan(reciever)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil //"Zero rows found"
-		}
-	}
 	return err
 }
 

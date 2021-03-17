@@ -44,11 +44,6 @@ type SqlRunner struct {
 	jobStatusTableName string
 }
 
-type DSPair struct {
-	JobTableName       string
-	JobStatusTableName string
-}
-
 type SourceEvents struct {
 	Count int
 	Name  string

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -87,23 +86,6 @@ type LatestJobStatusCounts struct {
 	Count int
 	State string
 	Rank  int
-}
-
-type SqlRunner struct {
-	dbHandle           *sql.DB
-	jobTableName       string
-	jobStatusTableName string
-}
-
-type DSPair struct {
-	jobTableName       string
-	jobStatusTableName string
-}
-
-type SourceEvents struct {
-	Count int
-	Name  string
-	ID    string
 }
 
 type DSStats struct {
@@ -215,39 +197,6 @@ func (r *RouterRpcHandler) GetJobIDStatus(arg string, result *string) (err error
 	response, err := readOnlyJobsDB.GetJobIDStatus(arg, r.jobsDBPrefix)
 	*result = string(response)
 	return err
-}
-
-func (r *RouterRpcHandler) GetDSJobStatusCount(dsName string, result *string) (err error) {
-	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
-	dbHandle := readOnlyJobsDB.DbHandle
-	dsListArr := make([]string, 0)
-	if dsName != "" {
-		dsListArr = append(dsListArr, r.jobsDBPrefix+"status_"+dsName)
-	} else {
-		dsList := readOnlyJobsDB.GetDSList()
-		for _, ds := range dsList {
-			dsListArr = append(dsListArr, ds.JobStatusTable)
-		}
-	}
-	for _, tableName := range dsListArr {
-		runner := &SqlRunner{dbHandle: dbHandle, jobTableName: tableName}
-		sqlStatement := ""
-		rows, err := runner.dbHandle.Query(sqlStatement)
-		defer rows.Close()
-		if err == nil {
-			var jobId string
-			_ = rows.Scan(&jobId)
-			*result = *result + jobId
-		}
-	}
-	return nil
-}
-
-func (r *RouterRpcHandler) GetDSUnprocessedJobCount(dsName string, result *string) (err error) {
-	readOnlyJobsDB := getReadOnlyJobsDB(r.jobsDBPrefix)
-	totalCount := readOnlyJobsDB.GetUnprocessedCount(nil, nil)
-	*result = strconv.Itoa(int(totalCount))
-	return nil
 }
 
 func (r *RouterRpcHandler) GetDSList(dsName string, result *string) (err error) {
@@ -491,23 +440,4 @@ func (r *RouterRpcHandler) FlushDrainJobsConfig(destID string, reply *string) (e
 
 	*reply = drain.FlushDrainJobConfig(destID)
 	return err
-}
-
-func runSQL(runner *SqlRunner, query string, reciever interface{}) error {
-	row := runner.dbHandle.QueryRow(query)
-	err := row.Scan(reciever)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil //"Zero rows found"
-		}
-	}
-	return err
-}
-
-func (r *SqlRunner) getTableRowCount() (int, error) {
-	var numRows int
-	var err error
-	totalRowsStmt := fmt.Sprintf(`select count(*) from %s`, r.jobTableName)
-	err = runSQL(r, totalRowsStmt, &numRows)
-	return numRows, err
 }
