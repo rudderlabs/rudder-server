@@ -680,6 +680,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	if tableSchemaDiff.TableToBeCreated {
+		fmt.Println(tableSchemaDiff.TableToBeCreated)
 		err = job.whManager.CreateTable(tName, tableSchemaDiff.ColumnMap)
 		if err != nil {
 			pkgLogger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
@@ -932,7 +933,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	if generated, _ := job.areIdentityTablesLoadFilesGenerated(); !generated {
 		err := job.resolveIdentities(populateHistoricIdentities)
 		if err != nil {
-			pkgLogger.Errorf(`SF: ID Resolution operation failed: %v`, err)
+			pkgLogger.Errorf(` ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
 			return job.processLoadTableResponse(errorMap)
 		}

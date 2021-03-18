@@ -2,6 +2,7 @@ package bigquery
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -340,6 +341,38 @@ func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+	empty = true
+
+	bq.Warehouse = warehouse
+	bq.Namespace = warehouse.Namespace
+	bq.Db, err = bq.connect(BQCredentialsT{
+		projectID:   bq.ProjectID,
+		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+	})
+	if err != nil {
+		return
+	}
+	defer bq.Db.Close()
+
+	tables := []string{"TRACKS", "PAGES", "SCREENS", "IDENTIFIES", "ALIASES"}
+	for _, tableName := range tables {
+		var exists bool
+		exists, err = bq.tableExists(tableName)
+		if err != nil {
+			return
+		}
+		if !exists {
+			continue
+		}
+		count, err := bq.GetTotalCountInTable(tableName)
+		if err != nil {
+			return empty, err
+		}
+		if count > 0 {
+			empty = false
+			return empty, nil
+		}
+	}
 	return
 }
 
@@ -478,15 +511,189 @@ func (bq *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
+	partitionDate := time.Now().Format("2006-01-02")
+	outputTable := partitionedTable(identityMergeRulesTable, partitionDate)
 
+	// create partitioned table in format tableName$20191221
+	loader := bq.Db.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
+
+	job, err := loader.Run(bq.BQContext)
+	if err != nil {
+		pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
+		return
+	}
+	status, err := job.Wait(bq.BQContext)
+	if err != nil {
+		pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
+		return
+	}
+
+	if status.Err() != nil {
+		return status.Err()
+	}
 	return
 }
 
 func (bq *HandleT) LoadIdentityMappingsTable() (err error) {
+	identityMappingsTable := warehouseutils.IdentityMappingsWarehouseTableName(PROVIDER)
+	pkgLogger.Infof("BQ: Starting load for table:%s\n", identityMappingsTable)
+
+	pkgLogger.Infof("BQ: Fetching load file location for %s", identityMappingsTable)
+
+	var location string
+	location, err = bq.Uploader.GetSingleLoadFileLocation(identityMappingsTable)
+	if err != nil {
+		return err
+	}
+	location = warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
+	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", identityMappingsTable, bq.Namespace, bq.ProjectID, location)
+	gcsRef := bigquery.NewGCSReference(location)
+	gcsRef.SourceFormat = bigquery.JSON
+	gcsRef.MaxBadRecords = 0
+	gcsRef.IgnoreUnknownValues = false
+	partitionDate := time.Now().Format("2006-01-02")
+	outputTable := partitionedTable(identityMappingsTable, partitionDate)
+
+	// create partitioned table in format tableName$20191221
+	loader := bq.Db.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
+
+	job, err := loader.Run(bq.BQContext)
+	if err != nil {
+		pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
+		return
+	}
+	status, err := job.Wait(bq.BQContext)
+	if err != nil {
+		pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
+		return
+	}
+
+	if status.Err() != nil {
+		return status.Err()
+	}
 	return
 }
 
-func (bq *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (bq *HandleT) tableExists(tableName string) (exists bool, err error) {
+	_, err = bq.Db.Dataset(bq.Namespace).Table(tableName).Metadata(context.Background())
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (bq *HandleT) columnExists(columnName string, tableName string) (exists bool, err error) {
+	tableMetadata, err := bq.Db.Dataset(bq.Namespace).Table(tableName).Metadata(context.Background())
+	if err != nil {
+		return false, err
+	}
+
+	schema := tableMetadata.Schema
+	for _, column := range schema {
+		if column.Name == columnName {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+type identityRulesT struct {
+	AnonymousId string `json:"anonymous_id"`
+	UserId      string `json:"user_id""`
+}
+
+func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) {
+	getFromTable := func(tableName string) (err error) {
+		var exists bool
+		exists, err = bq.tableExists(tableName)
+		if err != nil || !exists {
+			return
+		}
+
+		tableMetadata, err := bq.Db.Dataset(bq.Namespace).Table(tableName).Metadata(context.Background())
+		if err != nil {
+			return err
+		}
+		totalRows := int64(tableMetadata.NumRows)
+
+		// check if table in warehouse has anonymous_id and user_id and construct accordingly
+		hasAnonymousID, err := bq.columnExists("ANONYMOUS_ID", tableName)
+		if err != nil {
+			return
+		}
+		hasUserID, err := bq.columnExists("USER_ID", tableName)
+		if err != nil {
+			return
+		}
+
+		var toSelectFields string
+		if hasAnonymousID && hasUserID {
+			toSelectFields = `"anonymous_id", "user_id"`
+		} else if hasAnonymousID {
+			toSelectFields = `"anonymous_id", null as "user_id"`
+		} else if hasUserID {
+			toSelectFields = `null as anonymous_id", "user_id"`
+		} else {
+			pkgLogger.Infof("BQ: anonymous_id, user_id columns not present in table: %s", tableName)
+			return nil
+		}
+
+		batchSize := int64(10000)
+		var offset int64
+		for {
+			sqlStatement := fmt.Sprintf(`SELECT DISTINCT %s FROM "%s"."%s" LIMIT %d OFFSET %d`, toSelectFields, bq.Namespace, tableName, batchSize, offset)
+			pkgLogger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s, totalRows: %d", sqlStatement, totalRows)
+			ctx := context.Background()
+			query := bq.Db.Query(sqlStatement)
+			job, err := query.Run(ctx)
+			if err != nil {
+				break
+			}
+			status, err := job.Wait(ctx)
+			if err != nil {
+				return err
+			}
+			if err := status.Err(); err != nil {
+				return err
+			}
+			it, err := job.Read(ctx)
+			for {
+				var identityRule identityRulesT
+
+				err := it.Next(&identityRule)
+				if err == iterator.Done {
+					break
+				}
+				if err != nil {
+					return err
+				}
+				if len(identityRule.AnonymousId) == 0 && len(identityRule.UserId) == 0 {
+					continue
+				}
+				bytes, err := json.Marshal(identityRule)
+				if err != nil {
+					break
+				}
+				gzWriter.WriteGZ(string(bytes))
+			}
+
+			offset += batchSize
+			if offset >= totalRows {
+				break
+			}
+		}
+		return
+	}
+
+	tables := []string{"TRACKS", "PAGES", "SCREENS", "IDENTIFIES", "ALIASES"}
+	for _, table := range tables {
+		err = getFromTable(table)
+		if err != nil {
+			return
+		}
+	}
 	return
 }
 

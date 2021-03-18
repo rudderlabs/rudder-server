@@ -6,6 +6,7 @@ type EventLoader interface {
 	IsLoadTimeColumn(columnName string) bool
 	GetLoadTimeFomat(columnName string) string
 	AddColumn(columnName string, val interface{})
+	AddRow(columnNames []string, values []string)
 	AddEmptyColumn(columnName string)
 	WriteToString() (string, error)
 }

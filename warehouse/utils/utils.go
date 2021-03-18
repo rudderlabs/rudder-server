@@ -92,7 +92,7 @@ func init() {
 }
 
 func loadConfig() {
-	IdentityEnabledWarehouses = []string{"SNOWFLAKE"}
+	IdentityEnabledWarehouses = []string{"SNOWFLAKE", "BQ"}
 	enableIDResolution = config.GetBool("Warehouse.enableIDResolution", false)
 }
 
@@ -499,6 +499,9 @@ func IdentityMergeRulesTableName(warehouse WarehouseT) string {
 func IdentityMergeRulesWarehouseTableName(provider string) string {
 	return ToProviderCase(provider, IdentityMergeRulesTable)
 }
+func IdentityMappingsWarehouseTableName(provider string) string {
+	return ToProviderCase(provider, IdentityMappingsTable)
+}
 
 func IdentityMappingsTableName(warehouse WarehouseT) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMappingsTable, warehouse.Namespace, warehouse.Destination.ID)
@@ -518,4 +521,10 @@ func DoubleQuoteAndJoinByComma(strs []string) string {
 		quotedSlice = append(quotedSlice, fmt.Sprintf("%q", str))
 	}
 	return strings.Join(quotedSlice, ",")
+}
+func GetTempFileExtension(destType string) string {
+	if destType == "BQ" {
+		return "json.gz"
+	}
+	return "csv.gz"
 }
