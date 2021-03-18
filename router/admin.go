@@ -187,6 +187,19 @@ func (r *RouterRpcHandler) GetDSFailedJobs(arg string, result *string) (err erro
 	return nil
 }
 
+func (r *RouterRpcHandler) GetJobByID(arg string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	readOnlyJobsDB := r.getReadOnlyJobsDB(r.jobsDBPrefix)
+	response, err := readOnlyJobsDB.GetJobByID(arg, r.jobsDBPrefix)
+	*result = string(response)
+	return err
+}
+
 func (r *RouterRpcHandler) GetJobIDStatus(arg string, result *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {

@@ -30,6 +30,7 @@ type ReadonlyJobsDB interface {
 	GetFailedStatusErrorCodeCountsByDestination(args []string) (string, error)
 	GetDSListString() (string, error)
 	GetJobIDStatus(job_id string, prefix string) (string, error)
+	GetJobByID(job_id string, prefix string) (string, error)
 }
 
 type ReadonlyHandleT struct {
@@ -502,12 +503,77 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg string, prefix string) (strin
 	return string(response), nil
 }
 
+func (jd *ReadonlyHandleT) GetJobByID(job_id string, prefix string) (string, error) {
+	dsListTotal := jd.getDSList()
+	var response []byte
+	for _, dsPair := range dsListTotal {
+		var min, max sql.NullInt32
+		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobTable)
+		row := jd.DbHandle.QueryRow(sqlStatement)
+		err := row.Scan(&min, &max)
+		if err != nil {
+			return "", err
+		}
+		if !min.Valid || !max.Valid {
+			continue
+		}
+		jobId, err := strconv.Atoi(job_id)
+		if err != nil {
+			return "", err
+		}
+		if jobId < int(min.Int32) || jobId > int(max.Int32) {
+			continue
+		}
+		sqlStatement = fmt.Sprintf(`SELECT
+						%[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload,
+						%[1]s.created_at, %[1]s.expire_at,
+						job_latest_state.job_state, job_latest_state.attempt,
+						job_latest_state.exec_time, job_latest_state.retry_time,
+						job_latest_state.error_code, job_latest_state.error_response
+					FROM
+						%[1]s
+					LEFT JOIN 
+						(SELECT job_id, job_state, attempt, exec_time, retry_time,
+						error_code, error_response FROM %[2]s WHERE id IN
+							(SELECT MAX(id) from %[2]s GROUP BY job_id))
+						AS job_latest_state
+					ON %[1]s.job_id=job_latest_state.job_id
+					WHERE %[1]s.job_id = %[3]s;`, dsPair.JobTable, dsPair.JobStatusTable, job_id)
+
+		event := JobT{}
+		row = jd.DbHandle.QueryRow(sqlStatement)
+		err = row.Scan(&event.JobID, &event.UUID, &event.UserID, &event.Parameters, &event.CustomVal, &event.EventPayload,
+			&event.CreatedAt, &event.ExpireAt, &event.LastJobStatus.JobState, &event.LastJobStatus.AttemptNum,
+			&event.LastJobStatus.ExecTime, &event.LastJobStatus.RetryTime, &event.LastJobStatus.ErrorCode,
+			&event.LastJobStatus.ErrorResponse)
+		if err != nil {
+			sqlStatement = fmt.Sprintf(`SELECT
+						%[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload,
+						%[1]s.created_at, %[1]s.expire_at
+					FROM
+						%[1]s
+					WHERE %[1]s.job_id = %[2]s;`, dsPair.JobTable, job_id)
+			row = jd.DbHandle.QueryRow(sqlStatement)
+			err1 := row.Scan(&event.JobID, &event.UUID, &event.UserID, &event.Parameters, &event.CustomVal, &event.EventPayload,
+				&event.CreatedAt, &event.ExpireAt)
+			if err1 != nil {
+				return "", err1
+			}
+		}
+		response, err = json.MarshalIndent(event, "", " ")
+		if err != nil {
+			return "", err
+		}
+	}
+	return string(response), nil
+}
+
 func (jd *ReadonlyHandleT) GetJobIDStatus(job_id string, prefix string) (string, error) {
 	dsListTotal := jd.getDSList()
 	var response []byte
 	for _, dsPair := range dsListTotal {
 		var min, max sql.NullInt32
-		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobStatusTable)
+		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobTable)
 		row := jd.DbHandle.QueryRow(sqlStatement)
 		err := row.Scan(&min, &max)
 		if err != nil {
@@ -567,7 +633,7 @@ func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
 			return "", nil
 		}
 		var min, max sql.NullInt32
-		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobStatusTable)
+		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobTable)
 		row := jd.DbHandle.QueryRow(sqlStatement)
 		err = row.Scan(&min, &max)
 		if err != nil {

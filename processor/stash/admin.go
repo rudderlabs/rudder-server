@@ -75,6 +75,18 @@ func (s *StashRpcHandler) GetDSFailedJobs(arg string, result *string) (err error
 	return err
 }
 
+func (s *StashRpcHandler) GetJobByID(arg string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	response, err := s.ReadOnlyJobsDB.GetJobByID(arg, prefix)
+	*result = string(response)
+	return err
+}
+
 func (s *StashRpcHandler) GetJobIDStatus(arg string, result *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {

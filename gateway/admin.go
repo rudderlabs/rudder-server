@@ -233,6 +233,19 @@ func (g *GatewayRPCHandler) GetDSFailedJobs(arg string, result *string) (err err
 	*result = string(response)
 	return err
 }
+
+func (g *GatewayRPCHandler) GetJobByID(arg string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	response, err := g.readOnlyJobsDB.GetJobByID(arg, prefix)
+	*result = string(response)
+	return err
+}
+
 func (g *GatewayRPCHandler) GetJobIDStatus(arg string, result *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
