@@ -53,6 +53,7 @@ type EventStatusDetailed struct {
 
 type EventStatusStats struct {
 	StatsNums []EventStatusDetailed
+	DSList    string
 }
 
 type FailedJobs struct {
@@ -76,6 +77,10 @@ type ErrorCodeCountStats struct {
 }
 type FailedJobsStats struct {
 	FailedNums []FailedJobs
+}
+
+type FailedStatusStats struct {
+	FailedStatusStats []JobStatusT
 }
 
 /*
@@ -378,8 +383,8 @@ func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string
 	dsListArr := make([]DSPair, 0)
 	argList := strings.Split(arg, ":")
 	if argList[0] != "" {
-		statusPrefix := getStatusPrefix(argList[0])
-		jobPrefix := getJobPrefix(argList[0])
+		statusPrefix := getStatusPrefix(prefix)
+		jobPrefix := getJobPrefix(prefix)
 		dsListArr = append(dsListArr, DSPair{JobTableName: jobPrefix + argList[0], JobStatusTableName: statusPrefix + argList[0]})
 	} else if argList[1] != "" {
 		maxCount, err := strconv.Atoi(argList[1])
@@ -398,6 +403,7 @@ func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string
 	}
 	eventStatusDetailed := make([]EventStatusDetailed, 0)
 	eventStatusMap := make(map[string][]EventStatusDetailed)
+	var dsString string
 	for _, dsPair := range dsListArr {
 		sqlStatement := fmt.Sprintf(`SELECT COUNT(*), 
      					%[1]s.parameters->'source_id' as source, 
@@ -412,6 +418,7 @@ func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string
 		if err != nil {
 			return "", err
 		}
+		dsString = dsPair.JobTableName + "    " + dsString
 		defer row.Close()
 		for row.Next() {
 			event := EventStatusDetailed{}
@@ -438,7 +445,7 @@ func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string
 	for _, val := range eventStatusMap {
 		eventStatusDetailed = append(eventStatusDetailed, val...)
 	}
-	response, err := json.MarshalIndent(EventStatusStats{eventStatusDetailed}, "", " ")
+	response, err := json.MarshalIndent(EventStatusStats{StatsNums: eventStatusDetailed, DSList: dsString}, "", " ")
 	if err != nil {
 		return "", err
 	}
@@ -516,23 +523,28 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(job_id string, prefix string) (string,
 		if jobId < int(min.Int32) || jobId > int(max.Int32) {
 			continue
 		}
-		sqlStatement = fmt.Sprintf(`SELECT error_code , error_response , exec_time from %[1]s where job_id = %[2]s;`, dsPair.JobStatusTable, job_id)
+		sqlStatement = fmt.Sprintf(`SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[1]s WHERE job_id = %[2]s;`, dsPair.JobStatusTable, job_id)
 		var statusCode sql.NullString
-		event := FailedJobs{}
+		eventList := []JobStatusT{}
 		rows, err := jd.DbHandle.Query(sqlStatement)
 		if err != nil {
 			return "", err
 		}
 		defer rows.Close()
 		for rows.Next() {
-			err = rows.Scan(&statusCode, &event.ErrorResponse, &event.ExecTime)
+			event := JobStatusT{}
+			err = rows.Scan(&event.JobID, &event.JobState, &event.AttemptNum, &event.ExecTime, &event.RetryTime, &statusCode, &event.ErrorResponse)
 			if err != nil {
 				return "", nil
 			}
-			response, err = json.MarshalIndent(event, "", " ")
-			if err != nil {
-				return "", err
+			if statusCode.Valid {
+				event.ErrorCode = statusCode.String
 			}
+			eventList = append(eventList, event)
+		}
+		response, err = json.MarshalIndent(FailedStatusStats{FailedStatusStats: eventList}, "", " ")
+		if err != nil {
+			return "", err
 		}
 	}
 	return string(response), nil

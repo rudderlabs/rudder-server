@@ -5,34 +5,35 @@
 package mock_types
 
 import (
-	gomock "github.com/golang/mock/gomock"
 	reflect "reflect"
+
+	gomock "github.com/golang/mock/gomock"
 )
 
-// MockSuppressUserI is a mock of SuppressUserI interface
+// MockSuppressUserI is a mock of SuppressUserI interface.
 type MockSuppressUserI struct {
 	ctrl     *gomock.Controller
 	recorder *MockSuppressUserIMockRecorder
 }
 
-// MockSuppressUserIMockRecorder is the mock recorder for MockSuppressUserI
+// MockSuppressUserIMockRecorder is the mock recorder for MockSuppressUserI.
 type MockSuppressUserIMockRecorder struct {
 	mock *MockSuppressUserI
 }
 
-// NewMockSuppressUserI creates a new mock instance
+// NewMockSuppressUserI creates a new mock instance.
 func NewMockSuppressUserI(ctrl *gomock.Controller) *MockSuppressUserI {
 	mock := &MockSuppressUserI{ctrl: ctrl}
 	mock.recorder = &MockSuppressUserIMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockSuppressUserI) EXPECT() *MockSuppressUserIMockRecorder {
 	return m.recorder
 }
 
-// IsSuppressedUser mocks base method
+// IsSuppressedUser mocks base method.
 func (m *MockSuppressUserI) IsSuppressedUser(arg0, arg1, arg2 string) bool {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "IsSuppressedUser", arg0, arg1, arg2)
@@ -40,7 +41,7 @@ func (m *MockSuppressUserI) IsSuppressedUser(arg0, arg1, arg2 string) bool {
 	return ret0
 }
 
-// IsSuppressedUser indicates an expected call of IsSuppressedUser
+// IsSuppressedUser indicates an expected call of IsSuppressedUser.
 func (mr *MockSuppressUserIMockRecorder) IsSuppressedUser(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSuppressedUser", reflect.TypeOf((*MockSuppressUserI)(nil).IsSuppressedUser), arg0, arg1, arg2)
