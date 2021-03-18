@@ -138,7 +138,6 @@ var statusMap = map[string]string{
 
 func (uploadsReq *UploadsReqT) generateQuery(selectFields string) string {
 	query := fmt.Sprintf(`select %s, count(*) OVER() AS total_uploads from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
-
 	var whereClauses []string
 	if uploadsReq.SourceID != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id = '%s'`, uploadsReq.SourceID))

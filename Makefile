@@ -32,6 +32,7 @@ ifeq ($(RACE_ENABLED), TRUE)
 	$(eval BUILD_OPTIONS = $(BUILD_OPTIONS) -race -o rudder-server-with-race)
 endif
 	$(GO) build $(BUILD_OPTIONS) -mod vendor -a -installsuffix cgo -ldflags="$(LDFLAGS)"
+	$(GO) build -o build/wait-for-go/wait-for-go build/wait-for-go/wait-for.go 
 
 run: prepare-build ## Run rudder-server using go run
 	$(GO) run -mod=vendor main.go
