@@ -377,9 +377,13 @@ func (stats *PerfStats) Print() {
 }
 
 func (stats *PerfStats) Status() map[string]interface{} {
+	overallRate := float64(0)
+	if float64(stats.elapsedTime) > 0 {
+		overallRate = float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime)
+	}
 	return map[string]interface{}{
 		"total-events": stats.eventCount,
-		"overall-rate": float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime),
+		"overall-rate": overallRate,
 	}
 }
 
