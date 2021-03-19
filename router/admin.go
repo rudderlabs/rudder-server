@@ -52,8 +52,19 @@ func (ra *RouterAdmin) Status() interface{} {
 		if len(routerFailedList) > 0 {
 			routerStatus["recent-failedstatuses"] = routerFailedList
 		}
-		statusList = append(statusList, routerStatus)
+		abortedUsersMap := make(map[string]int, 0)
+		for _, worker := range router.workers {
+			worker.abortedUserMutex.RLock()
+			for k, v := range worker.abortedUserIDMap {
+				abortedUsersMap[k] = v
+			}
+			worker.abortedUserMutex.RUnlock()
+		}
+		if len(abortedUsersMap) > 0 {
+			routerStatus["aborted-usersmap"] = abortedUsersMap
+		}
 
+		statusList = append(statusList, routerStatus)
 	}
 	return statusList
 }
