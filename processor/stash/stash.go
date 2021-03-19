@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -61,14 +60,12 @@ func New() *HandleT {
 }
 
 func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
-
 	st.logger = pkgLogger
 	st.errorDB = errorDB
 	st.stats = stats.DefaultStats
 	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.statErrDBW = st.stats.NewStat("processor.err_db_write_time", stats.TimerType)
 	st.crashRecover()
-	admin.RegisterAdminHandler("ProcErrors", &StashRpcHandler{errorDB})
 }
 
 func (st *HandleT) crashRecover() {

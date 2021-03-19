@@ -34,7 +34,8 @@ func (g *GatewayAdmin) Status() interface{} {
 }
 
 type GatewayRPCHandler struct {
-	jobsDB jobsdb.JobsDB
+	jobsDB         jobsdb.JobsDB
+	readOnlyJobsDB jobsdb.ReadonlyJobsDB
 }
 
 type SqlRunner struct {
@@ -195,6 +196,66 @@ func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) (err error
 	}
 
 	return completeErr
+}
+
+func (g *GatewayRPCHandler) GetDSList(emptyInput string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	response, err := g.readOnlyJobsDB.GetDSListString()
+	*result = string(response)
+	return nil
+}
+
+func (g *GatewayRPCHandler) GetDSJobCount(arg string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	response, err := g.readOnlyJobsDB.GetJobSummaryCount(arg, prefix)
+	*result = string(response)
+	return err
+}
+
+func (g *GatewayRPCHandler) GetDSFailedJobs(arg string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	response, err := g.readOnlyJobsDB.GetLatestFailedJobs(arg, prefix)
+	*result = string(response)
+	return err
+}
+
+func (g *GatewayRPCHandler) GetJobByID(arg string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	response, err := g.readOnlyJobsDB.GetJobByID(arg, prefix)
+	*result = string(response)
+	return err
+}
+
+func (g *GatewayRPCHandler) GetJobIDStatus(arg string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	response, err := g.readOnlyJobsDB.GetJobIDStatus(arg, prefix)
+	*result = string(response)
+	return err
 }
 
 func runSQL(runner *SqlRunner, query string, reciever interface{}) error {
