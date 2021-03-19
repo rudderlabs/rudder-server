@@ -457,8 +457,8 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg string, prefix string) (strin
 	var dsList DSPair
 	argList := strings.Split(arg, ":")
 	if argList[0] != "" {
-		statusPrefix := getStatusPrefix(argList[0])
-		jobPrefix := getJobPrefix(argList[0])
+		statusPrefix := getStatusPrefix(prefix)
+		jobPrefix := getJobPrefix(prefix)
 		dsList = DSPair{JobTableName: jobPrefix + argList[0], JobStatusTableName: statusPrefix + argList[0]}
 	} else {
 		dsListTotal := jd.getDSList()
