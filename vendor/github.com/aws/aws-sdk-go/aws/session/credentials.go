@@ -3,11 +3,13 @@ package session
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/processcreds"
+	"github.com/aws/aws-sdk-go/aws/credentials/ssocreds"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/defaults"
 	"github.com/aws/aws-sdk-go/aws/request"
@@ -99,6 +101,9 @@ func resolveCredsFromProfile(cfg *aws.Config,
 			sharedCfg.Creds,
 		)
 
+	case sharedCfg.hasSSOConfiguration():
+		creds, err = resolveSSOCredentials(cfg, sharedCfg, handlers)
+
 	case len(sharedCfg.CredentialProcess) != 0:
 		// Get credentials from CredentialProcess
 		creds = processcreds.NewCredentials(sharedCfg.CredentialProcess)
@@ -148,6 +153,25 @@ func resolveCredsFromProfile(cfg *aws.Config,
 	}
 
 	return creds, nil
+}
+
+func resolveSSOCredentials(cfg *aws.Config, sharedCfg sharedConfig, handlers request.Handlers) (*credentials.Credentials, error) {
+	if err := sharedCfg.validateSSOConfiguration(); err != nil {
+		return nil, err
+	}
+
+	cfgCopy := cfg.Copy()
+	cfgCopy.Region = &sharedCfg.SSORegion
+
+	return ssocreds.NewCredentials(
+		&Session{
+			Config:   cfgCopy,
+			Handlers: handlers.Copy(),
+		},
+		sharedCfg.SSOAccountID,
+		sharedCfg.SSORoleName,
+		sharedCfg.SSOStartURL,
+	), nil
 }
 
 // valid credential source values
@@ -206,7 +230,14 @@ func credsFromAssumeRole(cfg aws.Config,
 		sharedCfg.RoleARN,
 		func(opt *stscreds.AssumeRoleProvider) {
 			opt.RoleSessionName = sharedCfg.RoleSessionName
-			opt.Duration = sessOpts.AssumeRoleDuration
+
+			if sessOpts.AssumeRoleDuration == 0 &&
+				sharedCfg.AssumeRoleDuration != nil &&
+				*sharedCfg.AssumeRoleDuration/time.Minute > 15 {
+				opt.Duration = *sharedCfg.AssumeRoleDuration
+			} else if sessOpts.AssumeRoleDuration != 0 {
+				opt.Duration = sessOpts.AssumeRoleDuration
+			}
 
 			// Assume role with external ID
 			if len(sharedCfg.ExternalID) > 0 {

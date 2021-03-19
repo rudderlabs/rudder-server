@@ -50,6 +50,7 @@ routerDBRetention = 0
 enableProcessor = true
 enableRouter = true
 enableStats = true
+statsTagsFormat = "influxdb" # influxdb or datadog
 
 [Http]
 ReadTimeOutInSec = 0
@@ -243,6 +244,8 @@ errReadLoopSleepInS = 30
 errDBReadBatchSize = 10000
 noOfErrStashWorkers = 2
 maxFailedCountForErrJob = 3
+    [Processor.Stats]
+    captureEventName = false
 
 [Dedup]
 enableDedup = false

@@ -70,7 +70,7 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
 
 func (st *HandleT) crashRecover() {
 	for {
-		execList := st.errorDB.GetExecuting(nil, errDBReadBatchSize, nil)
+		execList := st.errorDB.GetExecuting(jobsdb.GetQueryParamsT{Count: errDBReadBatchSize})
 
 		if len(execList) == 0 {
 			break
@@ -224,10 +224,11 @@ func (st *HandleT) readErrJobsLoop() {
 		time.Sleep(errReadLoopSleep)
 		st.statErrDBR.Start()
 
+		//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 		toQuery := errDBReadBatchSize
-		retryList := st.errorDB.GetToRetry(nil, toQuery, nil)
+		retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, Count: toQuery, IgnoreCustomValFiltersInQuery: true})
 		toQuery -= len(retryList)
-		unprocessedList := st.errorDB.GetUnprocessed(nil, toQuery, nil)
+		unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, Count: toQuery, IgnoreCustomValFiltersInQuery: true})
 
 		st.statErrDBR.End()
 

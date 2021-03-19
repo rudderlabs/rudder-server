@@ -157,10 +157,17 @@ func getActiveWorkerCount() int {
 	return activeWorkerCount
 }
 
-func (wh *HandleT) releaseWorker() {
+func (wh *HandleT) decrementActiveWorkers() {
 	// decrement number of workers actively engaged
 	activeWorkerCountLock.Lock()
 	activeWorkerCount--
+	activeWorkerCountLock.Unlock()
+}
+
+func (wh *HandleT) incrementActiveWorkers() {
+	// increment number of workers actively engaged
+	activeWorkerCountLock.Lock()
+	activeWorkerCount++
 	activeWorkerCountLock.Unlock()
 }
 
@@ -170,11 +177,13 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 		for {
 			uploadJob := <-workerChan
 			setDestInProgress(uploadJob.warehouse, true)
+			wh.incrementActiveWorkers()
 			err := wh.handleUploadJob(uploadJob)
 			if err != nil {
 				pkgLogger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
 			}
 			setDestInProgress(uploadJob.warehouse, false)
+			wh.decrementActiveWorkers()
 		}
 	})
 	return workerChan
@@ -184,8 +193,6 @@ func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	// Process the upload job
 	err = uploadJob.run()
 	wh.recordDeliveryStatus(uploadJob.warehouse.Destination.ID, uploadJob.upload.ID)
-	wh.releaseWorker()
-
 	return
 }
 
@@ -255,6 +262,11 @@ func (wh *HandleT) backendConfigSubscriber() {
 						wh.populateHistoricIdentities(warehouse)
 					}
 				}
+			}
+		}
+		if val, ok := allSources.ConnectionFlags.Services["warehouse"]; ok {
+			if UploadAPI.connectionManager != nil {
+				UploadAPI.connectionManager.Apply(allSources.ConnectionFlags.URL, val)
 			}
 		}
 		pkgLogger.Debug("[WH] Unlocking config sub lock: %s", wh.destType)
@@ -778,6 +790,11 @@ func minimalConfigSubscriber() {
 				}
 			}
 		}
+		if val, ok := sources.ConnectionFlags.Services["warehouse"]; ok {
+			if UploadAPI.connectionManager != nil {
+				UploadAPI.connectionManager.Apply(sources.ConnectionFlags.URL, val)
+			}
+		}
 	}
 }
 
@@ -1007,12 +1024,14 @@ func Start() {
 	setupDB(psqlInfo)
 	defer startWebHandler()
 
+	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
+		rruntime.Go(func() {
+			minimalConfigSubscriber()
+		})
 		if isMaster() {
-			rruntime.Go(func() {
-				minimalConfigSubscriber()
-			})
+			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 		}
 		return
 	}
@@ -1040,5 +1059,6 @@ func Start() {
 		rruntime.Go(func() {
 			runArchiver(dbHandle)
 		})
+		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 	}
 }

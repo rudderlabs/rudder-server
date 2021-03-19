@@ -129,10 +129,16 @@ type SourceRegulationT struct {
 }
 
 type ConfigT struct {
-	EnableMetrics bool       `json:"enableMetrics"`
-	WorkspaceID   string     `json:"workspaceId"`
-	Sources       []SourceT  `json:"sources"`
-	Libraries     LibrariesT `json:"libraries"`
+	EnableMetrics   bool            `json:"enableMetrics"`
+	WorkspaceID     string          `json:"workspaceId"`
+	Sources         []SourceT       `json:"sources"`
+	Libraries       LibrariesT      `json:"libraries"`
+	ConnectionFlags ConnectionFlags `json:"flags"`
+}
+
+type ConnectionFlags struct {
+	URL      string          `json:"url"`
+	Services map[string]bool `json:"services"`
 }
 
 type RegulationsT struct {

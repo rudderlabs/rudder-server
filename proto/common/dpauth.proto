@@ -1,0 +1,18 @@
+syntax = "proto3";
+package proto;
+
+
+option go_package = ".;proto";
+
+service DPAuthService{
+  rpc GetWorkspaceToken( GetWorkspaceTokenRequest ) returns ( GetWorkspaceTokenResponse );
+}
+
+message GetWorkspaceTokenRequest {
+}
+
+message GetWorkspaceTokenResponse {
+  string workspaceToken = 1;
+  string service = 2;
+  string instanceID = 3;
+}
