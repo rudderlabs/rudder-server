@@ -116,7 +116,7 @@ type workerT struct {
 	deliveryTimeStat    stats.RudderStats
 	batchTimeStat       stats.RudderStats
 	abortedUserIDMap    map[string]int // aborted user to count of jobs allowed map
-	abortedUserMutex    sync.Mutex
+	abortedUserMutex    sync.RWMutex
 }
 
 var (
@@ -866,7 +866,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 		defer worker.abortedUserMutex.Unlock()
 		if count, ok := worker.abortedUserIDMap[userID]; ok {
 			if count >= rt.allowAbortedUserJobsCountForProcessing {
-				rt.logger.Debugf("[%v Router] :: allowed jobs count > %d for userID %s. returing nil worker", rt.destName, rt.allowAbortedUserJobsCountForProcessing, userID)
+				rt.logger.Debugf("[%v Router] :: allowed jobs count(%d) >= allowAbortedUserJobsCountForProcessing(%d) for userID %s. returing nil worker", rt.destName, count, rt.allowAbortedUserJobsCountForProcessing, userID)
 				return nil
 			}
 
