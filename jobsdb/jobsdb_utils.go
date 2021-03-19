@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/rudderlabs/rudder-server/admin"
 )
 
 /*
@@ -199,4 +201,42 @@ func constructParameterJSONQuery(jd AssertInterface, table string, parameterFilt
 		opQuery += fmt.Sprintf(` OR (%s.parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
 	}
 	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
+}
+
+//Admin Handlers
+type JobsdbUtilsHandler struct {
+}
+
+var jobsdbUtilsHandler *JobsdbUtilsHandler
+
+func init() {
+	jobsdbUtilsHandler = &JobsdbUtilsHandler{}
+	admin.RegisterAdminHandler("JobsdbUtilsHandler", jobsdbUtilsHandler)
+}
+
+func (handler *JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+
+	args := strings.Split(argString, ":")
+	var response string
+	var readOnlyJobsDB ReadonlyHandleT
+	if args[0] == "brt" {
+		args[0] = "batch_rt"
+	}
+
+	readOnlyJobsDB.Setup(args[0])
+
+	switch args[1] {
+	case "Jobs between JobID's of a User":
+		response, err = readOnlyJobsDB.GetJobIDsForUser(args)
+	case "Error Code Count By Destination":
+		response, err = readOnlyJobsDB.GetFailedStatusErrorCodeCountsByDestination(args)
+	}
+	*reply = string(response)
+	return err
 }

@@ -15,7 +15,7 @@ require (
 	github.com/EagleChen/restrictor v0.0.0-20180420073700-9b81bbf8df1d
 	github.com/Shopify/sarama v1.26.1
 	github.com/araddon/dateparse v0.0.0-20190622164848-0fb0a474d195
-	github.com/aws/aws-sdk-go v1.29.11
+	github.com/aws/aws-sdk-go v1.37.23
 	github.com/bitly/go-simplejson v0.5.0 // indirect
 	github.com/bugsnag/bugsnag-go v1.5.3
 	github.com/bugsnag/panicwrap v1.2.0 // indirect
@@ -28,8 +28,10 @@ require (
 	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/gofrs/uuid v3.2.0+incompatible // indirect
 	github.com/golang-migrate/migrate/v4 v4.11.0
+	github.com/golang/mock v1.5.0
+	github.com/golang/protobuf v1.3.4 // indirect
+	github.com/google/uuid v1.1.1 // indirect
 	github.com/golang/mock v1.4.4
-	github.com/golang/protobuf v1.4.3
 	github.com/gorilla/mux v1.7.4
 	github.com/hashicorp/go-retryablehttp v0.6.6
 	github.com/hashicorp/yamux v0.0.0-20200609203250-aecfd211c9ce
