@@ -164,7 +164,7 @@ allowAbortedUserJobsCountForProcessing=1
 maxFailedCountForJob = 3
 retryTimeWindowInMins = 180
     [Router.MARKETO]
-    noOfWorkers = 8
+    noOfWorkers = 4
     [Router.throttler.MARKETO]
     limit = 45
     timeWindowInS = 20
@@ -241,14 +241,14 @@ numTransformWorker = 8
 maxRetry = 30
 retrySleepInMS = 100
 errReadLoopSleepInS = 30
-errDBReadBatchSize = 10000
+errDBReadBatchSize = 1000
 noOfErrStashWorkers = 2
 maxFailedCountForErrJob = 3
     [Processor.Stats]
     captureEventName = false
 
 [Dedup]
-enableDedup = false
+enableDedup = true
 dedupWindowInS = 86400
 
 [BackendConfig]
