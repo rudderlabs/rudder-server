@@ -217,7 +217,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 				if err == io.EOF {
 					break
 				} else {
-					pkgLogger.Errorf("IDR: Error while reading csv file for loading in staging table locally:%s: %v", mergeRulesStagingTable, err)
+					pkgLogger.Errorf("IDR: Error while reading merge rule file %s for loading in staging table locally:%s: %v", loadFileName, mergeRulesStagingTable, err)
 					return
 				}
 			}
@@ -237,7 +237,6 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			}
 		}
 	}
-	fmt.Println("where tje fica oiam")
 
 	_, err = stmt.Exec()
 	if err != nil {
