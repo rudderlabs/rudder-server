@@ -107,7 +107,15 @@ func updateConfigFile() {
 	config.GetUpdatedConfig(ch, "ConfigUpdate")
 	for {
 		<-ch
-		loadConfig()
+		utilsReloadConfig()
+	}
+}
+
+func utilsReloadConfig() {
+	_enableIDResolution := config.GetBool("Warehouse.enableIDResolution", false)
+	if _enableIDResolution != enableIDResolution {
+		enableIDResolution = _enableIDResolution
+		pkgLogger.Info("Warehouse.enableIDResolution changes to %s", enableIDResolution)
 	}
 }
 

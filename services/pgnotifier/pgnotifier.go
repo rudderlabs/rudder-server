@@ -109,10 +109,26 @@ func loadPGNotifierConfig() {
 }
 
 func pgNotifierReloadableConfig() {
-	maxAttempt = config.GetInt("PgNotifier.maxAttempt", 3)
-	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
-	retriggerInterval = time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
-	retriggerCount = config.GetInt("PgNotifier.retriggerCount", 500)
+	_maxAttempt := config.GetInt("PgNotifier.maxAttempt", 3)
+	if _maxAttempt != maxAttempt {
+		maxAttempt = _maxAttempt
+		pkgLogger.Info("PgNotifier.maxAttempt changes to %s", maxAttempt)
+	}
+	_trackBatchInterval := time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
+	if _trackBatchInterval != trackBatchInterval {
+		trackBatchInterval = _trackBatchInterval
+		pkgLogger.Info("PgNotifier.trackBatchIntervalInS changes to %s", trackBatchInterval)
+	}
+	_retriggerInterval := time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
+	if _retriggerInterval != retriggerInterval {
+		retriggerInterval = _retriggerInterval
+		pkgLogger.Info("PgNotifier.retriggerIntervalInS changes to %s", retriggerInterval)
+	}
+	_retriggerCount := config.GetInt("PgNotifier.retriggerCount", 500)
+	if _retriggerCount != retriggerCount {
+		retriggerCount = _retriggerCount
+		pkgLogger.Info("PgNotifier.retriggerCount changes to %s", retriggerCount)
+	}
 }
 
 //New Given default connection info return pg notifiew object from it

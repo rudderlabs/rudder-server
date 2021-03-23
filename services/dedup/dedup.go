@@ -39,7 +39,16 @@ func updateConfigFile() {
 	config.GetUpdatedConfig(ch, "ConfigUpdate")
 	for {
 		<-ch
-		loadConfig()
+		loadDedupConfig()
+	}
+}
+
+func loadDedupConfig() {
+	// Dedup time window in hours
+	_dedupWindow := config.GetDuration("Dedup.dedupWindowInS", time.Duration(86400))
+	if _dedupWindow != dedupWindow {
+		dedupWindow = _dedupWindow
+		pkgLogger.Info("Dedup.dedupWindowInS changes to %s", dedupWindow)
 	}
 }
 

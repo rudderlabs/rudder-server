@@ -39,7 +39,11 @@ func updateArchiverConfigFile() {
 }
 
 func archiverReloadableConfig() {
-	archivalTimeInDays = config.GetInt("JobsDB.archivalTimeInDays", 10)
+	_archivalTimeInDays := config.GetInt("JobsDB.archivalTimeInDays", 10)
+	if _archivalTimeInDays != archivalTimeInDays {
+		archivalTimeInDays = _archivalTimeInDays
+		pkgLogger.Info("JobsDB.archivalTimeInDays changes to %s", archivalTimeInDays)
+	}
 }
 
 func runArchiver(prefix string, dbHandle *sql.DB) {

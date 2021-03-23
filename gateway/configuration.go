@@ -41,12 +41,36 @@ func loadConfig() {
 }
 
 func gatewayReloadableConfig() {
-	userWebRequestBatchTimeout = (config.GetDuration("Gateway.userWebRequestBatchTimeoutInMS", time.Duration(15)) * time.Millisecond)
-	dbBatchWriteTimeout = (config.GetDuration("Gateway.dbBatchWriteTimeoutInMS", time.Duration(5)) * time.Millisecond)
-	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 4000) * 1024
-	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
-	allowReqsWithoutUserIDAndAnonymousID = config.GetBool("Gateway.allowReqsWithoutUserIDAndAnonymousID", false)
-	gwAllowPartialWriteWithErrors = config.GetBool("Gateway.allowPartialWriteWithErrors", true)
+	_userWebRequestBatchTimeout := (config.GetDuration("Gateway.userWebRequestBatchTimeoutInMS", time.Duration(15)) * time.Millisecond)
+	if _userWebRequestBatchTimeout != userWebRequestBatchTimeout {
+		userWebRequestBatchTimeout = _userWebRequestBatchTimeout
+		pkgLogger.Info("Gateway.userWebRequestBatchTimeoutInMS changes to %s", userWebRequestBatchTimeout)
+	}
+	_dbBatchWriteTimeout := (config.GetDuration("Gateway.dbBatchWriteTimeoutInMS", time.Duration(5)) * time.Millisecond)
+	if _dbBatchWriteTimeout != dbBatchWriteTimeout {
+		dbBatchWriteTimeout = _dbBatchWriteTimeout
+		pkgLogger.Info("Gateway.dbBatchWriteTimeoutInMS changes to %s", userWebRequestBatchTimeout)
+	}
+	_maxReqSize := config.GetInt("Gateway.maxReqSizeInKB", 4000) * 1024
+	if _maxReqSize != maxReqSize {
+		maxReqSize = _maxReqSize
+		pkgLogger.Info("Gateway.maxReqSizeInKB changes to %s", maxReqSize)
+	}
+	_enableRateLimit := config.GetBool("Gateway.enableRateLimit", false)
+	if _enableRateLimit != enableRateLimit {
+		enableRateLimit = _enableRateLimit
+		pkgLogger.Info("Gateway.enableRateLimit changes to %s", enableRateLimit)
+	}
+	_allowReqsWithoutUserIDAndAnonymousID := config.GetBool("Gateway.allowReqsWithoutUserIDAndAnonymousID", false)
+	if _allowReqsWithoutUserIDAndAnonymousID != allowReqsWithoutUserIDAndAnonymousID {
+		allowReqsWithoutUserIDAndAnonymousID = _allowReqsWithoutUserIDAndAnonymousID
+		pkgLogger.Info("Gateway.allowReqsWithoutUserIDAndAnonymousID changes to %s", allowReqsWithoutUserIDAndAnonymousID)
+	}
+	_gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
+	if _gwAllowPartialWriteWithErrors != gwAllowPartialWriteWithErrors {
+		gwAllowPartialWriteWithErrors = _gwAllowPartialWriteWithErrors
+		pkgLogger.Info("Gateway.gwAllowPartialWriteWithErrors changes to %s", gwAllowPartialWriteWithErrors)
+	}
 
 }
 

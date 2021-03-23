@@ -57,7 +57,6 @@ func init() {
 	viper.SetConfigFile(configPath)
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig() // Find and read the config file
-	//viper.WatchConfig()
 	// Don't panic if config.toml is not found or error with parsing. Use the default config values instead
 	if err != nil {
 		fmt.Println("[Config] :: Failed to parse Config toml, using default values:", err)
@@ -67,7 +66,11 @@ func init() {
 func UpdateConfig() {
 	configOverridePath := GetEnv("CONFIG_OVERRIDE_PATH","./config/config.yaml")
 	viper.SetConfigFile(configOverridePath)
-	_ = viper.ReadInConfig() // Find and read the config file
+	err := viper.ReadInConfig() // Find and read the config file
+	if err != nil {
+		fmt.Println("[Config] :: Failed to parse Config Yaml, using default values:", err)
+		return
+	}
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		fmt.Println("Config file changed:", e.Name)

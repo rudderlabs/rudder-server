@@ -223,9 +223,21 @@ func updateConfigFile() {
 }
 
 func backendCofigReload() {
-	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
-	regulationsPollInterval = config.GetDuration("BackendConfig.regulationsPollIntervalInS", 300) * time.Second
-	maxRegulationsPerRequest = config.GetInt("BackendConfig.maxRegulationsPerRequest", 1000)
+	_pollInterval := config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
+	if _pollInterval != pollInterval {
+		pollInterval = _pollInterval
+		pkgLogger.Info("BackendConfig.pollIntervalInS changes to %s", pollInterval)
+	}
+	_regulationsPollInterval := config.GetDuration("BackendConfig.regulationsPollIntervalInS", 300) * time.Second
+	if _regulationsPollInterval != regulationsPollInterval {
+		regulationsPollInterval = _regulationsPollInterval
+		pkgLogger.Info("BackendConfig.regulationsPollInterval changes to %s", regulationsPollInterval)
+	}
+	_maxRegulationsPerRequest := config.GetInt("BackendConfig.maxRegulationsPerRequest", 1000)
+	if _maxRegulationsPerRequest != maxRegulationsPerRequest {
+		maxRegulationsPerRequest = _maxRegulationsPerRequest
+		pkgLogger.Info("BackendConfig.maxRegulationsPerRequest changes to %s", maxRegulationsPerRequest)
+	}
 }
 
 func trackConfig(preConfig ConfigT, curConfig ConfigT) {

@@ -175,14 +175,46 @@ func loadConfig() {
 }
 
 func routerReloadableConfig() {
-	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
-	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
-	readSleep = config.GetDuration("Router.readSleepInMS", time.Duration(1000)) * time.Millisecond
-	jobsBatchTimeout = config.GetDuration("Router.jobsBatchTimeoutInSec", time.Duration(5)) * time.Second
-	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
-	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
-	fixedLoopSleep = config.GetDuration("Router.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
-	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
+	_jobQueryBatchSize := config.GetInt("Router.jobQueryBatchSize", 10000)
+	if _jobQueryBatchSize != jobQueryBatchSize {
+		jobQueryBatchSize = _jobQueryBatchSize
+		pkgLogger.Info("Router.jobQueryBatchSize changes to %s", jobQueryBatchSize)
+	}
+	_updateStatusBatchSize := config.GetInt("Router.updateStatusBatchSize", 1000)
+	if _updateStatusBatchSize != updateStatusBatchSize {
+		updateStatusBatchSize = _updateStatusBatchSize
+		pkgLogger.Info("Router.updateStatusBatchSize changes to %s", updateStatusBatchSize)
+	}
+	_readSleep := config.GetDuration("Router.readSleepInMS", time.Duration(1000)) * time.Millisecond
+	if _readSleep != readSleep {
+		readSleep = _readSleep
+		pkgLogger.Info("Router.readSleepInMS changes to %s", readSleep)
+	}
+	_jobsBatchTimeout := config.GetDuration("Router.jobsBatchTimeoutInSec", time.Duration(5)) * time.Second
+	if _jobsBatchTimeout != jobsBatchTimeout {
+		jobsBatchTimeout = _jobsBatchTimeout
+		pkgLogger.Info("Router.jobsBatchTimeoutInSec changes to %s", jobsBatchTimeout)
+	}
+	_minRetryBackoff := config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
+	if _minRetryBackoff != minRetryBackoff {
+		minRetryBackoff = _minRetryBackoff
+		pkgLogger.Info("Router.minRetryBackoffInS changes to %s", minRetryBackoff)
+	}
+	_maxRetryBackoff := config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
+	if _maxRetryBackoff != maxRetryBackoff {
+		maxRetryBackoff = _maxRetryBackoff
+		pkgLogger.Info("Router.maxRetryBackoff changes to %s", maxRetryBackoff)
+	}
+	_fixedLoopSleep := config.GetDuration("Router.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
+	if _fixedLoopSleep != fixedLoopSleep {
+		fixedLoopSleep = _fixedLoopSleep
+		pkgLogger.Info("Router.fixedLoopSleepInMS changes to %s", fixedLoopSleep)
+	}
+	_maxStatusUpdateWait := config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
+	if _maxStatusUpdateWait != maxStatusUpdateWait {
+		maxStatusUpdateWait = _maxStatusUpdateWait
+		pkgLogger.Info("Router.maxStatusUpdateWait changes to %s", maxStatusUpdateWait)
+	}
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -1320,8 +1352,17 @@ func (rt *HandleT) updateRTConfigFile() {
 	config.GetUpdatedConfig(ch, "ConfigUpdate")
 	for {
 		<-ch
-		rt.maxFailedCountForJob = getRouterConfigInt("maxFailedCountForJob", rt.destName, 3)
-		rt.retryTimeWindow = getRouterConfigDuration("retryTimeWindowInMins", rt.destName, time.Duration(180)) * time.Minute
+		_maxFailedCountForJob := getRouterConfigInt("maxFailedCountForJob", rt.destName, 3)
+		if _maxFailedCountForJob != rt.maxFailedCountForJob {
+			rt.maxFailedCountForJob = _maxFailedCountForJob
+			pkgLogger.Info("maxFailedCountForJob for %s changes to %s", rt.destName, _maxFailedCountForJob)
+
+		}
+		_retryTimeWindow := getRouterConfigDuration("retryTimeWindowInMins", rt.destName, time.Duration(180)) * time.Minute
+		if _retryTimeWindow != rt.retryTimeWindow {
+			rt.retryTimeWindow = _retryTimeWindow
+			pkgLogger.Info("retryTimeWindowInMins for %s changes to %s", rt.destName, _retryTimeWindow)
+		}
 	}
 }
 

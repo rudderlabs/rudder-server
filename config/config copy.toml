@@ -1,88 +1,12 @@
-# Contains the configuration for the whole server
-# Dont set secrets, passwords, api_keys etc. in this file. Use '.env' file or environment variables for that
-
-# These values can be overriden through environment variables. The regex for these is present in config/config.go
-# Please look at the following examples to override the config
-#
-# Eg 1:
-# maxProcess = 12
-#
-# RSERVER_MAX_PROCESS=12
-#
-# Eg 2:
-# [RateLimit]
-# eventLimit=1000
-#
-# RSERVER_RATE_LIMIT_EVENT_LIMIT=1000
-#
-# Eg 3:
-# [Gateway]
-# maxDBWriterProcess = 256
-#
-# RSERVER_GATEWAY_MAX_DBWRITER_PROCESS=64
-#
-# Eg 4:
-# [BackendConfig]
-# configJSONPath = "./workspaceConfig.json"
-#
-# RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH="./workspaceConfig.json"
-#
-# Eg 5:
-# [JobsDB.backup]
-# enabled = true
-# RSERVER_JOBS_DB_BACKUP_ENABLED=true
-#
-# Eg 6:
-# [Processor]
-# loopSleepInMS = 10
-# RSERVER_PROCESSOR_LOOP_SLEEP_IN_MS=10
-#
-# Eg 7:
-# [Router]
-# readSleepInMS = 1000
-# RSERVER_ROUTER_READ_SLEEP_IN_MS=1000
-
-
-
-maxProcess = 12 # Max number of cpu process to be used by go runtime
-gwDBRetentionInHr = 0
-routerDBRetention = 0
-enableProcessor = true
-enableRouter = true
-enableStats = true
-statsTagsFormat = "influxdb" # influxdb or datadog
-
-[Http]
-ReadTimeOutInSec = 0
-ReadHeaderTimeoutInSec = 0
-WriteTimeOutInSec = 10
-IdleTimeoutInSec = 720
-MaxHeaderBytes = 524288
-
-[RateLimit]
-eventLimit=1000
-rateLimitWindowInMins=60
-noOfBucketsInWindow=12
 
 [Gateway]
-webPort = 8080
-maxUserWebRequestWorkerProcess = 64
-maxDBWriterProcess = 256
-CustomVal = "GW"
-maxUserRequestBatchSize = 128
-maxDBBatchSize = 128
 userWebRequestBatchTimeoutInMS = 15
 dbBatchWriteTimeoutInMS = 5
 maxReqSizeInKB = 4000
 enableRateLimit = false
-enableSuppressUserFeature = true
 allowPartialWriteWithErrors = true
 allowReqsWithoutUserIDAndAnonymousID = false
 
-[EventSchemas]
-enableEventSchemasFeature = false
-syncIntervalInS = 5
-noOfWorkers = 128
 
 [Gateway.webhook]
 batchTimeoutInMS = 20
@@ -91,21 +15,21 @@ maxTransformerProcess = 64
 maxRetry = 5
 maxRetryTimeInS = 10
 
-[Debugger]
+[SourceDebugger]
 maxBatchSize = 32
 maxESQueueSize = 1024
 maxRetry = 3
 batchTimeoutInS = 2
 retrySleepInMS = 100
-
-[SourceDebugger]
 disableEventUploads = false
 
 [DestinationDebugger]
+maxBatchSize = 32
+maxESQueueSize = 1024
+maxRetry = 3
+batchTimeoutInS = 2
+retrySleepInMS = 100
 disableEventDeliveryStatusUploads = false
-
-[TransformationDebugger]
-disableTransformationStatusUploads = false
 
 [Archiver]
 backupRowsBatchSize = 100
@@ -149,7 +73,10 @@ fixedLoopSleepInMS = 0
 noOfJobsPerChannel = 1000
 noOfJobsToBatchInAWorker = 20
 jobsBatchTimeoutInSec = 5
+maxSleepInS = 60
+minSleepInS = 0
 maxStatusUpdateWaitInS = 5
+useTestSink = false
 guaranteeUserEventOrder = true
 kafkaWriteTimeoutInSec = 2
 kafkaDialTimeoutInSec = 10
@@ -161,7 +88,7 @@ allowAbortedUserJobsCountForProcessing=1
 maxFailedCountForJob = 3
 retryTimeWindowInMins = 180
     [Router.MARKETO]
-    noOfWorkers = 4
+    noOfWorkers = 8
     [Router.throttler.MARKETO]
     limit = 45
     timeWindowInS = 20
@@ -187,7 +114,7 @@ warehouseServiceMaxRetryTimeinHr = 3
 # Below config variables are supported per destination type too
 noOfWorkers = 8
 maxFailedCountForJob = 128
-retryTimeWindowInMins = 180
+retryTimeWindowInMins = 179
 
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave
@@ -214,8 +141,6 @@ populateHistoricIdentities = false
     maxParallelLoads = 20
     [Warehouse.postgres]
     maxParallelLoads = 3
-    [Warehouse.mssql]
-    maxParallelLoads = 3
     [Warehouse.clickhouse]
     maxParallelLoads = 3
     queryDebugLogs = false
@@ -240,15 +165,15 @@ numTransformWorker = 8
 maxRetry = 30
 retrySleepInMS = 100
 errReadLoopSleepInS = 30
-errDBReadBatchSize = 1000
+errDBReadBatchSize = 10000
 noOfErrStashWorkers = 2
 maxFailedCountForErrJob = 3
     [Processor.Stats]
     captureEventName = false
 
 [Dedup]
-enableDedup = true
-dedupWindowInS = 3600
+enableDedup = false
+dedupWindowInS = 86400
 
 [BackendConfig]
 configFromFile = false

@@ -326,14 +326,46 @@ func loadConfig() {
 }
 
 func processorReloadableConfig() {
-	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
-	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
-	fixedLoopSleep = config.GetDuration("Processor.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
-	maxEventsToProcess = config.GetInt("Processor.maxLoopProcessEvents", 10000)
-	avgEventsInRequest = config.GetInt("Processor.avgEventsInRequest", 1)
-	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
-	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
-	captureEventNameStats = config.GetBool("Processor.Stats.captureEventName", false)
+	_loopSleep := config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
+	if _loopSleep != loopSleep {
+		loopSleep = _loopSleep
+		pkgLogger.Info("Processor.loopSleepInMS changes to %s", loopSleep)
+	}
+	_maxLoopSleep := config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
+	if _maxLoopSleep != maxLoopSleep {
+		maxLoopSleep = _maxLoopSleep
+		pkgLogger.Info("Processor.maxLoopSleep changes to %s", maxLoopSleep)
+	}
+	_fixedLoopSleep := config.GetDuration("Processor.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
+	if _fixedLoopSleep != fixedLoopSleep {
+		fixedLoopSleep = _fixedLoopSleep
+		pkgLogger.Info("Processor.fixedLoopSleep changes to %s", fixedLoopSleep)
+	}
+	_maxEventsToProcess := config.GetInt("Processor.maxLoopProcessEvents", 10000)
+	if _maxEventsToProcess != maxEventsToProcess {
+		maxEventsToProcess = _maxEventsToProcess
+		pkgLogger.Info("Processor.maxEventsToProcess changes to %s", maxEventsToProcess)
+	}
+	_avgEventsInRequest := config.GetInt("Processor.avgEventsInRequest", 1)
+	if _avgEventsInRequest != avgEventsInRequest {
+		avgEventsInRequest = _avgEventsInRequest
+		pkgLogger.Info("Processor.avgEventsInRequest changes to %s", avgEventsInRequest)
+	}
+	_transformBatchSize := config.GetInt("Processor.transformBatchSize", 50)
+	if _transformBatchSize != transformBatchSize {
+		transformBatchSize = _transformBatchSize
+		pkgLogger.Info("Processor.transformBatchSize changes to %s", transformBatchSize)
+	}
+	_userTransformBatchSize := config.GetInt("Processor.userTransformBatchSize", 200)
+	if _userTransformBatchSize != userTransformBatchSize {
+		userTransformBatchSize = _userTransformBatchSize
+		pkgLogger.Info("Processor.userTransformBatchSize changes to %s", userTransformBatchSize)
+	}
+	_captureEventNameStats := config.GetBool("Processor.Stats.captureEventName", false)
+	if _captureEventNameStats != captureEventNameStats {
+		captureEventNameStats = _captureEventNameStats
+		pkgLogger.Info("Processor.captureEventNameStats changes to %s", captureEventNameStats)
+	}
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
