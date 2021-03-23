@@ -151,14 +151,37 @@ func loadConfig() {
 	blockSize = config.GetString("Warehouse.clickhouse.blockSize", "1000")
 	poolSize = config.GetString("Warehouse.clickhouse.poolSize", "10")
 	disableNullable = config.GetBool("Warehouse.clickhouse.disableNullable", false)
-
 }
+
 func updateConfigFile() {
 	ch := make(chan utils.DataEvent)
 	config.GetUpdatedConfig(ch, "ConfigUpdate")
 	for {
 		<-ch
-		loadConfig()
+		clickHouseReloadableConfig()
+	}
+}
+
+func clickHouseReloadableConfig() {
+	_queryDebugLogs := config.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
+	if _queryDebugLogs != queryDebugLogs {
+		queryDebugLogs = _queryDebugLogs
+		pkgLogger.Info("Warehouse.clickhouse.queryDebugLogs changes to %s", queryDebugLogs)
+	}
+	_blockSize := config.GetString("Warehouse.clickhouse.blockSize", "1000")
+	if _blockSize != blockSize {
+		blockSize = _blockSize
+		pkgLogger.Info("Warehouse.clickhouse.blockSize changes to %s", blockSize)
+	}
+	_poolSize := config.GetString("Warehouse.clickhouse.poolSize", "10")
+	if _poolSize != poolSize {
+		poolSize = _poolSize
+		pkgLogger.Info("Warehouse.clickhouse.poolSize changes to %s", poolSize)
+	}
+	_disableNullable := config.GetBool("Warehouse.clickhouse.disableNullable", false)
+	if _disableNullable != disableNullable {
+		disableNullable = _disableNullable
+		pkgLogger.Info("Warehouse.clickhouse.disableNullable changes to %s", disableNullable)
 	}
 }
 

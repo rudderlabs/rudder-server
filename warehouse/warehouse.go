@@ -126,15 +126,51 @@ func updateConfigFileWH() {
 }
 
 func warehouseReloadableconfig() {
-	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
-	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
-	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
-	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
-	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
-	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 1) * time.Second
-	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
-	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
-	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
+	_stagingFilesBatchSize := config.GetInt("Warehouse.stagingFilesBatchSize", 240)
+	if _stagingFilesBatchSize != stagingFilesBatchSize {
+		stagingFilesBatchSize = _stagingFilesBatchSize
+		pkgLogger.Info("Warehouse.stagingFilesBatchSize changes to %s", stagingFilesBatchSize)
+	}
+	_warehouseSyncFreqIgnore := config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
+	if _warehouseSyncFreqIgnore != warehouseSyncFreqIgnore {
+		warehouseSyncFreqIgnore = _warehouseSyncFreqIgnore
+		pkgLogger.Info("Warehouse.warehouseSyncFreqIgnore changes to %s", warehouseSyncFreqIgnore)
+	}
+	_warehouseSyncPreFetchCount := config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
+	if _warehouseSyncPreFetchCount != warehouseSyncPreFetchCount {
+		warehouseSyncPreFetchCount = _warehouseSyncPreFetchCount
+		pkgLogger.Info("Warehouse.warehouseSyncPreFetchCount changes to %s", warehouseSyncPreFetchCount)
+	}
+	_retryTimeWindow := config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
+	if _retryTimeWindow != retryTimeWindow {
+		retryTimeWindow = _retryTimeWindow
+		pkgLogger.Info("Warehouse.retryTimeWindowInMins changes to %s", retryTimeWindow)
+	}
+	_minRetryAttempts := config.GetInt("Warehouse.minRetryAttempts", 3)
+	if _minRetryAttempts != minRetryAttempts {
+		minRetryAttempts = _minRetryAttempts
+		pkgLogger.Info("Warehouse.minRetryAttempts changes to %s", minRetryAttempts)
+	}
+	_mainLoopSleep := config.GetDuration("Warehouse.mainLoopSleepInS", 1) * time.Second
+	if _mainLoopSleep != mainLoopSleep {
+		mainLoopSleep = _mainLoopSleep
+		pkgLogger.Info("Warehouse.mainLoopSleepInS changes to %s", mainLoopSleep)
+	}
+	_noOfSlaveWorkerRoutines := config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
+	if _noOfSlaveWorkerRoutines != noOfSlaveWorkerRoutines {
+		noOfSlaveWorkerRoutines = _noOfSlaveWorkerRoutines
+		pkgLogger.Info("Warehouse.noOfSlaveWorkerRoutines changes to %s", noOfSlaveWorkerRoutines)
+	}
+	_noOfWorkers := config.GetInt("Warehouse.noOfWorkers", 8)
+	if _noOfWorkers != noOfWorkers {
+		noOfWorkers = _noOfWorkers
+		pkgLogger.Info("Warehouse.noOfWorkers changes to %s", noOfWorkers)
+	}
+	_uploadFreqInS := config.GetInt64("Warehouse.uploadFreqInS", 1800)
+	if _uploadFreqInS != uploadFreqInS {
+		uploadFreqInS = _uploadFreqInS
+		pkgLogger.Info("Warehouse.uploadFreqInS changes to %s", uploadFreqInS)
+	}
 }
 
 func loadConfig() {

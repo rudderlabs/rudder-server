@@ -53,12 +53,25 @@ func loadConfig() {
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 }
 
+func loadRouterConfig() {
+	_maxRetry := config.GetInt("Processor.maxRetry", 30)
+	if _maxRetry != maxRetry {
+		maxRetry = _maxRetry
+		pkgLogger.Info("Processor.maxRetry changes to %s", maxRetry)
+	}
+	_retrySleep := config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	if _retrySleep != retrySleep {
+		retrySleep = _retrySleep
+		pkgLogger.Info("Processor.retrySleep changes to %s", retrySleep)
+	}
+}
+
 func updateConfigFile() {
 	ch := make(chan utils.DataEvent)
 	config.GetUpdatedConfig(ch, "ConfigUpdate")
 	for {
 		<-ch
-		loadConfig()
+		loadRouterConfig()
 	}
 }
 

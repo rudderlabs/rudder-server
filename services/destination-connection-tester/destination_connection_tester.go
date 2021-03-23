@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
@@ -43,9 +41,6 @@ type DestinationConnectionTesterResponse struct {
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("destination-connection-tester")
 }
 
@@ -56,15 +51,6 @@ func loadConfig() {
 	instanceID = config.GetEnv("INSTANCE_ID", "1")
 	rudderConnectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload")
 
-}
-
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		loadConfig()
-	}
 }
 
 func UploadDestinationConnectionTesterResponse(testResponse string, destinationId string) {

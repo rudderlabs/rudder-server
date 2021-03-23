@@ -71,7 +71,40 @@ func updateConfigFile() {
 	config.GetUpdatedConfig(ch, "ConfigUpdate")
 	for {
 		<-ch
-		loadConfig()
+		sourceDebuggerReloadableConfig()
+	}
+}
+
+func sourceDebuggerReloadableConfig() {
+	_maxBatchSize := config.GetInt("SourceDebugger.maxBatchSize", 32)
+	if _maxBatchSize != maxBatchSize {
+		maxBatchSize = _maxBatchSize
+		pkgLogger.Info("SourceDebugger.maxBatchSize changes to %s", maxBatchSize)
+	}
+	_maxESQueueSize := config.GetInt("SourceDebugger.maxESQueueSize", 1024)
+	if _maxESQueueSize != maxESQueueSize {
+		maxESQueueSize = _maxESQueueSize
+		pkgLogger.Info("SourceDebugger.maxESQueueSize changes to %s", maxESQueueSize)
+	}
+	_maxRetry := config.GetInt("SourceDebugger.maxRetry", 3)
+	if _maxRetry != maxRetry {
+		maxRetry = _maxRetry
+		pkgLogger.Info("SourceDebugger.maxRetry changes to %s", maxRetry)
+	}
+	_batchTimeout := config.GetDuration("SourceDebugger.batchTimeoutInS", time.Duration(2)) * time.Second
+	if _batchTimeout != batchTimeout {
+		batchTimeout = _batchTimeout
+		pkgLogger.Info("SourceDebugger.batchTimeout changes to %s", batchTimeout)
+	}
+	_retrySleep := config.GetDuration("SourceDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	if _retrySleep != retrySleep {
+		retrySleep = _retrySleep
+		pkgLogger.Info("SourceDebugger.retrySleep changes to %s", retrySleep)
+	}
+	_disableEventUploads := config.GetBool("SourceDebugger.disableEventUploads", false)
+	if _disableEventUploads != disableEventUploads {
+		disableEventUploads = _disableEventUploads
+		pkgLogger.Info("SourceDebugger.disableEventUploads changes to %s", disableEventUploads)
 	}
 }
 

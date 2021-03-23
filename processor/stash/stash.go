@@ -54,9 +54,21 @@ func updateConfigFile() {
 }
 
 func stashReloadableConfig() {
-	maxFailedCountForErrJob = config.GetInt("BatchRouter.maxFailedCountForErrJob", 3)
-	errDBReadBatchSize = config.GetInt("Processor.errDBReadBatchSize", 10000)
-	errReadLoopSleep = config.GetDuration("Processor.errReadLoopSleepInS", time.Duration(30)) * time.Second
+	_maxFailedCountForErrJob := config.GetInt("BatchRouter.maxFailedCountForErrJob", 3)
+	if _maxFailedCountForErrJob != maxFailedCountForErrJob {
+		maxFailedCountForErrJob = _maxFailedCountForErrJob
+		pkgLogger.Info("BatchRouter.maxFailedCountForErrJob changes to %s", maxFailedCountForErrJob)
+	}
+	_errDBReadBatchSize := config.GetInt("Processor.errDBReadBatchSize", 10000)
+	if _errDBReadBatchSize != errDBReadBatchSize {
+		errDBReadBatchSize = _errDBReadBatchSize
+		pkgLogger.Info("Processor.errDBReadBatchSize changes to %s", errDBReadBatchSize)
+	}
+	_errReadLoopSleep := config.GetDuration("Processor.errReadLoopSleepInS", time.Duration(30)) * time.Second
+	if _errReadLoopSleep != errReadLoopSleep {
+		errReadLoopSleep = _errReadLoopSleep
+		pkgLogger.Info("Processor.errReadLoopSleepInS changes to %s", errReadLoopSleep)
+	}
 }
 
 type StoreErrorOutputT struct {
