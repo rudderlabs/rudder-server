@@ -249,7 +249,7 @@ maxFailedCountForErrJob = 3
 
 [Dedup]
 enableDedup = true
-dedupWindowInS = 86400
+dedupWindowInS = 3600
 
 [BackendConfig]
 configFromFile = false
