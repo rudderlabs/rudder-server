@@ -149,10 +149,7 @@ fixedLoopSleepInMS = 0
 noOfJobsPerChannel = 1000
 noOfJobsToBatchInAWorker = 20
 jobsBatchTimeoutInSec = 5
-maxSleepInS = 60
-minSleepInS = 0
 maxStatusUpdateWaitInS = 5
-useTestSink = false
 guaranteeUserEventOrder = true
 kafkaWriteTimeoutInSec = 2
 kafkaDialTimeoutInSec = 10
@@ -190,7 +187,7 @@ warehouseServiceMaxRetryTimeinHr = 3
 # Below config variables are supported per destination type too
 noOfWorkers = 8
 maxFailedCountForJob = 128
-retryTimeWindowInMins = 180
+retryTimeWindowInMins = 179
 
 [Warehouse]
 mode = "embedded" # modes - embedded, off, master, slave, master_and_slave

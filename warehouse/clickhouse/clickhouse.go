@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -144,6 +145,9 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 
 func init() {
 	loadConfig()
+	rruntime.Go(func() {
+		updateConfigFile()
+	})
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
 }
 
@@ -153,6 +157,14 @@ func loadConfig() {
 	poolSize = config.GetString("Warehouse.clickhouse.poolSize", "10")
 	disableNullable = config.GetBool("Warehouse.clickhouse.disableNullable", false)
 
+}
+func updateConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		loadConfig()
+	}
 }
 
 /*

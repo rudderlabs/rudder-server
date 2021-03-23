@@ -112,7 +112,31 @@ type ErrorResponseT struct {
 
 func init() {
 	loadConfig()
+	rruntime.Go(func() {
+		updateConfigFileWH()
+	})
 	pkgLogger = logger.NewLogger().Child("warehouse")
+}
+
+func updateConfigFileWH() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		loadConfig()
+	}
+}
+
+func warehouseReloadableconfig() {
+	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
+	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
+	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
+	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
+	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
+	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 1) * time.Second
+	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
+	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
+	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
 }
 
 func loadConfig() {

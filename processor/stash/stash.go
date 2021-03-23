@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
@@ -29,6 +30,9 @@ var (
 
 func init() {
 	loadConfig()
+	rruntime.Go(func() {
+		updateConfigFile()
+	})
 	pkgLogger = logger.NewLogger().Child("processor").Child("stash")
 }
 
@@ -38,6 +42,21 @@ func loadConfig() {
 	errDBReadBatchSize = config.GetInt("Processor.errDBReadBatchSize", 1000)
 	noOfErrStashWorkers = config.GetInt("Processor.noOfErrStashWorkers", 2)
 	maxFailedCountForErrJob = config.GetInt("Processor.maxFailedCountForErrJob", 3)
+}
+
+func updateConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		stashReloadableConfig()
+	}
+}
+
+func stashReloadableConfig() {
+	maxFailedCountForErrJob = config.GetInt("BatchRouter.maxFailedCountForErrJob", 3)
+	errDBReadBatchSize = config.GetInt("Processor.errDBReadBatchSize", 10000)
+	errReadLoopSleep = config.GetDuration("Processor.errReadLoopSleepInS", time.Duration(30)) * time.Second
 }
 
 type StoreErrorOutputT struct {

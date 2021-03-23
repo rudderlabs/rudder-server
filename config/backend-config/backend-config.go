@@ -208,6 +208,24 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
+	rruntime.Go(func() {
+		updateConfigFile()
+	})
+}
+
+func updateConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		backendCofigReload()
+	}
+}
+
+func backendCofigReload() {
+	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
+	regulationsPollInterval = config.GetDuration("BackendConfig.regulationsPollIntervalInS", 300) * time.Second
+	maxRegulationsPerRequest = config.GetInt("BackendConfig.maxRegulationsPerRequest", 1000)
 }
 
 func trackConfig(preConfig ConfigT, curConfig ConfigT) {

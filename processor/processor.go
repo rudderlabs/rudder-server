@@ -248,6 +248,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
+	rruntime.Go(func() {
+		proc.updateConfigFile()
+	})
 	proc.transformer.Setup()
 
 	proc.crashRecover()
@@ -322,6 +325,17 @@ func loadConfig() {
 	captureEventNameStats = config.GetBool("Processor.Stats.captureEventName", false)
 }
 
+func processorReloadableConfig() {
+	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
+	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
+	fixedLoopSleep = config.GetDuration("Processor.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
+	maxEventsToProcess = config.GetInt("Processor.maxLoopProcessEvents", 10000)
+	avgEventsInRequest = config.GetInt("Processor.avgEventsInRequest", 1)
+	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
+	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
+	captureEventNameStats = config.GetBool("Processor.Stats.captureEventName", false)
+}
+
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	proc.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
@@ -348,6 +362,15 @@ func (proc *HandleT) backendConfigSubscriber() {
 			}
 		}
 		configSubscriberLock.Unlock()
+	}
+}
+
+func (proc *HandleT) updateConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		processorReloadableConfig()
 	}
 }
 

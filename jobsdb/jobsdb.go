@@ -31,6 +31,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"strconv"
@@ -411,7 +412,33 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
+	rruntime.Go(func() {
+		updateConfigFile()
+	})
 	pkgLogger = logger.NewLogger().Child("jobsdb")
+}
+
+func updateConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		jobsdbReloadableConfig()
+	}
+}
+
+func jobsdbReloadableConfig() {
+	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres", 0.8)
+	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres", 5)
+	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
+	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
+	maxMigrateDSProbe = config.GetInt("JobsDB.maxMigrateDSProbe", 10)
+	maxTableSize = (config.GetInt64("JobsDB.maxTableSizeInMB", 300) * 1000000)
+	backupRowsBatchSize = config.GetInt64("JobsDB.backupRowsBatchSize", 1000)
+	migrateDSLoopSleepDuration = (config.GetDuration("JobsDB.migrateDSLoopSleepDurationInS", time.Duration(30)) * time.Second)
+	addNewDSLoopSleepDuration = (config.GetDuration("JobsDB.addNewDSLoopSleepDurationInS", time.Duration(5)) * time.Second)
+	refreshDSListLoopSleepDuration = (config.GetDuration("JobsDB.refreshDSListLoopSleepDurationInS", time.Duration(5)) * time.Second)
+	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
 }
 
 // GetConnectionString Returns Jobs DB connection configuration

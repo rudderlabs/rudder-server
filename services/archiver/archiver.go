@@ -7,8 +7,10 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/archiver/tablearchiver"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -20,8 +22,24 @@ var (
 )
 
 func init() {
-	backupRowsBatchSize = config.GetInt("Archiver.backupRowsBatchSize", 100)
+	loadConfig()
+	rruntime.Go(func() {
+		updateConfigFile()
+	})
 	pkgLogger = logger.NewLogger().Child("archiver")
+}
+
+func updateConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		loadConfig()
+	}
+}
+
+func loadConfig() {
+	backupRowsBatchSize = config.GetInt("Archiver.backupRowsBatchSize", 100)
 }
 
 func isArchiverObjectStorageConfigured() bool {

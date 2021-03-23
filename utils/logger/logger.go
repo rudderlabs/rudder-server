@@ -29,6 +29,7 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils"
 	"go.uber.org/zap"
 )
 
@@ -148,8 +149,18 @@ func NewLogger() *LoggerT {
 // Setup sets up the logger initially
 func init() {
 	loadConfig()
+	go updateConfigFile()
 	Log = configureLogger()
 	loggerLevelsCache = make(map[string]int)
+}
+
+func updateConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		loadConfig()
+	}
 }
 
 func (l *LoggerT) Child(s string) LoggerI {
