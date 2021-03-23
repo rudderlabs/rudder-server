@@ -121,7 +121,7 @@ func updateConfigFileWH() {
 	config.GetUpdatedConfig(ch, "ConfigUpdate")
 	for {
 		<-ch
-		loadConfig()
+		warehouseReloadableconfig()
 	}
 }
 

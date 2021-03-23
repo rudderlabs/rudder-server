@@ -1283,7 +1283,7 @@ func updateConfigFile() {
 	config.GetUpdatedConfig(ch, "ConfigUpdate")
 	for {
 		<-ch
-		loadConfig()
+		routerReloadableConfig()
 	}
 }
 
