@@ -217,6 +217,8 @@ populateHistoricIdentities = false
     maxParallelLoads = 20
     [Warehouse.postgres]
     maxParallelLoads = 3
+    [Warehouse.mssql]
+    maxParallelLoads = 3
     [Warehouse.clickhouse]
     maxParallelLoads = 3
     queryDebugLogs = false

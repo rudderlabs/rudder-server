@@ -27,6 +27,7 @@ const (
 	SNOWFLAKE  = "SNOWFLAKE"
 	POSTGRES   = "POSTGRES"
 	CLICKHOUSE = "CLICKHOUSE"
+	MSSQL	   = "MSSQL"
 )
 
 const (

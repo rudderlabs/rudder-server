@@ -143,6 +143,7 @@ func setMaxParallelLoads() {
 		"BQ":         config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
 		"RS":         config.GetInt("Warehouse.redshift.maxParallelLoads", 3),
 		"POSTGRES":   config.GetInt("Warehouse.postgres.maxParallelLoads", 3),
+		"MSSQL":      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
 		"SNOWFLAKE":  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
 		"CLICKHOUSE": config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
 	}
