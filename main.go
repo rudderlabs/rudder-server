@@ -15,7 +15,9 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/reporting"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
@@ -171,6 +173,10 @@ func main() {
 	}
 
 	rruntime.Go(admin.StartServer)
+
+	rruntime.Go(func() {
+		reporting.Setup(reporting.Config{ConnInfo: jobsdb.GetConnectionString()}, backendconfig.DefaultBackendConfig)
+	})
 
 	misc.KeepProcessAlive()
 }

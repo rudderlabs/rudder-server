@@ -1043,6 +1043,13 @@ func (rt *HandleT) statusInsertLoop() {
 
 }
 
+// func (rt *HandleT) sendReportingMetrics(statusList []*jobsdb.JobStatusT) {
+// 	var x map[string]map[string]reporting.Metric // map[sourceID::destID]map[status::statusCode]metric
+// 	for _, jobStatus := range statusList {
+// 		connectionIdentifier := jobStatus.
+// 	}
+// }
+
 func (rt *HandleT) collectMetrics() {
 	if diagnostics.EnableRouterMetric {
 		for range rt.diagnosisTicker.C {
