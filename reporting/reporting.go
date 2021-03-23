@@ -57,33 +57,47 @@ type StatusDetail struct {
 }
 
 type ReportByStatus struct {
-	WorksapceID   string
-	Namespace     string
-	InstanceID    string
-	SourceID      string
-	DestinationID string
-	BatchID       string
-	InPU          string
-	PU            string
-	TerminalStae  bool
-	InitialState  bool
-	ReportedMin   int64
-	StatusDetail
+	InstanceDetails
+	ConnectionDetails
+	PUDetails
+	ReportMetadata
+	StatusDetail *StatusDetail
+}
+
+type InstanceDetails struct {
+	WorksapceID string
+	Namespace   string
+	InstanceID  string
+}
+
+type ReportMetadata struct {
+	ReportedMin int64
 }
 
 type Metric struct {
-	WorksapceID   string
-	Namespace     string
-	InstanceID    string
+	InstanceDetails
+	ConnectionDetails
+	PUDetails
+	ReportMetadata
+	StatusDetails []*StatusDetail
+}
+
+type ConnectionDetails struct {
 	SourceID      string
 	DestinationID string
 	BatchID       string
-	InPU          string
-	PU            string
-	TerminalStae  bool
-	InitialState  bool
-	ReportedMin   int64
-	StatusDetails []*StatusDetail
+}
+type PUDetails struct {
+	InPU         string
+	PU           string
+	TerminalStae bool
+	InitialState bool
+}
+
+type PUReportedMetric struct {
+	ConnectionDetails
+	PUDetails
+	StatusDetail *StatusDetail
 }
 
 type Client struct {
@@ -177,7 +191,7 @@ func getReports(current_min int64) (reports []*ReportByStatus, reportedMin int64
 	var metricReports []*ReportByStatus
 	for rows.Next() {
 		var metricReport ReportByStatus
-		err = rows.Scan(&metricReport.WorksapceID, &metricReport.Namespace, &metricReport.InstanceID, &metricReport.SourceID, &metricReport.DestinationID, &metricReport.BatchID, &metricReport.InPU, &metricReport.PU, &metricReport.ReportedMin, &metricReport.Status, &metricReport.Count, &metricReport.TerminalStae, &metricReport.InitialState, &metricReport.StatusCode, &metricReport.SampleResponse, &metricReport.SampleEvent)
+		err = rows.Scan(&metricReport.InstanceDetails.WorksapceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID, &metricReport.ConnectionDetails.SourceID, &metricReport.ConnectionDetails.DestinationID, &metricReport.ConnectionDetails.BatchID, &metricReport.PUDetails.InPU, &metricReport.PUDetails.PU, &metricReport.ReportedMin, &metricReport.StatusDetail.Status, &metricReport.StatusDetail.Count, &metricReport.PUDetails.TerminalStae, &metricReport.PUDetails.InitialState, &metricReport.StatusDetail.StatusCode, &metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent)
 		if err != nil {
 			panic(err)
 		}
@@ -191,7 +205,7 @@ func getAggregatedReports(reports []*ReportByStatus) []*Metric {
 	var x map[string]*Metric
 
 	reportIdentifier := func(report *ReportByStatus) string {
-		x := []string{report.WorksapceID, report.Namespace, report.InstanceID, report.SourceID, report.DestinationID, report.BatchID, report.InPU, report.PU, report.Status, fmt.Sprint(report.StatusCode)}
+		x := []string{report.InstanceDetails.WorksapceID, report.InstanceDetails.Namespace, report.InstanceDetails.InstanceID, report.ConnectionDetails.SourceID, report.ConnectionDetails.DestinationID, report.ConnectionDetails.BatchID, report.PUDetails.InPU, report.PUDetails.PU, report.StatusDetail.Status, fmt.Sprint(report.StatusDetail.StatusCode)}
 		return strings.Join(x, `::`)
 	}
 
@@ -199,33 +213,42 @@ func getAggregatedReports(reports []*ReportByStatus) []*Metric {
 		identifier := reportIdentifier(report)
 		if _, ok := x[identifier]; !ok {
 			x[identifier] = &Metric{
-				WorksapceID:   report.WorksapceID,
-				Namespace:     report.Namespace,
-				InstanceID:    report.InstanceID,
-				SourceID:      report.SourceID,
-				DestinationID: report.DestinationID,
-				BatchID:       report.BatchID,
-				InPU:          report.InPU,
-				PU:            report.PU,
+				InstanceDetails: InstanceDetails{
+					WorksapceID: report.WorksapceID,
+					Namespace:   report.Namespace,
+					InstanceID:  report.InstanceID,
+				},
+				ConnectionDetails: ConnectionDetails{
+					SourceID:      report.SourceID,
+					DestinationID: report.DestinationID,
+					BatchID:       report.BatchID,
+				},
+				PUDetails: PUDetails{
+					InPU: report.InPU,
+					PU:   report.PU,
+				},
+				ReportMetadata: ReportMetadata{
+					ReportedMin: report.ReportedMin,
+				},
 			}
 		}
 		r := funk.Find(x[identifier].StatusDetails, func(i StatusDetail) bool {
-			return i.Status == report.Status && i.StatusCode == report.StatusCode
+			return i.Status == report.StatusDetail.Status && i.StatusCode == report.StatusDetail.StatusCode
 		})
 		if r == nil {
 			x[identifier].StatusDetails = append(x[identifier].StatusDetails, &StatusDetail{
-				Status:         report.Status,
-				StatusCode:     report.StatusCode,
-				Count:          report.Count,
-				SampleResponse: report.SampleResponse,
-				SampleEvent:    report.SampleEvent,
+				Status:         report.StatusDetail.Status,
+				StatusCode:     report.StatusDetail.StatusCode,
+				Count:          report.StatusDetail.Count,
+				SampleResponse: report.StatusDetail.SampleResponse,
+				SampleEvent:    report.StatusDetail.SampleEvent,
 			})
 			continue
 		}
 		j := r.(*StatusDetail)
-		j.Count += report.Count
-		j.SampleResponse = report.SampleResponse
-		j.SampleEvent = report.SampleEvent
+		j.Count += report.StatusDetail.Count
+		j.SampleResponse = report.StatusDetail.SampleResponse
+		j.SampleEvent = report.StatusDetail.SampleEvent
 	}
 
 	var values []*Metric
@@ -286,7 +309,7 @@ func mainLoop() {
 // 	deleteFromTable()
 // }
 
-func (client *Client) Report(metric Metric, txn *sql.Tx) {
+func (client *Client) Report(metrics []*PUReportedMetric, txn *sql.Tx) {
 	stmt, err := txn.Prepare(pq.CopyIn(REPORTS_TABLE, "workspace_id", "namespace", "instance_id", "source_id", "destination_id", "batch_id", "in_pu", "pu", "reported_min", "status", "count", "terminal_state", "initial_state", "status_code", "sample_response", "sample_event"))
 	if err != nil {
 		panic(err)
@@ -294,8 +317,8 @@ func (client *Client) Report(metric Metric, txn *sql.Tx) {
 	defer stmt.Close()
 
 	reported_min := int64(timeutil.Now().Sub(time.Time{}.UTC()).Minutes())
-	for _, report := range metric.StatusDetails {
-		_, err = stmt.Exec(client.Config.WorksapceID, client.Config.Namespace, client.Config.WorksapceID, metric.SourceID, metric.DestinationID, metric.BatchID, metric.InPU, metric.PU, reported_min, report.Status, report.Count, metric.TerminalStae, metric.InitialState, report.StatusCode, report.SampleResponse, report.SampleEvent)
+	for _, metric := range metrics {
+		_, err = stmt.Exec(client.Config.WorksapceID, client.Config.Namespace, client.Config.WorksapceID, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.BatchID, metric.PUDetails.InPU, metric.PUDetails.PU, reported_min, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalStae, metric.PUDetails.InitialState, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, metric.StatusDetail.SampleEvent)
 		if err != nil {
 			panic(err)
 		}
