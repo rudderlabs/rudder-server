@@ -9,13 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/thoas/go-funk"
 )
 
@@ -33,13 +32,6 @@ type Config struct {
 	InstanceID  string
 	ConnInfo    string
 }
-
-// const (
-// 	SuccessCount = "success_count"
-// 	AbortCount   = "abort_count"
-// 	FailCount    = "fail_count"
-// 	DiffCount    = "diff_count"
-// )
 
 const (
 	SuccessStatus = "success_count"
@@ -88,10 +80,10 @@ type ConnectionDetails struct {
 	BatchID       string
 }
 type PUDetails struct {
-	InPU          string
-	PU            string
-	TerminalState bool
-	InitialState  bool
+	InPU       string
+	PU         string
+	TerminalPU bool
+	InitialPU  bool
 }
 
 type PUReportedMetric struct {
@@ -102,7 +94,6 @@ type PUReportedMetric struct {
 
 type Client struct {
 	Config
-	// Report(reports []Report, txn *sql.Tx) error
 }
 
 func init() {
@@ -143,10 +134,7 @@ func setupTable() error {
 
 func Setup(c Config, backendConfig backendconfig.BackendConfig) {
 	backendConfig.WaitForConfig()
-	x, _ := backendConfig.Get()
-	fmt.Println("*****")
-	fmt.Println(x.WorkspaceID)
-	fmt.Println("*****")
+	workspaceConfig, _ := backendConfig.Get()
 	var err error
 	dbHandle, err = sql.Open("postgres", c.ConnInfo)
 	if err != nil {
@@ -156,7 +144,7 @@ func Setup(c Config, backendConfig backendconfig.BackendConfig) {
 	if err != nil {
 		panic(err)
 	}
-	c.WorksapceID = x.WorkspaceID
+	c.WorksapceID = workspaceConfig.WorkspaceID
 	c.Namespace = config.GetKubeNamespace()
 	c.InstanceID = config.GetEnv("INSTANCE_ID", "1")
 	client = &Client{Config: c}
@@ -190,8 +178,8 @@ func getReports(current_min int64) (reports []*ReportByStatus, reportedMin int64
 
 	var metricReports []*ReportByStatus
 	for rows.Next() {
-		var metricReport ReportByStatus
-		err = rows.Scan(&metricReport.InstanceDetails.WorksapceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID, &metricReport.ConnectionDetails.SourceID, &metricReport.ConnectionDetails.DestinationID, &metricReport.ConnectionDetails.BatchID, &metricReport.PUDetails.InPU, &metricReport.PUDetails.PU, &metricReport.ReportedMin, &metricReport.StatusDetail.Status, &metricReport.StatusDetail.Count, &metricReport.PUDetails.TerminalState, &metricReport.PUDetails.InitialState, &metricReport.StatusDetail.StatusCode, &metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent)
+		metricReport := ReportByStatus{StatusDetail: &StatusDetail{}}
+		err = rows.Scan(&metricReport.InstanceDetails.WorksapceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID, &metricReport.ConnectionDetails.SourceID, &metricReport.ConnectionDetails.DestinationID, &metricReport.ConnectionDetails.BatchID, &metricReport.PUDetails.InPU, &metricReport.PUDetails.PU, &metricReport.ReportedMin, &metricReport.StatusDetail.Status, &metricReport.StatusDetail.Count, &metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU, &metricReport.StatusDetail.StatusCode, &metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent)
 		if err != nil {
 			panic(err)
 		}
@@ -202,17 +190,17 @@ func getReports(current_min int64) (reports []*ReportByStatus, reportedMin int64
 }
 
 func getAggregatedReports(reports []*ReportByStatus) []*Metric {
-	var x map[string]*Metric
+	metricsByGroup := map[string]*Metric{}
 
 	reportIdentifier := func(report *ReportByStatus) string {
-		x := []string{report.InstanceDetails.WorksapceID, report.InstanceDetails.Namespace, report.InstanceDetails.InstanceID, report.ConnectionDetails.SourceID, report.ConnectionDetails.DestinationID, report.ConnectionDetails.BatchID, report.PUDetails.InPU, report.PUDetails.PU, report.StatusDetail.Status, fmt.Sprint(report.StatusDetail.StatusCode)}
-		return strings.Join(x, `::`)
+		groupingIdentifiers := []string{report.InstanceDetails.WorksapceID, report.InstanceDetails.Namespace, report.InstanceDetails.InstanceID, report.ConnectionDetails.SourceID, report.ConnectionDetails.DestinationID, report.ConnectionDetails.BatchID, report.PUDetails.InPU, report.PUDetails.PU, report.StatusDetail.Status, fmt.Sprint(report.StatusDetail.StatusCode)}
+		return strings.Join(groupingIdentifiers, `::`)
 	}
 
 	for _, report := range reports {
 		identifier := reportIdentifier(report)
-		if _, ok := x[identifier]; !ok {
-			x[identifier] = &Metric{
+		if _, ok := metricsByGroup[identifier]; !ok {
+			metricsByGroup[identifier] = &Metric{
 				InstanceDetails: InstanceDetails{
 					WorksapceID: report.WorksapceID,
 					Namespace:   report.Namespace,
@@ -232,11 +220,11 @@ func getAggregatedReports(reports []*ReportByStatus) []*Metric {
 				},
 			}
 		}
-		r := funk.Find(x[identifier].StatusDetails, func(i StatusDetail) bool {
+		statusDetailInterface := funk.Find(metricsByGroup[identifier].StatusDetails, func(i StatusDetail) bool {
 			return i.Status == report.StatusDetail.Status && i.StatusCode == report.StatusDetail.StatusCode
 		})
-		if r == nil {
-			x[identifier].StatusDetails = append(x[identifier].StatusDetails, &StatusDetail{
+		if statusDetailInterface == nil {
+			metricsByGroup[identifier].StatusDetails = append(metricsByGroup[identifier].StatusDetails, &StatusDetail{
 				Status:         report.StatusDetail.Status,
 				StatusCode:     report.StatusDetail.StatusCode,
 				Count:          report.StatusDetail.Count,
@@ -245,14 +233,14 @@ func getAggregatedReports(reports []*ReportByStatus) []*Metric {
 			})
 			continue
 		}
-		j := r.(*StatusDetail)
-		j.Count += report.StatusDetail.Count
-		j.SampleResponse = report.StatusDetail.SampleResponse
-		j.SampleEvent = report.StatusDetail.SampleEvent
+		statusDetail := statusDetailInterface.(*StatusDetail)
+		statusDetail.Count += report.StatusDetail.Count
+		statusDetail.SampleResponse = report.StatusDetail.SampleResponse
+		statusDetail.SampleEvent = report.StatusDetail.SampleEvent
 	}
 
 	var values []*Metric
-	for _, val := range x {
+	for _, val := range metricsByGroup {
 		values = append(values, val)
 	}
 	return values
@@ -260,13 +248,14 @@ func getAggregatedReports(reports []*ReportByStatus) []*Metric {
 
 func mainLoop() {
 	tr := &http.Transport{}
-	client := &http.Client{Transport: tr}
+	netClient := &http.Client{Transport: tr}
 	for {
 		allReported := true
-		currentMin := int64(timeutil.Now().Sub(time.Time{}.UTC()).Minutes())
+		currentMin := time.Now().UTC().Unix() / 60
 		reports, reportedMin := getReports(currentMin)
 		if reports == nil || len(reports) == 0 {
 			time.Sleep(30 * time.Second)
+			continue
 		}
 		metrics := getAggregatedReports(reports)
 		for _, metric := range metrics {
@@ -276,13 +265,12 @@ func mainLoop() {
 			}
 			operation := func() error {
 				uri := "https://webhook.site/dde3d1aa-abc1-4270-8e2d-ffbb84c1fa94"
-				_, err := client.Post(uri, "application/json; charset=utf-8",
+				_, err := netClient.Post(uri, "application/json; charset=utf-8",
 					bytes.NewBuffer(payload))
 				return err
 			}
 
-			// backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
-			err = backoff.RetryNotify(operation, &backoff.ExponentialBackOff{}, func(err error, t time.Duration) {
+			err = backoff.RetryNotify(operation, backoff.NewExponentialBackOff(), func(err error, t time.Duration) {
 				pkgLogger.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
 			})
 			if err != nil {
@@ -302,13 +290,6 @@ func mainLoop() {
 	}
 }
 
-// loop() {
-// 	getFromByReportedBy()
-// 	aggregateByDest-StatusCode()
-// 	sendWithBackoff()
-// 	deleteFromTable()
-// }
-
 func (client *Client) Report(metrics []*PUReportedMetric, txn *sql.Tx) {
 	stmt, err := txn.Prepare(pq.CopyIn(REPORTS_TABLE, "workspace_id", "namespace", "instance_id", "source_id", "destination_id", "batch_id", "in_pu", "pu", "reported_min", "status", "count", "terminal_state", "initial_state", "status_code", "sample_response", "sample_event"))
 	if err != nil {
@@ -316,9 +297,9 @@ func (client *Client) Report(metrics []*PUReportedMetric, txn *sql.Tx) {
 	}
 	defer stmt.Close()
 
-	reported_min := int64(timeutil.Now().Sub(time.Time{}.UTC()).Minutes())
+	reported_min := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
-		_, err = stmt.Exec(client.Config.WorksapceID, client.Config.Namespace, client.Config.WorksapceID, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.BatchID, metric.PUDetails.InPU, metric.PUDetails.PU, reported_min, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalState, metric.PUDetails.InitialState, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, metric.StatusDetail.SampleEvent)
+		_, err = stmt.Exec(client.Config.WorksapceID, client.Config.Namespace, client.Config.WorksapceID, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.BatchID, metric.PUDetails.InPU, metric.PUDetails.PU, reported_min, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, metric.StatusDetail.SampleEvent)
 		if err != nil {
 			panic(err)
 		}
