@@ -162,7 +162,7 @@ func (sf *HandleT) columnExists(columnName string, tableName string) (exists boo
 
 func (sf *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	var count int
-	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s'`, sf.Namespace)
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '%s'`, sf.Namespace)
 	err = sf.Db.QueryRow(sqlStatement).Scan(&count)
 	// ignore err if no results for query
 	if err == sql.ErrNoRows {
