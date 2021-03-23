@@ -157,6 +157,11 @@ func main() {
 		os.Exit(1)
 	}()
 
+	//Setting up reporting client
+	rruntime.Go(func() {
+		reporting.Setup(reporting.Config{ConnInfo: jobsdb.GetConnectionString()}, backendconfig.DefaultBackendConfig)
+	})
+
 	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
 		appHandler.HandleRecovery(options)
@@ -173,10 +178,6 @@ func main() {
 	}
 
 	rruntime.Go(admin.StartServer)
-
-	rruntime.Go(func() {
-		reporting.Setup(reporting.Config{ConnInfo: jobsdb.GetConnectionString()}, backendconfig.DefaultBackendConfig)
-	})
 
 	misc.KeepProcessAlive()
 }

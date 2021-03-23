@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/reporting"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -639,6 +640,7 @@ func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsd
 	metadata.DestinationID = destination.ID
 	metadata.RudderID = batchEvent.UserID
 	metadata.JobID = batchEvent.JobID
+	metadata.SourceBatchID = 1 //TODO replace with correct batch id
 	metadata.DestinationType = destination.DestinationDefinition.Name
 	metadata.MessageID = event.Message["messageId"].(string)
 	if event.SessionID != "" {
@@ -688,13 +690,20 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 	}
 }
 
-func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, commonMetaData transformer.MetadataT, destination backendconfig.DestinationT) []transformer.TransformerEventT {
+func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, commonMetaData transformer.MetadataT, destination backendconfig.DestinationT) ([]transformer.TransformerEventT, []*reporting.PUReportedMetric) {
+	successMetrics := make([]*reporting.PUReportedMetric, 0)
+	connectionDetailsMap := make(map[string]*reporting.ConnectionDetails)
+	statusDetailsMap := make(map[string]*reporting.StatusDetail)
 	var eventsToTransform []transformer.TransformerEventT
 	for _, userTransformedEvent := range response.Events {
+		//Update metrics maps
+		updateMetricMaps(connectionDetailsMap, statusDetailsMap, userTransformedEvent, "succeeded", []byte(`{}`))
+
 		eventMetadata := commonMetaData
 		eventMetadata.MessageIDs = userTransformedEvent.Metadata.MessageIDs
 		eventMetadata.MessageID = userTransformedEvent.Metadata.MessageID
 		eventMetadata.JobID = userTransformedEvent.Metadata.JobID
+		eventMetadata.SourceBatchID = userTransformedEvent.Metadata.SourceBatchID
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
 		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
@@ -705,10 +714,75 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		}
 		eventsToTransform = append(eventsToTransform, updatedEvent)
 	}
-	return eventsToTransform
+
+	assertSameKeys(connectionDetailsMap, statusDetailsMap)
+
+	for k, cd := range connectionDetailsMap {
+		m := &reporting.PUReportedMetric{
+			ConnectionDetails: *cd,
+			PUDetails:         *createPUDetails("GW", "UT"),
+			StatusDetail:      statusDetailsMap[k],
+		}
+		successMetrics = append(successMetrics, m)
+	}
+
+	return eventsToTransform, successMetrics
 }
 
-func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventT, stage string) []*jobsdb.JobT {
+func assertSameKeys(m1 map[string]*reporting.ConnectionDetails, m2 map[string]*reporting.StatusDetail) {
+	if len(m1) != len(m2) {
+		panic("maps length don't match") //TODO improve msg
+	}
+	for k := range m1 {
+		if _, ok := m2[k]; !ok {
+			panic("key in map1 not found in map2") //TODO improve msg
+		}
+	}
+}
+
+func createConnectionDetail(sid, did, bid string) *reporting.ConnectionDetails {
+	return &reporting.ConnectionDetails{SourceID: sid,
+		DestinationID: did,
+		BatchID:       bid}
+}
+
+func createStatusDetail(status string, count int64, code int, resp string, event json.RawMessage) *reporting.StatusDetail {
+	return &reporting.StatusDetail{
+		Status:         status,
+		Count:          count,
+		StatusCode:     code,
+		SampleResponse: resp,
+		SampleEvent:    event}
+}
+
+func createPUDetails(inPU, pu string) *reporting.PUDetails {
+	return &reporting.PUDetails{
+		InPU:          inPU,
+		PU:            pu,
+		TerminalState: false,
+		InitialState:  false,
+	}
+}
+
+func updateMetricMaps(connectionDetailsMap map[string]*reporting.ConnectionDetails, statusDetailsMap map[string]*reporting.StatusDetail, event transformer.TransformerResponseT, status string, payload json.RawMessage) {
+	key := fmt.Sprintf("%s:%s:%d:%d", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, event.StatusCode)
+	cd, ok := connectionDetailsMap[key]
+	if !ok {
+		cd = createConnectionDetail(event.Metadata.SourceID, event.Metadata.DestinationID, strconv.FormatInt(event.Metadata.SourceBatchID, 10))
+		connectionDetailsMap[key] = cd
+	}
+	sd, ok := statusDetailsMap[key]
+	if !ok {
+		sd = createStatusDetail(status, 0, event.StatusCode, event.Error, payload)
+		statusDetailsMap[key] = sd
+	}
+	sd.Count++
+}
+
+func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventT, stage string, transformationEnabled bool) ([]*jobsdb.JobT, []*reporting.PUReportedMetric) {
+	failedMetrics := make([]*reporting.PUReportedMetric, 0)
+	connectionDetailsMap := make(map[string]*reporting.ConnectionDetails)
+	statusDetailsMap := make(map[string]*reporting.StatusDetail)
 	var failedEventsToStore []*jobsdb.JobT
 	for _, failedEvent := range response.FailedEvents {
 		var messages []types.SingularEventT
@@ -725,6 +799,9 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal list of failed events: %v`, err)
 			continue
 		}
+
+		//Update metrics maps
+		updateMetricMaps(connectionDetailsMap, statusDetailsMap, failedEvent, "aborted", payload)
 
 		id := uuid.NewV4()
 		// marshal error to escape any quotes in error string etc.
@@ -753,7 +830,31 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 
 		procErrorStat.Increment()
 	}
-	return failedEventsToStore
+
+	assertSameKeys(connectionDetailsMap, statusDetailsMap)
+
+	var inPU, pu string
+	if stage == transformer.DestTransformerStage {
+		if transformationEnabled {
+			inPU = "UT"
+		} else {
+			inPU = "GW"
+		}
+		pu = "DT"
+	} else if stage == transformer.UserTransformerStage {
+		inPU = "GW"
+		pu = "UT"
+	}
+	for k, cd := range connectionDetailsMap {
+		m := &reporting.PUReportedMetric{
+			ConnectionDetails: *cd,
+			PUDetails:         *createPUDetails(inPU, pu),
+			StatusDetail:      statusDetailsMap[k],
+		}
+		failedMetrics = append(failedMetrics, m)
+	}
+
+	return failedEventsToStore, failedMetrics
 }
 
 func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, writeKey string) {
@@ -937,6 +1038,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
 
+	reportMetrics := make([]*reporting.PUReportedMetric, 0)
+
 	proc.destProcessing.Start()
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
 	var startedAt, endedAt time.Time
@@ -978,13 +1081,17 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: timeTaken, Index: -1}, &proc.userTransformEventsByTimeTaken)
 			}
 
-			eventsToTransform = proc.getDestTransformerEvents(response, commonMetaData, destination)
-			failedJobs := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage)
+			var successMetrics []*reporting.PUReportedMetric
+			eventsToTransform, successMetrics = proc.getDestTransformerEvents(response, commonMetaData, destination)
+			failedJobs, failedMetrics := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
 			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
+
+			reportMetrics = append(reportMetrics, successMetrics...)
+			reportMetrics = append(reportMetrics, failedMetrics...)
 		} else {
 			proc.logger.Debug("No custom transformation")
 			eventsToTransform = eventList
@@ -1018,14 +1125,21 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
 		destStat.numOutputEvents.Count(len(destTransformEventList))
 
-		failedJobs := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage)
+		failedJobs, failedMetrics := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled)
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 		}
 		procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
 
+		reportMetrics = append(reportMetrics, failedMetrics...)
+		successMetrics := make([]*reporting.PUReportedMetric, 0)
+		connectionDetailsMap := make(map[string]*reporting.ConnectionDetails)
+		statusDetailsMap := make(map[string]*reporting.StatusDetail)
 		//Save the JSON in DB. This is what the router uses
 		for _, destEvent := range destTransformEventList {
+			//Update metrics maps
+			updateMetricMaps(connectionDetailsMap, statusDetailsMap, destEvent, "succeeded", []byte(`{}`))
+
 			destEventJSON, err := json.Marshal(destEvent.Output)
 			//Should be a valid JSON since its our transformation
 			//but we handle anyway
@@ -1044,6 +1158,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			receivedAt := destEvent.Metadata.ReceivedAt
 			messageId := destEvent.Metadata.MessageID
 			jobId := destEvent.Metadata.JobID
+			sourceBatchId := destEvent.Metadata.SourceBatchID
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
 			if rudderID == "" {
@@ -1053,7 +1168,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       rudderID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v", "transform_at": "%v", "message_id" : "%v" , "gateway_job_id" : "%v"}`, sourceID, destID, receivedAt, transformAt, messageId, jobId)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v", "transform_at": "%v", "message_id" : "%v" , "gateway_job_id" : "%v", "source_batch_id": "%v"}`, sourceID, destID, receivedAt, transformAt, messageId, jobId, sourceBatchId)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
@@ -1065,7 +1180,35 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				destJobs = append(destJobs, &newJob)
 			}
 		}
+
+		//TODO not necessary, remove these panics?
+		assertSameKeys(connectionDetailsMap, statusDetailsMap)
+
+		inPU := "GW"
+		if transformationEnabled {
+			inPU = "UT"
+		}
+		for k, cd := range connectionDetailsMap {
+			m := &reporting.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *createPUDetails(inPU, "DT"),
+				StatusDetail:      statusDetailsMap[k],
+			}
+			successMetrics = append(successMetrics, m)
+		}
+
+		reportMetrics = append(reportMetrics, successMetrics...)
 	}
+
+	//TODO remove prints
+	fmt.Println("&&&&&&&&&&&&&&&&&&&&&")
+	fmt.Printf("length of reportMetrics : %d\n", len(reportMetrics))
+	for _, m := range reportMetrics {
+		fmt.Printf("%v\n", m.ConnectionDetails)
+		fmt.Printf("%v\n", m.PUDetails)
+		fmt.Printf("%v\n", m.StatusDetail)
+	}
+	fmt.Println("&&&&&&&&&&&&&&&&&&&&&")
 
 	proc.destProcessing.End()
 	if len(statusList) != len(jobList) {
@@ -1096,7 +1239,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
 
-	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	txn := proc.gatewayDB.BeginGlobalTransaction()
+	proc.gatewayDB.AcquireUpdateJobStatusLocks()
+	proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{gateway.CustomVal}, nil)
+	//reporting.GetClient().Report(reportMetrics, txn)
+	proc.gatewayDB.CommitTransaction(txn)
+	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
+
 	if enableDedup {
 		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
 		if len(uniqueMessageIds) > 0 {

@@ -33,6 +33,7 @@ type MetadataT struct {
 	SourceID        string `json:"sourceId"`
 	DestinationID   string `json:"destinationId"`
 	JobID           int64  `json:"jobId"`
+	SourceBatchID   int64  `json:"sourceBatchId"`
 	DestinationType string `json:"destinationType"`
 	MessageID       string `json:"messageId"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs

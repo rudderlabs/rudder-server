@@ -88,10 +88,10 @@ type ConnectionDetails struct {
 	BatchID       string
 }
 type PUDetails struct {
-	InPU         string
-	PU           string
-	TerminalStae bool
-	InitialState bool
+	InPU          string
+	PU            string
+	TerminalState bool
+	InitialState  bool
 }
 
 type PUReportedMetric struct {
@@ -191,7 +191,7 @@ func getReports(current_min int64) (reports []*ReportByStatus, reportedMin int64
 	var metricReports []*ReportByStatus
 	for rows.Next() {
 		var metricReport ReportByStatus
-		err = rows.Scan(&metricReport.InstanceDetails.WorksapceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID, &metricReport.ConnectionDetails.SourceID, &metricReport.ConnectionDetails.DestinationID, &metricReport.ConnectionDetails.BatchID, &metricReport.PUDetails.InPU, &metricReport.PUDetails.PU, &metricReport.ReportedMin, &metricReport.StatusDetail.Status, &metricReport.StatusDetail.Count, &metricReport.PUDetails.TerminalStae, &metricReport.PUDetails.InitialState, &metricReport.StatusDetail.StatusCode, &metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent)
+		err = rows.Scan(&metricReport.InstanceDetails.WorksapceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID, &metricReport.ConnectionDetails.SourceID, &metricReport.ConnectionDetails.DestinationID, &metricReport.ConnectionDetails.BatchID, &metricReport.PUDetails.InPU, &metricReport.PUDetails.PU, &metricReport.ReportedMin, &metricReport.StatusDetail.Status, &metricReport.StatusDetail.Count, &metricReport.PUDetails.TerminalState, &metricReport.PUDetails.InitialState, &metricReport.StatusDetail.StatusCode, &metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent)
 		if err != nil {
 			panic(err)
 		}
@@ -318,7 +318,7 @@ func (client *Client) Report(metrics []*PUReportedMetric, txn *sql.Tx) {
 
 	reported_min := int64(timeutil.Now().Sub(time.Time{}.UTC()).Minutes())
 	for _, metric := range metrics {
-		_, err = stmt.Exec(client.Config.WorksapceID, client.Config.Namespace, client.Config.WorksapceID, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.BatchID, metric.PUDetails.InPU, metric.PUDetails.PU, reported_min, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalStae, metric.PUDetails.InitialState, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, metric.StatusDetail.SampleEvent)
+		_, err = stmt.Exec(client.Config.WorksapceID, client.Config.Namespace, client.Config.WorksapceID, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.BatchID, metric.PUDetails.InPU, metric.PUDetails.PU, reported_min, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalState, metric.PUDetails.InitialState, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, metric.StatusDetail.SampleEvent)
 		if err != nil {
 			panic(err)
 		}
