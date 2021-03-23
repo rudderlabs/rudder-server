@@ -35,9 +35,9 @@ func init() {
 func loadConfig() {
 	errorStashEnabled = config.GetBool("Processor.errorStashEnabled", true)
 	errReadLoopSleep = config.GetDuration("Processor.errReadLoopSleepInS", time.Duration(30)) * time.Second
-	errDBReadBatchSize = config.GetInt("Processor.errDBReadBatchSize", 10000)
+	errDBReadBatchSize = config.GetInt("Processor.errDBReadBatchSize", 1000)
 	noOfErrStashWorkers = config.GetInt("Processor.noOfErrStashWorkers", 2)
-	maxFailedCountForErrJob = config.GetInt("BatchRouter.maxFailedCountForErrJob", 3)
+	maxFailedCountForErrJob = config.GetInt("Processor.maxFailedCountForErrJob", 3)
 }
 
 type StoreErrorOutputT struct {
