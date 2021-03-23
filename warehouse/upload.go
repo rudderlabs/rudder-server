@@ -12,6 +12,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/reporting"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -476,6 +477,32 @@ func (job *UploadJobT) run() (err error) {
 		job.setUploadStatus(newStatus)
 
 		if newStatus == ExportedData {
+			reportingMetric := reporting.PUReportedMetric{
+				ConnectionDetails: reporting.ConnectionDetails{
+					SourceID:      job.upload.SourceID,
+					DestinationID: job.upload.DestinationID,
+				},
+				PUDetails: reporting.PUDetails{
+					InPU:       "batch_router",
+					PU:         "warehouse",
+					TerminalPU: true,
+				},
+				StatusDetail: &reporting.StatusDetail{
+					Status:      reporting.SuccessStatus,
+					StatusCode:  200,
+					Count:       job.getTotalRowsInStagingFiles(),
+					SampleEvent: []byte("{}"),
+				},
+			}
+			txn, txnErr := job.dbHandle.Begin()
+			if txnErr != nil {
+				panic(txnErr)
+			}
+			reporting.GetClient().Report([]*reporting.PUReportedMetric{&reportingMetric}, txn)
+			txnErr = txn.Commit()
+			if txnErr != nil {
+				panic(txnErr)
+			}
 			break
 		}
 
