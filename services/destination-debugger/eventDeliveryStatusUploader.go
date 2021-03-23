@@ -44,10 +44,33 @@ var pkgLogger logger.LoggerI
 
 func init() {
 	loadConfig()
+	rruntime.Go(func() {
+		updateConfigFile()
+	})
 	pkgLogger = logger.NewLogger().Child("destination-debugger").Child("eventDeliveryStatusUploader")
 }
 
 func loadConfig() {
+	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	//Number of events that are batched before sending schema to control plane
+	maxBatchSize = config.GetInt("DestinationDebugger.maxBatchSize", 32)
+	maxESQueueSize = config.GetInt("DestinationDebugger.maxESQueueSize", 1024)
+	maxRetry = config.GetInt("DestinationDebugger.maxRetry", 3)
+	batchTimeout = config.GetDuration("DestinationDebugger.batchTimeoutInS", time.Duration(2)) * time.Second
+	retrySleep = config.GetDuration("DestinationDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	disableEventDeliveryStatusUploads = config.GetBool("DestinationDebugger.disableEventDeliveryStatusUploads", false)
+}
+
+func updateConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		destinationDebuggerReloadableConfig()
+	}
+}
+
+func destinationDebuggerReloadableConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	//Number of events that are batched before sending schema to control plane
 	maxBatchSize = config.GetInt("DestinationDebugger.maxBatchSize", 32)

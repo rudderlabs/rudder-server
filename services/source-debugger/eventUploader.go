@@ -63,6 +63,15 @@ func loadConfig() {
 	disableEventUploads = config.GetBool("SourceDebugger.disableEventUploads", false)
 }
 
+func updateConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		loadConfig()
+	}
+}
+
 //RecordEvent is used to put the event batch in the eventBatchChannel,
 //which will be processed by handleEvents.
 func RecordEvent(writeKey string, eventBatch string) bool {

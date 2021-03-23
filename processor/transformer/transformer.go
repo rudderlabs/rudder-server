@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -99,9 +100,26 @@ func loadConfig() {
 	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 }
 
+func updateConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		transformerReloadableConfig()
+	}
+}
+
 func init() {
 	loadConfig()
+	rruntime.Go(func() {
+		updateConfigFile()
+	})
 	pkgLogger = logger.NewLogger().Child("processor").Child("transformer")
+}
+
+func transformerReloadableConfig() {
+	maxRetry = config.GetInt("Processor.maxRetry", 30)
+	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 }
 
 type TransformerResponseT struct {

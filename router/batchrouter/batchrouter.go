@@ -947,8 +947,37 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
+	rruntime.Go(func() {
+		updateConfigFile()
+	})
 	uploadedRawDataJobsCache = make(map[string]map[string]bool)
 	pkgLogger = logger.NewLogger().Child("batchrouter")
+}
+
+func updateConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		batchRouterReloadableconfig()
+	}
+}
+
+func batchRouterReloadableconfig() {
+	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
+	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
+	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
+	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
+}
+
+func (brt *HandleT) updateRTConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		brt.maxFailedCountForJob = getBatchRouterConfigInt("maxFailedCountForJob", brt.destType, 128)
+		brt.retryTimeWindow = getBatchRouterConfigDuration("retryTimeWindowInMins", brt.destType, time.Duration(180)) * time.Minute
+	}
 }
 
 //Setup initializes this module
@@ -964,7 +993,9 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destTyp
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 	brt.maxFailedCountForJob = getBatchRouterConfigInt("maxFailedCountForJob", destType, 128)
 	brt.retryTimeWindow = getBatchRouterConfigDuration("retryTimeWindowInMins", destType, time.Duration(180)) * time.Minute
-
+	rruntime.Go(func() {
+		brt.updateRTConfigFile()
+	})
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
 	brt.netHandle = client

@@ -2,14 +2,16 @@ package dedup
 
 import (
 	"fmt"
+	"sort"
+	"time"
+
 	badger "github.com/dgraph-io/badger/v2"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"sort"
-	"time"
 )
 
 type DedupI interface {
@@ -32,8 +34,20 @@ func loadConfig() {
 	dedupWindow = config.GetDuration("Dedup.dedupWindowInS", time.Duration(86400))
 }
 
+func updateConfigFile() {
+	ch := make(chan utils.DataEvent)
+	config.GetUpdatedConfig(ch, "ConfigUpdate")
+	for {
+		<-ch
+		loadConfig()
+	}
+}
+
 func init() {
 	loadConfig()
+	rruntime.Go(func() {
+		updateConfigFile()
+	})
 	pkgLogger = logger.NewLogger().Child("dedup")
 }
 func (d *DedupHandleT) setup(clearDB *bool) {

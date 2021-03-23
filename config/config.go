@@ -8,12 +8,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/spf13/cast"
 	"github.com/spf13/viper"
 )
 
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
+var EventBus utils.PublishSubscriber = new(utils.EventBus)
+
+type Topic string
 
 var (
 	whSchemaVersion string
@@ -51,10 +56,27 @@ func init() {
 	viper.SetConfigFile(configPath)
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig() // Find and read the config file
+	viper.WatchConfig()
+	go UpdateConfig()
 	// Don't panic if config.toml is not found or error with parsing. Use the default config values instead
 	if err != nil {
 		fmt.Println("[Config] :: Failed to parse Config toml, using default values:", err)
 	}
+}
+
+func UpdateConfig() {
+	for {
+		viper.OnConfigChange(func(e fsnotify.Event) {
+			fmt.Println("Config Changed")
+			EventBus.Publish("ConfigUpdate", "")
+		})
+		time.Sleep(5 * time.Second)
+	}
+}
+
+func GetUpdatedConfig(channel chan utils.DataEvent, topic string) {
+	EventBus.Subscribe(string(topic), channel)
+	EventBus.PublishToChannel(channel, string(topic), "")
 }
 
 //GetBool is a wrapper for viper's GetBool
