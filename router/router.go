@@ -946,26 +946,6 @@ func (rt *HandleT) Disable() {
 	rt.isEnabled = false
 }
 
-func getStatus(jobState string) string {
-	if jobState == jobsdb.Succeeded.State {
-		return reporting.SuccessStatus
-	}
-	if jobState == jobsdb.Failed.State {
-		return reporting.FailStatus
-	}
-	if jobState == jobsdb.Aborted.State {
-		return reporting.AbortStatus
-	}
-	if jobState == jobsdb.Waiting.State {
-		return reporting.WaitingStatus
-	}
-	if jobState == jobsdb.Throttled.State {
-		return reporting.ThrottledStatus
-	}
-
-	return reporting.FailStatus
-}
-
 func (rt *HandleT) statusInsertLoop() {
 
 	var responseList []jobResponseT
@@ -1004,7 +984,7 @@ func (rt *HandleT) statusInsertLoop() {
 				if err != nil {
 					rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
 				}
-				key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, getStatus(resp.status.JobState), resp.status.ErrorCode)
+				key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, reporting.GetStatus(resp.status.JobState), resp.status.ErrorCode)
 				cd, ok := connectionDetailsMap[key]
 				if !ok {
 					cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID)
@@ -1016,7 +996,7 @@ func (rt *HandleT) statusInsertLoop() {
 					if err != nil {
 						errorCode = 200 //TODO handle properly
 					}
-					sd = reporting.CreateStatusDetail(getStatus(resp.status.JobState), 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload)
+					sd = reporting.CreateStatusDetail(reporting.GetStatus(resp.status.JobState), 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload)
 					statusDetailsMap[key] = sd
 				}
 				sd.Count++
