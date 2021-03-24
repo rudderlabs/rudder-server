@@ -538,7 +538,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	for k, cd := range connectionDetailsMap {
 		m := &reporting.PUReportedMetric{
 			ConnectionDetails: *cd,
-			PUDetails:         *reporting.CreatePUDetails("DT", "BRT", false, terminalPU),
+			PUDetails:         *reporting.CreatePUDetails(reporting.DEST_TRANSFORMER, reporting.BATCH_ROUTER, terminalPU, false),
 			StatusDetail:      statusDetailsMap[k],
 		}
 		reportMetrics = append(reportMetrics, m)

@@ -487,8 +487,8 @@ func (job *UploadJobT) run() (err error) {
 					BatchID:       job.upload.SourceBatchID,
 				},
 				PUDetails: reporting.PUDetails{
-					InPU:       "batch_router",
-					PU:         "warehouse",
+					InPU:       reporting.BATCH_ROUTER,
+					PU:         reporting.WAREHOUSE,
 					TerminalPU: true,
 				},
 				StatusDetail: &reporting.StatusDetail{
@@ -1259,8 +1259,8 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 			BatchID:       job.upload.SourceBatchID,
 		},
 		PUDetails: reporting.PUDetails{
-			InPU:       "batch_router",
-			PU:         "warehouse",
+			InPU:       reporting.BATCH_ROUTER,
+			PU:         reporting.WAREHOUSE,
 			TerminalPU: true,
 		},
 		StatusDetail: &reporting.StatusDetail{
@@ -1279,8 +1279,8 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 				BatchID:       job.upload.SourceBatchID,
 			},
 			PUDetails: reporting.PUDetails{
-				InPU:       "batch_router",
-				PU:         "warehouse",
+				InPU:       reporting.BATCH_ROUTER,
+				PU:         reporting.WAREHOUSE,
 				TerminalPU: true,
 			},
 			StatusDetail: &reporting.StatusDetail{

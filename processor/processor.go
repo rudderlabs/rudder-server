@@ -720,7 +720,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 	for k, cd := range connectionDetailsMap {
 		m := &reporting.PUReportedMetric{
 			ConnectionDetails: *cd,
-			PUDetails:         *reporting.CreatePUDetails("GW", "UT", false, false),
+			PUDetails:         *reporting.CreatePUDetails(reporting.GATEWAY, reporting.USER_TRANSFORMER, false, false),
 			StatusDetail:      statusDetailsMap[k],
 		}
 		successMetrics = append(successMetrics, m)
@@ -801,14 +801,14 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 	var inPU, pu string
 	if stage == transformer.DestTransformerStage {
 		if transformationEnabled {
-			inPU = "UT"
+			inPU = reporting.USER_TRANSFORMER
 		} else {
-			inPU = "GW"
+			inPU = reporting.GATEWAY
 		}
-		pu = "DT"
+		pu = reporting.DEST_TRANSFORMER
 	} else if stage == transformer.UserTransformerStage {
-		inPU = "GW"
-		pu = "UT"
+		inPU = reporting.GATEWAY
+		pu = reporting.USER_TRANSFORMER
 	}
 	for k, cd := range connectionDetailsMap {
 		m := &reporting.PUReportedMetric{
@@ -1149,14 +1149,14 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//TODO not necessary, remove these panics?
 		reporting.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
-		inPU := "GW"
+		inPU := reporting.GATEWAY
 		if transformationEnabled {
-			inPU = "UT"
+			inPU = reporting.USER_TRANSFORMER
 		}
 		for k, cd := range connectionDetailsMap {
 			m := &reporting.PUReportedMetric{
 				ConnectionDetails: *cd,
-				PUDetails:         *reporting.CreatePUDetails(inPU, "DT", false, false),
+				PUDetails:         *reporting.CreatePUDetails(inPU, reporting.DEST_TRANSFORMER, false, false),
 				StatusDetail:      statusDetailsMap[k],
 			}
 			successMetrics = append(successMetrics, m)

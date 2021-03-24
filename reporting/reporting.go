@@ -34,13 +34,21 @@ type Config struct {
 	ConnInfo    string
 }
 
-const (
+var (
 	SuccessStatus   = jobsdb.Succeeded.State
 	AbortStatus     = jobsdb.Aborted.State
 	WaitingStatus   = jobsdb.Waiting.State
 	ThrottledStatus = jobsdb.Throttled.State
 	FailStatus      = jobsdb.Failed.State
 	DiffStatus      = "diff"
+
+	//Module names
+	GATEWAY = "gateway"
+	USER_TRANSFORMER = "user_transformer"
+	DEST_TRANSFORMER = "dest_transformer"
+	ROUTER = "router"
+	BATCH_ROUTER = "batch_router"
+	WAREHOUSE = "warehouse"
 )
 
 type StatusDetail struct {

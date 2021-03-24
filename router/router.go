@@ -1029,7 +1029,7 @@ func (rt *HandleT) statusInsertLoop() {
 			for k, cd := range connectionDetailsMap {
 				m := &reporting.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *reporting.CreatePUDetails("DT", "RT", true, false),
+					PUDetails:         *reporting.CreatePUDetails(reporting.DEST_TRANSFORMER, reporting.ROUTER, true, false),
 					StatusDetail:      statusDetailsMap[k],
 				}
 				reportMetrics = append(reportMetrics, m)
