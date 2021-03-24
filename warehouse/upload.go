@@ -75,6 +75,7 @@ type UploadT struct {
 	Namespace          string
 	SourceID           string
 	DestinationID      string
+	SourceBatchID      string
 	DestinationType    string
 	StartStagingFileID int64
 	EndStagingFileID   int64
@@ -483,6 +484,7 @@ func (job *UploadJobT) run() (err error) {
 				ConnectionDetails: reporting.ConnectionDetails{
 					SourceID:      job.upload.SourceID,
 					DestinationID: job.upload.DestinationID,
+					BatchID:       job.upload.SourceBatchID,
 				},
 				PUDetails: reporting.PUDetails{
 					InPU:       "batch_router",
@@ -1208,7 +1210,11 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 		}
 	}
 
-	metadata := make(map[string]string)
+	var metadata map[string]string
+	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
+	if unmarshallErr != nil {
+		metadata = make(map[string]string)
+	}
 	lastAttempt := upload.LastAttemptAt
 	if lastAttempt.IsZero() {
 		lastAttempt = timeutil.Now()
@@ -1250,6 +1256,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 		ConnectionDetails: reporting.ConnectionDetails{
 			SourceID:      job.upload.SourceID,
 			DestinationID: job.upload.DestinationID,
+			BatchID:       job.upload.SourceBatchID,
 		},
 		PUDetails: reporting.PUDetails{
 			InPU:       "batch_router",
@@ -1269,6 +1276,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 			ConnectionDetails: reporting.ConnectionDetails{
 				SourceID:      job.upload.SourceID,
 				DestinationID: job.upload.DestinationID,
+				BatchID:       job.upload.SourceBatchID,
 			},
 			PUDetails: reporting.PUDetails{
 				InPU:       "batch_router",

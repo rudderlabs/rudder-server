@@ -115,6 +115,7 @@ type TableSchemaT map[string]string
 type StagingFileT struct {
 	Schema           map[string]map[string]interface{}
 	BatchDestination DestinationT
+	SourceBatchID    string
 	Location         string
 	FirstEventAt     string
 	LastEventAt      string

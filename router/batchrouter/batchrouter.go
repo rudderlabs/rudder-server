@@ -363,16 +363,22 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 			}
 		}
 	}
+	var sampleParameters JobParametersT
+	err = json.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
+	if err != nil {
+		brt.logger.Error("Unmarshal of job parameters failed in postToWarehouse function. ", string(batchJobs.Jobs[0].Parameters))
+	}
 	payload := warehouseutils.StagingFileT{
 		Schema: schemaMap,
 		BatchDestination: warehouseutils.DestinationT{
 			Source:      batchJobs.BatchDestination.Source,
 			Destination: batchJobs.BatchDestination.Destination,
 		},
-		Location:     output.Key,
-		FirstEventAt: output.FirstEventAt,
-		LastEventAt:  output.LastEventAt,
-		TotalEvents:  output.TotalEvents,
+		SourceBatchID: sampleParameters.SourceBatchID,
+		Location:      output.Key,
+		FirstEventAt:  output.FirstEventAt,
+		LastEventAt:   output.LastEventAt,
+		TotalEvents:   output.TotalEvents,
 	}
 
 	jsonPayload, err := json.Marshal(&payload)

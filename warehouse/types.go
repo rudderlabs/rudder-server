@@ -43,14 +43,15 @@ type LoadFileJobT struct {
 }
 
 type StagingFileT struct {
-	ID           int64
-	Location     string
-	SourceID     string
-	Schema       json.RawMessage
-	Status       string // enum
-	CreatedAt    time.Time
-	FirstEventAt time.Time
-	LastEventAt  time.Time
+	ID            int64
+	Location      string
+	SourceID      string
+	SourceBatchID string
+	Schema        json.RawMessage
+	Status        string // enum
+	CreatedAt     time.Time
+	FirstEventAt  time.Time
+	LastEventAt   time.Time
 }
 
 type BatchRouterEventT struct {
