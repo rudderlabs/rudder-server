@@ -57,12 +57,12 @@ func loadRouterConfig() {
 	_maxRetry := config.GetInt("Processor.maxRetry", 30)
 	if _maxRetry != maxRetry {
 		maxRetry = _maxRetry
-		pkgLogger.Info("Processor.maxRetry changes to %s", maxRetry)
+		pkgLogger.Info("Processor.maxRetry changes to ", maxRetry)
 	}
 	_retrySleep := config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
 	if _retrySleep != retrySleep {
 		retrySleep = _retrySleep
-		pkgLogger.Info("Processor.retrySleep changes to %s", retrySleep)
+		pkgLogger.Info("Processor.retrySleep changes to ", retrySleep)
 	}
 }
 

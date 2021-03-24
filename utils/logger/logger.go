@@ -167,52 +167,52 @@ func loggerReloaderConfig() {
 	_rootLevel := levelMap[config.GetEnv("LOG_LEVEL", "INFO")]
 	if _rootLevel != rootLevel {
 		rootLevel = _rootLevel
-		Log.Info("LOG_LEVEL changes to %s", rootLevel)
+		Log.Info("LOG_LEVEL changes to ", rootLevel)
 	}
 	_enableConsole := config.GetBool("Logger.enableConsole", true)
 	if _enableConsole != enableConsole {
 		enableConsole = _enableConsole
-		Log.Info("Logger.enableConsole changes to %s", enableConsole)
+		Log.Info("Logger.enableConsole changes to ", enableConsole)
 	}
 	_enableFile := config.GetBool("Logger.enableFile", false)
 	if _enableFile != enableFile {
 		enableFile = _enableFile
-		Log.Info("Logger.enableFile changes to %s", enableFile)
+		Log.Info("Logger.enableFile changes to ", enableFile)
 	}
 	_consoleJsonFormat := config.GetBool("Logger.consoleJsonFormat", false)
 	if _consoleJsonFormat != consoleJsonFormat {
 		consoleJsonFormat = _consoleJsonFormat
-		Log.Info("Logger.consoleJsonFormat changes to %s", consoleJsonFormat)
+		Log.Info("Logger.consoleJsonFormat changes to ", consoleJsonFormat)
 	}
 	_fileJsonFormat := config.GetBool("Logger.fileJsonFormat", false)
 	if _fileJsonFormat != fileJsonFormat {
 		fileJsonFormat = _fileJsonFormat
-		Log.Info("Logger.fileJsonFormat changes to %s", fileJsonFormat)
+		Log.Info("Logger.fileJsonFormat changes to ", fileJsonFormat)
 	}
 	_logFileLocation := config.GetString("Logger.logFileLocation", "/tmp/rudder_log.log")
 	if _logFileLocation != logFileLocation {
 		logFileLocation = _logFileLocation
-		Log.Info("Logger.logFileLocation changes to %s", logFileLocation)
+		Log.Info("Logger.logFileLocation changes to ", logFileLocation)
 	}
 	_logFileSize := config.GetInt("Logger.logFileSize", 100)
 	if _logFileSize != logFileSize {
 		logFileSize = _logFileSize
-		Log.Info("Logger.logFileSize changes to %s", logFileSize)
+		Log.Info("Logger.logFileSize changes to ", logFileSize)
 	}
 	_enableTimestamp := config.GetBool("Logger.enableTimestamp", true)
 	if _enableTimestamp != enableTimestamp {
 		enableTimestamp = _enableTimestamp
-		Log.Info("Logger.enableTimestamp changes to %s", enableTimestamp)
+		Log.Info("Logger.enableTimestamp changes to ", enableTimestamp)
 	}
 	_enableFileNameInLog := config.GetBool("Logger.enableFileNameInLog", false)
 	if _enableFileNameInLog != enableFileNameInLog {
 		enableFileNameInLog = _enableFileNameInLog
-		Log.Info("Logger.enableFileNameInLog changes to %s", enableFileNameInLog)
+		Log.Info("Logger.enableFileNameInLog changes to ", enableFileNameInLog)
 	}
 	_enableStackTrace := config.GetBool("Logger.enableStackTrace", false)
 	if _enableStackTrace != enableStackTrace {
 		enableStackTrace = _enableStackTrace
-		Log.Info("Logger.enableStackTrace changes to %s", enableStackTrace)
+		Log.Info("Logger.enableStackTrace changes to ", enableStackTrace)
 	}
 
 	// colon separated key value pairs

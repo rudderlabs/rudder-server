@@ -44,32 +44,32 @@ func gatewayReloadableConfig() {
 	_userWebRequestBatchTimeout := (config.GetDuration("Gateway.userWebRequestBatchTimeoutInMS", time.Duration(15)) * time.Millisecond)
 	if _userWebRequestBatchTimeout != userWebRequestBatchTimeout {
 		userWebRequestBatchTimeout = _userWebRequestBatchTimeout
-		pkgLogger.Info("Gateway.userWebRequestBatchTimeoutInMS changes to %s", userWebRequestBatchTimeout)
+		pkgLogger.Info("Gateway.userWebRequestBatchTimeoutInMS changes to ", userWebRequestBatchTimeout)
 	}
 	_dbBatchWriteTimeout := (config.GetDuration("Gateway.dbBatchWriteTimeoutInMS", time.Duration(5)) * time.Millisecond)
 	if _dbBatchWriteTimeout != dbBatchWriteTimeout {
 		dbBatchWriteTimeout = _dbBatchWriteTimeout
-		pkgLogger.Info("Gateway.dbBatchWriteTimeoutInMS changes to %s", userWebRequestBatchTimeout)
+		pkgLogger.Info("Gateway.dbBatchWriteTimeoutInMS changes to ", userWebRequestBatchTimeout)
 	}
 	_maxReqSize := config.GetInt("Gateway.maxReqSizeInKB", 4000) * 1024
 	if _maxReqSize != maxReqSize {
 		maxReqSize = _maxReqSize
-		pkgLogger.Info("Gateway.maxReqSizeInKB changes to %s", maxReqSize)
+		pkgLogger.Info("Gateway.maxReqSizeInKB changes to ", maxReqSize)
 	}
 	_enableRateLimit := config.GetBool("Gateway.enableRateLimit", false)
 	if _enableRateLimit != enableRateLimit {
 		enableRateLimit = _enableRateLimit
-		pkgLogger.Info("Gateway.enableRateLimit changes to %s", enableRateLimit)
+		pkgLogger.Info("Gateway.enableRateLimit changes to ", enableRateLimit)
 	}
 	_allowReqsWithoutUserIDAndAnonymousID := config.GetBool("Gateway.allowReqsWithoutUserIDAndAnonymousID", false)
 	if _allowReqsWithoutUserIDAndAnonymousID != allowReqsWithoutUserIDAndAnonymousID {
 		allowReqsWithoutUserIDAndAnonymousID = _allowReqsWithoutUserIDAndAnonymousID
-		pkgLogger.Info("Gateway.allowReqsWithoutUserIDAndAnonymousID changes to %s", allowReqsWithoutUserIDAndAnonymousID)
+		pkgLogger.Info("Gateway.allowReqsWithoutUserIDAndAnonymousID changes to ", allowReqsWithoutUserIDAndAnonymousID)
 	}
 	_gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
 	if _gwAllowPartialWriteWithErrors != gwAllowPartialWriteWithErrors {
 		gwAllowPartialWriteWithErrors = _gwAllowPartialWriteWithErrors
-		pkgLogger.Info("Gateway.gwAllowPartialWriteWithErrors changes to %s", gwAllowPartialWriteWithErrors)
+		pkgLogger.Info("Gateway.gwAllowPartialWriteWithErrors changes to ", gwAllowPartialWriteWithErrors)
 	}
 
 }

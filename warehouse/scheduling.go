@@ -48,12 +48,12 @@ func schedulingReloadableconfig() {
 	_minUploadBackoff := config.GetDuration("Warehouse.minUploadBackoffInS", time.Duration(60)) * time.Second
 	if _minUploadBackoff != minUploadBackoff {
 		minUploadBackoff = _minUploadBackoff
-		pkgLogger.Info("Warehouse.minUploadBackoffInS changes to %s", minUploadBackoff)
+		pkgLogger.Info("Warehouse.minUploadBackoffInS changes to ", minUploadBackoff)
 	}
 	_maxUploadBackoff := config.GetDuration("Warehouse.maxUploadBackoffInS", time.Duration(1800)) * time.Second
 	if _maxUploadBackoff != maxUploadBackoff {
 		maxUploadBackoff = _maxUploadBackoff
-		pkgLogger.Info("Warehouse.maxUploadBackoffInS changes to %s", maxUploadBackoff)
+		pkgLogger.Info("Warehouse.maxUploadBackoffInS changes to ", maxUploadBackoff)
 	}
 }
 
