@@ -715,12 +715,12 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventsToTransform = append(eventsToTransform, updatedEvent)
 	}
 
-	assertSameKeys(connectionDetailsMap, statusDetailsMap)
+	reporting.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
 	for k, cd := range connectionDetailsMap {
 		m := &reporting.PUReportedMetric{
 			ConnectionDetails: *cd,
-			PUDetails:         *createPUDetails("GW", "UT"),
+			PUDetails:         *reporting.CreatePUDetails("GW", "UT", false, false),
 			StatusDetail:      statusDetailsMap[k],
 		}
 		successMetrics = append(successMetrics, m)
@@ -729,51 +729,16 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 	return eventsToTransform, successMetrics
 }
 
-func assertSameKeys(m1 map[string]*reporting.ConnectionDetails, m2 map[string]*reporting.StatusDetail) {
-	if len(m1) != len(m2) {
-		panic("maps length don't match") //TODO improve msg
-	}
-	for k := range m1 {
-		if _, ok := m2[k]; !ok {
-			panic("key in map1 not found in map2") //TODO improve msg
-		}
-	}
-}
-
-func createConnectionDetail(sid, did, bid string) *reporting.ConnectionDetails {
-	return &reporting.ConnectionDetails{SourceID: sid,
-		DestinationID: did,
-		BatchID:       bid}
-}
-
-func createStatusDetail(status string, count int64, code int, resp string, event json.RawMessage) *reporting.StatusDetail {
-	return &reporting.StatusDetail{
-		Status:         status,
-		Count:          count,
-		StatusCode:     code,
-		SampleResponse: resp,
-		SampleEvent:    event}
-}
-
-func createPUDetails(inPU, pu string) *reporting.PUDetails {
-	return &reporting.PUDetails{
-		InPU:       inPU,
-		PU:         pu,
-		TerminalPU: false,
-		InitialPU:  false,
-	}
-}
-
 func updateMetricMaps(connectionDetailsMap map[string]*reporting.ConnectionDetails, statusDetailsMap map[string]*reporting.StatusDetail, event transformer.TransformerResponseT, status string, payload json.RawMessage) {
 	key := fmt.Sprintf("%s:%s:%d:%s:%d", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, status, event.StatusCode)
 	cd, ok := connectionDetailsMap[key]
 	if !ok {
-		cd = createConnectionDetail(event.Metadata.SourceID, event.Metadata.DestinationID, strconv.FormatInt(event.Metadata.SourceBatchID, 10))
+		cd = reporting.CreateConnectionDetail(event.Metadata.SourceID, event.Metadata.DestinationID, strconv.FormatInt(event.Metadata.SourceBatchID, 10))
 		connectionDetailsMap[key] = cd
 	}
 	sd, ok := statusDetailsMap[key]
 	if !ok {
-		sd = createStatusDetail(status, 0, event.StatusCode, event.Error, payload)
+		sd = reporting.CreateStatusDetail(status, 0, event.StatusCode, event.Error, payload)
 		statusDetailsMap[key] = sd
 	}
 	sd.Count++
@@ -831,7 +796,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		procErrorStat.Increment()
 	}
 
-	assertSameKeys(connectionDetailsMap, statusDetailsMap)
+	reporting.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
 	var inPU, pu string
 	if stage == transformer.DestTransformerStage {
@@ -848,7 +813,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 	for k, cd := range connectionDetailsMap {
 		m := &reporting.PUReportedMetric{
 			ConnectionDetails: *cd,
-			PUDetails:         *createPUDetails(inPU, pu),
+			PUDetails:         *reporting.CreatePUDetails(inPU, pu, false, false),
 			StatusDetail:      statusDetailsMap[k],
 		}
 		failedMetrics = append(failedMetrics, m)
@@ -1182,7 +1147,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 
 		//TODO not necessary, remove these panics?
-		assertSameKeys(connectionDetailsMap, statusDetailsMap)
+		reporting.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
 		inPU := "GW"
 		if transformationEnabled {
@@ -1191,7 +1156,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		for k, cd := range connectionDetailsMap {
 			m := &reporting.PUReportedMetric{
 				ConnectionDetails: *cd,
-				PUDetails:         *createPUDetails(inPU, "DT"),
+				PUDetails:         *reporting.CreatePUDetails(inPU, "DT", false, false),
 				StatusDetail:      statusDetailsMap[k],
 			}
 			successMetrics = append(successMetrics, m)
@@ -1201,7 +1166,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 
 	//TODO remove prints
-	fmt.Println("&&&&&&&&&&&&&&&&&&&&&")
+	fmt.Println("&&&&&&&&&&&&&&&&&&&&& PROCESSOR")
 	fmt.Printf("length of reportMetrics : %d\n", len(reportMetrics))
 	for _, m := range reportMetrics {
 		fmt.Printf("%v\n", m.ConnectionDetails)

@@ -15,6 +15,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/reporting"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/drain"
@@ -98,6 +99,7 @@ type JobParametersT struct {
 	DestinationID string `json:"destination_id"`
 	ReceivedAt    string `json:"received_at"`
 	TransformAt   string `json:"transform_at"`
+	SourceBatchID string `json:"source_batch_id"`
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -944,6 +946,26 @@ func (rt *HandleT) Disable() {
 	rt.isEnabled = false
 }
 
+func getStatus(jobState string) string {
+	if jobState == jobsdb.Succeeded.State {
+		return reporting.SuccessStatus
+	}
+	if jobState == jobsdb.Failed.State {
+		return reporting.FailStatus
+	}
+	if jobState == jobsdb.Aborted.State {
+		return reporting.AbortStatus
+	}
+	if jobState == jobsdb.Waiting.State {
+		return reporting.WaitingStatus
+	}
+	if jobState == jobsdb.Throttled.State {
+		return reporting.ThrottledStatus
+	}
+
+	return reporting.FailStatus
+}
+
 func (rt *HandleT) statusInsertLoop() {
 
 	var responseList []jobResponseT
@@ -968,10 +990,37 @@ func (rt *HandleT) statusInsertLoop() {
 			//but approx is good enough at the cost of reduced computation.
 		}
 		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
+			reportMetrics := make([]*reporting.PUReportedMetric, 0)
+			connectionDetailsMap := make(map[string]*reporting.ConnectionDetails)
+			statusDetailsMap := make(map[string]*reporting.StatusDetail)
+
 			statusStat.Start()
 			var statusList []*jobsdb.JobStatusT
 			var routerAbortedJobs []*jobsdb.JobT
 			for _, resp := range responseList {
+				//Update metrics maps
+				var parameters JobParametersT
+				err := json.Unmarshal(resp.JobT.Parameters, &parameters)
+				if err != nil {
+					rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
+				}
+				key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, getStatus(resp.status.JobState), resp.status.ErrorCode)
+				cd, ok := connectionDetailsMap[key]
+				if !ok {
+					cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID)
+					connectionDetailsMap[key] = cd
+				}
+				sd, ok := statusDetailsMap[key]
+				if !ok {
+					errorCode, err := strconv.Atoi(resp.status.ErrorCode)
+					if err != nil {
+						errorCode = 200 //TODO handle properly
+					}
+					sd = reporting.CreateStatusDetail(getStatus(resp.status.JobState), 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload)
+					statusDetailsMap[key] = sd
+				}
+				sd.Count++
+
 				statusList = append(statusList, resp.status)
 
 				if resp.status.JobState == jobsdb.Aborted.State {
@@ -996,6 +1045,16 @@ func (rt *HandleT) statusInsertLoop() {
 				}
 			}
 
+			reporting.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+			for k, cd := range connectionDetailsMap {
+				m := &reporting.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reporting.CreatePUDetails("DT", "RT", false, true),
+					StatusDetail:      statusDetailsMap[k],
+				}
+				reportMetrics = append(reportMetrics, m)
+			}
+
 			if len(statusList) > 0 {
 				rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
 
@@ -1007,7 +1066,12 @@ func (rt *HandleT) statusInsertLoop() {
 					rt.errorDB.Store(routerAbortedJobs)
 				}
 				//Update the status
-				rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
+				txn := rt.jobsDB.BeginGlobalTransaction()
+				rt.jobsDB.AcquireUpdateJobStatusLocks()
+				rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil)
+				reporting.GetClient().Report(reportMetrics, txn)
+				rt.jobsDB.CommitTransaction(txn)
+				rt.jobsDB.ReleaseUpdateJobStatusLocks()
 			}
 
 			if rt.guaranteeUserEventOrder {
@@ -1038,6 +1102,18 @@ func (rt *HandleT) statusInsertLoop() {
 			lastUpdate = time.Now()
 			countStat.Count(len(responseList))
 			statusStat.End()
+
+			//TODO remove prints
+			if len(reportMetrics) > 0 {
+				fmt.Println("&&&&&&&&&&&&&&&&&&&&& ROUTER")
+				fmt.Printf("length of reportMetrics : %d\n", len(reportMetrics))
+				for _, m := range reportMetrics {
+					fmt.Printf("%v\n", m.ConnectionDetails)
+					fmt.Printf("%v\n", m.PUDetails)
+					fmt.Printf("%v\n", m.StatusDetail)
+				}
+				fmt.Println("&&&&&&&&&&&&&&&&&&&&&")
+			}
 		}
 	}
 

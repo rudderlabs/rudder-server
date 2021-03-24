@@ -34,10 +34,12 @@ type Config struct {
 }
 
 const (
-	SuccessStatus = "success_count"
-	AbortStatus   = "abort_count"
-	FailStatus    = "fail_count"
-	DiffStatus    = "diff_count"
+	SuccessStatus   = "success_count"
+	AbortStatus     = "abort_count"
+	WaitingStatus   = "wait_count"
+	ThrottledStatus = "throttled_count"
+	FailStatus      = "fail_count"
+	DiffStatus      = "diff_count"
 )
 
 type StatusDetail struct {
@@ -155,6 +157,41 @@ func Setup(c Config, backendConfig backendconfig.BackendConfig) {
 
 func GetClient() *Client {
 	return client
+}
+
+func CreateConnectionDetail(sid, did, bid string) *ConnectionDetails {
+	return &ConnectionDetails{SourceID: sid,
+		DestinationID: did,
+		BatchID:       bid}
+}
+
+func CreateStatusDetail(status string, count int64, code int, resp string, event json.RawMessage) *StatusDetail {
+	return &StatusDetail{
+		Status:         status,
+		Count:          count,
+		StatusCode:     code,
+		SampleResponse: resp,
+		SampleEvent:    event}
+}
+
+func CreatePUDetails(inPU, pu string, terminalPU, initialPU bool) *PUDetails {
+	return &PUDetails{
+		InPU:       inPU,
+		PU:         pu,
+		TerminalPU: terminalPU,
+		InitialPU:  initialPU,
+	}
+}
+
+func AssertSameKeys(m1 map[string]*ConnectionDetails, m2 map[string]*StatusDetail) {
+	if len(m1) != len(m2) {
+		panic("maps length don't match") //TODO improve msg
+	}
+	for k := range m1 {
+		if _, ok := m2[k]; !ok {
+			panic("key in map1 not found in map2") //TODO improve msg
+		}
+	}
 }
 
 func getReports(current_min int64) (reports []*ReportByStatus, reportedMin int64) {
