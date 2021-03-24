@@ -35,12 +35,12 @@ type Config struct {
 }
 
 const (
-	SuccessStatus   = "success_count"
-	AbortStatus     = "abort_count"
-	WaitingStatus   = "wait_count"
-	ThrottledStatus = "throttled_count"
-	FailStatus      = "fail_count"
-	DiffStatus      = "diff_count"
+	SuccessStatus   = jobsdb.Succeeded.State
+	AbortStatus     = jobsdb.Aborted.State
+	WaitingStatus   = jobsdb.Waiting.State
+	ThrottledStatus = jobsdb.Throttled.State
+	FailStatus      = jobsdb.Failed.State
+	DiffStatus      = "diff"
 )
 
 type StatusDetail struct {
@@ -322,7 +322,7 @@ func mainLoop() {
 				panic(err)
 			}
 			operation := func() error {
-				uri := "https://webhook.site/dde3d1aa-abc1-4270-8e2d-ffbb84c1fa94"
+				uri := "https://webhook.site/f44086e2-bbd8-4a2b-b41d-9f7c635783db"
 				_, err := netClient.Post(uri, "application/json; charset=utf-8",
 					bytes.NewBuffer(payload))
 				return err
