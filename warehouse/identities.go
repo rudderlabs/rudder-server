@@ -41,7 +41,7 @@ func updateConfigFileIdentities() {
 		_shouldPopulateHistoricIdentities := config.GetBool("Warehouse.populateHistoricIdentities", false)
 		if _shouldPopulateHistoricIdentities != shouldPopulateHistoricIdentities {
 			shouldPopulateHistoricIdentities = _shouldPopulateHistoricIdentities
-			pkgLogger.Info("Warehouse.populateHistoricIdentities changes to %s", shouldPopulateHistoricIdentities)
+			pkgLogger.Info("Warehouse.populateHistoricIdentities changes to ", shouldPopulateHistoricIdentities)
 		}
 	}
 }

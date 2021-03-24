@@ -57,17 +57,17 @@ func stashReloadableConfig() {
 	_maxFailedCountForErrJob := config.GetInt("BatchRouter.maxFailedCountForErrJob", 3)
 	if _maxFailedCountForErrJob != maxFailedCountForErrJob {
 		maxFailedCountForErrJob = _maxFailedCountForErrJob
-		pkgLogger.Info("BatchRouter.maxFailedCountForErrJob changes to %s", maxFailedCountForErrJob)
+		pkgLogger.Info("BatchRouter.maxFailedCountForErrJob changes to ", maxFailedCountForErrJob)
 	}
 	_errDBReadBatchSize := config.GetInt("Processor.errDBReadBatchSize", 10000)
 	if _errDBReadBatchSize != errDBReadBatchSize {
 		errDBReadBatchSize = _errDBReadBatchSize
-		pkgLogger.Info("Processor.errDBReadBatchSize changes to %s", errDBReadBatchSize)
+		pkgLogger.Info("Processor.errDBReadBatchSize changes to ", errDBReadBatchSize)
 	}
 	_errReadLoopSleep := config.GetDuration("Processor.errReadLoopSleepInS", time.Duration(30)) * time.Second
 	if _errReadLoopSleep != errReadLoopSleep {
 		errReadLoopSleep = _errReadLoopSleep
-		pkgLogger.Info("Processor.errReadLoopSleepInS changes to %s", errReadLoopSleep)
+		pkgLogger.Info("Processor.errReadLoopSleepInS changes to ", errReadLoopSleep)
 	}
 }
 

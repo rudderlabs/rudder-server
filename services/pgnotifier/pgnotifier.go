@@ -112,22 +112,22 @@ func pgNotifierReloadableConfig() {
 	_maxAttempt := config.GetInt("PgNotifier.maxAttempt", 3)
 	if _maxAttempt != maxAttempt {
 		maxAttempt = _maxAttempt
-		pkgLogger.Info("PgNotifier.maxAttempt changes to %s", maxAttempt)
+		pkgLogger.Info("PgNotifier.maxAttempt changes to ", maxAttempt)
 	}
 	_trackBatchInterval := time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
 	if _trackBatchInterval != trackBatchInterval {
 		trackBatchInterval = _trackBatchInterval
-		pkgLogger.Info("PgNotifier.trackBatchIntervalInS changes to %s", trackBatchInterval)
+		pkgLogger.Info("PgNotifier.trackBatchIntervalInS changes to ", trackBatchInterval)
 	}
 	_retriggerInterval := time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
 	if _retriggerInterval != retriggerInterval {
 		retriggerInterval = _retriggerInterval
-		pkgLogger.Info("PgNotifier.retriggerIntervalInS changes to %s", retriggerInterval)
+		pkgLogger.Info("PgNotifier.retriggerIntervalInS changes to ", retriggerInterval)
 	}
 	_retriggerCount := config.GetInt("PgNotifier.retriggerCount", 500)
 	if _retriggerCount != retriggerCount {
 		retriggerCount = _retriggerCount
-		pkgLogger.Info("PgNotifier.retriggerCount changes to %s", retriggerCount)
+		pkgLogger.Info("PgNotifier.retriggerCount changes to ", retriggerCount)
 	}
 }
 

@@ -171,22 +171,22 @@ func clickHouseReloadableConfig() {
 	_queryDebugLogs := config.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
 	if _queryDebugLogs != queryDebugLogs {
 		queryDebugLogs = _queryDebugLogs
-		pkgLogger.Info("Warehouse.clickhouse.queryDebugLogs changes to %s", queryDebugLogs)
+		pkgLogger.Info("Warehouse.clickhouse.queryDebugLogs changes to ", queryDebugLogs)
 	}
 	_blockSize := config.GetString("Warehouse.clickhouse.blockSize", "1000")
 	if _blockSize != blockSize {
 		blockSize = _blockSize
-		pkgLogger.Info("Warehouse.clickhouse.blockSize changes to %s", blockSize)
+		pkgLogger.Info("Warehouse.clickhouse.blockSize changes to ", blockSize)
 	}
 	_poolSize := config.GetString("Warehouse.clickhouse.poolSize", "10")
 	if _poolSize != poolSize {
 		poolSize = _poolSize
-		pkgLogger.Info("Warehouse.clickhouse.poolSize changes to %s", poolSize)
+		pkgLogger.Info("Warehouse.clickhouse.poolSize changes to ", poolSize)
 	}
 	_disableNullable := config.GetBool("Warehouse.clickhouse.disableNullable", false)
 	if _disableNullable != disableNullable {
 		disableNullable = _disableNullable
-		pkgLogger.Info("Warehouse.clickhouse.disableNullable changes to %s", disableNullable)
+		pkgLogger.Info("Warehouse.clickhouse.disableNullable changes to ", disableNullable)
 	}
 }
 

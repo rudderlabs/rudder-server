@@ -42,7 +42,7 @@ func archiverReloadableConfig() {
 	_archivalTimeInDays := config.GetInt("JobsDB.archivalTimeInDays", 10)
 	if _archivalTimeInDays != archivalTimeInDays {
 		archivalTimeInDays = _archivalTimeInDays
-		pkgLogger.Info("JobsDB.archivalTimeInDays changes to %s", archivalTimeInDays)
+		pkgLogger.Info("JobsDB.archivalTimeInDays changes to ", archivalTimeInDays)
 	}
 }
 
