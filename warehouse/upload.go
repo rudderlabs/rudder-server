@@ -277,9 +277,11 @@ func (job *UploadJobT) run() (err error) {
 
 	// set last_exec_at to record last upload start time
 	// sync scheduling with syncStartAt depends on this determine to start upload or not
-	job.setUploadColumns(
-		UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
-	)
+	// job.setUploadColumns(
+	// 	UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
+	// )
+
+	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}}})
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
@@ -322,7 +324,7 @@ func (job *UploadJobT) run() (err error) {
 	for {
 		err = nil
 
-		job.setUploadStatus(nextUploadState.inProgress)
+		job.setUploadStatus(UploadStatusOpts{Status: nextUploadState.inProgress})
 		pkgLogger.Debugf("[WH] Upload: %d, Current state: %s", job.upload.ID, nextUploadState.inProgress)
 
 		targetStatus := nextUploadState.completed
@@ -474,8 +476,8 @@ func (job *UploadJobT) run() (err error) {
 		}
 
 		pkgLogger.Debugf("[WH] Upload: %d, Next state: %s", job.upload.ID, newStatus)
-		job.setUploadStatus(newStatus)
 
+		uploadStatusOpts := UploadStatusOpts{Status: newStatus}
 		if newStatus == ExportedData {
 			reportingMetric := reporting.PUReportedMetric{
 				ConnectionDetails: reporting.ConnectionDetails{
@@ -494,15 +496,11 @@ func (job *UploadJobT) run() (err error) {
 					SampleEvent: []byte("{}"),
 				},
 			}
-			txn, txnErr := job.dbHandle.Begin()
-			if txnErr != nil {
-				panic(txnErr)
-			}
-			reporting.GetClient().Report([]*reporting.PUReportedMetric{&reportingMetric}, txn)
-			txnErr = txn.Commit()
-			if txnErr != nil {
-				panic(txnErr)
-			}
+			uploadStatusOpts.ReportingMetric = reportingMetric
+		}
+		job.setUploadStatus(uploadStatusOpts)
+
+		if newStatus == ExportedData {
 			break
 		}
 
@@ -1082,22 +1080,42 @@ func (job *UploadJobT) getUploadFirstAttemptTime() (timing time.Time) {
 	return timing
 }
 
-func (job *UploadJobT) setUploadStatus(status string, additionalFields ...UploadColumnT) (err error) {
-	pkgLogger.Debugf("[WH]: Setting status of %s for wh_upload:%v", status, job.upload.ID)
-	marshalledTimings, timings := job.getNewTimings(status)
+type UploadStatusOpts struct {
+	Status           string
+	AdditionalFields []UploadColumnT
+	ReportingMetric  reporting.PUReportedMetric
+}
+
+func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
+	pkgLogger.Debugf("[WH]: Setting status of %s for wh_upload:%v", statusOpts.Status, job.upload.ID)
+	marshalledTimings, timings := job.getNewTimings(statusOpts.Status)
 	opts := []UploadColumnT{
-		{Column: UploadStatusField, Value: status},
+		{Column: UploadStatusField, Value: statusOpts.Status},
 		{Column: UploadTimingsField, Value: marshalledTimings},
 		{Column: UploadUpdatedAtField, Value: timeutil.Now()},
 	}
 
-	job.upload.Status = status
+	job.upload.Status = statusOpts.Status
 	job.upload.Timings = timings
-	additionalFields = append(additionalFields, opts...)
+	additionalFields := append(statusOpts.AdditionalFields, opts...)
 
-	return job.setUploadColumns(
-		additionalFields...,
-	)
+	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
+
+	if statusOpts.ReportingMetric != (reporting.PUReportedMetric{}) {
+		txn, err := dbHandle.Begin()
+		uploadColumnOpts.Txn = txn
+		err = job.setUploadColumns(uploadColumnOpts)
+		if err != nil {
+			return err
+		}
+		reporting.GetClient().Report([]*reporting.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
+		err = txn.Commit()
+		return err
+	}
+	return job.setUploadColumns(uploadColumnOpts)
+	// return job.setUploadColumns(
+	// 	additionalFields...,
+	// )
 }
 
 // SetSchema
@@ -1107,9 +1125,10 @@ func (job *UploadJobT) setSchema(consolidatedSchema warehouseutils.SchemaT) erro
 		panic(err)
 	}
 	job.upload.Schema = consolidatedSchema
-	return job.setUploadColumns(
-		UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
-	)
+	// return job.setUploadColumns(
+	// 	UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
+	// )
+	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema}}})
 }
 
 // Set LoadFileIDs
@@ -1117,27 +1136,37 @@ func (job *UploadJobT) setLoadFileIDs(startLoadFileID int64, endLoadFileID int64
 	job.upload.StartLoadFileID = startLoadFileID
 	job.upload.EndLoadFileID = endLoadFileID
 
-	return job.setUploadColumns(
-		UploadColumnT{Column: UploadStartLoadFileIDField, Value: startLoadFileID},
-		UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
-	)
+	// return job.setUploadColumns(
+	// 	UploadColumnT{Column: UploadStartLoadFileIDField, Value: startLoadFileID},
+	// 	UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
+	// )
+	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadStartLoadFileIDField, Value: startLoadFileID}, UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID}}})
+}
+
+type UploadColumnsOpts struct {
+	Fields []UploadColumnT
+	Txn    *sql.Tx
 }
 
 // SetUploadColumns sets any column values passed as args in UploadColumnT format for WarehouseUploadsTable
-func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
+func (job *UploadJobT) setUploadColumns(opts UploadColumnsOpts) (err error) {
 	var columns string
 	values := []interface{}{job.upload.ID}
 	// setting values using syntax $n since Exec can correctly format time.Time strings
-	for idx, f := range fields {
+	for idx, f := range opts.Fields {
 		// start with $2 as $1 is upload.ID
 		columns += fmt.Sprintf(`%s=$%d`, f.Column, idx+2)
-		if idx < len(fields)-1 {
+		if idx < len(opts.Fields)-1 {
 			columns += ","
 		}
 		values = append(values, f.Value)
 	}
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, warehouseutils.WarehouseUploadsTable, columns)
-	_, err = dbHandle.Exec(sqlStatement, values...)
+	if opts.Txn != nil {
+		_, err = opts.Txn.Exec(sqlStatement, values...)
+	} else {
+		_, err = dbHandle.Exec(sqlStatement, values...)
+	}
 
 	return err
 }
@@ -1149,7 +1178,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 
 	upload := job.upload
 
-	job.setUploadStatus(state)
+	job.setUploadStatus(UploadStatusOpts{Status: state})
 	var e map[string]map[string]interface{}
 	json.Unmarshal(job.upload.Error, &e)
 	if e == nil {
@@ -1191,8 +1220,75 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	}
 
 	serializedErr, _ := json.Marshal(&e)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, metadata=$3, updated_at=$4 WHERE id=$5`, warehouseutils.WarehouseUploadsTable)
-	_, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, metadataJSON, timeutil.Now(), upload.ID)
+	// sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, metadata=$3, updated_at=$4 WHERE id=$5`, warehouseutils.WarehouseUploadsTable)
+
+	uploadColumns := []UploadColumnT{
+		{Column: "status", Value: state},
+		{Column: "metadata", Value: metadataJSON},
+		{Column: "error", Value: serializedErr},
+		{Column: "updated_at", Value: timeutil.Now()},
+	}
+
+	txn, err := job.dbHandle.Begin()
+	if err != nil {
+		panic(err)
+	}
+	err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
+	if err != nil {
+		panic(err)
+	}
+
+	inputCount := job.getTotalRowsInStagingFiles()
+	outputCount, _ := getTotalEventsUploaded(job.upload.ID)
+	failCount := inputCount - outputCount
+	reportingStatus := reporting.FailStatus
+	if state == Aborted {
+		reportingStatus = reporting.AbortStatus
+	}
+
+	reportingMetrics := []*reporting.PUReportedMetric{{
+		ConnectionDetails: reporting.ConnectionDetails{
+			SourceID:      job.upload.SourceID,
+			DestinationID: job.upload.DestinationID,
+		},
+		PUDetails: reporting.PUDetails{
+			InPU:       "batch_router",
+			PU:         "warehouse",
+			TerminalPU: true,
+		},
+		StatusDetail: &reporting.StatusDetail{
+			Status:         reportingStatus,
+			StatusCode:     400, // TODO: Change this to error specific code
+			Count:          failCount,
+			SampleEvent:    []byte("{}"),
+			SampleResponse: string(serializedErr),
+		},
+	}}
+	if outputCount > 0 {
+		reportingMetrics = append(reportingMetrics, &reporting.PUReportedMetric{
+			ConnectionDetails: reporting.ConnectionDetails{
+				SourceID:      job.upload.SourceID,
+				DestinationID: job.upload.DestinationID,
+			},
+			PUDetails: reporting.PUDetails{
+				InPU:       "batch_router",
+				PU:         "warehouse",
+				TerminalPU: true,
+			},
+			StatusDetail: &reporting.StatusDetail{
+				Status:         reporting.SuccessStatus,
+				StatusCode:     400, // TODO: Change this to error specific code
+				Count:          failCount,
+				SampleEvent:    []byte("{}"),
+				SampleResponse: string(serializedErr),
+			},
+		})
+	}
+	reporting.GetClient().Report(reportingMetrics, txn)
+	err = txn.Commit()
+
+	// TODO: Add reporting metrics in txn
+	// _, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, metadataJSON, timeutil.Now(), upload.ID)
 
 	job.upload.Status = state
 	job.upload.Error = serializedErr

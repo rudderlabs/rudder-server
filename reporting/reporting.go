@@ -257,7 +257,7 @@ func getAggregatedReports(reports []*ReportByStatus) []*Metric {
 				},
 			}
 		}
-		statusDetailInterface := funk.Find(metricsByGroup[identifier].StatusDetails, func(i StatusDetail) bool {
+		statusDetailInterface := funk.Find(metricsByGroup[identifier].StatusDetails, func(i *StatusDetail) bool {
 			return i.Status == report.StatusDetail.Status && i.StatusCode == report.StatusDetail.StatusCode
 		})
 		if statusDetailInterface == nil {
