@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/reporting"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
@@ -87,6 +88,15 @@ type ObjectStorageT struct {
 	Provider        string
 	DestinationID   string
 	DestinationType string
+}
+
+//JobParametersT struct holds source id and destination id of a job
+type JobParametersT struct {
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
+	ReceivedAt    string `json:"received_at"`
+	TransformAt   string `json:"transform_at"`
+	SourceBatchID string `json:"source_batch_id"`
 }
 
 func (brt *HandleT) backendConfigSubscriber() {
@@ -414,6 +424,9 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		warehouseServiceFailedTimeLock.Unlock()
 	}
 
+	reportMetrics := make([]*reporting.PUReportedMetric, 0)
+	connectionDetailsMap := make(map[string]*reporting.ConnectionDetails)
+	statusDetailsMap := make(map[string]*reporting.StatusDetail)
 	jobStateCounts := make(map[string]map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
@@ -466,6 +479,26 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			jobStateCounts[jobState] = make(map[string]int)
 		}
 		jobStateCounts[jobState][strconv.Itoa(attemptNum)] = jobStateCounts[jobState][strconv.Itoa(attemptNum)] + 1
+
+		//Update metrics maps
+		errorCode := getBRTErrorCode(jobState)
+		var parameters JobParametersT
+		err = json.Unmarshal(job.Parameters, &parameters)
+		if err != nil {
+			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+		}
+		key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, reporting.GetStatus(jobState), strconv.Itoa(errorCode))
+		cd, ok := connectionDetailsMap[key]
+		if !ok {
+			cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID)
+			connectionDetailsMap[key] = cd
+		}
+		sd, ok := statusDetailsMap[key]
+		if !ok {
+			sd = reporting.CreateStatusDetail(reporting.GetStatus(jobState), 0, errorCode, string(errorResp), job.EventPayload)
+			statusDetailsMap[key] = sd
+		}
+		sd.Count++
 	}
 
 	//tracking batch router errors
@@ -490,10 +523,50 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	if abortedEvents != nil {
 		brt.errorDB.Store(abortedEvents)
 	}
+
+	reporting.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+	terminalPU := true
+	if isWarehouse {
+		terminalPU = false
+	}
+	for k, cd := range connectionDetailsMap {
+		m := &reporting.PUReportedMetric{
+			ConnectionDetails: *cd,
+			PUDetails:         *reporting.CreatePUDetails("DT", "BRT", false, terminalPU),
+			StatusDetail:      statusDetailsMap[k],
+		}
+		reportMetrics = append(reportMetrics, m)
+	}
+
 	//Mark the status of the jobs
-	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
+	txn := brt.jobsDB.BeginGlobalTransaction()
+	brt.jobsDB.AcquireUpdateJobStatusLocks()
+	brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
+	reporting.GetClient().Report(reportMetrics, txn)
+	brt.jobsDB.CommitTransaction(txn)
+	brt.jobsDB.ReleaseUpdateJobStatusLocks()
+
+	//TODO remove prints
+	if len(reportMetrics) > 0 {
+		fmt.Println("&&&&&&&&&&&&&&&&&&&&& BATCH ROUTER")
+		fmt.Printf("length of reportMetrics : %d\n", len(reportMetrics))
+		for _, m := range reportMetrics {
+			fmt.Printf("%v\n", m.ConnectionDetails)
+			fmt.Printf("%v\n", m.PUDetails)
+			fmt.Printf("%v\n", m.StatusDetail)
+		}
+		fmt.Println("&&&&&&&&&&&&&&&&&&&&&")
+	}
 
 	sendDestStatusStats(batchJobs.BatchDestination, jobStateCounts, brt.destType, isWarehouse)
+}
+
+func getBRTErrorCode(state string) int {
+	if state == jobsdb.Succeeded.State {
+		return 200
+	}
+
+	return 500
 }
 
 func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {
