@@ -697,7 +697,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 	var eventsToTransform []transformer.TransformerEventT
 	for _, userTransformedEvent := range response.Events {
 		//Update metrics maps
-		updateMetricMaps(connectionDetailsMap, statusDetailsMap, userTransformedEvent, "succeeded", []byte(`{}`))
+		updateMetricMaps(connectionDetailsMap, statusDetailsMap, userTransformedEvent, reporting.SuccessStatus, []byte(`{}`))
 
 		eventMetadata := commonMetaData
 		eventMetadata.MessageIDs = userTransformedEvent.Metadata.MessageIDs
@@ -757,15 +757,15 @@ func createStatusDetail(status string, count int64, code int, resp string, event
 
 func createPUDetails(inPU, pu string) *reporting.PUDetails {
 	return &reporting.PUDetails{
-		InPU:          inPU,
-		PU:            pu,
-		TerminalState: false,
-		InitialState:  false,
+		InPU:       inPU,
+		PU:         pu,
+		TerminalPU: false,
+		InitialPU:  false,
 	}
 }
 
 func updateMetricMaps(connectionDetailsMap map[string]*reporting.ConnectionDetails, statusDetailsMap map[string]*reporting.StatusDetail, event transformer.TransformerResponseT, status string, payload json.RawMessage) {
-	key := fmt.Sprintf("%s:%s:%d:%d", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, event.StatusCode)
+	key := fmt.Sprintf("%s:%s:%d:%s:%d", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, status, event.StatusCode)
 	cd, ok := connectionDetailsMap[key]
 	if !ok {
 		cd = createConnectionDetail(event.Metadata.SourceID, event.Metadata.DestinationID, strconv.FormatInt(event.Metadata.SourceBatchID, 10))
@@ -801,7 +801,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		}
 
 		//Update metrics maps
-		updateMetricMaps(connectionDetailsMap, statusDetailsMap, failedEvent, "aborted", payload)
+		updateMetricMaps(connectionDetailsMap, statusDetailsMap, failedEvent, reporting.AbortStatus, payload)
 
 		id := uuid.NewV4()
 		// marshal error to escape any quotes in error string etc.
@@ -1138,7 +1138,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//Save the JSON in DB. This is what the router uses
 		for _, destEvent := range destTransformEventList {
 			//Update metrics maps
-			updateMetricMaps(connectionDetailsMap, statusDetailsMap, destEvent, "succeeded", []byte(`{}`))
+			updateMetricMaps(connectionDetailsMap, statusDetailsMap, destEvent, reporting.SuccessStatus, []byte(`{}`))
 
 			destEventJSON, err := json.Marshal(destEvent.Output)
 			//Should be a valid JSON since its our transformation
@@ -1242,7 +1242,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	txn := proc.gatewayDB.BeginGlobalTransaction()
 	proc.gatewayDB.AcquireUpdateJobStatusLocks()
 	proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{gateway.CustomVal}, nil)
-	//reporting.GetClient().Report(reportMetrics, txn)
+	reporting.GetClient().Report(reportMetrics, txn)
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 
