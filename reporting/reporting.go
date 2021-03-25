@@ -115,7 +115,7 @@ type Client struct {
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("reporting")
-	reportingServiceURL = config.GetString("Reporting.serviceURL", "https://webhook.site/dde3d1aa-abc1-4270-8e2d-ffbb84c1fa94d")
+	reportingServiceURL = config.GetString("Reporting.serviceURL", "https://webhook.site/dde3d1aa-abc1-4270-8e2d-ffbb84c1fa94")
 }
 
 func New(config Config) *Client {
@@ -369,7 +369,7 @@ func mainLoop() {
 				if resp != nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
 					respBody, _ := ioutil.ReadAll(resp.Body)
 					defer resp.Body.Close()
-					err = errors.New(fmt.Sprintf(`Received reponse: statusCode:%d error:%v`, resp.StatusCode, respBody))
+					err = errors.New(fmt.Sprintf(`Received reponse: statusCode:%d error:%v`, resp.StatusCode, string(respBody)))
 				}
 				return err
 			}
