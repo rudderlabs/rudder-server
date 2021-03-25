@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
@@ -113,7 +115,7 @@ type Client struct {
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("reporting")
-	reportingServiceURL = config.GetString("Reporting.serviceURL", "https://webhook.site/dde3d1aa-abc1-4270-8e2d-ffbb84c1fa94")
+	reportingServiceURL = config.GetString("Reporting.serviceURL", "https://webhook.site/dde3d1aa-abc1-4270-8e2d-ffbb84c1fa94d")
 }
 
 func New(config Config) *Client {
@@ -362,8 +364,13 @@ func mainLoop() {
 			}
 			operation := func() error {
 				uri := reportingServiceURL
-				_, err := netClient.Post(uri, "application/json; charset=utf-8",
+				resp, err := netClient.Post(uri, "application/json; charset=utf-8",
 					bytes.NewBuffer(payload))
+				if resp != nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+					respBody, _ := ioutil.ReadAll(resp.Body)
+					defer resp.Body.Close()
+					err = errors.New(fmt.Sprintf(`Received reponse: statusCode:%d error:%v`, resp.StatusCode, respBody))
+				}
 				return err
 			}
 

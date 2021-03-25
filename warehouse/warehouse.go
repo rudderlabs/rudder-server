@@ -333,7 +333,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at, metadata->>'source_batch_id'
+	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at, metadata->>'source_batch_id', metadata->>'source_task_id', metadata->>'source_job_id'
                                 FROM %[1]s
 								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
 								ORDER BY id ASC`,
@@ -349,7 +349,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	var sourceBatchID, sourceTaskID, sourceJobID sql.NullString
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt, &sourceBatchID)
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt, &sourceBatchID, &sourceTaskID, &sourceJobID)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
@@ -388,7 +388,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	}
 
 	now := timeutil.Now()
-	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task__id": "%s", "source_job_id": "%s"}`, jsonUploadsList[0].SourceBatchID, jsonUploadsList[0].SourceTaskID, jsonUploadsList[0].SourceJobID))
+	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task_id": "%s", "source_job_id": "%s"}`, jsonUploadsList[0].SourceBatchID, jsonUploadsList[0].SourceTaskID, jsonUploadsList[0].SourceJobID))
 	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, Waiting, "{}", "{}", metadata, firstEventAt, lastEventAt, now, now)
 
 	var uploadID int64
@@ -902,7 +902,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		firstEventAt = nil
 		lastEventAt = nil
 	}
-	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task__id": "%s", "source_job_id": "%s"}`, stagingFile.SourceBatchID, stagingFile.SourceTaskID, stagingFile.SourceJobID))
+	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task_id": "%s", "source_job_id": "%s"}`, stagingFile.SourceBatchID, stagingFile.SourceTaskID, stagingFile.SourceJobID))
 
 	pkgLogger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
 	schemaPayload, _ := json.Marshal(stagingFile.Schema)
