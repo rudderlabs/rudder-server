@@ -10,7 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/services/db"
-	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	// This is necessary for compatibility with enterprise features

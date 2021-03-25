@@ -24,7 +24,8 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -676,6 +677,7 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 			sourceID, _ := params["source_id"].(string)
 			destID, _ := params["destination_id"].(string)
 			procErr, _ := params["error"].(string)
+			procErrBytes, _ := json.Marshal(procErr)
 			procErr = strconv.Quote(procErr)
 			statusCode, _ := params["status_code"].(string)
 
@@ -686,7 +688,7 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 				AttemptNum:    1,
 				JobState:      jobsdb.Aborted.State,
 				ErrorCode:     statusCode,
-				ErrorResponse: []byte(fmt.Sprintf(`{"error": %s}`, procErr)),
+				ErrorResponse: []byte(fmt.Sprintf(`{"error": %v}`, string(procErrBytes))),
 			}
 			destinationdebugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
 		}
@@ -713,17 +715,17 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 	return eventsToTransform
 }
 
-func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventT, stage string) []*jobsdb.JobT {
+func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string) []*jobsdb.JobT {
 	var failedEventsToStore []*jobsdb.JobT
 	for _, failedEvent := range response.FailedEvents {
 		var messages []types.SingularEventT
 		if len(failedEvent.Metadata.MessageIDs) > 0 {
 			messageIds := failedEvent.Metadata.MessageIDs
 			for _, msgID := range messageIds {
-				messages = append(messages, eventsByMessageID[msgID])
+				messages = append(messages, eventsByMessageID[msgID].SingularEvent)
 			}
 		} else {
-			messages = append(messages, eventsByMessageID[failedEvent.Metadata.MessageID])
+			messages = append(messages, eventsByMessageID[failedEvent.Metadata.MessageID].SingularEvent)
 		}
 		payload, err := json.Marshal(messages)
 		if err != nil {
@@ -798,6 +800,7 @@ func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, 
 		}
 	}
 }
+
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 
 	proc.pStatsJobs.Start()
@@ -808,7 +811,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
-	var eventsByMessageID = make(map[string]types.SingularEventT)
+	var eventsByMessageID = make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 
 	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
@@ -868,7 +871,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				uniqueMessageIds[messageId] = struct{}{}
 				//We count this as one, not destination specific ones
 				totalEvents++
-				eventsByMessageID[messageId] = singularEvent
+				eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{SingularEvent: singularEvent, ReceivedAt: receivedAt}
 
 				//Getting all the destinations which are enabled for this
 				//event
@@ -990,6 +993,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			}
 			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
+
+			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: &destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIds})
 		} else {
 			proc.logger.Debug("No custom transformation")
 			eventsToTransform = eventList
