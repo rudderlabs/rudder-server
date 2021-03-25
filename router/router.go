@@ -449,6 +449,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				worker.deliveryTimeStat.End()
 				// END: request to destination endpoint
 
+				//TODO remove
+				saveDestinationResponse = true
 				if isSuccessStatus(respStatusCode) {
 					if saveDestinationResponse {
 						if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
