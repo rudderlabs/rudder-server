@@ -23,9 +23,10 @@ import (
 const REPORTS_TABLE = "reports"
 
 var (
-	client    *Client
-	dbHandle  *sql.DB
-	pkgLogger logger.LoggerI
+	client              *Client
+	dbHandle            *sql.DB
+	pkgLogger           logger.LoggerI
+	reportingServiceURL string
 )
 
 type Config struct {
@@ -112,6 +113,7 @@ type Client struct {
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("reporting")
+	reportingServiceURL = config.GetString("Reporting.serviceURL", "https://webhook.site/dde3d1aa-abc1-4270-8e2d-ffbb84c1fa94")
 }
 
 func New(config Config) *Client {
@@ -359,7 +361,7 @@ func mainLoop() {
 				panic(err)
 			}
 			operation := func() error {
-				uri := "https://webhook.site/f44086e2-bbd8-4a2b-b41d-9f7c635783db"
+				uri := reportingServiceURL
 				_, err := netClient.Post(uri, "application/json; charset=utf-8",
 					bytes.NewBuffer(payload))
 				return err

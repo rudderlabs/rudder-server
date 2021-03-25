@@ -893,12 +893,12 @@ func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, 
 
 func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadata, inCountMap, successCountMap, failedCountMap map[string]int64) []*reporting.PUReportedMetric {
 	//Calculate diff and append to reportMetrics
-	//diff = inCount - succesCount - abortCount
+	//diff = succesCount + abortCount - inCount
 	diffMetrics := make([]*reporting.PUReportedMetric, 0)
 	for key, inCount := range inCountMap {
 		successCount, _ := successCountMap[key]
 		failedCount, _ := failedCountMap[key]
-		diff := inCount - successCount - failedCount
+		diff := successCount + failedCount - inCount
 		if diff != 0 {
 			metricMetadata := inCountMetadataMap[key]
 			metric := &reporting.PUReportedMetric{
