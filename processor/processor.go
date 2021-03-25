@@ -1446,6 +1446,9 @@ func (proc *HandleT) mainLoop() {
 	//waiting till the backend config is received
 	proc.backendConfig.WaitForConfig()
 
+	//waiting for reporting client setup
+	reporting.WaitForSetup()
+
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
 

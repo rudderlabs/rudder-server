@@ -15,6 +15,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/thoas/go-funk"
 )
@@ -148,24 +149,44 @@ func setupTable() error {
 }
 
 func Setup(c Config, backendConfig backendconfig.BackendConfig) {
-	backendConfig.WaitForConfig()
-	workspaceConfig, _ := backendConfig.Get()
-	var err error
-	dbHandle, err = sql.Open("postgres", c.ConnInfo)
-	if err != nil {
-		panic(err)
+	ch := make(chan utils.DataEvent)
+	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+
+	for {
+		beconfig := <-ch
+		sources := beconfig.Data.(backendconfig.ConfigT)
+		if sources.WorkspaceID == "" {
+			continue
+		}
+
+		var err error
+		dbHandle, err = sql.Open("postgres", c.ConnInfo)
+		if err != nil {
+			panic(err)
+		}
+		err = setupTable()
+		if err != nil {
+			panic(err)
+		}
+		c.WorksapceID = sources.WorkspaceID
+		c.Namespace = config.GetKubeNamespace()
+		c.InstanceID = config.GetEnv("INSTANCE_ID", "1")
+		client = &Client{Config: c}
+		rruntime.Go(func() {
+			mainLoop()
+		})
+		break
 	}
-	err = setupTable()
-	if err != nil {
-		panic(err)
+}
+
+func WaitForSetup() {
+	for {
+		if GetClient() == nil {
+			time.Sleep(time.Second)
+			continue
+		}
+		break
 	}
-	c.WorksapceID = workspaceConfig.WorkspaceID
-	c.Namespace = config.GetKubeNamespace()
-	c.InstanceID = config.GetEnv("INSTANCE_ID", "1")
-	client = &Client{Config: c}
-	rruntime.Go(func() {
-		mainLoop()
-	})
 }
 
 func GetClient() *Client {
