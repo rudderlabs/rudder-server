@@ -115,11 +115,14 @@ type TableSchemaT map[string]string
 type StagingFileT struct {
 	Schema           map[string]map[string]interface{}
 	BatchDestination DestinationT
-	SourceBatchID    string
 	Location         string
 	FirstEventAt     string
 	LastEventAt      string
 	TotalEvents      int
+	// cloud sources specific info
+	SourceBatchID string
+	SourceTaskID  string
+	SourceJobID   string
 }
 
 type UploaderI interface {

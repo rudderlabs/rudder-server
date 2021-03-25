@@ -346,7 +346,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 
 	var stagingFilesList []*StagingFileT
 	var firstEventAt, lastEventAt sql.NullTime
-	var sourceBatchID sql.NullString
+	var sourceBatchID, sourceTaskID, sourceJobID sql.NullString
 	for rows.Next() {
 		var jsonUpload StagingFileT
 		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt, &sourceBatchID)
@@ -355,7 +355,10 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		}
 		jsonUpload.FirstEventAt = firstEventAt.Time
 		jsonUpload.LastEventAt = lastEventAt.Time
+		// add cloud sources metadata
 		jsonUpload.SourceBatchID = sourceBatchID.String
+		jsonUpload.SourceTaskID = sourceTaskID.String
+		jsonUpload.SourceJobID = sourceJobID.String
 		stagingFilesList = append(stagingFilesList, &jsonUpload)
 	}
 
@@ -385,7 +388,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	}
 
 	now := timeutil.Now()
-	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s"}`, jsonUploadsList[0].SourceBatchID))
+	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task__id": "%s", "source_job_id": "%s"}`, jsonUploadsList[0].SourceBatchID, jsonUploadsList[0].SourceTaskID, jsonUploadsList[0].SourceJobID))
 	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, Waiting, "{}", "{}", metadata, firstEventAt, lastEventAt, now, now)
 
 	var uploadID int64
@@ -623,7 +626,10 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
+		// cloud sources info
 		upload.SourceBatchID = gjson.GetBytes(upload.Metadata, "source_batch_id").String()
+		upload.SourceTaskID = gjson.GetBytes(upload.Metadata, "source_task_id").String()
+		upload.SourceJobID = gjson.GetBytes(upload.Metadata, "source_job_id").String()
 
 		_, upload.FirstAttemptAt = warehouseutils.TimingFromJSONString(firstTiming)
 		var lastStatus string
@@ -896,7 +902,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		firstEventAt = nil
 		lastEventAt = nil
 	}
-	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s"}`, stagingFile.SourceBatchID))
+	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task__id": "%s", "source_job_id": "%s"}`, stagingFile.SourceBatchID, stagingFile.SourceTaskID, stagingFile.SourceJobID))
 
 	pkgLogger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
 	schemaPayload, _ := json.Marshal(stagingFile.Schema)

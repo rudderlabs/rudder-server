@@ -75,7 +75,6 @@ type UploadT struct {
 	Namespace          string
 	SourceID           string
 	DestinationID      string
-	SourceBatchID      string
 	DestinationType    string
 	StartStagingFileID int64
 	EndStagingFileID   int64
@@ -91,6 +90,10 @@ type UploadT struct {
 	Metadata           json.RawMessage
 	FirstEventAt       time.Time
 	LastEventAt        time.Time
+	// cloud sources specific info
+	SourceBatchID string
+	SourceTaskID  string
+	SourceJobID   string
 }
 
 type UploadJobT struct {
@@ -485,6 +488,8 @@ func (job *UploadJobT) run() (err error) {
 					SourceID:      job.upload.SourceID,
 					DestinationID: job.upload.DestinationID,
 					SourceBatchID: job.upload.SourceBatchID,
+					SourceTaskID:  job.upload.SourceTaskID,
+					SourceJobID:   job.upload.SourceJobID,
 				},
 				PUDetails: reporting.PUDetails{
 					InPU:       reporting.BATCH_ROUTER,
@@ -1257,6 +1262,8 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 			SourceID:      job.upload.SourceID,
 			DestinationID: job.upload.DestinationID,
 			SourceBatchID: job.upload.SourceBatchID,
+			SourceTaskID:  job.upload.SourceTaskID,
+			SourceJobID:   job.upload.SourceJobID,
 		},
 		PUDetails: reporting.PUDetails{
 			InPU:       reporting.BATCH_ROUTER,
@@ -1277,6 +1284,8 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 				SourceID:      job.upload.SourceID,
 				DestinationID: job.upload.DestinationID,
 				SourceBatchID: job.upload.SourceBatchID,
+				SourceTaskID:  job.upload.SourceTaskID,
+				SourceJobID:   job.upload.SourceJobID,
 			},
 			PUDetails: reporting.PUDetails{
 				InPU:       reporting.BATCH_ROUTER,
