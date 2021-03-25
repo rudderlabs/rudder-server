@@ -5,37 +5,36 @@
 package mock_sysUtils
 
 import (
+	gomock "github.com/golang/mock/gomock"
 	io "io"
 	http "net/http"
 	reflect "reflect"
-
-	gomock "github.com/golang/mock/gomock"
 )
 
-// MockHttpI is a mock of HttpI interface.
+// MockHttpI is a mock of HttpI interface
 type MockHttpI struct {
 	ctrl     *gomock.Controller
 	recorder *MockHttpIMockRecorder
 }
 
-// MockHttpIMockRecorder is the mock recorder for MockHttpI.
+// MockHttpIMockRecorder is the mock recorder for MockHttpI
 type MockHttpIMockRecorder struct {
 	mock *MockHttpI
 }
 
-// NewMockHttpI creates a new mock instance.
+// NewMockHttpI creates a new mock instance
 func NewMockHttpI(ctrl *gomock.Controller) *MockHttpI {
 	mock := &MockHttpI{ctrl: ctrl}
 	mock.recorder = &MockHttpIMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use.
+// EXPECT returns an object that allows the caller to indicate expected use
 func (m *MockHttpI) EXPECT() *MockHttpIMockRecorder {
 	return m.recorder
 }
 
-// NewRequest mocks base method.
+// NewRequest mocks base method
 func (m *MockHttpI) NewRequest(arg0, arg1 string, arg2 io.Reader) (*http.Request, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NewRequest", arg0, arg1, arg2)
@@ -44,7 +43,7 @@ func (m *MockHttpI) NewRequest(arg0, arg1 string, arg2 io.Reader) (*http.Request
 	return ret0, ret1
 }
 
-// NewRequest indicates an expected call of NewRequest.
+// NewRequest indicates an expected call of NewRequest
 func (mr *MockHttpIMockRecorder) NewRequest(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewRequest", reflect.TypeOf((*MockHttpI)(nil).NewRequest), arg0, arg1, arg2)
