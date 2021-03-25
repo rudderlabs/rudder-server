@@ -100,6 +100,8 @@ type JobParametersT struct {
 	ReceivedAt    string `json:"received_at"`
 	TransformAt   string `json:"transform_at"`
 	SourceBatchID string `json:"source_batch_id"`
+	SourceTaskID  string `json:"source_task_id"`
+	SourceJobID   string `json:"source_job_id"`
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -987,7 +989,7 @@ func (rt *HandleT) statusInsertLoop() {
 				key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, reporting.GetStatus(resp.status.JobState), resp.status.ErrorCode)
 				cd, ok := connectionDetailsMap[key]
 				if !ok {
-					cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID)
+					cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceJobID)
 					connectionDetailsMap[key] = cd
 				}
 				sd, ok := statusDetailsMap[key]

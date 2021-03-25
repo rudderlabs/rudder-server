@@ -43,20 +43,20 @@ var (
 	DiffStatus      = "diff"
 
 	//Module names
-	GATEWAY = "gateway"
+	GATEWAY          = "gateway"
 	USER_TRANSFORMER = "user_transformer"
 	DEST_TRANSFORMER = "dest_transformer"
-	ROUTER = "router"
-	BATCH_ROUTER = "batch_router"
-	WAREHOUSE = "warehouse"
+	ROUTER           = "router"
+	BATCH_ROUTER     = "batch_router"
+	WAREHOUSE        = "warehouse"
 )
 
 type StatusDetail struct {
-	Status         string
-	Count          int64
-	StatusCode     int
-	SampleResponse string
-	SampleEvent    json.RawMessage
+	Status         string          `json:"state"`
+	Count          int64           `json:"count"`
+	StatusCode     int             `json:"status_code"`
+	SampleResponse string          `json:"sample_response"`
+	SampleEvent    json.RawMessage `json:"sample_event"`
 }
 
 type ReportByStatus struct {
@@ -68,13 +68,13 @@ type ReportByStatus struct {
 }
 
 type InstanceDetails struct {
-	WorksapceID string
-	Namespace   string
-	InstanceID  string
+	WorksapceID string `json:"workspace_id"`
+	Namespace   string `json:"namespace"`
+	InstanceID  string `json:"instance_id"`
 }
 
 type ReportMetadata struct {
-	ReportedMin int64
+	ReportedMin int64 `json:"reported_min"`
 }
 
 type Metric struct {
@@ -82,19 +82,21 @@ type Metric struct {
 	ConnectionDetails
 	PUDetails
 	ReportMetadata
-	StatusDetails []*StatusDetail
+	StatusDetails []*StatusDetail `json:"reports"`
 }
 
 type ConnectionDetails struct {
-	SourceID      string
-	DestinationID string
-	BatchID       string
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
+	SourceBatchID string `json:"source_batch_id"`
+	SourceTaskID  string `json:"source_task_id"`
+	SourceJobID   string `json:"source_job_id"`
 }
 type PUDetails struct {
-	InPU       string
-	PU         string
-	TerminalPU bool
-	InitialPU  bool
+	InPU       string `json:"in_reported_by"`
+	PU         string `json:"reported_by"`
+	TerminalPU bool   `json:"terminal_state"`
+	InitialPU  bool   `json:"initial_state"`
 }
 
 type PUReportedMetric struct {
@@ -124,7 +126,9 @@ func setupTable() error {
 		instance_id VARCHAR(64) NOT NULL,
 		source_id VARCHAR(64),
 		destination_id VARCHAR(64) NOT NULL,
-		batch_id VARCHAR(64),
+		source_batch_id VARCHAR(64),
+		source_task_id VARCHAR(64),
+		source_job_id VARCHAR(64),
 		in_pu VARCHAR(64),
 		pu VARCHAR(64),
 		reported_min BIGINT NOT NULL,
@@ -168,10 +172,12 @@ func GetClient() *Client {
 	return client
 }
 
-func CreateConnectionDetail(sid, did, bid string) *ConnectionDetails {
+func CreateConnectionDetail(sid, did, sbid, stid, sjid string) *ConnectionDetails {
 	return &ConnectionDetails{SourceID: sid,
 		DestinationID: did,
-		BatchID:       bid}
+		SourceBatchID: sbid,
+		SourceTaskID:  stid,
+		SourceJobID:   sjid}
 }
 
 func CreateStatusDetail(status string, count int64, code int, resp string, event json.RawMessage) *StatusDetail {
@@ -234,7 +240,7 @@ func getReports(current_min int64) (reports []*ReportByStatus, reportedMin int64
 		return nil, 0
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_id, destination_id, batch_id, in_pu, pu, reported_min, status, count, terminal_state, initial_state, status_code, sample_response, sample_event FROM %s WHERE reported_min = %d`, REPORTS_TABLE, queryMin.Int64)
+	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_id, destination_id, source_batch_id, source_task_id, source_job_id, in_pu, pu, reported_min, status, count, terminal_state, initial_state, status_code, sample_response, sample_event FROM %s WHERE reported_min = %d`, REPORTS_TABLE, queryMin.Int64)
 	var rows *sql.Rows
 	rows, err = dbHandle.Query(sqlStatement)
 	if err != nil {
@@ -245,7 +251,7 @@ func getReports(current_min int64) (reports []*ReportByStatus, reportedMin int64
 	var metricReports []*ReportByStatus
 	for rows.Next() {
 		metricReport := ReportByStatus{StatusDetail: &StatusDetail{}}
-		err = rows.Scan(&metricReport.InstanceDetails.WorksapceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID, &metricReport.ConnectionDetails.SourceID, &metricReport.ConnectionDetails.DestinationID, &metricReport.ConnectionDetails.BatchID, &metricReport.PUDetails.InPU, &metricReport.PUDetails.PU, &metricReport.ReportedMin, &metricReport.StatusDetail.Status, &metricReport.StatusDetail.Count, &metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU, &metricReport.StatusDetail.StatusCode, &metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent)
+		err = rows.Scan(&metricReport.InstanceDetails.WorksapceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID, &metricReport.ConnectionDetails.SourceID, &metricReport.ConnectionDetails.DestinationID, &metricReport.ConnectionDetails.SourceBatchID, &metricReport.ConnectionDetails.SourceTaskID, &metricReport.ConnectionDetails.SourceJobID, &metricReport.PUDetails.InPU, &metricReport.PUDetails.PU, &metricReport.ReportedMin, &metricReport.StatusDetail.Status, &metricReport.StatusDetail.Count, &metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU, &metricReport.StatusDetail.StatusCode, &metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent)
 		if err != nil {
 			panic(err)
 		}
@@ -259,7 +265,7 @@ func getAggregatedReports(reports []*ReportByStatus) []*Metric {
 	metricsByGroup := map[string]*Metric{}
 
 	reportIdentifier := func(report *ReportByStatus) string {
-		groupingIdentifiers := []string{report.InstanceDetails.WorksapceID, report.InstanceDetails.Namespace, report.InstanceDetails.InstanceID, report.ConnectionDetails.SourceID, report.ConnectionDetails.DestinationID, report.ConnectionDetails.BatchID, report.PUDetails.InPU, report.PUDetails.PU, report.StatusDetail.Status, fmt.Sprint(report.StatusDetail.StatusCode)}
+		groupingIdentifiers := []string{report.InstanceDetails.WorksapceID, report.InstanceDetails.Namespace, report.InstanceDetails.InstanceID, report.ConnectionDetails.SourceID, report.ConnectionDetails.DestinationID, report.ConnectionDetails.SourceBatchID, report.ConnectionDetails.SourceTaskID, report.ConnectionDetails.SourceJobID, report.PUDetails.InPU, report.PUDetails.PU, report.StatusDetail.Status, fmt.Sprint(report.StatusDetail.StatusCode)}
 		return strings.Join(groupingIdentifiers, `::`)
 	}
 
@@ -275,7 +281,9 @@ func getAggregatedReports(reports []*ReportByStatus) []*Metric {
 				ConnectionDetails: ConnectionDetails{
 					SourceID:      report.SourceID,
 					DestinationID: report.DestinationID,
-					BatchID:       report.BatchID,
+					SourceBatchID: report.SourceBatchID,
+					SourceTaskID:  report.SourceTaskID,
+					SourceJobID:   report.SourceJobID,
 				},
 				PUDetails: PUDetails{
 					InPU: report.InPU,
@@ -357,7 +365,7 @@ func mainLoop() {
 }
 
 func (client *Client) Report(metrics []*PUReportedMetric, txn *sql.Tx) {
-	stmt, err := txn.Prepare(pq.CopyIn(REPORTS_TABLE, "workspace_id", "namespace", "instance_id", "source_id", "destination_id", "batch_id", "in_pu", "pu", "reported_min", "status", "count", "terminal_state", "initial_state", "status_code", "sample_response", "sample_event"))
+	stmt, err := txn.Prepare(pq.CopyIn(REPORTS_TABLE, "workspace_id", "namespace", "instance_id", "source_id", "destination_id", "source_batch_id", "source_task_id", "source_job_id", "in_pu", "pu", "reported_min", "status", "count", "terminal_state", "initial_state", "status_code", "sample_response", "sample_event"))
 	if err != nil {
 		panic(err)
 	}
@@ -365,7 +373,7 @@ func (client *Client) Report(metrics []*PUReportedMetric, txn *sql.Tx) {
 
 	reported_min := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
-		_, err = stmt.Exec(client.Config.WorksapceID, client.Config.Namespace, client.Config.WorksapceID, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.BatchID, metric.PUDetails.InPU, metric.PUDetails.PU, reported_min, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, metric.StatusDetail.SampleEvent)
+		_, err = stmt.Exec(client.Config.WorksapceID, client.Config.Namespace, client.Config.WorksapceID, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.SourceBatchID, metric.ConnectionDetails.SourceTaskID, metric.ConnectionDetails.SourceJobID, metric.PUDetails.InPU, metric.PUDetails.PU, reported_min, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, metric.StatusDetail.SampleEvent)
 		if err != nil {
 			panic(err)
 		}

@@ -484,7 +484,7 @@ func (job *UploadJobT) run() (err error) {
 				ConnectionDetails: reporting.ConnectionDetails{
 					SourceID:      job.upload.SourceID,
 					DestinationID: job.upload.DestinationID,
-					BatchID:       job.upload.SourceBatchID,
+					SourceBatchID: job.upload.SourceBatchID,
 				},
 				PUDetails: reporting.PUDetails{
 					InPU:       reporting.BATCH_ROUTER,
@@ -1256,7 +1256,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 		ConnectionDetails: reporting.ConnectionDetails{
 			SourceID:      job.upload.SourceID,
 			DestinationID: job.upload.DestinationID,
-			BatchID:       job.upload.SourceBatchID,
+			SourceBatchID: job.upload.SourceBatchID,
 		},
 		PUDetails: reporting.PUDetails{
 			InPU:       reporting.BATCH_ROUTER,
@@ -1276,7 +1276,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 			ConnectionDetails: reporting.ConnectionDetails{
 				SourceID:      job.upload.SourceID,
 				DestinationID: job.upload.DestinationID,
-				BatchID:       job.upload.SourceBatchID,
+				SourceBatchID: job.upload.SourceBatchID,
 			},
 			PUDetails: reporting.PUDetails{
 				InPU:       reporting.BATCH_ROUTER,

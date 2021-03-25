@@ -97,6 +97,8 @@ type JobParametersT struct {
 	ReceivedAt    string `json:"received_at"`
 	TransformAt   string `json:"transform_at"`
 	SourceBatchID string `json:"source_batch_id"`
+	SourceTaskID  string `json:"source_task_id"`
+	SourceJobID   string `json:"source_job_id"`
 }
 
 func (brt *HandleT) backendConfigSubscriber() {
@@ -496,7 +498,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, reporting.GetStatus(jobState), strconv.Itoa(errorCode))
 		cd, ok := connectionDetailsMap[key]
 		if !ok {
-			cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID)
+			cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceJobID)
 			connectionDetailsMap[key] = cd
 		}
 		sd, ok := statusDetailsMap[key]
