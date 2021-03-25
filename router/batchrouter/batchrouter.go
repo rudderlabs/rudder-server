@@ -376,11 +376,13 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 			Source:      batchJobs.BatchDestination.Source,
 			Destination: batchJobs.BatchDestination.Destination,
 		},
-		SourceBatchID: sampleParameters.SourceBatchID,
 		Location:      output.Key,
 		FirstEventAt:  output.FirstEventAt,
 		LastEventAt:   output.LastEventAt,
 		TotalEvents:   output.TotalEvents,
+		SourceBatchID: sampleParameters.SourceBatchID,
+		SourceTaskID:  sampleParameters.SourceTaskID,
+		SourceJobID:   sampleParameters.SourceJobID,
 	}
 
 	jsonPayload, err := json.Marshal(&payload)
