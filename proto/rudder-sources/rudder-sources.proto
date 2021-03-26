@@ -1,0 +1,30 @@
+syntax = "proto3";
+package proto;
+
+
+option go_package = ".;proto";
+
+service JobService{
+  rpc Start( JobRequest ) returns ( JobResponse );
+  rpc Stop( JobRequest ) returns ( JobResponse );
+  rpc Info( InfoRequest ) returns ( InfoResponse );
+}
+
+message JobRequest {
+  string jobID = 1;
+}
+
+message JobResponse {
+  string error = 1;
+}
+
+message InfoRequest {
+  string role = 1;
+  string path = 2;
+  string body = 3;
+}
+
+message InfoResponse {
+  string error = 1;
+  string data = 2;
+}

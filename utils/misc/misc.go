@@ -19,15 +19,15 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
-	"unicode"
-
-	//"runtime/debug"
 	"time"
+	"unicode"
 
 	"github.com/araddon/dateparse"
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	uuid "github.com/satori/go.uuid"
@@ -377,9 +377,13 @@ func (stats *PerfStats) Print() {
 }
 
 func (stats *PerfStats) Status() map[string]interface{} {
+	overallRate := float64(0)
+	if float64(stats.elapsedTime) > 0 {
+		overallRate = float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime)
+	}
 	return map[string]interface{}{
 		"total-events": stats.eventCount,
-		"overall-rate": float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime),
+		"overall-rate": overallRate,
 	}
 }
 
@@ -912,4 +916,16 @@ func UpdateJSONWithNewKeyVal(params []byte, key, val string) []byte {
 	}
 
 	return updatedParams
+}
+
+func ConcatErrors(givenErrors []error) error {
+	var errorsToJoin []error
+	for _, err := range givenErrors {
+		if err == nil {
+			pkgLogger.Errorf("%v", string(debug.Stack()))
+			continue
+		}
+		errorsToJoin = append(errorsToJoin, err)
+	}
+	return multierror.Join(errorsToJoin)
 }

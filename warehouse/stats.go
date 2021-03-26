@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,7 +47,7 @@ func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.RudderSt
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
-		"warehouseID": job.warehouseID(),
+		"destination": job.warehouseID(),
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
@@ -98,8 +99,8 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 		return
 	}
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
-
-	job.counterStat("upload_success").Count(1)
+	attempts := job.getAttemptNumber()
+	job.counterStat("upload_success", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
 }
 
 func (job *UploadJobT) generateUploadAbortedMetrics() {
@@ -117,9 +118,10 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
-	job.counterStat("num_staged_events").Count(int(numStagedEvents))
 
-	job.counterStat("upload_aborted").Count(1)
+	job.counterStat("num_staged_events").Count(int(numStagedEvents))
+	attempts := job.getAttemptNumber()
+	job.counterStat("upload_aborted", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
 }
 
 func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {

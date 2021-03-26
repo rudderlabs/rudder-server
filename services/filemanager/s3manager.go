@@ -24,7 +24,7 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
 	if err != nil {
 		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
-		return UploadOutput{}, err
+		/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
 	}
 	var uploadSession *session.Session
 	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
@@ -76,7 +76,7 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
 	if err != nil {
 		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
-		return err
+		/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
 	}
 	var sess *session.Session
 	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
@@ -128,7 +128,7 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error
 	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
 	if err != nil {
 		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
-		return s3Objects, err
+		/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
 	}
 	var sess *session.Session
 	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {

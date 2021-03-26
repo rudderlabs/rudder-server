@@ -350,7 +350,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		caseSubQuery := fmt.Sprintf(`case
 						  when (select true) then (
 						  	select %[1]s from %[2]s
-						  	where id = %[2]s.id
+						  	where x.id = %[2]s.id
 							  and %[1]s is not null
 							  order by received_at desc
 						  	limit 1)
@@ -377,8 +377,8 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s AS (SELECT DISTINCT * FROM
 										(
 											SELECT
-											id, %[2]s
-											FROM %[3]s
+											x.id, %[2]s
+											FROM %[3]s as x
 										) as xyz
 									)`,
 		stagingTableName,

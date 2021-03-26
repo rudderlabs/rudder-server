@@ -34,6 +34,10 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+func RegisterAdminHandlers(readonlyProcErrorDB jobsdb.ReadonlyJobsDB) {
+	admin.RegisterAdminHandler("ProcErrors", &stash.StashRpcHandler{ReadOnlyJobsDB: readonlyProcErrorDB})
+}
+
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
 	backendConfig                  backendconfig.BackendConfig
@@ -279,6 +283,7 @@ var (
 	enableEventSchemasFeature           bool
 	enableDedup                         bool
 	transformTimesPQLength              int
+	captureEventNameStats               bool
 )
 
 func loadConfig() {
@@ -301,6 +306,8 @@ func loadConfig() {
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
 	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
 	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
+	// Capture event name as a tag in event level stats
+	captureEventNameStats = config.GetBool("Processor.Stats.captureEventName", false)
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -753,6 +760,43 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 	return failedEventsToStore
 }
 
+func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, writeKey string) {
+	//Any panics in this function are captured and ignore sending the stat
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+		}
+	}()
+	var eventType string
+	var eventName string
+	if val, ok := event["type"]; ok {
+		eventType = val.(string)
+		tags := map[string]string{
+			"writeKey":   writeKey,
+			"event_type": eventType,
+		}
+		statEventType := proc.stats.NewSampledTaggedStat("processor.event_type", stats.CountType, tags)
+		statEventType.Count(1)
+		if captureEventNameStats {
+			if eventType != "track" {
+				eventName = eventType
+			} else {
+				if val, ok := event["event"]; ok {
+					eventName = val.(string)
+				} else {
+					eventName = eventType
+				}
+			}
+			tags_detailed := map[string]string{
+				"writeKey":   writeKey,
+				"event_type": eventType,
+				"event_name": eventName,
+			}
+			statEventTypeDetailed := proc.stats.NewSampledTaggedStat("processor.event_type_detailed", stats.CountType, tags_detailed)
+			statEventTypeDetailed.Count(1)
+		}
+	}
+}
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 
 	proc.pStatsJobs.Start()
@@ -817,6 +861,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
 					continue
 				}
+
+				proc.updateSourceEventStatsDetailed(singularEvent, writeKey)
+
 				uniqueMessageIds[messageId] = struct{}{}
 				//We count this as one, not destination specific ones
 				totalEvents++
@@ -1053,7 +1100,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
 
-	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	err := proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	if err != nil {
+		pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
+		panic(err)
+	}
 	if enableDedup {
 		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
 		if len(uniqueMessageIds) > 0 {
@@ -1131,7 +1182,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	var retryList, unprocessedList []*jobsdb.JobT
 	var totalRetryEvents, totalUnprocessedEvents int
 
-	unTruncatedRetryList := proc.gatewayDB.GetToRetry([]string{gateway.CustomVal}, toQuery, nil)
+	unTruncatedRetryList := proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{gateway.CustomVal}, Count: toQuery})
 	retryList, totalRetryEvents = getTruncatedEventList(unTruncatedRetryList, maxEventsToProcess)
 
 	if len(unTruncatedRetryList) >= dbReadBatchSize || totalRetryEvents >= maxEventsToProcess {
@@ -1139,7 +1190,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	} else {
 		eventsLeftToProcess := maxEventsToProcess - totalRetryEvents
 		toQuery = misc.MinInt(eventsLeftToProcess, dbReadBatchSize)
-		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed([]string{gateway.CustomVal}, toQuery, nil)
+		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{gateway.CustomVal}, Count: toQuery})
 		unprocessedList, totalUnprocessedEvents = getTruncatedEventList(unTruncatedUnProcessedList, eventsLeftToProcess)
 	}
 
@@ -1190,7 +1241,12 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 			}
 			statusList = append(statusList, &newStatus)
 		}
-		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+		err := proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while marking gateway jobs statuses as executing. Panicking. Err: %v", err)
+			panic(err)
+		}
+
 		proc.addJobsToSessions(combinedList)
 	} else {
 		proc.processJobsForDest(combinedList, nil)
@@ -1224,7 +1280,7 @@ func (proc *HandleT) mainLoop() {
 
 func (proc *HandleT) crashRecover() {
 	for {
-		execList := proc.gatewayDB.GetExecuting([]string{gateway.CustomVal}, dbReadBatchSize, nil)
+		execList := proc.gatewayDB.GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gateway.CustomVal}, Count: dbReadBatchSize})
 
 		if len(execList) == 0 {
 			break
@@ -1245,7 +1301,11 @@ func (proc *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+		err := proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while marking gateway jobs statuses as failed. Panicking. Err: %v", err)
+			panic(err)
+		}
 	}
 }
 

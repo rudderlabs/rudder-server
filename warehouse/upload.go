@@ -4,12 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
+	"github.com/tidwall/gjson"
 )
 
 // Upload Status
@@ -450,7 +451,7 @@ func (job *UploadJobT) run() (err error) {
 
 			wg.Wait()
 			if len(loadErrors) > 0 {
-				err = multierror.Join(loadErrors)
+				err = misc.ConcatErrors(loadErrors)
 				break
 			}
 
@@ -502,7 +503,7 @@ func (job *UploadJobT) exportUserTables() (err error) {
 		job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 		if len(loadErrors) > 0 {
-			err = multierror.Join(loadErrors)
+			err = misc.ConcatErrors(loadErrors)
 			return
 		}
 	}
@@ -526,7 +527,7 @@ func (job *UploadJobT) exportIdentities() (err error) {
 			job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 			if len(loadErrors) > 0 {
-				err = multierror.Join(loadErrors)
+				err = misc.ConcatErrors(loadErrors)
 				return
 			}
 		}
@@ -545,7 +546,7 @@ func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 	job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 	if len(loadErrors) > 0 {
-		err = multierror.Join(loadErrors)
+		err = misc.ConcatErrors(loadErrors)
 		return
 	}
 
@@ -1115,9 +1116,7 @@ func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
 	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
-	if !job.hasAllTablesSkipped {
-		job.counterStat("warehouse_failed_uploads").Count(1)
-	}
+
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 
 	upload := job.upload
@@ -1148,7 +1147,6 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	if errorByState["attempt"].(int) > minRetryAttempts {
 		firstTiming := job.getUploadFirstAttemptTime()
 		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
-			job.counterStat("upload_aborted").Count(1)
 			state = Aborted
 		}
 	}
@@ -1171,7 +1169,30 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	job.upload.Status = state
 	job.upload.Error = serializedErr
 
+	attempts := job.getAttemptNumber()
+
+	if !job.hasAllTablesSkipped {
+		job.counterStat("warehouse_failed_uploads", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
+	}
+	if state == Aborted {
+		job.counterStat("upload_aborted", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
+	}
+
 	return state, err
+}
+
+func (job *UploadJobT) getAttemptNumber() int {
+	uploadError := job.upload.Error
+	var attempts int32
+	if string(uploadError) == "" {
+		return 0
+	}
+
+	gjson.Parse(string(uploadError)).ForEach(func(key gjson.Result, value gjson.Result) bool {
+		attempts += int32(gjson.Get(value.String(), "attempt").Int())
+		return true
+	})
+	return int(attempts)
 }
 
 func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, status string, statusError error) (err error) {
@@ -1340,7 +1361,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	wg.Wait()
 
 	if len(saveLoadFileErrs) > 0 {
-		err = multierror.Join(saveLoadFileErrs)
+		err = misc.ConcatErrors(saveLoadFileErrs)
 		pkgLogger.Errorf(`[WH]: Encountered errors in creating load file records in wh_load_files: %v`, err)
 		return startLoadFileID, endLoadFileID, err
 	}

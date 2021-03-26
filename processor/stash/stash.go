@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -36,9 +35,9 @@ func init() {
 func loadConfig() {
 	errorStashEnabled = config.GetBool("Processor.errorStashEnabled", true)
 	errReadLoopSleep = config.GetDuration("Processor.errReadLoopSleepInS", time.Duration(30)) * time.Second
-	errDBReadBatchSize = config.GetInt("Processor.errDBReadBatchSize", 10000)
+	errDBReadBatchSize = config.GetInt("Processor.errDBReadBatchSize", 1000)
 	noOfErrStashWorkers = config.GetInt("Processor.noOfErrStashWorkers", 2)
-	maxFailedCountForErrJob = config.GetInt("BatchRouter.maxFailedCountForErrJob", 3)
+	maxFailedCountForErrJob = config.GetInt("Processor.maxFailedCountForErrJob", 3)
 }
 
 type StoreErrorOutputT struct {
@@ -61,19 +60,17 @@ func New() *HandleT {
 }
 
 func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
-
 	st.logger = pkgLogger
 	st.errorDB = errorDB
 	st.stats = stats.DefaultStats
 	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.statErrDBW = st.stats.NewStat("processor.err_db_write_time", stats.TimerType)
 	st.crashRecover()
-	admin.RegisterAdminHandler("ProcErrors", &StashRpcHandler{errorDB})
 }
 
 func (st *HandleT) crashRecover() {
 	for {
-		execList := st.errorDB.GetExecuting(nil, errDBReadBatchSize, nil)
+		execList := st.errorDB.GetExecuting(jobsdb.GetQueryParamsT{Count: errDBReadBatchSize})
 
 		if len(execList) == 0 {
 			break
@@ -94,7 +91,11 @@ func (st *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		st.errorDB.UpdateJobStatus(statusList, nil, nil)
+		err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as failed. Panicking. Err: %v", err)
+			panic(err)
+		}
 	}
 }
 
@@ -217,7 +218,11 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		}
 		statusList = append(statusList, &status)
 	}
-	st.errorDB.UpdateJobStatus(statusList, nil, nil)
+	err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+	if err != nil {
+		pkgLogger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
+		panic(err)
+	}
 }
 
 func (st *HandleT) readErrJobsLoop() {
@@ -227,10 +232,11 @@ func (st *HandleT) readErrJobsLoop() {
 		time.Sleep(errReadLoopSleep)
 		st.statErrDBR.Start()
 
+		//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 		toQuery := errDBReadBatchSize
-		retryList := st.errorDB.GetToRetry(nil, toQuery, nil)
+		retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, Count: toQuery, IgnoreCustomValFiltersInQuery: true})
 		toQuery -= len(retryList)
-		unprocessedList := st.errorDB.GetUnprocessed(nil, toQuery, nil)
+		unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, Count: toQuery, IgnoreCustomValFiltersInQuery: true})
 
 		st.statErrDBR.End()
 
@@ -263,7 +269,12 @@ func (st *HandleT) readErrJobsLoop() {
 			statusList = append(statusList, &status)
 		}
 
-		st.errorDB.UpdateJobStatus(statusList, nil, nil)
+		err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
+			panic(err)
+		}
+
 		if hasFileUploader {
 			st.errProcessQ <- combinedList
 		}

@@ -34,6 +34,7 @@ var (
 	pkgLogger                                                  logger.LoggerI
 	Diagnostics                                                diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyHandleT
+	readonlyProcErrorDB                                        jobsdb.ReadonlyHandleT
 )
 
 //AppHandler to be implemented by different app type objects.
@@ -93,7 +94,11 @@ func rudderCoreBaseSetup() {
 
 	readonlyGatewayDB.Setup("gw")
 	readonlyRouterDB.Setup("rt")
-	readonlyBatchRouterDB.Setup("brt")
+	readonlyBatchRouterDB.Setup("batch_rt")
+	readonlyProcErrorDB.Setup("proc_error")
+
+	processor.RegisterAdminHandlers(&readonlyProcErrorDB)
+	router.RegisterAdminHandlers(&readonlyRouterDB, &readonlyBatchRouterDB)
 
 	runtime.GOMAXPROCS(maxProcess)
 }

@@ -58,6 +58,15 @@ type BackupSettingsT struct {
 	PathPrefix    string
 }
 
+//GetQueryParamsT is a struct to hold jobsdb query params
+type GetQueryParamsT struct {
+	CustomValFilters              []string
+	ParameterFilters              []ParameterFilterT
+	StateFilters                  []string
+	Count                         int
+	IgnoreCustomValFiltersInQuery bool
+}
+
 /*
 JobsDB interface contains public methods to access JobsDB data
 */
@@ -65,11 +74,11 @@ type JobsDB interface {
 	Store(jobList []*JobT)
 	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
 	CheckPGHealth() bool
-	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT)
+	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
-	GetToRetry(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
-	GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
-	GetExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT
+	GetToRetry(params GetQueryParamsT) []*JobT
+	GetUnprocessed(params GetQueryParamsT) []*JobT
+	GetExecuting(params GetQueryParamsT) []*JobT
 
 	Status() interface{}
 }
@@ -227,6 +236,14 @@ func (jd *HandleT) assertErrorAndRollbackTx(err error, tx *sql.Tx) {
 		jd.printLists(true)
 		jd.logger.Fatal(jd.dsEmptyResultCache)
 		panic(err)
+	}
+}
+
+func (jd *HandleT) rollbackTx(err error, tx *sql.Tx) {
+	if err != nil {
+		tx.Rollback()
+		jd.printLists(true)
+		jd.logger.Fatal(jd.dsEmptyResultCache)
 	}
 }
 
@@ -1229,11 +1246,11 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 	queryStat.Start()
 	defer queryStat.End()
 	//Unprocessed jobs
-	unprocessedList := jd.getUnprocessedJobsDS(srcDS, []string{}, false, 0, nil)
+	unprocessedList := jd.getUnprocessedJobsDS(srcDS, false, 0, GetQueryParamsT{})
 
 	//Jobs which haven't finished processing
 	retryList := jd.getProcessedJobsDS(srcDS, true,
-		getValidNonTerminalStates(), []string{}, 0, nil)
+		0, GetQueryParamsT{StateFilters: getValidNonTerminalStates()})
 	jobsToMigrate := append(unprocessedList, retryList...)
 	noJobsMigrated = len(jobsToMigrate)
 	//Copy the jobs over. Second parameter (true) makes sure job_id is copied over
@@ -1511,8 +1528,11 @@ limitCount == 0 means return all
 stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
-func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []string,
-	customValFilters []string, limitCount int, parameterFilters []ParameterFilterT) []*JobT {
+func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, params GetQueryParamsT) []*JobT {
+	stateFilters := params.StateFilters
+	customValFilters := params.CustomValFilters
+	parameterFilters := params.ParameterFilters
+
 	checkValidJobState(jd, stateFilters)
 
 	if jd.isEmptyResult(ds, stateFilters, customValFilters, parameterFilters) {
@@ -1542,7 +1562,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, stateFilters []s
 	} else {
 		stateQuery = ""
 	}
-	if len(customValFilters) > 0 {
+	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
 		jd.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
 			constructQuery(jd, fmt.Sprintf("%s.custom_val", ds.JobTable),
@@ -1639,8 +1659,10 @@ count == 0 means return all
 stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
-func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
-	order bool, count int, parameterFilters []ParameterFilterT) []*JobT {
+func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, params GetQueryParamsT) []*JobT {
+	customValFilters := params.CustomValFilters
+	parameterFilters := params.ParameterFilters
+
 	if jd.isEmptyResult(ds, []string{NotProcessed.State}, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		return []*JobT{}
@@ -1677,7 +1699,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, customValFilters []string,
                                              FROM %[2]s)`, ds.JobTable, ds.JobStatusTable)
 	}
 
-	if len(customValFilters) > 0 {
+	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
 		sqlStatement += " AND " + constructQuery(jd, fmt.Sprintf("%s.custom_val", ds.JobTable),
 			customValFilters, "OR")
 	}
@@ -2498,23 +2520,29 @@ UpdateJobStatus updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) {
+func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
 
 	if len(statusList) == 0 {
-		return
+		return nil
 	}
 
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
 	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList)
-	jd.assertErrorAndRollbackTx(err, txn)
+	if err != nil {
+		jd.rollbackTx(err, txn)
+		jd.logger.Infof("[[ %s ]]: Error occured while updating job statuses. Returning err, %v", jd.tablePrefix, err)
+		return err
+	}
 
 	err = txn.Commit()
 	jd.assertError(err)
 	for ds, stateList := range updatedStatesByDS {
 		jd.markClearEmptyResult(ds, stateList, customValFilters, parameterFilters, hasJobs, nil)
 	}
+
+	return nil
 }
 
 /*
@@ -2656,10 +2684,13 @@ func (jd *HandleT) printLists(console bool) {
 GetUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
-	if count == 0 {
+func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
 		return []*JobT{}
 	}
+
+	customValFilters := params.CustomValFilters
+	count := params.Count
 
 	var queryStat stats.RudderStats
 	statName := ""
@@ -2686,7 +2717,7 @@ func (jd *HandleT) GetUnprocessed(customValFilters []string, count int, paramete
 	}
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
-		jobs := jd.getUnprocessedJobsDS(ds, customValFilters, true, count, parameterFilters)
+		jobs := jd.getUnprocessedJobsDS(ds, true, count, params)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
 		jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
@@ -2704,15 +2735,15 @@ DeleteJobStatus deletes the latest status of a batch of jobs
 This is only done during recovery, which happens during the server start.
 So, we don't have to worry about dsEmptyResultCache
 */
-func (jd *HandleT) DeleteJobStatus(stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) {
-	if count == 0 {
+func (jd *HandleT) DeleteJobStatus(params GetQueryParamsT) {
+	if params.Count == 0 {
 		return
 	}
 
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
-	err = jd.deleteJobStatusInTxn(txn, stateFilter, customValFilters, count, parameterFilters)
+	err = jd.deleteJobStatusInTxn(txn, params)
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	err = txn.Commit()
@@ -2723,8 +2754,8 @@ func (jd *HandleT) DeleteJobStatus(stateFilter []string, customValFilters []stri
 if count passed is less than 0, then delete happens on the entire dsList;
 deleteJobStatusInTxn deletes the latest status of a batch of jobs
 */
-func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) error {
-	if count == 0 {
+func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, params GetQueryParamsT) error {
+	if params.Count == 0 {
 		return nil
 	}
 
@@ -2740,18 +2771,18 @@ func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, stateFilte
 
 	totalDeletedCount := 0
 	for _, ds := range dsList {
-		deletedCount, err := jd.deleteJobStatusDSInTxn(txHandler, ds, stateFilter, customValFilters, parameterFilters)
+		deletedCount, err := jd.deleteJobStatusDSInTxn(txHandler, ds, params)
 		if err != nil {
 			return err
 		}
 		totalDeletedCount += deletedCount
 
 		//since count is less than 0, iterating on complete dsList
-		if count < 0 {
+		if params.Count < 0 {
 			continue
 		}
 
-		if totalDeletedCount >= count {
+		if totalDeletedCount >= params.Count {
 			break
 		}
 	}
@@ -2763,8 +2794,11 @@ func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, stateFilte
 stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
-func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataSetT, stateFilters []string,
-	customValFilters []string, parameterFilters []ParameterFilterT) (int, error) {
+func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataSetT, params GetQueryParamsT) (int, error) {
+	stateFilters := params.StateFilters
+	customValFilters := params.CustomValFilters
+	parameterFilters := params.ParameterFilters
+
 	checkValidJobState(jd, stateFilters)
 
 	var queryStat stats.RudderStats
@@ -2842,10 +2876,14 @@ realises on the caller to update it. That means that successive calls to GetProc
 can return the same set of events. It is the responsibility of the caller to call it from
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
-func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
-	if count == 0 {
+func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
 		return []*JobT{}
 	}
+
+	stateFilter := params.StateFilters
+	customValFilters := params.CustomValFilters
+	count := params.Count
 
 	var queryStat stats.RudderStats
 	statName := ""
@@ -2878,7 +2916,7 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 	for _, ds := range dsList {
 		//count==0 means return all which we don't want
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
-		jobs := jd.getProcessedJobsDS(ds, false, stateFilter, customValFilters, count, parameterFilters)
+		jobs := jd.getProcessedJobsDS(ds, false, count, params)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
 		jd.assert(count >= 0, fmt.Sprintf("count:%d after subtracting len(jobs):%d is less than 0", count, len(jobs)))
@@ -2894,35 +2932,44 @@ func (jd *HandleT) GetProcessed(stateFilter []string, customValFilters []string,
 GetToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) GetToRetry(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
-	return jd.GetProcessed([]string{Failed.State}, customValFilters, count, parameterFilters)
+func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
+	params.StateFilters = []string{Failed.State}
+	return jd.GetProcessed(params)
 }
 
 /*
 GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) GetWaiting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
-	return jd.GetProcessed([]string{Waiting.State}, customValFilters, count, parameterFilters)
+func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
+	params.StateFilters = []string{Waiting.State}
+	return jd.GetProcessed(params)
 }
 
-func (jd *HandleT) GetThrottled(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
-	return jd.GetProcessed([]string{Throttled.State}, customValFilters, count, parameterFilters)
+/*
+GetThrottled returns events which were throttled before
+This is a wrapper over GetProcessed call above
+*/
+func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
+	params.StateFilters = []string{Throttled.State}
+	return jd.GetProcessed(params)
 }
 
 /*
 GetExecuting returns events which  in executing state
 */
-func (jd *HandleT) GetExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) []*JobT {
-	return jd.GetProcessed([]string{Executing.State}, customValFilters, count, parameterFilters)
+func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
+	params.StateFilters = []string{Executing.State}
+	return jd.GetProcessed(params)
 }
 
 /*
 DeleteExecuting deletes events whose latest job state is executing.
 This is only done during recovery, which happens during the server start.
 */
-func (jd *HandleT) DeleteExecuting(customValFilters []string, count int, parameterFilters []ParameterFilterT) {
-	jd.DeleteJobStatus([]string{Executing.State}, customValFilters, count, parameterFilters)
+func (jd *HandleT) DeleteExecuting(params GetQueryParamsT) {
+	params.StateFilters = []string{Executing.State}
+	jd.DeleteJobStatus(params)
 }
 
 /*
