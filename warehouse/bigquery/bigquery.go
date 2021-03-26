@@ -134,20 +134,46 @@ func (bq *HandleT) addColumn(tableName string, columnName string, columnType str
 	return
 }
 
+func (bq *HandleT) schemaExists(schemaname string, location string) (exists bool, err error) {
+	ds := bq.Db.Dataset(bq.Namespace)
+	_, err = ds.Metadata(bq.BQContext)
+	if err != nil {
+		if e, ok := err.(*googleapi.Error); ok && e.Code == 404 {
+			pkgLogger.Debugf("BQ: Dataset %s not found", bq.Namespace)
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 func (bq *HandleT) CreateSchema() (err error) {
 	pkgLogger.Infof("BQ: Creating bigquery dataset: %s in project: %s", bq.Namespace, bq.ProjectID)
 	location := strings.TrimSpace(warehouseutils.GetConfigValue(GCPLocation, bq.Warehouse))
 	if location == "" {
 		location = "US"
 	}
+
+	var schemaExists bool
+	schemaExists, err = bq.schemaExists(bq.Namespace, location)
+	if err != nil {
+		pkgLogger.Errorf("BQ: Error checking if schema: %s exists: %v", bq.Namespace, err)
+		return err
+	}
+	if schemaExists {
+		pkgLogger.Infof("BQ: Skipping creating schema: %s since it already exists", bq.Namespace)
+		return
+	}
+
 	ds := bq.Db.Dataset(bq.Namespace)
 	meta := &bigquery.DatasetMetadata{
 		Location: location,
 	}
+	pkgLogger.Infof("BQ: Creating schema: %s ...", bq.Namespace)
 	err = ds.Create(bq.BQContext, meta)
 	if err != nil {
 		if e, ok := err.(*googleapi.Error); ok && e.Code == 409 {
-			pkgLogger.Debugf("BQ: Create schema %s failed as schema already exists", bq.Namespace)
+			pkgLogger.Infof("BQ: Create schema %s failed as schema already exists", bq.Namespace)
 			return nil
 		}
 	}
@@ -418,8 +444,8 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 	schema = make(warehouseutils.SchemaT)
 	query := dbClient.Query(fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
-							 FROM %[1]s.INFORMATION_SCHEMA.TABLES as t JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c
-							 ON (t.table_name = c.table_name) and (t.table_type != 'VIEW') and c.column_name != '_PARTITIONTIME'`, bq.Namespace))
+							 FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c
+							 ON (t.table_name = c.table_name) and (t.table_type != 'VIEW') and (c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL)`, bq.Namespace))
 
 	it, err := query.Read(bq.BQContext)
 	if err != nil {
@@ -458,6 +484,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 			schema[tName][strings.ToLower(cName)] = datatype
 		}
 	}
+
 	return
 }
 

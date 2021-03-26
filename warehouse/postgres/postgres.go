@@ -432,7 +432,23 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
+func (pg *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, pg.Namespace)
+	err = pg.Db.QueryRow(sqlStatement).Scan(&exists)
+	return
+}
+
 func (pg *HandleT) CreateSchema() (err error) {
+	var schemaExists bool
+	schemaExists, err = pg.schemaExists(pg.Namespace)
+	if err != nil {
+		pkgLogger.Errorf("PG: Error checking if schema: %s exists: %v", pg.Namespace, err)
+		return err
+	}
+	if schemaExists {
+		pkgLogger.Infof("PG: Skipping creating schema: %s since it already exists", pg.Namespace)
+		return
+	}
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, pg.Namespace)
 	pkgLogger.Infof("PG: Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
@@ -534,9 +550,7 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type
-									FROM INFORMATION_SCHEMA.COLUMNS
-									WHERE table_schema = '%s' and table_name not like '%s%s'`, pg.Namespace, stagingTablePrefix, "%")
+	sqlStatement := fmt.Sprintf(`select t.table_name, c.column_name, c.data_type from INFORMATION_SCHEMA.TABLES t LEFT JOIN INFORMATION_SCHEMA.COLUMNS c on t.table_name = c.table_name WHERE t.table_schema = '%s' and t.table_name not like '%s%s'`, pg.Namespace, stagingTablePrefix, "%")
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
@@ -549,17 +563,19 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var tName, cName, cType string
+		var tName, cName, cType sql.NullString
 		err = rows.Scan(&tName, &cName, &cType)
 		if err != nil {
 			pkgLogger.Errorf("PG: Error in processing fetched schema from redshift destination:%v", pg.Warehouse.Destination.ID)
 			return
 		}
-		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(map[string]string)
+		if _, ok := schema[tName.String]; !ok {
+			schema[tName.String] = make(map[string]string)
 		}
-		if datatype, ok := postgresDataTypesMapToRudder[cType]; ok {
-			schema[tName][cName] = datatype
+		if cName.Valid && cType.Valid {
+			if datatype, ok := postgresDataTypesMapToRudder[cType.String]; ok {
+				schema[tName.String][cName.String] = datatype
+			}
 		}
 	}
 	return
