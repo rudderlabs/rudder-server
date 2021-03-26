@@ -74,7 +74,7 @@ type JobsDB interface {
 	Store(jobList []*JobT)
 	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
 	CheckPGHealth() bool
-	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT)
+	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
 	GetToRetry(params GetQueryParamsT) []*JobT
 	GetUnprocessed(params GetQueryParamsT) []*JobT
@@ -236,6 +236,14 @@ func (jd *HandleT) assertErrorAndRollbackTx(err error, tx *sql.Tx) {
 		jd.printLists(true)
 		jd.logger.Fatal(jd.dsEmptyResultCache)
 		panic(err)
+	}
+}
+
+func (jd *HandleT) rollbackTx(err error, tx *sql.Tx) {
+	if err != nil {
+		tx.Rollback()
+		jd.printLists(true)
+		jd.logger.Fatal(jd.dsEmptyResultCache)
 	}
 }
 
@@ -2512,23 +2520,29 @@ UpdateJobStatus updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) {
+func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
 
 	if len(statusList) == 0 {
-		return
+		return nil
 	}
 
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
 	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList)
-	jd.assertErrorAndRollbackTx(err, txn)
+	if err != nil {
+		jd.rollbackTx(err, txn)
+		jd.logger.Infof("[[ %s ]]: Error occured while updating job statuses. Returning err, %v", jd.tablePrefix, err)
+		return err
+	}
 
 	err = txn.Commit()
 	jd.assertError(err)
 	for ds, stateList := range updatedStatesByDS {
 		jd.markClearEmptyResult(ds, stateList, customValFilters, parameterFilters, hasJobs, nil)
 	}
+
+	return nil
 }
 
 /*

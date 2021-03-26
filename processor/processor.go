@@ -1100,7 +1100,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
 
-	proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	err := proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	if err != nil {
+		pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
+		panic(err)
+	}
 	if enableDedup {
 		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
 		if len(uniqueMessageIds) > 0 {
@@ -1237,7 +1241,12 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 			}
 			statusList = append(statusList, &newStatus)
 		}
-		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+		err := proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while marking gateway jobs statuses as executing. Panicking. Err: %v", err)
+			panic(err)
+		}
+
 		proc.addJobsToSessions(combinedList)
 	} else {
 		proc.processJobsForDest(combinedList, nil)
@@ -1292,7 +1301,11 @@ func (proc *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+		err := proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while marking gateway jobs statuses as failed. Panicking. Err: %v", err)
+			panic(err)
+		}
 	}
 }
 
