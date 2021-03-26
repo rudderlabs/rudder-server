@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -49,11 +50,16 @@ const partitionField = "received_at"
 // clickhouse doesnt support bool, they recommend to use Uint8 and set 1,0
 
 var rudderDataTypesMapToClickHouse = map[string]string{
-	"int":      "Int64",
-	"float":    "Float64",
-	"string":   "String",
-	"datetime": "DateTime",
-	"boolean":  "UInt8",
+	"int":             "Int64",
+	"array(int)":      "Array(Int64)",
+	"float":           "Float64",
+	"array(float)":    "Array(Float64)",
+	"string":          "String",
+	"array(string)":   "Array(String)",
+	"datetime":        "DateTime",
+	"array(datetime)": "Array(DateTime)",
+	"boolean":         "UInt8",
+	"array(boolean)":  "Array(UInt8)",
 }
 
 var datatypeDefaultValuesMap = map[string]interface{}{
@@ -279,6 +285,43 @@ func generateArgumentString(arg string, length int) string {
 	return strings.Join(args, ",")
 }
 
+func castStringToArray(data string, dataType string) (interface{}, error) {
+	switch dataType {
+	case "array(int)":
+		var dataInt []int64
+		err := json.Unmarshal([]byte(data), &dataInt)
+		return dataInt, err
+	case "array(float)":
+		var dataFloat []float64
+		err := json.Unmarshal([]byte(data), &dataFloat)
+		return dataFloat, err
+	case "array(string)":
+		var dataString []string
+		err := json.Unmarshal([]byte(data), &dataString)
+		return dataString, err
+	case "array(datetime)":
+		var dataTime []time.Time
+		err := json.Unmarshal([]byte(data), &dataTime) //TODO:: verify this - time parsing
+		return dataTime, err
+	case "array(boolean)":
+		var dataBool []bool
+		err := json.Unmarshal([]byte(data), &dataBool)
+		if err != nil {
+			return dataBool, err
+		}
+		dataInt := make([]int32, len(dataBool))
+		for _, val := range dataBool {
+			if val {
+				dataInt = append(dataInt, 1)
+			} else {
+				dataInt = append(dataInt, 0)
+			}
+		}
+		return dataBool, err
+	}
+	return data, nil
+}
+
 // typecastDataFromType typeCasts string data to the mentioned data type
 func typecastDataFromType(data string, dataType string) interface{} {
 	var dataI interface{}
@@ -298,7 +341,12 @@ func typecastDataFromType(data string, dataType string) interface{} {
 			dataI = 1
 		}
 	default:
-		return data
+		if strings.Contains(dataType, "array") {
+			dataI, err = castStringToArray(data, dataType)
+		} else {
+			return data
+		}
+
 	}
 	if err != nil {
 		if disableNullable {
