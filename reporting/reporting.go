@@ -115,7 +115,7 @@ type Client struct {
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("reporting")
-	reportingServiceURL = config.GetString("Reporting.serviceURL", "https://webhook.site/dde3d1aa-abc1-4270-8e2d-ffbb84c1fa94")
+	reportingServiceURL = config.GetString("Reporting.serviceURL", "http://a02013f3ae48a4436aec4b2aa3d1159c-1237165542.us-east-1.elb.amazonaws.com/metrics")
 }
 
 func New(config Config) *Client {
