@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -452,7 +451,7 @@ func (job *UploadJobT) run() (err error) {
 
 			wg.Wait()
 			if len(loadErrors) > 0 {
-				err = multierror.Join(loadErrors)
+				err = misc.ConcatErrors(loadErrors)
 				break
 			}
 
@@ -504,7 +503,7 @@ func (job *UploadJobT) exportUserTables() (err error) {
 		job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 		if len(loadErrors) > 0 {
-			err = multierror.Join(loadErrors)
+			err = misc.ConcatErrors(loadErrors)
 			return
 		}
 	}
@@ -528,7 +527,7 @@ func (job *UploadJobT) exportIdentities() (err error) {
 			job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 			if len(loadErrors) > 0 {
-				err = multierror.Join(loadErrors)
+				err = misc.ConcatErrors(loadErrors)
 				return
 			}
 		}
@@ -547,7 +546,7 @@ func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 	job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 	if len(loadErrors) > 0 {
-		err = multierror.Join(loadErrors)
+		err = misc.ConcatErrors(loadErrors)
 		return
 	}
 
@@ -1362,7 +1361,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	wg.Wait()
 
 	if len(saveLoadFileErrs) > 0 {
-		err = multierror.Join(saveLoadFileErrs)
+		err = misc.ConcatErrors(saveLoadFileErrs)
 		pkgLogger.Errorf(`[WH]: Encountered errors in creating load file records in wh_load_files: %v`, err)
 		return startLoadFileID, endLoadFileID, err
 	}
