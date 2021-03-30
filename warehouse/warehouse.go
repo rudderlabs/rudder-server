@@ -64,6 +64,8 @@ var (
 	maxStagingFileReadBufferCapacityInK int
 	destinationsMap                     map[string]warehouseutils.WarehouseT // destID -> warehouse map
 	destinationsMapLock                 sync.RWMutex
+	sourceIDsByWorkspace                map[string][]string // workspaceID -> []sourceIDs
+	sourceIDsByWorkspaceLock            sync.RWMutex
 	longRunningUploadStatThresholdInMin time.Duration
 	pkgLogger                           logger.LoggerI
 	numLoadFileUploadWorkers            int
@@ -74,6 +76,7 @@ var (
 var (
 	host, user, password, dbname, sslmode string
 	port                                  int
+	destinationIDs                        []string
 )
 
 // warehouses worker modes
@@ -139,6 +142,7 @@ func loadConfig() {
 	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
 	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
 	destinationsMap = map[string]warehouseutils.WarehouseT{}
+	sourceIDsByWorkspace = map[string][]string{}
 	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 10240)
 	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
 	slaveUploadTimeout = config.GetDuration("Warehouse.slaveUploadTimeoutInMin", time.Duration(10)) * time.Minute
@@ -206,6 +210,14 @@ func (wh *HandleT) backendConfigSubscriber() {
 		allSources := config.Data.(backendconfig.ConfigT)
 
 		for _, source := range allSources.Sources {
+			sourceIDsByWorkspaceLock.Lock()
+			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
+				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
+			}
+			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
+
+			sourceIDsByWorkspaceLock.Unlock()
+
 			if len(source.Destinations) == 0 {
 				continue
 			}
