@@ -364,7 +364,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			// set anonymousId if not set in payload
-			var index int
 			result := gjson.GetBytes(body, "batch")
 			out := []map[string]interface{}{}
 
@@ -392,8 +391,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 					toSet["messageId"] = uuid.NewV4().String()
 				}
 				out = append(out, toSet)
-
-				index++
 				return true // keep iterating
 			})
 
