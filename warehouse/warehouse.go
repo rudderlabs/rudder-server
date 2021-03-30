@@ -215,7 +215,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
 			}
 			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
-
 			sourceIDsByWorkspaceLock.Unlock()
 
 			if len(source.Destinations) == 0 {
@@ -791,6 +790,12 @@ func minimalConfigSubscriber() {
 		pkgLogger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.ConfigT)
 		for _, source := range sources.Sources {
+			sourceIDsByWorkspaceLock.Lock()
+			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
+				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
+			}
+			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
+			sourceIDsByWorkspaceLock.Unlock()
 			for _, destination := range source.Destinations {
 				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh := &HandleT{
