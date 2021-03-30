@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/reporting"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
@@ -1051,6 +1052,13 @@ func Start() {
 	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
 		panic(err)
+	}
+
+	//Setting up reporting client
+	if CheckForWarehouseEnvVars() {
+		rruntime.Go(func() {
+			reporting.Setup(reporting.Config{ConnInfo: psqlInfo, ClientName: reporting.WAREHOUSE_CLIENT}, backendconfig.DefaultBackendConfig)
+		})
 	}
 
 	if isSlave() {

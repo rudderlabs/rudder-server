@@ -1051,7 +1051,7 @@ func (rt *HandleT) statusInsertLoop() {
 				txn := rt.jobsDB.BeginGlobalTransaction()
 				rt.jobsDB.AcquireUpdateJobStatusLocks()
 				rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil)
-				reporting.GetClient().Report(reportMetrics, txn)
+				reporting.GetClient(reporting.CORE_CLIENT).Report(reportMetrics, txn)
 				rt.jobsDB.CommitTransaction(txn)
 				rt.jobsDB.ReleaseUpdateJobStatusLocks()
 			}
@@ -1336,7 +1336,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rt.logger.Info("Router started: ", destName)
 
 	//waiting for reporting client setup
-	reporting.WaitForSetup()
+	reporting.WaitForSetup(reporting.CORE_CLIENT)
 
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	rt.jobsDB = jobsDB

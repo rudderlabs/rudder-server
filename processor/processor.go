@@ -1289,7 +1289,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	txn := proc.gatewayDB.BeginGlobalTransaction()
 	proc.gatewayDB.AcquireUpdateJobStatusLocks()
 	proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{gateway.CustomVal}, nil)
-	reportingClient := reporting.GetClient()
+	reportingClient := reporting.GetClient(reporting.CORE_CLIENT)
 	if reportingClient != nil {
 		reportingClient.Report(reportMetrics, txn)
 	}
@@ -1447,7 +1447,7 @@ func (proc *HandleT) mainLoop() {
 	proc.backendConfig.WaitForConfig()
 
 	//waiting for reporting client setup
-	reporting.WaitForSetup()
+	reporting.WaitForSetup(reporting.CORE_CLIENT)
 
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)

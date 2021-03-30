@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -24,14 +25,22 @@ import (
 
 const REPORTS_TABLE = "reports"
 
+const (
+	CORE_CLIENT      = "core"
+	WAREHOUSE_CLIENT = "warehouse"
+)
+
 var (
-	client              *Client
-	dbHandle            *sql.DB
+	clients             map[string]*Client
+	clientsMapLock      sync.RWMutex
+	dbHandles           map[string]*sql.DB
+	dbHandlesMapLock    sync.RWMutex
 	pkgLogger           logger.LoggerI
 	reportingServiceURL string
 )
 
 type Config struct {
+	ClientName  string
 	Namespace   string
 	WorksapceID string
 	InstanceID  string
@@ -116,6 +125,8 @@ type Client struct {
 func init() {
 	pkgLogger = logger.NewLogger().Child("reporting")
 	reportingServiceURL = config.GetString("Reporting.serviceURL", "http://a02013f3ae48a4436aec4b2aa3d1159c-1237165542.us-east-1.elb.amazonaws.com/metrics")
+	clients = make(map[string]*Client)
+	dbHandles = make(map[string]*sql.DB)
 }
 
 func New(config Config) *Client {
@@ -123,7 +134,7 @@ func New(config Config) *Client {
 	return cl
 }
 
-func setupTable() error {
+func setupTable(dbHandle *sql.DB) error {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id BIGSERIAL PRIMARY KEY,
 		workspace_id VARCHAR(64) NOT NULL,
@@ -163,29 +174,41 @@ func Setup(c Config, backendConfig backendconfig.BackendConfig) {
 			continue
 		}
 
-		var err error
-		dbHandle, err = sql.Open("postgres", c.ConnInfo)
+		dbHandle, err := sql.Open("postgres", c.ConnInfo)
 		if err != nil {
 			panic(err)
 		}
-		err = setupTable()
+		err = setupTable(dbHandle)
 		if err != nil {
 			panic(err)
 		}
+		if c.ClientName == "" {
+			c.ClientName = CORE_CLIENT
+		}
+
+		dbHandlesMapLock.Lock()
+		dbHandles[c.ClientName] = dbHandle
+		dbHandlesMapLock.Unlock()
+
 		c.WorksapceID = sources.WorkspaceID
 		c.Namespace = config.GetKubeNamespace()
 		c.InstanceID = config.GetEnv("INSTANCE_ID", "1")
-		client = &Client{Config: c}
+		// if c.ClientName == "" {
+		// 	c.ClientName = CORE_CLIENT
+		// }
+		clientsMapLock.Lock()
+		clients[c.ClientName] = &Client{Config: c}
+		clientsMapLock.Unlock()
 		rruntime.Go(func() {
-			mainLoop()
+			mainLoop(c.ClientName)
 		})
 		break
 	}
 }
 
-func WaitForSetup() {
+func WaitForSetup(clientName string) {
 	for {
-		if GetClient() == nil {
+		if GetClient(clientName) == nil {
 			time.Sleep(time.Second)
 			continue
 		}
@@ -193,8 +216,30 @@ func WaitForSetup() {
 	}
 }
 
-func GetClient() *Client {
-	return client
+func GetClient(clientName string) *Client {
+	clientsMapLock.RLock()
+	defer clientsMapLock.RUnlock()
+	if c, ok := clients[clientName]; ok {
+		return c
+	}
+	coreClient, ok := clients[CORE_CLIENT]
+	if !ok {
+		return nil
+	}
+	return coreClient
+}
+
+func getDBHandle(clientName string) *sql.DB {
+	dbHandlesMapLock.RLock()
+	defer dbHandlesMapLock.RUnlock()
+	if h, ok := dbHandles[clientName]; ok {
+		return h
+	}
+	handle, ok := dbHandles[CORE_CLIENT]
+	if !ok {
+		panic(fmt.Sprintf("getDBHandle() returned nil for client: %s", clientName))
+	}
+	return handle
 }
 
 func CreateConnectionDetail(sid, did, sbid, stid, sjid string) *ConnectionDetails {
@@ -254,10 +299,10 @@ func AssertSameKeys(m1 map[string]*ConnectionDetails, m2 map[string]*StatusDetai
 	}
 }
 
-func getReports(current_min int64) (reports []*ReportByStatus, reportedMin int64) {
+func getReports(current_min int64, clientName string) (reports []*ReportByStatus, reportedMin int64) {
 	sqlStatement := fmt.Sprintf(`SELECT reported_min FROM %s WHERE reported_min < %d ORDER BY reported_min ASC LIMIT 1`, REPORTS_TABLE, current_min)
 	var queryMin sql.NullInt64
-	err := dbHandle.QueryRow(sqlStatement).Scan(&queryMin)
+	err := getDBHandle(clientName).QueryRow(sqlStatement).Scan(&queryMin)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
@@ -267,7 +312,7 @@ func getReports(current_min int64) (reports []*ReportByStatus, reportedMin int64
 
 	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_id, destination_id, source_batch_id, source_task_id, source_job_id, in_pu, pu, reported_min, status, count, terminal_state, initial_state, status_code, sample_response, sample_event FROM %s WHERE reported_min = %d`, REPORTS_TABLE, queryMin.Int64)
 	var rows *sql.Rows
-	rows, err = dbHandle.Query(sqlStatement)
+	rows, err = getDBHandle(clientName).Query(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
@@ -345,13 +390,13 @@ func getAggregatedReports(reports []*ReportByStatus) []*Metric {
 	return values
 }
 
-func mainLoop() {
+func mainLoop(clientName string) {
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr}
 	for {
 		allReported := true
 		currentMin := time.Now().UTC().Unix() / 60
-		reports, reportedMin := getReports(currentMin)
+		reports, reportedMin := getReports(currentMin, clientName)
 		if reports == nil || len(reports) == 0 {
 			time.Sleep(30 * time.Second)
 			continue
@@ -385,7 +430,7 @@ func mainLoop() {
 		}
 		if allReported {
 			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_min = %d`, REPORTS_TABLE, reportedMin)
-			_, err := dbHandle.Exec(sqlStatement)
+			_, err := getDBHandle(clientName).Exec(sqlStatement)
 			if err != nil {
 				pkgLogger.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, REPORTS_TABLE, err)
 			}

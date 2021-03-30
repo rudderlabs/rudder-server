@@ -1115,7 +1115,7 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 		if err != nil {
 			return err
 		}
-		reporting.GetClient().Report([]*reporting.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
+		reporting.GetClient(reporting.WAREHOUSE_CLIENT).Report([]*reporting.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
 		err = txn.Commit()
 		return err
 	}
@@ -1301,7 +1301,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 			},
 		})
 	}
-	reporting.GetClient().Report(reportingMetrics, txn)
+	reporting.GetClient(reporting.WAREHOUSE_CLIENT).Report(reportingMetrics, txn)
 	err = txn.Commit()
 
 	// TODO: Add reporting metrics in txn

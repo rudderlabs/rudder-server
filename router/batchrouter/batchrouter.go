@@ -552,7 +552,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	txn := brt.jobsDB.BeginGlobalTransaction()
 	brt.jobsDB.AcquireUpdateJobStatusLocks()
 	brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
-	reporting.GetClient().Report(reportMetrics, txn)
+	reporting.GetClient(reporting.CORE_CLIENT).Report(reportMetrics, txn)
 	brt.jobsDB.CommitTransaction(txn)
 	brt.jobsDB.ReleaseUpdateJobStatusLocks()
 
@@ -1040,7 +1040,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destTyp
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
 	//waiting for reporting client setup
-	reporting.WaitForSetup()
+	reporting.WaitForSetup(reporting.CORE_CLIENT)
 
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.destType = destType
