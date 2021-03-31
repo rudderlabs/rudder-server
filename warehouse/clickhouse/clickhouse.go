@@ -74,11 +74,16 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"Int16":              "int",
 	"Int32":              "int",
 	"Int64":              "int",
+	"Array(Int64)":       "array(int)",
 	"Float32":            "float",
 	"Float64":            "float",
+	"Array(Float64)":     "array(float)",
 	"String":             "string",
+	"Array(String)":      "array(string)",
 	"DateTime":           "datetime",
+	"Array(DateTime)":    "array(datetime)",
 	"UInt8":              "boolean",
+	"Array(UInt8)":       "array(boolean)",
 	"Nullable(Int8)":     "int",
 	"Nullable(Int16)":    "int",
 	"Nullable(Int32)":    "int",
@@ -285,29 +290,29 @@ func generateArgumentString(arg string, length int) string {
 	return strings.Join(args, ",")
 }
 
-func castStringToArray(data string, dataType string) (interface{}, error) {
+func castStringToArray(data string, dataType string) interface{} {
 	switch dataType {
 	case "array(int)":
-		var dataInt []int64
-		err := json.Unmarshal([]byte(data), &dataInt)
-		return dataInt, err
+		dataInt := make([]int64, 0)
+		json.Unmarshal([]byte(data), &dataInt)
+		return dataInt
 	case "array(float)":
-		var dataFloat []float64
-		err := json.Unmarshal([]byte(data), &dataFloat)
-		return dataFloat, err
+		dataFloat := make([]float64, 0)
+		json.Unmarshal([]byte(data), &dataFloat)
+		return dataFloat
 	case "array(string)":
-		var dataString []string
-		err := json.Unmarshal([]byte(data), &dataString)
-		return dataString, err
+		dataString := make([]string, 0)
+		json.Unmarshal([]byte(data), &dataString)
+		return dataString
 	case "array(datetime)":
-		var dataTime []time.Time
-		err := json.Unmarshal([]byte(data), &dataTime) //TODO:: verify this - time parsing
-		return dataTime, err
+		dataTime := make([]time.Time, 0)
+		json.Unmarshal([]byte(data), &dataTime) //TODO:: verify this - time parsing
+		return dataTime
 	case "array(boolean)":
-		var dataBool []bool
+		dataBool := make([]bool, 0)
 		err := json.Unmarshal([]byte(data), &dataBool)
 		if err != nil {
-			return dataBool, err
+			return dataBool
 		}
 		dataInt := make([]int32, len(dataBool))
 		for _, val := range dataBool {
@@ -317,9 +322,9 @@ func castStringToArray(data string, dataType string) (interface{}, error) {
 				dataInt = append(dataInt, 0)
 			}
 		}
-		return dataBool, err
+		return dataBool
 	}
-	return data, nil
+	return data
 }
 
 // typecastDataFromType typeCasts string data to the mentioned data type
@@ -342,7 +347,7 @@ func typecastDataFromType(data string, dataType string) interface{} {
 		}
 	default:
 		if strings.Contains(dataType, "array") {
-			dataI, err = castStringToArray(data, dataType)
+			dataI = castStringToArray(data, dataType)
 		} else {
 			return data
 		}
@@ -420,6 +425,8 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			for index, value := range record {
 				columnName := sortedColumnKeys[index]
 				columnDataType := tableSchemaInUpload[columnName]
+				fmt.Println(columnName)
+				fmt.Println(columnDataType)
 				data := typecastDataFromType(value, columnDataType)
 				recordInterface = append(recordInterface, data)
 			}
