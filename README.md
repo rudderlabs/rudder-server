@@ -64,7 +64,7 @@ Once you have installed RudderStack, [send test events](https://docs.rudderstack
 
 ### Connections Page
 
-![Connections Page](https://user-images.githubusercontent.com/59817155/113098401-0a057e00-9216-11eb-90de-6b120aeaf764.png)
+![Connections Page](https://user-images.githubusercontent.com/59817155/113102943-489e3700-921c-11eb-87c0-d4b6f9e3270c.png)
 
 ### Live Events
 
