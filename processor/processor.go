@@ -1006,6 +1006,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		if val, ok := destination.DestinationDefinition.Config["transformAt"].(string); ok {
 			transformAt = val
 		}
+		//Check for overrides through env
+		transformAtOverrideFound := config.IsSet("Processor." + destination.DestinationDefinition.Name + ".transformAt")
+		if transformAtOverrideFound {
+			transformAt = config.GetString("Processor."+destination.DestinationDefinition.Name+".transformAt", "processor")
+		}
 
 		if transformAt == "processor" {
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
