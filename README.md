@@ -28,19 +28,15 @@ Questions? Please join our [Slack channel](https://resources.rudderstack.com/joi
 
 - **Segment API Compatible**: RudderStack is Segment API compatible. So you don't need to change your app if you are using Segment, just integrate the RudderStack SDKs into your app and your events will keep flowing as before (including data-warehouse).
 
-- **Warehouse-first**: RudderStack treats your data warehouse as a first class citizen among destinations, with advanced features and configurable, near real-time sync.
-
 - **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, **1mg**, **Nana**, **OnceHub**,  and dozens of large companies use RudderStack for collecting their events. **Note**: If you're using RudderStack and would like to add your name in this list, please submit a PR.
 
 - **High Availability**: RudderStack comes with at least 99.99% uptime. We have built a sophisticated error handling and retry system that ensures that your data will be delivered even in the event of network partitions or destinations downtime.
 
-- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
-
 - **Seamless Integration**: RudderStack currently supports integration with over 80 popular [tool](https://docs.rudderstack.com/destinations-guides) and [warehouse](https://docs.rudderstack.com/data-warehouse-integration-guides) destinations.
 
-- **User-specified Transformation**: RudderStack offers a powerful JavaScript-based event transformation framework which lets you enhance or transform your event data by combining it with your other internal data. Furthermore, RudderStack runs inside your cloud or on-premise environment, so you can easily access your production data to join with the event data.
+- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
 
-- **Enhanced Telemetry**: To help us improve RudderStack, we collect performance and diagnostic metrics about how you use RudderStack, and how it is working. **No customer data is present in the metrics**. For technical details, please check out our wiki page on [Telemetry](https://github.com/rudderlabs/rudder-server/wiki/RudderStack-Telemetry).
+- **User-specified Transformation**: RudderStack offers a powerful JavaScript-based event transformation framework which lets you enhance or transform your event data by combining it with your other internal data. Furthermore, RudderStack runs inside your cloud or on-premise environment, so you can easily access your production data to join with the event data.
 
 # Our Customers
 
@@ -51,12 +47,16 @@ Questions? Please join our [Slack channel](https://resources.rudderstack.com/joi
 
 The easiest way to experience RudderStack is to [sign up](https://app.rudderlabs.com/signup?type=freetrial) for **RudderStack Cloud Free** - a completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to get started.
 
-You can also set up and use RudderStack on your platform of choice:
+You can also set up RudderStack on your platform of choice with these two easy steps:
+
+## Step 1: Set Up RudderStack
 
 - [Setting up RudderStack on Docker](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/docker)
 - [Setting up RudderStack on Kubernetes](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/kubernetes)
 
-**Note:** If you are planning to use RudderStack in production, we **strongly** recommend the Kubernetes Helm charts. We update our Docker images with bug fixes much more frequently than our GitHub repo (where we release once a month).
+**Note:** If you are planning to use RudderStack in production, we **strongly** we highly recommend using our Kubernetes Helm charts. We update our Docker images with bug fixes much more frequently than our GitHub repo (where we release once a month).
+
+## Step 2: Verify the Installation
 
 Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack#how-to-send-test-events) to verify the setup.
 
