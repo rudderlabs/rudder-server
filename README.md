@@ -10,7 +10,7 @@
 
 ## Table of Contents
 
-- [What is the RudderStack?]()
+- [What is RudderStack?]()
 - [Why Use RudderStack?]()
 - [Set Up RudderStack]()
 - [Our Customers]()
