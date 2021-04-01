@@ -11,11 +11,11 @@
 ## Table of Contents
 
 - [What is RudderStack?]()
-- [Why Use RudderStack?]()
-- [Set Up RudderStack]()
-- [Our Customers]()
+- [Why use RudderStack?]()
+- [Set up RudderStack]()
+- [Our customers]()
 - [Contribute to RudderStack]()
-- [Follow Us]()
+- [Follow us]()
 
 
 # What is RudderStack?
@@ -33,7 +33,7 @@ Questions? Please join our [**Slack channel**](https://resources.rudderstack.com
 | Try **RudderStack Cloud Free** - a free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to start building a smarter customer data pipeline today, with RudderStack Cloud. |
 |:------|
 
-# Why Use RudderStack?
+# Why use RudderStack?
 
 - **Unlimited Events**: Event volume-based pricing of most of the commercial systems is broken. With RudderStack, you are be able to collect as much data as possible without worrying about overrunning your event budgets.
 
@@ -51,43 +51,43 @@ Questions? Please join our [**Slack channel**](https://resources.rudderstack.com
 
 - **User-specified Transformation**: RudderStack offers a powerful JavaScript-based event transformation framework which lets you enhance or transform your event data by combining it with your other internal data. Furthermore, RudderStack runs inside your cloud or on-premise environment, so you can easily access your production data to join with the event data.
 
-# Our Customers
+# Our customers
 
 [![1mg](https://user-images.githubusercontent.com/59817155/95971154-74745e80-0e2e-11eb-8468-9f9cf1bfcf46.png)](https://www.1mg.com/) [![Grofers](https://user-images.githubusercontent.com/59817155/95970797-fe6ff780-0e2d-11eb-9c08-d4550b2c68b5.png)](https://grofers.com/) [![IFTTT](https://user-images.githubusercontent.com/59817155/95970944-2cedd280-0e2e-11eb-83d3-500c46c3a290.png)](https://ifttt.com/) [![Mattermost](https://user-images.githubusercontent.com/59817155/95971043-4c84fb00-0e2e-11eb-8ef8-2e47970221c6.png)](https://mattermost.com/) [![Wynn Casino](https://user-images.githubusercontent.com/59817155/95969926-f9f70f00-0e2c-11eb-8985-27b62d34fc65.png)](https://www.wynnlasvegas.com/) [![Acorns](https://user-images.githubusercontent.com/59817155/95970244-58bc8880-0e2d-11eb-9c7b-2ca08e2b11d7.png)](https://www.acorns.com/) [![Hinge](https://user-images.githubusercontent.com/59817155/95970463-9de0ba80-0e2d-11eb-91b1-bbfe55b91228.png)](https://hinge.co/) [![Proposify](https://user-images.githubusercontent.com/59817155/95971522-f82e4b00-0e2e-11eb-8c58-95fcb8a0e76c.png)](https://www.proposify.com/) [![Barstool Sports](https://user-images.githubusercontent.com/59817155/95971526-f95f7800-0e2e-11eb-85d3-fa81dbf9aa6e.png)](https://www.barstoolsports.com/)
 
 
-# Get Started with RudderStack
+# Get started with RudderStack
 
 The easiest way to experience RudderStack is to [sign up](https://app.rudderlabs.com/signup?type=freetrial) for **RudderStack Cloud Free** - a completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to get started.
 
 You can also set up RudderStack on your platform of choice with these two easy steps:
 
-## Step 1: Set Up RudderStack
+## Step 1: Set up RudderStack
 
 - [Setting up RudderStack on Docker](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/docker)
 - [Setting up RudderStack on Kubernetes](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/kubernetes)
 
 **Note:** If you are planning to use RudderStack in production, we **strongly** we highly recommend using our Kubernetes Helm charts. We update our Docker images with bug fixes much more frequently than our GitHub repo (where we release once a month).
 
-## Step 2: Verify the Installation
+## Step 2: Verify the installation
 
 Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack#how-to-send-test-events) to verify the setup.
 
-# UI Pages
+# UI pages
 
-### Connections Page
+### Connections page
 
 ![Connections Page](https://user-images.githubusercontent.com/59817155/113102943-489e3700-921c-11eb-87c0-d4b6f9e3270c.png)
 
-### Live Events
+### Live events
 
 ![Events Page](https://user-images.githubusercontent.com/59817155/113098485-25708900-9216-11eb-8f61-2b0a4443afe1.JPG)
 
-### Connecting a Source to a Destination
+### Connecting a RudderStack source to a destination
 
 ![Connection](https://user-images.githubusercontent.com/59817155/113098528-35886880-9216-11eb-97e9-6575bca23ae6.gif)
 
-# RudderStack Architecture
+# RudderStack architecture
 
 Read about RudderStack's architecture in our [wiki](https://github.com/rudderlabs/rudder-server/wiki/RudderStack's-Architecture).
 
@@ -99,7 +99,7 @@ RudderStack server is released under the [AGPLv3 License][agplv3_license].
 
 We would love to see you contribute to RudderStack. Get more information on how to contribute [here](CONTRIBUTING.md).
 
-# Follow Us
+# Follow us
 
 - [RudderStack Blog][rudderstack-blog]
 - [Slack][slack]
