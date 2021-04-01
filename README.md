@@ -8,6 +8,16 @@
 </p>
 <br/>
 
+## Table of Contents
+
+- [What is the RudderStack?]()
+- [Why Use RudderStack?]()
+- [Set Up RudderStack]()
+- [Our Customers]()
+- [Contribute to RudderStack]()
+- [Follow Us]()
+
+
 # What is RudderStack?
 
 [RudderStack](https://rudderstack.com/) is a **customer data pipeline tool** for collecting, routing and processing data from your websites, apps, cloud tools, and data warehouse.
@@ -43,7 +53,7 @@ Questions? Please join our [Slack channel](https://resources.rudderstack.com/joi
 [![1mg](https://user-images.githubusercontent.com/59817155/95971154-74745e80-0e2e-11eb-8468-9f9cf1bfcf46.png)](https://www.1mg.com/) [![Grofers](https://user-images.githubusercontent.com/59817155/95970797-fe6ff780-0e2d-11eb-9c08-d4550b2c68b5.png)](https://grofers.com/) [![IFTTT](https://user-images.githubusercontent.com/59817155/95970944-2cedd280-0e2e-11eb-83d3-500c46c3a290.png)](https://ifttt.com/) [![Mattermost](https://user-images.githubusercontent.com/59817155/95971043-4c84fb00-0e2e-11eb-8ef8-2e47970221c6.png)](https://mattermost.com/) [![Wynn Casino](https://user-images.githubusercontent.com/59817155/95969926-f9f70f00-0e2c-11eb-8985-27b62d34fc65.png)](https://www.wynnlasvegas.com/) [![Acorns](https://user-images.githubusercontent.com/59817155/95970244-58bc8880-0e2d-11eb-9c7b-2ca08e2b11d7.png)](https://www.acorns.com/) [![Hinge](https://user-images.githubusercontent.com/59817155/95970463-9de0ba80-0e2d-11eb-91b1-bbfe55b91228.png)](https://hinge.co/) [![Proposify](https://user-images.githubusercontent.com/59817155/95971522-f82e4b00-0e2e-11eb-8c58-95fcb8a0e76c.png)](https://www.proposify.com/) [![Barstool Sports](https://user-images.githubusercontent.com/59817155/95971526-f95f7800-0e2e-11eb-85d3-fa81dbf9aa6e.png)](https://www.barstoolsports.com/)
 
 
-# Get Started
+# Get Started with RudderStack
 
 The easiest way to experience RudderStack is to [sign up](https://app.rudderlabs.com/signup?type=freetrial) for **RudderStack Cloud Free** - a completely free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to get started.
 
