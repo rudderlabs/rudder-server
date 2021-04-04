@@ -641,27 +641,43 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
-// add metadata to each singularEvent which will be returned by transformer in response
-func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT, receivedAt time.Time) {
-	eventBytes, err := json.Marshal(event.Message)
-	if err != nil {
-		panic("couldn't marshal payload") //TODO need panic here?
-	}
+func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time) *transformer.MetadataT {
+	commonMetadata := transformer.MetadataT{}
 
+	eventBytes, err := json.Marshal(singularEvent)
+	if err != nil {
+		//Marshalling should never fail. But still panicking.
+		panic("couldn't marshal payload")
+	}
+	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+	commonMetadata.RudderID = batchEvent.UserID
+	commonMetadata.JobID = batchEvent.JobID
+	commonMetadata.MessageID = singularEvent["messageId"].(string)
+	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
+	commonMetadata.SourceBatchID = gjson.GetBytes(eventBytes, "context.sources.batch_id").String()
+	commonMetadata.SourceTaskID = gjson.GetBytes(eventBytes, "context.sources.task_id").String()
+	commonMetadata.SourceJobID = gjson.GetBytes(eventBytes, "context.sources.job_id").String()
+
+	return &commonMetadata
+}
+
+// add metadata to each singularEvent which will be returned by transformer in response
+func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transformer.TransformerEventT, destination backendconfig.DestinationT) {
 	metadata := transformer.MetadataT{}
-	metadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+	metadata.SourceID = commonMetadata.SourceID
+	metadata.RudderID = commonMetadata.RudderID
+	metadata.JobID = commonMetadata.JobID
+	metadata.MessageID = commonMetadata.MessageID
+	metadata.ReceivedAt = commonMetadata.ReceivedAt
+	metadata.SourceBatchID = commonMetadata.SourceBatchID
+	metadata.SourceTaskID = commonMetadata.SourceTaskID
+	metadata.SourceJobID = commonMetadata.SourceJobID
+
 	metadata.DestinationID = destination.ID
-	metadata.RudderID = batchEvent.UserID
-	metadata.JobID = batchEvent.JobID
-	metadata.SourceBatchID = gjson.GetBytes(eventBytes, "context.sources.batch_id").String()
-	metadata.SourceTaskID = gjson.GetBytes(eventBytes, "context.sources.task_id").String()
-	metadata.SourceJobID = gjson.GetBytes(eventBytes, "context.sources.job_id").String()
 	metadata.DestinationType = destination.DestinationDefinition.Name
-	metadata.MessageID = event.Message["messageId"].(string)
 	if event.SessionID != "" {
 		metadata.SessionID = event.SessionID
 	}
-	metadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
 	event.Metadata = metadata
 }
 
@@ -945,6 +961,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	uniqueMessageIds := make(map[string]struct{})
 	var sourceDupStats = make(map[string]int)
 
+	reportMetrics := make([]*reporting.PUReportedMetric, 0)
+	inCountMap := make(map[string]int64)
+	inCountMetadataMap := make(map[string]MetricMetadata)
+	connectionDetailsMap := make(map[string]*reporting.ConnectionDetails)
+	statusDetailsMap := make(map[string]*reporting.StatusDetail)
+
 	for idx, batchEvent := range jobList {
 
 		var singularEvents []types.SingularEventT
@@ -997,6 +1019,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					proc.logger.Debug("No enabled destinations")
 					continue
 				}
+
+				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(singularEvent, batchEvent, receivedAt)
 				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 				for _, destType := range enabledDestTypes {
 					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
@@ -1021,7 +1045,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy.Message["request_ip"] = requestIP
 
 						enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-						enhanceWithMetadata(&shallowEventCopy, batchEvent, destination, receivedAt)
+						enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, destination)
 
 						metadata := shallowEventCopy.Metadata
 						srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
@@ -1034,6 +1058,28 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 							shallowEventCopy)
 					}
 				}
+
+				//Grouping events by sourceid + destinationid + source batch id to find the count
+				key := fmt.Sprintf("%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID)
+				if _, ok := inCountMap[key]; !ok {
+					inCountMap[key] = 0
+				}
+				inCountMap[key] = inCountMap[key] + 1
+				if _, ok := inCountMetadataMap[key]; !ok {
+					inCountMetadataMap[key] = MetricMetadata{sourceID: commonMetadataFromSingularEvent.SourceID, sourceBatchID: commonMetadataFromSingularEvent.SourceBatchID, sourceTaskID: commonMetadataFromSingularEvent.SourceTaskID, sourceJobID: commonMetadataFromSingularEvent.SourceJobID}
+				}
+
+				cd, ok := connectionDetailsMap[key]
+				if !ok {
+					cd = reporting.CreateConnectionDetail(commonMetadataFromSingularEvent.SourceID, "", commonMetadataFromSingularEvent.SourceBatchID, commonMetadataFromSingularEvent.SourceTaskID, commonMetadataFromSingularEvent.SourceJobID)
+					connectionDetailsMap[key] = cd
+				}
+				sd, ok := statusDetailsMap[key]
+				if !ok {
+					sd = reporting.CreateStatusDetail(reporting.SuccessStatus, 0, 200, "", []byte(`{}`))
+					statusDetailsMap[key] = sd
+				}
+				sd.Count++
 			}
 		}
 
@@ -1050,14 +1096,23 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		statusList = append(statusList, &newStatus)
 	}
 
+	//GW report metrics
+	reporting.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+	for k, cd := range connectionDetailsMap {
+		m := &reporting.PUReportedMetric{
+			ConnectionDetails: *cd,
+			PUDetails:         *reporting.CreatePUDetails("", reporting.GATEWAY, false, true),
+			StatusDetail:      statusDetailsMap[k],
+		}
+		reportMetrics = append(reportMetrics, m)
+	}
+
 	proc.statNumEvents.Count(totalEvents)
 
 	proc.marshalSingularEvents.End()
 
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
-
-	reportMetrics := make([]*reporting.PUReportedMetric, 0)
 
 	proc.destProcessing.Start()
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
@@ -1077,8 +1132,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		configSubscriberLock.RUnlock()
 
 		//Grouping events by sourceid + destinationid + source batch id to find the count
-		inCountMap := make(map[string]int64)
-		inCountMetadataMap := make(map[string]MetricMetadata)
+		inCountMap = make(map[string]int64)
+		inCountMetadataMap = make(map[string]MetricMetadata)
 		for _, event := range eventList {
 			key := fmt.Sprintf("%s:%s:%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID)
 			if _, ok := inCountMap[key]; !ok {
@@ -1293,8 +1348,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	if reportingClient != nil {
 		reportingClient.Report(reportMetrics, txn)
 	}
-	proc.gatewayDB.CommitTransaction(txn)
-	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 
 	if enableDedup {
 		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
@@ -1306,6 +1359,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
+	proc.gatewayDB.CommitTransaction(txn)
+	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.statDBW.End()
 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
