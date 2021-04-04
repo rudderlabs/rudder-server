@@ -301,8 +301,17 @@ func castStringToArray(data string, dataType string) interface{} {
 		json.Unmarshal([]byte(data), &dataFloat)
 		return dataFloat
 	case "array(string)":
+		dataInterface := make([]interface{}, 0)
+		json.Unmarshal([]byte(data), &dataInterface)
 		dataString := make([]string, 0)
-		json.Unmarshal([]byte(data), &dataString)
+		for _, value := range dataInterface {
+			if _, ok := value.(string); ok {
+				dataString = append(dataString, value.(string))
+			} else {
+				bytes, _ := json.Marshal(value)
+				dataString = append(dataString, string(bytes))
+			}
+		}
 		return dataString
 	case "array(datetime)":
 		dataTime := make([]time.Time, 0)
@@ -425,8 +434,6 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			for index, value := range record {
 				columnName := sortedColumnKeys[index]
 				columnDataType := tableSchemaInUpload[columnName]
-				fmt.Println(columnName)
-				fmt.Println(columnDataType)
 				data := typecastDataFromType(value, columnDataType)
 				recordInterface = append(recordInterface, data)
 			}
