@@ -69,9 +69,10 @@ var dataTypesMapToRudder = map[bigquery.FieldType]string{
 }
 
 var partitionKeyMap = map[string]string{
-	"users":                      "id",
-	"identifies":                 "id",
-	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
+	"users":                              "id",
+	"identifies":                         "id",
+	warehouseutils.DiscardsTable:         "row_id, column_name, table_name",
+	warehouseutils.IdentityMappingsTable: "merge_property_type, merge_property_value",
 }
 
 func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
@@ -496,82 +497,12 @@ func (bq *HandleT) Cleanup() {
 
 func (bq *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	identityMergeRulesTable := warehouseutils.IdentityMergeRulesWarehouseTableName(PROVIDER)
-	pkgLogger.Infof("BQ: Starting load for table:%s\n", identityMergeRulesTable)
-
-	pkgLogger.Infof("BQ: Fetching load file location for %s", identityMergeRulesTable)
-
-	var location string
-	location, err = bq.Uploader.GetSingleLoadFileLocation(identityMergeRulesTable)
-	if err != nil {
-		return err
-	}
-	location = warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
-	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", identityMergeRulesTable, bq.Namespace, bq.ProjectID, location)
-	gcsRef := bigquery.NewGCSReference(location)
-	gcsRef.SourceFormat = bigquery.JSON
-	gcsRef.MaxBadRecords = 0
-	gcsRef.IgnoreUnknownValues = false
-	partitionDate := time.Now().Format("2006-01-02")
-	outputTable := partitionedTable(identityMergeRulesTable, partitionDate)
-
-	// create partitioned table in format tableName$20191221
-	loader := bq.Db.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
-
-	job, err := loader.Run(bq.BQContext)
-	if err != nil {
-		pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
-		return
-	}
-	status, err := job.Wait(bq.BQContext)
-	if err != nil {
-		pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
-		return
-	}
-
-	if status.Err() != nil {
-		return status.Err()
-	}
-	return
+	return bq.LoadTable(identityMergeRulesTable)
 }
 
 func (bq *HandleT) LoadIdentityMappingsTable() (err error) {
 	identityMappingsTable := warehouseutils.IdentityMappingsWarehouseTableName(PROVIDER)
-	pkgLogger.Infof("BQ: Starting load for table:%s\n", identityMappingsTable)
-
-	pkgLogger.Infof("BQ: Fetching load file location for %s", identityMappingsTable)
-
-	var location string
-	location, err = bq.Uploader.GetSingleLoadFileLocation(identityMappingsTable)
-	if err != nil {
-		return err
-	}
-	location = warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
-	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", identityMappingsTable, bq.Namespace, bq.ProjectID, location)
-	gcsRef := bigquery.NewGCSReference(location)
-	gcsRef.SourceFormat = bigquery.JSON
-	gcsRef.MaxBadRecords = 0
-	gcsRef.IgnoreUnknownValues = false
-	partitionDate := time.Now().Format("2006-01-02")
-	outputTable := partitionedTable(identityMappingsTable, partitionDate)
-
-	// create partitioned table in format tableName$20191221
-	loader := bq.Db.Dataset(bq.Namespace).Table(outputTable).LoaderFrom(gcsRef)
-
-	job, err := loader.Run(bq.BQContext)
-	if err != nil {
-		pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
-		return
-	}
-	status, err := job.Wait(bq.BQContext)
-	if err != nil {
-		pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
-		return
-	}
-
-	if status.Err() != nil {
-		return status.Err()
-	}
-	return
+	return bq.LoadTable(identityMappingsTable)
 }
 
 func (bq *HandleT) tableExists(tableName string) (exists bool, err error) {
