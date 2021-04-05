@@ -167,9 +167,18 @@ func partitionedTable(tableName string, partitionDate string) string {
 	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
 }
 
-func (bq *HandleT) loadTable(tableName string, forceLoad bool) (partitionDate string, err error) {
+func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFromTableUploads bool) (partitionDate string, err error) {
 	pkgLogger.Infof("BQ: Starting load for table:%s\n", tableName)
-	locations := bq.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
+	var locations []string
+	if getLoadFileLocFromTableUploads {
+		location, err := bq.Uploader.GetSingleLoadFileLocation(tableName)
+		if err != nil {
+			return "", err
+		}
+		locations = append(locations, location)
+	} else {
+		locations = bq.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
+	}
 	locations = warehouseutils.GetGCSLocations(locations, warehouseutils.GCSLocationOptionsT{})
 	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
 	gcsRef := bigquery.NewGCSReference(locations...)
@@ -203,7 +212,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool) (partitionDate st
 func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	pkgLogger.Infof("BQ: Starting load for identifies and users tables\n")
-	partitionDate, err := bq.loadTable(warehouseutils.IdentifiesTable, true)
+	partitionDate, err := bq.loadTable(warehouseutils.IdentifiesTable, true, false)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -343,9 +352,10 @@ func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 
 func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
 	empty = true
-
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
+	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
+	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", bq.ProjectID)
 	bq.Db, err = bq.connect(BQCredentialsT{
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
@@ -355,7 +365,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 	}
 	defer bq.Db.Close()
 
-	tables := []string{"TRACKS", "PAGES", "SCREENS", "IDENTIFIES", "ALIASES"}
+	tables := []string{"tracks", "pages", "screens", "identifies", "aliases"}
 	for _, tableName := range tables {
 		var exists bool
 		exists, err = bq.tableExists(tableName)
@@ -410,7 +420,11 @@ func (bq *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 }
 
 func (bq *HandleT) LoadTable(tableName string) error {
-	_, err := bq.loadTable(tableName, false)
+	var getLoadFileLocFromTableUploads bool
+	if misc.Contains([]string{warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable}, tableName) {
+		getLoadFileLocFromTableUploads = true
+	}
+	_, err := bq.loadTable(tableName, false, getLoadFileLocFromTableUploads)
 	return err
 }
 
@@ -507,11 +521,15 @@ func (bq *HandleT) LoadIdentityMappingsTable() (err error) {
 
 func (bq *HandleT) tableExists(tableName string) (exists bool, err error) {
 	_, err = bq.Db.Dataset(bq.Namespace).Table(tableName).Metadata(context.Background())
-	if err != nil {
-		return false, err
+	if err == nil {
+		return true, nil
 	}
-
-	return true, nil
+	if e, ok := err.(*googleapi.Error); ok {
+		if e.Code == 404 {
+			return false, nil
+		}
+	}
+	return false, err
 }
 
 func (bq *HandleT) columnExists(columnName string, tableName string) (exists bool, err error) {
@@ -531,8 +549,10 @@ func (bq *HandleT) columnExists(columnName string, tableName string) (exists boo
 }
 
 type identityRulesT struct {
-	AnonymousId string `json:"anonymous_id"`
-	UserId      string `json:"user_id""`
+	MergeProperty1Type  string `json:"merge_property_1_type"`
+	MergeProperty1Value string `json:"merge_property_1_value"`
+	MergeProperty2Type  string `json:"merge_property_2_type"`
+	MergeProperty2Value string `json:"merge_property_2_value`
 }
 
 func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) {
@@ -548,24 +568,23 @@ func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 			return err
 		}
 		totalRows := int64(tableMetadata.NumRows)
-
 		// check if table in warehouse has anonymous_id and user_id and construct accordingly
-		hasAnonymousID, err := bq.columnExists("ANONYMOUS_ID", tableName)
+		hasAnonymousID, err := bq.columnExists("anonymous_id", tableName)
 		if err != nil {
 			return
 		}
-		hasUserID, err := bq.columnExists("USER_ID", tableName)
+		hasUserID, err := bq.columnExists("user_id", tableName)
 		if err != nil {
 			return
 		}
 
 		var toSelectFields string
 		if hasAnonymousID && hasUserID {
-			toSelectFields = `"anonymous_id", "user_id"`
+			toSelectFields = `anonymous_id, user_id`
 		} else if hasAnonymousID {
-			toSelectFields = `"anonymous_id", null as "user_id"`
+			toSelectFields = `anonymous_id, null as user_id`
 		} else if hasUserID {
-			toSelectFields = `null as anonymous_id", "user_id"`
+			toSelectFields = `null as anonymous_id", user_id`
 		} else {
 			pkgLogger.Infof("BQ: anonymous_id, user_id columns not present in table: %s", tableName)
 			return nil
@@ -574,8 +593,8 @@ func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 		batchSize := int64(10000)
 		var offset int64
 		for {
-			sqlStatement := fmt.Sprintf(`SELECT DISTINCT %s FROM "%s"."%s" LIMIT %d OFFSET %d`, toSelectFields, bq.Namespace, tableName, batchSize, offset)
-			pkgLogger.Infof("SF: Downloading distinct combinations of anonymous_id, user_id: %s, totalRows: %d", sqlStatement, totalRows)
+			sqlStatement := fmt.Sprintf(`SELECT DISTINCT %[1]s FROM %[2]s.%[3]s LIMIT %[4]d OFFSET %[5]d`, toSelectFields, bq.Namespace, tableName, batchSize, offset)
+			pkgLogger.Infof("BQ: Downloading distinct combinations of anonymous_id, user_id: %s, totalRows: %d", sqlStatement, totalRows)
 			ctx := context.Background()
 			query := bq.Db.Query(sqlStatement)
 			job, err := query.Run(ctx)
@@ -591,23 +610,36 @@ func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 			}
 			it, err := job.Read(ctx)
 			for {
-				var identityRule identityRulesT
+				var values []bigquery.Value
 
-				err := it.Next(&identityRule)
+				err := it.Next(&values)
 				if err == iterator.Done {
 					break
 				}
 				if err != nil {
 					return err
 				}
-				if len(identityRule.AnonymousId) == 0 && len(identityRule.UserId) == 0 {
+				var anonId, userId string
+				if _, ok := values[0].(string); ok {
+					anonId = values[0].(string)
+				}
+				if _, ok := values[1].(string); ok {
+					userId = values[1].(string)
+				}
+				identityRule := identityRulesT{
+					MergeProperty1Type:  "anonymous_id",
+					MergeProperty1Value: anonId,
+					MergeProperty2Type:  "user_id",
+					MergeProperty2Value: userId,
+				}
+				if len(identityRule.MergeProperty1Value) == 0 && len(identityRule.MergeProperty2Value) == 0 {
 					continue
 				}
 				bytes, err := json.Marshal(identityRule)
 				if err != nil {
 					break
 				}
-				gzWriter.WriteGZ(string(bytes))
+				gzWriter.WriteGZ(string(bytes) + "\n")
 			}
 
 			offset += batchSize
@@ -618,7 +650,7 @@ func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 		return
 	}
 
-	tables := []string{"TRACKS", "PAGES", "SCREENS", "IDENTIFIES", "ALIASES"}
+	tables := []string{"tracks", "pages", "screens", "identifies", "aliases"}
 	for _, table := range tables {
 		err = getFromTable(table)
 		if err != nil {
