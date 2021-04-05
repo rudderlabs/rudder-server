@@ -10,12 +10,12 @@
 
 ### Table of Contents
 
-- [What is RudderStack?]()
-- [Why use RudderStack?]()
-- [Set up RudderStack]()
-- [Our customers]()
-- [Contribute to RudderStack]()
-- [Follow us]()
+- [What is RudderStack?](https://github.com/rudderlabs/rudder-server#what-is-rudderstack)
+- [Why use RudderStack?](https://github.com/rudderlabs/rudder-server#why-use-rudderstack)
+- [Set up RudderStack](https://github.com/rudderlabs/rudder-server#get-started-with-rudderstack)
+- [Our customers](https://github.com/rudderlabs/rudder-server#our-customers)
+- [Contribute to RudderStack](https://github.com/rudderlabs/rudder-server#contribute)
+- [Follow us](https://github.com/rudderlabs/rudder-server#follow-us)
 
 
 ## What is RudderStack?
