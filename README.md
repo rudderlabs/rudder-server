@@ -37,19 +37,21 @@ Questions? Please join our [**Slack channel**](https://resources.rudderstack.com
 
 - **Unlimited Events**: Event volume-based pricing of most of the commercial systems is broken. With RudderStack, you are be able to collect as much data as possible without worrying about overrunning your event budgets.
 
+- **Warehouse-first**: RudderStack treats your data warehouse as a first class citizen among destinations, with advanced features and configurable, near real-time sync.
+
 - **Developer-focused**: RudderStack is built API-first. It integrates seamlessly with the tools that the developers already use and love.
 
 - **Segment API Compatible**: RudderStack is Segment API compatible. So you don't need to change your app if you are using Segment, just integrate the RudderStack SDKs into your app and your events will keep flowing as before (including data-warehouse).
 
 - **Production-ready**: Companies like **Mattermost**, **IFTTT**, **Torpedo**, **Grofers**, **1mg**, **Nana**, **OnceHub**,  and dozens of large companies use RudderStack for collecting their events. **Note**: If you're using RudderStack and would like to add your name in this list, please submit a PR.
 
-- **High Availability**: RudderStack comes with at least 99.99% uptime. We have built a sophisticated error handling and retry system that ensures that your data will be delivered even in the event of network partitions or destinations downtime.
-
 - **Seamless Integration**: RudderStack currently supports integration with over 80 popular [tool](https://docs.rudderstack.com/destinations-guides) and [warehouse](https://docs.rudderstack.com/data-warehouse-integration-guides) destinations.
 
-- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
-
 - **User-specified Transformation**: RudderStack offers a powerful JavaScript-based event transformation framework which lets you enhance or transform your event data by combining it with your other internal data. Furthermore, RudderStack runs inside your cloud or on-premise environment, so you can easily access your production data to join with the event data.
+
+- **High Availability**: RudderStack comes with at least 99.99% uptime. We have built a sophisticated error handling and retry system that ensures that your data will be delivered even in the event of network partitions or destinations downtime.
+
+- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
 
 ## Our customers
 
@@ -66,6 +68,7 @@ You can also set up RudderStack on your platform of choice with these two easy s
 
 - [Setting up RudderStack on Docker](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/docker)
 - [Setting up RudderStack on Kubernetes](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack/kubernetes)
+- [Developer Machine Setup](https://docs.rudderstack.com/installing-and-setting-up-rudderstack/developer-machine-setup)
 
 | If you are planning to use RudderStack in production, we highly recommend using our Kubernetes Helm charts. We update our Docker images with bug fixes much more frequently than our GitHub repo (where we release once a month). |
 |:------|
