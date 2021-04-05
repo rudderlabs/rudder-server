@@ -356,8 +356,10 @@ func getAggregatedReports(reports []*ReportByStatus) []*Metric {
 					SourceJobID:   report.SourceJobID,
 				},
 				PUDetails: PUDetails{
-					InPU: report.InPU,
-					PU:   report.PU,
+					InPU:       report.InPU,
+					PU:         report.PU,
+					TerminalPU: report.TerminalPU,
+					InitialPU:  report.InitialPU,
 				},
 				ReportMetadata: ReportMetadata{
 					ReportedMin: report.ReportedMin,
