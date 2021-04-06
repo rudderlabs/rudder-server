@@ -329,6 +329,11 @@ func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUse
 		return true
 	}
 
+	if !worker.rt.guaranteeUserEventOrder {
+		//if guaranteeUserEventOrder is false, letting the next jobs pass
+		return true
+	}
+
 	//If batching is enabled, we send the request only if the previous one succeeds
 	if worker.rt.enableBatching {
 		return isSuccessStatus(prevRespStatusCode)
