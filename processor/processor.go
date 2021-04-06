@@ -820,8 +820,14 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			continue
 		}
 
+		//Using first element in messages array for sample event
+		sampleEvent, err := json.Marshal(messages[0])
+		if err != nil {
+			proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal first element in failed events: %v`, err)
+			sampleEvent = []byte(`{}`)
+		}
 		//Update metrics maps
-		updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, reporting.AbortStatus, payload)
+		updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, reporting.AbortStatus, sampleEvent)
 
 		id := uuid.NewV4()
 		// marshal error to escape any quotes in error string etc.
