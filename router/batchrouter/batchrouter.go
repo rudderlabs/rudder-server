@@ -92,13 +92,15 @@ type ObjectStorageT struct {
 
 //JobParametersT struct holds source id and destination id of a job
 type JobParametersT struct {
-	SourceID      string `json:"source_id"`
-	DestinationID string `json:"destination_id"`
-	ReceivedAt    string `json:"received_at"`
-	TransformAt   string `json:"transform_at"`
-	SourceBatchID string `json:"source_batch_id"`
-	SourceTaskID  string `json:"source_task_id"`
-	SourceJobID   string `json:"source_job_id"`
+	SourceID        string `json:"source_id"`
+	DestinationID   string `json:"destination_id"`
+	ReceivedAt      string `json:"received_at"`
+	TransformAt     string `json:"transform_at"`
+	SourceBatchID   string `json:"source_batch_id"`
+	SourceTaskID    string `json:"source_task_id"`
+	SourceTaskRunID string `json:"source_task_run_id"`
+	SourceJobID     string `json:"source_job_id"`
+	SourceJobRunID  string `json:"source_job_run_id"`
 }
 
 func (brt *HandleT) backendConfigSubscriber() {
@@ -376,13 +378,15 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 			Source:      batchJobs.BatchDestination.Source,
 			Destination: batchJobs.BatchDestination.Destination,
 		},
-		Location:      output.Key,
-		FirstEventAt:  output.FirstEventAt,
-		LastEventAt:   output.LastEventAt,
-		TotalEvents:   output.TotalEvents,
-		SourceBatchID: sampleParameters.SourceBatchID,
-		SourceTaskID:  sampleParameters.SourceTaskID,
-		SourceJobID:   sampleParameters.SourceJobID,
+		Location:        output.Key,
+		FirstEventAt:    output.FirstEventAt,
+		LastEventAt:     output.LastEventAt,
+		TotalEvents:     output.TotalEvents,
+		SourceBatchID:   sampleParameters.SourceBatchID,
+		SourceTaskID:    sampleParameters.SourceTaskID,
+		SourceTaskRunID: sampleParameters.SourceTaskRunID,
+		SourceJobID:     sampleParameters.SourceJobID,
+		SourceJobRunID:  sampleParameters.SourceJobRunID,
 	}
 
 	jsonPayload, err := json.Marshal(&payload)
@@ -500,7 +504,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, reporting.GetStatus(jobState), strconv.Itoa(errorCode))
 		cd, ok := connectionDetailsMap[key]
 		if !ok {
-			cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceJobID)
+			cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
 			connectionDetailsMap[key] = cd
 		}
 		sd, ok := statusDetailsMap[key]

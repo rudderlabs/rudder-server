@@ -120,9 +120,11 @@ type StagingFileT struct {
 	LastEventAt      string
 	TotalEvents      int
 	// cloud sources specific info
-	SourceBatchID string
-	SourceTaskID  string
-	SourceJobID   string
+	SourceBatchID   string
+	SourceTaskID    string
+	SourceTaskRunID string
+	SourceJobID     string
+	SourceJobRunID  string
 }
 
 type UploaderI interface {

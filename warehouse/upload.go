@@ -91,9 +91,11 @@ type UploadT struct {
 	FirstEventAt       time.Time
 	LastEventAt        time.Time
 	// cloud sources specific info
-	SourceBatchID string
-	SourceTaskID  string
-	SourceJobID   string
+	SourceBatchID   string
+	SourceTaskID    string
+	SourceTaskRunID string
+	SourceJobID     string
+	SourceJobRunID  string
 }
 
 type UploadJobT struct {
@@ -485,11 +487,13 @@ func (job *UploadJobT) run() (err error) {
 		if newStatus == ExportedData {
 			reportingMetric := reporting.PUReportedMetric{
 				ConnectionDetails: reporting.ConnectionDetails{
-					SourceID:      job.upload.SourceID,
-					DestinationID: job.upload.DestinationID,
-					SourceBatchID: job.upload.SourceBatchID,
-					SourceTaskID:  job.upload.SourceTaskID,
-					SourceJobID:   job.upload.SourceJobID,
+					SourceID:        job.upload.SourceID,
+					DestinationID:   job.upload.DestinationID,
+					SourceBatchID:   job.upload.SourceBatchID,
+					SourceTaskID:    job.upload.SourceTaskID,
+					SourceTaskRunID: job.upload.SourceTaskRunID,
+					SourceJobID:     job.upload.SourceJobID,
+					SourceJobRunID:  job.upload.SourceJobRunID,
 				},
 				PUDetails: reporting.PUDetails{
 					InPU:       reporting.BATCH_ROUTER,
@@ -1259,11 +1263,13 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 
 	reportingMetrics := []*reporting.PUReportedMetric{{
 		ConnectionDetails: reporting.ConnectionDetails{
-			SourceID:      job.upload.SourceID,
-			DestinationID: job.upload.DestinationID,
-			SourceBatchID: job.upload.SourceBatchID,
-			SourceTaskID:  job.upload.SourceTaskID,
-			SourceJobID:   job.upload.SourceJobID,
+			SourceID:        job.upload.SourceID,
+			DestinationID:   job.upload.DestinationID,
+			SourceBatchID:   job.upload.SourceBatchID,
+			SourceTaskID:    job.upload.SourceTaskID,
+			SourceTaskRunID: job.upload.SourceTaskRunID,
+			SourceJobID:     job.upload.SourceJobID,
+			SourceJobRunID:  job.upload.SourceJobRunID,
 		},
 		PUDetails: reporting.PUDetails{
 			InPU:       reporting.BATCH_ROUTER,
@@ -1281,11 +1287,13 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	if outputCount > 0 {
 		reportingMetrics = append(reportingMetrics, &reporting.PUReportedMetric{
 			ConnectionDetails: reporting.ConnectionDetails{
-				SourceID:      job.upload.SourceID,
-				DestinationID: job.upload.DestinationID,
-				SourceBatchID: job.upload.SourceBatchID,
-				SourceTaskID:  job.upload.SourceTaskID,
-				SourceJobID:   job.upload.SourceJobID,
+				SourceID:        job.upload.SourceID,
+				DestinationID:   job.upload.DestinationID,
+				SourceBatchID:   job.upload.SourceBatchID,
+				SourceTaskID:    job.upload.SourceTaskID,
+				SourceTaskRunID: job.upload.SourceTaskRunID,
+				SourceJobID:     job.upload.SourceJobID,
+				SourceJobRunID:  job.upload.SourceJobRunID,
 			},
 			PUDetails: reporting.PUDetails{
 				InPU:       reporting.BATCH_ROUTER,

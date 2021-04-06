@@ -95,13 +95,15 @@ type jobResponseT struct {
 
 //JobParametersT struct holds source id and destination id of a job
 type JobParametersT struct {
-	SourceID      string `json:"source_id"`
-	DestinationID string `json:"destination_id"`
-	ReceivedAt    string `json:"received_at"`
-	TransformAt   string `json:"transform_at"`
-	SourceBatchID string `json:"source_batch_id"`
-	SourceTaskID  string `json:"source_task_id"`
-	SourceJobID   string `json:"source_job_id"`
+	SourceID        string `json:"source_id"`
+	DestinationID   string `json:"destination_id"`
+	ReceivedAt      string `json:"received_at"`
+	TransformAt     string `json:"transform_at"`
+	SourceBatchID   string `json:"source_batch_id"`
+	SourceTaskID    string `json:"source_task_id"`
+	SourceTaskRunID string `json:"source_task_run_id"`
+	SourceJobID     string `json:"source_job_id"`
+	SourceJobRunID  string `json:"source_job_run_id"`
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -989,7 +991,7 @@ func (rt *HandleT) statusInsertLoop() {
 				key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, reporting.GetStatus(resp.status.JobState), resp.status.ErrorCode)
 				cd, ok := connectionDetailsMap[key]
 				if !ok {
-					cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceJobID)
+					cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
 					connectionDetailsMap[key] = cd
 				}
 				sd, ok := statusDetailsMap[key]
