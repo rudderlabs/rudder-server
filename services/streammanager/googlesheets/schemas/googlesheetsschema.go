@@ -1,8 +1,6 @@
 package schemas
 
 import (
-	"encoding/json"
-
 	"github.com/tidwall/gjson"
 )
 
@@ -42,8 +40,7 @@ func GetSheetsHeaderSchema() []interface{} {
 	return hschema
 }
 
-func GetSheetsEvent(jsonData json.RawMessage) []interface{} {
-	parsedJSON := gjson.ParseBytes(jsonData)
+func GetSheetsEvent(parsedJSON gjson.Result) []interface{} {
 	message := []interface{}{
 		parsedJSON.Get("id").String(),
 		parsedJSON.Get("anonymous_id").String(),
