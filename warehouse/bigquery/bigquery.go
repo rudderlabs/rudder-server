@@ -69,10 +69,11 @@ var dataTypesMapToRudder = map[bigquery.FieldType]string{
 }
 
 var partitionKeyMap = map[string]string{
-	"users":                              "id",
-	"identifies":                         "id",
-	warehouseutils.DiscardsTable:         "row_id, column_name, table_name",
-	warehouseutils.IdentityMappingsTable: "merge_property_type, merge_property_value",
+	"users":                                "id",
+	"identifies":                           "id",
+	warehouseutils.DiscardsTable:           "row_id, column_name, table_name",
+	warehouseutils.IdentityMappingsTable:   "merge_property_type, merge_property_value",
+	warehouseutils.IdentityMergeRulesTable: "merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value",
 }
 
 func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
