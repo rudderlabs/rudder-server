@@ -158,7 +158,6 @@ func loadConfig() {
 	blockSize = config.GetString("Warehouse.clickhouse.blockSize", "1000")
 	poolSize = config.GetString("Warehouse.clickhouse.poolSize", "10")
 	disableNullable = config.GetBool("Warehouse.clickhouse.disableNullable", false)
-
 }
 
 /*
