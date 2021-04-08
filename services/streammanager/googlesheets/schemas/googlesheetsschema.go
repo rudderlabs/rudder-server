@@ -8,6 +8,7 @@ func GetSheetsHeaderSchema() []interface{} {
 	hschema := []interface{}{
 		"id",
 		"anonymous_id",
+		"traits",
 		"context_app_build",
 		"context_app_name",
 		"context_app_namespace",
@@ -31,6 +32,7 @@ func GetSheetsHeaderSchema() []interface{} {
 		"context_traits",
 		"context_userAgent",
 		"event_text",
+		"event",
 		"event_name",
 		"sent_at",
 		"received_at",
@@ -44,6 +46,7 @@ func GetSheetsEvent(parsedJSON gjson.Result) []interface{} {
 	message := []interface{}{
 		parsedJSON.Get("id").String(),
 		parsedJSON.Get("anonymous_id").String(),
+		parsedJSON.Get("traits").String(),
 		parsedJSON.Get("context_app_build").String(),
 		parsedJSON.Get("context_app_name").String(),
 		parsedJSON.Get("context_app_namespace").String(),
@@ -67,6 +70,7 @@ func GetSheetsEvent(parsedJSON gjson.Result) []interface{} {
 		parsedJSON.Get("context_traits").String(),
 		parsedJSON.Get("context_userAgent").String(),
 		parsedJSON.Get("event_text").String(),
+		parsedJSON.Get("event").String(),
 		parsedJSON.Get("event_name").String(),
 		parsedJSON.Get("sent_at").String(),
 		parsedJSON.Get("received_at").String(),

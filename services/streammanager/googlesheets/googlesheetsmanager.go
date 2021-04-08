@@ -11,6 +11,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/jwt"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/sheets/v4"
 )
 
@@ -76,7 +77,7 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	service := producer.(*sheets.Service)
-	spreadSheetId := parsedJSON.Get("spreadSheetTab").String()
+	spreadSheetId := parsedJSON.Get("spreadSheetId").String()
 	spreadSheetTab := parsedJSON.Get("spreadSheetTab").String()
 	var vr sheets.ValueRange
 	vr.MajorDimension = "ROWS"
@@ -86,27 +87,25 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	_, err := service.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 
 	if err != nil {
-		fmt.Print("Unable to set data into sheet.", err)
-		respStatus = "Failed"
-		responseMessage = "Failed Code Message"
-		return 500, respStatus, responseMessage
+		serviceError := err.(*googleapi.Error)
+		respStatus = "Faliure"
+		responseMessage = "[GoogleSheets] error :: Failed to add Header :: " + serviceError.Message
+		return serviceError.Code, respStatus, responseMessage
 	}
 
 	// Append actual messages
-	fmt.Println("json", parsedJSON)
 	messageValues := [][]interface{}{}
 	message := schemas.GetSheetsEvent(parsedJSON)
 	vr.Values = append(messageValues, message)
 	_, err = service.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 	if err != nil {
-		fmt.Print("Unable to retrieve data from sheet.", err)
-		respStatus = "Failed"
-		responseMessage = "Failed OMG"
-		return 500, respStatus, responseMessage
+		serviceError := err.(*googleapi.Error)
+		respStatus = "Faliure"
+		responseMessage = "[GoogleSheets] error :: Failed to insert Payload :: " + serviceError.Message
+		return serviceError.Code, respStatus, responseMessage
 	}
 
-	fmt.Println("success")
 	respStatus = "Success"
-	responseMessage = "Done"
+	responseMessage = "[GoogleSheets] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()
 	return 200, respStatus, responseMessage
 }
