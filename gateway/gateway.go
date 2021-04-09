@@ -163,7 +163,7 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 			batchRequestQ:  make(chan *batchWebRequestT),
 			reponseQ:       make(chan map[uuid.UUID]string),
 			workerID:       i,
-			batchTimeStat:  gateway.stats.NewStat("gateway.batch_time", stats.TimerType),
+			batchTimeStat:  gateway.stats.NewStat(fmt.Sprintf("gateway.batch_time_%d", i), stats.TimerType),
 			bufferFullStat: gateway.stats.NewStat(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full", i), stats.CountType),
 			timeOutStat:    gateway.stats.NewStat(fmt.Sprintf("gateway.user_request_worker_%d_time_out", i), stats.CountType),
 		}
@@ -233,7 +233,7 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 		} else {
 			gateway.jobsDB.Store(jobList)
 		}
-		gateway.dbWritesStat.Count(1)
+		gateway.dbWritesStat.SendTiming(1)
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
 			userWorkerBatchRequest.respChannel <- errorMessagesMap
@@ -1102,7 +1102,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
 	gateway.requestSizeStat = gateway.stats.NewStat("gateway.request_size", stats.CountType)
-	gateway.dbWritesStat = gateway.stats.NewStat("gateway.db_writes", stats.CountType)
+	gateway.dbWritesStat = gateway.stats.NewStat("gateway.db_writes", stats.TimerType)
 	gateway.dbWorkersBufferFullStat = gateway.stats.NewStat("gateway.db_workers_buffer_full", stats.CountType)
 	gateway.dbWorkersTimeOutStat = gateway.stats.NewStat("gateway.db_workers_time_out", stats.CountType)
 
