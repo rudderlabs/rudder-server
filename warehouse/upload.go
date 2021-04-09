@@ -454,6 +454,7 @@ func (job *UploadJobT) run() (err error) {
 				err = misc.ConcatErrors(loadErrors)
 				break
 			}
+			job.generateUploadSuccessMetrics()
 
 			newStatus = nextUploadState.completed
 
@@ -475,7 +476,6 @@ func (job *UploadJobT) run() (err error) {
 		job.setUploadStatus(newStatus)
 
 		if newStatus == ExportedData {
-			job.counterStat("warehouse_succeeded_uploads", tag{name: "namespace", value: job.upload.Namespace}).Count(1)
 			break
 		}
 
@@ -551,7 +551,6 @@ func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 		return
 	}
 
-	job.generateUploadSuccessMetrics()
 	return
 }
 
