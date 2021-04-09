@@ -23,6 +23,7 @@ type Config struct {
 type Credentials struct {
 	Email      string `json:"client_email"`
 	PrivateKey string `json:"private_key"`
+	TokenUrl   string `json:"token_uri"`
 }
 
 var pkgLogger logger.LoggerI
@@ -52,20 +53,26 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 		}
 
 	}
-
+	// Creating token URL from Credentials file if not using constant from google.JWTTOkenURL
+	tokenURI := google.JWTTokenURL
+	if len(credentialsFile.TokenUrl) != 0 {
+		tokenURI = credentialsFile.TokenUrl
+	}
+	// Creating HWT Config which we are using for getting the oauth token
 	jwtconfig := &jwt.Config{
 		Email:      credentialsFile.Email,
 		PrivateKey: []byte(credentialsFile.PrivateKey),
 		Scopes: []string{
 			"https://www.googleapis.com/auth/spreadsheets",
 		},
-		TokenURL: google.JWTTokenURL, // credentialsFile.TokenURL,google.JWTTokenURL,
-
+		TokenURL: tokenURI,
 	}
-	token, err := jwtconfig.TokenSource(oauth2.NoContext).Token()
+	token, err := jwtconfig.TokenSource(ctx).Token()
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleSheets] error  :: error in GoogleSheets while Retrieving token for service account:: %w", err)
 	}
+	// Once the token is received we are generating the oauth-config client which are using for
+	// generating the google-sheets service
 	client := oauthconfig.Client(ctx, token)
 	sheetService, err := sheets.New(client)
 	if err != nil {
@@ -77,11 +84,14 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	service := producer.(*sheets.Service)
+	// Storing sheet_id and sheet_tab for the specific message
 	spreadSheetId := parsedJSON.Get("spreadSheetId").String()
 	spreadSheetTab := parsedJSON.Get("spreadSheetTab").String()
+	// Creating value range for inserting row into sheet
 	var vr sheets.ValueRange
 	vr.MajorDimension = "ROWS"
 	vr.Range = spreadSheetTab + "!A1"
+	// This is the header row for creating the header in the sheet
 	headerRow := schemas.GetSheetsHeaderSchema()
 	vr.Values = append(vr.Values, headerRow)
 	_, err := service.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
@@ -93,10 +103,12 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		return serviceError.Code, respStatus, responseMessage
 	}
 
-	// Append actual messages
+	// In this section we are appending the actual messages into the sheet
 	messageValues := [][]interface{}{}
+	// After parsing the parsedJSON as a row specific message we are storing it message
 	message := schemas.GetSheetsEvent(parsedJSON)
 	vr.Values = append(messageValues, message)
+	// Appending the actual message into the specific sheet
 	_, err = service.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 	if err != nil {
 		serviceError := err.(*googleapi.Error)

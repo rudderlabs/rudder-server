@@ -8,6 +8,7 @@ func GetSheetsHeaderSchema() []interface{} {
 	hschema := []interface{}{
 		"id",
 		"anonymous_id",
+		"user_id",
 		"traits",
 		"context_app_build",
 		"context_app_name",
@@ -39,6 +40,7 @@ func GetSheetsHeaderSchema() []interface{} {
 		"timestamp",
 		"original_timestamp",
 		"properties"}
+
 	return hschema
 }
 
@@ -46,6 +48,7 @@ func GetSheetsEvent(parsedJSON gjson.Result) []interface{} {
 	message := []interface{}{
 		parsedJSON.Get("id").String(),
 		parsedJSON.Get("anonymous_id").String(),
+		parsedJSON.Get("user_id").String(),
 		parsedJSON.Get("traits").String(),
 		parsedJSON.Get("context_app_build").String(),
 		parsedJSON.Get("context_app_name").String(),
