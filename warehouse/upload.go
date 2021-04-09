@@ -475,6 +475,7 @@ func (job *UploadJobT) run() (err error) {
 		job.setUploadStatus(newStatus)
 
 		if newStatus == ExportedData {
+			job.counterStat("warehouse_succeeded_uploads", tag{name: "namespace", value: job.upload.Namespace}).Count(1)
 			break
 		}
 
