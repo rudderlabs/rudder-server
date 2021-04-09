@@ -17,10 +17,10 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/lib/pq"
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/reporting"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
@@ -38,6 +39,7 @@ import (
 )
 
 var (
+	application                         app.Interface
 	webPort                             int
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
@@ -1026,7 +1028,8 @@ func setupDB(connInfo string) {
 	setupTables(dbHandle)
 }
 
-func Start() {
+func Start(app app.Interface) {
+	application = app
 	time.Sleep(1 * time.Second)
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
 	if !isStandAlone() && !db.IsNormalMode() {
@@ -1060,9 +1063,9 @@ func Start() {
 
 	//Setting up reporting client
 	if CheckForWarehouseEnvVars() {
-		rruntime.Go(func() {
-			reporting.Setup(reporting.Config{ConnInfo: psqlInfo, ClientName: reporting.WAREHOUSE_CLIENT}, backendconfig.DefaultBackendConfig)
-		})
+		if application.Features().Reporting != nil {
+			application.Features().Reporting.GetReportingInstance().AddClient(types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
+		}
 	}
 
 	if isSlave() {

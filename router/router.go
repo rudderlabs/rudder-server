@@ -15,7 +15,6 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/reporting"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/drain"
@@ -24,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -84,6 +84,7 @@ type HandleT struct {
 	destinationResponseHandler             ResponseHandlerI
 	saveDestinationResponse                bool
 	drainJobHandler                        drain.DrainI
+	reporting                              utilTypes.ReportingI
 }
 
 type jobResponseT struct {
@@ -974,9 +975,9 @@ func (rt *HandleT) statusInsertLoop() {
 			//but approx is good enough at the cost of reduced computation.
 		}
 		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
-			reportMetrics := make([]*reporting.PUReportedMetric, 0)
-			connectionDetailsMap := make(map[string]*reporting.ConnectionDetails)
-			statusDetailsMap := make(map[string]*reporting.StatusDetail)
+			reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
+			connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
+			statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 
 			statusStat.Start()
 			var statusList []*jobsdb.JobStatusT
@@ -988,10 +989,10 @@ func (rt *HandleT) statusInsertLoop() {
 				if err != nil {
 					rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
 				}
-				key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, reporting.GetStatus(resp.status.JobState), resp.status.ErrorCode)
+				key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
 				cd, ok := connectionDetailsMap[key]
 				if !ok {
-					cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
+					cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
 					connectionDetailsMap[key] = cd
 				}
 				sd, ok := statusDetailsMap[key]
@@ -1000,7 +1001,7 @@ func (rt *HandleT) statusInsertLoop() {
 					if err != nil {
 						errorCode = 200 //TODO handle properly
 					}
-					sd = reporting.CreateStatusDetail(reporting.GetStatus(resp.status.JobState), 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload)
+					sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload)
 					statusDetailsMap[key] = sd
 				}
 				sd.Count++
@@ -1029,11 +1030,11 @@ func (rt *HandleT) statusInsertLoop() {
 				}
 			}
 
-			reporting.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+			utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 			for k, cd := range connectionDetailsMap {
-				m := &reporting.PUReportedMetric{
+				m := &utilTypes.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *reporting.CreatePUDetails(reporting.DEST_TRANSFORMER, reporting.ROUTER, true, false),
+					PUDetails:         *utilTypes.CreatePUDetails(utilTypes.DEST_TRANSFORMER, utilTypes.ROUTER, true, false),
 					StatusDetail:      statusDetailsMap[k],
 				}
 				reportMetrics = append(reportMetrics, m)
@@ -1053,7 +1054,9 @@ func (rt *HandleT) statusInsertLoop() {
 				txn := rt.jobsDB.BeginGlobalTransaction()
 				rt.jobsDB.AcquireUpdateJobStatusLocks()
 				rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil)
-				reporting.GetClient(reporting.CORE_CLIENT).Report(reportMetrics, txn)
+				if rt.reporting != nil {
+					rt.reporting.Report(reportMetrics, txn)
+				}
 				rt.jobsDB.CommitTransaction(txn)
 				rt.jobsDB.ReleaseUpdateJobStatusLocks()
 			}
@@ -1332,13 +1335,16 @@ func init() {
 }
 
 //Setup initializes this module
-func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT) {
+func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
+	rt.reporting = reporting
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
 
 	//waiting for reporting client setup
-	reporting.WaitForSetup(reporting.CORE_CLIENT)
+	if rt.reporting != nil {
+		rt.reporting.WaitForSetup(utilTypes.CORE_REPORTING_CLIENT)
+	}
 
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	rt.jobsDB = jobsDB

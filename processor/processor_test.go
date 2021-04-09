@@ -243,7 +243,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
 		})
 
 		It("should recover after crash", func() {
@@ -306,7 +306,7 @@ var _ = Describe("Processor", func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
 		})
 	})
 
@@ -325,7 +325,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
 
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
@@ -1500,7 +1500,7 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 
 func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
 	var clearDB = false
-	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
+	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
 
 	// make sure the mock backend config has sent the configuration
 	testutils.RunTestWithTimeout(func() {

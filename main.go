@@ -17,7 +17,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/reporting"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
@@ -72,8 +71,8 @@ func printVersion() {
 	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
-func startWarehouseService() {
-	warehouse.Start()
+func startWarehouseService(application app.Interface) {
+	warehouse.Start(application)
 }
 
 func canStartServer() bool {
@@ -158,9 +157,10 @@ func main() {
 	}()
 
 	//Setting up reporting client
-	rruntime.Go(func() {
-		reporting.Setup(reporting.Config{ConnInfo: jobsdb.GetConnectionString()}, backendconfig.DefaultBackendConfig)
-	})
+	if application.Features().Reporting != nil {
+		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+		reporting.AddClient(types.Config{ConnInfo: jobsdb.GetConnectionString()})
+	}
 
 	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
@@ -173,7 +173,7 @@ func main() {
 	// initialize warehouse service after core to handle non-normal recovery modes
 	if appTypeStr != app.GATEWAY && canStartWarehouse() {
 		rruntime.Go(func() {
-			startWarehouseService()
+			startWarehouseService(application)
 		})
 	}
 

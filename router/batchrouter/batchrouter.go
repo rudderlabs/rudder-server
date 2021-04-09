@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/reporting"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
@@ -31,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
@@ -75,6 +75,7 @@ type HandleT struct {
 	noOfWorkers             int
 	maxFailedCountForJob    int
 	retryTimeWindow         time.Duration
+	reporting               types.ReportingI
 }
 
 type BatchDestinationT struct {
@@ -438,9 +439,9 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		warehouseServiceFailedTimeLock.Unlock()
 	}
 
-	reportMetrics := make([]*reporting.PUReportedMetric, 0)
-	connectionDetailsMap := make(map[string]*reporting.ConnectionDetails)
-	statusDetailsMap := make(map[string]*reporting.StatusDetail)
+	reportMetrics := make([]*types.PUReportedMetric, 0)
+	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
+	statusDetailsMap := make(map[string]*types.StatusDetail)
 	jobStateCounts := make(map[string]map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
@@ -501,15 +502,15 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		if err != nil {
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
 		}
-		key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, reporting.GetStatus(jobState), strconv.Itoa(errorCode))
+		key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode))
 		cd, ok := connectionDetailsMap[key]
 		if !ok {
-			cd = reporting.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
+			cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
 			connectionDetailsMap[key] = cd
 		}
 		sd, ok := statusDetailsMap[key]
 		if !ok {
-			sd = reporting.CreateStatusDetail(reporting.GetStatus(jobState), 0, errorCode, string(errorResp), job.EventPayload)
+			sd = types.CreateStatusDetail(jobState, 0, errorCode, string(errorResp), job.EventPayload)
 			statusDetailsMap[key] = sd
 		}
 		sd.Count++
@@ -538,15 +539,15 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		brt.errorDB.Store(abortedEvents)
 	}
 
-	reporting.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+	types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 	terminalPU := true
 	if isWarehouse {
 		terminalPU = false
 	}
 	for k, cd := range connectionDetailsMap {
-		m := &reporting.PUReportedMetric{
+		m := &types.PUReportedMetric{
 			ConnectionDetails: *cd,
-			PUDetails:         *reporting.CreatePUDetails(reporting.DEST_TRANSFORMER, reporting.BATCH_ROUTER, terminalPU, false),
+			PUDetails:         *types.CreatePUDetails(types.DEST_TRANSFORMER, types.BATCH_ROUTER, terminalPU, false),
 			StatusDetail:      statusDetailsMap[k],
 		}
 		reportMetrics = append(reportMetrics, m)
@@ -556,7 +557,9 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	txn := brt.jobsDB.BeginGlobalTransaction()
 	brt.jobsDB.AcquireUpdateJobStatusLocks()
 	brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
-	reporting.GetClient(reporting.CORE_CLIENT).Report(reportMetrics, txn)
+	if brt.reporting != nil {
+		brt.reporting.Report(reportMetrics, txn)
+	}
 	brt.jobsDB.CommitTransaction(txn)
 	brt.jobsDB.ReleaseUpdateJobStatusLocks()
 
@@ -1039,12 +1042,15 @@ func init() {
 }
 
 //Setup initializes this module
-func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destType string) {
+func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI) {
+	brt.reporting = reporting
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
 	//waiting for reporting client setup
-	reporting.WaitForSetup(reporting.CORE_CLIENT)
+	if brt.reporting != nil {
+		brt.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
+	}
 
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.destType = destType

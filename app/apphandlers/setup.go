@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var (
@@ -99,7 +100,7 @@ func rudderCoreBaseSetup() {
 }
 
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT) {
+func StartProcessor(clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
 
@@ -109,7 +110,7 @@ func StartProcessor(clearDB *bool, enableProcessor bool, gatewayDB, routerDB, ba
 
 	if enableProcessor {
 		var processor = processor.NewProcessor()
-		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB)
+		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting)
 		processor.Start()
 
 		processorLoaded = true
@@ -117,7 +118,7 @@ func StartProcessor(clearDB *bool, enableProcessor bool, gatewayDB, routerDB, ba
 }
 
 //StartRouter atomically starts router process if not already started
-func StartRouter(enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT) {
+func StartRouter(enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
 
@@ -126,13 +127,13 @@ func StartRouter(enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb
 	}
 
 	if enableRouter {
-		go monitorDestRouters(routerDB, batchRouterDB, procErrorDB)
+		go monitorDestRouters(routerDB, batchRouterDB, procErrorDB, reporting)
 		routerLoaded = true
 	}
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT) {
+func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
@@ -152,7 +153,7 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT) {
 					if !ok {
 						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
 						var brt batchrouter.HandleT
-						brt.Setup(batchRouterDB, procErrorDB, destination.DestinationDefinition.Name)
+						brt.Setup(batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
 						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 					}
 				} else {
@@ -160,7 +161,7 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT) {
 					if !ok {
 						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
 						var router router.HandleT
-						router.Setup(routerDB, procErrorDB, destination.DestinationDefinition)
+						router.Setup(routerDB, procErrorDB, destination.DestinationDefinition, reporting)
 						dstToRouter[destination.DestinationDefinition.Name] = &router
 					}
 				}

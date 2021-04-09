@@ -12,12 +12,14 @@ import (
 	"github.com/lib/pq"
 	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/reporting"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -485,8 +487,8 @@ func (job *UploadJobT) run() (err error) {
 
 		uploadStatusOpts := UploadStatusOpts{Status: newStatus}
 		if newStatus == ExportedData {
-			reportingMetric := reporting.PUReportedMetric{
-				ConnectionDetails: reporting.ConnectionDetails{
+			reportingMetric := types.PUReportedMetric{
+				ConnectionDetails: types.ConnectionDetails{
 					SourceID:        job.upload.SourceID,
 					DestinationID:   job.upload.DestinationID,
 					SourceBatchID:   job.upload.SourceBatchID,
@@ -495,13 +497,13 @@ func (job *UploadJobT) run() (err error) {
 					SourceJobID:     job.upload.SourceJobID,
 					SourceJobRunID:  job.upload.SourceJobRunID,
 				},
-				PUDetails: reporting.PUDetails{
-					InPU:       reporting.BATCH_ROUTER,
-					PU:         reporting.WAREHOUSE,
+				PUDetails: types.PUDetails{
+					InPU:       types.BATCH_ROUTER,
+					PU:         types.WAREHOUSE,
 					TerminalPU: true,
 				},
-				StatusDetail: &reporting.StatusDetail{
-					Status:      reporting.SuccessStatus,
+				StatusDetail: &types.StatusDetail{
+					Status:      jobsdb.Succeeded.State,
 					StatusCode:  200,
 					Count:       job.getTotalRowsInStagingFiles(),
 					SampleEvent: []byte("{}"),
@@ -1094,7 +1096,7 @@ func (job *UploadJobT) getUploadFirstAttemptTime() (timing time.Time) {
 type UploadStatusOpts struct {
 	Status           string
 	AdditionalFields []UploadColumnT
-	ReportingMetric  reporting.PUReportedMetric
+	ReportingMetric  types.PUReportedMetric
 }
 
 func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
@@ -1112,14 +1114,17 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 
 	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
 
-	if statusOpts.ReportingMetric != (reporting.PUReportedMetric{}) {
+	if statusOpts.ReportingMetric != (types.PUReportedMetric{}) {
 		txn, err := dbHandle.Begin()
 		uploadColumnOpts.Txn = txn
 		err = job.setUploadColumns(uploadColumnOpts)
 		if err != nil {
 			return err
 		}
-		reporting.GetClient(reporting.WAREHOUSE_CLIENT).Report([]*reporting.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
+
+		if application.Features().Reporting != nil {
+			application.Features().Reporting.GetReportingInstance().Report([]*types.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
+		}
 		err = txn.Commit()
 		return err
 	}
@@ -1256,13 +1261,13 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	inputCount := job.getTotalRowsInStagingFiles()
 	outputCount, _ := getTotalEventsUploaded(job.upload.ID)
 	failCount := inputCount - outputCount
-	reportingStatus := reporting.FailStatus
+	reportingStatus := jobsdb.Failed.State
 	if state == Aborted {
-		reportingStatus = reporting.AbortStatus
+		reportingStatus = jobsdb.Aborted.State
 	}
 
-	reportingMetrics := []*reporting.PUReportedMetric{{
-		ConnectionDetails: reporting.ConnectionDetails{
+	reportingMetrics := []*types.PUReportedMetric{{
+		ConnectionDetails: types.ConnectionDetails{
 			SourceID:        job.upload.SourceID,
 			DestinationID:   job.upload.DestinationID,
 			SourceBatchID:   job.upload.SourceBatchID,
@@ -1271,12 +1276,12 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 			SourceJobID:     job.upload.SourceJobID,
 			SourceJobRunID:  job.upload.SourceJobRunID,
 		},
-		PUDetails: reporting.PUDetails{
-			InPU:       reporting.BATCH_ROUTER,
-			PU:         reporting.WAREHOUSE,
+		PUDetails: types.PUDetails{
+			InPU:       types.BATCH_ROUTER,
+			PU:         types.WAREHOUSE,
 			TerminalPU: true,
 		},
-		StatusDetail: &reporting.StatusDetail{
+		StatusDetail: &types.StatusDetail{
 			Status:         reportingStatus,
 			StatusCode:     400, // TODO: Change this to error specific code
 			Count:          failCount,
@@ -1285,8 +1290,8 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 		},
 	}}
 	if outputCount > 0 {
-		reportingMetrics = append(reportingMetrics, &reporting.PUReportedMetric{
-			ConnectionDetails: reporting.ConnectionDetails{
+		reportingMetrics = append(reportingMetrics, &types.PUReportedMetric{
+			ConnectionDetails: types.ConnectionDetails{
 				SourceID:        job.upload.SourceID,
 				DestinationID:   job.upload.DestinationID,
 				SourceBatchID:   job.upload.SourceBatchID,
@@ -1295,13 +1300,13 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 				SourceJobID:     job.upload.SourceJobID,
 				SourceJobRunID:  job.upload.SourceJobRunID,
 			},
-			PUDetails: reporting.PUDetails{
-				InPU:       reporting.BATCH_ROUTER,
-				PU:         reporting.WAREHOUSE,
+			PUDetails: types.PUDetails{
+				InPU:       types.BATCH_ROUTER,
+				PU:         types.WAREHOUSE,
 				TerminalPU: true,
 			},
-			StatusDetail: &reporting.StatusDetail{
-				Status:         reporting.SuccessStatus,
+			StatusDetail: &types.StatusDetail{
+				Status:         jobsdb.Succeeded.State,
 				StatusCode:     400, // TODO: Change this to error specific code
 				Count:          failCount,
 				SampleEvent:    []byte("{}"),
@@ -1309,7 +1314,9 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 			},
 		})
 	}
-	reporting.GetClient(reporting.WAREHOUSE_CLIENT).Report(reportingMetrics, txn)
+	if application.Features().Reporting != nil {
+		application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn)
+	}
 	err = txn.Commit()
 
 	// TODO: Add reporting metrics in txn

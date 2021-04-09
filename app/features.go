@@ -58,9 +58,30 @@ func RegisterConfigEnvFeature(f ConfigEnvFeatureSetup) {
 	configEnvFeatureSetup = f
 }
 
+/*********************************
+Reporting Feature
+*********************************/
+
+// ReportingFeature handles reporting statuses / errors to reporting service
+type ReportingFeature interface {
+	Setup(backendConfig backendconfig.BackendConfig) types.ReportingI
+	GetReportingInstance() types.ReportingI
+}
+
+// ReportingFeatureSetup is a function that initializes a Reporting feature
+type ReportingFeatureSetup func(Interface) ReportingFeature
+
+var reportingFeatureSetup ReportingFeatureSetup
+
+// RegisterReportingFeature registers a config env feature implementation
+func RegisterReportingFeature(f ReportingFeatureSetup) {
+	reportingFeatureSetup = f
+}
+
 // Features contains optional implementations of Enterprise only features.
 type Features struct {
 	Migrator     MigratorFeature
 	SuppressUser SuppressUserFeature
 	ConfigEnv    ConfigEnvFeature
+	Reporting    ReportingFeature
 }
