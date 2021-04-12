@@ -46,7 +46,9 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	if err != nil {
 		pkgLogger.Error(err)
 		bt.stats.failedStat.Count(len(events))
-		return transformerBatchResponseT{batchError: errors.New("Internal server error in source transformer")}
+		errorLog := fmt.Errorf("JS HTTP connection error to source transformer: URL: %v Error: %+v", url, err)
+		pkgLogger.Error(errorLog)
+		panic(errorLog)
 	}
 
 	respBody, err := ioutil.ReadAll(resp.Body)
