@@ -137,7 +137,8 @@ func updateConfig(sources backendconfig.ConfigT) {
 	for _, source := range sources.Sources {
 		for _, destination := range source.Destinations {
 			for _, transformation := range destination.Transformations {
-				if transformation.EventTransform {
+				eventTransform, ok := transformation.Config["eventTransform"].(bool)
+				if ok && eventTransform {
 					uploadEnabledTransformations[transformation.VersionID] = true
 				}
 			}

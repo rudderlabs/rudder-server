@@ -165,8 +165,8 @@ type SRegulationsT struct {
 }
 
 type TransformationT struct {
-	VersionID      string
-	EventTransform bool
+	VersionID string
+	Config    map[string]interface{}
 }
 
 type LibraryT struct {
