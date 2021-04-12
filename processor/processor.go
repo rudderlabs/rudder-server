@@ -274,6 +274,7 @@ var (
 	configSessionThresholdEvents        int
 	configProcessSessions               bool
 	writeKeyDestinationMap              map[string][]backendconfig.DestinationT
+	writeKeySourceMap                   map[string]backendconfig.SourceT
 	destinationIDtoTypeMap              map[string]string
 	destinationTransformationEnabledMap map[string]bool
 	rawDataDestinations                 []string
@@ -317,10 +318,12 @@ func (proc *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		configSubscriberLock.Lock()
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
+		writeKeySourceMap = map[string]backendconfig.SourceT{}
 		destinationIDtoTypeMap = make(map[string]string)
 		destinationTransformationEnabledMap = make(map[string]bool)
 		sources := config.Data.(backendconfig.ConfigT)
 		for _, source := range sources.Sources {
+			writeKeySourceMap[source.WriteKey] = source
 			if source.Enabled {
 				writeKeyDestinationMap[source.WriteKey] = source.Destinations
 				for _, destination := range source.Destinations {
@@ -582,6 +585,16 @@ func (proc *HandleT) createSessions() {
 	}
 }
 
+func getSourceByWriteKey(writeKey string) backendconfig.SourceT {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+	source, ok := writeKeySourceMap[writeKey]
+	if !ok {
+		panic(fmt.Errorf(`source not found for writeKey: %s`, writeKey))
+	}
+	return source
+}
+
 func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
@@ -637,9 +650,11 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
-func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT, receivedAt time.Time) {
+func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT, source backendconfig.SourceT, receivedAt time.Time) {
 	metadata := transformer.MetadataT{}
 	metadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+	metadata.SourceType = source.SourceDefinition.Name
+	metadata.SourceCategory = source.SourceDefinition.Category
 	metadata.DestinationID = destination.ID
 	metadata.RudderID = batchEvent.UserID
 	metadata.JobID = batchEvent.JobID
@@ -876,6 +891,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 				workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 				workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
+				sourceForSingularEvent := getSourceByWriteKey(writeKey)
 
 				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
 				if len(enabledDestTypes) == 0 {
@@ -906,7 +922,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy.Message["request_ip"] = requestIP
 
 						enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-						enhanceWithMetadata(&shallowEventCopy, batchEvent, destination, receivedAt)
+						enhanceWithMetadata(&shallowEventCopy, batchEvent, destination, sourceForSingularEvent, receivedAt)
 
 						metadata := shallowEventCopy.Metadata
 						srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
@@ -949,7 +965,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 		destination := eventList[0].Destination
-		commonMetaData := transformer.MetadataT{SourceID: sourceID, DestinationID: destID, DestinationType: destination.DestinationDefinition.Name}
+		commonMetaData := transformer.MetadataT{
+			SourceID:        sourceID,
+			SourceType:      eventList[0].Metadata.SourceType,
+			SourceCategory:  eventList[0].Metadata.SourceCategory,
+			DestinationID:   destID,
+			DestinationType: destination.DestinationDefinition.Name,
+		}
 
 		destStat := proc.destStats[destID]
 		destStat.numEvents.Count(len(eventList))
