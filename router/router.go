@@ -743,8 +743,10 @@ func (worker *workerT) handleThrottle(job *jobsdb.JobT, parameters JobParameters
 		return false
 	}
 	worker.rt.throttlerMutex.Lock()
-	worker.rt.throttler.Inc(parameters.DestinationID, userID)
 	toThrottle := worker.rt.throttler.CheckLimitReached(parameters.DestinationID, userID)
+	if !toThrottle {
+		worker.rt.throttler.Inc(parameters.DestinationID, userID)
+	}
 	worker.rt.throttlerMutex.Unlock()
 	if toThrottle {
 		// block other jobs of same user if userEventOrdering is required.
@@ -925,8 +927,12 @@ func (rt *HandleT) canThrottle(parameters *JobParametersT, userID string) (canBe
 	}
 
 	//No need of locks here, because this is used only by a single goroutine (generatorLoop)
-	rt.generatorThrottler.Inc(parameters.DestinationID, userID)
-	return rt.generatorThrottler.CheckLimitReached(parameters.DestinationID, userID)
+	limitReached := rt.generatorThrottler.CheckLimitReached(parameters.DestinationID, userID)
+	if !limitReached {
+		rt.generatorThrottler.Inc(parameters.DestinationID, userID)
+	}
+
+	return limitReached
 }
 
 // ResetSleep  this makes the workers reset their sleep
