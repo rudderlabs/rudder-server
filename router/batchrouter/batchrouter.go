@@ -930,9 +930,11 @@ func (brt *HandleT) collectMetrics() {
 }
 
 func loadConfig() {
-	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
+	config.RegisterIntConfigVariable("BatchRouter.jobQueryBatchSize", 100000, &jobQueryBatchSize, true, 1)
 	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
+	config.RegisterDurationConfigVariable("BatchRouter.mainLoopSleepInS", time.Duration(2), &mainLoopSleep, true, time.Second)
 	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
+	config.RegisterInt64ConfigVariable("JobsDB.uploadFreqInS", 30, &uploadFreqInS, true, 1)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	inProgressMap = map[string]bool{}
@@ -941,7 +943,7 @@ func loadConfig() {
 	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
-	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
+	config.RegisterDurationConfigVariable("BatchRouter.warehouseServiceMaxRetryTimeinHr", time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour)
 	encounteredMergeRuleMap = map[string]map[string]bool{}
 }
 

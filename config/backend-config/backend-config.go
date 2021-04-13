@@ -196,46 +196,18 @@ func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	workspaceToken = config.GetWorkspaceToken()
 
-	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
-	regulationsPollInterval = config.GetDuration("BackendConfig.regulationsPollIntervalInS", 300) * time.Second
+	config.RegisterDurationConfigVariable("BackendConfig.pollIntervalInS", time.Duration(5), &pollInterval, true, time.Second)
+
+	config.RegisterDurationConfigVariable("BackendConfig.regulationsPollIntervalInS", time.Duration(300), &regulationsPollInterval, true, time.Second)
+
 	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
-	maxRegulationsPerRequest = config.GetInt("BackendConfig.maxRegulationsPerRequest", 1000)
+	config.RegisterIntConfigVariable("BackendConfig.maxRegulationsPerRequest", 1000, &maxRegulationsPerRequest, true, 1)
 	configEnvReplacementEnabled = config.GetBool("BackendConfig.envReplacementEnabled", true)
 }
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
-}
-
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		backendCofigReload()
-	}
-}
-
-func backendCofigReload() {
-	_pollInterval := config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
-	if _pollInterval != pollInterval {
-		pollInterval = _pollInterval
-		pkgLogger.Info("BackendConfig.pollIntervalInS changes to ", pollInterval)
-	}
-	_regulationsPollInterval := config.GetDuration("BackendConfig.regulationsPollIntervalInS", 300) * time.Second
-	if _regulationsPollInterval != regulationsPollInterval {
-		regulationsPollInterval = _regulationsPollInterval
-		pkgLogger.Info("BackendConfig.regulationsPollInterval changes to ", regulationsPollInterval)
-	}
-	_maxRegulationsPerRequest := config.GetInt("BackendConfig.maxRegulationsPerRequest", 1000)
-	if _maxRegulationsPerRequest != maxRegulationsPerRequest {
-		maxRegulationsPerRequest = _maxRegulationsPerRequest
-		pkgLogger.Info("BackendConfig.maxRegulationsPerRequest changes to ", maxRegulationsPerRequest)
-	}
 }
 
 func trackConfig(preConfig ConfigT, curConfig ConfigT) {

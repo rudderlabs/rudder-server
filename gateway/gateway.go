@@ -92,19 +92,7 @@ var BatchEvent = []byte(`
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("gateway")
-}
-
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		gatewayReloadableConfig()
-	}
 }
 
 type userWorkerBatchRequestT struct {

@@ -44,63 +44,19 @@ var pkgLogger logger.LoggerI
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("destination-debugger").Child("eventDeliveryStatusUploader")
 }
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	//Number of events that are batched before sending schema to control plane
-	maxBatchSize = config.GetInt("DestinationDebugger.maxBatchSize", 32)
-	maxESQueueSize = config.GetInt("DestinationDebugger.maxESQueueSize", 1024)
-	maxRetry = config.GetInt("DestinationDebugger.maxRetry", 3)
-	batchTimeout = config.GetDuration("DestinationDebugger.batchTimeoutInS", time.Duration(2)) * time.Second
-	retrySleep = config.GetDuration("DestinationDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	disableEventDeliveryStatusUploads = config.GetBool("DestinationDebugger.disableEventDeliveryStatusUploads", false)
-}
+	config.RegisterIntConfigVariable("DestinationDebugger.maxBatchSize", 32, &maxBatchSize, true, 1)
+	config.RegisterIntConfigVariable("DestinationDebugger.maxESQueueSize", 1024, &maxESQueueSize, true, 1)
+	config.RegisterIntConfigVariable("DestinationDebugger.maxRetry", 3, &maxRetry, true, 1)
+	config.RegisterDurationConfigVariable("DestinationDebugger.batchTimeoutInS", time.Duration(2000), &batchTimeout, true, time.Millisecond)
+	config.RegisterDurationConfigVariable("DestinationDebugger.retrySleepInMS", time.Duration(100), &retrySleep, true, time.Millisecond)
+	config.RegisterBoolConfigVariable("DestinationDebugger.disableEventDeliveryStatusUploads", false, &disableEventDeliveryStatusUploads, true)
 
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		destinationDebuggerReloadableConfig()
-	}
-}
-
-func destinationDebuggerReloadableConfig() {
-	_maxBatchSize := config.GetInt("DestinationDebugger.maxBatchSize", 32)
-	if _maxBatchSize != maxBatchSize {
-		maxBatchSize = _maxBatchSize
-		pkgLogger.Info("DestinationDebugger.maxBatchSize changes to ", maxBatchSize)
-	}
-	_maxESQueueSize := config.GetInt("DestinationDebugger.maxESQueueSize", 1024)
-	if _maxESQueueSize != maxESQueueSize {
-		maxESQueueSize = _maxESQueueSize
-		pkgLogger.Info("DestinationDebugger.maxESQueueSize changes to ", maxESQueueSize)
-	}
-	_maxRetry := config.GetInt("DestinationDebugger.maxRetry", 3)
-	if _maxRetry != maxRetry {
-		maxRetry = _maxRetry
-		pkgLogger.Info("DestinationDebugger.maxRetry changes to ", maxRetry)
-	}
-	_batchTimeout := config.GetDuration("DestinationDebugger.batchTimeoutInS", time.Duration(2)) * time.Second
-	if _batchTimeout != batchTimeout {
-		batchTimeout = _batchTimeout
-		pkgLogger.Info("DestinationDebugger.batchTimeout changes to ", batchTimeout)
-	}
-	_retrySleep := config.GetDuration("DestinationDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	if _retrySleep != retrySleep {
-		retrySleep = _retrySleep
-		pkgLogger.Info("DestinationDebugger.retrySleep changes to ", retrySleep)
-	}
-	_disableEventDeliveryStatusUploads := config.GetBool("DestinationDebugger.disableEventDeliveryStatusUploads", false)
-	if _disableEventDeliveryStatusUploads != disableEventDeliveryStatusUploads {
-		disableEventDeliveryStatusUploads = _disableEventDeliveryStatusUploads
-		pkgLogger.Info("DestinationDebugger.disableEventDeliveryStatusUploads changes to ", disableEventDeliveryStatusUploads)
-	}
 }
 
 //RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
