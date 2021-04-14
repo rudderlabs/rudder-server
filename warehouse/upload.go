@@ -14,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
@@ -137,9 +136,6 @@ var maxParallelLoads map[string]int
 func init() {
 	setMaxParallelLoads()
 	initializeStateMachine()
-	rruntime.Go(func() {
-		updateUploadConfigFile()
-	})
 }
 
 func setMaxParallelLoads() {
@@ -150,15 +146,6 @@ func setMaxParallelLoads() {
 		"MSSQL":      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
 		"SNOWFLAKE":  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
 		"CLICKHOUSE": config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
-	}
-}
-
-func updateUploadConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		setMaxParallelLoads()
 	}
 }
 

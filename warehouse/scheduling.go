@@ -8,8 +8,6 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
@@ -25,36 +23,11 @@ var (
 func init() {
 	scheduledTimesCache = map[string][]int{}
 	loadConfigScheduling()
-	rruntime.Go(func() {
-		updateConfigFileScheduling()
-	})
 }
 
 func loadConfigScheduling() {
-	minUploadBackoff = config.GetDuration("Warehouse.minUploadBackoffInS", time.Duration(60)) * time.Second
-	maxUploadBackoff = config.GetDuration("Warehouse.maxUploadBackoffInS", time.Duration(1800)) * time.Second
-}
-
-func updateConfigFileScheduling() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		schedulingReloadableconfig()
-	}
-}
-
-func schedulingReloadableconfig() {
-	_minUploadBackoff := config.GetDuration("Warehouse.minUploadBackoffInS", time.Duration(60)) * time.Second
-	if _minUploadBackoff != minUploadBackoff {
-		minUploadBackoff = _minUploadBackoff
-		pkgLogger.Info("Warehouse.minUploadBackoffInS changes to ", minUploadBackoff)
-	}
-	_maxUploadBackoff := config.GetDuration("Warehouse.maxUploadBackoffInS", time.Duration(1800)) * time.Second
-	if _maxUploadBackoff != maxUploadBackoff {
-		maxUploadBackoff = _maxUploadBackoff
-		pkgLogger.Info("Warehouse.maxUploadBackoffInS changes to ", maxUploadBackoff)
-	}
+	config.RegisterDurationConfigVariable("Warehouse.minUploadBackoffInS", time.Duration(60), &minUploadBackoff, true, time.Second)
+	config.RegisterDurationConfigVariable("Warehouse.maxUploadBackoffInS", time.Duration(1000), &maxUploadBackoff, true, time.Second)
 }
 
 // ScheduledTimes returns all possible start times (minutes from start of day) as per schedule

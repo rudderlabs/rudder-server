@@ -112,67 +112,7 @@ type ErrorResponseT struct {
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFileWH()
-	})
 	pkgLogger = logger.NewLogger().Child("warehouse")
-}
-
-func updateConfigFileWH() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		warehouseReloadableconfig()
-	}
-}
-
-func warehouseReloadableconfig() {
-	_stagingFilesBatchSize := config.GetInt("Warehouse.stagingFilesBatchSize", 240)
-	if _stagingFilesBatchSize != stagingFilesBatchSize {
-		stagingFilesBatchSize = _stagingFilesBatchSize
-		pkgLogger.Info("Warehouse.stagingFilesBatchSize changes to ", stagingFilesBatchSize)
-	}
-	_warehouseSyncFreqIgnore := config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
-	if _warehouseSyncFreqIgnore != warehouseSyncFreqIgnore {
-		warehouseSyncFreqIgnore = _warehouseSyncFreqIgnore
-		pkgLogger.Info("Warehouse.warehouseSyncFreqIgnore changes to ", warehouseSyncFreqIgnore)
-	}
-	_warehouseSyncPreFetchCount := config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
-	if _warehouseSyncPreFetchCount != warehouseSyncPreFetchCount {
-		warehouseSyncPreFetchCount = _warehouseSyncPreFetchCount
-		pkgLogger.Info("Warehouse.warehouseSyncPreFetchCount changes to ", warehouseSyncPreFetchCount)
-	}
-	_retryTimeWindow := config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
-	if _retryTimeWindow != retryTimeWindow {
-		retryTimeWindow = _retryTimeWindow
-		pkgLogger.Info("Warehouse.retryTimeWindowInMins changes to ", retryTimeWindow)
-	}
-	_minRetryAttempts := config.GetInt("Warehouse.minRetryAttempts", 3)
-	if _minRetryAttempts != minRetryAttempts {
-		minRetryAttempts = _minRetryAttempts
-		pkgLogger.Info("Warehouse.minRetryAttempts changes to ", minRetryAttempts)
-	}
-	_mainLoopSleep := config.GetDuration("Warehouse.mainLoopSleepInS", 1) * time.Second
-	if _mainLoopSleep != mainLoopSleep {
-		mainLoopSleep = _mainLoopSleep
-		pkgLogger.Info("Warehouse.mainLoopSleepInS changes to ", mainLoopSleep)
-	}
-	_noOfSlaveWorkerRoutines := config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
-	if _noOfSlaveWorkerRoutines != noOfSlaveWorkerRoutines {
-		noOfSlaveWorkerRoutines = _noOfSlaveWorkerRoutines
-		pkgLogger.Info("Warehouse.noOfSlaveWorkerRoutines changes to ", noOfSlaveWorkerRoutines)
-	}
-	_noOfWorkers := config.GetInt("Warehouse.noOfWorkers", 8)
-	if _noOfWorkers != noOfWorkers {
-		noOfWorkers = _noOfWorkers
-		pkgLogger.Info("Warehouse.noOfWorkers changes to ", noOfWorkers)
-	}
-	_uploadFreqInS := config.GetInt64("Warehouse.uploadFreqInS", 1800)
-	if _uploadFreqInS != uploadFreqInS {
-		uploadFreqInS = _uploadFreqInS
-		pkgLogger.Info("Warehouse.uploadFreqInS changes to ", uploadFreqInS)
-	}
 }
 
 func loadConfig() {
@@ -180,11 +120,12 @@ func loadConfig() {
 	webPort = config.GetInt("Warehouse.webPort", 8082)
 	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL"}
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
-	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
-	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
-	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
-	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 1) * time.Second
-	crashRecoverWarehouses = []string{"RS", "MSSQL"}
+	config.RegisterIntConfigVariable("Warehouse.noOfWorkers", 8, &noOfWorkers, true, 1)
+	config.RegisterIntConfigVariable("Warehouse.noOfSlaveWorkerRoutines", 4, &noOfSlaveWorkerRoutines, true, 1)
+	config.RegisterIntConfigVariable("Warehouse.stagingFilesBatchSize", 240, &stagingFilesBatchSize, true, 1)
+	config.RegisterInt64ConfigVariable("Warehouse.uploadFreqInS", 1800, &uploadFreqInS, true, 1)
+	config.RegisterDurationConfigVariable("Warehouse.mainLoopSleepInS", time.Duration(1), &mainLoopSleep, true, time.Second)
+	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
@@ -195,17 +136,17 @@ func loadConfig() {
 	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslmode = config.GetEnv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
-	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
-	stagingFilesSchemaPaginationSize = config.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100)
-	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
+	config.RegisterIntConfigVariable("Warehouse.warehouseSyncPreFetchCount", 10, &warehouseSyncPreFetchCount, true, 1)
+	config.RegisterIntConfigVariable("Warehouse.stagingFilesSchemaPaginationSize", 100, &stagingFilesSchemaPaginationSize, true, 1)
+	config.RegisterBoolConfigVariable("Warehouse.warehouseSyncFreqIgnore", false, &warehouseSyncFreqIgnore, true)
 	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
-	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
+	config.RegisterIntConfigVariable("Warehouse.minRetryAttempts", 3, &minRetryAttempts, true, 1)
+	config.RegisterDurationConfigVariable("Warehouse.retryTimeWindow", time.Duration(180), &retryTimeWindow, true, time.Minute)
 	destinationsMap = map[string]warehouseutils.WarehouseT{}
-	sourceIDsByWorkspace = map[string][]string{}
-	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 10240)
-	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
-	slaveUploadTimeout = config.GetDuration("Warehouse.slaveUploadTimeoutInMin", time.Duration(10)) * time.Minute
-	numLoadFileUploadWorkers = config.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
+	config.RegisterIntConfigVariable("Warehouse.maxStagingFileReadBufferCapacityInK", 10240, &maxStagingFileReadBufferCapacityInK, true, 1)
+	config.RegisterDurationConfigVariable("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120), &longRunningUploadStatThresholdInMin, true, time.Minute)
+	config.RegisterDurationConfigVariable("Warehouse.slaveUploadTimeout", time.Duration(10), &slaveUploadTimeout, true, time.Minute)
+	config.RegisterIntConfigVariable("Warehouse.numLoadFileUploadWorkers", 8, &numLoadFileUploadWorkers, true, 1)
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 }
 
