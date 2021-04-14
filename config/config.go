@@ -77,6 +77,50 @@ func UpdateConfig() {
 	})
 }
 
+func hotReloadConfig() {
+	for key, value := range hotReloadableConfig {
+		switch value := value.(type) {
+		case *int:
+			_value := viper.GetInt(key)
+			if _value != *value {
+				*value = _value
+				fmt.Printf("The value of %s changed to %d", key, _value)
+			}
+		case *int64:
+			_value := viper.GetInt64(key)
+			if _value != *value {
+				*value = _value
+				fmt.Printf("The value of %s changed to %d", key, _value)
+			}
+		case *string:
+			_value := viper.GetString(key)
+			if _value != *value {
+				*value = _value
+				fmt.Printf("The value of %s changed to %s", key, _value)
+			}
+		case *time.Duration:
+			_value := viper.GetDuration(key)
+			if _value != *value {
+				*value = _value
+				fmt.Printf("The value of %s changed to %s", key, _value)
+			}
+		case *bool:
+			_value := viper.GetBool(key)
+			if _value != *value {
+				*value = _value
+				fmt.Printf("The value of %s changed to %v", key, _value)
+			}
+		case *float64:
+			_value := viper.GetFloat64(key)
+			if _value != *value {
+				*value = _value
+				fmt.Printf("The value of %s changed to %v", key, _value)
+			}
+		}
+
+	}
+}
+
 func GetUpdatedConfig(channel chan utils.DataEvent, topic string) {
 	EventBus.Subscribe(string(topic), channel)
 	EventBus.PublishToChannel(channel, string(topic), "")
