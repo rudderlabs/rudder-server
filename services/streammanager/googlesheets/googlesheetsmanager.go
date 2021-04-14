@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/rudderlabs/rudder-server/services/streammanager/googlesheets/schemas"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -97,10 +98,10 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	_, err := service.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 
 	if err != nil {
-		serviceError := err.(*googleapi.Error)
+		statCode, serviceMessage := HandleServiceError(err)
 		respStatus = "Faliure"
-		responseMessage = "[GoogleSheets] error :: Failed to add Header :: " + serviceError.Message
-		return serviceError.Code, respStatus, responseMessage
+		responseMessage = "[GoogleSheets] error :: Failed to add Header :: " + serviceMessage
+		return statCode, respStatus, responseMessage
 	}
 
 	// In this section we are appending the actual messages into the sheet
@@ -111,13 +112,26 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	// Appending the actual message into the specific sheet
 	_, err = service.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 	if err != nil {
-		serviceError := err.(*googleapi.Error)
+		statCode, serviceMessage := HandleServiceError(err)
 		respStatus = "Faliure"
-		responseMessage = "[GoogleSheets] error :: Failed to insert Payload :: " + serviceError.Message
-		return serviceError.Code, respStatus, responseMessage
+		responseMessage = "[GoogleSheets] error :: Failed to insert Payload :: " + serviceMessage
+		return statCode, respStatus, responseMessage
 	}
 
 	respStatus = "Success"
 	responseMessage = "[GoogleSheets] :: Message Payload inserted with messageId :: " + parsedJSON.Get("id").String()
 	return 200, respStatus, responseMessage
+}
+
+// This method is created for fail safety, if in any case when err type is not googleapi.Error
+// we should not crash with a type error.
+func HandleServiceError(err error) (statusCode int, responseMessage string) {
+	statusCode = 400
+	responseMessage = err.Error()
+	if reflect.TypeOf(err).String() == "*googleapi.Error" {
+		serviceErr := err.(*googleapi.Error)
+		statusCode = serviceErr.Code
+		responseMessage = serviceErr.Message
+	}
+	return statusCode, responseMessage
 }
