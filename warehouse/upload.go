@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
@@ -124,34 +123,37 @@ var (
 	alwaysMarkExported                               = []string{warehouseutils.DiscardsTable}
 	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{warehouseutils.SNOWFLAKE}
 	warehousesToVerifyLoadFilesFolder                = []string{warehouseutils.SNOWFLAKE}
+	bqMaxParallelLoads                               int
+	rsMaxParallelLoads                               int
+	pgMaxParallelLoads                               int
+	sfMaxParallelLoads                               int
+	chMaxParallelLoads                               int
 )
 
 var maxParallelLoads map[string]int
 
 func init() {
+	loadConfigUpload()
 	setMaxParallelLoads()
 	initializeStateMachine()
-	rruntime.Go(func() {
-		updateUploadConfigFile()
-	})
+}
+
+func loadConfigUpload() {
+	config.RegisterIntConfigVariable("Warehouse.bigquery.maxParallelLoads", 20, &bqMaxParallelLoads, true, 1)
+	config.RegisterIntConfigVariable("Warehouse.redshift.maxParallelLoads", 3, &rsMaxParallelLoads, true, 1)
+	config.RegisterIntConfigVariable("Warehouse.postgres.maxParallelLoads", 3, &pgMaxParallelLoads, true, 1)
+	config.RegisterIntConfigVariable("Warehouse.snowflake.maxParallelLoads", 3, &sfMaxParallelLoads, true, 1)
+	config.RegisterIntConfigVariable("Warehouse.clickhouse.maxParallelLoads", 3, &chMaxParallelLoads, true, 1)
+
 }
 
 func setMaxParallelLoads() {
 	maxParallelLoads = map[string]int{
-		"BQ":         config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
-		"RS":         config.GetInt("Warehouse.redshift.maxParallelLoads", 3),
-		"POSTGRES":   config.GetInt("Warehouse.postgres.maxParallelLoads", 3),
-		"SNOWFLAKE":  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
-		"CLICKHOUSE": config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
-	}
-}
-
-func updateUploadConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		setMaxParallelLoads()
+		"BQ":         bqMaxParallelLoads,
+		"RS":         rsMaxParallelLoads,
+		"POSTGRES":   pgMaxParallelLoads,
+		"SNOWFLAKE":  sfMaxParallelLoads,
+		"CLICKHOUSE": chMaxParallelLoads,
 	}
 }
 

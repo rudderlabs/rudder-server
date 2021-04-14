@@ -22,11 +22,11 @@ func init() {
 }
 
 func loadConfigArchiver() {
-	archiveLoadFiles = config.GetBool("Warehouse.archiveLoadFiles", true)
-	archiveStagingFiles = config.GetBool("Warehouse.archiveStagingFiles", true)
-	stagingFilesArchivalTimeInDays = config.GetInt("Warehouse.stagingFilesArchivalTimeInDays", 45)
-	loadFilesArchivalTimeInDays = config.GetInt("Warehouse.loadFilesArchivalTimeInDays", 15)
-	archiverTickerTime = config.GetDuration("Warehouse.archiverTickerTimeInMin", 1440) * time.Minute // default 1 day
+	config.RegisterBoolConfigVariable("Warehouse.archiveLoadFiles", true, &archiveLoadFiles, true)
+	config.RegisterBoolConfigVariable("Warehouse.archiveStagingFiles", true, &archiveStagingFiles, true)
+	config.RegisterIntConfigVariable("Warehouse.stagingFilesArchivalTimeInDays", 45, &stagingFilesArchivalTimeInDays, true, 1)
+	config.RegisterIntConfigVariable("Warehouse.loadFilesArchivalTimeInDays", 15, &loadFilesArchivalTimeInDays, true, 1)
+	config.RegisterDurationConfigVariable("Warehouse.archiverTickerTimeInMin", time.Duration(1440), &archiverTickerTime, true, time.Minute)
 }
 
 func runArchiver(dbHandle *sql.DB) {

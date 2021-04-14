@@ -18,7 +18,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -140,49 +139,15 @@ func connect(cred credentialsT) (*sql.DB, error) {
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
 }
 
 func loadConfig() {
-	queryDebugLogs = config.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
-	blockSize = config.GetString("Warehouse.clickhouse.blockSize", "1000")
-	poolSize = config.GetString("Warehouse.clickhouse.poolSize", "10")
-	disableNullable = config.GetBool("Warehouse.clickhouse.disableNullable", false)
-}
+	config.RegisterStringConfigVariable("Warehouse.clickhouse.queryDebugLogs", "false", &queryDebugLogs, true)
+	config.RegisterStringConfigVariable("Warehouse.clickhouse.blockSize", "1000", &blockSize, true)
+	config.RegisterStringConfigVariable("Warehouse.clickhouse.poolSize", "10", &poolSize, true)
+	config.RegisterBoolConfigVariable("Warehouse.clickhouse.disableNullable", false, &disableNullable, true)
 
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		clickHouseReloadableConfig()
-	}
-}
-
-func clickHouseReloadableConfig() {
-	_queryDebugLogs := config.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
-	if _queryDebugLogs != queryDebugLogs {
-		queryDebugLogs = _queryDebugLogs
-		pkgLogger.Info("Warehouse.clickhouse.queryDebugLogs changes to ", queryDebugLogs)
-	}
-	_blockSize := config.GetString("Warehouse.clickhouse.blockSize", "1000")
-	if _blockSize != blockSize {
-		blockSize = _blockSize
-		pkgLogger.Info("Warehouse.clickhouse.blockSize changes to ", blockSize)
-	}
-	_poolSize := config.GetString("Warehouse.clickhouse.poolSize", "10")
-	if _poolSize != poolSize {
-		poolSize = _poolSize
-		pkgLogger.Info("Warehouse.clickhouse.poolSize changes to ", poolSize)
-	}
-	_disableNullable := config.GetBool("Warehouse.clickhouse.disableNullable", false)
-	if _disableNullable != disableNullable {
-		disableNullable = _disableNullable
-		pkgLogger.Info("Warehouse.clickhouse.disableNullable changes to ", disableNullable)
-	}
 }
 
 /*
