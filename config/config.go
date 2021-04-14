@@ -110,6 +110,48 @@ func GetInt(key string, defaultValue int) (value int) {
 	return viper.GetInt(key)
 }
 
+func RegisterIntConfigVariable(key string, defaultValue int, ptr *int, isHotReloadable bool, valueScale int) {
+	if isHotReloadable {
+		hotReloadableConfig[key] = ptr
+	}
+	*ptr = GetInt(key, defaultValue) * valueScale
+}
+
+func RegisterBoolConfigVariable(key string, defaultValue bool, ptr *bool, isHotReloadable bool) {
+	if isHotReloadable {
+		hotReloadableConfig[key] = ptr
+	}
+	*ptr = GetBool(key, defaultValue)
+}
+
+func RegisterFloat64ConfigVariable(key string, defaultValue float64, ptr *float64, isHotReloadable bool) {
+	if isHotReloadable {
+		hotReloadableConfig[key] = ptr
+	}
+	*ptr = GetFloat64(key, defaultValue)
+}
+
+func RegisterInt64ConfigVariable(key string, defaultValue int64, ptr *int64, isHotReloadable bool, valueScale int64) {
+	if isHotReloadable {
+		hotReloadableConfig[key] = ptr
+	}
+	*ptr = GetInt64(key, defaultValue) * valueScale
+}
+
+func RegisterDurationConfigVariable(key string, defaultValue time.Duration, ptr *time.Duration, isHotReloadable bool, timeScale time.Duration) {
+	if isHotReloadable {
+		hotReloadableConfig[key] = ptr
+	}
+	*ptr = GetDuration(key, defaultValue) * timeScale
+}
+
+func RegisterStringConfigVariable(key string, defaultValue string, ptr *string, isHotReloadable bool) {
+	if isHotReloadable {
+		hotReloadableConfig[key] = ptr
+	}
+	*ptr = GetString(key, defaultValue)
+}
+
 // GetInt64 is wrapper for viper's GetInt
 func GetInt64(key string, defaultValue int64) (value int64) {
 
