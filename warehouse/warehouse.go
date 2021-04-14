@@ -179,7 +179,6 @@ func uploadStatusTrack() {
 				if err != nil && err != sql.ErrNoRows {
 					panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 				}
-				defer rows.Close()
 
 				var uploaded, staging_files_count int
 				for rows.Next() {
@@ -188,6 +187,7 @@ func uploadStatusTrack() {
 						panic(err)
 					}
 				}
+				rows.Close()
 
 				if staging_files_count > 0 {
 					warehouseID := misc.GetTagName(destination.ID, source.Name, destination.Name)
