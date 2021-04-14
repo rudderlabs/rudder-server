@@ -86,10 +86,10 @@ func loadConfig() {
 type TransformationStatusUploader struct {
 }
 
-func IsUploadEnabled(versionID string) bool {
+func IsUploadEnabled(id string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	_, ok := uploadEnabledTransformations[versionID]
+	_, ok := uploadEnabledTransformations[id]
 	return ok
 }
 
@@ -139,7 +139,7 @@ func updateConfig(sources backendconfig.ConfigT) {
 			for _, transformation := range destination.Transformations {
 				eventTransform, ok := transformation.Config["eventTransform"].(bool)
 				if ok && eventTransform {
-					uploadEnabledTransformations[transformation.VersionID] = true
+					uploadEnabledTransformations[transformation.ID] = true
 				}
 			}
 		}
@@ -165,7 +165,7 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 	}()
 
 	for _, transformation := range tStatus.Destination.Transformations {
-		if IsUploadEnabled(transformation.VersionID) {
+		if IsUploadEnabled(transformation.ID) {
 			reportedMessageIDs := make(map[string]struct{})
 			eventBeforeMap := make(map[string]*EventBeforeTransform)
 			eventAfterMap := make(map[string]*EventsAfterTransform)
@@ -188,7 +188,7 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 			}
 
 			for k := range eventBeforeMap {
-				RecordTransformationStatus(&TransformStatusT{TransformationID: transformation.VersionID,
+				RecordTransformationStatus(&TransformStatusT{TransformationID: transformation.ID,
 					SourceID:      tStatus.SourceID,
 					DestinationID: tStatus.DestID,
 					EventBefore:   eventBeforeMap[k],
@@ -208,7 +208,7 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 							StatusCode: failedEvent.StatusCode,
 						}
 
-						RecordTransformationStatus(&TransformStatusT{TransformationID: transformation.VersionID,
+						RecordTransformationStatus(&TransformStatusT{TransformationID: transformation.ID,
 							SourceID:      tStatus.SourceID,
 							DestinationID: tStatus.DestID,
 							EventBefore:   eventBefore,
@@ -225,7 +225,7 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 						StatusCode: failedEvent.StatusCode,
 					}
 
-					RecordTransformationStatus(&TransformStatusT{TransformationID: transformation.VersionID,
+					RecordTransformationStatus(&TransformStatusT{TransformationID: transformation.ID,
 						SourceID:      tStatus.SourceID,
 						DestinationID: tStatus.DestID,
 						EventBefore:   eventBefore,
@@ -243,7 +243,7 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 						IsDropped:  true,
 					}
 
-					RecordTransformationStatus(&TransformStatusT{TransformationID: transformation.VersionID,
+					RecordTransformationStatus(&TransformStatusT{TransformationID: transformation.ID,
 						SourceID:      tStatus.SourceID,
 						DestinationID: tStatus.DestID,
 						EventBefore:   eventBefore,
