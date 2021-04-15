@@ -59,6 +59,10 @@ const (
 	TableUploadExported                = "exported_data"
 )
 
+const (
+	CloudSourceCateogry = "cloud"
+)
+
 var stateTransitions map[string]*uploadStateT
 
 type uploadStateT struct {
@@ -72,6 +76,8 @@ type UploadT struct {
 	ID                 int64
 	Namespace          string
 	SourceID           string
+	SourceType         string
+	SourceCategory     string
 	DestinationID      string
 	DestinationType    string
 	StartStagingFileID int64
@@ -248,7 +254,7 @@ func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
 			FROM row_numbered_load_files
 			WHERE
 				row_number=1 AND table_name != '%[3]s'`,
-		warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(job.stagingFileIDs, ","), warehouseutils.DiscardsTable)
+		warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(job.stagingFileIDs, ","), warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable))
 	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
@@ -762,7 +768,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 		}
 		if !hasLoadFiles {
 			wg.Done()
-			if misc.ContainsString(alwaysMarkExported, tableName) {
+			if misc.ContainsString(alwaysMarkExported, strings.ToLower(tableName)) {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)
 				tableUpload.setStatus(TableUploadExported)
 			}
@@ -1566,6 +1572,13 @@ func (job *UploadJobT) GetSingleLoadFileLocation(tableName string) (string, erro
 	var location string
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&location)
 	return location, err
+}
+
+func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
+	if job.upload.SourceCategory == CloudSourceCateogry {
+		return true
+	}
+	return false
 }
 
 /*

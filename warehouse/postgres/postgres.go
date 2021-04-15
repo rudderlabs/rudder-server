@@ -243,6 +243,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 		}
 		csvReader := csv.NewReader(gzipReader)
+		var csvRowsProcessedCount int
 		for {
 			var record []string
 			record, err = csvReader.Read()
@@ -255,7 +256,12 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					txn.Rollback()
 					return
 				}
-
+			}
+			if len(sortedColumnKeys) != len(record) {
+				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
+				pkgLogger.Error(err)
+				txn.Rollback()
+				return
 			}
 			var recordInterface []interface{}
 			for _, value := range record {
@@ -271,6 +277,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				txn.Rollback()
 				return
 			}
+			csvRowsProcessedCount++
 		}
 		gzipReader.Close()
 		gzipFile.Close()
