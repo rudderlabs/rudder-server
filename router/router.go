@@ -165,7 +165,7 @@ func loadConfig() {
 	noOfJobsToBatchInAWorker = config.GetInt("Router.noOfJobsToBatchInAWorker", 20)
 	config.RegisterDurationConfigVariable("Router.jobsBatchTimeoutInSec", time.Duration(5), &jobsBatchTimeout, true, time.Second)
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
-	config.RegisterDurationConfigVariable("Router.maxStatusUpdateWaitInS", time.Duration(5), &maxRetryBackoff, true, time.Second)
+	config.RegisterDurationConfigVariable("Router.maxStatusUpdateWaitInS", time.Duration(5), &maxStatusUpdateWait, true, time.Second)
 
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second

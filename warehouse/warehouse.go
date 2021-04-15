@@ -117,7 +117,6 @@ func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
 	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
-	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	config.RegisterIntConfigVariable("Warehouse.noOfWorkers", 8, &noOfWorkers, true, 1)
 	config.RegisterIntConfigVariable("Warehouse.noOfSlaveWorkerRoutines", 4, &noOfSlaveWorkerRoutines, true, 1)
 	config.RegisterIntConfigVariable("Warehouse.stagingFilesBatchSize", 240, &stagingFilesBatchSize, true, 1)
@@ -137,7 +136,6 @@ func loadConfig() {
 	config.RegisterIntConfigVariable("Warehouse.warehouseSyncPreFetchCount", 10, &warehouseSyncPreFetchCount, true, 1)
 	config.RegisterIntConfigVariable("Warehouse.stagingFilesSchemaPaginationSize", 100, &stagingFilesSchemaPaginationSize, true, 1)
 	config.RegisterBoolConfigVariable("Warehouse.warehouseSyncFreqIgnore", false, &warehouseSyncFreqIgnore, true)
-	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
 	config.RegisterIntConfigVariable("Warehouse.minRetryAttempts", 3, &minRetryAttempts, true, 1)
 	config.RegisterDurationConfigVariable("Warehouse.retryTimeWindow", time.Duration(180), &retryTimeWindow, true, time.Minute)
 	destinationsMap = map[string]warehouseutils.WarehouseT{}

@@ -49,7 +49,6 @@ func (mr *MockJobsDBMockRecorder) CheckPGHealth() *gomock.Call {
 }
 
 // GetExecuting mocks base method.
-=======
 func (m *MockJobsDB) GetExecuting(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetExecuting", arg0)
@@ -58,14 +57,12 @@ func (m *MockJobsDB) GetExecuting(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
 }
 
 // GetExecuting indicates an expected call of GetExecuting.
-=======
 func (mr *MockJobsDBMockRecorder) GetExecuting(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetExecuting", reflect.TypeOf((*MockJobsDB)(nil).GetExecuting), arg0)
 }
 
 // GetToRetry mocks base method.
-=======
 func (m *MockJobsDB) GetToRetry(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetToRetry", arg0)
@@ -74,14 +71,12 @@ func (m *MockJobsDB) GetToRetry(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
 }
 
 // GetToRetry indicates an expected call of GetToRetry.
-=======
 func (mr *MockJobsDBMockRecorder) GetToRetry(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetToRetry", reflect.TypeOf((*MockJobsDB)(nil).GetToRetry), arg0)
 }
 
 // GetUnprocessed mocks base method.
-=======
 func (m *MockJobsDB) GetUnprocessed(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetUnprocessed", arg0)
@@ -90,7 +85,6 @@ func (m *MockJobsDB) GetUnprocessed(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT 
 }
 
 // GetUnprocessed indicates an expected call of GetUnprocessed.
-=======
 func (mr *MockJobsDBMockRecorder) GetUnprocessed(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUnprocessed", reflect.TypeOf((*MockJobsDB)(nil).GetUnprocessed), arg0)
