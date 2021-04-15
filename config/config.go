@@ -84,8 +84,11 @@ func hotReloadConfig() {
 		switch value := value.(type) {
 		case *int:
 			var _value int
-			if viper.IsSet(key) {
+			if viper.IsSet(configVal.keys[0]) {
 				_value = viper.GetInt(key)
+				_value = _value * configVal.multiplier.(int)
+			} else if len(configVal.keys) > 1 && viper.IsSet(configVal.keys[1]) {
+				_value = viper.GetInt(configVal.keys[1])
 				_value = _value * configVal.multiplier.(int)
 			} else {
 				_value = configVal.defaultValue.(int) * configVal.multiplier.(int)
@@ -120,6 +123,8 @@ func hotReloadConfig() {
 			var _value time.Duration
 			if viper.IsSet(key) {
 				_value = viper.GetDuration(key) * configVal.multiplier.(time.Duration)
+			} else if len(configVal.keys) > 1 && viper.IsSet(configVal.keys[1]) {
+				_value = viper.GetDuration(configVal.keys[1]) * configVal.multiplier.(time.Duration)
 			} else {
 				_value = configVal.defaultValue.(time.Duration) * configVal.multiplier.(time.Duration)
 			}
@@ -264,6 +269,42 @@ func RegisterStringConfigVariable(key string, defaultValue string, ptr *string, 
 		hotReloadableConfig[key] = &configVar
 	}
 	*ptr = GetString(key, defaultValue)
+}
+
+func RegisterMultipleKeyIntConfigVariable(key1 string, key2 string, defaultValue int, ptr *int, isHotReloadable bool) {
+	if isHotReloadable {
+		configVar := ConfigVar{
+			value:           ptr,
+			multiplier:      1,
+			isHotReloadable: isHotReloadable,
+			defaultValue:    defaultValue,
+			keys:            []string{key1, key2},
+		}
+		hotReloadableConfig[key1] = &configVar
+	}
+	if viper.IsSet(key1) {
+		*ptr = GetInt(key1, defaultValue)
+	} else {
+		*ptr = GetInt(key2, defaultValue)
+	}
+}
+
+func RegisterMultipleKeyDurationConfigVariable(key1 string, key2 string, defaultValue time.Duration, ptr *time.Duration, isHotReloadable bool, timeScale time.Duration) {
+	if isHotReloadable {
+		configVar := ConfigVar{
+			value:           ptr,
+			multiplier:      timeScale,
+			isHotReloadable: isHotReloadable,
+			defaultValue:    defaultValue,
+			keys:            []string{key1, key2},
+		}
+		hotReloadableConfig[key1] = &configVar
+	}
+	if viper.IsSet(key1) {
+		*ptr = GetDuration(key1, defaultValue) * timeScale
+	} else {
+		*ptr = GetDuration(key2, defaultValue) * timeScale
+	}
 }
 
 // GetInt64 is wrapper for viper's GetInt

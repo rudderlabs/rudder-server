@@ -1390,6 +1390,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
+	config.RegisterMultipleKeyIntConfigVariable("Router."+rt.destName+"."+"noOfWorkers", "Router."+"noOfWorkers", 3, &rt.maxFailedCountForJob, true)
 	rt.maxFailedCountForJob = getRouterConfigInt("maxFailedCountForJob", destName, 3)
 	rt.retryTimeWindow = getRouterConfigDuration("retryTimeWindowInMins", destName, time.Duration(180)) * time.Minute
 	// rruntime.Go(func() {

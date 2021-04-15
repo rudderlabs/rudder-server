@@ -1025,6 +1025,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destTyp
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 	brt.maxFailedCountForJob = getBatchRouterConfigInt("maxFailedCountForJob", destType, 128)
+	config.RegisterMultipleKeyIntConfigVariable("BatchRouter."+brt.destType+"."+"noOfWorkers", "BatchRouter."+"noOfWorkers", 128, &brt.maxFailedCountForJob, true)
 	brt.retryTimeWindow = getBatchRouterConfigDuration("retryTimeWindowInMins", destType, time.Duration(180)) * time.Minute
 	// rruntime.Go(func() {
 	// 	brt.updateRTConfigFile()
