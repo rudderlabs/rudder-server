@@ -545,12 +545,14 @@ func (rs *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
 	schemaExists, err = rs.schemaExists(rs.Namespace)
 	if err != nil {
+		pkgLogger.Errorf("RS: Error checking if schema: %s exists: %v", rs.Namespace, err)
 		return err
 	}
-	if !schemaExists {
-		err = rs.createSchema()
+	if schemaExists {
+		pkgLogger.Infof("RS: Skipping creating schema: %s since it already exists", rs.Namespace)
+		return
 	}
-	return err
+	return rs.createSchema()
 }
 
 func (rs *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {

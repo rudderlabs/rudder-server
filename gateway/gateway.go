@@ -364,13 +364,14 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			// set anonymousId if not set in payload
-			var index int
 			result := gjson.GetBytes(body, "batch")
+			out := []map[string]interface{}{}
 
 			var notIdentifiable bool
-			result.ForEach(func(_, _ gjson.Result) bool {
-				anonIDFromReq := strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.anonymousId`, index)).String())
-				userIDFromReq := strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.userId`, index)).String())
+			result.ForEach(func(_, vjson gjson.Result) bool {
+				anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
+				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
+
 				if anonIDFromReq == "" {
 					if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
 						notIdentifiable = true
@@ -383,13 +384,17 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 					notIdentifiable = true
 					return false
 				}
-				body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.rudderId`, index), rudderId)
-				if strings.TrimSpace(gjson.GetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index)).String()) == "" {
-					body, _ = sjson.SetBytes(body, fmt.Sprintf(`batch.%v.messageId`, index), uuid.NewV4().String())
+
+				toSet := vjson.Value().(map[string]interface{})
+				toSet["rudderId"] = rudderId
+				if messageId := strings.TrimSpace(vjson.Get("messageId").String()); messageId == "" {
+					toSet["messageId"] = uuid.NewV4().String()
 				}
-				index++
+				out = append(out, toSet)
 				return true // keep iterating
 			})
+
+			body, _ = sjson.SetBytes(body, "batch", out)
 
 			if notIdentifiable {
 				req.done <- response.GetStatus(response.NonIdentifiableRequest)

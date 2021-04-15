@@ -50,7 +50,7 @@ func (d *DedupHandleT) openBadger(clearDB *bool) {
 		panic(err)
 	}
 	path := fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
-	d.badgerDB, err = badger.Open(badger.DefaultOptions(path))
+	d.badgerDB, err = badger.Open(badger.DefaultOptions(path).WithTruncate(true))
 	if err != nil {
 		panic(err)
 	}

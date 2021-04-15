@@ -38,7 +38,6 @@ func loadConfig() {
 	config.RegisterIntConfigVariable("Processor.errDBReadBatchSize", 10000, &errDBReadBatchSize, true, 1)
 	config.RegisterIntConfigVariable("Processor.noOfErrStashWorkers", 2, &noOfErrStashWorkers, true, 1)
 	config.RegisterIntConfigVariable("BatchRouter.maxFailedCountForErrJob", 3, &maxFailedCountForErrJob, true, 1)
-
 }
 
 type StoreErrorOutputT struct {
@@ -92,7 +91,11 @@ func (st *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		st.errorDB.UpdateJobStatus(statusList, nil, nil)
+		err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as failed. Panicking. Err: %v", err)
+			panic(err)
+		}
 	}
 }
 
@@ -215,7 +218,11 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		}
 		statusList = append(statusList, &status)
 	}
-	st.errorDB.UpdateJobStatus(statusList, nil, nil)
+	err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+	if err != nil {
+		pkgLogger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
+		panic(err)
+	}
 }
 
 func (st *HandleT) readErrJobsLoop() {
@@ -262,7 +269,12 @@ func (st *HandleT) readErrJobsLoop() {
 			statusList = append(statusList, &status)
 		}
 
-		st.errorDB.UpdateJobStatus(statusList, nil, nil)
+		err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
+			panic(err)
+		}
+
 		if hasFileUploader {
 			st.errProcessQ <- combinedList
 		}

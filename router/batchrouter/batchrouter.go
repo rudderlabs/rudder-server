@@ -491,7 +491,11 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		brt.errorDB.Store(abortedEvents)
 	}
 	//Mark the status of the jobs
-	brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
+	err = brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
+	if err != nil {
+		brt.logger.Errorf("Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+		panic(err)
+	}
 
 	sendDestStatusStats(batchJobs.BatchDestination, jobStateCounts, brt.destType, isWarehouse)
 }
@@ -621,7 +625,11 @@ func (brt *HandleT) initWorkers() {
 					}
 
 					//Mark the jobs as executing
-					brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
+					err := brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
+					if err != nil {
+						brt.logger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", brt.destType, err)
+						panic(err)
+					}
 					brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
 
 					var wg sync.WaitGroup
@@ -872,7 +880,11 @@ func (brt *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		brt.jobsDB.UpdateJobStatus(statusList, []string{}, nil)
+		err := brt.jobsDB.UpdateJobStatus(statusList, []string{}, nil)
+		if err != nil {
+			brt.logger.Errorf("Error occurred while marking %s jobs statuses as failed. Panicking. Err: %v", brt.destType, err)
+			panic(err)
+		}
 	}
 	if misc.Contains(objectStorageDestinations, brt.destType) {
 		brt.dedupRawDataDestJobsOnCrash()
