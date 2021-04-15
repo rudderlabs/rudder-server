@@ -58,54 +58,12 @@ func init() {
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	//Number of events that are batched before sending schema to control plane
-	maxBatchSize = config.GetInt("SourceDebugger.maxBatchSize", 32)
-	maxESQueueSize = config.GetInt("SourceDebugger.maxESQueueSize", 1024)
-	maxRetry = config.GetInt("SourceDebugger.maxRetry", 3)
-	batchTimeout = config.GetDuration("SourceDebugger.batchTimeoutInS", time.Duration(2)) * time.Second
-	retrySleep = config.GetDuration("SourceDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	disableEventUploads = config.GetBool("SourceDebugger.disableEventUploads", false)
-}
-
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		sourceDebuggerReloadableConfig()
-	}
-}
-
-func sourceDebuggerReloadableConfig() {
-	_maxBatchSize := config.GetInt("SourceDebugger.maxBatchSize", 32)
-	if _maxBatchSize != maxBatchSize {
-		maxBatchSize = _maxBatchSize
-		pkgLogger.Info("SourceDebugger.maxBatchSize changes to ", maxBatchSize)
-	}
-	_maxESQueueSize := config.GetInt("SourceDebugger.maxESQueueSize", 1024)
-	if _maxESQueueSize != maxESQueueSize {
-		maxESQueueSize = _maxESQueueSize
-		pkgLogger.Info("SourceDebugger.maxESQueueSize changes to ", maxESQueueSize)
-	}
-	_maxRetry := config.GetInt("SourceDebugger.maxRetry", 3)
-	if _maxRetry != maxRetry {
-		maxRetry = _maxRetry
-		pkgLogger.Info("SourceDebugger.maxRetry changes to ", maxRetry)
-	}
-	_batchTimeout := config.GetDuration("SourceDebugger.batchTimeoutInS", time.Duration(2)) * time.Second
-	if _batchTimeout != batchTimeout {
-		batchTimeout = _batchTimeout
-		pkgLogger.Info("SourceDebugger.batchTimeout changes to ", batchTimeout)
-	}
-	_retrySleep := config.GetDuration("SourceDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	if _retrySleep != retrySleep {
-		retrySleep = _retrySleep
-		pkgLogger.Info("SourceDebugger.retrySleep changes to ", retrySleep)
-	}
-	_disableEventUploads := config.GetBool("SourceDebugger.disableEventUploads", false)
-	if _disableEventUploads != disableEventUploads {
-		disableEventUploads = _disableEventUploads
-		pkgLogger.Info("SourceDebugger.disableEventUploads changes to ", disableEventUploads)
-	}
+	config.RegisterIntConfigVariable("SourceDebugger.maxBatchSize", 32, &maxBatchSize, true, 1)
+	config.RegisterIntConfigVariable("SourceDebugger.maxESQueueSize", 1024, &maxESQueueSize, true, 1)
+	config.RegisterIntConfigVariable("SourceDebugger.maxRetry", 3, &maxRetry, true, 1)
+	config.RegisterDurationConfigVariable("SourceDebugger.batchTimeoutInS", time.Duration(2), &batchTimeout, true, time.Second)
+	config.RegisterDurationConfigVariable("SourceDebugger.retrySleepInMS", time.Duration(100), &retrySleep, true, time.Millisecond)
+	config.RegisterBoolConfigVariable("SourceDebugger.disableEventUploads", false, &disableEventUploads, true)
 }
 
 //RecordEvent is used to put the event batch in the eventBatchChannel,

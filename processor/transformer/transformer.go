@@ -18,7 +18,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -97,40 +96,13 @@ var (
 )
 
 func loadConfig() {
-	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
-	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
-	maxRetry = config.GetInt("Processor.maxRetry", 30)
-	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
-}
-
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		transformerReloadableConfig()
-	}
+	config.RegisterIntConfigVariable("Processor.maxRetry", 30, &maxRetry, true, 1)
+	config.RegisterDurationConfigVariable("Processor.retrySleepInMS", time.Duration(100), &retrySleep, true, time.Millisecond)
 }
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("processor").Child("transformer")
-}
-
-func transformerReloadableConfig() {
-	_maxRetry := config.GetInt("Processor.maxRetry", 30)
-	if _maxRetry != maxRetry {
-		maxRetry = _maxRetry
-		pkgLogger.Info("Processor.maxRetry changes to ", maxRetry)
-	}
-	_retrySleep := config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	if _retrySleep != retrySleep {
-		retrySleep = _retrySleep
-		pkgLogger.Info("Processor.retrySleepInMS changes to ", retrySleep)
-	}
 }
 
 type TransformerResponseT struct {

@@ -163,14 +163,15 @@ func loadConfig() {
 	readSleep = config.GetDuration("Router.readSleepInMS", time.Duration(1000)) * time.Millisecond
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	noOfJobsToBatchInAWorker = config.GetInt("Router.noOfJobsToBatchInAWorker", 20)
-	jobsBatchTimeout = config.GetDuration("Router.jobsBatchTimeoutInSec", time.Duration(5)) * time.Second
+	config.RegisterDurationConfigVariable("Router.jobsBatchTimeoutInSec", time.Duration(5), &jobsBatchTimeout, true, time.Second)
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
-	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
+	config.RegisterDurationConfigVariable("Router.maxStatusUpdateWaitInS", time.Duration(5), &maxRetryBackoff, true, time.Second)
+
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
-	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
-	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
-	fixedLoopSleep = config.GetDuration("Router.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
+	config.RegisterDurationConfigVariable("Router.minRetryBackoffInS", time.Duration(10), &minRetryBackoff, true, time.Second)
+	config.RegisterDurationConfigVariable("Router.maxRetryBackoffInS", time.Duration(300), &maxRetryBackoff, true, time.Second)
+	config.RegisterDurationConfigVariable("Router.fixedLoopSleepInMS", time.Duration(0), &fixedLoopSleep, true, time.Millisecond)
 	failedEventsCacheSize = config.GetInt("Router.failedEventsCacheSize", 10)
 }
 
@@ -1338,33 +1339,24 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("router")
 }
 
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		routerReloadableConfig()
-	}
-}
+// func (rt *HandleT) updateRTConfigFile() {
+// 	ch := make(chan utils.DataEvent)
+// 	config.GetUpdatedConfig(ch, "ConfigUpdate")
+// 	for {
+// 		<-ch
+// 		_maxFailedCountForJob := getRouterConfigInt("maxFailedCountForJob", rt.destName, 3)
+// 		if _maxFailedCountForJob != rt.maxFailedCountForJob {
+// 			rt.maxFailedCountForJob = _maxFailedCountForJob
+// 			pkgLogger.Info("maxFailedCountForJob for %s changes to ", rt.destName, _maxFailedCountForJob)
 
-func (rt *HandleT) updateRTConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		_maxFailedCountForJob := getRouterConfigInt("maxFailedCountForJob", rt.destName, 3)
-		if _maxFailedCountForJob != rt.maxFailedCountForJob {
-			rt.maxFailedCountForJob = _maxFailedCountForJob
-			pkgLogger.Info("maxFailedCountForJob for %s changes to ", rt.destName, _maxFailedCountForJob)
-
-		}
-		_retryTimeWindow := getRouterConfigDuration("retryTimeWindowInMins", rt.destName, time.Duration(180)) * time.Minute
-		if _retryTimeWindow != rt.retryTimeWindow {
-			rt.retryTimeWindow = _retryTimeWindow
-			pkgLogger.Info("retryTimeWindowInMins for %s changes to ", rt.destName, _retryTimeWindow)
-		}
-	}
-}
+// 		}
+// 		_retryTimeWindow := getRouterConfigDuration("retryTimeWindowInMins", rt.destName, time.Duration(180)) * time.Minute
+// 		if _retryTimeWindow != rt.retryTimeWindow {
+// 			rt.retryTimeWindow = _retryTimeWindow
+// 			pkgLogger.Info("retryTimeWindowInMins for %s changes to ", rt.destName, _retryTimeWindow)
+// 		}
+// 	}
+// }
 
 //Setup initializes this module
 func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT) {
@@ -1400,9 +1392,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	rt.maxFailedCountForJob = getRouterConfigInt("maxFailedCountForJob", destName, 3)
 	rt.retryTimeWindow = getRouterConfigDuration("retryTimeWindowInMins", destName, time.Duration(180)) * time.Minute
-	rruntime.Go(func() {
-		rt.updateRTConfigFile()
-	})
+	// rruntime.Go(func() {
+	// 	rt.updateRTConfigFile()
+	// })
 	rt.drainJobHandler = drain.Setup(rt.jobsDB)
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 

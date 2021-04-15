@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/lib/pq"
@@ -43,19 +42,7 @@ const (
 func init() {
 	loadPGNotifierConfig()
 	queueName = "pg_notifier_queue"
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("pgnotifier")
-}
-
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		pgNotifierReloadableConfig()
-	}
 }
 
 type PgNotifierT struct {
@@ -106,29 +93,6 @@ func loadPGNotifierConfig() {
 	retriggerInterval = time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
 	retriggerCount = config.GetInt("PgNotifier.retriggerCount", 500)
 	retriggerExecutingTimeLimitInS = config.GetInt("PgNotifier.retriggerExecutingTimeLimitInS", 120)
-}
-
-func pgNotifierReloadableConfig() {
-	_maxAttempt := config.GetInt("PgNotifier.maxAttempt", 3)
-	if _maxAttempt != maxAttempt {
-		maxAttempt = _maxAttempt
-		pkgLogger.Info("PgNotifier.maxAttempt changes to ", maxAttempt)
-	}
-	_trackBatchInterval := time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
-	if _trackBatchInterval != trackBatchInterval {
-		trackBatchInterval = _trackBatchInterval
-		pkgLogger.Info("PgNotifier.trackBatchIntervalInS changes to ", trackBatchInterval)
-	}
-	_retriggerInterval := time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
-	if _retriggerInterval != retriggerInterval {
-		retriggerInterval = _retriggerInterval
-		pkgLogger.Info("PgNotifier.retriggerIntervalInS changes to ", retriggerInterval)
-	}
-	_retriggerCount := config.GetInt("PgNotifier.retriggerCount", 500)
-	if _retriggerCount != retriggerCount {
-		retriggerCount = _retriggerCount
-		pkgLogger.Info("PgNotifier.retriggerCount changes to ", retriggerCount)
-	}
 }
 
 //New Given default connection info return pg notifiew object from it

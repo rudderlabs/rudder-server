@@ -11,9 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/router/types"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
 )
@@ -49,37 +47,13 @@ var (
 )
 
 func loadConfig() {
-	maxRetry = config.GetInt("Processor.maxRetry", 30)
-	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
-}
+	config.RegisterIntConfigVariable("Processor.maxRetry", 30, &maxRetry, true, 1)
+	config.RegisterDurationConfigVariable("Processor.retrySleepInMS", time.Duration(100), &retrySleep, true, time.Millisecond)
 
-func loadRouterConfig() {
-	_maxRetry := config.GetInt("Processor.maxRetry", 30)
-	if _maxRetry != maxRetry {
-		maxRetry = _maxRetry
-		pkgLogger.Info("Processor.maxRetry changes to ", maxRetry)
-	}
-	_retrySleep := config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	if _retrySleep != retrySleep {
-		retrySleep = _retrySleep
-		pkgLogger.Info("Processor.retrySleep changes to ", retrySleep)
-	}
-}
-
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		loadRouterConfig()
-	}
 }
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("router").Child("transformer")
 
 }
