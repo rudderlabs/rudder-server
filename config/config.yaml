@@ -106,10 +106,10 @@ JobsDB:
   maxMigrateOnce: 10
   maxMigrateDSProbe: 12
   maxTableSizeInMB: 300
-  migrateDSLoopSleepDurationInS: 30000
-  addNewDSLoopSleepDurationInS: 5000
-  refreshDSListLoopSleepDurationInS: 5000
-  backupCheckSleepDurationIns: 5000
+  migrateDSLoopSleepDurationInS: 30
+  addNewDSLoopSleepDurationInS: 5
+  refreshDSListLoopSleepDurationInS: 6
+  backupCheckSleepDurationIns: 5
   backupRowsBatchSize: 1000
   archivalTimeInDays: 10
   archiverTickerTimeInMin: 1440

@@ -80,6 +80,7 @@ func UpdateConfig() {
 func hotReloadConfig() {
 	for key, configVal := range hotReloadableConfig {
 		value := configVal.value
+		fmt.Println(key)
 		switch value := value.(type) {
 		case *int:
 			var _value int
@@ -213,7 +214,7 @@ func RegisterFloat64ConfigVariable(key string, defaultValue float64, ptr *float6
 	if isHotReloadable {
 		configVar := ConfigVar{
 			value:           ptr,
-			multiplier:      1,
+			multiplier:      1.0,
 			isHotReloadable: isHotReloadable,
 			defaultValue:    defaultValue,
 			keys:            []string{key},
