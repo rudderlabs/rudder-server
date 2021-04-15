@@ -330,6 +330,11 @@ func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUse
 		return true
 	}
 
+	if !worker.rt.guaranteeUserEventOrder {
+		//if guaranteeUserEventOrder is false, letting the next jobs pass
+		return true
+	}
+
 	//If batching is enabled, we send the request only if the previous one succeeds
 	if worker.rt.enableBatching {
 		return isSuccessStatus(prevRespStatusCode)
@@ -1008,7 +1013,11 @@ func (rt *HandleT) statusInsertLoop() {
 					rt.errorDB.Store(routerAbortedJobs)
 				}
 				//Update the status
-				rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
+				err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
+				if err != nil {
+					rt.logger.Errorf("Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
+					panic(err)
+				}
 			}
 
 			if rt.guaranteeUserEventOrder {
@@ -1230,8 +1239,17 @@ func (rt *HandleT) generatorLoop() {
 		rt.throttledUserMap = nil
 
 		//Mark the jobs as executing
-		rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
-		rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
+		err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
+			panic(err)
+		}
+		//Mark the jobs as executing
+		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
+			panic(err)
+		}
 
 		//Send the jobs to the jobQ
 		for _, wrkJob := range toProcess {

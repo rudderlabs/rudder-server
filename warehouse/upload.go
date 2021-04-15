@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -263,7 +262,7 @@ func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
 			FROM row_numbered_load_files
 			WHERE
 				row_number=1 AND table_name != '%[6]s'`,
-		warehouseutils.WarehouseLoadFilesTable, job.upload.StartLoadFileID, job.upload.EndLoadFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID, warehouseutils.DiscardsTable)
+		warehouseutils.WarehouseLoadFilesTable, job.upload.StartLoadFileID, job.upload.EndLoadFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable))
 	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
@@ -467,7 +466,7 @@ func (job *UploadJobT) run() (err error) {
 
 			wg.Wait()
 			if len(loadErrors) > 0 {
-				err = multierror.Join(loadErrors)
+				err = misc.ConcatErrors(loadErrors)
 				break
 			}
 
@@ -519,7 +518,7 @@ func (job *UploadJobT) exportUserTables() (err error) {
 		job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 		if len(loadErrors) > 0 {
-			err = multierror.Join(loadErrors)
+			err = misc.ConcatErrors(loadErrors)
 			return
 		}
 	}
@@ -543,7 +542,7 @@ func (job *UploadJobT) exportIdentities() (err error) {
 			job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 			if len(loadErrors) > 0 {
-				err = multierror.Join(loadErrors)
+				err = misc.ConcatErrors(loadErrors)
 				return
 			}
 		}
@@ -562,7 +561,7 @@ func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 	job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 	if len(loadErrors) > 0 {
-		err = multierror.Join(loadErrors)
+		err = misc.ConcatErrors(loadErrors)
 		return
 	}
 
@@ -777,7 +776,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 		}
 		if !hasLoadFiles {
 			wg.Done()
-			if misc.ContainsString(alwaysMarkExported, tableName) {
+			if misc.ContainsString(alwaysMarkExported, strings.ToLower(tableName)) {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)
 				tableUpload.setStatus(TableUploadExported)
 			}
@@ -1377,7 +1376,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	wg.Wait()
 
 	if len(saveLoadFileErrs) > 0 {
-		err = multierror.Join(saveLoadFileErrs)
+		err = misc.ConcatErrors(saveLoadFileErrs)
 		pkgLogger.Errorf(`[WH]: Encountered errors in creating load file records in wh_load_files: %v`, err)
 		return startLoadFileID, endLoadFileID, err
 	}
