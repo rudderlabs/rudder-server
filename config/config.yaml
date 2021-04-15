@@ -104,7 +104,7 @@ JobsDB:
   jobStatusMigrateThres: 5
   maxDSSize: 100000
   maxMigrateOnce: 10
-  maxMigrateDSProbe: 10
+  maxMigrateDSProbe: 12
   maxTableSizeInMB: 300
   migrateDSLoopSleepDurationInS: 30000
   addNewDSLoopSleepDurationInS: 5000

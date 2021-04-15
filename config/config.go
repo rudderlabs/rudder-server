@@ -20,8 +20,17 @@ type Topic string
 
 var (
 	whSchemaVersion     string
-	hotReloadableConfig map[string]interface{}
+	hotReloadableConfig map[string]*ConfigVar
+	totalMap            map[string]*ConfigVar
 )
+
+type ConfigVar struct {
+	value           interface{}
+	multiplier      interface{}
+	isHotReloadable bool
+	defaultValue    interface{}
+	keys            []string
+}
 
 // Rudder server supported config constants
 const (
@@ -49,7 +58,7 @@ func init() {
 	if err := godotenv.Load(); err != nil {
 		fmt.Println("INFO: No .env file found.")
 	}
-	hotReloadableConfig = make(map[string]interface{})
+	hotReloadableConfig = make(map[string]*ConfigVar)
 	configPath := GetEnv("CONFIG_PATH", "./config/config.yaml")
 	viper.SetConfigFile(configPath)
 	viper.AddConfigPath(".")
@@ -62,46 +71,79 @@ func init() {
 }
 
 func UpdateConfig() {
+	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		hotReloadConfig()
 	})
 }
 
 func hotReloadConfig() {
-	for key, value := range hotReloadableConfig {
+	for key, configVal := range hotReloadableConfig {
+		value := configVal.value
 		switch value := value.(type) {
 		case *int:
-			_value := viper.GetInt(key)
+			var _value int
+			if viper.IsSet(key) {
+				_value = viper.GetInt(key)
+				_value = _value * configVal.multiplier.(int)
+			} else {
+				_value = configVal.defaultValue.(int) * configVal.multiplier.(int)
+			}
 			if _value != *value {
 				*value = _value
 				fmt.Printf("The value of %s changed to %d", key, _value)
 			}
 		case *int64:
-			_value := viper.GetInt64(key)
+			var _value int64
+			if viper.IsSet(key) {
+				_value = viper.GetInt64(key) * configVal.multiplier.(int64)
+			} else {
+				_value = configVal.defaultValue.(int64) * configVal.multiplier.(int64)
+			}
 			if _value != *value {
 				*value = _value
 				fmt.Printf("The value of %s changed to %d", key, _value)
 			}
 		case *string:
-			_value := viper.GetString(key)
+			var _value string
+			if viper.IsSet(key) {
+				_value = viper.GetString(key)
+			} else {
+				_value = configVal.defaultValue.(string)
+			}
 			if _value != *value {
 				*value = _value
 				fmt.Printf("The value of %s changed to %s", key, _value)
 			}
 		case *time.Duration:
-			_value := viper.GetDuration(key)
+			var _value time.Duration
+			if viper.IsSet(key) {
+				_value = viper.GetDuration(key) * configVal.multiplier.(time.Duration)
+			} else {
+				_value = configVal.defaultValue.(time.Duration) * configVal.multiplier.(time.Duration)
+			}
 			if _value != *value {
 				*value = _value
 				fmt.Printf("The value of %s changed to %s", key, _value)
 			}
 		case *bool:
-			_value := viper.GetBool(key)
+			var _value bool
+			if viper.IsSet(key) {
+				_value = viper.GetBool(key)
+			} else {
+				_value = configVal.defaultValue.(bool)
+			}
 			if _value != *value {
 				*value = _value
 				fmt.Printf("The value of %s changed to %v", key, _value)
 			}
 		case *float64:
-			_value := viper.GetFloat64(key)
+			var _value float64
+			if viper.IsSet(key) {
+				_value = viper.GetFloat64(key) * configVal.multiplier.(float64)
+			} else {
+				_value = configVal.defaultValue.(float64) * configVal.multiplier.(float64)
+			}
 			if _value != *value {
 				*value = _value
 				fmt.Printf("The value of %s changed to %v", key, _value)
@@ -141,42 +183,84 @@ func GetInt(key string, defaultValue int) (value int) {
 
 func RegisterIntConfigVariable(key string, defaultValue int, ptr *int, isHotReloadable bool, valueScale int) {
 	if isHotReloadable {
-		hotReloadableConfig[key] = ptr
+		configVar := ConfigVar{
+			value:           ptr,
+			multiplier:      valueScale,
+			isHotReloadable: isHotReloadable,
+			defaultValue:    defaultValue,
+			keys:            []string{key},
+		}
+		hotReloadableConfig[key] = &configVar
 	}
 	*ptr = GetInt(key, defaultValue) * valueScale
 }
 
 func RegisterBoolConfigVariable(key string, defaultValue bool, ptr *bool, isHotReloadable bool) {
 	if isHotReloadable {
-		hotReloadableConfig[key] = ptr
+		configVar := ConfigVar{
+			value:           ptr,
+			multiplier:      1,
+			isHotReloadable: isHotReloadable,
+			defaultValue:    defaultValue,
+			keys:            []string{key},
+		}
+		hotReloadableConfig[key] = &configVar
 	}
 	*ptr = GetBool(key, defaultValue)
 }
 
 func RegisterFloat64ConfigVariable(key string, defaultValue float64, ptr *float64, isHotReloadable bool) {
 	if isHotReloadable {
-		hotReloadableConfig[key] = ptr
+		configVar := ConfigVar{
+			value:           ptr,
+			multiplier:      1,
+			isHotReloadable: isHotReloadable,
+			defaultValue:    defaultValue,
+			keys:            []string{key},
+		}
+		hotReloadableConfig[key] = &configVar
 	}
 	*ptr = GetFloat64(key, defaultValue)
 }
 
 func RegisterInt64ConfigVariable(key string, defaultValue int64, ptr *int64, isHotReloadable bool, valueScale int64) {
 	if isHotReloadable {
-		hotReloadableConfig[key] = ptr
+		configVar := ConfigVar{
+			value:           ptr,
+			multiplier:      valueScale,
+			isHotReloadable: isHotReloadable,
+			defaultValue:    defaultValue,
+			keys:            []string{key},
+		}
+		hotReloadableConfig[key] = &configVar
 	}
 	*ptr = GetInt64(key, defaultValue) * valueScale
 }
 
 func RegisterDurationConfigVariable(key string, defaultValue time.Duration, ptr *time.Duration, isHotReloadable bool, timeScale time.Duration) {
 	if isHotReloadable {
-		hotReloadableConfig[key] = ptr
+		configVar := ConfigVar{
+			value:           ptr,
+			multiplier:      timeScale,
+			isHotReloadable: isHotReloadable,
+			defaultValue:    defaultValue,
+			keys:            []string{key},
+		}
+		hotReloadableConfig[key] = &configVar
 	}
 	*ptr = GetDuration(key, defaultValue) * timeScale
 }
 
 func RegisterStringConfigVariable(key string, defaultValue string, ptr *string, isHotReloadable bool) {
 	if isHotReloadable {
-		hotReloadableConfig[key] = ptr
+		configVar := ConfigVar{
+			value:           ptr,
+			multiplier:      1,
+			isHotReloadable: isHotReloadable,
+			defaultValue:    defaultValue,
+			keys:            []string{key},
+		}
+		hotReloadableConfig[key] = &configVar
 	}
 	*ptr = GetString(key, defaultValue)
 }
