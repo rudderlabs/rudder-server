@@ -8,7 +8,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/archiver"
-	"github.com/rudderlabs/rudder-server/utils"
 )
 
 var (
@@ -24,26 +23,8 @@ func init() {
 }
 
 func loadConfigArchiver() {
-	archivalTimeInDays = config.GetInt("JobsDB.archivalTimeInDays", 10)
-	archiverTickerTime = config.GetDuration("JobsDB.archiverTickerTimeInMin", 1440) * time.Minute // default 1 day
-
-}
-
-func updateArchiverConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		archiverReloadableConfig()
-	}
-}
-
-func archiverReloadableConfig() {
-	_archivalTimeInDays := config.GetInt("JobsDB.archivalTimeInDays", 10)
-	if _archivalTimeInDays != archivalTimeInDays {
-		archivalTimeInDays = _archivalTimeInDays
-		pkgLogger.Info("JobsDB.archivalTimeInDays changes to ", archivalTimeInDays)
-	}
+	config.RegisterIntConfigVariable("JobsDB.archivalTimeInDays", 10, &archivalTimeInDays, true, 1)
+	config.RegisterDurationConfigVariable("JobsDB.archiverTickerTimeInMin", time.Duration(1440), &archiverTickerTime, true, time.Minute) // default 1 day
 }
 
 func runArchiver(prefix string, dbHandle *sql.DB) {
