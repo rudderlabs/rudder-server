@@ -58,7 +58,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable("SourceDebugger.maxBatchSize", 32, &maxBatchSize, true, 1)
 	config.RegisterIntConfigVariable("SourceDebugger.maxESQueueSize", 1024, &maxESQueueSize, true, 1)
 	config.RegisterIntConfigVariable("SourceDebugger.maxRetry", 3, &maxRetry, true, 1)
-	config.RegisterDurationConfigVariable("SourceDebugger.batchTimeoutInS", time.Duration(2000), &batchTimeout, true, time.Millisecond)
+	config.RegisterDurationConfigVariable("SourceDebugger.batchTimeoutInS", time.Duration(2), &batchTimeout, true, time.Second)
 	config.RegisterDurationConfigVariable("SourceDebugger.retrySleepInMS", time.Duration(100), &retrySleep, true, time.Millisecond)
 	config.RegisterBoolConfigVariable("SourceDebugger.disableEventUploads", false, &disableEventUploads, true)
 }

@@ -10,13 +10,11 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/spf13/cast"
 	"github.com/spf13/viper"
 )
 
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
-var EventBus utils.PublishSubscriber = new(utils.EventBus)
 
 type Topic string
 
@@ -51,6 +49,7 @@ func init() {
 	if err := godotenv.Load(); err != nil {
 		fmt.Println("INFO: No .env file found.")
 	}
+	hotReloadableConfig = make(map[string]interface{})
 	configPath := GetEnv("CONFIG_PATH", "./config/config.yaml")
 	viper.SetConfigFile(configPath)
 	viper.AddConfigPath(".")
@@ -63,15 +62,6 @@ func init() {
 }
 
 func UpdateConfig() {
-	configOverridePath := GetEnv("CONFIG_OVERRIDE_PATH", "./config/config.yaml")
-	viper.SetConfigFile(configOverridePath)
-	viper.AddConfigPath(".")
-	err := viper.ReadInConfig() // Find and read the config file
-	if err != nil {
-		fmt.Println("[Config] :: Failed to parse Config Yaml, using default values:", err)
-		return
-	}
-	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		hotReloadConfig()
 	})
@@ -119,11 +109,6 @@ func hotReloadConfig() {
 		}
 
 	}
-}
-
-func GetUpdatedConfig(channel chan utils.DataEvent, topic string) {
-	EventBus.Subscribe(string(topic), channel)
-	EventBus.PublishToChannel(channel, string(topic), "")
 }
 
 //GetBool is a wrapper for viper's GetBool

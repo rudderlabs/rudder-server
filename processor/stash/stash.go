@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	uuid "github.com/satori/go.uuid"
@@ -30,45 +29,16 @@ var (
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("processor").Child("stash")
 }
 
 func loadConfig() {
-	errorStashEnabled = config.GetBool("Processor.errorStashEnabled", true)
-	errReadLoopSleep = config.GetDuration("Processor.errReadLoopSleepInS", time.Duration(30)) * time.Second
-	errDBReadBatchSize = config.GetInt("Processor.errDBReadBatchSize", 10000)
-	noOfErrStashWorkers = config.GetInt("Processor.noOfErrStashWorkers", 2)
-	maxFailedCountForErrJob = config.GetInt("BatchRouter.maxFailedCountForErrJob", 3)
-}
+	config.RegisterBoolConfigVariable("Processor.errorStashEnabled", false, &errorStashEnabled, true)
+	config.RegisterDurationConfigVariable("Processor.errReadLoopSleepInS", time.Duration(30), &errReadLoopSleep, true, time.Second)
+	config.RegisterIntConfigVariable("Processor.errDBReadBatchSize", 10000, &errDBReadBatchSize, true, 1)
+	config.RegisterIntConfigVariable("Processor.noOfErrStashWorkers", 2, &noOfErrStashWorkers, true, 1)
+	config.RegisterIntConfigVariable("BatchRouter.maxFailedCountForErrJob", 3, &maxFailedCountForErrJob, true, 1)
 
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		stashReloadableConfig()
-	}
-}
-
-func stashReloadableConfig() {
-	_maxFailedCountForErrJob := config.GetInt("BatchRouter.maxFailedCountForErrJob", 3)
-	if _maxFailedCountForErrJob != maxFailedCountForErrJob {
-		maxFailedCountForErrJob = _maxFailedCountForErrJob
-		pkgLogger.Info("BatchRouter.maxFailedCountForErrJob changes to ", maxFailedCountForErrJob)
-	}
-	_errDBReadBatchSize := config.GetInt("Processor.errDBReadBatchSize", 10000)
-	if _errDBReadBatchSize != errDBReadBatchSize {
-		errDBReadBatchSize = _errDBReadBatchSize
-		pkgLogger.Info("Processor.errDBReadBatchSize changes to ", errDBReadBatchSize)
-	}
-	_errReadLoopSleep := config.GetDuration("Processor.errReadLoopSleepInS", time.Duration(30)) * time.Second
-	if _errReadLoopSleep != errReadLoopSleep {
-		errReadLoopSleep = _errReadLoopSleep
-		pkgLogger.Info("Processor.errReadLoopSleepInS changes to ", errReadLoopSleep)
-	}
 }
 
 type StoreErrorOutputT struct {

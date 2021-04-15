@@ -10,7 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -26,24 +25,8 @@ var (
 
 func init() {
 	shouldPopulateHistoricIdentities = config.GetBool("Warehouse.populateHistoricIdentities", false)
-	rruntime.Go(func() {
-		updateConfigFileIdentities()
-	})
 	populatingHistoricIdentitiesProgressMap = map[string]bool{}
 	populatedHistoricIdentitiesMap = map[string]bool{}
-}
-
-func updateConfigFileIdentities() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		_shouldPopulateHistoricIdentities := config.GetBool("Warehouse.populateHistoricIdentities", false)
-		if _shouldPopulateHistoricIdentities != shouldPopulateHistoricIdentities {
-			shouldPopulateHistoricIdentities = _shouldPopulateHistoricIdentities
-			pkgLogger.Info("Warehouse.populateHistoricIdentities changes to ", shouldPopulateHistoricIdentities)
-		}
-	}
 }
 
 func uniqueWarehouseNamespaceString(warehouse warehouseutils.WarehouseT) string {

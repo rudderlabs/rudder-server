@@ -87,14 +87,14 @@ SourceDebugger:
   maxBatchSize: 32
   maxESQueueSize: 1024
   maxRetry: 3
-  batchTimeoutInMS: 2000
+  batchTimeoutInS: 2
   retrySleepInMS: 100
   disableEventUploads: false
 DestinationDebugger:
   maxBatchSize: 32
   maxESQueueSize: 1024
   maxRetry: 3
-  batchTimeoutInMS: 2000
+  batchTimeoutInS: 2
   retrySleepInMS: 100
   disableEventDeliveryStatusUploads: false
 Archiver:
@@ -106,10 +106,10 @@ JobsDB:
   maxMigrateOnce: 10
   maxMigrateDSProbe: 10
   maxTableSizeInMB: 300
-  migrateDSLoopSleepDurationInMS: 30000
-  addNewDSLoopSleepDurationInMS: 5000
-  refreshDSListLoopSleepDurationInMS: 5000
-  backupCheckSleepDurationInMs: 5000
+  migrateDSLoopSleepDurationInS: 30000
+  addNewDSLoopSleepDurationInS: 5000
+  refreshDSListLoopSleepDurationInS: 5000
+  backupCheckSleepDurationIns: 5000
   backupRowsBatchSize: 1000
   archivalTimeInDays: 10
   archiverTickerTimeInMin: 1440
@@ -131,13 +131,13 @@ Router:
   fixedLoopSleepInMS: 0
   noOfJobsPerChannel: 1000
   noOfJobsToBatchInAWorker: 20
-  jobsBatchTimeoutInMilliSec: 5000
-  maxStatusUpdateWaitInMS: 5000
+  jobsBatchTimeoutInSec: 5
+  maxStatusUpdateWaitInS: 5
   guaranteeUserEventOrder: true
   kafkaWriteTimeoutInSec: 2
   kafkaDialTimeoutInSec: 10
-  minRetryBackoffInMS: 10000
-  maxRetryBackoffInMS: 300000
+  minRetryBackoffInS: 10
+  maxRetryBackoffInS: 300
   noOfWorkers: 64
   allowAbortedUserJobsCountForProcessing: 1
   maxFailedCountForJob: 3

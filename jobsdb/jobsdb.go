@@ -389,10 +389,10 @@ func loadConfig() {
 	config.RegisterIntConfigVariable("JobsDB.maxMigrateDSProbe", 10, &maxMigrateDSProbe, true, 1)
 	config.RegisterInt64ConfigVariable("JobsDB.maxTableSize", 300, &maxTableSize, true, 1000000)
 	config.RegisterInt64ConfigVariable("JobsDB.backupRowsBatchSize", 1000, &backupRowsBatchSize, true, 1)
-	config.RegisterDurationConfigVariable("JobsDB.migrateDSLoopSleepDurationInMS", time.Duration(30000), &migrateDSLoopSleepDuration, true, time.Millisecond)
-	config.RegisterDurationConfigVariable("JobsDB.addNewDSLoopSleepDurationInMS", time.Duration(5000), &addNewDSLoopSleepDuration, true, time.Millisecond)
-	config.RegisterDurationConfigVariable("JobsDB.refreshDSListLoopSleepDurationInMS", time.Duration(5000), &refreshDSListLoopSleepDuration, true, time.Millisecond)
-	config.RegisterDurationConfigVariable("JobsDB.backupCheckSleepDurationInMs", time.Duration(2000), &refreshDSListLoopSleepDuration, true, time.Millisecond)
+	config.RegisterDurationConfigVariable("JobsDB.migrateDSLoopSleepDurationInMS", time.Duration(30), &migrateDSLoopSleepDuration, true, time.Second)
+	config.RegisterDurationConfigVariable("JobsDB.addNewDSLoopSleepDurationInMS", time.Duration(5), &addNewDSLoopSleepDuration, true, time.Second)
+	config.RegisterDurationConfigVariable("JobsDB.refreshDSListLoopSleepDurationInMS", time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second)
+	config.RegisterDurationConfigVariable("JobsDB.backupCheckSleepDurationInMs", time.Duration(2), &refreshDSListLoopSleepDuration, true, time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 
 }
