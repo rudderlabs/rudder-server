@@ -59,6 +59,10 @@ const (
 	TableUploadExported                = "exported_data"
 )
 
+const (
+	CloudSourceCateogry = "cloud"
+)
+
 var stateTransitions map[string]*uploadStateT
 
 type uploadStateT struct {
@@ -72,6 +76,8 @@ type UploadT struct {
 	ID                 int64
 	Namespace          string
 	SourceID           string
+	SourceType         string
+	SourceCategory     string
 	DestinationID      string
 	DestinationType    string
 	StartStagingFileID int64
@@ -1553,6 +1559,13 @@ func (job *UploadJobT) GetSingleLoadFileLocation(tableName string) (string, erro
 	var location string
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&location)
 	return location, err
+}
+
+func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
+	if job.upload.SourceCategory == CloudSourceCateogry {
+		return true
+	}
+	return false
 }
 
 /*
