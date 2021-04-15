@@ -643,6 +643,9 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			continue
 		}
 
+		upload.SourceType = warehouse.Source.SourceDefinition.Name
+		upload.SourceCategory = warehouse.Source.SourceDefinition.Category
+
 		stagingFilesList, err := wh.getStagingFiles(warehouse, upload.StartStagingFileID, upload.EndStagingFileID)
 		if err != nil {
 			return nil, err
