@@ -1339,25 +1339,6 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("router")
 }
 
-// func (rt *HandleT) updateRTConfigFile() {
-// 	ch := make(chan utils.DataEvent)
-// 	config.GetUpdatedConfig(ch, "ConfigUpdate")
-// 	for {
-// 		<-ch
-// 		_maxFailedCountForJob := getRouterConfigInt("maxFailedCountForJob", rt.destName, 3)
-// 		if _maxFailedCountForJob != rt.maxFailedCountForJob {
-// 			rt.maxFailedCountForJob = _maxFailedCountForJob
-// 			pkgLogger.Info("maxFailedCountForJob for %s changes to ", rt.destName, _maxFailedCountForJob)
-
-// 		}
-// 		_retryTimeWindow := getRouterConfigDuration("retryTimeWindowInMins", rt.destName, time.Duration(180)) * time.Minute
-// 		if _retryTimeWindow != rt.retryTimeWindow {
-// 			rt.retryTimeWindow = _retryTimeWindow
-// 			pkgLogger.Info("retryTimeWindowInMins for %s changes to ", rt.destName, _retryTimeWindow)
-// 		}
-// 	}
-// }
-
 //Setup initializes this module
 func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT) {
 	destName := destinationDefinition.Name
@@ -1390,12 +1371,8 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
-	config.RegisterMultipleKeyIntConfigVariable("Router."+rt.destName+"."+"noOfWorkers", "Router."+"noOfWorkers", 3, &rt.maxFailedCountForJob, true)
-	rt.maxFailedCountForJob = getRouterConfigInt("maxFailedCountForJob", destName, 3)
-	rt.retryTimeWindow = getRouterConfigDuration("retryTimeWindowInMins", destName, time.Duration(180)) * time.Minute
-	// rruntime.Go(func() {
-	// 	rt.updateRTConfigFile()
-	// })
+	config.RegisterMultipleKeyIntConfigVariable("Router."+rt.destName+"."+"maxFailedCountForJob", "Router."+"maxFailedCountForJob", 3, &rt.maxFailedCountForJob, true)
+	config.RegisterMultipleKeyDurationConfigVariable("Router."+rt.destName+"."+"retryTimeWindowInMins", "Router."+"retryTimeWindowInMins", 3, &rt.retryTimeWindow, true, time.Minute)
 	rt.drainJobHandler = drain.Setup(rt.jobsDB)
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 

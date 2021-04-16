@@ -998,21 +998,6 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("batchrouter")
 }
 
-// func (brt *HandleT) updateRTConfigFile() {
-// 	for {
-// 		_maxFailedCountForJob := getBatchRouterConfigInt("maxFailedCountForJob", brt.destType, 128)
-// 		if _maxFailedCountForJob != brt.maxFailedCountForJob {
-// 			brt.maxFailedCountForJob = _maxFailedCountForJob
-// 			pkgLogger.Info("maxFailedCountForJob for %s changes to ", brt.destType, _maxFailedCountForJob)
-// 		}
-// 		_retryTimeWindow := getBatchRouterConfigDuration("retryTimeWindowInMins", brt.destType, time.Duration(180)) * time.Minute
-// 		if _retryTimeWindow != brt.retryTimeWindow {
-// 			brt.retryTimeWindow = _retryTimeWindow
-// 			pkgLogger.Info("retryTimeWindowInMins for %s changes to ", brt.destType, _retryTimeWindow)
-// 		}
-// 	}
-// }
-
 //Setup initializes this module
 func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destType string) {
 	brt.logger = pkgLogger.Child(destType)
@@ -1024,12 +1009,8 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destTyp
 	brt.errorDB = errorDB
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
-	brt.maxFailedCountForJob = getBatchRouterConfigInt("maxFailedCountForJob", destType, 128)
-	config.RegisterMultipleKeyIntConfigVariable("BatchRouter."+brt.destType+"."+"noOfWorkers", "BatchRouter."+"noOfWorkers", 128, &brt.maxFailedCountForJob, true)
-	brt.retryTimeWindow = getBatchRouterConfigDuration("retryTimeWindowInMins", destType, time.Duration(180)) * time.Minute
-	// rruntime.Go(func() {
-	// 	brt.updateRTConfigFile()
-	// })
+	config.RegisterMultipleKeyIntConfigVariable("BatchRouter."+brt.destType+"."+"maxFailedCountForJob", "BatchRouter."+"maxFailedCountForJob", 128, &brt.maxFailedCountForJob, true)
+	config.RegisterMultipleKeyDurationConfigVariable("BatchRouter."+brt.destType+"."+"retryTimeWindowInMins", "Router."+"retryTimeWindowInMins", 180, &brt.retryTimeWindow, true, time.Minute)
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
 	brt.netHandle = client
