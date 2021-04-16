@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
@@ -27,30 +28,34 @@ type Credentials struct {
 	TokenUrl   string `json:"token_uri"`
 }
 
+type GoogleAPIService struct {
+	Jwt     *jwt.Config
+	Service *sheets.Service
+}
+
 var pkgLogger logger.LoggerI
+var googleAPIService GoogleAPIService
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("googlesheets")
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
+func NewProducer(destinationConfig interface{}) (*GoogleAPIService, error) {
 	var config Config
 	var credentialsFile Credentials
-	var oauthconfig *oauth2.Config
-	ctx := context.Background()
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleSheets] Error while marshalling destination config :: %w", err)
 	}
 	err = json.Unmarshal(jsonConfig, &config)
 	if err != nil {
-		return nil, fmt.Errorf("[GoogleSheets] error  :: error in GoogleSheets while unmarshelling destination config:: %w", err)
+		return nil, fmt.Errorf("[GoogleSheets] error  :: error in GoogleSheets while unmarshalling destination config:: %w", err)
 	}
 	if config.Credentials != "" {
 		err = json.Unmarshal([]byte(config.Credentials), &credentialsFile)
 		if err != nil {
-			return nil, fmt.Errorf("[GoogleSheets] error  :: error in GoogleSheets while unmarshelling credentials json:: %w", err)
+			return nil, fmt.Errorf("[GoogleSheets] error  :: error in GoogleSheets while unmarshalling credentials json:: %w", err)
 		}
 
 	}
@@ -59,7 +64,7 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 	if len(credentialsFile.TokenUrl) != 0 {
 		tokenURI = credentialsFile.TokenUrl
 	}
-	// Creating HWT Config which we are using for getting the oauth token
+	// Creating JWT Config which we are using for getting the oauth token
 	jwtconfig := &jwt.Config{
 		Email:      credentialsFile.Email,
 		PrivateKey: []byte(credentialsFile.PrivateKey),
@@ -68,27 +73,49 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 		},
 		TokenURL: tokenURI,
 	}
-	token, err := jwtconfig.TokenSource(ctx).Token()
-	if err != nil {
-		return nil, fmt.Errorf("[GoogleSheets] error  :: error in GoogleSheets while Retrieving token for service account:: %w", err)
-	}
-	// Once the token is received we are generating the oauth-config client which are using for
-	// generating the google-sheets service
-	client := oauthconfig.Client(ctx, token)
-	sheetService, err := sheets.New(client)
-	if err != nil {
-		return nil, fmt.Errorf("[GoogleSheets] error  :: Unable to create sheet service :: %w", err)
-	}
-	return sheetService, err
+	googleAPIService.Jwt = jwtconfig
+	service, err := GenerateServiceWithrefreshToken(*jwtconfig)
+	googleAPIService.Service = service
+	return &googleAPIService, err
 }
 
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
-	service := producer.(*sheets.Service)
+
 	// Here we recieve the transformed json with all the required mappings
 	parsedJSON := gjson.ParseBytes(jsonData)
 	// Storing sheet_id and sheet_tab for the specific message
 	spreadSheetId := parsedJSON.Get("spreadSheetId").String()
 	spreadSheetTab := parsedJSON.Get("spreadSheetTab").String()
+
+	var pServiceMessage string
+	// First we are pinging to google-sheets using existing client
+	pkgLogger.Info("[Google Sheets] Pingging to Sheets using existing client", googleAPIService)
+	_, pingErr := googleAPIService.Service.Spreadsheets.Get(spreadSheetId).Do()
+	// If we encounter any error we are handling that error and parsing it into pServiceMessage
+	if pingErr != nil {
+		pkgLogger.Info("[Google Sheets] Ping Error", pingErr.Error())
+		_, pServiceMessage = HandleServiceError(pingErr)
+
+	}
+	var serviceErr error
+	// With the formatted error message we are interested in checking if the error string has
+	// the following term in it, if so we want to update our client with new access token
+	if strings.Contains(pServiceMessage, "token expired and refresh token is not set") {
+		pkgLogger.Info("[Google Sheets] Generating New Client")
+		// Here we are updating the client with new generated client
+		googleAPIService.Service, serviceErr = GenerateServiceWithrefreshToken(*googleAPIService.Jwt)
+		// If we face error while generating the client we lodge error with status code 400
+		if serviceErr != nil {
+			pkgLogger.Info("[Google Sheets] Failed to Generate New Client")
+			respStatus = "Faliure"
+			responseMessage = serviceErr.Error()
+			return 400, respStatus, responseMessage
+		}
+	}
+
+	// With our global - sheet client now updated we are ready to proceed for further
+	// api calls.
+
 	// Here we extract the keys, values of the transformed json into two string arrays
 	// because google sheets-api works with array of data if any error occurs here we
 	// log it as parse error for that event
@@ -108,7 +135,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	vr.Range = spreadSheetTab + "!A1"
 	// This is the header row for creating the header in the sheet
 	vr.Values = append(vr.Values, headerRow)
-	_, err := service.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
+	_, err := googleAPIService.Service.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 
 	if err != nil {
 		statCode, serviceMessage := HandleServiceError(err)
@@ -123,7 +150,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	message := GetSheetsData(values)
 	vr.Values = append(messageValues, message)
 	// Appending the actual message into the specific sheet
-	_, err = service.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
+	_, err = googleAPIService.Service.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 	if err != nil {
 		statCode, serviceMessage := HandleServiceError(err)
 		respStatus = "Faliure"
@@ -179,7 +206,7 @@ func ParseTransformedData(source gjson.Result) ([]string, []string, error) {
 	return keys, values, err
 }
 
-//used to parse a string array to an interface array for compatibility
+// used to parse a string array to an interface array for compatibility
 // with sheets-api
 func GetSheetsData(typedata []string) []interface{} {
 	data := make([]interface{}, len(typedata))
@@ -187,4 +214,23 @@ func GetSheetsData(typedata []string) []interface{} {
 		data[key] = value
 	}
 	return data
+}
+
+// This method produces a google-sheets client from a jwt.Config client by
+// retrieveing access token
+func GenerateServiceWithrefreshToken(jwtconfig jwt.Config) (*sheets.Service, error) {
+	ctx := context.Background()
+	var oauthconfig *oauth2.Config
+	token, err := jwtconfig.TokenSource(ctx).Token()
+	if err != nil {
+		return nil, fmt.Errorf("[GoogleSheets] error  :: error in GoogleSheets while Retrieving token for service account:: %w", err)
+	}
+	// Once the token is received we are generating the oauth-config client which are using for
+	// generating the google-sheets service
+	client := oauthconfig.Client(ctx, token)
+	sheetService, err := sheets.New(client)
+	if err != nil {
+		return nil, fmt.Errorf("[GoogleSheets] error  :: Unable to create sheet service :: %w", err)
+	}
+	return sheetService, err
 }
