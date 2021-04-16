@@ -59,7 +59,6 @@ type HandleT struct {
 	requestsMetric                         []requestMetric
 	failuresMetric                         map[string][]failureMetric
 	customDestinationManager               customdestinationmanager.DestinationManager
-	generatorThrottler                     throttler.Throttler
 	throttler                              throttler.Throttler
 	throttlerMutex                         sync.RWMutex
 	guaranteeUserEventOrder                bool
@@ -204,6 +203,16 @@ func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJ
 	destinationJobs := worker.rt.transformer.Transform(transformer.BATCH, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
 	worker.rt.batchOutputCountStat.Count(len(destinationJobs))
 
+	if len(destinationJobs) != len(routerJobs) {
+		destinationID := destinationJobs[0].JobMetadataArray[0].DestinationID
+		//Batched jobs and router transformed jobs can have more than 1 metadatas. So, don't increment userID.
+		userID := ""
+		if len(destinationJobs[0].JobMetadataArray) == 1 {
+			userID = destinationJobs[0].JobMetadataArray[0].UserID
+		}
+		worker.rt.throttler.Dec(destinationID, userID, int64(len(routerJobs)-len(destinationJobs)))
+	}
+
 	var totalJobMetadataCount int
 	for _, destinationJob := range destinationJobs {
 		totalJobMetadataCount += len(destinationJob.JobMetadataArray)
@@ -258,10 +267,10 @@ func (worker *workerT) workerProcess() {
 
 			// mark job as throttled if either dest level event limit reached or dest user level limit reached
 			// Generator does this check before pushing jobs to workers. Checking here again.
-			hasBeenThrottled := worker.handleThrottle(job, parameters, userID, isPrevFailedUser)
-			if hasBeenThrottled {
-				continue
-			}
+			// hasBeenThrottled := worker.handleThrottle(job, parameters, userID, isPrevFailedUser)
+			// if hasBeenThrottled {
+			// 	continue
+			// }
 
 			firstAttemptedAt := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str
 
@@ -417,13 +426,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				diagnosisStartTime := time.Now()
 				sourceID := destinationJob.JobMetadataArray[0].SourceID
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
-				//Batched jobs and router transformed jobs can have more than 1 metadatas. So, don't increment userID.
-				userID := ""
-				if len(destinationJob.JobMetadataArray) == 1 {
-					userID = destinationJob.JobMetadataArray[0].UserID
-				}
-				worker.rt.generatorThrottler.Inc(destinationID, userID)
-				worker.rt.throttler.Inc(destinationID, userID)
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
@@ -924,12 +926,16 @@ func (worker *workerT) canBackoff(job *jobsdb.JobT, userID string) (shouldBackof
 }
 
 func (rt *HandleT) canThrottle(parameters *JobParametersT, userID string) (canBeThrottled bool) {
-	if !rt.generatorThrottler.IsEnabled() {
+	if !rt.throttler.IsEnabled() {
 		return false
 	}
 
 	//No need of locks here, because this is used only by a single goroutine (generatorLoop)
-	return rt.generatorThrottler.CheckLimitReached(parameters.DestinationID, userID)
+	limitReached := rt.throttler.CheckLimitReached(parameters.DestinationID, userID)
+	if !limitReached {
+		rt.throttler.Inc(parameters.DestinationID, userID)
+	}
+	return limitReached
 }
 
 // ResetSleep  this makes the workers reset their sleep
@@ -1334,11 +1340,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rt.transformer = transformer.NewTransformer()
 	rt.transformer.Setup()
 
-	var throttler, generatorThrottler throttler.HandleT
+	var throttler throttler.HandleT
 	throttler.SetUp(rt.destName)
-	generatorThrottler.SetUp(rt.destName)
 	rt.throttler = &throttler
-	rt.generatorThrottler = &generatorThrottler
 
 	rt.isBackendConfigInitialized = false
 	rt.backendConfigInitialized = make(chan bool)

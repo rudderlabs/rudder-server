@@ -13,6 +13,7 @@ import (
 type Throttler interface {
 	CheckLimitReached(destID string, userID string) bool
 	Inc(destID string, userID string)
+	Dec(destID string, userID string, count int64)
 	IsEnabled() bool
 }
 
@@ -20,6 +21,7 @@ type Limiter struct {
 	enabled     bool
 	eventLimit  int
 	timeWindow  time.Duration
+	dataStore   *MapLimitStore
 	ratelimiter *ratelimiter.RateLimiter
 }
 
@@ -78,12 +80,12 @@ func (throttler *HandleT) SetUp(destName string) {
 	throttler.setLimits()
 
 	if throttler.destLimiter.enabled {
-		dataStore := ratelimiter.NewMapLimitStore(2*throttler.destLimiter.timeWindow, 10*time.Second)
+		dataStore := NewMapLimitStore(2*throttler.destLimiter.timeWindow, 10*time.Second)
 		throttler.destLimiter.ratelimiter = ratelimiter.New(dataStore, int64(throttler.destLimiter.eventLimit), throttler.destLimiter.timeWindow)
 	}
 
 	if throttler.userLimiter.enabled {
-		dataStore := ratelimiter.NewMapLimitStore(2*throttler.userLimiter.timeWindow, 10*time.Second)
+		dataStore := NewMapLimitStore(2*throttler.userLimiter.timeWindow, 10*time.Second)
 		throttler.userLimiter.ratelimiter = ratelimiter.New(dataStore, int64(throttler.userLimiter.eventLimit), throttler.userLimiter.timeWindow)
 	}
 }
@@ -129,6 +131,22 @@ func (throttler *HandleT) Inc(destID string, userID string) {
 	}
 	if throttler.userLimiter.enabled && userID != "" {
 		throttler.userLimiter.ratelimiter.Inc(userKey)
+	}
+}
+
+//Dec decrements the destLimiter and userLimiter counters by count passed
+//If destID or userID passed is empty, we don't decrement the counters.
+func (throttler *HandleT) Dec(destID string, userID string, count int64) {
+	destKey := throttler.getDestKey(destID)
+	userKey := throttler.getUserKey(destID, userID)
+
+	if throttler.destLimiter.enabled && destID != "" {
+		currentWindow := time.Now().UTC().Truncate(throttler.destLimiter.timeWindow)
+		throttler.destLimiter.dataStore.Dec(destKey, count, currentWindow)
+	}
+	if throttler.userLimiter.enabled && userID != "" {
+		currentWindow := time.Now().UTC().Truncate(throttler.userLimiter.timeWindow)
+		throttler.userLimiter.dataStore.Dec(userKey, count, currentWindow)
 	}
 }
 
