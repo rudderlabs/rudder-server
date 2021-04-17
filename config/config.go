@@ -21,7 +21,6 @@ type Topic string
 var (
 	whSchemaVersion     string
 	hotReloadableConfig map[string]*ConfigVar
-	totalMap            map[string]*ConfigVar
 )
 
 type ConfigVar struct {
