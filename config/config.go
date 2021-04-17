@@ -66,7 +66,7 @@ func init() {
 	UpdateConfig()
 	// Don't panic if config.toml is not found or error with parsing. Use the default config values instead
 	if err != nil {
-		fmt.Println("[Config] :: Failed to parse Config toml, using default values:", err)
+		fmt.Println("[Config] :: Failed to parse Config Yaml, using default values:", err)
 	}
 }
 
