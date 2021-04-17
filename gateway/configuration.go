@@ -35,7 +35,7 @@ func loadConfig() {
 	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
 	config.RegisterBoolConfigVariable("Gateway.allowReqsWithoutUserIDAndAnonymousID", false, &allowReqsWithoutUserIDAndAnonymousID, true)
-	config.RegisterBoolConfigVariable("Gateway.allowPartialWriteWithErrors", false, &gwAllowPartialWriteWithErrors, true)
+	config.RegisterBoolConfigVariable("Gateway.allowPartialWriteWithErrors", true, &gwAllowPartialWriteWithErrors, true)
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers
