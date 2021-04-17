@@ -89,11 +89,11 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	var pServiceMessage string
 	// First we are pinging to google-sheets using existing client
-	pkgLogger.Info("[Google Sheets] Pingging to Sheets using existing client", googleAPIService)
+	pkgLogger.Debug("[Google Sheets] Pingging to Sheets using existing client", googleAPIService)
 	_, pingErr := googleAPIService.Service.Spreadsheets.Get(spreadSheetId).Do()
 	// If we encounter any error we are handling that error and parsing it into pServiceMessage
 	if pingErr != nil {
-		pkgLogger.Info("[Google Sheets] Ping Error", pingErr.Error())
+		pkgLogger.Debug("[Google Sheets] Ping Error", pingErr.Error())
 		_, pServiceMessage = HandleServiceError(pingErr)
 
 	}
@@ -101,12 +101,12 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	// With the formatted error message we are interested in checking if the error string has
 	// the following term in it, if so we want to update our client with new access token
 	if strings.Contains(pServiceMessage, "token expired and refresh token is not set") {
-		pkgLogger.Info("[Google Sheets] Generating New Client")
+		pkgLogger.Debug("[Google Sheets] Generating New Client")
 		// Here we are updating the client with new generated client
 		googleAPIService.Service, serviceErr = GenerateServiceWithrefreshToken(*googleAPIService.Jwt)
 		// If we face error while generating the client we lodge error with status code 400
 		if serviceErr != nil {
-			pkgLogger.Info("[Google Sheets] Failed to Generate New Client")
+			pkgLogger.Debug("[Google Sheets] Failed to Generate New Client")
 			respStatus = "Faliure"
 			responseMessage = serviceErr.Error()
 			return 400, respStatus, responseMessage
