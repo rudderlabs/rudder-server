@@ -79,15 +79,14 @@ func UpdateConfig() {
 func hotReloadConfig() {
 	for key, configVal := range hotReloadableConfig {
 		value := configVal.value
-		fmt.Println(key)
 		switch value := value.(type) {
 		case *int:
 			var _value int
 			if viper.IsSet(configVal.keys[0]) {
-				_value = viper.GetInt(key)
+				_value = GetInt(key, configVal.defaultValue.(int))
 				_value = _value * configVal.multiplier.(int)
 			} else if len(configVal.keys) > 1 && viper.IsSet(configVal.keys[1]) {
-				_value = viper.GetInt(configVal.keys[1])
+				_value = GetInt(configVal.keys[1], configVal.defaultValue.(int))
 				_value = _value * configVal.multiplier.(int)
 			} else {
 				_value = configVal.defaultValue.(int) * configVal.multiplier.(int)
@@ -99,7 +98,7 @@ func hotReloadConfig() {
 		case *int64:
 			var _value int64
 			if viper.IsSet(key) {
-				_value = viper.GetInt64(key) * configVal.multiplier.(int64)
+				_value = GetInt64(key, configVal.defaultValue.(int64)) * configVal.multiplier.(int64)
 			} else {
 				_value = configVal.defaultValue.(int64) * configVal.multiplier.(int64)
 			}
@@ -110,7 +109,7 @@ func hotReloadConfig() {
 		case *string:
 			var _value string
 			if viper.IsSet(key) {
-				_value = viper.GetString(key)
+				_value = GetString(key, configVal.defaultValue.(string))
 			} else {
 				_value = configVal.defaultValue.(string)
 			}
@@ -121,9 +120,9 @@ func hotReloadConfig() {
 		case *time.Duration:
 			var _value time.Duration
 			if viper.IsSet(key) {
-				_value = viper.GetDuration(key) * configVal.multiplier.(time.Duration)
+				_value = GetDuration(key, configVal.defaultValue.(time.Duration)) * configVal.multiplier.(time.Duration)
 			} else if len(configVal.keys) > 1 && viper.IsSet(configVal.keys[1]) {
-				_value = viper.GetDuration(configVal.keys[1]) * configVal.multiplier.(time.Duration)
+				_value = GetDuration(configVal.keys[1], configVal.defaultValue.(time.Duration)) * configVal.multiplier.(time.Duration)
 			} else {
 				_value = configVal.defaultValue.(time.Duration) * configVal.multiplier.(time.Duration)
 			}
@@ -134,7 +133,7 @@ func hotReloadConfig() {
 		case *bool:
 			var _value bool
 			if viper.IsSet(key) {
-				_value = viper.GetBool(key)
+				_value = GetBool(key, configVal.defaultValue.(bool))
 			} else {
 				_value = configVal.defaultValue.(bool)
 			}
@@ -145,7 +144,7 @@ func hotReloadConfig() {
 		case *float64:
 			var _value float64
 			if viper.IsSet(key) {
-				_value = viper.GetFloat64(key) * configVal.multiplier.(float64)
+				_value = GetFloat64(key, configVal.defaultValue.(float64)) * configVal.multiplier.(float64)
 			} else {
 				_value = configVal.defaultValue.(float64) * configVal.multiplier.(float64)
 			}
