@@ -61,7 +61,10 @@ var rudderDataTypesMapToClickHouse = map[string]string{
 	"boolean":         "UInt8",
 	"array(boolean)":  "Array(UInt8)",
 }
-
+var clickhouseSpecificColumnNameMappings = map[string]string{
+	"event":      "LowCardinality(String)",
+	"event_text": "LowCardinality(String)",
+}
 var datatypeDefaultValuesMap = map[string]interface{}{
 	"int":      0,
 	"float":    0.0,
@@ -70,29 +73,31 @@ var datatypeDefaultValuesMap = map[string]interface{}{
 }
 
 var clickhouseDataTypesMapToRudder = map[string]string{
-	"Int8":               "int",
-	"Int16":              "int",
-	"Int32":              "int",
-	"Int64":              "int",
-	"Array(Int64)":       "array(int)",
-	"Float32":            "float",
-	"Float64":            "float",
-	"Array(Float64)":     "array(float)",
-	"String":             "string",
-	"Array(String)":      "array(string)",
-	"DateTime":           "datetime",
-	"Array(DateTime)":    "array(datetime)",
-	"UInt8":              "boolean",
-	"Array(UInt8)":       "array(boolean)",
-	"Nullable(Int8)":     "int",
-	"Nullable(Int16)":    "int",
-	"Nullable(Int32)":    "int",
-	"Nullable(Int64)":    "int",
-	"Nullable(Float32)":  "float",
-	"Nullable(Float64)":  "float",
-	"Nullable(String)":   "string",
-	"Nullable(DateTime)": "datetime",
-	"Nullable(UInt8)":    "boolean",
+	"Int8":                             "int",
+	"Int16":                            "int",
+	"Int32":                            "int",
+	"Int64":                            "int",
+	"Array(Int64)":                     "array(int)",
+	"Float32":                          "float",
+	"Float64":                          "float",
+	"Array(Float64)":                   "array(float)",
+	"String":                           "string",
+	"Array(String)":                    "array(string)",
+	"DateTime":                         "datetime",
+	"Array(DateTime)":                  "array(datetime)",
+	"UInt8":                            "boolean",
+	"Array(UInt8)":                     "array(boolean)",
+	"LowCardinality(String)":           "string",
+	"LowCardinality(Nullable(String))": "string",
+	"Nullable(Int8)":                   "int",
+	"Nullable(Int16)":                  "int",
+	"Nullable(Int32)":                  "int",
+	"Nullable(Int64)":                  "int",
+	"Nullable(Float32)":                "float",
+	"Nullable(Float64)":                "float",
+	"Nullable(String)":                 "string",
+	"Nullable(DateTime)":               "datetime",
+	"Nullable(UInt8)":                  "boolean",
 	"SimpleAggregateFunction(anyLast, Nullable(Int8))":     "int",
 	"SimpleAggregateFunction(anyLast, Nullable(Int16))":    "int",
 	"SimpleAggregateFunction(anyLast, Nullable(Int32))":    "int",
@@ -200,7 +205,7 @@ func columnsWithDataTypes(tableName string, columns map[string]string, notNullab
 	var arr []string
 	for columnName, dataType := range columns {
 		codec := getClickHouseCodecForColumnType(dataType, tableName)
-		columnType := getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
+		columnType := getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
 		arr = append(arr, fmt.Sprintf(`%s %s %s`, columnName, columnType, codec))
 	}
 	return strings.Join(arr[:], ",")
@@ -216,19 +221,29 @@ func getClickHouseCodecForColumnType(columnType string, tableName string) string
 	return ""
 }
 
+func getClickhouseColumnTypeForSpecificColumn(columnName string, columnType string, isNullable bool) string {
+	specificColumnType := columnType
+	if isNullable {
+		specificColumnType = fmt.Sprintf("Nullable(%s)", specificColumnType)
+	}
+	if _, ok := clickhouseSpecificColumnNameMappings[columnName]; ok {
+		specificColumnType = clickhouseSpecificColumnNameMappings[columnName]
+	}
+
+	return specificColumnType
+
+}
+
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
-func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string, notNullableKey bool) string {
-	if notNullableKey {
-		return columnType
+func getClickHouseColumnTypeForSpecificTable(tableName string, columnName string, columnType string, notNullableKey bool) string {
+	if notNullableKey || (tableName != warehouseutils.IdentifiesTable && disableNullable) {
+		return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, false)
 	}
 	// Nullable is not disabled for users and identity table
 	if tableName == warehouseutils.UsersTable {
-		return fmt.Sprintf(`SimpleAggregateFunction(anyLast, Nullable(%s))`, columnType)
+		return fmt.Sprintf(`SimpleAggregateFunction(anyLast, %s)`, getClickhouseColumnTypeForSpecificColumn(columnName, columnType, true))
 	}
-	if tableName != warehouseutils.IdentifiesTable && disableNullable {
-		return columnType
-	}
-	return fmt.Sprintf(`Nullable(%s)`, columnType)
+	return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, true)
 }
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
@@ -535,7 +550,7 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 
 // AddColumn adds column:columnName with dataType columnType to the tableName
 func (ch *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[columnType], false))
+	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, columnName, getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[columnType], false))
 	pkgLogger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return
