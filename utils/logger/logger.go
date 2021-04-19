@@ -109,7 +109,7 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("Logger.logFileLocation", "/tmp/rudder_log.log", &logFileLocation, true)
 	config.RegisterIntConfigVariable("Logger.logFileSize", 100, &logFileSize, true, 1)
 	config.RegisterBoolConfigVariable("Logger.enableTimestamp", true, &enableTimestamp, true)
-	config.RegisterBoolConfigVariable("Logger.enableFileNameInLog", false, &enableFileNameInLog, true)
+	config.RegisterBoolConfigVariable("Logger.enableFileNameInLog", true, &enableFileNameInLog, true)
 	config.RegisterBoolConfigVariable("Logger.enableStackTrace", false, &enableStackTrace, true)
 
 	// colon separated key value pairs

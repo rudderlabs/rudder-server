@@ -294,7 +294,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable("Processor.fixedLoopSleepInMS", time.Duration(0), &fixedLoopSleep, true, time.Millisecond)
 	config.RegisterIntConfigVariable("Processor.transformBatchSize", 50, &transformBatchSize, true, 1)
 	config.RegisterIntConfigVariable("Processor.userTransformBatchSize", 200, &userTransformBatchSize, true, 1)
-	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
+	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 100)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	// Enable dedup of incoming events by default
