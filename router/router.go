@@ -839,7 +839,7 @@ func (rt *HandleT) initWorkers() {
 	}
 }
 
-func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
+func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
 
 	if !rt.guaranteeUserEventOrder {
 		//if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
@@ -857,7 +857,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 	index := int(math.Abs(float64(misc.GetHash(userID) % rt.noOfWorkers)))
 
 	worker := rt.workers[index]
-	var toSendWorker *workerT
 
 	//#JobOrder (see other #JobOrder comment)
 	worker.failedJobIDMutex.RLock()
@@ -876,9 +875,13 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 			}
 
 			rt.logger.Debugf("[%v Router] :: userID found in abortedUserIDtoJobMap: %s. Allowing jobID: %d. returing worker", rt.destName, userID, job.JobID)
-			worker.abortedUserIDMap[userID] = worker.abortedUserIDMap[userID] + 1
+			// incrementing abortedUserIDMap after all checks of backoff, throttle etc are made
+			defer func() {
+				if toSendWorker != nil {
+					toSendWorker.abortedUserIDMap[userID] = toSendWorker.abortedUserIDMap[userID] + 1
+				}
+			}()
 		}
-
 		toSendWorker = worker
 	} else {
 		//This job can only be higher than blocking
