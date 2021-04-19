@@ -405,7 +405,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable("JobsDB.migrateDSLoopSleepDurationInS", time.Duration(30), &migrateDSLoopSleepDuration, true, time.Second)
 	config.RegisterDurationConfigVariable("JobsDB.addNewDSLoopSleepDurationInS", time.Duration(5), &addNewDSLoopSleepDuration, true, time.Second)
 	config.RegisterDurationConfigVariable("JobsDB.refreshDSListLoopSleepDurationInS", time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second)
-	config.RegisterDurationConfigVariable("JobsDB.backupCheckSleepDurationIns", time.Duration(2), &backupCheckSleepDuration, true, time.Second)
+	config.RegisterDurationConfigVariable("JobsDB.backupCheckSleepDurationIns", time.Duration(5), &backupCheckSleepDuration, true, time.Second)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 
 }

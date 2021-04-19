@@ -121,9 +121,9 @@ func loadConfig() {
 	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	config.RegisterIntConfigVariable("Warehouse.noOfWorkers", 8, &noOfWorkers, true, 1)
 	config.RegisterIntConfigVariable("Warehouse.noOfSlaveWorkerRoutines", 4, &noOfSlaveWorkerRoutines, true, 1)
-	config.RegisterIntConfigVariable("Warehouse.stagingFilesBatchSize", 240, &stagingFilesBatchSize, true, 1)
+	config.RegisterIntConfigVariable("Warehouse.stagingFilesBatchSize", 960, &stagingFilesBatchSize, true, 1)
 	config.RegisterInt64ConfigVariable("Warehouse.uploadFreqInS", 1800, &uploadFreqInS, true, 1)
-	config.RegisterDurationConfigVariable("Warehouse.mainLoopSleepInS", time.Duration(1), &mainLoopSleep, true, time.Second)
+	config.RegisterDurationConfigVariable("Warehouse.mainLoopSleepInS", time.Duration(5), &mainLoopSleep, true, time.Second)
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}

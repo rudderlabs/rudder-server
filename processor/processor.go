@@ -302,12 +302,12 @@ var (
 )
 
 func loadConfig() {
-	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
-	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
-	fixedLoopSleep = config.GetDuration("Processor.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
-	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
-	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
-	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
+	config.RegisterDurationConfigVariable("Processor.maxLoopSleepInMS", time.Duration(5000), &maxLoopSleep, true, time.Millisecond)
+	config.RegisterDurationConfigVariable("Processor.loopSleepInMS", time.Duration(10), &loopSleep, true, time.Millisecond)
+	config.RegisterDurationConfigVariable("Processor.fixedLoopSleepInMS", time.Duration(0), &fixedLoopSleep, true, time.Millisecond)
+	config.RegisterIntConfigVariable("Processor.transformBatchSize", 50, &transformBatchSize, true, 1)
+	config.RegisterIntConfigVariable("Processor.userTransformBatchSize", 200, &userTransformBatchSize, true, 1)
+	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 100)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	// Enable dedup of incoming events by default

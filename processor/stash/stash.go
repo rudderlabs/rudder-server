@@ -35,7 +35,7 @@ func init() {
 func loadConfig() {
 	config.RegisterBoolConfigVariable("Processor.errorStashEnabled", false, &errorStashEnabled, true)
 	config.RegisterDurationConfigVariable("Processor.errReadLoopSleepInS", time.Duration(30), &errReadLoopSleep, true, time.Second)
-	config.RegisterIntConfigVariable("Processor.errDBReadBatchSize", 10000, &errDBReadBatchSize, true, 1)
+	config.RegisterIntConfigVariable("Processor.errDBReadBatchSize", 1000, &errDBReadBatchSize, true, 1)
 	config.RegisterIntConfigVariable("Processor.noOfErrStashWorkers", 2, &noOfErrStashWorkers, true, 1)
 	config.RegisterIntConfigVariable("BatchRouter.maxFailedCountForErrJob", 3, &maxFailedCountForErrJob, true, 1)
 

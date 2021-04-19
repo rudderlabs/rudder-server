@@ -53,22 +53,12 @@ func init() {
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	//Number of events that are batched before sending schema to control plane
-	maxBatchSize = config.GetInt("DestinationDebugger.maxBatchSize", 32)
-	maxESQueueSize = config.GetInt("DestinationDebugger.maxESQueueSize", 1024)
-	maxRetry = config.GetInt("DestinationDebugger.maxRetry", 3)
-	batchTimeout = config.GetDuration("DestinationDebugger.batchTimeoutInS", time.Duration(2)) * time.Second
-	retrySleep = config.GetDuration("DestinationDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	disableEventDeliveryStatusUploads = config.GetBool("DestinationDebugger.disableEventDeliveryStatusUploads", false)
-}
-
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		destinationDebuggerReloadableConfig()
-	}
-}
+	config.RegisterIntConfigVariable("DestinationDebugger.maxBatchSize", 32, &maxBatchSize, true, 1)
+	config.RegisterIntConfigVariable("DestinationDebugger.maxESQueueSize", 1024, &maxESQueueSize, true, 1)
+	config.RegisterIntConfigVariable("DestinationDebugger.maxRetry", 3, &maxRetry, true, 1)
+	config.RegisterDurationConfigVariable("DestinationDebugger.batchTimeoutInS", time.Duration(2), &batchTimeout, true, time.Second)
+	config.RegisterDurationConfigVariable("DestinationDebugger.retrySleepInMS", time.Duration(100), &retrySleep, true, time.Millisecond)
+	config.RegisterBoolConfigVariable("DestinationDebugger.disableEventDeliveryStatusUploads", false, &disableEventDeliveryStatusUploads, true)
 
 func destinationDebuggerReloadableConfig() {
 	_maxBatchSize := config.GetInt("DestinationDebugger.maxBatchSize", 32)
