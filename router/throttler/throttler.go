@@ -15,6 +15,8 @@ type Throttler interface {
 	Inc(destID string, userID string)
 	Dec(destID string, userID string, count int64)
 	IsEnabled() bool
+	IsUserLevelEnabled() bool
+	IsDestLevelEnabled() bool
 }
 
 type Limiter struct {
@@ -81,11 +83,13 @@ func (throttler *HandleT) SetUp(destName string) {
 
 	if throttler.destLimiter.enabled {
 		dataStore := NewMapLimitStore(2*throttler.destLimiter.timeWindow, 10*time.Second)
+		throttler.destLimiter.dataStore = dataStore
 		throttler.destLimiter.ratelimiter = ratelimiter.New(dataStore, int64(throttler.destLimiter.eventLimit), throttler.destLimiter.timeWindow)
 	}
 
 	if throttler.userLimiter.enabled {
 		dataStore := NewMapLimitStore(2*throttler.userLimiter.timeWindow, 10*time.Second)
+		throttler.userLimiter.dataStore = dataStore
 		throttler.userLimiter.ratelimiter = ratelimiter.New(dataStore, int64(throttler.userLimiter.eventLimit), throttler.userLimiter.timeWindow)
 	}
 }
@@ -152,6 +156,14 @@ func (throttler *HandleT) Dec(destID string, userID string, count int64) {
 
 func (throttler *HandleT) IsEnabled() bool {
 	return throttler.destLimiter.enabled || throttler.userLimiter.enabled
+}
+
+func (throttler *HandleT) IsUserLevelEnabled() bool {
+	return throttler.userLimiter.enabled
+}
+
+func (throttler *HandleT) IsDestLevelEnabled() bool {
+	return throttler.destLimiter.enabled
 }
 
 func (throttler *HandleT) getDestKey(destID string) string {
