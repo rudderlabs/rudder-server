@@ -25,7 +25,6 @@ import (
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -147,60 +146,6 @@ func loadConfig() {
 	numLoadFileUploadWorkers = config.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	uploadStatusTrackFrequency = config.GetDuration("Warehouse.uploadStatusTrackFrequencyInMin", time.Duration(2)) * time.Minute
-}
-
-func uploadStatusTrack() {
-	for {
-		ch := make(chan utils.DataEvent)
-		backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
-		config := <-ch
-		allSources := config.Data.(backendconfig.ConfigT)
-
-		for _, source := range allSources.Sources {
-			if len(source.Destinations) == 0 || !source.Enabled {
-				continue
-			}
-			for _, destination := range source.Destinations {
-				if !misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) || !destination.Enabled {
-					continue
-				}
-				config := destination.Config
-				syncFrequency := "1440" //default frequency
-				if config[warehouseutils.SyncFrequency] != nil {
-					syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
-				}
-
-				sqlStatement := fmt.Sprintf(`
-					select cast( case when count(*) > 0 then 1 else 0 end as status), (select count(*) from %[6]s where source_id='%[2]s' and destination_id='%[3]s' and created_at > now() - interval '%[5]s MIN') as staging_files_count 
-						from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and status='%[4]s' and updated_at > now() - interval '%[5]s MIN'`,
-					warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, syncFrequency, warehouseutils.WarehouseStagingFilesTable)
-				rows, err := dbHandle.Query(sqlStatement)
-
-				if err != nil && err != sql.ErrNoRows {
-					panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
-				}
-
-				var uploaded, staging_files_count int
-				for rows.Next() {
-					err = rows.Scan(&uploaded, &staging_files_count)
-					if err != nil {
-						panic(err)
-					}
-				}
-				rows.Close()
-
-				if staging_files_count > 0 {
-					warehouseID := misc.GetTagName(destination.ID, source.Name, destination.Name)
-					stats.NewTaggedStat("warehouse_successful_upload_exists", stats.CountType, map[string]string{
-						"module":      moduleName,
-						"destType":    destination.DestinationDefinition.Name,
-						"warehouseID": warehouseID,
-					}).Count(uploaded)
-				}
-			}
-		}
-		time.Sleep(uploadStatusTrackFrequency)
-	}
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -764,6 +709,52 @@ func (wh *HandleT) runUploadJobAllocator() {
 	}
 }
 
+func (wh *HandleT) uploadStatusTrack() {
+	for {
+		for _, warehouse := range wh.warehouses {
+			source := warehouse.Source
+			destination := warehouse.Destination
+
+			if !source.Enabled || !destination.Enabled {
+				continue
+			}
+			config := destination.Config
+			syncFrequency := "1440" //default frequency
+			if config[warehouseutils.SyncFrequency] != nil {
+				syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
+			}
+
+			fmt.Println(syncFrequency)
+
+			sqlStatement := fmt.Sprintf(`
+				select cast( case when count(*) > 0 then 1 else 0 end as bit) from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s') and updated_at > now() - interval '%[6]s MIN'`,
+				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, syncFrequency)
+			fmt.Println(sqlStatement)
+			rows, err := wh.dbHandle.Query(sqlStatement)
+
+			if err != nil && err != sql.ErrNoRows {
+				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+			}
+
+			var uploaded int
+			for rows.Next() {
+				err = rows.Scan(&uploaded)
+				if err != nil {
+					panic(err)
+				}
+			}
+			rows.Close()
+			tags := []tag{
+				{name: "value", value: strconv.Itoa(uploaded)},
+				{name: "syncFrequency", value: syncFrequency},
+			}
+
+			counterStat(warehouse, "warehouse_successful_upload_exists", tags...).Count(1)
+		}
+		time.Sleep(uploadStatusTrackFrequency)
+	}
+}
+
 func getBucketFolder(batchID string, tableName string) string {
 	return fmt.Sprintf(`%v-%v`, batchID, tableName)
 }
@@ -817,6 +808,13 @@ func (wh *HandleT) Setup(whType string) {
 	})
 	rruntime.Go(func() {
 		wh.mainLoop()
+	})
+}
+
+func (wh *HandleT) monitorUploadStatus() {
+	pkgLogger.Infof("WH: Warehouse Idle upload tracker started")
+	rruntime.Go(func() {
+		wh.uploadStatusTrack()
 	})
 }
 
@@ -878,6 +876,7 @@ func monitorDestRouters() {
 						wh.Setup(destination.DestinationDefinition.Name)
 						wh.configSubscriberLock.Unlock()
 						dstToWhRouter[destination.DestinationDefinition.Name] = wh
+						wh.monitorUploadStatus()
 					} else {
 						pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
 						wh.configSubscriberLock.Lock()
@@ -1115,9 +1114,6 @@ func Start() {
 		})
 		rruntime.Go(func() {
 			runArchiver(dbHandle)
-		})
-		rruntime.Go(func() {
-			uploadStatusTrack()
 		})
 		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 	}

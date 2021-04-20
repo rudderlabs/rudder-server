@@ -83,6 +83,18 @@ func (jobRun *JobRunT) counterStat(name string) stats.RudderStats {
 	})
 }
 
+func counterStat(warehouse warehouseutils.WarehouseT, name string, extraTags ...tag) stats.RudderStats {
+	tags := map[string]string{
+		"module":      moduleName,
+		"destType":    warehouse.Type,
+		"warehouseID": getWarehouseTagName(warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name),
+	}
+	for _, extraTag := range extraTags {
+		tags[extraTag.name] = extraTag.value
+	}
+	return stats.NewTaggedStat(name, stats.CountType, tags)
+}
+
 func (job *UploadJobT) generateUploadSuccessMetrics() {
 	// Total loaded events in the upload
 	numUploadedEvents, err := getTotalEventsUploaded(job.upload.ID)
