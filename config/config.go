@@ -83,14 +83,20 @@ func watchForConfigChange() {
 		switch value := value.(type) {
 		case *int:
 			var _value int
+			var isSet bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
 				_value = cast.ToInt(envVal)
-			} else if viper.IsSet(configVal.keys[0]) {
-				_value = GetInt(key, configVal.defaultValue.(int))
-			} else if len(configVal.keys) > 1 && viper.IsSet(configVal.keys[1]) {
-				_value = GetInt(configVal.keys[1], configVal.defaultValue.(int))
 			} else {
+				for _, key := range configVal.keys {
+					if viper.IsSet(key) {
+						isSet = true
+						_value = GetInt(key, configVal.defaultValue.(int))
+						break
+					}
+				}
+			}
+			if !isSet {
 				_value = configVal.defaultValue.(int)
 			}
 			_value = _value * configVal.multiplier.(int)
@@ -101,12 +107,20 @@ func watchForConfigChange() {
 			}
 		case *int64:
 			var _value int64
+			var isSet bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
 				_value = cast.ToInt64(envVal)
-			} else if viper.IsSet(key) {
-				_value = GetInt64(key, configVal.defaultValue.(int64))
 			} else {
+				for _, key := range configVal.keys {
+					if viper.IsSet(key) {
+						isSet = true
+						_value = GetInt64(key, configVal.defaultValue.(int64))
+						break
+					}
+				}
+			}
+			if !isSet {
 				_value = configVal.defaultValue.(int64)
 			}
 			_value = _value * configVal.multiplier.(int64)
@@ -116,12 +130,20 @@ func watchForConfigChange() {
 			}
 		case *string:
 			var _value string
+			var isSet bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
 				_value = cast.ToString(envVal)
-			} else if viper.IsSet(key) {
-				_value = GetString(key, configVal.defaultValue.(string))
 			} else {
+				for _, key := range configVal.keys {
+					if viper.IsSet(key) {
+						isSet = true
+						_value = GetString(key, configVal.defaultValue.(string))
+						break
+					}
+				}
+			}
+			if !isSet {
 				_value = configVal.defaultValue.(string)
 			}
 			if _value != *value {
@@ -130,14 +152,20 @@ func watchForConfigChange() {
 			}
 		case *time.Duration:
 			var _value time.Duration
+			var isSet bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
 				_value = cast.ToDuration(envVal)
-			} else if viper.IsSet(key) {
-				_value = GetDuration(key, configVal.defaultValue.(time.Duration))
-			} else if len(configVal.keys) > 1 && viper.IsSet(configVal.keys[1]) {
-				_value = GetDuration(configVal.keys[1], configVal.defaultValue.(time.Duration))
 			} else {
+				for _, key := range configVal.keys {
+					if viper.IsSet(key) {
+						isSet = true
+						_value = GetDuration(key, configVal.defaultValue.(time.Duration))
+						break
+					}
+				}
+			}
+			if !isSet {
 				_value = configVal.defaultValue.(time.Duration)
 			}
 			_value = _value * configVal.multiplier.(time.Duration)
@@ -147,12 +175,20 @@ func watchForConfigChange() {
 			}
 		case *bool:
 			var _value bool
+			var isSet bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
 				_value = cast.ToBool(envVal)
-			} else if viper.IsSet(key) {
-				_value = GetBool(key, configVal.defaultValue.(bool))
 			} else {
+				for _, key := range configVal.keys {
+					if viper.IsSet(key) {
+						isSet = true
+						_value = GetBool(key, configVal.defaultValue.(bool))
+						break
+					}
+				}
+			}
+			if !isSet {
 				_value = configVal.defaultValue.(bool)
 			}
 			if _value != *value {
@@ -161,12 +197,20 @@ func watchForConfigChange() {
 			}
 		case *float64:
 			var _value float64
+			var isSet bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
 				_value = cast.ToFloat64(envVal)
-			} else if viper.IsSet(key) {
-				_value = GetFloat64(key, configVal.defaultValue.(float64))
 			} else {
+				for _, key := range configVal.keys {
+					if viper.IsSet(key) {
+						isSet = true
+						_value = GetFloat64(key, configVal.defaultValue.(float64))
+						break
+					}
+				}
+			}
+			if !isSet {
 				_value = configVal.defaultValue.(float64)
 			}
 			_value = _value * configVal.multiplier.(float64)
@@ -225,6 +269,7 @@ func RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool,
 		if IsSet(key) {
 			isSet = true
 			*ptr = GetInt(key, defaultValue) * valueScale
+			break
 		}
 	}
 	if !isSet {
@@ -250,6 +295,7 @@ func RegisterBoolConfigVariable(defaultValue bool, ptr *bool, isHotReloadable bo
 		if IsSet(key) {
 			isSet = true
 			*ptr = GetBool(key, defaultValue)
+			break
 		}
 	}
 	if !isSet {
@@ -275,6 +321,7 @@ func RegisterFloat64ConfigVariable(defaultValue float64, ptr *float64, isHotRelo
 		if IsSet(key) {
 			isSet = true
 			*ptr = GetFloat64(key, defaultValue)
+			break
 		}
 	}
 	if !isSet {
@@ -300,6 +347,7 @@ func RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable
 		if IsSet(key) {
 			isSet = true
 			*ptr = GetInt64(key, defaultValue)
+			break
 		}
 	}
 	if !isSet {
@@ -325,6 +373,7 @@ func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Durati
 		if IsSet(key) {
 			isSet = true
 			*ptr = GetDuration(key, defaultValue) * timeScale
+			break
 		}
 	}
 	if !isSet {
@@ -350,6 +399,7 @@ func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloada
 		if IsSet(key) {
 			isSet = true
 			*ptr = GetString(key, defaultValue)
+			break
 		}
 	}
 	if !isSet {
