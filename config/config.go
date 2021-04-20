@@ -79,11 +79,9 @@ func UpdateConfig() {
 func hotReloadConfig() {
 	for key, configVal := range hotReloadableConfig {
 		value := configVal.value
-		fmt.Println(key)
 		switch value := value.(type) {
 		case *int:
 			var _value int
-			fmt.Println(*value)
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
 				_value = cast.ToInt(envVal)
