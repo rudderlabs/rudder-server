@@ -86,6 +86,7 @@ func watchForConfigChange() {
 			var isSet bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
+				isSet = true
 				_value = cast.ToInt(envVal)
 			} else {
 				for _, key := range configVal.keys {
@@ -110,6 +111,7 @@ func watchForConfigChange() {
 			var isSet bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
+				isSet = true
 				_value = cast.ToInt64(envVal)
 			} else {
 				for _, key := range configVal.keys {
@@ -133,6 +135,7 @@ func watchForConfigChange() {
 			var isSet bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
+				isSet = true
 				_value = cast.ToString(envVal)
 			} else {
 				for _, key := range configVal.keys {
@@ -155,6 +158,7 @@ func watchForConfigChange() {
 			var isSet bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
+				isSet = true
 				_value = cast.ToDuration(envVal)
 			} else {
 				for _, key := range configVal.keys {
@@ -178,6 +182,7 @@ func watchForConfigChange() {
 			var isSet bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
+				isSet = true
 				_value = cast.ToBool(envVal)
 			} else {
 				for _, key := range configVal.keys {
@@ -200,6 +205,7 @@ func watchForConfigChange() {
 			var isSet bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
+				isSet = true
 				_value = cast.ToFloat64(envVal)
 			} else {
 				for _, key := range configVal.keys {
