@@ -79,10 +79,15 @@ func UpdateConfig() {
 func hotReloadConfig() {
 	for key, configVal := range hotReloadableConfig {
 		value := configVal.value
+		fmt.Println(key)
 		switch value := value.(type) {
 		case *int:
 			var _value int
-			if viper.IsSet(configVal.keys[0]) {
+			fmt.Println(*value)
+			envVal := GetEnv(TransformKey(key), "")
+			if envVal != "" {
+				_value = cast.ToInt(envVal)
+			} else if viper.IsSet(configVal.keys[0]) {
 				_value = GetInt(key, configVal.defaultValue.(int))
 				_value = _value * configVal.multiplier.(int)
 			} else if len(configVal.keys) > 1 && viper.IsSet(configVal.keys[1]) {
@@ -93,11 +98,16 @@ func hotReloadConfig() {
 			}
 			if _value != *value {
 				*value = _value
+
 				fmt.Printf("The value of %s changed to %d", key, _value)
 			}
 		case *int64:
+			fmt.Println(*value)
 			var _value int64
-			if viper.IsSet(key) {
+			envVal := GetEnv(TransformKey(key), "")
+			if envVal != "" {
+				_value = cast.ToInt64(envVal)
+			} else if viper.IsSet(key) {
 				_value = GetInt64(key, configVal.defaultValue.(int64)) * configVal.multiplier.(int64)
 			} else {
 				_value = configVal.defaultValue.(int64) * configVal.multiplier.(int64)
@@ -107,8 +117,12 @@ func hotReloadConfig() {
 				fmt.Printf("The value of %s changed to %d", key, _value)
 			}
 		case *string:
+			fmt.Println(*value)
 			var _value string
-			if viper.IsSet(key) {
+			envVal := GetEnv(TransformKey(key), "")
+			if envVal != "" {
+				_value = cast.ToString(envVal)
+			} else if viper.IsSet(key) {
 				_value = GetString(key, configVal.defaultValue.(string))
 			} else {
 				_value = configVal.defaultValue.(string)
@@ -118,8 +132,12 @@ func hotReloadConfig() {
 				fmt.Printf("The value of %s changed to %s", key, _value)
 			}
 		case *time.Duration:
+			fmt.Println(*value)
 			var _value time.Duration
-			if viper.IsSet(key) {
+			envVal := GetEnv(TransformKey(key), "")
+			if envVal != "" {
+				_value = cast.ToDuration(envVal)
+			} else if viper.IsSet(key) {
 				_value = GetDuration(key, configVal.defaultValue.(time.Duration)) * configVal.multiplier.(time.Duration)
 			} else if len(configVal.keys) > 1 && viper.IsSet(configVal.keys[1]) {
 				_value = GetDuration(configVal.keys[1], configVal.defaultValue.(time.Duration)) * configVal.multiplier.(time.Duration)
@@ -131,8 +149,12 @@ func hotReloadConfig() {
 				fmt.Printf("The value of %s changed to %s", key, _value)
 			}
 		case *bool:
+			fmt.Println(*value)
 			var _value bool
-			if viper.IsSet(key) {
+			envVal := GetEnv(TransformKey(key), "")
+			if envVal != "" {
+				_value = cast.ToBool(envVal)
+			} else if viper.IsSet(key) {
 				_value = GetBool(key, configVal.defaultValue.(bool))
 			} else {
 				_value = configVal.defaultValue.(bool)
@@ -142,8 +164,12 @@ func hotReloadConfig() {
 				fmt.Printf("The value of %s changed to %v", key, _value)
 			}
 		case *float64:
+			fmt.Println(*value)
 			var _value float64
-			if viper.IsSet(key) {
+			envVal := GetEnv(TransformKey(key), "")
+			if envVal != "" {
+				_value = cast.ToFloat64(envVal)
+			} else if viper.IsSet(key) {
 				_value = GetFloat64(key, configVal.defaultValue.(float64)) * configVal.multiplier.(float64)
 			} else {
 				_value = configVal.defaultValue.(float64) * configVal.multiplier.(float64)
