@@ -7,6 +7,7 @@ phases:
   build:
     commands:
       - sed -i -e 's/^CONFIG_BACKEND_URL=.*$/CONFIG_BACKEND_URL=https:\/\/api.rudderlabs.com/' build/docker.env
+      - cp tests/e2e/config_overrides.toml tests/e2e/config.toml
       - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' build/docker.env
       - cat build/docker.env
       - cat tests/e2e/config.toml
@@ -20,7 +21,7 @@ phases:
       #- sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/migrations\/config.toml/' build/docker.env
       #- docker-compose -f build/docker-compose.codebuild.yml up -d
       #- docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e/migrations"
-      - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/warehouse/config_overrides.toml > tests/e2e/warehouse/config.toml
+      - cp tests/e2e/warehouse/config_overrides.toml  tests/e2e/warehouse/config.toml
       - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/warehouse\/config.toml/' build/docker.env
       - docker-compose -f build/docker-compose.codebuild.yml up -d
       - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo tests/e2e/warehouse"
