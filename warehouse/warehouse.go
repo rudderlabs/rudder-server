@@ -711,6 +711,8 @@ func (wh *HandleT) runUploadJobAllocator() {
 
 func (wh *HandleT) uploadStatusTrack() {
 	for {
+		time.Sleep(uploadStatusTrackFrequency)
+
 		for _, warehouse := range wh.warehouses {
 			source := warehouse.Source
 			destination := warehouse.Destination
@@ -724,11 +726,9 @@ func (wh *HandleT) uploadStatusTrack() {
 				syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
 			}
 
-			fmt.Println(syncFrequency)
-
 			sqlStatement := fmt.Sprintf(`
-				select cast( case when count(*) > 0 then 1 else 0 end as bit) from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s') and updated_at > now() - interval '%[6]s MIN'`,
-				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, syncFrequency)
+				select cast( case when count(*) > 0 then 1 else 0 end as bit) from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s') and updated_at > now() - interval '%[6]s'`,
+				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, uploadStatusTrackFrequency)
 			fmt.Println(sqlStatement)
 			rows, err := wh.dbHandle.Query(sqlStatement)
 
@@ -751,7 +751,6 @@ func (wh *HandleT) uploadStatusTrack() {
 
 			counterStat(warehouse, "warehouse_successful_upload_exists", tags...).Count(1)
 		}
-		time.Sleep(uploadStatusTrackFrequency)
 	}
 }
 
