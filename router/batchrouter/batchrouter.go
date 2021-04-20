@@ -942,11 +942,9 @@ func (brt *HandleT) collectMetrics() {
 }
 
 func loadConfig() {
-	config.RegisterIntConfigVariable("BatchRouter.jobQueryBatchSize", 100000, &jobQueryBatchSize, true, 1)
-	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
-	config.RegisterDurationConfigVariable("BatchRouter.mainLoopSleepInS", time.Duration(2), &mainLoopSleep, true, time.Second)
-	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
-	config.RegisterInt64ConfigVariable("JobsDB.uploadFreqInS", 30, &uploadFreqInS, true, 1)
+	config.RegisterIntConfigVariable(100000, &jobQueryBatchSize, true, 1, "BatchRouter.jobQueryBatchSize")
+	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, "BatchRouter.mainLoopSleepInS")
+	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "JobsDB.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
 	inProgressMap = map[string]bool{}
@@ -955,7 +953,7 @@ func loadConfig() {
 	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
-	config.RegisterDurationConfigVariable("BatchRouter.warehouseServiceMaxRetryTimeinHr", time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour)
+	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	encounteredMergeRuleMap = map[string]map[string]bool{}
 }
 
@@ -976,8 +974,8 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destTyp
 	brt.errorDB = errorDB
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
-	config.RegisterMultipleKeyIntConfigVariable("BatchRouter."+brt.destType+"."+"maxFailedCountForJob", "BatchRouter."+"maxFailedCountForJob", 128, &brt.maxFailedCountForJob, true)
-	config.RegisterMultipleKeyDurationConfigVariable("BatchRouter."+brt.destType+"."+"retryTimeWindowInMins", "Router."+"retryTimeWindowInMins", 180, &brt.retryTimeWindow, true, time.Minute)
+	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
+	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindowInMins"}...)
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
 	brt.netHandle = client

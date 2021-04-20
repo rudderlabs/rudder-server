@@ -7,7 +7,6 @@ phases:
   build:
     commands:
       - sed -i -e 's/^CONFIG_BACKEND_URL=.*$/CONFIG_BACKEND_URL=https:\/\/api.rudderlabs.com/' build/docker.env
-      - go run tests/helpers/tomlmerge/toml_merge.go config/config.yaml tests/e2e/config_overrides.toml > tests/e2e/config.toml
       - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' build/docker.env
       - cat build/docker.env
       - cat tests/e2e/config.toml

@@ -138,11 +138,11 @@ func init() {
 }
 
 func loadConfigUpload() {
-	config.RegisterIntConfigVariable("Warehouse.bigquery.maxParallelLoads", 20, &bqMaxParallelLoads, true, 1)
-	config.RegisterIntConfigVariable("Warehouse.redshift.maxParallelLoads", 3, &rsMaxParallelLoads, true, 1)
-	config.RegisterIntConfigVariable("Warehouse.postgres.maxParallelLoads", 3, &pgMaxParallelLoads, true, 1)
-	config.RegisterIntConfigVariable("Warehouse.snowflake.maxParallelLoads", 3, &sfMaxParallelLoads, true, 1)
-	config.RegisterIntConfigVariable("Warehouse.clickhouse.maxParallelLoads", 3, &chMaxParallelLoads, true, 1)
+	config.RegisterIntConfigVariable(20, &bqMaxParallelLoads, true, 1, "Warehouse.bigquery.maxParallelLoads")
+	config.RegisterIntConfigVariable(3, &rsMaxParallelLoads, true, 1, "Warehouse.redshift.maxParallelLoads")
+	config.RegisterIntConfigVariable(3, &pgMaxParallelLoads, true, 1, "Warehouse.postgres.maxParallelLoads")
+	config.RegisterIntConfigVariable(3, &sfMaxParallelLoads, true, 1, "Warehouse.snowflake.maxParallelLoads")
+	config.RegisterIntConfigVariable(3, &chMaxParallelLoads, true, 1, "Warehouse.clickhouse.maxParallelLoads")
 
 }
 

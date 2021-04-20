@@ -30,7 +30,7 @@ var (
 
 func loadConfig() {
 	// Dedup time window in hours
-	config.RegisterDurationConfigVariable("Dedup.dedupWindowInS", time.Duration(86400), &dedupWindow, true, time.Second)
+	config.RegisterDurationConfigVariable(time.Duration(86400), &dedupWindow, true, time.Second, "Dedup.dedupWindowInS")
 }
 
 func init() {

@@ -25,7 +25,7 @@ func init() {
 }
 
 func loadConfig() {
-	config.RegisterIntConfigVariable("Archiver.backupRowsBatchSize", 100, &backupRowsBatchSize, true, 1)
+	config.RegisterIntConfigVariable(100, &backupRowsBatchSize, true, 1, "Archiver.backupRowsBatchSize")
 }
 
 func isArchiverObjectStorageConfigured() bool {
