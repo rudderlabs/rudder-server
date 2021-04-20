@@ -58,12 +58,12 @@ func init() {
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	//Number of events that are batched before sending schema to control plane
-	config.RegisterIntConfigVariable("SourceDebugger.maxBatchSize", 32, &maxBatchSize, true, 1)
-	config.RegisterIntConfigVariable("SourceDebugger.maxESQueueSize", 1024, &maxESQueueSize, true, 1)
-	config.RegisterIntConfigVariable("SourceDebugger.maxRetry", 3, &maxRetry, true, 1)
-	config.RegisterDurationConfigVariable("SourceDebugger.batchTimeoutInS", time.Duration(2), &batchTimeout, true, time.Second)
-	config.RegisterDurationConfigVariable("SourceDebugger.retrySleepInMS", time.Duration(100), &retrySleep, true, time.Millisecond)
-	config.RegisterBoolConfigVariable("SourceDebugger.disableEventUploads", false, &disableEventUploads, true)
+	config.RegisterIntConfigVariable(32, &maxBatchSize, true, 1, "SourceDebugger.maxBatchSize")
+	config.RegisterIntConfigVariable(1024, &maxESQueueSize, true, 1, "SourceDebugger.maxESQueueSize")
+	config.RegisterIntConfigVariable(3, &maxRetry, true, 1, "SourceDebugger.maxRetry")
+	config.RegisterDurationConfigVariable(time.Duration(2), &batchTimeout, true, time.Second, "SourceDebugger.batchTimeoutInS")
+	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, "SourceDebugger.retrySleepInMS")
+	config.RegisterBoolConfigVariable(false, &disableEventUploads, true, "SourceDebugger.disableEventUploads")
 }
 
 //RecordEvent is used to put the event batch in the eventBatchChannel,

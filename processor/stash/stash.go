@@ -33,12 +33,11 @@ func init() {
 }
 
 func loadConfig() {
-	config.RegisterBoolConfigVariable("Processor.errorStashEnabled", false, &errorStashEnabled, true)
-	config.RegisterDurationConfigVariable("Processor.errReadLoopSleepInS", time.Duration(30), &errReadLoopSleep, true, time.Second)
-	config.RegisterIntConfigVariable("Processor.errDBReadBatchSize", 1000, &errDBReadBatchSize, true, 1)
-	config.RegisterIntConfigVariable("Processor.noOfErrStashWorkers", 2, &noOfErrStashWorkers, true, 1)
-	config.RegisterIntConfigVariable("BatchRouter.maxFailedCountForErrJob", 3, &maxFailedCountForErrJob, true, 1)
-
+	config.RegisterBoolConfigVariable(false, &errorStashEnabled, true, "Processor.errorStashEnabled")
+	config.RegisterDurationConfigVariable(time.Duration(30), &errReadLoopSleep, true, time.Second, "Processor.errReadLoopSleepInS")
+	config.RegisterIntConfigVariable(1000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
+	config.RegisterIntConfigVariable(2, &noOfErrStashWorkers, true, 1, "Processor.noOfErrStashWorkers")
+	config.RegisterIntConfigVariable(3, &maxFailedCountForErrJob, true, 1, "Processor.maxFailedCountForErrJob")
 }
 
 type StoreErrorOutputT struct {

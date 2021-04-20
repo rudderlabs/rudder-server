@@ -47,8 +47,8 @@ var (
 )
 
 func loadConfig() {
-	config.RegisterIntConfigVariable("Processor.maxRetry", 30, &maxRetry, true, 1)
-	config.RegisterDurationConfigVariable("Processor.retrySleepInMS", time.Duration(100), &retrySleep, true, time.Millisecond)
+	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
+	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, "Processor.retrySleepInMS")
 
 }
 

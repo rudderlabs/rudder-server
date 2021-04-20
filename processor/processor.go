@@ -302,11 +302,11 @@ var (
 )
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable("Processor.maxLoopSleepInMS", time.Duration(5000), &maxLoopSleep, true, time.Millisecond)
-	config.RegisterDurationConfigVariable("Processor.loopSleepInMS", time.Duration(10), &loopSleep, true, time.Millisecond)
-	config.RegisterDurationConfigVariable("Processor.fixedLoopSleepInMS", time.Duration(0), &fixedLoopSleep, true, time.Millisecond)
-	config.RegisterIntConfigVariable("Processor.transformBatchSize", 50, &transformBatchSize, true, 1)
-	config.RegisterIntConfigVariable("Processor.userTransformBatchSize", 200, &userTransformBatchSize, true, 1)
+	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, "Processor.maxLoopSleepInMS")
+	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, "Processor.loopSleepInMS")
+	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Processor.fixedLoopSleepInMS")
+	config.RegisterIntConfigVariable(50, &transformBatchSize, true, 1, "Processor.transformBatchSize")
+	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 100)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
@@ -316,56 +316,13 @@ func loadConfig() {
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
 	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
-	maxEventsToProcess = config.GetInt("Processor.maxLoopProcessEvents", 10000)
-	avgEventsInRequest = config.GetInt("Processor.avgEventsInRequest", 1)
+	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
+	config.RegisterIntConfigVariable(1, &avgEventsInRequest, true, 1, "Processor.avgEventsInRequest")
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
 	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
 	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
 	// Capture event name as a tag in event level stats
-	captureEventNameStats = config.GetBool("Processor.Stats.captureEventName", false)
-}
-
-func processorReloadableConfig() {
-	_loopSleep := config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
-	if _loopSleep != loopSleep {
-		loopSleep = _loopSleep
-		pkgLogger.Info("Processor.loopSleepInMS changes to ", loopSleep)
-	}
-	_maxLoopSleep := config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
-	if _maxLoopSleep != maxLoopSleep {
-		maxLoopSleep = _maxLoopSleep
-		pkgLogger.Info("Processor.maxLoopSleep changes to ", maxLoopSleep)
-	}
-	_fixedLoopSleep := config.GetDuration("Processor.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
-	if _fixedLoopSleep != fixedLoopSleep {
-		fixedLoopSleep = _fixedLoopSleep
-		pkgLogger.Info("Processor.fixedLoopSleep changes to ", fixedLoopSleep)
-	}
-	_maxEventsToProcess := config.GetInt("Processor.maxLoopProcessEvents", 10000)
-	if _maxEventsToProcess != maxEventsToProcess {
-		maxEventsToProcess = _maxEventsToProcess
-		pkgLogger.Info("Processor.maxEventsToProcess changes to ", maxEventsToProcess)
-	}
-	_avgEventsInRequest := config.GetInt("Processor.avgEventsInRequest", 1)
-	if _avgEventsInRequest != avgEventsInRequest {
-		avgEventsInRequest = _avgEventsInRequest
-		pkgLogger.Info("Processor.avgEventsInRequest changes to ", avgEventsInRequest)
-	}
-	_transformBatchSize := config.GetInt("Processor.transformBatchSize", 50)
-	if _transformBatchSize != transformBatchSize {
-		transformBatchSize = _transformBatchSize
-		pkgLogger.Info("Processor.transformBatchSize changes to ", transformBatchSize)
-	}
-	_userTransformBatchSize := config.GetInt("Processor.userTransformBatchSize", 200)
-	if _userTransformBatchSize != userTransformBatchSize {
-		userTransformBatchSize = _userTransformBatchSize
-		pkgLogger.Info("Processor.userTransformBatchSize changes to ", userTransformBatchSize)
-	}
-	_captureEventNameStats := config.GetBool("Processor.Stats.captureEventName", false)
-	if _captureEventNameStats != captureEventNameStats {
-		captureEventNameStats = _captureEventNameStats
-		pkgLogger.Info("Processor.captureEventNameStats changes to ", captureEventNameStats)
-	}
+	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
 }
 
 func (proc *HandleT) backendConfigSubscriber() {

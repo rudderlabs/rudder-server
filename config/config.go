@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -16,11 +17,10 @@ import (
 
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
-type Topic string
-
 var (
 	whSchemaVersion     string
 	hotReloadableConfig map[string]*ConfigVar
+	configVarLock       sync.RWMutex
 )
 
 type ConfigVar struct {
@@ -60,7 +60,6 @@ func init() {
 	hotReloadableConfig = make(map[string]*ConfigVar)
 	configPath := GetEnv("CONFIG_PATH", "./config/config.yaml")
 	viper.SetConfigFile(configPath)
-	viper.AddConfigPath(".")
 	err := viper.ReadInConfig() // Find and read the config file
 	UpdateConfig()
 	// Don't panic if config.yaml is not found or error with parsing. Use the default config values instead
@@ -72,11 +71,13 @@ func init() {
 func UpdateConfig() {
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
-		EventBus.Publish("ConfigUpdate", "")
+		watchForConfigChange()
 	})
 }
 
-func hotReloadConfig() {
+func watchForConfigChange() {
+	configVarLock.RLock()
+	defer configVarLock.RUnlock()
 	for key, configVal := range hotReloadableConfig {
 		value := configVal.value
 		switch value := value.(type) {
@@ -87,35 +88,33 @@ func hotReloadConfig() {
 				_value = cast.ToInt(envVal)
 			} else if viper.IsSet(configVal.keys[0]) {
 				_value = GetInt(key, configVal.defaultValue.(int))
-				_value = _value * configVal.multiplier.(int)
 			} else if len(configVal.keys) > 1 && viper.IsSet(configVal.keys[1]) {
 				_value = GetInt(configVal.keys[1], configVal.defaultValue.(int))
-				_value = _value * configVal.multiplier.(int)
 			} else {
-				_value = configVal.defaultValue.(int) * configVal.multiplier.(int)
+				_value = configVal.defaultValue.(int)
 			}
+			_value = _value * configVal.multiplier.(int)
 			if _value != *value {
 				*value = _value
 
 				fmt.Printf("The value of %s changed to %d", key, _value)
 			}
 		case *int64:
-			fmt.Println(*value)
 			var _value int64
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
 				_value = cast.ToInt64(envVal)
 			} else if viper.IsSet(key) {
-				_value = GetInt64(key, configVal.defaultValue.(int64)) * configVal.multiplier.(int64)
+				_value = GetInt64(key, configVal.defaultValue.(int64))
 			} else {
-				_value = configVal.defaultValue.(int64) * configVal.multiplier.(int64)
+				_value = configVal.defaultValue.(int64)
 			}
+			_value = _value * configVal.multiplier.(int64)
 			if _value != *value {
 				*value = _value
 				fmt.Printf("The value of %s changed to %d", key, _value)
 			}
 		case *string:
-			fmt.Println(*value)
 			var _value string
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
@@ -130,24 +129,23 @@ func hotReloadConfig() {
 				fmt.Printf("The value of %s changed to %s", key, _value)
 			}
 		case *time.Duration:
-			fmt.Println(*value)
 			var _value time.Duration
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
 				_value = cast.ToDuration(envVal)
 			} else if viper.IsSet(key) {
-				_value = GetDuration(key, configVal.defaultValue.(time.Duration)) * configVal.multiplier.(time.Duration)
+				_value = GetDuration(key, configVal.defaultValue.(time.Duration))
 			} else if len(configVal.keys) > 1 && viper.IsSet(configVal.keys[1]) {
-				_value = GetDuration(configVal.keys[1], configVal.defaultValue.(time.Duration)) * configVal.multiplier.(time.Duration)
+				_value = GetDuration(configVal.keys[1], configVal.defaultValue.(time.Duration))
 			} else {
-				_value = configVal.defaultValue.(time.Duration) * configVal.multiplier.(time.Duration)
+				_value = configVal.defaultValue.(time.Duration)
 			}
+			_value = _value * configVal.multiplier.(time.Duration)
 			if _value != *value {
 				*value = _value
 				fmt.Printf("The value of %s changed to %s", key, _value)
 			}
 		case *bool:
-			fmt.Println(*value)
 			var _value bool
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
@@ -162,16 +160,16 @@ func hotReloadConfig() {
 				fmt.Printf("The value of %s changed to %v", key, _value)
 			}
 		case *float64:
-			fmt.Println(*value)
 			var _value float64
 			envVal := GetEnv(TransformKey(key), "")
 			if envVal != "" {
 				_value = cast.ToFloat64(envVal)
 			} else if viper.IsSet(key) {
-				_value = GetFloat64(key, configVal.defaultValue.(float64)) * configVal.multiplier.(float64)
+				_value = GetFloat64(key, configVal.defaultValue.(float64))
 			} else {
-				_value = configVal.defaultValue.(float64) * configVal.multiplier.(float64)
+				_value = configVal.defaultValue.(float64)
 			}
+			_value = _value * configVal.multiplier.(float64)
 			if _value != *value {
 				*value = _value
 				fmt.Printf("The value of %s changed to %v", key, _value)
@@ -209,123 +207,153 @@ func GetInt(key string, defaultValue int) (value int) {
 	return viper.GetInt(key)
 }
 
-func RegisterIntConfigVariable(key string, defaultValue int, ptr *int, isHotReloadable bool, valueScale int) {
+func RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool, valueScale int, keys ...string) {
+	configVarLock.Lock()
+	defer configVarLock.Unlock()
+	var isSet bool
 	if isHotReloadable {
 		configVar := ConfigVar{
 			value:           ptr,
 			multiplier:      valueScale,
 			isHotReloadable: isHotReloadable,
 			defaultValue:    defaultValue,
-			keys:            []string{key},
+			keys:            keys,
 		}
-		hotReloadableConfig[key] = &configVar
+		hotReloadableConfig[keys[0]] = &configVar
 	}
-	*ptr = GetInt(key, defaultValue) * valueScale
+	for _, key := range keys {
+		if IsSet(key) {
+			isSet = true
+			*ptr = GetInt(key, defaultValue) * valueScale
+		}
+	}
+	if !isSet {
+		*ptr = defaultValue * valueScale
+	}
 }
 
-func RegisterBoolConfigVariable(key string, defaultValue bool, ptr *bool, isHotReloadable bool) {
+func RegisterBoolConfigVariable(defaultValue bool, ptr *bool, isHotReloadable bool, keys ...string) {
+	configVarLock.Lock()
+	defer configVarLock.Unlock()
+	var isSet bool
 	if isHotReloadable {
 		configVar := ConfigVar{
 			value:           ptr,
 			multiplier:      1,
 			isHotReloadable: isHotReloadable,
 			defaultValue:    defaultValue,
-			keys:            []string{key},
+			keys:            keys,
 		}
-		hotReloadableConfig[key] = &configVar
+		hotReloadableConfig[keys[0]] = &configVar
 	}
-	*ptr = GetBool(key, defaultValue)
+	for _, key := range keys {
+		if IsSet(key) {
+			isSet = true
+			*ptr = GetBool(key, defaultValue)
+		}
+	}
+	if !isSet {
+		*ptr = defaultValue
+	}
 }
 
-func RegisterFloat64ConfigVariable(key string, defaultValue float64, ptr *float64, isHotReloadable bool) {
+func RegisterFloat64ConfigVariable(defaultValue float64, ptr *float64, isHotReloadable bool, keys ...string) {
+	configVarLock.Lock()
+	defer configVarLock.Unlock()
+	var isSet bool
 	if isHotReloadable {
 		configVar := ConfigVar{
 			value:           ptr,
 			multiplier:      1.0,
 			isHotReloadable: isHotReloadable,
 			defaultValue:    defaultValue,
-			keys:            []string{key},
+			keys:            keys,
 		}
-		hotReloadableConfig[key] = &configVar
+		hotReloadableConfig[keys[0]] = &configVar
 	}
-	*ptr = GetFloat64(key, defaultValue)
+	for _, key := range keys {
+		if IsSet(key) {
+			isSet = true
+			*ptr = GetFloat64(key, defaultValue)
+		}
+	}
+	if !isSet {
+		*ptr = defaultValue
+	}
 }
 
-func RegisterInt64ConfigVariable(key string, defaultValue int64, ptr *int64, isHotReloadable bool, valueScale int64) {
+func RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable bool, valueScale int64, keys ...string) {
+	configVarLock.Lock()
+	defer configVarLock.Unlock()
+	var isSet bool
 	if isHotReloadable {
 		configVar := ConfigVar{
 			value:           ptr,
 			multiplier:      valueScale,
 			isHotReloadable: isHotReloadable,
 			defaultValue:    defaultValue,
-			keys:            []string{key},
+			keys:            keys,
 		}
-		hotReloadableConfig[key] = &configVar
+		hotReloadableConfig[keys[0]] = &configVar
 	}
-	*ptr = GetInt64(key, defaultValue) * valueScale
+	for _, key := range keys {
+		if IsSet(key) {
+			isSet = true
+			*ptr = GetInt64(key, defaultValue)
+		}
+	}
+	if !isSet {
+		*ptr = defaultValue * valueScale
+	}
 }
 
-func RegisterDurationConfigVariable(key string, defaultValue time.Duration, ptr *time.Duration, isHotReloadable bool, timeScale time.Duration) {
+func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Duration, isHotReloadable bool, timeScale time.Duration, keys ...string) {
+	configVarLock.Lock()
+	defer configVarLock.Unlock()
+	var isSet bool
 	if isHotReloadable {
 		configVar := ConfigVar{
 			value:           ptr,
 			multiplier:      timeScale,
 			isHotReloadable: isHotReloadable,
 			defaultValue:    defaultValue,
-			keys:            []string{key},
+			keys:            keys,
 		}
-		hotReloadableConfig[key] = &configVar
+		hotReloadableConfig[keys[0]] = &configVar
 	}
-	*ptr = GetDuration(key, defaultValue) * timeScale
+	for _, key := range keys {
+		if IsSet(key) {
+			isSet = true
+			*ptr = GetDuration(key, defaultValue) * timeScale
+		}
+	}
+	if !isSet {
+		*ptr = defaultValue * timeScale
+	}
 }
 
-func RegisterStringConfigVariable(key string, defaultValue string, ptr *string, isHotReloadable bool) {
+func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloadable bool, keys ...string) {
+	configVarLock.Lock()
+	defer configVarLock.Unlock()
+	var isSet bool
 	if isHotReloadable {
 		configVar := ConfigVar{
 			value:           ptr,
 			multiplier:      1,
 			isHotReloadable: isHotReloadable,
 			defaultValue:    defaultValue,
-			keys:            []string{key},
+			keys:            keys,
 		}
-		hotReloadableConfig[key] = &configVar
+		hotReloadableConfig[keys[0]] = &configVar
 	}
-	*ptr = GetString(key, defaultValue)
-}
-
-func RegisterMultipleKeyIntConfigVariable(key1 string, key2 string, defaultValue int, ptr *int, isHotReloadable bool) {
-	if isHotReloadable {
-		configVar := ConfigVar{
-			value:           ptr,
-			multiplier:      1,
-			isHotReloadable: isHotReloadable,
-			defaultValue:    defaultValue,
-			keys:            []string{key1, key2},
+	for _, key := range keys {
+		if IsSet(key) {
+			isSet = true
+			*ptr = GetString(key, defaultValue)
 		}
-		hotReloadableConfig[key1] = &configVar
 	}
-	if viper.IsSet(key1) {
-		*ptr = GetInt(key1, defaultValue)
-	} else {
-		*ptr = GetInt(key2, defaultValue)
-	}
-}
-
-func RegisterMultipleKeyDurationConfigVariable(key1 string, key2 string, defaultValue time.Duration, ptr *time.Duration, isHotReloadable bool, timeScale time.Duration) {
-	if isHotReloadable {
-		configVar := ConfigVar{
-			value:           ptr,
-			multiplier:      timeScale,
-			isHotReloadable: isHotReloadable,
-			defaultValue:    defaultValue,
-			keys:            []string{key1, key2},
-		}
-		hotReloadableConfig[key1] = &configVar
-	}
-	if viper.IsSet(key1) {
-		*ptr = GetDuration(key1, defaultValue) * timeScale
-	} else {
-		*ptr = GetDuration(key2, defaultValue) * timeScale
+	if !isSet {
+		*ptr = defaultValue
 	}
 }
 

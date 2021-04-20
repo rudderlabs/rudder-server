@@ -148,10 +148,10 @@ func init() {
 }
 
 func loadConfig() {
-	config.RegisterStringConfigVariable("Warehouse.clickhouse.queryDebugLogs", "false", &queryDebugLogs, true)
-	config.RegisterStringConfigVariable("Warehouse.clickhouse.blockSize", "1000", &blockSize, true)
-	config.RegisterStringConfigVariable("Warehouse.clickhouse.poolSize", "10", &poolSize, true)
-	config.RegisterBoolConfigVariable("Warehouse.clickhouse.disableNullable", false, &disableNullable, true)
+	config.RegisterStringConfigVariable("false", &queryDebugLogs, true, "Warehouse.clickhouse.queryDebugLogs")
+	config.RegisterStringConfigVariable("1000", &blockSize, true, "Warehouse.clickhouse.blockSize")
+	config.RegisterStringConfigVariable("10", &poolSize, true, "Warehouse.clickhouse.disableNullable")
+	config.RegisterBoolConfigVariable(false, &disableNullable, true, "Warehouse.clickhouse.disableNullable")
 
 }
 
