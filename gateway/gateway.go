@@ -417,13 +417,13 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
 			eventBatchesToRecord = append(eventBatchesToRecord, fmt.Sprintf("%s", body))
-
+			sourcesJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str // pick the job_run_id from the first event of batch. We are assuming job_run_id will be same for all events in a batch and the batch is coming from rudder-sources
 			id := uuid.NewV4()
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       gjson.GetBytes(body, "batch.0.rudderId").Str,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, sourceID, counter)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "job_run_id": "%s"}`, sourceID, counter, sourcesJobRunID)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
@@ -597,6 +597,7 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 type pendingEventsRequestPayload struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
+	JobRunID      string `json:"job_run_id"`
 }
 
 func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
@@ -657,6 +658,15 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 				Optional: false,
 			},
 		}
+	}
+	if reqPayload.JobRunID != "" {
+		jobRunIDParam := jobsdb.ParameterFilterT{
+			Name:     "job_run_id",
+			Value:    reqPayload.JobRunID,
+			Optional: true,
+		}
+		gwParameterFilters = append(gwParameterFilters, jobRunIDParam)
+		rtParameterFilters = append(rtParameterFilters, jobRunIDParam)
 	}
 
 	var excludeGateway bool

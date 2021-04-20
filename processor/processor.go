@@ -656,6 +656,7 @@ func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsd
 	metadata.SourceType = source.SourceDefinition.Name
 	metadata.SourceCategory = source.SourceDefinition.Category
 	metadata.DestinationID = destination.ID
+	metadata.JobRunID = gjson.GetBytes(batchEvent.Parameters, "job_run_id").Str
 	metadata.RudderID = batchEvent.UserID
 	metadata.JobID = batchEvent.JobID
 	metadata.DestinationType = destination.DestinationDefinition.Name
@@ -757,7 +758,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		newFailedJob := jobsdb.JobT{
 			UUID:         id,
 			EventPayload: payload,
-			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "error": %s, "status_code": "%v", "stage": "%s"}`, commonMetaData.SourceID, commonMetaData.DestinationID, string(marshalledErr), failedEvent.StatusCode, stage)),
+			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "job_run_id": "%s", "error": %s, "status_code": "%v", "stage": "%s"}`, commonMetaData.SourceID, commonMetaData.DestinationID, commonMetaData.JobRunID, string(marshalledErr), failedEvent.StatusCode, stage)),
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			CustomVal:    commonMetaData.DestinationType,
@@ -968,6 +969,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		commonMetaData := transformer.MetadataT{
 			SourceID:        sourceID,
 			SourceType:      eventList[0].Metadata.SourceType,
+			JobRunID:        eventList[0].Metadata.JobRunID,
 			SourceCategory:  eventList[0].Metadata.SourceCategory,
 			DestinationID:   destID,
 			DestinationType: destination.DestinationDefinition.Name,
@@ -1075,6 +1077,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			rudderID := destEvent.Metadata.RudderID
 			receivedAt := destEvent.Metadata.ReceivedAt
 			messageId := destEvent.Metadata.MessageID
+			jobRunID := destEvent.Metadata.JobRunID
 			jobId := destEvent.Metadata.JobID
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
@@ -1085,7 +1088,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       rudderID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v", "transform_at": "%v", "message_id" : "%v" , "gateway_job_id" : "%v"}`, sourceID, destID, receivedAt, transformAt, messageId, jobId)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "job_run_id": "%v", "received_at": "%v", "transform_at": "%v", "message_id" : "%v" , "gateway_job_id" : "%v"}`, sourceID, destID, jobRunID, receivedAt, transformAt, messageId, jobId)),
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
