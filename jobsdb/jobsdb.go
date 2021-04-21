@@ -125,7 +125,7 @@ type JobT struct {
 }
 
 func (job *JobT) String() string {
-	return fmt.Sprintf("JobID=%v, CustomVal=%v, EventPayload=%v", job.JobID, job.CustomVal, string(job.EventPayload))
+	return fmt.Sprintf("JobID=%v, CustomVal=%v, Parameters=%v, EventPayload=%v", job.JobID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 }
 
 //The struct fields need to be exposed to JSON package
