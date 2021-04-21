@@ -71,7 +71,7 @@ type GetQueryParamsT struct {
 JobsDB interface contains public methods to access JobsDB data
 */
 type JobsDB interface {
-	Store(jobList []*JobT)
+	Store(jobList []*JobT) error
 	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
 	CheckPGHealth() bool
 	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
@@ -2641,14 +2641,14 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 /*
 Store call is used to create new Jobs
 */
-func (jd *HandleT) Store(jobList []*JobT) {
+func (jd *HandleT) Store(jobList []*JobT) error {
 	//Only locks the list
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList(false)
 	err := jd.storeJobsDS(dsList[len(dsList)-1], false, jobList)
-	jd.assertError(err)
+	return err
 }
 
 /*

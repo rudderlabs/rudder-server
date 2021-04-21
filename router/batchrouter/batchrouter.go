@@ -488,7 +488,12 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 
 	//Store the aborted jobs to errorDB
 	if abortedEvents != nil {
-		brt.errorDB.Store(abortedEvents)
+		err := brt.errorDB.Store(abortedEvents)
+		if err != nil {
+			brt.logger.Errorf("[Batch Router] Store into proc error table failed with error: %v", err)
+			brt.logger.Errorf("abortedEvents: %v", abortedEvents)
+			panic(err)
+		}
 	}
 	//Mark the status of the jobs
 	err = brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)

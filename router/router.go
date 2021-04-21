@@ -1004,7 +1004,12 @@ func (rt *HandleT) statusInsertLoop() {
 				})
 				//Store the aborted jobs to errorDB
 				if routerAbortedJobs != nil {
-					rt.errorDB.Store(routerAbortedJobs)
+					err := rt.errorDB.Store(routerAbortedJobs)
+					if err != nil {
+						rt.logger.Errorf("[Router] Store into proc error table failed with error: %v", err)
+						rt.logger.Errorf("routerAbortedJobs: %v", routerAbortedJobs)
+						panic(err)
+					}
 				}
 				//Update the status
 				err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
