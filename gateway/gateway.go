@@ -419,11 +419,12 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			eventBatchesToRecord = append(eventBatchesToRecord, fmt.Sprintf("%s", body))
 
 			id := uuid.NewV4()
+			sourceJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       gjson.GetBytes(body, "batch.0.rudderId").Str,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, sourceID, counter)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "job_run_id": "%v"}`, sourceID, counter, sourceJobRunID)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
