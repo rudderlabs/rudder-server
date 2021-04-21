@@ -1359,10 +1359,12 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 	if copyID {
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
 			"event_payload", "created_at", "expire_at"))
-		jd.assertError(err)
 	} else {
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload"))
-		jd.assertError(err)
+	}
+
+	if err != nil {
+		return err
 	}
 
 	defer stmt.Close()
@@ -1373,7 +1375,9 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 		} else {
 			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 		}
-		jd.assertError(err)
+		if err != nil {
+			return err
+		}
 	}
 	_, err = stmt.Exec()
 
