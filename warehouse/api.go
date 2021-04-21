@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
@@ -19,6 +20,7 @@ import (
 )
 
 type UploadsReqT struct {
+	WorkspaceID     string
 	SourceID        string
 	DestinationID   string
 	DestinationType string
@@ -29,8 +31,9 @@ type UploadsReqT struct {
 }
 
 type UploadReqT struct {
-	UploadId int64
-	API      UploadAPIT
+	WorkspaceID string
+	UploadId    int64
+	API         UploadAPIT
 }
 
 type UploadsResT struct {
@@ -139,7 +142,10 @@ var statusMap = map[string]string{
 func (uploadsReq *UploadsReqT) generateQuery(selectFields string) string {
 	query := fmt.Sprintf(`select %s, count(*) OVER() AS total_uploads from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
 	var whereClauses []string
-	if uploadsReq.SourceID != "" {
+	authorizedSourceIDs := uploadsReq.authorizedSources()
+	if uploadsReq.SourceID == "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(`source_id IN (%v)`, misc.SingleQuoteLiteralJoin(authorizedSourceIDs)))
+	} else if misc.ContainsString(authorizedSourceIDs, uploadsReq.SourceID) {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id = '%s'`, uploadsReq.SourceID))
 	}
 	if uploadsReq.DestinationID != "" {
@@ -250,6 +256,9 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadResponse{}, err
+	}
+	if !uploadReq.authorizeSource(upload.SourceId) {
+		return &proto.WHUploadResponse{}, errors.New("Unauthorized request")
 	}
 	upload.CreatedAt = timestamppb.New(createdAt.Time)
 	upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
@@ -368,4 +377,25 @@ func (uploadReq UploadReqT) validateReq() error {
 		return errors.New(fmt.Sprint(`upload_id is empty or should be greater than 0 `))
 	}
 	return nil
+}
+
+func (uploadReq UploadReqT) authorizeSource(sourceID string) bool {
+	var authorizedSourceIDs []string
+	var ok bool
+	sourceIDsByWorkspaceLock.RLock()
+	defer sourceIDsByWorkspaceLock.RUnlock()
+	if authorizedSourceIDs, ok = sourceIDsByWorkspace[uploadReq.WorkspaceID]; !ok {
+		return false
+	}
+	return misc.ContainsString(authorizedSourceIDs, sourceID)
+}
+
+func (uploadsReq UploadsReqT) authorizedSources() (sourceIDs []string) {
+	sourceIDsByWorkspaceLock.RLock()
+	defer sourceIDsByWorkspaceLock.RUnlock()
+	var ok bool
+	if sourceIDs, ok = sourceIDsByWorkspace[uploadsReq.WorkspaceID]; !ok {
+		sourceIDs = []string{}
+	}
+	return sourceIDs
 }
