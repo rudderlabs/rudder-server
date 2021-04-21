@@ -461,6 +461,7 @@ func (job *UploadJobT) run() (err error) {
 				err = misc.ConcatErrors(loadErrors)
 				break
 			}
+			job.generateUploadSuccessMetrics()
 
 			newStatus = nextUploadState.completed
 
@@ -557,7 +558,6 @@ func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 		return
 	}
 
-	job.generateUploadSuccessMetrics()
 	return
 }
 
