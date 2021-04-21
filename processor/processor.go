@@ -96,6 +96,15 @@ type DestStatT struct {
 	destTransform    stats.RudderStats
 }
 
+type ParametersT struct {
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
+	ReceivedAt    string `json:"received_at"`
+	TransformAt   string `json:"transform_at"`
+	MessageID     string `json:"message_id"`
+	GatewayJobID  int64  `json:"gateway_job_id"`
+}
+
 func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) *DestStatT {
 	destinationTag := misc.GetTagName(destination.ID, destination.Name)
 	var module = "router"
@@ -1082,10 +1091,24 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				rudderID = "random-" + id.String()
 			}
 
+			params := ParametersT{
+				SourceID:      sourceID,
+				DestinationID: destID,
+				ReceivedAt:    receivedAt,
+				TransformAt:   transformAt,
+				MessageID:     messageId,
+				GatewayJobID:  jobId,
+			}
+			marshalledParams, err := json.Marshal(params)
+			if err != nil {
+				proc.logger.Errorf("[Processor] Failed to marshal parameters object. Parameters: %v", params)
+				panic(err)
+			}
+
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       rudderID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v", "transform_at": "%v", "message_id" : "%v" , "gateway_job_id" : "%v"}`, sourceID, destID, receivedAt, transformAt, messageId, jobId)),
+				Parameters:   marshalledParams,
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
