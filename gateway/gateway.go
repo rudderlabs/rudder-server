@@ -418,7 +418,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       gjson.GetBytes(body, "batch.0.rudderId").Str,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d,"source_job_run_id": "%s"}`, sourceID, counter, sourcesJobRunID)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "source_job_run_id": "%s"}`, sourceID, counter, sourcesJobRunID)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
