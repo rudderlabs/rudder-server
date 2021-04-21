@@ -105,9 +105,11 @@ func (mr *MockJobsDBMockRecorder) Status() *gomock.Call {
 }
 
 // Store mocks base method
-func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) {
+func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Store", arg0)
+	ret := m.ctrl.Call(m, "Store", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // Store indicates an expected call of Store

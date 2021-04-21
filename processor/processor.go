@@ -1109,12 +1109,22 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-		proc.routerDB.Store(destJobs)
+		err := proc.routerDB.Store(destJobs)
+		if err != nil {
+			proc.logger.Errorf("Store into router table failed with error: %v", err)
+			proc.logger.Errorf("destJobs: %v", destJobs)
+			panic(err)
+		}
 		proc.statDestNumOutputEvents.Count(len(destJobs))
 	}
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
-		proc.batchRouterDB.Store(batchDestJobs)
+		err := proc.batchRouterDB.Store(batchDestJobs)
+		if err != nil {
+			proc.logger.Errorf("Store into batch router table failed with error: %v", err)
+			proc.logger.Errorf("batchDestJobs: %v", batchDestJobs)
+			panic(err)
+		}
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
 
@@ -1124,7 +1134,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 	if len(procErrorJobs) > 0 {
 		proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobs))
-		proc.errorDB.Store(procErrorJobs)
+		err := proc.errorDB.Store(procErrorJobs)
+		if err != nil {
+			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
+			proc.logger.Errorf("procErrorJobs: %v", procErrorJobs)
+			panic(err)
+		}
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
 

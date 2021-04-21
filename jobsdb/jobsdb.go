@@ -71,7 +71,7 @@ type GetQueryParamsT struct {
 JobsDB interface contains public methods to access JobsDB data
 */
 type JobsDB interface {
-	Store(jobList []*JobT)
+	Store(jobList []*JobT) error
 	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
 	CheckPGHealth() bool
 	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
@@ -122,6 +122,10 @@ type JobT struct {
 	EventPayload  json.RawMessage `json:"EventPayload"`
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
+}
+
+func (job *JobT) String() string {
+	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 }
 
 //The struct fields need to be exposed to JSON package
@@ -1359,10 +1363,12 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 	if copyID {
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
 			"event_payload", "created_at", "expire_at"))
-		jd.assertError(err)
 	} else {
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload"))
-		jd.assertError(err)
+	}
+
+	if err != nil {
+		return err
 	}
 
 	defer stmt.Close()
@@ -1373,7 +1379,9 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 		} else {
 			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 		}
-		jd.assertError(err)
+		if err != nil {
+			return err
+		}
 	}
 	_, err = stmt.Exec()
 
@@ -2641,14 +2649,14 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 /*
 Store call is used to create new Jobs
 */
-func (jd *HandleT) Store(jobList []*JobT) {
+func (jd *HandleT) Store(jobList []*JobT) error {
 	//Only locks the list
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList(false)
 	err := jd.storeJobsDS(dsList[len(dsList)-1], false, jobList)
-	jd.assertError(err)
+	return err
 }
 
 /*
