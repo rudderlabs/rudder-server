@@ -76,7 +76,6 @@ var (
 var (
 	host, user, password, dbname, sslmode string
 	port                                  int
-	destinationIDs                        []string
 )
 
 // warehouses worker modes
