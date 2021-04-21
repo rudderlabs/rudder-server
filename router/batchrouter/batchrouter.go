@@ -60,20 +60,21 @@ var (
 )
 
 type HandleT struct {
-	destType                string
-	destinationsMap         map[string]*BatchDestinationT // destinationID -> destination
-	netHandle               *http.Client
-	processQ                chan BatchDestinationT
-	jobsDB                  *jobsdb.HandleT
-	errorDB                 jobsdb.JobsDB
-	isEnabled               bool
-	batchRequestsMetricLock sync.RWMutex
-	diagnosisTicker         *time.Ticker
-	batchRequestsMetric     []batchRequestMetric
-	logger                  logger.LoggerI
-	noOfWorkers             int
-	maxFailedCountForJob    int
-	retryTimeWindow         time.Duration
+	destType                 string
+	destinationsMap          map[string]*BatchDestinationT // destinationID -> destination
+	connectionWHNamespaceMap map[string]string             // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
+	netHandle                *http.Client
+	processQ                 chan BatchDestinationT
+	jobsDB                   *jobsdb.HandleT
+	errorDB                  jobsdb.JobsDB
+	isEnabled                bool
+	batchRequestsMetricLock  sync.RWMutex
+	diagnosisTicker          *time.Ticker
+	batchRequestsMetric      []batchRequestMetric
+	logger                   logger.LoggerI
+	noOfWorkers              int
+	maxFailedCountForJob     int
+	retryTimeWindow          time.Duration
 }
 
 type BatchDestinationT struct {
@@ -96,6 +97,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 		config := <-ch
 		configSubscriberLock.Lock()
 		brt.destinationsMap = map[string]*BatchDestinationT{}
+		brt.connectionWHNamespaceMap = map[string]string{}
 		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
@@ -108,10 +110,13 @@ func (brt *HandleT) backendConfigSubscriber() {
 
 						// initialize map to track encountered anonymousIds for a warehouse destination
 						if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
-							identifier := connectionString(DestinationT{Destination: destination, Source: source})
+							connIdentifier := connectionIdentifier(DestinationT{Destination: destination, Source: source})
+							warehouseConnIdentifier := brt.warehouseConnectionIdentifier(connIdentifier, source, destination)
+							brt.connectionWHNamespaceMap[connIdentifier] = warehouseConnIdentifier
+
 							encounteredMergeRuleMapLock.Lock()
-							if _, ok := encounteredMergeRuleMap[identifier]; !ok {
-								encounteredMergeRuleMap[identifier] = make(map[string]bool)
+							if _, ok := encounteredMergeRuleMap[warehouseConnIdentifier]; !ok {
+								encounteredMergeRuleMap[warehouseConnIdentifier] = make(map[string]bool)
 							}
 							encounteredMergeRuleMapLock.Unlock()
 						}
@@ -200,7 +205,8 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 	var dedupedIDMergeRuleJobs int
 	eventsFound := false
-	identifier := connectionString(*batchJobs.BatchDestination)
+	connIdentifier := connectionIdentifier(*batchJobs.BatchDestination)
+	warehouseConnIdentifier := brt.connectionWHNamespaceMap[connIdentifier]
 	for _, job := range batchJobs.Jobs {
 		// do not add to staging file if the event is a rudder_identity_merge_rules record
 		// and has been previously added to it
@@ -209,13 +215,16 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 			mergeProp2 := gjson.GetBytes(job.EventPayload, "metadata.mergePropTwo").String()
 			ruleIdentifier := fmt.Sprintf(`%s::%s`, mergeProp1, mergeProp2)
 			encounteredMergeRuleMapLock.Lock()
-			if _, ok := encounteredMergeRuleMap[identifier][ruleIdentifier]; ok {
+			configSubscriberLock.Lock()
+			if _, ok := encounteredMergeRuleMap[warehouseConnIdentifier][ruleIdentifier]; ok {
 				encounteredMergeRuleMapLock.Unlock()
+				configSubscriberLock.Unlock()
 				dedupedIDMergeRuleJobs++
 				continue
 			} else {
-				encounteredMergeRuleMap[identifier][ruleIdentifier] = true
+				encounteredMergeRuleMap[warehouseConnIdentifier][ruleIdentifier] = true
 				encounteredMergeRuleMapLock.Unlock()
+				configSubscriberLock.Unlock()
 			}
 		}
 
@@ -711,8 +720,29 @@ type BatchJobsT struct {
 	BatchDestination *DestinationT
 }
 
-func connectionString(batchDestination DestinationT) string {
+func connectionIdentifier(batchDestination DestinationT) string {
 	return fmt.Sprintf(`source:%s::destination:%s`, batchDestination.Source.ID, batchDestination.Destination.ID)
+}
+
+func (brt *HandleT) warehouseConnectionIdentifier(connIdentifier string, source backendconfig.SourceT, destination backendconfig.DestinationT) string {
+	namespace := brt.getNamespace(destination.Config, source, destination, brt.destType)
+	return fmt.Sprintf(`namespace:%s::%s`, namespace, connIdentifier)
+}
+
+func (brt *HandleT) getNamespace(config interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
+	configMap := config.(map[string]interface{})
+	var namespace string
+	if destType == "CLICKHOUSE" {
+		//TODO: Handle if configMap["database"] is nil
+		return configMap["database"].(string)
+	}
+	if configMap["namespace"] != nil {
+		namespace = configMap["namespace"].(string)
+		if len(strings.TrimSpace(namespace)) > 0 {
+			return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, namespace))
+		}
+	}
+	return warehouseutils.ToProviderCase(destType, warehouseutils.ToSafeNamespace(destType, source.Name))
 }
 
 func isDestInProgress(destID string) bool {
