@@ -654,9 +654,16 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			continue
 		}
 
+		upload.SourceType = warehouse.Source.SourceDefinition.Name
+		upload.SourceCategory = warehouse.Source.SourceDefinition.Category
+
 		stagingFilesList, err := wh.getStagingFiles(warehouse, upload.StartStagingFileID, upload.EndStagingFileID)
 		if err != nil {
 			return nil, err
+		}
+		var stagingFileIDs []int64
+		for _, stagingFile := range stagingFilesList {
+			stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
 		}
 
 		whManager, err := manager.New(wh.destType)
@@ -665,12 +672,13 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		}
 
 		uploadJob := UploadJobT{
-			upload:       &upload,
-			stagingFiles: stagingFilesList,
-			warehouse:    warehouse,
-			whManager:    whManager,
-			dbHandle:     wh.dbHandle,
-			pgNotifier:   &wh.notifier,
+			upload:         &upload,
+			stagingFiles:   stagingFilesList,
+			stagingFileIDs: stagingFileIDs,
+			warehouse:      warehouse,
+			whManager:      whManager,
+			dbHandle:       wh.dbHandle,
+			pgNotifier:     &wh.notifier,
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)

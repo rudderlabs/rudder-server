@@ -100,14 +100,14 @@ func (tableUpload *TableUploadT) updateTableEventsCount(job *UploadJobT) (err er
 				total_events,
 				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
 				FROM %[1]s
-				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s' AND table_name = '%[6]s'
+				WHERE staging_file_id IN (%[2]v) AND table_name = '%[3]s'
 		)
 		SELECT sum(total_events) as total
 			FROM row_numbered_load_files
 			WHERE
 				row_number=1
 		`,
-		warehouseutils.WarehouseLoadFilesTable, job.upload.StartLoadFileID, job.upload.EndLoadFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID, tableUpload.tableName)
+		warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(job.stagingFileIDs, ","), tableUpload.tableName)
 
 	sqlStatement := fmt.Sprintf(`update %[1]s set total_events = subquery.total FROM (%[2]s) AS subquery WHERE table_name = '%[3]s' AND wh_upload_id = %[4]d`,
 		warehouseutils.WarehouseTableUploadsTable,

@@ -60,7 +60,7 @@ func configureLogger() *zap.SugaredLogger {
 	}
 	combinedCore := zapcore.NewTee(cores...)
 	if enableFileNameInLog {
-		options = append(options, zap.AddCaller(), zap.AddCallerSkip(2))
+		options = append(options, zap.AddCaller(), zap.AddCallerSkip(1))
 	}
 	if enableStackTrace {
 		// enables stack track for log level error

@@ -116,7 +116,6 @@ func uploadJobs(deliveryStatusesBuffer []*DeliveryStatusT) {
 
 	rawJSON, err := json.Marshal(res)
 	if err != nil {
-		pkgLogger.Debugf(string(rawJSON))
 		misc.AssertErrorIfDev(err)
 		return
 	}
