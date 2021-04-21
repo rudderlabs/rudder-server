@@ -81,13 +81,13 @@ type ReportByStatus struct {
 }
 
 type InstanceDetails struct {
-	WorksapceID string `json:"workspace_id"`
+	WorksapceID string `json:"workspaceId"`
 	Namespace   string `json:"namespace"`
-	InstanceID  string `json:"instance_id"`
+	InstanceID  string `json:"instanceId"`
 }
 
 type ReportMetadata struct {
-	ReportedMin int64 `json:"reported_min"`
+	ReportedMin int64 `json:"reportedMin"`
 }
 
 type Metric struct {
@@ -99,19 +99,19 @@ type Metric struct {
 }
 
 type ConnectionDetails struct {
-	SourceID        string `json:"source_id"`
-	DestinationID   string `json:"destination_id"`
-	SourceBatchID   string `json:"source_batch_id"`
-	SourceTaskID    string `json:"source_task_id"`
-	SourceTaskRunID string `json:"source_task_run_id"`
-	SourceJobID     string `json:"source_job_id"`
-	SourceJobRunID  string `json:"source_job_run_id"`
+	SourceID        string `json:"sourceId"`
+	DestinationID   string `json:"destinationId"`
+	SourceBatchID   string `json:"sourceBatchId"`
+	SourceTaskID    string `json:"sourceTaskId"`
+	SourceTaskRunID string `json:"sourceTaskRunId"`
+	SourceJobID     string `json:"sourceJobId"`
+	SourceJobRunID  string `json:"sourceJobRunId"`
 }
 type PUDetails struct {
-	InPU       string `json:"in_reported_by"`
-	PU         string `json:"reported_by"`
-	TerminalPU bool   `json:"terminal_state"`
-	InitialPU  bool   `json:"initial_state"`
+	InPU       string `json:"inReportedBy"`
+	PU         string `json:"reportedBy"`
+	TerminalPU bool   `json:"terminalState"`
+	InitialPU  bool   `json:"initialState"`
 }
 
 type PUReportedMetric struct {
@@ -456,9 +456,9 @@ func (client *Client) Report(metrics []*PUReportedMetric, txn *sql.Tx) {
 	}
 	defer stmt.Close()
 
-	reported_min := time.Now().UTC().Unix() / 60
+	reportedMin := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
-		_, err = stmt.Exec(client.Config.WorksapceID, client.Config.Namespace, client.Config.WorksapceID, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.SourceBatchID, metric.ConnectionDetails.SourceTaskID, metric.ConnectionDetails.SourceTaskRunID, metric.ConnectionDetails.SourceJobID, metric.ConnectionDetails.SourceJobRunID, metric.PUDetails.InPU, metric.PUDetails.PU, reported_min, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, metric.StatusDetail.SampleEvent)
+		_, err = stmt.Exec(client.Config.WorksapceID, client.Config.Namespace, client.Config.WorksapceID, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.SourceBatchID, metric.ConnectionDetails.SourceTaskID, metric.ConnectionDetails.SourceTaskRunID, metric.ConnectionDetails.SourceJobID, metric.ConnectionDetails.SourceJobRunID, metric.PUDetails.InPU, metric.PUDetails.PU, reportedMin, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, metric.StatusDetail.SampleEvent)
 		if err != nil {
 			panic(err)
 		}
