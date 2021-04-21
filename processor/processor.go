@@ -644,10 +644,7 @@ func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsd
 	metadata.RudderID = batchEvent.UserID
 	metadata.JobID = batchEvent.JobID
 	metadata.DestinationType = destination.DestinationDefinition.Name
-	fmt.Printf("msgid: %v", event.Message["messageId"])
-	//metadata.MessageID = event.Message["messageId"].(string)
-	metadata.MessageID = fmt.Sprintf("%v", event.Message["messageId"])
-	fmt.Printf("msgid: %v", metadata.MessageID)
+	metadata.MessageID = event.Message["messageId"].(string)
 	if event.SessionID != "" {
 		metadata.SessionID = event.SessionID
 	}
