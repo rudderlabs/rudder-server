@@ -124,6 +124,10 @@ type JobT struct {
 	Parameters    json.RawMessage `json:"Parameters"`
 }
 
+func (job *JobT) String() string {
+	return fmt.Sprintf("JobID=%v, CustomVal=%v, EventPayload=%v", job.JobID, job.CustomVal, string(job.EventPayload))
+}
+
 //The struct fields need to be exposed to JSON package
 type dataSetT struct {
 	JobTable       string `json:"job"`
