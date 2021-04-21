@@ -118,13 +118,13 @@ func init() {
 func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
-	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL"}
 	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
 	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
 	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
 	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
 	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 1) * time.Second
-	crashRecoverWarehouses = []string{"RS"}
+	crashRecoverWarehouses = []string{"RS", "MSSQL"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
@@ -787,6 +787,7 @@ var loadFileFormatMap = map[string]string{
 	"SNOWFLAKE":  "csv",
 	"POSTGRES":   "csv",
 	"CLICKHOUSE": "csv",
+	"MSSQL":      "csv",
 }
 
 func minimalConfigSubscriber() {
