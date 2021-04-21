@@ -644,7 +644,10 @@ func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsd
 	metadata.RudderID = batchEvent.UserID
 	metadata.JobID = batchEvent.JobID
 	metadata.DestinationType = destination.DestinationDefinition.Name
-	metadata.MessageID = event.Message["messageId"].(string)
+	fmt.Printf("msgid: %v", event.Message["messageId"])
+	//metadata.MessageID = event.Message["messageId"].(string)
+	metadata.MessageID = fmt.Sprintf("%v", event.Message["messageId"])
+	fmt.Printf("msgid: %v", metadata.MessageID)
 	if event.SessionID != "" {
 		metadata.SessionID = event.SessionID
 	}
@@ -1007,6 +1010,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			transformAt = val
 		}
 
+		fmt.Printf("eventsToTransform :: %v", eventsToTransform)
 		if transformAt == "processor" {
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 		} else {
@@ -1019,6 +1023,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventsToTransform, Stage: "destination-transformer", ProcessingTime: timeTaken, Index: -1}, &proc.destTransformEventsByTimeTaken)
 
 		destTransformEventList := response.Events
+		fmt.Printf("out metadata : %v", destTransformEventList[0].Metadata.MessageID)
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
 		destStat.numOutputEvents.Count(len(destTransformEventList))
 
