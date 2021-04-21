@@ -42,6 +42,8 @@ const (
 	SourceTransformerInvalidOutputJSON = "Invalid output json in source transformer response"
 	//NonIdentifiableRequest - Request neither has anonymousId nor userId
 	NonIdentifiableRequest = "Request neither has anonymousId nor userId"
+
+	InvalidMessageId = "Request has Message ID with Invalid Characters"
 )
 
 var (

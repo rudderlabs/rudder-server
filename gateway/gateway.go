@@ -89,6 +89,8 @@ var BatchEvent = []byte(`
 	}
 `)
 
+var invalidMesageIdRegex = "\n"
+
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("gateway")
@@ -367,28 +369,38 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			result := gjson.GetBytes(body, "batch")
 			out := []map[string]interface{}{}
 
-			var notIdentifiable bool
+			var isNotIdentifiable bool
+			var isInvalidMessageID bool
 			result.ForEach(func(_, vjson gjson.Result) bool {
 				anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
 				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
 
 				if anonIDFromReq == "" {
 					if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
-						notIdentifiable = true
+						isNotIdentifiable = true
 						return false
 					}
 				}
 				// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
 				rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 				if err != nil {
-					notIdentifiable = true
+					isNotIdentifiable = true
 					return false
 				}
 
 				toSet := vjson.Value().(map[string]interface{})
 				toSet["rudderId"] = rudderId
-				if messageId := strings.TrimSpace(vjson.Get("messageId").String()); messageId == "" {
+				messageId := strings.TrimSpace(vjson.Get("messageId").String())
+				if messageId == "" {
 					toSet["messageId"] = uuid.NewV4().String()
+				} else {
+					isInvalidMessageID, err = regexp.Match(invalidMesageIdRegex, []byte(messageId))
+					if err != nil {
+						panic(err)
+					}
+					if isInvalidMessageID {
+						return false
+					}
 				}
 				out = append(out, toSet)
 				return true // keep iterating
@@ -396,13 +408,18 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 			body, _ = sjson.SetBytes(body, "batch", out)
 
-			if notIdentifiable {
+			if isNotIdentifiable {
 				req.done <- response.GetStatus(response.NonIdentifiableRequest)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, "notIdentifiable", 1)
 				continue
 			}
-
+			if isInvalidMessageID {
+				req.done <- response.GetStatus(response.InvalidMessageId)
+				preDbStoreCount++
+				misc.IncrementMapByKey(sourceFailStats, "InvalidMessageId", 1)
+				continue
+			}
 			if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
 				userID := gjson.GetBytes(body, "batch.0.userId").String()
 				if gateway.suppressUserHandler.IsSuppressedUser(userID, gateway.getSourceIDForWriteKey(writeKey), writeKey) {
