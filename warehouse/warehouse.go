@@ -70,6 +70,7 @@ var (
 	slaveUploadTimeout                  time.Duration
 	runningMode                         string
 	uploadStatusTrackFrequency          time.Duration
+	uploadBufferTimeInMin               int
 )
 
 var (
@@ -145,7 +146,8 @@ func loadConfig() {
 	slaveUploadTimeout = config.GetDuration("Warehouse.slaveUploadTimeoutInMin", time.Duration(10)) * time.Minute
 	numLoadFileUploadWorkers = config.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
-	uploadStatusTrackFrequency = config.GetDuration("Warehouse.uploadStatusTrackFrequencyInMin", time.Duration(2)) * time.Minute
+	uploadStatusTrackFrequency = config.GetDuration("Warehouse.uploadStatusTrackFrequencyInMin", time.Duration(30)) * time.Minute
+	uploadBufferTimeInMin = config.GetInt("Warehouse.uploadBufferTimeInMin", 180)
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -720,36 +722,44 @@ func (wh *HandleT) uploadStatusTrack() {
 			if !source.Enabled || !destination.Enabled {
 				continue
 			}
+
 			config := destination.Config
-			syncFrequency := "1440" //default frequency
+			// Default frequency
+			syncFrequency := "1440"
 			if config[warehouseutils.SyncFrequency] != nil {
 				syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
 			}
 
+			timeWindow := uploadBufferTimeInMin
+			if value, err := strconv.Atoi(syncFrequency); err == nil {
+				timeWindow += value
+			}
+
 			sqlStatement := fmt.Sprintf(`
-				select cast( case when count(*) > 0 then 1 else 0 end as bit) from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s') and updated_at > now() - interval '%[6]s'`,
-				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, uploadStatusTrackFrequency)
-			fmt.Println(sqlStatement)
+				select 
+					cast( case when count(*) > 0 then 1 else 0 end as bit ), 
+						(select count(*) from %[7]s where source_id='%[2]s' and destination_id='%[3]s' and created_at > now() - interval '%[6]d MIN') as staging_files_count 
+				from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s') and updated_at > now() - interval '%[6]d MIN'`,
+				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, timeWindow, warehouseutils.WarehouseStagingFilesTable)
+
 			rows, err := wh.dbHandle.Query(sqlStatement)
 
 			if err != nil && err != sql.ErrNoRows {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}
 
-			var uploaded int
+			var uploaded, staging_files_count int
 			for rows.Next() {
-				err = rows.Scan(&uploaded)
+				err = rows.Scan(&uploaded, &staging_files_count)
 				if err != nil {
 					panic(err)
 				}
 			}
 			rows.Close()
-			tags := []tag{
-				{name: "value", value: strconv.Itoa(uploaded)},
-				{name: "syncFrequency", value: syncFrequency},
-			}
 
-			counterStat(warehouse, "warehouse_successful_upload_exists", tags...).Count(1)
+			if staging_files_count > 0 {
+				recordUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name).Count(uploaded)
+			}
 		}
 	}
 }
