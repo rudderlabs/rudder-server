@@ -108,9 +108,8 @@ func watchForConfigChange() {
 			}
 			_value = _value * configVal.multiplier.(int)
 			if _value != *value {
+				fmt.Printf("The value of %s changed from %d to %d", key, *value, _value)
 				*value = _value
-
-				fmt.Printf("The value of %s changed to %d", key, _value)
 			}
 		case *int64:
 			var _value int64
@@ -133,8 +132,8 @@ func watchForConfigChange() {
 			}
 			_value = _value * configVal.multiplier.(int64)
 			if _value != *value {
+				fmt.Printf("The value of %s changed from %d to %d", key, *value, _value)
 				*value = _value
-				fmt.Printf("The value of %s changed to %d", key, _value)
 			}
 		case *string:
 			var _value string
@@ -156,8 +155,8 @@ func watchForConfigChange() {
 				_value = configVal.defaultValue.(string)
 			}
 			if _value != *value {
+				fmt.Printf("The value of %s changed from %v to %v", key, *value, _value)
 				*value = _value
-				fmt.Printf("The value of %s changed to %s", key, _value)
 			}
 		case *time.Duration:
 			var _value time.Duration
@@ -180,8 +179,8 @@ func watchForConfigChange() {
 			}
 			_value = _value * configVal.multiplier.(time.Duration)
 			if _value != *value {
+				fmt.Printf("The value of %s changed from %v to %v", key, *value, _value)
 				*value = _value
-				fmt.Printf("The value of %s changed to %s", key, _value)
 			}
 		case *bool:
 			var _value bool
@@ -203,8 +202,8 @@ func watchForConfigChange() {
 				_value = configVal.defaultValue.(bool)
 			}
 			if _value != *value {
+				fmt.Printf("The value of %s changed from %v to %v", key, *value, _value)
 				*value = _value
-				fmt.Printf("The value of %s changed to %v", key, _value)
 			}
 		case *float64:
 			var _value float64
@@ -227,8 +226,8 @@ func watchForConfigChange() {
 			}
 			_value = _value * configVal.multiplier.(float64)
 			if _value != *value {
+				fmt.Printf("The value of %s changed from %v to %v", key, *value, _value)
 				*value = _value
-				fmt.Printf("The value of %s changed to %v", key, _value)
 			}
 		}
 
@@ -296,7 +295,6 @@ func RegisterBoolConfigVariable(defaultValue bool, ptr *bool, isHotReloadable bo
 	if isHotReloadable {
 		configVar := ConfigVar{
 			value:           ptr,
-			multiplier:      1,
 			isHotReloadable: isHotReloadable,
 			defaultValue:    defaultValue,
 			keys:            keys,
@@ -400,7 +398,6 @@ func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloada
 	if isHotReloadable {
 		configVar := ConfigVar{
 			value:           ptr,
-			multiplier:      1,
 			isHotReloadable: isHotReloadable,
 			defaultValue:    defaultValue,
 			keys:            keys,
