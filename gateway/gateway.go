@@ -75,6 +75,7 @@ var (
 	enableEventSchemasFeature                                   bool
 	diagnosisTickerTime                                         time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                        bool
+	gwAllowPartialWriteWithErrors                               bool
 	pkgLogger                                                   logger.LoggerI
 	Diagnostics                                                 diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
@@ -222,7 +223,6 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 }
 
 func (gateway *HandleT) dbWriterWorkerProcess(process int) {
-	gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
 		jobList := make([]*jobsdb.JobT, 0)
 		var errorMessagesMap map[uuid.UUID]string

@@ -12,9 +12,9 @@ func loadConfig() {
 
 	sourceTransformerURL = strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/sources"
 	// Number of incoming webhooks that are batched before calling source transformer
-	maxWebhookBatchSize = config.GetInt("Gateway.webhook.maxBatchSize", 32)
+	config.RegisterIntConfigVariable(32, &maxWebhookBatchSize, true, 1, "Gateway.webhook.maxBatchSize")
 	// Timeout after which batch is formed anyway with whatever webhooks are available
-	webhookBatchTimeout = (config.GetDuration("Gateway.webhook.batchTimeoutInMS", time.Duration(20)) * time.Millisecond)
+	config.RegisterDurationConfigVariable(time.Duration(20), &webhookBatchTimeout, true, time.Millisecond, "Gateway.webhook.batchTimeoutInMS")
 	// Multiple source transformers are used to generate rudder events from webhooks
 	maxTransformerProcess = config.GetInt("Gateway.webhook.maxTransformerProcess", 64)
 	// Max time till when retries to source transformer are done

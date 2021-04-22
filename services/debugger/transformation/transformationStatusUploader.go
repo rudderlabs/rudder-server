@@ -80,7 +80,7 @@ func init() {
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-	disableTransformationUploads = config.GetBool("TransformationDebugger.disableTransformationStatusUploads", false)
+	config.RegisterBoolConfigVariable(false, &disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
 }
 
 type TransformationStatusUploader struct {

@@ -98,8 +98,8 @@ var (
 func loadConfig() {
 	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
 	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
-	maxRetry = config.GetInt("Processor.maxRetry", 30)
-	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
+	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, "Processor.retrySleepInMS")
 }
 
 func init() {

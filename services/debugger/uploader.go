@@ -38,11 +38,11 @@ func init() {
 
 func loadConfig() {
 	//Number of events that are batched before sending events to control plane
-	maxBatchSize = config.GetInt("Debugger.maxBatchSize", 32)
-	maxESQueueSize = config.GetInt("Debugger.maxESQueueSize", 1024)
-	maxRetry = config.GetInt("Debugger.maxRetry", 3)
-	batchTimeout = config.GetDuration("Debugger.batchTimeoutInS", time.Duration(2)) * time.Second
-	retrySleep = config.GetDuration("Debugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	config.RegisterIntConfigVariable(32, &maxBatchSize, true, 1, "Debugger.maxBatchSize")
+	config.RegisterIntConfigVariable(1024, &maxESQueueSize, true, 1, "Debugger.maxESQueueSize")
+	config.RegisterIntConfigVariable(3, &maxRetry, true, 1, "Debugger.maxRetry")
+	config.RegisterDurationConfigVariable(time.Duration(2), &batchTimeout, true, time.Second, "Debugger.batchTimeoutInS")
+	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, "Debugger.retrySleepInMS")
 }
 
 func New(url string, transformer Transformer) *Uploader {

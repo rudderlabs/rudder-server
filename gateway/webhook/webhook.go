@@ -30,7 +30,6 @@ var (
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("gateway").Child("webhook")
-
 }
 
 type webhookT struct {
