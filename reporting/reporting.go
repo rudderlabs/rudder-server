@@ -87,7 +87,7 @@ type InstanceDetails struct {
 }
 
 type ReportMetadata struct {
-	ReportedMin int64 `json:"reportedMin"`
+	ReportedAt int64 `json:"reportedAt"`
 }
 
 type Metric struct {
@@ -151,7 +151,7 @@ func setupTable(dbHandle *sql.DB) error {
 		source_job_run_id VARCHAR(64),
 		in_pu VARCHAR(64),
 		pu VARCHAR(64),
-		reported_min BIGINT NOT NULL,
+		reported_at BIGINT NOT NULL,
 		status_code INT,
 		sample_response TEXT,
 		sample_event JSONB,
@@ -305,8 +305,8 @@ func AssertSameKeys(m1 map[string]*ConnectionDetails, m2 map[string]*StatusDetai
 	}
 }
 
-func getReports(current_min int64, clientName string) (reports []*ReportByStatus, reportedMin int64) {
-	sqlStatement := fmt.Sprintf(`SELECT reported_min FROM %s WHERE reported_min < %d ORDER BY reported_min ASC LIMIT 1`, REPORTS_TABLE, current_min)
+func getReports(current_ms int64, clientName string) (reports []*ReportByStatus, reportedAt int64) {
+	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, REPORTS_TABLE, current_ms)
 	var queryMin sql.NullInt64
 	err := getDBHandle(clientName).QueryRow(sqlStatement).Scan(&queryMin)
 	if err != nil && err != sql.ErrNoRows {
@@ -316,7 +316,7 @@ func getReports(current_min int64, clientName string) (reports []*ReportByStatus
 		return nil, 0
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_id, destination_id, source_batch_id, source_task_id, source_task_run_id, source_job_id, source_job_run_id, in_pu, pu, reported_min, status, count, terminal_state, initial_state, status_code, sample_response, sample_event FROM %s WHERE reported_min = %d`, REPORTS_TABLE, queryMin.Int64)
+	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_id, destination_id, source_batch_id, source_task_id, source_task_run_id, source_job_id, source_job_run_id, in_pu, pu, reported_at, status, count, terminal_state, initial_state, status_code, sample_response, sample_event FROM %s WHERE reported_at = %d`, REPORTS_TABLE, queryMin.Int64)
 	var rows *sql.Rows
 	rows, err = getDBHandle(clientName).Query(sqlStatement)
 	if err != nil {
@@ -327,7 +327,7 @@ func getReports(current_min int64, clientName string) (reports []*ReportByStatus
 	var metricReports []*ReportByStatus
 	for rows.Next() {
 		metricReport := ReportByStatus{StatusDetail: &StatusDetail{}}
-		err = rows.Scan(&metricReport.InstanceDetails.WorksapceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID, &metricReport.ConnectionDetails.SourceID, &metricReport.ConnectionDetails.DestinationID, &metricReport.ConnectionDetails.SourceBatchID, &metricReport.ConnectionDetails.SourceTaskID, &metricReport.ConnectionDetails.SourceTaskRunID, &metricReport.ConnectionDetails.SourceJobID, &metricReport.ConnectionDetails.SourceJobRunID, &metricReport.PUDetails.InPU, &metricReport.PUDetails.PU, &metricReport.ReportedMin, &metricReport.StatusDetail.Status, &metricReport.StatusDetail.Count, &metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU, &metricReport.StatusDetail.StatusCode, &metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent)
+		err = rows.Scan(&metricReport.InstanceDetails.WorksapceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID, &metricReport.ConnectionDetails.SourceID, &metricReport.ConnectionDetails.DestinationID, &metricReport.ConnectionDetails.SourceBatchID, &metricReport.ConnectionDetails.SourceTaskID, &metricReport.ConnectionDetails.SourceTaskRunID, &metricReport.ConnectionDetails.SourceJobID, &metricReport.ConnectionDetails.SourceJobRunID, &metricReport.PUDetails.InPU, &metricReport.PUDetails.PU, &metricReport.ReportedAt, &metricReport.StatusDetail.Status, &metricReport.StatusDetail.Count, &metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU, &metricReport.StatusDetail.StatusCode, &metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent)
 		if err != nil {
 			panic(err)
 		}
@@ -370,7 +370,7 @@ func getAggregatedReports(reports []*ReportByStatus) []*Metric {
 					InitialPU:  report.InitialPU,
 				},
 				ReportMetadata: ReportMetadata{
-					ReportedMin: report.ReportedMin,
+					ReportedAt: report.ReportedAt,
 				},
 			}
 		}
@@ -405,8 +405,8 @@ func mainLoop(clientName string) {
 	netClient := &http.Client{Transport: tr}
 	for {
 		allReported := true
-		currentMin := time.Now().UTC().Unix() / 60
-		reports, reportedMin := getReports(currentMin, clientName)
+		currentMs := time.Now().UTC().UnixNano() / int64(time.Millisecond)
+		reports, reportedAt := getReports(currentMs, clientName)
 		if reports == nil || len(reports) == 0 {
 			time.Sleep(30 * time.Second)
 			continue
@@ -439,7 +439,7 @@ func mainLoop(clientName string) {
 			}
 		}
 		if allReported {
-			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_min = %d`, REPORTS_TABLE, reportedMin)
+			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, REPORTS_TABLE, reportedAt)
 			_, err := getDBHandle(clientName).Exec(sqlStatement)
 			if err != nil {
 				pkgLogger.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, REPORTS_TABLE, err)
@@ -450,15 +450,15 @@ func mainLoop(clientName string) {
 }
 
 func (client *Client) Report(metrics []*PUReportedMetric, txn *sql.Tx) {
-	stmt, err := txn.Prepare(pq.CopyIn(REPORTS_TABLE, "workspace_id", "namespace", "instance_id", "source_id", "destination_id", "source_batch_id", "source_task_id", "source_task_run_id", "source_job_id", "source_job_run_id", "in_pu", "pu", "reported_min", "status", "count", "terminal_state", "initial_state", "status_code", "sample_response", "sample_event"))
+	stmt, err := txn.Prepare(pq.CopyIn(REPORTS_TABLE, "workspace_id", "namespace", "instance_id", "source_id", "destination_id", "source_batch_id", "source_task_id", "source_task_run_id", "source_job_id", "source_job_run_id", "in_pu", "pu", "reported_at", "status", "count", "terminal_state", "initial_state", "status_code", "sample_response", "sample_event"))
 	if err != nil {
 		panic(err)
 	}
 	defer stmt.Close()
 
-	reportedMin := time.Now().UTC().Unix() / 60
+	reportedAt := time.Now().UTC().UnixNano() / int64(time.Millisecond)
 	for _, metric := range metrics {
-		_, err = stmt.Exec(client.Config.WorksapceID, client.Config.Namespace, client.Config.WorksapceID, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.SourceBatchID, metric.ConnectionDetails.SourceTaskID, metric.ConnectionDetails.SourceTaskRunID, metric.ConnectionDetails.SourceJobID, metric.ConnectionDetails.SourceJobRunID, metric.PUDetails.InPU, metric.PUDetails.PU, reportedMin, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, metric.StatusDetail.SampleEvent)
+		_, err = stmt.Exec(client.Config.WorksapceID, client.Config.Namespace, client.Config.WorksapceID, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.SourceBatchID, metric.ConnectionDetails.SourceTaskID, metric.ConnectionDetails.SourceTaskRunID, metric.ConnectionDetails.SourceJobID, metric.ConnectionDetails.SourceJobRunID, metric.PUDetails.InPU, metric.PUDetails.PU, reportedAt, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, metric.StatusDetail.SampleEvent)
 		if err != nil {
 			panic(err)
 		}
