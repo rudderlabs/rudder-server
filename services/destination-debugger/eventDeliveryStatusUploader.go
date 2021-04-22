@@ -60,6 +60,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, "DestinationDebugger.retrySleepInMS")
 	config.RegisterBoolConfigVariable(false, &disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
 
+<<<<<<< HEAD
 func destinationDebuggerReloadableConfig() {
 	_maxBatchSize := config.GetInt("DestinationDebugger.maxBatchSize", 32)
 	if _maxBatchSize != maxBatchSize {
@@ -91,6 +92,8 @@ func destinationDebuggerReloadableConfig() {
 		disableEventDeliveryStatusUploads = _disableEventDeliveryStatusUploads
 		pkgLogger.Info("DestinationDebugger.disableEventDeliveryStatusUploads changes to ", disableEventDeliveryStatusUploads)
 	}
+=======
+>>>>>>> 4207c166322d1dcdceb8464abfeeb357a18ccb1b
 }
 
 //RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,

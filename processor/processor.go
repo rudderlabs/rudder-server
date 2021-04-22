@@ -248,6 +248,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
+
 	proc.transformer.Setup()
 
 	proc.crashRecover()
