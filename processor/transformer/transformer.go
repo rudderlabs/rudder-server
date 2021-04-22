@@ -34,6 +34,7 @@ type MetadataT struct {
 	SourceType      string `json:"sourceType"`
 	SourceCategory  string `json:"sourceCategory"`
 	DestinationID   string `json:"destinationId"`
+	JobRunID        string `json: "jobRunId"`
 	JobID           int64  `json:"jobId"`
 	DestinationType string `json:"destinationType"`
 	MessageID       string `json:"messageId"`
