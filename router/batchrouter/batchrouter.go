@@ -554,7 +554,9 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			PUDetails:         *reporting.CreatePUDetails(reporting.DEST_TRANSFORMER, reporting.BATCH_ROUTER, terminalPU, false),
 			StatusDetail:      statusDetailsMap[k],
 		}
-		reportMetrics = append(reportMetrics, m)
+		if m.StatusDetail.Count != 0 {
+			reportMetrics = append(reportMetrics, m)
+		}
 	}
 
 	//Mark the status of the jobs

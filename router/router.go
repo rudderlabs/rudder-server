@@ -1041,7 +1041,9 @@ func (rt *HandleT) statusInsertLoop() {
 					PUDetails:         *reporting.CreatePUDetails(reporting.DEST_TRANSFORMER, reporting.ROUTER, true, false),
 					StatusDetail:      statusDetailsMap[k],
 				}
-				reportMetrics = append(reportMetrics, m)
+				if m.StatusDetail.Count != 0 {
+					reportMetrics = append(reportMetrics, m)
+				}
 			}
 
 			if len(statusList) > 0 {
