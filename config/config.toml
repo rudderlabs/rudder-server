@@ -91,21 +91,21 @@ maxTransformerProcess = 64
 maxRetry = 5
 maxRetryTimeInS = 10
 
-[SourceDebugger]
+[Debugger]
 maxBatchSize = 32
 maxESQueueSize = 1024
 maxRetry = 3
 batchTimeoutInS = 2
 retrySleepInMS = 100
+
+[SourceDebugger]
 disableEventUploads = false
 
 [DestinationDebugger]
-maxBatchSize = 32
-maxESQueueSize = 1024
-maxRetry = 3
-batchTimeoutInS = 2
-retrySleepInMS = 100
 disableEventDeliveryStatusUploads = false
+
+[TransformationDebugger]
+disableTransformationStatusUploads = false
 
 [Archiver]
 backupRowsBatchSize = 100
