@@ -44,9 +44,6 @@ var pkgLogger logger.LoggerI
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("destination-debugger").Child("eventDeliveryStatusUploader")
 }
 
