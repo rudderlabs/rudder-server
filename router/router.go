@@ -1003,7 +1003,12 @@ func (rt *HandleT) statusInsertLoop() {
 					sd = reporting.CreateStatusDetail(reporting.GetStatus(resp.status.JobState), 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload)
 					statusDetailsMap[key] = sd
 				}
-				sd.Count++
+				if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 2 {
+					sd.Count++
+				}
+				if resp.status.JobState != jobsdb.Failed.State {
+					sd.Count++
+				}
 
 				statusList = append(statusList, resp.status)
 

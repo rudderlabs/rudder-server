@@ -512,7 +512,12 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			sd = reporting.CreateStatusDetail(reporting.GetStatus(jobState), 0, errorCode, string(errorResp), job.EventPayload)
 			statusDetailsMap[key] = sd
 		}
-		sd.Count++
+		if job.LastJobStatus.JobState == jobsdb.Failed.State && status.JobState != jobsdb.Failed.State {
+			sd.Count++
+		}
+		if job.LastJobStatus.JobState != jobsdb.Failed.State {
+			sd.Count++
+		}
 	}
 
 	//tracking batch router errors
