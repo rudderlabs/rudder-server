@@ -959,7 +959,7 @@ func (rt *HandleT) statusInsertLoop() {
 
 	statusStat := stats.NewTaggedStat("router_status_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
 	countStat := stats.NewTaggedStat("router_status_events", stats.CountType, stats.Tags{"destType": rt.destName})
-
+	timeout := time.After(maxStatusUpdateWait)
 	for {
 		rt.perfStats.Start()
 		select {
@@ -968,7 +968,8 @@ func (rt *HandleT) statusInsertLoop() {
 				jobStatus.status.JobState, jobStatus.status.JobID)
 			responseList = append(responseList, jobStatus)
 			rt.perfStats.End(1)
-		case <-time.After(maxStatusUpdateWait):
+		case <-timeout:
+			timeout = time.After(maxStatusUpdateWait)
 			rt.perfStats.End(0)
 			//Ideally should sleep for duration maxStatusUpdateWait-(time.Now()-lastUpdate)
 			//but approx is good enough at the cost of reduced computation.

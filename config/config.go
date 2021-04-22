@@ -108,7 +108,7 @@ func watchForConfigChange() {
 			}
 			_value = _value * configVal.multiplier.(int)
 			if _value != *value {
-				fmt.Printf("The value of %s changed from %d to %d", key, *value, _value)
+				fmt.Printf("The value of %s changed from %d to %d\n", key, *value, _value)
 				*value = _value
 			}
 		case *int64:
@@ -132,7 +132,7 @@ func watchForConfigChange() {
 			}
 			_value = _value * configVal.multiplier.(int64)
 			if _value != *value {
-				fmt.Printf("The value of %s changed from %d to %d", key, *value, _value)
+				fmt.Printf("The value of %s changed from %d to %d\n", key, *value, _value)
 				*value = _value
 			}
 		case *string:
@@ -155,7 +155,7 @@ func watchForConfigChange() {
 				_value = configVal.defaultValue.(string)
 			}
 			if _value != *value {
-				fmt.Printf("The value of %s changed from %v to %v", key, *value, _value)
+				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
 				*value = _value
 			}
 		case *time.Duration:
@@ -179,7 +179,7 @@ func watchForConfigChange() {
 			}
 			_value = _value * configVal.multiplier.(time.Duration)
 			if _value != *value {
-				fmt.Printf("The value of %s changed from %v to %v", key, *value, _value)
+				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
 				*value = _value
 			}
 		case *bool:
@@ -202,7 +202,7 @@ func watchForConfigChange() {
 				_value = configVal.defaultValue.(bool)
 			}
 			if _value != *value {
-				fmt.Printf("The value of %s changed from %v to %v", key, *value, _value)
+				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
 				*value = _value
 			}
 		case *float64:
@@ -226,7 +226,7 @@ func watchForConfigChange() {
 			}
 			_value = _value * configVal.multiplier.(float64)
 			if _value != *value {
-				fmt.Printf("The value of %s changed from %v to %v", key, *value, _value)
+				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
 				*value = _value
 			}
 		}
@@ -356,7 +356,7 @@ func RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable
 	for _, key := range keys {
 		if IsSet(key) {
 			isSet = true
-			*ptr = GetInt64(key, defaultValue)
+			*ptr = GetInt64(key, defaultValue) * valueScale
 			break
 		}
 	}
