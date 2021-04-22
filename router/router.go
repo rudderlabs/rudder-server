@@ -564,10 +564,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	}
 
 	status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
-	//Saving payload to DB only if router job undergoes batching or dest transform.
-	if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
-		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
-	}
 	if respBody != "" {
 		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "response", respBody)
 	}
@@ -591,6 +587,12 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		delete(worker.retryForJobMap, destinationJobMetadata.JobID)
 		worker.retryForJobMapMutex.Unlock()
 	} else {
+		//Saving payload to DB only
+		//1. if job failed and
+		//2. if router job undergoes batching or dest transform.
+		if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
+			status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+		}
 		// the job failed
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
 		worker.failedJobs++

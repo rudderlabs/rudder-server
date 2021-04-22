@@ -158,14 +158,17 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 	gateway.userWebRequestWorkers = make([]*userWebRequestWorkerT, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
 		gateway.logger.Debug("User Web Request Worker Started", i)
+		tags := map[string]string{
+			"workerId": strconv.Itoa(i),
+		}
 		userWebRequestWorker := &userWebRequestWorkerT{
 			webRequestQ:    make(chan *webRequestT, maxUserWebRequestBatchSize),
 			batchRequestQ:  make(chan *batchWebRequestT),
 			reponseQ:       make(chan map[uuid.UUID]string),
 			workerID:       i,
-			batchTimeStat:  gateway.stats.NewStat("gateway.batch_time", stats.TimerType),
-			bufferFullStat: gateway.stats.NewStat(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full", i), stats.CountType),
-			timeOutStat:    gateway.stats.NewStat(fmt.Sprintf("gateway.user_request_worker_%d_time_out", i), stats.CountType),
+			batchTimeStat:  gateway.stats.NewTaggedStat("gateway.batch_time", stats.TimerType, tags),
+			bufferFullStat: gateway.stats.NewTaggedStat("gateway.user_request_worker_buffer_full", stats.CountType, tags),
+			timeOutStat:    gateway.stats.NewTaggedStat("gateway.user_request_worker_time_out", stats.CountType, tags),
 		}
 		gateway.userWebRequestWorkers[i] = userWebRequestWorker
 		rruntime.Go(func() {
@@ -342,7 +345,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				continue
 			}
-			gateway.requestSizeStat.Count(len(body))
+			gateway.requestSizeStat.SendTiming(time.Duration(len(body)))
 			if req.reqType != "batch" {
 				body, _ = sjson.SetBytes(body, "type", req.reqType)
 				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
@@ -470,7 +473,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		}
 
 		userWebRequestWorker.batchTimeStat.End()
-		gateway.batchSizeStat.Count(len(breq.batchRequest))
+		gateway.batchSizeStat.SendTiming(time.Duration(len(breq.batchRequest)))
 		// update stats request wise
 		gateway.updateSourceStats(sourceStats, "gateway.write_key_requests", sourceTagMap)
 		gateway.updateSourceStats(sourceSuccessStats, "gateway.write_key_successful_requests", sourceTagMap)
@@ -1120,8 +1123,9 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 
-	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
-	gateway.requestSizeStat = gateway.stats.NewStat("gateway.request_size", stats.CountType)
+	//For the lack of better stat type, using TimerType.
+	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.TimerType)
+	gateway.requestSizeStat = gateway.stats.NewStat("gateway.request_size", stats.TimerType)
 	gateway.dbWritesStat = gateway.stats.NewStat("gateway.db_writes", stats.CountType)
 	gateway.dbWorkersBufferFullStat = gateway.stats.NewStat("gateway.db_workers_buffer_full", stats.CountType)
 	gateway.dbWorkersTimeOutStat = gateway.stats.NewStat("gateway.db_workers_time_out", stats.CountType)

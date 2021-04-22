@@ -23,6 +23,7 @@ var (
 	maxWebhookBatchSize   int
 	webhookRetryMax       int
 	webhookRetryWaitMax   time.Duration
+	webhookRetryWaitMin   time.Duration
 	pkgLogger             logger.LoggerI
 )
 

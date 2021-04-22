@@ -28,6 +28,7 @@ func Setup(gwHandle GatewayI) *HandleT {
 	webhook.batchRequestQ = make(chan *batchWebhookT)
 	webhook.netClient = retryablehttp.NewClient()
 	webhook.netClient.Logger = nil // to avoid debug logs
+	webhook.netClient.RetryWaitMin = webhookRetryWaitMin
 	webhook.netClient.RetryWaitMax = webhookRetryWaitMax
 	webhook.netClient.RetryMax = webhookRetryMax
 	for i := 0; i < maxTransformerProcess; i++ {
