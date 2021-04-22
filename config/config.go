@@ -76,6 +76,11 @@ func UpdateConfig() {
 }
 
 func watchForConfigChange() {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Errorf("Failed while trying to update Config Variabled with Error: %w", r)
+		}
+	}()
 	configVarLock.RLock()
 	defer configVarLock.RUnlock()
 	for key, configVal := range hotReloadableConfig {
