@@ -23,16 +23,3 @@ func loadConfig() {
 	// Max retry attempts to source transformer
 	webhookRetryMax = config.GetInt("Gateway.webhook.maxRetry", 5)
 }
-
-func webhookReloadableConfig() {
-	_webhookBatchTimeout := (config.GetDuration("Gateway.webhook.batchTimeoutInMS", time.Duration(20)) * time.Millisecond)
-	if _webhookBatchTimeout != webhookBatchTimeout {
-		webhookBatchTimeout = _webhookBatchTimeout
-		pkgLogger.Info("Gateway.webhook.batchTimeoutInMS changes to ", webhookBatchTimeout)
-	}
-	_maxWebhookBatchSize := config.GetInt("Gateway.webhook.maxBatchSize", 32)
-	if _maxWebhookBatchSize != maxWebhookBatchSize {
-		maxWebhookBatchSize = _maxWebhookBatchSize
-		pkgLogger.Info("Gateway.webhook.maxBatchSize changes to ", maxWebhookBatchSize)
-	}
-}
