@@ -67,9 +67,9 @@ var (
 type StatusDetail struct {
 	Status         string          `json:"state"`
 	Count          int64           `json:"count"`
-	StatusCode     int             `json:"status_code"`
-	SampleResponse string          `json:"sample_response"`
-	SampleEvent    json.RawMessage `json:"sample_event"`
+	StatusCode     int             `json:"statusCode"`
+	SampleResponse string          `json:"sampleResponse"`
+	SampleEvent    json.RawMessage `json:"sampleEvent"`
 }
 
 type ReportByStatus struct {
