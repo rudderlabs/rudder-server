@@ -175,49 +175,6 @@ func loadConfig() {
 	failedEventsCacheSize = config.GetInt("Router.failedEventsCacheSize", 10)
 }
 
-func routerReloadableConfig() {
-	_jobQueryBatchSize := config.GetInt("Router.jobQueryBatchSize", 10000)
-	if _jobQueryBatchSize != jobQueryBatchSize {
-		jobQueryBatchSize = _jobQueryBatchSize
-		pkgLogger.Info("Router.jobQueryBatchSize changes to ", jobQueryBatchSize)
-	}
-	_updateStatusBatchSize := config.GetInt("Router.updateStatusBatchSize", 1000)
-	if _updateStatusBatchSize != updateStatusBatchSize {
-		updateStatusBatchSize = _updateStatusBatchSize
-		pkgLogger.Info("Router.updateStatusBatchSize changes to ", updateStatusBatchSize)
-	}
-	_readSleep := config.GetDuration("Router.readSleepInMS", time.Duration(1000)) * time.Millisecond
-	if _readSleep != readSleep {
-		readSleep = _readSleep
-		pkgLogger.Info("Router.readSleepInMS changes to ", readSleep)
-	}
-	_jobsBatchTimeout := config.GetDuration("Router.jobsBatchTimeoutInSec", time.Duration(5)) * time.Second
-	if _jobsBatchTimeout != jobsBatchTimeout {
-		jobsBatchTimeout = _jobsBatchTimeout
-		pkgLogger.Info("Router.jobsBatchTimeoutInSec changes to ", jobsBatchTimeout)
-	}
-	_minRetryBackoff := config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
-	if _minRetryBackoff != minRetryBackoff {
-		minRetryBackoff = _minRetryBackoff
-		pkgLogger.Info("Router.minRetryBackoffInS changes to ", minRetryBackoff)
-	}
-	_maxRetryBackoff := config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
-	if _maxRetryBackoff != maxRetryBackoff {
-		maxRetryBackoff = _maxRetryBackoff
-		pkgLogger.Info("Router.maxRetryBackoff changes to ", maxRetryBackoff)
-	}
-	_fixedLoopSleep := config.GetDuration("Router.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
-	if _fixedLoopSleep != fixedLoopSleep {
-		fixedLoopSleep = _fixedLoopSleep
-		pkgLogger.Info("Router.fixedLoopSleepInMS changes to ", fixedLoopSleep)
-	}
-	_maxStatusUpdateWait := config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
-	if _maxStatusUpdateWait != maxStatusUpdateWait {
-		maxStatusUpdateWait = _maxStatusUpdateWait
-		pkgLogger.Info("Router.maxStatusUpdateWait changes to ", maxStatusUpdateWait)
-	}
-}
-
 func (worker *workerT) trackStuckDelivery() chan struct{} {
 	ch := make(chan struct{}, 1)
 	rruntime.Go(func() {
@@ -1333,9 +1290,6 @@ func (rt *HandleT) crashRecover() {
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("router")
 }
 

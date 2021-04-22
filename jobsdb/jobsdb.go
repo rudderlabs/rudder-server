@@ -31,7 +31,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"strconv"
@@ -412,77 +411,7 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("jobsdb")
-}
-
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		jobsdbReloadableConfig()
-	}
-}
-
-func jobsdbReloadableConfig() {
-	_jobDoneMigrateThres := config.GetFloat64("JobsDB.jobDoneMigrateThres", 0.8)
-	if jobDoneMigrateThres != _jobDoneMigrateThres {
-		jobDoneMigrateThres = _jobDoneMigrateThres
-		pkgLogger.Info("JobsDB.jobDoneMigrateThres changes to ", jobDoneMigrateThres)
-	}
-	_jobStatusMigrateThres := config.GetFloat64("JobsDB.jobStatusMigrateThres", 5)
-	if _jobStatusMigrateThres != jobStatusMigrateThres {
-		jobStatusMigrateThres = _jobStatusMigrateThres
-		pkgLogger.Info("JobsDB.jobStatusMigrateThres changes to ", jobStatusMigrateThres)
-	}
-	_maxDSSize := config.GetInt("JobsDB.maxDSSize", 100000)
-	if _maxDSSize != maxDSSize {
-		maxDSSize = _maxDSSize
-		pkgLogger.Info("JobsDB.maxDSSize changes to ", maxDSSize)
-	}
-	_maxMigrateOnce := config.GetInt("JobsDB.maxMigrateOnce", 10)
-	if _maxMigrateOnce != maxMigrateOnce {
-		maxMigrateOnce = _maxMigrateOnce
-		pkgLogger.Info("JobsDB.maxMigrateOnce changes to ", maxMigrateOnce)
-	}
-	_maxMigrateDSProbe := config.GetInt("JobsDB.maxMigrateDSProbe", 10)
-	if _maxMigrateDSProbe != maxMigrateDSProbe {
-		maxMigrateDSProbe = _maxMigrateDSProbe
-		pkgLogger.Info("JobsDB.maxMigrateDSProbe changes to ", maxMigrateDSProbe)
-	}
-	_maxTableSize := (config.GetInt64("JobsDB.maxTableSizeInMB", 300) * 1000000)
-	if _maxTableSize != maxTableSize {
-		maxTableSize = _maxTableSize
-		pkgLogger.Info("JobsDB.maxTableSize changes to ", maxTableSize)
-	}
-	_backupRowsBatchSize := config.GetInt64("JobsDB.backupRowsBatchSize", 1000)
-	if _backupRowsBatchSize != backupRowsBatchSize {
-		backupRowsBatchSize = _backupRowsBatchSize
-		pkgLogger.Info("JobsDB.backupRowsBatchSize changes to ", backupRowsBatchSize)
-	}
-	_migrateDSLoopSleepDuration := (config.GetDuration("JobsDB.migrateDSLoopSleepDurationInS", time.Duration(30)) * time.Second)
-	if _migrateDSLoopSleepDuration != migrateDSLoopSleepDuration {
-		migrateDSLoopSleepDuration = _migrateDSLoopSleepDuration
-		pkgLogger.Info("JobsDB.migrateDSLoopSleepDuration changes to ", migrateDSLoopSleepDuration)
-	}
-	_addNewDSLoopSleepDuration := (config.GetDuration("JobsDB.addNewDSLoopSleepDurationInS", time.Duration(5)) * time.Second)
-	if _addNewDSLoopSleepDuration != addNewDSLoopSleepDuration {
-		addNewDSLoopSleepDuration = _addNewDSLoopSleepDuration
-		pkgLogger.Info("JobsDB.addNewDSLoopSleepDuration changes to ", addNewDSLoopSleepDuration)
-	}
-	_refreshDSListLoopSleepDuration := (config.GetDuration("JobsDB.refreshDSListLoopSleepDurationInS", time.Duration(5)) * time.Second)
-	if _refreshDSListLoopSleepDuration != refreshDSListLoopSleepDuration {
-		refreshDSListLoopSleepDuration = _refreshDSListLoopSleepDuration
-		pkgLogger.Info("JobsDB.refreshDSListLoopSleepDuration changes to ", refreshDSListLoopSleepDuration)
-	}
-	_backupCheckSleepDuration := (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
-	if _backupCheckSleepDuration != backupCheckSleepDuration {
-		backupCheckSleepDuration = _backupCheckSleepDuration
-		pkgLogger.Info("JobsDB.backupCheckSleepDuration changes to ", backupCheckSleepDuration)
-	}
 }
 
 // GetConnectionString Returns Jobs DB connection configuration

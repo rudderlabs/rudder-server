@@ -35,9 +35,6 @@ func loadConfig() {
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("dedup")
 }
 func (d *DedupHandleT) setup(clearDB *bool) {

@@ -248,9 +248,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
-	rruntime.Go(func() {
-		proc.updateConfigFile()
-	})
 	proc.transformer.Setup()
 
 	proc.crashRecover()
@@ -351,15 +348,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 			}
 		}
 		configSubscriberLock.Unlock()
-	}
-}
-
-func (proc *HandleT) updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		processorReloadableConfig()
 	}
 }
 

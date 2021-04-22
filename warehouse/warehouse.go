@@ -141,6 +141,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
 	config.RegisterDurationConfigVariable(time.Duration(180), &retryTimeWindow, true, time.Minute, "Warehouse.retryTimeWindowInMins")
 	destinationsMap = map[string]warehouseutils.WarehouseT{}
+	sourceIDsByWorkspace = map[string][]string{}
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	config.RegisterDurationConfigVariable(time.Duration(120), &longRunningUploadStatThresholdInMin, true, time.Minute, "Warehouse.longRunningUploadStatThresholdInMin")
 	config.RegisterDurationConfigVariable(time.Duration(10), &slaveUploadTimeout, true, time.Minute, "Warehouse.slaveUploadTimeout")

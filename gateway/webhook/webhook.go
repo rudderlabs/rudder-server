@@ -9,11 +9,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -30,19 +28,7 @@ var (
 
 func init() {
 	loadConfig()
-	rruntime.Go(func() {
-		updateConfigFile()
-	})
 	pkgLogger = logger.NewLogger().Child("gateway").Child("webhook")
-}
-
-func updateConfigFile() {
-	ch := make(chan utils.DataEvent)
-	config.GetUpdatedConfig(ch, "ConfigUpdate")
-	for {
-		<-ch
-		webhookReloadableConfig()
-	}
 }
 
 type webhookT struct {

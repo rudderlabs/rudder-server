@@ -148,7 +148,6 @@ func NewLogger() *LoggerT {
 // Setup sets up the logger initially
 func init() {
 	loadConfig()
-	go updateConfigFile()
 	Log = configureLogger()
 	loggerLevelsCache = make(map[string]int)
 }

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 )
 
@@ -17,9 +16,6 @@ var (
 
 func init() {
 	loadConfigArchiver()
-	rruntime.Go(func() {
-		updateArchiverConfigFile()
-	})
 }
 
 func loadConfigArchiver() {
