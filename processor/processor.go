@@ -677,7 +677,6 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 			sourceID, _ := params["source_id"].(string)
 			destID, _ := params["destination_id"].(string)
 			procErr, _ := params["error"].(string)
-			procErrBytes, _ := json.Marshal(procErr)
 			procErr = strconv.Quote(procErr)
 			statusCode, _ := params["status_code"].(string)
 
@@ -688,7 +687,7 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 				AttemptNum:    1,
 				JobState:      jobsdb.Aborted.State,
 				ErrorCode:     statusCode,
-				ErrorResponse: []byte(fmt.Sprintf(`{"error": %v}`, string(procErrBytes))),
+				ErrorResponse: []byte(fmt.Sprintf(`{"error": %s}`, procErr)),
 			}
 			destinationdebugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
 		}

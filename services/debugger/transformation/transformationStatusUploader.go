@@ -164,6 +164,11 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 		}
 	}()
 
+	//if disableTransformationUploads is true, return;
+	if disableTransformationUploads {
+		return
+	}
+
 	for _, transformation := range tStatus.Destination.Transformations {
 		if IsUploadEnabled(transformation.ID) {
 			reportedMessageIDs := make(map[string]struct{})
