@@ -20,7 +20,7 @@ func loadConfig() {
 	// Max time till when retries to source transformer are done
 	webhookRetryWaitMax = (config.GetDuration("Gateway.webhook.maxRetryTimeInS", time.Duration(10)) * time.Second)
 	// Min time gap when retries to source transformer are done
-	webhookRetryWaitMin = (config.GetDuration("Gateway.webhook.minRetryTimeInS", time.Duration(100)) * time.Millisecond)
+	webhookRetryWaitMin = (config.GetDuration("Gateway.webhook.minRetryTimeInMS", time.Duration(100)) * time.Millisecond)
 	// Max retry attempts to source transformer
 	webhookRetryMax = config.GetInt("Gateway.webhook.maxRetry", 5)
 }

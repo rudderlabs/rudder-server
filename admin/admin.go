@@ -150,15 +150,15 @@ func (a Admin) StartCpuProfile(path *string, reply *string) (err error) {
 	pkgLogger.Info("Starting cpu profile. Writing to ", *path)
 	err = pprof.StartCPUProfile(f)
 	if err != nil {
-		pkgLogger.Info("StartCPUProfile threw error. Cpu profiling may already be running")
-		*reply = "Cpu profiling may already be running"
+		pkgLogger.Info("StartCPUProfile threw error. Cpu profiling may already be running or some other error occured.")
+		*reply = err.Error()
 	} else {
 		*reply = "Cpu profile is being written to " + *path
 	}
 	return nil
 }
 
-// StartCpuProfile starts writing cpu profile at given path using pprof
+// StopCpuProfile stops writing already cpu profile
 func (a Admin) StopCpuProfile(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
