@@ -78,7 +78,8 @@ func UpdateConfig() {
 func watchForConfigChange() {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Errorf("Failed while trying to update Config Variabled with Error: %w", r)
+			err := fmt.Errorf("failed while trying to update Config Variabled with Error: %w", r)
+			fmt.Println(err)
 		}
 	}()
 	configVarLock.RLock()
@@ -514,7 +515,7 @@ func GetEnvAsInt(key string, defaultVal int) int {
 func GetRequiredEnvAsInt(key string) int {
 	stringValue, exists := os.LookupEnv(key)
 	if !exists {
-		panic(fmt.Errorf("Fatal error, no required environment variable: %s", key))
+		panic(fmt.Errorf("fatal error, no required environment variable: %s", key))
 	}
 	if value, err := strconv.Atoi(stringValue); err == nil {
 		return value
@@ -537,7 +538,7 @@ func GetRequiredEnv(key string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
 	}
-	panic(fmt.Errorf("Fatal error, no required environment variable: %s", key))
+	panic(fmt.Errorf("fatal error, no required environment variable: %s", key))
 }
 
 // Override Config by application or command line
