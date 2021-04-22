@@ -59,41 +59,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(2), &batchTimeout, true, time.Second, "DestinationDebugger.batchTimeoutInS")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, "DestinationDebugger.retrySleepInMS")
 	config.RegisterBoolConfigVariable(false, &disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
-
-<<<<<<< HEAD
-func destinationDebuggerReloadableConfig() {
-	_maxBatchSize := config.GetInt("DestinationDebugger.maxBatchSize", 32)
-	if _maxBatchSize != maxBatchSize {
-		maxBatchSize = _maxBatchSize
-		pkgLogger.Info("DestinationDebugger.maxBatchSize changes to ", maxBatchSize)
-	}
-	_maxESQueueSize := config.GetInt("DestinationDebugger.maxESQueueSize", 1024)
-	if _maxESQueueSize != maxESQueueSize {
-		maxESQueueSize = _maxESQueueSize
-		pkgLogger.Info("DestinationDebugger.maxESQueueSize changes to ", maxESQueueSize)
-	}
-	_maxRetry := config.GetInt("DestinationDebugger.maxRetry", 3)
-	if _maxRetry != maxRetry {
-		maxRetry = _maxRetry
-		pkgLogger.Info("DestinationDebugger.maxRetry changes to ", maxRetry)
-	}
-	_batchTimeout := config.GetDuration("DestinationDebugger.batchTimeoutInS", time.Duration(2)) * time.Second
-	if _batchTimeout != batchTimeout {
-		batchTimeout = _batchTimeout
-		pkgLogger.Info("DestinationDebugger.batchTimeout changes to ", batchTimeout)
-	}
-	_retrySleep := config.GetDuration("DestinationDebugger.retrySleepInMS", time.Duration(100)) * time.Millisecond
-	if _retrySleep != retrySleep {
-		retrySleep = _retrySleep
-		pkgLogger.Info("DestinationDebugger.retrySleep changes to ", retrySleep)
-	}
-	_disableEventDeliveryStatusUploads := config.GetBool("DestinationDebugger.disableEventDeliveryStatusUploads", false)
-	if _disableEventDeliveryStatusUploads != disableEventDeliveryStatusUploads {
-		disableEventDeliveryStatusUploads = _disableEventDeliveryStatusUploads
-		pkgLogger.Info("DestinationDebugger.disableEventDeliveryStatusUploads changes to ", disableEventDeliveryStatusUploads)
-	}
-=======
->>>>>>> 4207c166322d1dcdceb8464abfeeb357a18ccb1b
 }
 
 //RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,

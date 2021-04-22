@@ -105,13 +105,8 @@ func (mr *MockJobsDBMockRecorder) Status() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockJobsDB)(nil).Status))
 }
 
-<<<<<<< HEAD
-// Store mocks base method
-func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) error {
-=======
 // Store mocks base method.
-func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) {
->>>>>>> 4207c166322d1dcdceb8464abfeeb357a18ccb1b
+func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Store", arg0)
 	ret0, _ := ret[0].(error)
