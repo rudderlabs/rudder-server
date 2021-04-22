@@ -44,7 +44,7 @@ func init() {
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-	disableEventDeliveryStatusUploads = config.GetBool("DestinationDebugger.disableEventDeliveryStatusUploads", false)
+	config.RegisterBoolConfigVariable(false, &disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
 }
 
 type EventDeliveryStatusUploader struct {

@@ -29,7 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -840,7 +840,7 @@ func (rt *HandleT) initWorkers() {
 	}
 }
 
-func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
+func (rt *HandleT) findWorker(job *jobsdb.JobT) *workerT {
 
 	if !rt.guaranteeUserEventOrder {
 		//if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
@@ -858,6 +858,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
 	index := int(math.Abs(float64(misc.GetHash(userID) % rt.noOfWorkers)))
 
 	worker := rt.workers[index]
+	var toSendWorker *workerT
 
 	//#JobOrder (see other #JobOrder comment)
 	worker.failedJobIDMutex.RLock()
@@ -876,15 +877,9 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
 			}
 
 			rt.logger.Debugf("[%v Router] :: userID found in abortedUserIDtoJobMap: %s. Allowing jobID: %d. returing worker", rt.destName, userID, job.JobID)
-			// incrementing abortedUserIDMap after all checks of backoff, throttle etc are made
-			// We don't need lock inside this defer func, because we already hold the lock above and this
-			// defer is called before defer Unlock
-			defer func() {
-				if toSendWorker != nil {
-					toSendWorker.abortedUserIDMap[userID] = toSendWorker.abortedUserIDMap[userID] + 1
-				}
-			}()
+			worker.abortedUserIDMap[userID] = worker.abortedUserIDMap[userID] + 1
 		}
+
 		toSendWorker = worker
 	} else {
 		//This job can only be higher than blocking
@@ -1015,12 +1010,7 @@ func (rt *HandleT) statusInsertLoop() {
 				})
 				//Store the aborted jobs to errorDB
 				if routerAbortedJobs != nil {
-					err := rt.errorDB.Store(routerAbortedJobs)
-					if err != nil {
-						rt.logger.Errorf("[Router] Store into proc error table failed with error: %v", err)
-						rt.logger.Errorf("routerAbortedJobs: %v", routerAbortedJobs)
-						panic(err)
-					}
+					rt.errorDB.Store(routerAbortedJobs)
 				}
 				//Update the status
 				err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)

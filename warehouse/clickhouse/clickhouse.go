@@ -150,7 +150,7 @@ func init() {
 func loadConfig() {
 	config.RegisterStringConfigVariable("false", &queryDebugLogs, true, "Warehouse.clickhouse.queryDebugLogs")
 	config.RegisterStringConfigVariable("1000", &blockSize, true, "Warehouse.clickhouse.blockSize")
-	config.RegisterStringConfigVariable("10", &poolSize, true, "Warehouse.clickhouse.disableNullable")
+	config.RegisterStringConfigVariable("10", &poolSize, true, "Warehouse.clickhouse.poolSize")
 	config.RegisterBoolConfigVariable(false, &disableNullable, true, "Warehouse.clickhouse.disableNullable")
 
 }
