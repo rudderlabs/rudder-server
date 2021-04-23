@@ -1047,29 +1047,7 @@ func validcomma(data []byte, i int, end byte) (outi int, ok bool) {
 	}
 	return i, false
 }
-func validarray(data []byte, i int) (outi int, ok bool) {
-	for ; i < len(data); i++ {
-		switch data[i] {
-		default:
-			for ; i < len(data); i++ {
-				if i, ok = validany(data, i); !ok {
-					return i, false
-				}
-				if i, ok = validcomma(data, i, ']'); !ok {
-					return i, false
-				}
-				if data[i] == ']' {
-					return i + 1, true
-				}
-			}
-		case ' ', '\t', '\n', '\r':
-			continue
-		case ']':
-			return i + 1, true
-		}
-	}
-	return i, false
-}
+
 func validstring(data []byte, i int) (outi int, ok bool) {
 	for ; i < len(data); i++ {
 		if data[i] < ' ' {
