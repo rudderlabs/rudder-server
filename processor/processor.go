@@ -677,13 +677,13 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
-func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time) *transformer.MetadataT {
+func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source backendconfig.SourceT) *transformer.MetadataT {
 	commonMetadata := transformer.MetadataT{}
 
 	eventBytes, err := json.Marshal(singularEvent)
 	if err != nil {
 		//Marshalling should never fail. But still panicking.
-		panic("couldn't marshal payload")
+		panic(fmt.Errorf("[Processor] couldn't marshal singularEvent. singularEvent: %v\n", singularEvent))
 	}
 	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	commonMetadata.RudderID = batchEvent.UserID
@@ -695,16 +695,17 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceTaskRunID = gjson.GetBytes(eventBytes, "context.sources.task_run_id").String()
 	commonMetadata.SourceJobID = gjson.GetBytes(eventBytes, "context.sources.job_id").String()
 	commonMetadata.SourceJobRunID = gjson.GetBytes(eventBytes, "context.sources.job_run_id").String()
+	commonMetadata.SourceType = source.SourceDefinition.Name
+	commonMetadata.SourceCategory = source.SourceDefinition.Category
 
 	return &commonMetadata
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
-
-func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transformer.TransformerEventT, destination backendconfig.DestinationT, source backendconfig.SourceT) {
+func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transformer.TransformerEventT, destination backendconfig.DestinationT) {
 	metadata := transformer.MetadataT{}
-	metadata.SourceType = source.SourceDefinition.Name
-	metadata.SourceCategory = source.SourceDefinition.Category
+	metadata.SourceType = commonMetadata.SourceType
+	metadata.SourceCategory = commonMetadata.SourceCategory
 	metadata.SourceID = commonMetadata.SourceID
 	metadata.RudderID = commonMetadata.RudderID
 	metadata.JobID = commonMetadata.JobID
@@ -1072,7 +1073,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					continue
 				}
 
-				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(singularEvent, batchEvent, receivedAt)
+				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(singularEvent, batchEvent, receivedAt, sourceForSingularEvent)
 				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 				for _, destType := range enabledDestTypes {
 					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
@@ -1097,7 +1098,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy.Message["request_ip"] = requestIP
 
 						enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-						enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, destination, sourceForSingularEvent)
+						enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, destination)
 
 						metadata := shallowEventCopy.Metadata
 						srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
@@ -1337,11 +1338,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				TransformAt:     transformAt,
 				MessageID:       messageId,
 				GatewayJobID:    jobId,
-				SourceBatchId:   sourceBatchId,
-				SourceTaskId:    sourceTaskId,
-				SourceTaskRunId: sourceTaskRunId,
-				SourceJobId:     sourceJobId,
-				SourceJobRunId:  sourceJobRunId,
+				SourceBatchID:   sourceBatchId,
+				SourceTaskID:    sourceTaskId,
+				SourceTaskRunID: sourceTaskRunId,
+				SourceJobID:     sourceJobId,
+				SourceJobRunID:  sourceJobRunId,
 			}
 			marshalledParams, err := json.Marshal(params)
 			if err != nil {
@@ -1434,7 +1435,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	txn := proc.gatewayDB.BeginGlobalTransaction()
 	proc.gatewayDB.AcquireUpdateJobStatusLocks()
-	proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{gateway.CustomVal}, nil)
+	err := proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{gateway.CustomVal}, nil)
+	if err != nil {
+		pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
+		panic(err)
+	}
 	if proc.reporting != nil {
 		proc.reporting.Report(reportMetrics, txn)
 	}

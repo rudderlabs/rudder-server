@@ -1069,7 +1069,11 @@ func (rt *HandleT) statusInsertLoop() {
 				//Update the status
 				txn := rt.jobsDB.BeginGlobalTransaction()
 				rt.jobsDB.AcquireUpdateJobStatusLocks()
-				rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil)
+				err := rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil)
+				if err != nil {
+					rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
+					panic(err)
+				}
 				if rt.reporting != nil {
 					rt.reporting.Report(reportMetrics, txn)
 				}
@@ -1301,7 +1305,7 @@ func (rt *HandleT) generatorLoop() {
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
-		//Mark the jobs as executing
+		//Mark the jobs as aborted
 		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)

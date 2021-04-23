@@ -577,7 +577,12 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	//Mark the status of the jobs
 	txn := brt.jobsDB.BeginGlobalTransaction()
 	brt.jobsDB.AcquireUpdateJobStatusLocks()
-	brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
+	err = brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
+	if err != nil {
+		brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+		panic(err)
+	}
+
 	if brt.reporting != nil {
 		brt.reporting.Report(reportMetrics, txn)
 	}

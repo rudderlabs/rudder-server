@@ -74,13 +74,13 @@ type JobsDB interface {
 	Store(jobList []*JobT) error
 	BeginGlobalTransaction() *sql.Tx
 	CommitTransaction(txn *sql.Tx)
-	StoreInTxn(txHandler *sql.Tx, jobList []*JobT)
+	StoreInTxn(txHandler *sql.Tx, jobList []*JobT) error
 	AcquireStoreLock()
 	ReleaseStoreLock()
 	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
 	CheckPGHealth() bool
 	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
-	UpdateJobStatusInTxn(txHandler *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT)
+	UpdateJobStatusInTxn(txHandler *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 	AcquireUpdateJobStatusLocks()
 	ReleaseUpdateJobStatusLocks()
 
@@ -166,7 +166,7 @@ func (jd *HandleT) ReleaseUpdateJobStatusLocks() {
 StoreInTxn call is used to create new Jobs in transaction.
 IMP NOTE: AcquireStoreLock Should be called before calling this function
 */
-func (jd *HandleT) StoreInTxn(txHandler *sql.Tx, jobList []*JobT) {
+func (jd *HandleT) StoreInTxn(txHandler *sql.Tx, jobList []*JobT) error {
 
 	queryStat := stats.NewTaggedStat("store_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
@@ -175,11 +175,15 @@ func (jd *HandleT) StoreInTxn(txHandler *sql.Tx, jobList []*JobT) {
 	dsList := jd.getDSList(false)
 	ds := dsList[len(dsList)-1]
 	err := jd.storeJobsDSInTxn(txHandler, ds, false, jobList)
-	jd.assertErrorAndRollbackTx(err, txHandler)
+	if err != nil {
+		jd.rollbackTx(err, txHandler)
+		return err
+	}
 
 	//Empty customValFilters means we want to clear for all
 	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
-	// fmt.Println("Bursting CACHE")
+
+	return nil
 }
 
 /*
@@ -188,18 +192,23 @@ customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 IMP NOTE: AcquireUpdateJobStatusLocks Should be called before calling this function
 */
-func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) {
+func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
 
 	if len(statusList) == 0 {
-		return
+		return nil
 	}
 
 	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList)
-	jd.assertErrorAndRollbackTx(err, txn)
+	if err != nil {
+		jd.rollbackTx(err, txn)
+		return err
+	}
 
 	for ds, stateList := range updatedStatesByDS {
 		jd.markClearEmptyResult(ds, stateList, customValFilters, parameterFilters, hasJobs, nil)
 	}
+
+	return nil
 }
 
 /*

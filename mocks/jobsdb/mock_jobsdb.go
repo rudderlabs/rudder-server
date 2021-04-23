@@ -194,9 +194,11 @@ func (mr *MockJobsDBMockRecorder) Store(arg0 interface{}) *gomock.Call {
 }
 
 // StoreInTxn mocks base method
-func (m *MockJobsDB) StoreInTxn(arg0 *sql.Tx, arg1 []*jobsdb.JobT) {
+func (m *MockJobsDB) StoreInTxn(arg0 *sql.Tx, arg1 []*jobsdb.JobT) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "StoreInTxn", arg0, arg1)
+	ret := m.ctrl.Call(m, "StoreInTxn", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // StoreInTxn indicates an expected call of StoreInTxn
@@ -234,9 +236,11 @@ func (mr *MockJobsDBMockRecorder) UpdateJobStatus(arg0, arg1, arg2 interface{}) 
 }
 
 // UpdateJobStatusInTxn mocks base method
-func (m *MockJobsDB) UpdateJobStatusInTxn(arg0 *sql.Tx, arg1 []*jobsdb.JobStatusT, arg2 []string, arg3 []jobsdb.ParameterFilterT) {
+func (m *MockJobsDB) UpdateJobStatusInTxn(arg0 *sql.Tx, arg1 []*jobsdb.JobStatusT, arg2 []string, arg3 []jobsdb.ParameterFilterT) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "UpdateJobStatusInTxn", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "UpdateJobStatusInTxn", arg0, arg1, arg2, arg3)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // UpdateJobStatusInTxn indicates an expected call of UpdateJobStatusInTxn

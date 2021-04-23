@@ -243,7 +243,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
 		})
 
 		It("should recover after crash", func() {
@@ -306,7 +306,7 @@ var _ = Describe("Processor", func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).After(updateCall2).Return(emptyJobsList).Times(1) // returning empty job list should end crash recover loop
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
 		})
 	})
 
@@ -325,7 +325,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
 
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
@@ -468,7 +468,7 @@ var _ = Describe("Processor", func() {
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer", "received_at": "", "transform_at": "processor", "message_id" : "" , "gateway_job_id" : "0", "source_batch_id": "", "source_task_id": "", "source_task_run_id": "", "source_job_id": "", "source_job_run_id": ""}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":"0","source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":""}`))
 			}
 
 			// One Store call is expected for all events
@@ -656,7 +656,7 @@ var _ = Describe("Processor", func() {
 				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "destination-from-transformer", "received_at": "", "transform_at": "processor", "message_id" : "" , "gateway_job_id" : "0", "source_batch_id": "", "source_task_id": "", "source_task_run_id": "", "source_job_id": "", "source_job_run_id": ""}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":"0","source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":""}`))
 			}
 
 			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).
