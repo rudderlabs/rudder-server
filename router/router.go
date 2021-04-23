@@ -1153,7 +1153,8 @@ func (rt *HandleT) generatorLoop() {
 		rt.throttledUserMap = make(map[string]struct{})
 		//Identify jobs which can be processed
 		for _, job := range combinedList {
-			if rt.drainJobHandler.CanJobBeDrained(job.JobID, destIDExtractor([]byte(job.Parameters))) {
+			destinationID := gjson.GetBytes(job.Parameters, "destination_id")
+			if destinationID.String() == config.GetString("Router.drainDestinationID", "NONE") || rt.drainJobHandler.CanJobBeDrained(job.JobID, destIDExtractor([]byte(job.Parameters))) {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
