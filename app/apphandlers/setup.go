@@ -35,6 +35,7 @@ var (
 	pkgLogger                                                  logger.LoggerI
 	Diagnostics                                                diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyHandleT
+	readonlyProcErrorDB                                        jobsdb.ReadonlyHandleT
 )
 
 //AppHandler to be implemented by different app type objects.
@@ -72,7 +73,7 @@ func loadConfig() {
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableRouter = config.GetBool("enableRouter", true)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL"}
 }
 
 func rudderCoreBaseSetup() {
@@ -94,7 +95,11 @@ func rudderCoreBaseSetup() {
 
 	readonlyGatewayDB.Setup("gw")
 	readonlyRouterDB.Setup("rt")
-	readonlyBatchRouterDB.Setup("brt")
+	readonlyBatchRouterDB.Setup("batch_rt")
+	readonlyProcErrorDB.Setup("proc_error")
+
+	processor.RegisterAdminHandlers(&readonlyProcErrorDB)
+	router.RegisterAdminHandlers(&readonlyRouterDB, &readonlyBatchRouterDB)
 
 	runtime.GOMAXPROCS(maxProcess)
 }

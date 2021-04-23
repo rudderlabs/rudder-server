@@ -27,6 +27,7 @@ const (
 	SNOWFLAKE  = "SNOWFLAKE"
 	POSTGRES   = "POSTGRES"
 	CLICKHOUSE = "CLICKHOUSE"
+	MSSQL	   = "MSSQL"
 )
 
 const (
@@ -134,6 +135,7 @@ type UploaderI interface {
 	GetLoadFileLocations(options GetLoadFileLocationsOptionsT) []string
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFileLocation(tableName string) (string, error)
+	ShouldOnDedupUseNewRecord() bool
 }
 
 type GetLoadFileLocationsOptionsT struct {

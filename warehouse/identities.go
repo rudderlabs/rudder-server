@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -339,7 +339,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			pkgLogger.Errorf(`[WH]: Identity table upload errors: %v`, err)
 		}
 		if len(loadErrors) > 0 {
-			job.setUploadError(multierror.Join(loadErrors), Aborted)
+			job.setUploadError(misc.ConcatErrors(loadErrors), Aborted)
 			return
 		}
 		job.setUploadStatus(UploadStatusOpts{Status: ExportedData})

@@ -10,6 +10,11 @@ import (
 //SingularEventT single event structrue
 type SingularEventT map[string]interface{}
 
+type SingularEventWithReceivedAt struct {
+	SingularEvent SingularEventT
+	ReceivedAt    time.Time
+}
+
 //GatewayBatchRequestT batch request structure
 type GatewayBatchRequestT struct {
 	Batch []SingularEventT `json:"batch"`

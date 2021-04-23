@@ -10,8 +10,9 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/services/db"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
-	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 
@@ -41,6 +42,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
+	transformationdebugger.Setup()
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
 
@@ -87,8 +89,8 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 		var rateLimiter ratelimiter.HandleT
 
 		rateLimiter.SetUp()
-		gateway.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
 		gateway.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
+		gateway.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI

@@ -12,7 +12,8 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/db"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 
@@ -44,6 +45,7 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
+	transformationdebugger.Setup()
 	destinationdebugger.Setup()
 
 	migrationMode := processor.App.Options().MigrationMode

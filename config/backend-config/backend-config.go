@@ -166,6 +166,8 @@ type SRegulationsT struct {
 
 type TransformationT struct {
 	VersionID string
+	ID        string
+	Config    map[string]interface{}
 }
 
 type LibraryT struct {
@@ -196,11 +198,13 @@ func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	workspaceToken = config.GetWorkspaceToken()
 
-	pollInterval = config.GetDuration("BackendConfig.pollIntervalInS", 5) * time.Second
-	regulationsPollInterval = config.GetDuration("BackendConfig.regulationsPollIntervalInS", 300) * time.Second
+	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, true, time.Second, "BackendConfig.pollIntervalInS")
+
+	config.RegisterDurationConfigVariable(time.Duration(300), &regulationsPollInterval, true, time.Second, "BackendConfig.regulationsPollIntervalInS")
+
 	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
-	maxRegulationsPerRequest = config.GetInt("BackendConfig.maxRegulationsPerRequest", 1000)
+	config.RegisterIntConfigVariable(1000, &maxRegulationsPerRequest, true, 1, "BackendConfig.maxRegulationsPerRequest")
 	configEnvReplacementEnabled = config.GetBool("BackendConfig.envReplacementEnabled", true)
 }
 

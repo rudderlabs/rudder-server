@@ -9,7 +9,7 @@ import (
 )
 
 type StashRpcHandler struct {
-	jobsDB jobsdb.JobsDB
+	ReadOnlyJobsDB jobsdb.ReadonlyJobsDB
 }
 
 var prefix = "proc_error_jobs_"
@@ -51,6 +51,54 @@ func (s *StashRpcHandler) GetDSStats(dsName string, result *string) (err error) 
 	return marshalErr
 }
 
+func (s *StashRpcHandler) GetDSList(dsName string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	response, err := s.ReadOnlyJobsDB.GetDSListString()
+	*result = string(response)
+	return nil
+}
+
+func (s *StashRpcHandler) GetDSFailedJobs(arg string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	response, err := s.ReadOnlyJobsDB.GetLatestFailedJobs(arg, prefix)
+	*result = string(response)
+	return err
+}
+
+func (s *StashRpcHandler) GetJobByID(arg string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	response, err := s.ReadOnlyJobsDB.GetJobByID(arg, prefix)
+	*result = string(response)
+	return err
+}
+
+func (s *StashRpcHandler) GetJobIDStatus(arg string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	response, err := s.ReadOnlyJobsDB.GetJobIDStatus(arg, prefix)
+	*result = string(response)
+	return err
+}
+
 type DestinationCountResult struct {
 	Count    int
 	DestName string
@@ -85,4 +133,16 @@ func (s *StashRpcHandler) getErrorCountByDest(dbHandle *sql.DB, jobTableName str
 	}
 
 	return results, nil
+}
+
+func (s *StashRpcHandler) GetDSJobCount(arg string, result *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	response, err := s.ReadOnlyJobsDB.GetJobSummaryCount(arg, prefix)
+	*result = string(response)
+	return nil
 }

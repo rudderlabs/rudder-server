@@ -26,7 +26,6 @@ services:
       - DEST_TRANSFORM_URL=http://d-transformer:9090
       - CONFIG_BACKEND_URL=https://api.rudderlabs.com
       - WORKSPACE_TOKEN=<your_workspace_token>
-      - CONFIG_PATH=/app/config/config.toml
       # - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
       # - RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH=<workspace_config_filepath_in_container> # For ex., /etc/rudderstack/workspaceConfig.json
     # Uncomment the following lines to mount workspaceConfig file

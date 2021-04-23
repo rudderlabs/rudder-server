@@ -31,7 +31,10 @@ const supportedTransformerAPIVersion = 1
 
 type MetadataT struct {
 	SourceID        string `json:"sourceId"`
+	SourceType      string `json:"sourceType"`
+	SourceCategory  string `json:"sourceCategory"`
 	DestinationID   string `json:"destinationId"`
+	JobRunID        string `json: "jobRunId"`
 	JobID           int64  `json:"jobId"`
 	SourceBatchID   string `json:"sourceBatchId"`
 	SourceJobID     string `json:"sourceJobId"`
@@ -100,8 +103,8 @@ var (
 func loadConfig() {
 	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
 	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
-	maxRetry = config.GetInt("Processor.maxRetry", 30)
-	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
+	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, "Processor.retrySleepInMS")
 }
 
 func init() {
@@ -130,6 +133,7 @@ func (trans *HandleT) transformWorker() {
 		}
 		retryCount := 0
 		var resp *http.Response
+		var respData []byte
 		//We should rarely have error communicating with our JS
 		reqFailed := false
 
@@ -137,6 +141,13 @@ func (trans *HandleT) transformWorker() {
 			transformRequestTimerStat.Start()
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
+
+			if err == nil {
+				//If no err returned by client.Post, reading body.
+				//If reading body fails, retrying.
+				respData, err = ioutil.ReadAll(resp.Body)
+			}
+
 			if err != nil {
 				transformRequestTimerStat.End()
 				reqFailed = true
@@ -178,10 +189,6 @@ func (trans *HandleT) transformWorker() {
 		}
 
 		var transformerResponses []TransformerResponseT
-		respData, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			panic(err)
-		}
 		if resp.StatusCode == http.StatusOK {
 			err = json.Unmarshal(respData, &transformerResponses)
 			//This is returned by our JS engine so should  be parsable

@@ -180,9 +180,11 @@ func (mr *MockJobsDBMockRecorder) Status() *gomock.Call {
 }
 
 // Store mocks base method
-func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) {
+func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Store", arg0)
+	ret := m.ctrl.Call(m, "Store", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // Store indicates an expected call of Store
@@ -218,9 +220,11 @@ func (mr *MockJobsDBMockRecorder) StoreWithRetryEach(arg0 interface{}) *gomock.C
 }
 
 // UpdateJobStatus mocks base method
-func (m *MockJobsDB) UpdateJobStatus(arg0 []*jobsdb.JobStatusT, arg1 []string, arg2 []jobsdb.ParameterFilterT) {
+func (m *MockJobsDB) UpdateJobStatus(arg0 []*jobsdb.JobStatusT, arg1 []string, arg2 []jobsdb.ParameterFilterT) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "UpdateJobStatus", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "UpdateJobStatus", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // UpdateJobStatus indicates an expected call of UpdateJobStatus

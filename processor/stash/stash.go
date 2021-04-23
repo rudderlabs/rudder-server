@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -34,11 +33,11 @@ func init() {
 }
 
 func loadConfig() {
-	errorStashEnabled = config.GetBool("Processor.errorStashEnabled", true)
-	errReadLoopSleep = config.GetDuration("Processor.errReadLoopSleepInS", time.Duration(30)) * time.Second
-	errDBReadBatchSize = config.GetInt("Processor.errDBReadBatchSize", 10000)
-	noOfErrStashWorkers = config.GetInt("Processor.noOfErrStashWorkers", 2)
-	maxFailedCountForErrJob = config.GetInt("BatchRouter.maxFailedCountForErrJob", 3)
+	config.RegisterBoolConfigVariable(true, &errorStashEnabled, true, "Processor.errorStashEnabled")
+	config.RegisterDurationConfigVariable(time.Duration(30), &errReadLoopSleep, true, time.Second, "Processor.errReadLoopSleepInS")
+	config.RegisterIntConfigVariable(1000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
+	config.RegisterIntConfigVariable(2, &noOfErrStashWorkers, true, 1, "Processor.noOfErrStashWorkers")
+	config.RegisterIntConfigVariable(3, &maxFailedCountForErrJob, true, 1, "Processor.maxFailedCountForErrJob")
 }
 
 type StoreErrorOutputT struct {
@@ -61,14 +60,12 @@ func New() *HandleT {
 }
 
 func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
-
 	st.logger = pkgLogger
 	st.errorDB = errorDB
 	st.stats = stats.DefaultStats
 	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.statErrDBW = st.stats.NewStat("processor.err_db_write_time", stats.TimerType)
 	st.crashRecover()
-	admin.RegisterAdminHandler("ProcErrors", &StashRpcHandler{errorDB})
 }
 
 func (st *HandleT) crashRecover() {
@@ -94,7 +91,11 @@ func (st *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		st.errorDB.UpdateJobStatus(statusList, nil, nil)
+		err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as failed. Panicking. Err: %v", err)
+			panic(err)
+		}
 	}
 }
 
@@ -217,7 +218,11 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		}
 		statusList = append(statusList, &status)
 	}
-	st.errorDB.UpdateJobStatus(statusList, nil, nil)
+	err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+	if err != nil {
+		pkgLogger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
+		panic(err)
+	}
 }
 
 func (st *HandleT) readErrJobsLoop() {
@@ -264,7 +269,12 @@ func (st *HandleT) readErrJobsLoop() {
 			statusList = append(statusList, &status)
 		}
 
-		st.errorDB.UpdateJobStatus(statusList, nil, nil)
+		err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
+			panic(err)
+		}
+
 		if hasFileUploader {
 			st.errProcessQ <- combinedList
 		}
