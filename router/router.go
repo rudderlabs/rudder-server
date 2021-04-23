@@ -168,6 +168,19 @@ type failureMetric struct {
 	ErrorResponse     json.RawMessage `json:"error_response"`
 }
 
+var BatchEvent = []byte(`
+	{
+		"batch": [
+		]
+	}
+`)
+
+var BatchRTEvent = []byte(`
+	{
+		"batch": 
+	}
+`)
+
 func isSuccessStatus(status int) bool {
 	return status >= 200 && status < 300
 }
@@ -386,11 +399,32 @@ func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) []byte {
 	return resp
 }
 
+func getIterableJSON(payload []byte, transformAt string) gjson.Result {
+	var result gjson.Result
+	var body []byte
+	var err error
+	if transformAt == "router" {
+		if !misc.ValidBytes(payload) {
+			body, err = sjson.SetRawBytes(BatchRTEvent, "batch", payload)
+		} else {
+			body, err = sjson.SetRawBytes(BatchEvent, "batch.0", payload)
+		}
+	} else {
+		body, err = sjson.SetRawBytes(BatchEvent, "batch.0", payload)
+	}
+	if err != nil {
+		return result
+	}
+	result = gjson.GetBytes(body, "batch")
+	return result
+}
+
 func (worker *workerT) handleWorkerDestinationJobs() {
 	worker.batchTimeStat.Start()
 
 	var respStatusCode, prevRespStatusCode int
 	var respBody string
+	var respBodyTemp string
 	handledJobMetadatas := make(map[int64]*types.JobMetadataT)
 
 	var destinationResponseHandler ResponseHandlerI
@@ -445,6 +479,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				sourceID := destinationJob.JobMetadataArray[0].SourceID
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
 				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
+				transformAt := destinationJob.JobMetadataArray[0].TransformAt
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
@@ -460,7 +495,17 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
-					respStatusCode, respBody = worker.rt.netHandle.sendPost(destinationJob.Message)
+					result := getIterableJSON(destinationJob.Message, transformAt)
+					result.ForEach(func(_, vjson gjson.Result) bool {
+						respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost([]byte(vjson.String()))
+						if isSuccessStatus(respStatusCode) {
+							respBody = respBody + " " + respBodyTemp
+							return true
+						} else {
+							respBody = respBodyTemp
+							return false
+						}
+					})
 				}
 				ch <- struct{}{}
 
@@ -663,6 +708,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	if respBody != "" {
 		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "response", respBody)
 	}
+	if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
+		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+	}
 
 	if isSuccessStatus(respStatusCode) {
 		atomic.AddUint64(&worker.rt.successCount, 1)
@@ -686,9 +734,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		//Saving payload to DB only
 		//1. if job failed and
 		//2. if router job undergoes batching or dest transform.
-		if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
-			status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
-		}
 		// the job failed
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
 		worker.failedJobs++
