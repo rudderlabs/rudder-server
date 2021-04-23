@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS reports (
 		source_job_run_id VARCHAR(64),
 		in_pu VARCHAR(64),
 		pu VARCHAR(64),
-		reported_min BIGINT NOT NULL,
+		reported_at BIGINT NOT NULL,
 		status_code INT,
 		sample_response TEXT,
 		sample_event JSONB,

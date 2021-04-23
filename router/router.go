@@ -992,6 +992,34 @@ func (rt *HandleT) statusInsertLoop() {
 			var statusList []*jobsdb.JobStatusT
 			var routerAbortedJobs []*jobsdb.JobT
 			for _, resp := range responseList {
+				//Update metrics maps
+				var parameters JobParametersT
+				err := json.Unmarshal(resp.JobT.Parameters, &parameters)
+				if err != nil {
+					rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
+				}
+				key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
+				cd, ok := connectionDetailsMap[key]
+				if !ok {
+					cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
+					connectionDetailsMap[key] = cd
+				}
+				sd, ok := statusDetailsMap[key]
+				if !ok {
+					errorCode, err := strconv.Atoi(resp.status.ErrorCode)
+					if err != nil {
+						errorCode = 200 //TODO handle properly
+					}
+					sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload)
+					statusDetailsMap[key] = sd
+				}
+				if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 {
+					sd.Count++
+				}
+				if resp.status.JobState != jobsdb.Failed.State {
+					sd.Count++
+				}
+
 				statusList = append(statusList, resp.status)
 
 				if resp.status.JobState == jobsdb.Aborted.State {
@@ -1023,7 +1051,9 @@ func (rt *HandleT) statusInsertLoop() {
 					PUDetails:         *utilTypes.CreatePUDetails(utilTypes.DEST_TRANSFORMER, utilTypes.ROUTER, true, false),
 					StatusDetail:      statusDetailsMap[k],
 				}
-				reportMetrics = append(reportMetrics, m)
+				if m.StatusDetail.Count != 0 {
+					reportMetrics = append(reportMetrics, m)
+				}
 			}
 
 			if len(statusList) > 0 {

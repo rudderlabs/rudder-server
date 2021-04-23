@@ -35,9 +35,9 @@ type Client struct {
 type StatusDetail struct {
 	Status         string          `json:"state"`
 	Count          int64           `json:"count"`
-	StatusCode     int             `json:"status_code"`
-	SampleResponse string          `json:"sample_response"`
-	SampleEvent    json.RawMessage `json:"sample_event"`
+	StatusCode     int             `json:"statusCode"`
+	SampleResponse string          `json:"sampleResponse"`
+	SampleEvent    json.RawMessage `json:"sampleEvent"`
 }
 
 type ReportByStatus struct {
@@ -49,13 +49,13 @@ type ReportByStatus struct {
 }
 
 type InstanceDetails struct {
-	WorksapceID string `json:"workspace_id"`
+	WorksapceID string `json:"workspaceId"`
 	Namespace   string `json:"namespace"`
-	InstanceID  string `json:"instance_id"`
+	InstanceID  string `json:"instanceId"`
 }
 
 type ReportMetadata struct {
-	ReportedMin int64 `json:"reported_min"`
+	ReportedMin int64 `json:"reportedAt"`
 }
 
 type Metric struct {
@@ -67,19 +67,19 @@ type Metric struct {
 }
 
 type ConnectionDetails struct {
-	SourceID        string `json:"source_id"`
-	DestinationID   string `json:"destination_id"`
-	SourceBatchID   string `json:"source_batch_id"`
-	SourceTaskID    string `json:"source_task_id"`
-	SourceTaskRunID string `json:"source_task_run_id"`
-	SourceJobID     string `json:"source_job_id"`
-	SourceJobRunID  string `json:"source_job_run_id"`
+	SourceID        string `json:"sourceId"`
+	DestinationID   string `json:"destinationId"`
+	SourceBatchID   string `json:"sourceBatchId"`
+	SourceTaskID    string `json:"sourceTaskId"`
+	SourceTaskRunID string `json:"sourceTaskRunId"`
+	SourceJobID     string `json:"sourceJobId"`
+	SourceJobRunID  string `json:"sourceJobRunId"`
 }
 type PUDetails struct {
-	InPU       string `json:"in_reported_by"`
-	PU         string `json:"reported_by"`
-	TerminalPU bool   `json:"terminal_state"`
-	InitialPU  bool   `json:"initial_state"`
+	InPU       string `json:"inReportedBy"`
+	PU         string `json:"reportedBy"`
+	TerminalPU bool   `json:"terminalState"`
+	InitialPU  bool   `json:"initialState"`
 }
 
 type PUReportedMetric struct {

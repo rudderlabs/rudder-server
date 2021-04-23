@@ -522,7 +522,12 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			sd = types.CreateStatusDetail(jobState, 0, errorCode, string(errorResp), job.EventPayload)
 			statusDetailsMap[key] = sd
 		}
-		sd.Count++
+		if status.JobState == jobsdb.Failed.State && status.AttemptNum == 1 {
+			sd.Count++
+		}
+		if status.JobState != jobsdb.Failed.State {
+			sd.Count++
+		}
 	}
 
 	//tracking batch router errors
@@ -564,7 +569,9 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			PUDetails:         *types.CreatePUDetails(types.DEST_TRANSFORMER, types.BATCH_ROUTER, terminalPU, false),
 			StatusDetail:      statusDetailsMap[k],
 		}
-		reportMetrics = append(reportMetrics, m)
+		if m.StatusDetail.Count != 0 {
+			reportMetrics = append(reportMetrics, m)
+		}
 	}
 
 	//Mark the status of the jobs
