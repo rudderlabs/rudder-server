@@ -993,6 +993,7 @@ func (rt *HandleT) statusInsertLoop() {
 			var routerAbortedJobs []*jobsdb.JobT
 			for _, resp := range responseList {
 				//Update metrics maps
+				//REPORTING - ROUTER - START
 				var parameters JobParametersT
 				err := json.Unmarshal(resp.JobT.Parameters, &parameters)
 				if err != nil {
@@ -1019,6 +1020,7 @@ func (rt *HandleT) statusInsertLoop() {
 				if resp.status.JobState != jobsdb.Failed.State {
 					sd.Count++
 				}
+				//REPORTING - ROUTER - END
 
 				statusList = append(statusList, resp.status)
 

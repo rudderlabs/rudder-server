@@ -1112,6 +1112,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					}
 				}
 
+				//REPORTING - GATEWAY metrics - START
 				//Grouping events by sourceid + destinationid + source batch id to find the count
 				key := fmt.Sprintf("%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID)
 				if _, ok := inCountMap[key]; !ok {
@@ -1133,6 +1134,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					statusDetailsMap[key] = sd
 				}
 				sd.Count++
+				//REPORTING - GATEWAY metrics - END
 			}
 		}
 
@@ -1366,7 +1368,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			}
 		}
 
-		//TODO not necessary, remove these panics?
+		//REPORTING - PROCESSOR metrics - START
 		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
 		inPU := types.GATEWAY
@@ -1387,6 +1389,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		reportMetrics = append(reportMetrics, failedMetrics...)
 		reportMetrics = append(reportMetrics, successMetrics...)
 		reportMetrics = append(reportMetrics, diffMetrics...)
+		//REPORTING - PROCESSOR metrics - END
 	}
 
 	proc.destProcessing.End()
