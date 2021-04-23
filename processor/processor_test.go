@@ -468,7 +468,7 @@ var _ = Describe("Processor", func() {
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":"0","source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":""}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":""}`))
 			}
 
 			// One Store call is expected for all events
@@ -656,7 +656,7 @@ var _ = Describe("Processor", func() {
 				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":"0","source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":""}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":""}`))
 			}
 
 			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).
@@ -1183,7 +1183,7 @@ var _ = Describe("Processor", func() {
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(job.CustomVal).To(Equal("enabled-destination-a-definition-name"))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(fmt.Sprintf(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-a", "error": "error-%v", "status_code": "400", "stage": "dest_transformer"}`, i+1)))
+				Expect(string(job.Parameters)).To(Equal(fmt.Sprintf(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": "400", "stage": "dest_transformer"}`, i+1)))
 
 				// compare payloads
 				var payload []map[string]interface{}
@@ -1294,7 +1294,7 @@ var _ = Describe("Processor", func() {
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(job.CustomVal).To(Equal("MINIO"))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-b", "error": "error-combined", "status_code": "400", "stage": "user_transformer"}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": "400", "stage": "user_transformer"}`))
 
 				// compare payloads
 				var payload []map[string]interface{}
