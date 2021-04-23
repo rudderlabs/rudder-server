@@ -47,8 +47,9 @@ var (
 )
 
 func loadConfig() {
-	maxRetry = config.GetInt("Processor.maxRetry", 30)
-	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
+	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, "Processor.retrySleepInMS")
+
 }
 
 func init() {
@@ -68,6 +69,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 
 	retryCount := 0
 	var resp *http.Response
+	var respData []byte
 	//We should rarely have error communicating with our JS
 	reqFailed := false
 
@@ -85,6 +87,13 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 		trans.transformRequestTimerStat.Start()
 		resp, err = trans.client.Post(url, "application/json; charset=utf-8",
 			bytes.NewBuffer(rawJSON))
+
+		if err == nil {
+			//If no err returned by client.Post, reading body.
+			//If reading body fails, retrying.
+			respData, err = ioutil.ReadAll(resp.Body)
+		}
+
 		if err != nil {
 			trans.transformRequestTimerStat.End()
 			reqFailed = true
@@ -108,11 +117,6 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	// Remove Assertion?
 	if resp.StatusCode != http.StatusOK {
 		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
-	}
-
-	respData, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		panic(err)
 	}
 
 	var destinationJobs []types.DestinationJobT

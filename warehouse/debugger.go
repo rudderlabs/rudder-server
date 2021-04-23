@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 

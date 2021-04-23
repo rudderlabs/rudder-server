@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"context"
+
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
@@ -14,6 +15,7 @@ type warehousegrpc struct {
 
 func (w *warehousegrpc) GetWHUploads(context context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
 	uploadsReq := UploadsReqT{
+		WorkspaceID:     request.WorkspaceId,
 		SourceID:        request.SourceId,
 		DestinationID:   request.DestinationId,
 		DestinationType: request.DestinationType,
@@ -28,8 +30,9 @@ func (w *warehousegrpc) GetWHUploads(context context.Context, request *proto.WHU
 
 func (w *warehousegrpc) GetWHUpload(context context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
 	uploadReq := UploadReqT{
-		UploadId: request.UploadId,
-		API:      UploadAPI,
+		UploadId:    request.UploadId,
+		WorkspaceID: request.WorkspaceId,
+		API:         UploadAPI,
 	}
 	res, err := uploadReq.GetWHUpload()
 	return res, err

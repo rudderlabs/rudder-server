@@ -47,7 +47,7 @@ func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.RudderSt
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
-		"destination": job.warehouseID(),
+		"warehouseID": job.warehouseID(),
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value

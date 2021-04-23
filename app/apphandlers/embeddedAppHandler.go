@@ -10,8 +10,9 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/services/db"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
-	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	// This is necessary for compatibility with enterprise features
@@ -40,6 +41,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
+	transformationdebugger.Setup()
 	destinationdebugger.Setup()
 	sourcedebugger.Setup()
 

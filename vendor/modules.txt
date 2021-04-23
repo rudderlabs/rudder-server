@@ -119,6 +119,11 @@ github.com/cloudflare/golz4
 github.com/coinpaprika/ratelimiter
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
+# github.com/denisenkom/go-mssqldb v0.9.0
+github.com/denisenkom/go-mssqldb
+github.com/denisenkom/go-mssqldb/internal/cp
+github.com/denisenkom/go-mssqldb/internal/decimal
+github.com/denisenkom/go-mssqldb/internal/querytext
 # github.com/dgraph-io/badger/v2 v2.0.3
 github.com/dgraph-io/badger/v2
 github.com/dgraph-io/badger/v2/options
@@ -168,6 +173,8 @@ github.com/golang-migrate/migrate/v4/internal/url
 github.com/golang-migrate/migrate/v4/source
 github.com/golang-migrate/migrate/v4/source/go_bindata
 github.com/golang-migrate/migrate/v4/source/httpfs
+# github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe
+github.com/golang-sql/civil
 # github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 github.com/golang/glog
 # github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
@@ -480,6 +487,7 @@ google.golang.org/api/internal/third_party/uritemplates
 google.golang.org/api/iterator
 google.golang.org/api/option
 google.golang.org/api/option/internaloption
+google.golang.org/api/sheets/v4
 google.golang.org/api/storage/v1
 google.golang.org/api/support/bundler
 google.golang.org/api/transport/cert

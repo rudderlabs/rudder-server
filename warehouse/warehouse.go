@@ -64,6 +64,8 @@ var (
 	maxStagingFileReadBufferCapacityInK int
 	destinationsMap                     map[string]warehouseutils.WarehouseT // destID -> warehouse map
 	destinationsMapLock                 sync.RWMutex
+	sourceIDsByWorkspace                map[string][]string // workspaceID -> []sourceIDs
+	sourceIDsByWorkspaceLock            sync.RWMutex
 	longRunningUploadStatThresholdInMin time.Duration
 	pkgLogger                           logger.LoggerI
 	numLoadFileUploadWorkers            int
@@ -119,11 +121,11 @@ func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
 	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
-	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
-	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
-	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
-	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
-	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 1) * time.Second
+	config.RegisterIntConfigVariable(8, &noOfWorkers, true, 1, "Warehouse.noOfWorkers")
+	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
+	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
+	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
+	config.RegisterDurationConfigVariable(time.Duration(5), &mainLoopSleep, true, time.Second, "Warehouse.mainLoopSleepInS")
 	crashRecoverWarehouses = []string{"RS"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
@@ -135,16 +137,17 @@ func loadConfig() {
 	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslmode = config.GetEnv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
-	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
-	stagingFilesSchemaPaginationSize = config.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100)
-	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
-	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
-	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
+	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
+	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
+	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
+	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
+	config.RegisterDurationConfigVariable(time.Duration(180), &retryTimeWindow, true, time.Minute, "Warehouse.retryTimeWindowInMins")
 	destinationsMap = map[string]warehouseutils.WarehouseT{}
-	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 10240)
-	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
-	slaveUploadTimeout = config.GetDuration("Warehouse.slaveUploadTimeoutInMin", time.Duration(10)) * time.Minute
-	numLoadFileUploadWorkers = config.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
+	sourceIDsByWorkspace = map[string][]string{}
+	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
+	config.RegisterDurationConfigVariable(time.Duration(120), &longRunningUploadStatThresholdInMin, true, time.Minute, "Warehouse.longRunningUploadStatThresholdInMin")
+	config.RegisterDurationConfigVariable(time.Duration(10), &slaveUploadTimeout, true, time.Minute, "Warehouse.slaveUploadTimeoutInMin")
+	config.RegisterIntConfigVariable(8, &numLoadFileUploadWorkers, true, 1, "Warehouse.numLoadFileUploadWorkers")
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	uploadStatusTrackFrequency = config.GetDuration("Warehouse.uploadStatusTrackFrequencyInMin", time.Duration(30)) * time.Minute
 	uploadBufferTimeInMin = config.GetInt("Warehouse.uploadBufferTimeInMin", 180)
@@ -210,6 +213,13 @@ func (wh *HandleT) backendConfigSubscriber() {
 		allSources := config.Data.(backendconfig.ConfigT)
 
 		for _, source := range allSources.Sources {
+			sourceIDsByWorkspaceLock.Lock()
+			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
+				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
+			}
+			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
+			sourceIDsByWorkspaceLock.Unlock()
+
 			if len(source.Destinations) == 0 {
 				continue
 			}
@@ -647,9 +657,16 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			continue
 		}
 
+		upload.SourceType = warehouse.Source.SourceDefinition.Name
+		upload.SourceCategory = warehouse.Source.SourceDefinition.Category
+
 		stagingFilesList, err := wh.getStagingFiles(warehouse, upload.StartStagingFileID, upload.EndStagingFileID)
 		if err != nil {
 			return nil, err
+		}
+		var stagingFileIDs []int64
+		for _, stagingFile := range stagingFilesList {
+			stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
 		}
 
 		whManager, err := manager.New(wh.destType)
@@ -658,12 +675,13 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		}
 
 		uploadJob := UploadJobT{
-			upload:       &upload,
-			stagingFiles: stagingFilesList,
-			warehouse:    warehouse,
-			whManager:    whManager,
-			dbHandle:     wh.dbHandle,
-			pgNotifier:   &wh.notifier,
+			upload:         &upload,
+			stagingFiles:   stagingFilesList,
+			stagingFileIDs: stagingFileIDs,
+			warehouse:      warehouse,
+			whManager:      whManager,
+			dbHandle:       wh.dbHandle,
+			pgNotifier:     &wh.notifier,
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)
@@ -833,6 +851,7 @@ var loadFileFormatMap = map[string]string{
 	"SNOWFLAKE":  "csv",
 	"POSTGRES":   "csv",
 	"CLICKHOUSE": "csv",
+	"MSSQL":      "csv",
 }
 
 func minimalConfigSubscriber() {
@@ -843,6 +862,12 @@ func minimalConfigSubscriber() {
 		pkgLogger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.ConfigT)
 		for _, source := range sources.Sources {
+			sourceIDsByWorkspaceLock.Lock()
+			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
+				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
+			}
+			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
+			sourceIDsByWorkspaceLock.Unlock()
 			for _, destination := range source.Destinations {
 				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh := &HandleT{
