@@ -55,7 +55,7 @@ type InstanceDetails struct {
 }
 
 type ReportMetadata struct {
-	ReportedMin int64 `json:"reportedAt"`
+	ReportedAt int64 `json:"reportedAt"`
 }
 
 type Metric struct {
