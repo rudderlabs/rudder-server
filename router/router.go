@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"encoding/json"
 	"fmt"
+	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"math"
 	"math/rand"
 	"sort"
@@ -440,7 +441,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
-					respStatusCode, respBody = worker.rt.netHandle.sendPost(destinationJob.Message)
+					respStatusCode, respBody = worker.rt.netHandle.SendPost(destinationJob.Message)
 				}
 				ch <- struct{}{}
 
@@ -1372,6 +1373,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 func (rt *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	connectionTestingEnabled := []string{"AM", "BRAZE", "GA", "MP", "WEBHOOK"}
 	for {
 		config := <-ch
 		rt.configSubscriberLock.Lock()
@@ -1385,6 +1387,13 @@ func (rt *HandleT) backendConfigSubscriber() {
 						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 							rt.saveDestinationResponse = value
+						}
+						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(connectionTestingEnabled, destination.DestinationDefinition.Name) {
+							destination := destination
+							rruntime.Go(func() {
+								testResponse := destinationConnectionTester.TestDestinationConnection(destination)
+								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
+							})
 						}
 					}
 				}

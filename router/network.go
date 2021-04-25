@@ -24,9 +24,9 @@ type NetHandleT struct {
 
 //var pkgLogger logger.LoggerI
 
-//sendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
+//SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
-func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody string) {
+func (network *NetHandleT) SendPost(jsonData []byte) (statusCode int, respBody string) {
 	client := network.httpClient
 	//Parse the response to get parameters
 	postInfo, err := integrations.GetPostInfo(jsonData)
