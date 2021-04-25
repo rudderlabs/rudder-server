@@ -1789,14 +1789,13 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 	for _, status := range statusList {
 		//  Handle the case when google analytics returns gif in response
 		updatedStatesMap[status.JobState] = true
-		if !utf8.ValidString(string(status.ErrorResponse)) {
+		errorResponse := string(status.ErrorResponse)
+		if !utf8.ValidString(string(errorResponse)) || strings.HasPrefix(errorResponse, "GIF") {
 			status.ErrorResponse = []byte(`{}`)
 		}
-		errorResponse := strings.ReplaceAll(string(status.ErrorResponse), "\u0000", "")
 		_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
 			status.RetryTime, status.ErrorCode, errorResponse)
 		if err != nil {
-			pkgLogger.Errorf(`Error inserting job status with error response: %v`, string(status.ErrorResponse))
 			return
 		}
 	}
