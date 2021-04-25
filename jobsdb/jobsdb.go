@@ -1790,7 +1790,7 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 		//  Handle the case when google analytics returns gif in response
 		updatedStatesMap[status.JobState] = true
 		errorResponse := string(status.ErrorResponse)
-		if !utf8.ValidString(string(errorResponse)) || strings.HasPrefix(errorResponse, "GIF") {
+		if !utf8.ValidString(string(errorResponse)) || strings.Contains(errorResponse, "GIF89") {
 			status.ErrorResponse = []byte(`{}`)
 		}
 		_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
