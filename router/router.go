@@ -467,6 +467,11 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 		} else {
 			respStatusCode = destinationJob.StatusCode
 			respBody = destinationJob.Error
+			// TODO: Remove this and put proper fix
+			if strings.Contains(respBody, "GIF89") {
+				pkgLogger.Errorf(`Invalid GIF response from destination: %s`, respBody)
+				respBody = ""
+			}
 		}
 
 		if !isJobTerminated(respStatusCode) {
