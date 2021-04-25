@@ -1792,9 +1792,11 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 		if !utf8.ValidString(string(status.ErrorResponse)) {
 			status.ErrorResponse = []byte(`{}`)
 		}
+		errorResponse := strings.ReplaceAll(string(status.ErrorResponse), "\\u0000", "")
 		_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
-			status.RetryTime, status.ErrorCode, string(status.ErrorResponse))
+			status.RetryTime, status.ErrorCode, errorResponse)
 		if err != nil {
+			pkgLogger.Errorf(`Error inserting job status with error response: %v`, string(status.ErrorResponse))
 			return
 		}
 	}
