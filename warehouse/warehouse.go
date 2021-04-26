@@ -762,7 +762,7 @@ func (wh *HandleT) uploadStatusTrack() {
 			}
 
 			lastSyncTime := time.Now().Add(time.Duration(-timeWindow) * time.Minute)
-			if !createdAt.Valid || createdAt.Before(lastSyncTime) {
+			if !createdAt.Valid || createdAt.Time.Before(lastSyncTime) {
 				continue
 			}
 
@@ -772,7 +772,7 @@ func (wh *HandleT) uploadStatusTrack() {
 				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, timeWindow)
 
 			var uploaded int
-			err := wh.dbHandle.QueryRow(sqlStatement).Scan(&uploaded)
+			err = wh.dbHandle.QueryRow(sqlStatement).Scan(&uploaded)
 			if err != nil && err != sql.ErrNoRows {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}
