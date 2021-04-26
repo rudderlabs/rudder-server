@@ -1,4 +1,4 @@
-package throttler
+package ratelimiter
 
 import (
 	"fmt"
@@ -51,7 +51,7 @@ func (m *MapLimitStore) Inc(key string, window time.Time) error {
 	return nil
 }
 
-// Inc increments current window limit counter for key
+// Dec decrements current window limit counter for key
 func (m *MapLimitStore) Dec(key string, count int64, window time.Time) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()

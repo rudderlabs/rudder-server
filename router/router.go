@@ -100,9 +100,14 @@ type JobParametersT struct {
 	TransformAt   string `json:"transform_at"`
 }
 
+type workerMessageT struct {
+	job             *jobsdb.JobT
+	throttledAtTime time.Time
+}
+
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	channel                chan *jobsdb.JobT       // the worker job channel
+	channel                chan workerMessageT     // the worker job channel
 	workerID               int                     // identifies the worker
 	failedJobs             int                     // counts the failed jobs of a worker till it gets reset by external channel
 	sleepTime              time.Duration           // the sleep duration for every job of the worker
@@ -118,6 +123,7 @@ type workerT struct {
 	abortedUserIDMap       map[string]int // aborted user to count of jobs allowed map
 	abortedUserMutex       sync.RWMutex
 	jobCountsByDestAndUser map[string]*destJobCountsT
+	throttledAtTime        time.Time
 }
 
 type destJobCountsT struct {
@@ -234,7 +240,9 @@ func (worker *workerT) workerProcess() {
 	timeout := time.After(jobsBatchTimeout)
 	for {
 		select {
-		case job := <-worker.channel:
+		case message := <-worker.channel:
+			job := message.job
+			worker.throttledAtTime = message.throttledAtTime
 			worker.rt.logger.Debugf("[%v Router] :: performing checks to send payload to %s. Payload: ", worker.rt.destName, job.EventPayload)
 
 			userID := job.UserID
@@ -258,7 +266,7 @@ func (worker *workerT) workerProcess() {
 					markedAsWaiting := worker.handleJobForPrevFailedUser(job, parameters, userID, previousFailedJobID)
 					if markedAsWaiting {
 						worker.rt.logger.Debugf(`Decrementing in throttle map for destination:%s since job:%d is marked as waiting for user:%s`, parameters.DestinationID, job.JobID, userID)
-						worker.rt.throttler.Dec(parameters.DestinationID, userID, 1)
+						worker.rt.throttler.Dec(parameters.DestinationID, userID, 1, worker.throttledAtTime)
 						continue
 					}
 				}
@@ -577,7 +585,7 @@ func (worker *workerT) decrementInThrottleMap(apiCallsCount map[string]*destJobC
 				}
 				diff := int64(incrementedCountByUserID - sentCountByUserID)
 				if diff > 0 {
-					worker.rt.throttler.Dec(destID, userID, diff)
+					worker.rt.throttler.Dec(destID, userID, diff, worker.throttledAtTime)
 				}
 			}
 		}
@@ -589,7 +597,8 @@ func (worker *workerT) decrementInThrottleMap(apiCallsCount map[string]*destJobC
 			}
 			diff := int64(incrementedMapByDestID.total - sentMapByDestID.total)
 			if diff > 0 {
-				worker.rt.throttler.Dec(destID, "", diff)
+				pkgLogger.Debugf(`Decrementing throttle map by %d for dest:%s`, diff, destID)
+				worker.rt.throttler.Dec(destID, "", diff, worker.throttledAtTime)
 			}
 		}
 	}
@@ -806,36 +815,6 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 	return false
 }
 
-func (worker *workerT) handleThrottle(job *jobsdb.JobT, parameters JobParametersT, userID string, isPrevFailedUser bool) (hasBeenThrottled bool) {
-	if !worker.rt.throttler.IsEnabled() {
-		return false
-	}
-	worker.rt.throttlerMutex.Lock()
-	toThrottle := worker.rt.throttler.CheckLimitReached(parameters.DestinationID, userID)
-	worker.rt.throttlerMutex.Unlock()
-	if toThrottle {
-		// block other jobs of same user if userEventOrdering is required.
-		if worker.rt.guaranteeUserEventOrder && !isPrevFailedUser && userID != "" {
-			worker.rt.logger.Errorf("[%v Router] :: Request Failed for userID: %v. Adding user to failed users map to preserve ordering.", worker.rt.destName, userID)
-			worker.failedJobIDMutex.Lock()
-			worker.failedJobIDMap[userID] = job.JobID
-			worker.failedJobIDMutex.Unlock()
-		}
-		worker.rt.logger.Debugf("[%v Router] :: throttling %v for destinationID: %v", worker.rt.destName, job.JobID, parameters.DestinationID)
-		status := jobsdb.JobStatusT{
-			JobID:         job.JobID,
-			AttemptNum:    job.LastJobStatus.AttemptNum,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
-			JobState:      jobsdb.Throttled.State,
-			ErrorResponse: []byte(`{}`), // check
-		}
-		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
-		return true
-	}
-	return false
-}
-
 func durationBeforeNextAttempt(attempt int) (d time.Duration) {
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = minRetryBackoff
@@ -883,7 +862,7 @@ func (rt *HandleT) initWorkers() {
 	rt.workers = make([]*workerT, rt.noOfWorkers)
 	for i := 0; i < rt.noOfWorkers; i++ {
 		worker := &workerT{
-			channel:                make(chan *jobsdb.JobT, noOfJobsPerChannel),
+			channel:                make(chan workerMessageT, noOfJobsPerChannel),
 			failedJobIDMap:         make(map[string]int64),
 			retryForJobMap:         make(map[int64]time.Time),
 			workerID:               i,
@@ -904,7 +883,7 @@ func (rt *HandleT) initWorkers() {
 	}
 }
 
-func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
+func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSendWorker *workerT) {
 
 	if !rt.guaranteeUserEventOrder {
 		//if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
@@ -972,7 +951,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
 	if toSendWorker != nil {
 		var parameters JobParametersT
 		err := json.Unmarshal(job.Parameters, &parameters)
-		if err == nil && rt.canThrottle(&parameters, userID) {
+		if err == nil && rt.canThrottle(parameters.DestinationID, userID, throttledAtTime) {
 			rt.throttledUserMap[userID] = struct{}{}
 			rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`, rt.destName, job.JobID, userID)
 			return nil
@@ -994,15 +973,15 @@ func (worker *workerT) canBackoff(job *jobsdb.JobT, userID string) (shouldBackof
 	return false
 }
 
-func (rt *HandleT) canThrottle(parameters *JobParametersT, userID string) (canBeThrottled bool) {
+func (rt *HandleT) canThrottle(destID string, userID string, throttledAtTime time.Time) (canBeThrottled bool) {
 	if !rt.throttler.IsEnabled() {
 		return false
 	}
 
 	//No need of locks here, because this is used only by a single goroutine (generatorLoop)
-	limitReached := rt.throttler.CheckLimitReached(parameters.DestinationID, userID)
+	limitReached := rt.throttler.CheckLimitReached(destID, userID, throttledAtTime)
 	if !limitReached {
-		rt.throttler.Inc(parameters.DestinationID, userID)
+		rt.throttler.Inc(destID, userID, throttledAtTime)
 	}
 	return limitReached
 }
@@ -1280,6 +1259,7 @@ func (rt *HandleT) generatorLoop() {
 		var toProcess []workerJobT
 
 		rt.throttledUserMap = make(map[string]struct{})
+		throttledAtTime := time.Now()
 		//Identify jobs which can be processed
 		for _, job := range combinedList {
 			if rt.drainJobHandler.CanJobBeDrained(job.JobID, destIDExtractor([]byte(job.Parameters))) {
@@ -1295,7 +1275,7 @@ func (rt *HandleT) generatorLoop() {
 				drainList = append(drainList, &status)
 				continue
 			}
-			w := rt.findWorker(job)
+			w := rt.findWorker(job, throttledAtTime)
 			if w != nil {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
@@ -1327,7 +1307,7 @@ func (rt *HandleT) generatorLoop() {
 
 		//Send the jobs to the jobQ
 		for _, wrkJob := range toProcess {
-			wrkJob.worker.channel <- wrkJob.job
+			wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime}
 		}
 
 		if len(toProcess) == 0 {
