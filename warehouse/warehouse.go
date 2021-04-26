@@ -1047,7 +1047,13 @@ func Start() {
 	psqlInfo := getConnectionString()
 
 	setupDB(psqlInfo)
-	defer startWebHandler()
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Fatal(r)
+			panic(r)
+		}
+		startWebHandler()
+	}()
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
