@@ -755,14 +755,14 @@ func (wh *HandleT) uploadStatusTrack() {
 				select created_at from %[1]s where source_id='%[2]s' and destination_id='%[3]s' order by created_at desc limit 1`,
 				warehouseutils.WarehouseStagingFilesTable, source.ID, destination.ID)
 
-			var createdAt time.Time
+			var createdAt sql.NullTime
 			err := wh.dbHandle.QueryRow(sqlStatement).Scan(&createdAt)
 			if err != nil && err != sql.ErrNoRows {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}
 
 			lastSyncTime := time.Now().Add(time.Duration(-timeWindow) * time.Minute)
-			if createdAt.Before(lastSyncTime) {
+			if !createdAt.Valid || createdAt.Before(lastSyncTime) {
 				continue
 			}
 
