@@ -174,7 +174,7 @@ func recordStagedRowsStat(totalEvents int, destType, destID, sourceName, destNam
 	stats.NewTaggedStat("rows_staged", stats.CountType, tags).Count(totalEvents)
 }
 
-func recordUploadStatusStat(name, destType, destID, sourceName, destName string) stats.RudderStats {
+func getUploadStatusStat(name, destType, destID, sourceName, destName string) stats.RudderStats {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    destType,

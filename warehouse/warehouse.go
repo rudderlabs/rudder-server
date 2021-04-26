@@ -731,8 +731,6 @@ func (wh *HandleT) runUploadJobAllocator() {
 
 func (wh *HandleT) uploadStatusTrack() {
 	for {
-		time.Sleep(uploadStatusTrackFrequency)
-
 		for _, warehouse := range wh.warehouses {
 			source := warehouse.Source
 			destination := warehouse.Destination
@@ -754,31 +752,50 @@ func (wh *HandleT) uploadStatusTrack() {
 			}
 
 			sqlStatement := fmt.Sprintf(`
-				select 
-					cast( case when count(*) > 0 then 1 else 0 end as bit ), 
-						(select count(*) from %[7]s where source_id='%[2]s' and destination_id='%[3]s' and created_at > now() - interval '%[6]d MIN') as staging_files_count 
-				from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s') and updated_at > now() - interval '%[6]d MIN'`,
-				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, timeWindow, warehouseutils.WarehouseStagingFilesTable)
+				select created_at from %[1]s where source_id='%[2]s' and destination_id='%[3]s' order by created_at desc limit 1`,
+				warehouseutils.WarehouseStagingFilesTable, source.ID, destination.ID)
 
-			rows, err := wh.dbHandle.Query(sqlStatement)
-
+			queryRow, err := wh.dbHandle.Query(sqlStatement)
 			if err != nil && err != sql.ErrNoRows {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}
 
-			var uploaded, staging_files_count int
-			for rows.Next() {
-				err = rows.Scan(&uploaded, &staging_files_count)
+			var createdAt time.Time
+			for queryRow.Next() {
+				err = queryRow.Scan(&createdAt)
 				if err != nil {
 					panic(err)
 				}
 			}
-			rows.Close()
+			queryRow.Close()
 
-			if staging_files_count > 0 {
-				recordUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name).Count(uploaded)
+			lastSyncTime := time.Now().Add(time.Duration(-timeWindow) * time.Minute)
+			if createdAt.Before(lastSyncTime) {
+				continue
 			}
+
+			sqlStatement = fmt.Sprintf(`
+				select cast( case when count(*) > 0 then 1 else 0 end as bit ) 
+					from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s') and updated_at > now() - interval '%[6]d MIN'`,
+				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, timeWindow)
+
+			queryRow, err = wh.dbHandle.Query(sqlStatement)
+			if err != nil && err != sql.ErrNoRows {
+				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+			}
+
+			var uploaded int
+			for queryRow.Next() {
+				err = queryRow.Scan(&uploaded)
+				if err != nil {
+					panic(err)
+				}
+			}
+			queryRow.Close()
+
+			getUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name).Count(uploaded)
 		}
+		time.Sleep(uploadStatusTrackFrequency)
 	}
 }
 
