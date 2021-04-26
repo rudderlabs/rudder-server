@@ -15,8 +15,12 @@ var (
 )
 
 func init() {
-	archivalTimeInDays = config.GetInt("JobsDB.archivalTimeInDays", 10)
-	archiverTickerTime = config.GetDuration("JobsDB.archiverTickerTimeInMin", 1440) * time.Minute // default 1 day
+	loadConfigArchiver()
+}
+
+func loadConfigArchiver() {
+	config.RegisterIntConfigVariable(10, &archivalTimeInDays, true, 1, "JobsDB.archivalTimeInDays")
+	config.RegisterDurationConfigVariable(time.Duration(1440), &archiverTickerTime, true, time.Minute, "JobsDB.archiverTickerTimeInMin") // default 1 day
 }
 
 func runArchiver(prefix string, dbHandle *sql.DB) {

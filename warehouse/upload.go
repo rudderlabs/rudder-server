@@ -59,6 +59,10 @@ const (
 	TableUploadExported                = "exported_data"
 )
 
+const (
+	CloudSourceCateogry = "cloud"
+)
+
 var stateTransitions map[string]*uploadStateT
 
 type uploadStateT struct {
@@ -72,6 +76,8 @@ type UploadT struct {
 	ID                 int64
 	Namespace          string
 	SourceID           string
+	SourceType         string
+	SourceCategory     string
 	DestinationID      string
 	DestinationType    string
 	StartStagingFileID int64
@@ -96,6 +102,7 @@ type UploadJobT struct {
 	warehouse           warehouseutils.WarehouseT
 	whManager           manager.ManagerI
 	stagingFiles        []*StagingFileT
+	stagingFileIDs      []int64
 	pgNotifier          *pgnotifier.PgNotifierT
 	schemaHandle        *SchemaHandleT
 	schemaLock          sync.Mutex
@@ -136,6 +143,7 @@ func setMaxParallelLoads() {
 		"BQ":         config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
 		"RS":         config.GetInt("Warehouse.redshift.maxParallelLoads", 3),
 		"POSTGRES":   config.GetInt("Warehouse.postgres.maxParallelLoads", 3),
+		"MSSQL":      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
 		"SNOWFLAKE":  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
 		"CLICKHOUSE": config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
 	}
@@ -241,13 +249,13 @@ func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
 				table_name,
 				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
 				FROM %[1]s
-				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
+				WHERE staging_file_id IN (%[2]v)
 		)
 		SELECT SUM(total_events)
 			FROM row_numbered_load_files
 			WHERE
-				row_number=1 AND table_name != '%[6]s'`,
-		warehouseutils.WarehouseLoadFilesTable, job.upload.StartLoadFileID, job.upload.EndLoadFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID, warehouseutils.DiscardsTable)
+				row_number=1 AND table_name != '%[3]s'`,
+		warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(job.stagingFileIDs, ","), warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable))
 	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
@@ -454,6 +462,7 @@ func (job *UploadJobT) run() (err error) {
 				err = misc.ConcatErrors(loadErrors)
 				break
 			}
+			job.generateUploadSuccessMetrics()
 
 			newStatus = nextUploadState.completed
 
@@ -550,7 +559,6 @@ func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 		return
 	}
 
-	job.generateUploadSuccessMetrics()
 	return
 }
 
@@ -761,7 +769,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 		}
 		if !hasLoadFiles {
 			wg.Done()
-			if misc.ContainsString(alwaysMarkExported, tableName) {
+			if misc.ContainsString(alwaysMarkExported, strings.ToLower(tableName)) {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)
 				tableUpload.setStatus(TableUploadExported)
 			}
@@ -931,7 +939,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	if generated, _ := job.areIdentityTablesLoadFilesGenerated(); !generated {
 		err := job.resolveIdentities(populateHistoricIdentities)
 		if err != nil {
-			pkgLogger.Errorf(`SF: ID Resolution operation failed: %v`, err)
+			pkgLogger.Errorf(` ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
 			return job.processLoadTableResponse(errorMap)
 		}
@@ -1225,10 +1233,6 @@ func (job *UploadJobT) hasLoadFiles(tableName string) (bool, error) {
 }
 
 func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileID int64, err error) {
-	var stagingFileIDs []int64
-	for _, stagingFile := range job.stagingFiles {
-		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
-	}
 	stmt := fmt.Sprintf(`
 		SELECT
 			MIN(id), MAX(id)
@@ -1245,13 +1249,28 @@ func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileI
 			grouped_load_files.row_number = 1;
 	`, warehouseutils.WarehouseLoadFilesTable)
 
-	pkgLogger.Debugf(`Querying for load_file_id range for the uploadJob:%d with stagingFileIDs:%v Query:%v`, job.upload.ID, stagingFileIDs, stmt)
+	pkgLogger.Debugf(`Querying for load_file_id range for the uploadJob:%d with stagingFileIDs:%v Query:%v`, job.upload.ID, job.stagingFileIDs, stmt)
 	var minID, maxID sql.NullInt64
-	err = job.dbHandle.QueryRow(stmt, pq.Array(stagingFileIDs)).Scan(&minID, &maxID)
+	err = job.dbHandle.QueryRow(stmt, pq.Array(job.stagingFileIDs)).Scan(&minID, &maxID)
 	if err != nil {
-		return 0, 0, fmt.Errorf("Error while querying for load_file_id range for uploadJob:%d with stagingFileIDs:%v : %w", job.upload.ID, stagingFileIDs, err)
+		return 0, 0, fmt.Errorf("Error while querying for load_file_id range for uploadJob:%d with stagingFileIDs:%v : %w", job.upload.ID, job.stagingFileIDs, err)
 	}
 	return minID.Int64, maxID.Int64, nil
+}
+
+func (job *UploadJobT) deleteLoadFiles(stagingFiles []*StagingFileT) {
+	var stagingFileIDs []int64
+	for _, stagingFile := range stagingFiles {
+		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
+	}
+
+	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]s WHERE staging_file_id IN (%v)`, warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(stagingFileIDs, ","))
+	pkgLogger.Debugf(`Deleting any load files present for staging files (upload:%d) before generating them for the staging files again. Query: %s`, job.upload.ID, sqlStatement)
+
+	_, err := job.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		pkgLogger.Errorf(`Error deleting any load files present for staging files (upload:%d) before generating them for the staging files again, Query: %s`, job.upload.ID, sqlStatement)
+	}
 }
 
 func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64, endLoadFileID int64, err error) {
@@ -1276,6 +1295,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			}
 		}
 	}
+	job.deleteLoadFiles(toProcessStagingFiles)
 
 	job.setStagingFilesStatus(toProcessStagingFiles, warehouseutils.StagingFileExecutingState, nil)
 
@@ -1460,7 +1480,7 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	}
 
 	var mappingsLocation sql.NullString
-	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
+	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable))
 	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mappingsLocation)
 	if err != nil {
 		return
@@ -1497,14 +1517,14 @@ func (job *UploadJobT) GetLoadFileLocations(options warehouseutils.GetLoadFileLo
 				location,
 				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
 				FROM %[1]s
-				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s' %[6]s
+				WHERE staging_file_id IN (%[2]v) %[3]s
 		)
 		SELECT location
 			FROM row_numbered_load_files
 			WHERE
 				row_number=1
-			%[7]s`,
-		warehouseutils.WarehouseLoadFilesTable, startID, endID, job.warehouse.Source.ID, job.warehouse.Destination.ID, tableFilterSQL, limitSQL)
+			%[4]s`,
+		warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(job.stagingFileIDs, ","), tableFilterSQL, limitSQL)
 
 	pkgLogger.Debugf(`Fetching loadFileLocations: %v`, sqlStatement)
 	rows, err := dbHandle.Query(sqlStatement)
@@ -1553,6 +1573,13 @@ func (job *UploadJobT) GetSingleLoadFileLocation(tableName string) (string, erro
 	var location string
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&location)
 	return location, err
+}
+
+func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
+	if job.upload.SourceCategory == CloudSourceCateogry {
+		return true
+	}
+	return false
 }
 
 /*

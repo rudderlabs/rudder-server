@@ -44,9 +44,8 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 
 	bt.stats.transformTimerStat.End()
 	if err != nil {
-		pkgLogger.Error(err)
-		bt.stats.failedStat.Count(len(events))
-		return transformerBatchResponseT{batchError: errors.New("Internal server error in source transformer")}
+		err := fmt.Errorf("JS HTTP connection error to source transformer: URL: %v Error: %+v", url, err)
+		panic(err)
 	}
 
 	respBody, err := ioutil.ReadAll(resp.Body)
@@ -60,7 +59,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	if resp.StatusCode != http.StatusOK {
 		pkgLogger.Errorf("Source Transformer returned status code: %v", resp.StatusCode)
 		bt.stats.failedStat.Count(len(events))
-		return transformerBatchResponseT{batchError: fmt.Errorf(`Source Transformer returned non-success status code: %v, Error: %v`, resp.StatusCode, string(respBody))}
+		return transformerBatchResponseT{batchError: fmt.Errorf("source Transformer returned non-success status code: %v, Error: %v", resp.StatusCode, string(respBody))}
 	}
 
 	/*

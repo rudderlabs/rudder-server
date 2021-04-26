@@ -27,9 +27,13 @@ var (
 )
 
 func init() {
-	archiveUploadRelatedRecords = config.GetBool("Warehouse.archiveUploadRelatedRecords", true)
-	uploadsArchivalTimeInDays = config.GetInt("Warehouse.uploadsArchivalTimeInDays", 7)
-	archiverTickerTime = config.GetDuration("Warehouse.archiverTickerTimeInMin", 1440) * time.Minute // default 1 day
+	loadConfigArchiver()
+}
+
+func loadConfigArchiver() {
+	config.RegisterBoolConfigVariable(true, &archiveUploadRelatedRecords, true, "Warehouse.archiveUploadRelatedRecords")
+	config.RegisterIntConfigVariable(5, &uploadsArchivalTimeInDays, true, 1, "Warehouse.uploadsArchivalTimeInDays")
+	config.RegisterDurationConfigVariable(time.Duration(1440), &archiverTickerTime, true, time.Minute, "Warehouse.archiverTickerTimeInMin") // default 1 day
 }
 
 type backupRecordsArgs struct {
@@ -116,7 +120,7 @@ func archiveUploads(dbHandle *sql.DB) {
 		if archiver.IsArchiverObjectStorageConfigured() {
 			filterSQL := fmt.Sprintf(`source_id='%[1]s' AND destination_id='%[2]s' AND id >= %[3]d and id <= %[4]d`, sourceID, destID, startStagingFileId, endStagingFileId)
 			storedStagingFilesLocation, err = backupRecords(backupRecordsArgs{
-				tableName:      warehouseutils.WarehouseLoadFilesTable,
+				tableName:      warehouseutils.WarehouseStagingFilesTable,
 				sourceID:       sourceID,
 				destID:         destID,
 				tableFilterSQL: filterSQL,
@@ -128,6 +132,8 @@ func archiveUploads(dbHandle *sql.DB) {
 				txn.Rollback()
 				continue
 			}
+		} else {
+			pkgLogger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archivef`)
 		}
 
 		// delete staging files
@@ -170,6 +176,8 @@ func archiveUploads(dbHandle *sql.DB) {
 				txn.Rollback()
 				continue
 			}
+		} else {
+			pkgLogger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archivef`)
 		}
 
 		// delete load files

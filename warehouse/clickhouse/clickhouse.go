@@ -148,10 +148,10 @@ func init() {
 }
 
 func loadConfig() {
-	queryDebugLogs = config.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
-	blockSize = config.GetString("Warehouse.clickhouse.blockSize", "1000")
-	poolSize = config.GetString("Warehouse.clickhouse.poolSize", "10")
-	disableNullable = config.GetBool("Warehouse.clickhouse.disableNullable", false)
+	config.RegisterStringConfigVariable("false", &queryDebugLogs, true, "Warehouse.clickhouse.queryDebugLogs")
+	config.RegisterStringConfigVariable("1000", &blockSize, true, "Warehouse.clickhouse.blockSize")
+	config.RegisterStringConfigVariable("10", &poolSize, true, "Warehouse.clickhouse.poolSize")
+	config.RegisterBoolConfigVariable(false, &disableNullable, true, "Warehouse.clickhouse.disableNullable")
 
 }
 
@@ -360,6 +360,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 		}
 		csvReader := csv.NewReader(gzipReader)
+		var csvRowsProcessedCount int
 		for {
 			var record []string
 			record, err = csvReader.Read()
@@ -372,6 +373,12 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					txn.Rollback()
 					return
 				}
+			}
+			if len(sortedColumnKeys) != len(record) {
+				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
+				pkgLogger.Error(err)
+				txn.Rollback()
+				return err
 			}
 			var recordInterface []interface{}
 			for index, value := range record {
@@ -387,7 +394,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				txn.Rollback()
 				return
 			}
-
+			csvRowsProcessedCount++
 		}
 		gzipReader.Close()
 		gzipFile.Close()

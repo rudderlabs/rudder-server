@@ -2,14 +2,15 @@ package dedup
 
 import (
 	"fmt"
+	"sort"
+	"time"
+
 	badger "github.com/dgraph-io/badger/v2"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"sort"
-	"time"
 )
 
 type DedupI interface {
@@ -29,7 +30,7 @@ var (
 
 func loadConfig() {
 	// Dedup time window in hours
-	dedupWindow = config.GetDuration("Dedup.dedupWindowInS", time.Duration(86400))
+	config.RegisterDurationConfigVariable(time.Duration(86400), &dedupWindow, true, time.Second, "Dedup.dedupWindowInS")
 }
 
 func init() {
@@ -49,7 +50,7 @@ func (d *DedupHandleT) openBadger(clearDB *bool) {
 		panic(err)
 	}
 	path := fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
-	d.badgerDB, err = badger.Open(badger.DefaultOptions(path))
+	d.badgerDB, err = badger.Open(badger.DefaultOptions(path).WithTruncate(true))
 	if err != nil {
 		panic(err)
 	}

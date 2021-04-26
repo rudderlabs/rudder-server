@@ -2,10 +2,18 @@
 
 package types
 
-import "net/http"
+import (
+	"net/http"
+	"time"
+)
 
 //SingularEventT single event structrue
 type SingularEventT map[string]interface{}
+
+type SingularEventWithReceivedAt struct {
+	SingularEvent SingularEventT
+	ReceivedAt    time.Time
+}
 
 //GatewayBatchRequestT batch request structure
 type GatewayBatchRequestT struct {

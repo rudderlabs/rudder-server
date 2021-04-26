@@ -20,8 +20,12 @@ var (
 )
 
 func init() {
-	backupRowsBatchSize = config.GetInt("Archiver.backupRowsBatchSize", 100)
+	loadConfig()
 	pkgLogger = logger.NewLogger().Child("archiver")
+}
+
+func loadConfig() {
+	config.RegisterIntConfigVariable(100, &backupRowsBatchSize, true, 1, "Archiver.backupRowsBatchSize")
 }
 
 func IsArchiverObjectStorageConfigured() bool {
