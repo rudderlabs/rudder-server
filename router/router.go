@@ -388,7 +388,7 @@ func getIterableJSON(payload []byte, transformAt string) gjson.Result {
 		body, err = sjson.SetRawBytes(BatchEvent, "batch.0", payload)
 	}
 	if err != nil {
-		return result
+		panic(fmt.Errorf("Setting Payload through sjson failed with err %v", err))
 	}
 	result = gjson.GetBytes(body, "batch")
 	return result
