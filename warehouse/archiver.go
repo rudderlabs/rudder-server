@@ -82,7 +82,7 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 }
 
 func archiveUploads(dbHandle *sql.DB) {
-	sqlStatement := fmt.Sprintf(`SELECT id,source_id, destination_id, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, metadata FROM %s WHERE ((metadata->>'archivedStagingAndLoadFiles')::bool IS DISTINCT FROM TRUE) AND created_at < NOW() -INTERVAL '%d DAY' AND (status = '%s' OR status = '%s')`, warehouseutils.WarehouseUploadsTable, uploadsArchivalTimeInDays, ExportedData, Aborted)
+	sqlStatement := fmt.Sprintf(`SELECT id,source_id, destination_id, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, metadata FROM %s WHERE ((metadata->>'archivedStagingAndLoadFiles')::bool IS DISTINCT FROM TRUE) AND created_at < NOW() -INTERVAL '%d DAY' AND status = '%s'`, warehouseutils.WarehouseUploadsTable, uploadsArchivalTimeInDays, ExportedData)
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err == sql.ErrNoRows {
