@@ -755,19 +755,11 @@ func (wh *HandleT) uploadStatusTrack() {
 				select created_at from %[1]s where source_id='%[2]s' and destination_id='%[3]s' order by created_at desc limit 1`,
 				warehouseutils.WarehouseStagingFilesTable, source.ID, destination.ID)
 
-			queryRow, err := wh.dbHandle.Query(sqlStatement)
+			var createdAt time.Time
+			err := wh.dbHandle.QueryRow(sqlStatement).Scan(&createdAt)
 			if err != nil && err != sql.ErrNoRows {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}
-
-			var createdAt time.Time
-			for queryRow.Next() {
-				err = queryRow.Scan(&createdAt)
-				if err != nil {
-					panic(err)
-				}
-			}
-			queryRow.Close()
 
 			lastSyncTime := time.Now().Add(time.Duration(-timeWindow) * time.Minute)
 			if createdAt.Before(lastSyncTime) {
@@ -779,19 +771,11 @@ func (wh *HandleT) uploadStatusTrack() {
 					from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s') and updated_at > now() - interval '%[6]d MIN'`,
 				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, timeWindow)
 
-			queryRow, err = wh.dbHandle.Query(sqlStatement)
+			var uploaded int
+			err := wh.dbHandle.QueryRow(sqlStatement).Scan(&uploaded)
 			if err != nil && err != sql.ErrNoRows {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}
-
-			var uploaded int
-			for queryRow.Next() {
-				err = queryRow.Scan(&uploaded)
-				if err != nil {
-					panic(err)
-				}
-			}
-			queryRow.Close()
 
 			getUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name).Count(uploaded)
 		}
