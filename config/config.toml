@@ -223,6 +223,7 @@ populateHistoricIdentities = false
     blockSize = 1000
     poolSize = 10
     disableNullable = false
+    enableArraySupport = false
 
 [Processor]
 webPort = 8086

@@ -141,6 +141,7 @@ func GetDestinationURL(destType string) string {
 			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + rsAlterStringToTextQueryParam
 		}
+		if destType == "CLIC"
 		return destinationEndPoint + "?" + whSchemaVersionQueryParam
 	}
 	return destinationEndPoint
