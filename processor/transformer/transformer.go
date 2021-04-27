@@ -182,6 +182,8 @@ func (trans *HandleT) transformWorker() {
 			//This is returned by our JS engine so should  be parsable
 			//but still handling it
 			if err != nil {
+				trans.logger.Errorf("Data sent to transformer : %v", string(rawJSON))
+				trans.logger.Errorf("Transformer returned : %v", string(respData))
 				panic(err)
 			}
 		} else {
