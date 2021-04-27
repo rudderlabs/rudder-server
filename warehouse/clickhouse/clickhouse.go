@@ -308,15 +308,24 @@ func castStringToArray(data string, dataType string) interface{} {
 	switch dataType {
 	case "array(int)":
 		dataInt := make([]int64, 0)
-		json.Unmarshal([]byte(data), &dataInt)
+		err := json.Unmarshal([]byte(data), &dataInt)
+		if err != nil {
+			pkgLogger.Error("Error while unmarshalling data into array of int: %s", err.Error())
+		}
 		return dataInt
 	case "array(float)":
 		dataFloat := make([]float64, 0)
-		json.Unmarshal([]byte(data), &dataFloat)
+		err := json.Unmarshal([]byte(data), &dataFloat)
+		if err != nil {
+			pkgLogger.Error("Error while unmarshalling data into array of float: %s", err.Error())
+		}
 		return dataFloat
 	case "array(string)":
 		dataInterface := make([]interface{}, 0)
-		json.Unmarshal([]byte(data), &dataInterface)
+		err := json.Unmarshal([]byte(data), &dataInterface)
+		if err != nil {
+			pkgLogger.Error("Error while unmarshalling data into array of interface: %s", err.Error())
+		}
 		dataString := make([]string, 0)
 		for _, value := range dataInterface {
 			if _, ok := value.(string); ok {
@@ -329,12 +338,16 @@ func castStringToArray(data string, dataType string) interface{} {
 		return dataString
 	case "array(datetime)":
 		dataTime := make([]time.Time, 0)
-		json.Unmarshal([]byte(data), &dataTime) //TODO:: verify this - time parsing
+		err := json.Unmarshal([]byte(data), &dataTime)
+		if err != nil {
+			pkgLogger.Error("Error while unmarshalling data into array of date time: %s", err.Error())
+		}
 		return dataTime
 	case "array(boolean)":
 		dataBool := make([]bool, 0)
 		err := json.Unmarshal([]byte(data), &dataBool)
 		if err != nil {
+			pkgLogger.Error("Error while unmarshalling data into array of bool: %s", err.Error())
 			return dataBool
 		}
 		dataInt := make([]int32, len(dataBool))
