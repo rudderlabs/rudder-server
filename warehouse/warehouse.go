@@ -118,13 +118,13 @@ func init() {
 func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
-	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL"}
 	config.RegisterIntConfigVariable(8, &noOfWorkers, true, 1, "Warehouse.noOfWorkers")
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
 	config.RegisterDurationConfigVariable(time.Duration(5), &mainLoopSleep, true, time.Second, "Warehouse.mainLoopSleepInS")
-	crashRecoverWarehouses = []string{"RS"}
+	crashRecoverWarehouses = []string{"RS", "POSTGRES", "MSSQL"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
