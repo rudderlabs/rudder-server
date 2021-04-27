@@ -258,7 +258,8 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if err != nil {
 		return makeErrorResponse(err)
 	}
-	userID := parsedJSON.Get("userId").Value().(string)
+	userID, _ := parsedJSON.Get("userId").Value().(string)
+
 	message := prepareMessage(topic, userID, value, timestamp)
 
 	partition, offset, err := kafkaProducer.SendMessage(message)

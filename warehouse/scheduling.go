@@ -22,8 +22,12 @@ var (
 
 func init() {
 	scheduledTimesCache = map[string][]int{}
-	minUploadBackoff = config.GetDuration("Warehouse.minUploadBackoffInS", time.Duration(60)) * time.Second
-	maxUploadBackoff = config.GetDuration("Warehouse.maxUploadBackoffInS", time.Duration(1800)) * time.Second
+	loadConfigScheduling()
+}
+
+func loadConfigScheduling() {
+	config.RegisterDurationConfigVariable(time.Duration(60), &minUploadBackoff, true, time.Second, "Warehouse.minUploadBackoffInS")
+	config.RegisterDurationConfigVariable(time.Duration(1800), &maxUploadBackoff, true, time.Second, "Warehouse.maxUploadBackoffInS")
 }
 
 // ScheduledTimes returns all possible start times (minutes from start of day) as per schedule

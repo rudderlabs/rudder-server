@@ -30,7 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -171,19 +171,20 @@ func isJobTerminated(status int) bool {
 }
 
 func loadConfig() {
-	jobQueryBatchSize = config.GetInt("Router.jobQueryBatchSize", 10000)
-	updateStatusBatchSize = config.GetInt("Router.updateStatusBatchSize", 1000)
-	readSleep = config.GetDuration("Router.readSleepInMS", time.Duration(1000)) * time.Millisecond
+	config.RegisterIntConfigVariable(10000, &jobQueryBatchSize, true, 1, "Router.jobQueryBatchSize")
+	config.RegisterIntConfigVariable(1000, &updateStatusBatchSize, true, 1, "Router.updateStatusBatchSize")
+	config.RegisterDurationConfigVariable(time.Duration(1000), &readSleep, true, time.Millisecond, "Router.readSleepInMS")
 	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
 	noOfJobsToBatchInAWorker = config.GetInt("Router.noOfJobsToBatchInAWorker", 20)
-	jobsBatchTimeout = config.GetDuration("Router.jobsBatchTimeoutInSec", time.Duration(5)) * time.Second
+	config.RegisterDurationConfigVariable(time.Duration(5), &jobsBatchTimeout, true, time.Second, "Router.jobsBatchTimeoutInSec")
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
-	maxStatusUpdateWait = config.GetDuration("Router.maxStatusUpdateWaitInS", time.Duration(5)) * time.Second
+	config.RegisterDurationConfigVariable(time.Duration(5), &maxStatusUpdateWait, true, time.Second, "Router.maxStatusUpdateWaitInS")
+
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
-	minRetryBackoff = config.GetDuration("Router.minRetryBackoffInS", time.Duration(10)) * time.Second
-	maxRetryBackoff = config.GetDuration("Router.maxRetryBackoffInS", time.Duration(300)) * time.Second
-	fixedLoopSleep = config.GetDuration("Router.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
+	config.RegisterDurationConfigVariable(time.Duration(10), &minRetryBackoff, true, time.Second, "Router.minRetryBackoffInS")
+	config.RegisterDurationConfigVariable(time.Duration(300), &maxRetryBackoff, true, time.Second, "Router.maxRetryBackoffInS")
+	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Router.fixedLoopSleepInMS")
 	failedEventsCacheSize = config.GetInt("Router.failedEventsCacheSize", 10)
 }
 
@@ -297,7 +298,7 @@ func (worker *workerT) workerProcess() {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
 
-				if len(worker.routerJobs) == noOfJobsToBatchInAWorker {
+				if len(worker.routerJobs) >= noOfJobsToBatchInAWorker {
 					worker.destinationJobs = worker.batch(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
@@ -306,7 +307,7 @@ func (worker *workerT) workerProcess() {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
 
-				if len(worker.routerJobs) == noOfJobsToBatchInAWorker {
+				if len(worker.routerJobs) >= noOfJobsToBatchInAWorker {
 					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
@@ -647,10 +648,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	}
 
 	status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
-	//Saving payload to DB only if router job undergoes batching or dest transform.
-	if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
-		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
-	}
 	if respBody != "" {
 		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "response", respBody)
 	}
@@ -674,6 +671,12 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		delete(worker.retryForJobMap, destinationJobMetadata.JobID)
 		worker.retryForJobMapMutex.Unlock()
 	} else {
+		//Saving payload to DB only
+		//1. if job failed and
+		//2. if router job undergoes batching or dest transform.
+		if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
+			status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+		}
 		// the job failed
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
 		worker.failedJobs++
@@ -1023,7 +1026,7 @@ func (rt *HandleT) statusInsertLoop() {
 
 	statusStat := stats.NewTaggedStat("router_status_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
 	countStat := stats.NewTaggedStat("router_status_events", stats.CountType, stats.Tags{"destType": rt.destName})
-
+	timeout := time.After(maxStatusUpdateWait)
 	for {
 		rt.perfStats.Start()
 		select {
@@ -1032,7 +1035,8 @@ func (rt *HandleT) statusInsertLoop() {
 				jobStatus.status.JobState, jobStatus.status.JobID)
 			responseList = append(responseList, jobStatus)
 			rt.perfStats.End(1)
-		case <-time.After(maxStatusUpdateWait):
+		case <-timeout:
+			timeout = time.After(maxStatusUpdateWait)
 			rt.perfStats.End(0)
 			//Ideally should sleep for duration maxStatusUpdateWait-(time.Now()-lastUpdate)
 			//but approx is good enough at the cost of reduced computation.
@@ -1380,8 +1384,10 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
-	rt.maxFailedCountForJob = getRouterConfigInt("maxFailedCountForJob", destName, 3)
-	rt.retryTimeWindow = getRouterConfigDuration("retryTimeWindowInMins", destName, time.Duration(180)) * time.Minute
+	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
+	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindowInMins"}
+	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
+	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	rt.drainJobHandler = drain.Setup(rt.jobsDB)
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 

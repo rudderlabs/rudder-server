@@ -102,15 +102,15 @@ var (
 
 func loadConfig() {
 	rootLevel = levelMap[config.GetEnv("LOG_LEVEL", "INFO")]
-	enableConsole = config.GetBool("Logger.enableConsole", true)
-	enableFile = config.GetBool("Logger.enableFile", false)
-	consoleJsonFormat = config.GetBool("Logger.consoleJsonFormat", false)
-	fileJsonFormat = config.GetBool("Logger.fileJsonFormat", false)
-	logFileLocation = config.GetString("Logger.logFileLocation", "/tmp/rudder_log.log")
-	logFileSize = config.GetInt("Logger.logFileSize", 100)
-	enableTimestamp = config.GetBool("Logger.enableTimestamp", true)
-	enableFileNameInLog = config.GetBool("Logger.enableFileNameInLog", false)
-	enableStackTrace = config.GetBool("Logger.enableStackTrace", false)
+	config.RegisterBoolConfigVariable(true, &enableConsole, true, "Logger.enableConsole")
+	config.RegisterBoolConfigVariable(false, &enableFile, true, "Logger.enableFile")
+	config.RegisterBoolConfigVariable(false, &consoleJsonFormat, true, "Logger.consoleJsonFormat")
+	config.RegisterBoolConfigVariable(false, &fileJsonFormat, true, "Logger.fileJsonFormat")
+	config.RegisterStringConfigVariable("/tmp/rudder_log.log", &logFileLocation, true, "Logger.logFileLocation")
+	config.RegisterIntConfigVariable(100, &logFileSize, true, 1, "Logger.logFileSize")
+	config.RegisterBoolConfigVariable(true, &enableTimestamp, true, "Logger.enableTimestamp")
+	config.RegisterBoolConfigVariable(true, &enableFileNameInLog, true, "Logger.enableFileNameInLog")
+	config.RegisterBoolConfigVariable(false, &enableStackTrace, true, "Logger.enableStackTrace")
 
 	// colon separated key value pairs
 	// Example: "router.GA=DEBUG:warehouse.REDSHIFT=DEBUG"

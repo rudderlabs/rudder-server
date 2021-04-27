@@ -23,13 +23,13 @@ var (
 	maxWebhookBatchSize   int
 	webhookRetryMax       int
 	webhookRetryWaitMax   time.Duration
+	webhookRetryWaitMin   time.Duration
 	pkgLogger             logger.LoggerI
 )
 
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("gateway").Child("webhook")
-
 }
 
 type webhookT struct {

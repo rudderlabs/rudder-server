@@ -3,7 +3,6 @@ RUN apk add --no-cache ca-certificates postgresql-client
 ADD rudder-server /
 ADD rudder-server-with-race /
 ADD ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
-ADD ./config/config.toml /app/config/config.toml
 ADD build/wait-for /
 ADD build/wait-for-go/wait-for-go /
 ADD build/docker-entrypoint.sh /

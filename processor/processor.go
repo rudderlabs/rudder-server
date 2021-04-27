@@ -24,7 +24,8 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -94,6 +95,16 @@ type DestStatT struct {
 	sessionTransform stats.RudderStats
 	userTransform    stats.RudderStats
 	destTransform    stats.RudderStats
+}
+
+type ParametersT struct {
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
+	JobRunID      string `json:"job_run_id"`
+	ReceivedAt    string `json:"received_at"`
+	TransformAt   string `json:"transform_at"`
+	MessageID     string `json:"message_id"`
+	GatewayJobID  int64  `json:"gateway_job_id"`
 }
 
 func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) *DestStatT {
@@ -237,6 +248,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
+
 	proc.transformer.Setup()
 
 	proc.crashRecover()
@@ -288,27 +300,27 @@ var (
 )
 
 func loadConfig() {
-	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
-	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
-	fixedLoopSleep = config.GetDuration("Processor.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
-	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
-	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
-	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
+	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, "Processor.maxLoopSleepInMS")
+	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, "Processor.loopSleepInMS")
+	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Processor.fixedLoopSleepInMS")
+	config.RegisterIntConfigVariable(50, &transformBatchSize, true, 1, "Processor.transformBatchSize")
+	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
+	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 100)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	// Enable dedup of incoming events by default
 	enableDedup = config.GetBool("Dedup.enableDedup", false)
-	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
+	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
 	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
-	maxEventsToProcess = config.GetInt("Processor.maxLoopProcessEvents", 10000)
-	avgEventsInRequest = config.GetInt("Processor.avgEventsInRequest", 1)
+	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
+	config.RegisterIntConfigVariable(1, &avgEventsInRequest, true, 1, "Processor.avgEventsInRequest")
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
 	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
 	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
 	// Capture event name as a tag in event level stats
-	captureEventNameStats = config.GetBool("Processor.Stats.captureEventName", false)
+	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -656,6 +668,7 @@ func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsd
 	metadata.SourceType = source.SourceDefinition.Name
 	metadata.SourceCategory = source.SourceDefinition.Category
 	metadata.DestinationID = destination.ID
+	metadata.JobRunID = gjson.GetBytes(batchEvent.Parameters, "job_run_id").Str
 	metadata.RudderID = batchEvent.UserID
 	metadata.JobID = batchEvent.JobID
 	metadata.DestinationType = destination.DestinationDefinition.Name
@@ -716,6 +729,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.MessageID = userTransformedEvent.Metadata.MessageID
 		eventMetadata.JobID = userTransformedEvent.Metadata.JobID
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
+		eventMetadata.JobRunID = userTransformedEvent.Metadata.JobRunID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
 		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
 		updatedEvent := transformer.TransformerEventT{
@@ -728,17 +742,17 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 	return eventsToTransform
 }
 
-func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventT, stage string) []*jobsdb.JobT {
+func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string) []*jobsdb.JobT {
 	var failedEventsToStore []*jobsdb.JobT
 	for _, failedEvent := range response.FailedEvents {
 		var messages []types.SingularEventT
 		if len(failedEvent.Metadata.MessageIDs) > 0 {
 			messageIds := failedEvent.Metadata.MessageIDs
 			for _, msgID := range messageIds {
-				messages = append(messages, eventsByMessageID[msgID])
+				messages = append(messages, eventsByMessageID[msgID].SingularEvent)
 			}
 		} else {
-			messages = append(messages, eventsByMessageID[failedEvent.Metadata.MessageID])
+			messages = append(messages, eventsByMessageID[failedEvent.Metadata.MessageID].SingularEvent)
 		}
 		payload, err := json.Marshal(messages)
 		if err != nil {
@@ -757,7 +771,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		newFailedJob := jobsdb.JobT{
 			UUID:         id,
 			EventPayload: payload,
-			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "error": %s, "status_code": "%v", "stage": "%s"}`, commonMetaData.SourceID, commonMetaData.DestinationID, string(marshalledErr), failedEvent.StatusCode, stage)),
+			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "job_run_id": "%s", "error": %s, "status_code": "%v", "stage": "%s"}`, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Metadata.JobRunID, string(marshalledErr), failedEvent.StatusCode, stage)),
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			CustomVal:    commonMetaData.DestinationType,
@@ -813,6 +827,7 @@ func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, 
 		}
 	}
 }
+
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 
 	proc.pStatsJobs.Start()
@@ -823,7 +838,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
-	var eventsByMessageID = make(map[string]types.SingularEventT)
+	var eventsByMessageID = make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 
 	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
@@ -883,7 +898,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				uniqueMessageIds[messageId] = struct{}{}
 				//We count this as one, not destination specific ones
 				totalEvents++
-				eventsByMessageID[messageId] = singularEvent
+				eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{SingularEvent: singularEvent, ReceivedAt: receivedAt}
 
 				//Getting all the destinations which are enabled for this
 				//event
@@ -1012,6 +1027,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			}
 			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
+
+			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: &destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIds})
 		} else {
 			proc.logger.Debug("No custom transformation")
 			eventsToTransform = eventList
@@ -1075,6 +1092,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			rudderID := destEvent.Metadata.RudderID
 			receivedAt := destEvent.Metadata.ReceivedAt
 			messageId := destEvent.Metadata.MessageID
+			jobRunID := destEvent.Metadata.JobRunID
 			jobId := destEvent.Metadata.JobID
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
@@ -1082,10 +1100,25 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				rudderID = "random-" + id.String()
 			}
 
+			params := ParametersT{
+				SourceID:      sourceID,
+				DestinationID: destID,
+				JobRunID:      jobRunID,
+				ReceivedAt:    receivedAt,
+				TransformAt:   transformAt,
+				MessageID:     messageId,
+				GatewayJobID:  jobId,
+			}
+			marshalledParams, err := json.Marshal(params)
+			if err != nil {
+				proc.logger.Errorf("[Processor] Failed to marshal parameters object. Parameters: %v", params)
+				panic(err)
+			}
+
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       rudderID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v", "transform_at": "%v", "message_id" : "%v" , "gateway_job_id" : "%v"}`, sourceID, destID, receivedAt, transformAt, messageId, jobId)),
+				Parameters:   marshalledParams,
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
@@ -1109,12 +1142,22 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-		proc.routerDB.Store(destJobs)
+		err := proc.routerDB.Store(destJobs)
+		if err != nil {
+			proc.logger.Errorf("Store into router table failed with error: %v", err)
+			proc.logger.Errorf("destJobs: %v", destJobs)
+			panic(err)
+		}
 		proc.statDestNumOutputEvents.Count(len(destJobs))
 	}
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
-		proc.batchRouterDB.Store(batchDestJobs)
+		err := proc.batchRouterDB.Store(batchDestJobs)
+		if err != nil {
+			proc.logger.Errorf("Store into batch router table failed with error: %v", err)
+			proc.logger.Errorf("batchDestJobs: %v", batchDestJobs)
+			panic(err)
+		}
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
 
@@ -1124,7 +1167,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 	if len(procErrorJobs) > 0 {
 		proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobs))
-		proc.errorDB.Store(procErrorJobs)
+		err := proc.errorDB.Store(procErrorJobs)
+		if err != nil {
+			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
+			proc.logger.Errorf("procErrorJobs: %v", procErrorJobs)
+			panic(err)
+		}
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
 

@@ -143,6 +143,7 @@ func setMaxParallelLoads() {
 		"BQ":         config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
 		"RS":         config.GetInt("Warehouse.redshift.maxParallelLoads", 3),
 		"POSTGRES":   config.GetInt("Warehouse.postgres.maxParallelLoads", 3),
+		"MSSQL":      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
 		"SNOWFLAKE":  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
 		"CLICKHOUSE": config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
 	}
@@ -461,6 +462,7 @@ func (job *UploadJobT) run() (err error) {
 				err = misc.ConcatErrors(loadErrors)
 				break
 			}
+			job.generateUploadSuccessMetrics()
 
 			newStatus = nextUploadState.completed
 
@@ -557,7 +559,6 @@ func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 		return
 	}
 
-	job.generateUploadSuccessMetrics()
 	return
 }
 
@@ -938,7 +939,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	if generated, _ := job.areIdentityTablesLoadFilesGenerated(); !generated {
 		err := job.resolveIdentities(populateHistoricIdentities)
 		if err != nil {
-			pkgLogger.Errorf(`SF: ID Resolution operation failed: %v`, err)
+			pkgLogger.Errorf(` ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
 			return job.processLoadTableResponse(errorMap)
 		}
@@ -1479,7 +1480,7 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	}
 
 	var mappingsLocation sql.NullString
-	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
+	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable))
 	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mappingsLocation)
 	if err != nil {
 		return

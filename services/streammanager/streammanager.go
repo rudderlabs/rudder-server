@@ -7,6 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/eventbridge"
 	"github.com/rudderlabs/rudder-server/services/streammanager/firehose"
 	"github.com/rudderlabs/rudder-server/services/streammanager/googlepubsub"
+	"github.com/rudderlabs/rudder-server/services/streammanager/googlesheets"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
 	"github.com/rudderlabs/rudder-server/services/streammanager/personalize"
@@ -37,6 +38,9 @@ func NewProducer(destinationConfig interface{}, destType string) (interface{}, e
 	case "GOOGLEPUBSUB":
 		producer, err := googlepubsub.NewProducer(destinationConfig)
 		return producer, err
+	case "GOOGLESHEETS":
+		producer, err := googlesheets.NewProducer(destinationConfig)
+		return producer, err
 	case "PERSONALIZE":
 		producer, err := personalize.NewProducer(destinationConfig)
 		return producer, err
@@ -50,7 +54,7 @@ func NewProducer(destinationConfig interface{}, destType string) (interface{}, e
 func CloseProducer(producer interface{}, destType string) error {
 
 	switch destType {
-	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE":
+	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE", "GOOGLESHEETS":
 		return nil
 	case "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD":
 		err := kafka.CloseProducer(producer)
@@ -81,6 +85,8 @@ func Produce(jsonData json.RawMessage, destType string, producer interface{}, co
 		return eventbridge.Produce(jsonData, producer, config)
 	case "GOOGLEPUBSUB":
 		return googlepubsub.Produce(jsonData, producer, config)
+	case "GOOGLESHEETS":
+		return googlesheets.Produce(jsonData, producer, config)
 	case "PERSONALIZE":
 		return personalize.Produce(jsonData, producer, config)
 	default:
