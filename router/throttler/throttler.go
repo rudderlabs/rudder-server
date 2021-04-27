@@ -23,7 +23,6 @@ type Limiter struct {
 	enabled     bool
 	eventLimit  int
 	timeWindow  time.Duration
-	dataStore   *ratelimiter.MapLimitStore
 	ratelimiter *ratelimiter.RateLimiter
 }
 
@@ -83,13 +82,11 @@ func (throttler *HandleT) SetUp(destName string) {
 
 	if throttler.destLimiter.enabled {
 		dataStore := ratelimiter.NewMapLimitStore(2*throttler.destLimiter.timeWindow, 10*time.Second)
-		throttler.destLimiter.dataStore = dataStore
 		throttler.destLimiter.ratelimiter = ratelimiter.New(dataStore, int64(throttler.destLimiter.eventLimit), throttler.destLimiter.timeWindow)
 	}
 
 	if throttler.userLimiter.enabled {
 		dataStore := ratelimiter.NewMapLimitStore(2*throttler.userLimiter.timeWindow, 10*time.Second)
-		throttler.userLimiter.dataStore = dataStore
 		throttler.userLimiter.ratelimiter = ratelimiter.New(dataStore, int64(throttler.userLimiter.eventLimit), throttler.userLimiter.timeWindow)
 	}
 }

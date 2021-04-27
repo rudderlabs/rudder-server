@@ -107,23 +107,24 @@ type workerMessageT struct {
 
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	channel                chan workerMessageT     // the worker job channel
-	workerID               int                     // identifies the worker
-	failedJobs             int                     // counts the failed jobs of a worker till it gets reset by external channel
-	sleepTime              time.Duration           // the sleep duration for every job of the worker
-	failedJobIDMap         map[string]int64        // user to failed jobId
-	failedJobIDMutex       sync.RWMutex            // lock to protect structure above
-	retryForJobMap         map[int64]time.Time     // jobID to next retry time map
-	retryForJobMapMutex    sync.RWMutex            // lock to protect structure above
-	routerJobs             []types.RouterJobT      // slice to hold router jobs to send to destination transformer
-	destinationJobs        []types.DestinationJobT // slice to hold destination jobs
-	rt                     *HandleT                // handle to router
-	deliveryTimeStat       stats.RudderStats
-	batchTimeStat          stats.RudderStats
-	abortedUserIDMap       map[string]int // aborted user to count of jobs allowed map
-	abortedUserMutex       sync.RWMutex
-	jobCountsByDestAndUser map[string]*destJobCountsT
-	throttledAtTime        time.Time
+	channel                    chan workerMessageT     // the worker job channel
+	workerID                   int                     // identifies the worker
+	failedJobs                 int                     // counts the failed jobs of a worker till it gets reset by external channel
+	sleepTime                  time.Duration           // the sleep duration for every job of the worker
+	failedJobIDMap             map[string]int64        // user to failed jobId
+	failedJobIDMutex           sync.RWMutex            // lock to protect structure above
+	retryForJobMap             map[int64]time.Time     // jobID to next retry time map
+	retryForJobMapMutex        sync.RWMutex            // lock to protect structure above
+	routerJobs                 []types.RouterJobT      // slice to hold router jobs to send to destination transformer
+	destinationJobs            []types.DestinationJobT // slice to hold destination jobs
+	rt                         *HandleT                // handle to router
+	deliveryTimeStat           stats.RudderStats
+	batchTimeStat              stats.RudderStats
+	abortedUserIDMap           map[string]int // aborted user to count of jobs allowed map
+	abortedUserMutex           sync.RWMutex
+	jobCountsByDestAndUser     map[string]*destJobCountsT
+	throttledAtTime            time.Time
+	encounteredRouterTransform bool
 }
 
 type destJobCountsT struct {
@@ -291,7 +292,7 @@ func (worker *workerT) workerProcess() {
 			worker.rt.configSubscriberLock.RUnlock()
 
 			worker.recordCountsByDestAndUser(destination.ID, userID)
-
+			worker.encounteredRouterTransform = false
 			if worker.rt.enableBatching {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
@@ -301,6 +302,7 @@ func (worker *workerT) workerProcess() {
 					worker.processDestinationJobs()
 				}
 			} else if parameters.TransformAt == "router" {
+				worker.encounteredRouterTransform = true
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
 
@@ -585,6 +587,11 @@ func (worker *workerT) decrementInThrottleMap(apiCallsCount map[string]*destJobC
 				}
 				diff := int64(incrementedCountByUserID - sentCountByUserID)
 				if diff > 0 {
+					// decrement only half to account for api call to be made again in router transform
+					if worker.encounteredRouterTransform {
+						diff = diff / 2
+					}
+					pkgLogger.Debugf(`Decrementing user level throttle map by %d for dest:%s, user:%s`, diff, destID, userID)
 					worker.rt.throttler.Dec(destID, userID, diff, worker.throttledAtTime)
 				}
 			}
@@ -597,7 +604,11 @@ func (worker *workerT) decrementInThrottleMap(apiCallsCount map[string]*destJobC
 			}
 			diff := int64(incrementedMapByDestID.total - sentMapByDestID.total)
 			if diff > 0 {
-				pkgLogger.Debugf(`Decrementing throttle map by %d for dest:%s`, diff, destID)
+				// decrement only half to account for api call to be made again in router transform
+				if worker.encounteredRouterTransform {
+					diff = diff / 2
+				}
+				pkgLogger.Debugf(`Decrementing destination level throttle map by %d for dest:%s`, diff, destID)
 				worker.rt.throttler.Dec(destID, "", diff, worker.throttledAtTime)
 			}
 		}
