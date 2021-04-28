@@ -73,6 +73,7 @@ type HandleT struct {
 	batchOutputCountStat                   stats.RudderStats
 	batchInputOutputDiffCountStat          stats.RudderStats
 	eventsAbortedStat                      stats.RudderStats
+	drainedJobsStat                        stats.RudderStats
 	noOfWorkers                            int
 	allowAbortedUserJobsCountForProcessing int
 	throttledUserMap                       map[string]struct{} // used before calling findWorker. A temp storage to save <userid> whose job can be throttled.
@@ -128,6 +129,7 @@ var (
 	pkgLogger                                                     logger.LoggerI
 	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                time.Duration
+	toDrainDestinationID                                          string
 )
 
 type requestMetric struct {
@@ -173,6 +175,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(300), &maxRetryBackoff, true, time.Second, "Router.maxRetryBackoffInS")
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Router.fixedLoopSleepInMS")
 	failedEventsCacheSize = config.GetInt("Router.failedEventsCacheSize", 10)
+	config.RegisterStringConfigVariable("NONE", &toDrainDestinationID, true, "Router.drainDestinationID")
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -1213,7 +1216,7 @@ func (rt *HandleT) generatorLoop() {
 		rt.throttledUserMap = make(map[string]struct{})
 		//Identify jobs which can be processed
 		for _, job := range combinedList {
-			if rt.drainJobHandler.CanJobBeDrained(job.JobID, destIDExtractor([]byte(job.Parameters))) {
+			if isToBeDrained(job) {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -1221,7 +1224,7 @@ func (rt *HandleT) generatorLoop() {
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
-					ErrorResponse: []byte(`{}`),
+					ErrorResponse: []byte(`{"reason": "Job confifgured to be aborted via ENV" }`),
 				}
 				drainList = append(drainList, &status)
 				continue
@@ -1252,6 +1255,13 @@ func (rt *HandleT) generatorLoop() {
 		//Mark the jobs as executing
 		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
 		if err != nil {
+			if len(drainList) > 0 {
+				rt.drainedJobsStat = stats.NewTaggedStat(`router_drained_events`, stats.CountType, stats.Tags{
+					"destType": rt.destName,
+					"destId":   toDrainDestinationID,
+				})
+				rt.drainedJobsStat.Count(len(drainList))
+			}
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
@@ -1273,10 +1283,8 @@ func (rt *HandleT) generatorLoop() {
 	}
 }
 
-func destIDExtractor(body []byte) func() string {
-	return func() string {
-		return gjson.GetBytes(body, "destination_id").String()
-	}
+func isToBeDrained(job *jobsdb.JobT) bool {
+	return toDrainDestinationID != "NONE" && gjson.GetBytes(job.Parameters, "destination_id").String() == toDrainDestinationID
 }
 
 func (rt *HandleT) crashRecover() {
