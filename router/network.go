@@ -118,6 +118,19 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 			defer resp.Body.Close()
 		}
 
+		contentTypeHeader := resp.Header.Get("Content-Type")
+		if contentTypeHeader == "" {
+			//Detecting content type of the respBody
+			contentTypeHeader = http.DetectContentType(respBody)
+		}
+
+		//If content type is not of type "*text*", overriding it with empty string
+		if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
+			strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
+			strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
+			respBody = []byte("")
+		}
+
 		if err != nil {
 			network.logger.Error("Errored when sending request to the server", err)
 			return http.StatusGatewayTimeout, string(respBody)

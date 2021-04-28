@@ -38,6 +38,13 @@ func (loader *JsonLoader) AddColumn(columnName string, val interface{}) {
 	loader.columnData[providerColumnName] = val
 }
 
+func (loader *JsonLoader) AddRow(columnNames []string, row []string) {
+	for i, columnName := range columnNames {
+		providerColumnName := ToProviderCase(loader.destType, columnName)
+		loader.columnData[providerColumnName] = row[i]
+	}
+}
+
 func (loader *JsonLoader) AddEmptyColumn(columnName string) {
 	loader.AddColumn(columnName, nil)
 }

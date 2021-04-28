@@ -977,7 +977,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	if generated, _ := job.areIdentityTablesLoadFilesGenerated(); !generated {
 		err := job.resolveIdentities(populateHistoricIdentities)
 		if err != nil {
-			pkgLogger.Errorf(`SF: ID Resolution operation failed: %v`, err)
+			pkgLogger.Errorf(` ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
 			return job.processLoadTableResponse(errorMap)
 		}
@@ -1635,7 +1635,7 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	}
 
 	var mappingsLocation sql.NullString
-	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
+	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable))
 	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mappingsLocation)
 	if err != nil {
 		return
