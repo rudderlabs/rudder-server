@@ -613,7 +613,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 				status.JobState = jobsdb.Aborted.State
 				addToFailedMap = false
 				worker.updateAbortedMetrics(destinationJobMetadata.DestinationID)
-				destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
 				worker.retryForJobMapMutex.Lock()
 				delete(worker.retryForJobMap, destinationJobMetadata.JobID)
 				worker.retryForJobMapMutex.Unlock()
@@ -628,9 +627,13 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			worker.retryForJobMapMutex.Unlock()
 		} else {
 			status.JobState = jobsdb.Aborted.State
-			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
 			addToFailedMap = false
 			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID)
+		}
+
+		if status.JobState == jobsdb.Aborted.State {
+			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
+			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "error_response", status.ErrorResponse)
 		}
 
 		if worker.rt.guaranteeUserEventOrder {
