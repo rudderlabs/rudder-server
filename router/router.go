@@ -545,10 +545,11 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	worker.rt.trackRequestMetrics(reqMetric)
 }
 
-func (worker *workerT) updateAbortedMetrics(destinationID string) {
+func (worker *workerT) updateAbortedMetrics(destinationID, statusCode string) {
 	worker.rt.eventsAbortedStat = stats.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
-		"destType": worker.rt.destName,
-		"destId":   destinationID,
+		"destType":       worker.rt.destName,
+		"respStatusCode": statusCode,
+		"destId":         destinationID,
 	})
 	worker.rt.eventsAbortedStat.Increment()
 }
@@ -611,9 +612,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			timeElapsed := time.Since(firstAttemptedAtTime)
 			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
-				addToFailedMap = false
-				worker.updateAbortedMetrics(destinationJobMetadata.DestinationID)
-				destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
 				worker.retryForJobMapMutex.Lock()
 				delete(worker.retryForJobMap, destinationJobMetadata.JobID)
 				worker.retryForJobMapMutex.Unlock()
@@ -628,9 +626,13 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			worker.retryForJobMapMutex.Unlock()
 		} else {
 			status.JobState = jobsdb.Aborted.State
-			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
+		}
+
+		if status.JobState == jobsdb.Aborted.State {
 			addToFailedMap = false
-			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID)
+			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID, status.ErrorCode)
+			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
+			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "error_response", status.ErrorResponse)
 		}
 
 		if worker.rt.guaranteeUserEventOrder {
