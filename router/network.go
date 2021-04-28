@@ -118,6 +118,12 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 			defer resp.Body.Close()
 		}
 
+		//Detecting content type of the respBody
+		//If content type is not of type "*text*", overriding it with empty string
+		if !strings.Contains(strings.ToLower(http.DetectContentType(respBody)), "text") {
+			respBody = []byte("")
+		}
+
 		if err != nil {
 			network.logger.Error("Errored when sending request to the server", err)
 			return http.StatusGatewayTimeout, string(respBody)
