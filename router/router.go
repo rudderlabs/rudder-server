@@ -73,6 +73,7 @@ type HandleT struct {
 	batchOutputCountStat                   stats.RudderStats
 	batchInputOutputDiffCountStat          stats.RudderStats
 	eventsAbortedStat                      stats.RudderStats
+	drainedJobsStat                        stats.RudderStats
 	noOfWorkers                            int
 	allowAbortedUserJobsCountForProcessing int
 	throttledUserMap                       map[string]struct{} // used before calling findWorker. A temp storage to save <userid> whose job can be throttled.
@@ -141,6 +142,7 @@ var (
 	pkgLogger                                                     logger.LoggerI
 	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                time.Duration
+	toDrainDestinationID                                          string
 )
 
 type requestMetric struct {
@@ -186,6 +188,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(300), &maxRetryBackoff, true, time.Second, "Router.maxRetryBackoffInS")
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Router.fixedLoopSleepInMS")
 	failedEventsCacheSize = config.GetInt("Router.failedEventsCacheSize", 10)
+	config.RegisterStringConfigVariable("NONE", &toDrainDestinationID, true, "Router.drainDestinationID")
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -628,10 +631,11 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	worker.rt.trackRequestMetrics(reqMetric)
 }
 
-func (worker *workerT) updateAbortedMetrics(destinationID string) {
+func (worker *workerT) updateAbortedMetrics(destinationID, statusCode string) {
 	worker.rt.eventsAbortedStat = stats.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
-		"destType": worker.rt.destName,
-		"destId":   destinationID,
+		"destType":       worker.rt.destName,
+		"respStatusCode": statusCode,
+		"destId":         destinationID,
 	})
 	worker.rt.eventsAbortedStat.Increment()
 }
@@ -694,9 +698,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			timeElapsed := time.Since(firstAttemptedAtTime)
 			if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 				status.JobState = jobsdb.Aborted.State
-				addToFailedMap = false
-				worker.updateAbortedMetrics(destinationJobMetadata.DestinationID)
-				destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
 				worker.retryForJobMapMutex.Lock()
 				delete(worker.retryForJobMap, destinationJobMetadata.JobID)
 				worker.retryForJobMapMutex.Unlock()
@@ -711,9 +712,13 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			worker.retryForJobMapMutex.Unlock()
 		} else {
 			status.JobState = jobsdb.Aborted.State
-			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
+		}
+
+		if status.JobState == jobsdb.Aborted.State {
 			addToFailedMap = false
-			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID)
+			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID, status.ErrorCode)
+			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
+			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "error_response", status.ErrorResponse)
 		}
 
 		if worker.rt.guaranteeUserEventOrder {
@@ -1277,7 +1282,7 @@ func (rt *HandleT) generatorLoop() {
 		throttledAtTime := time.Now()
 		//Identify jobs which can be processed
 		for _, job := range combinedList {
-			if rt.drainJobHandler.CanJobBeDrained(job.JobID, destIDExtractor([]byte(job.Parameters))) {
+			if isToBeDrained(job) {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -1285,7 +1290,7 @@ func (rt *HandleT) generatorLoop() {
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
-					ErrorResponse: []byte(`{}`),
+					ErrorResponse: []byte(`{"reason": "Job confifgured to be aborted via ENV" }`),
 				}
 				drainList = append(drainList, &status)
 				continue
@@ -1316,6 +1321,13 @@ func (rt *HandleT) generatorLoop() {
 		//Mark the jobs as executing
 		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
 		if err != nil {
+			if len(drainList) > 0 {
+				rt.drainedJobsStat = stats.NewTaggedStat(`router_drained_events`, stats.CountType, stats.Tags{
+					"destType": rt.destName,
+					"destId":   toDrainDestinationID,
+				})
+				rt.drainedJobsStat.Count(len(drainList))
+			}
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
@@ -1337,10 +1349,8 @@ func (rt *HandleT) generatorLoop() {
 	}
 }
 
-func destIDExtractor(body []byte) func() string {
-	return func() string {
-		return gjson.GetBytes(body, "destination_id").String()
-	}
+func isToBeDrained(job *jobsdb.JobT) bool {
+	return toDrainDestinationID != "NONE" && gjson.GetBytes(job.Parameters, "destination_id").String() == toDrainDestinationID
 }
 
 func (rt *HandleT) crashRecover() {
