@@ -17,6 +17,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/lib/pq"
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -30,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
@@ -37,6 +39,7 @@ import (
 )
 
 var (
+	application                         app.Interface
 	webPort                             int
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
@@ -347,7 +350,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at
+	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at, metadata->>'source_batch_id', metadata->>'source_task_id', metadata->>'source_task_run_id', metadata->>'source_job_id', metadata->>'source_job_run_id'
                                 FROM %[1]s
 								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
 								ORDER BY id ASC`,
@@ -360,14 +363,21 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 
 	var stagingFilesList []*StagingFileT
 	var firstEventAt, lastEventAt sql.NullTime
+	var sourceBatchID, sourceTaskID, sourceTaskRunID, sourceJobID, sourceJobRunID sql.NullString
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt)
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt, &sourceBatchID, &sourceTaskID, &sourceTaskRunID, &sourceJobID, &sourceJobRunID)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		jsonUpload.FirstEventAt = firstEventAt.Time
 		jsonUpload.LastEventAt = lastEventAt.Time
+		// add cloud sources metadata
+		jsonUpload.SourceBatchID = sourceBatchID.String
+		jsonUpload.SourceTaskID = sourceTaskID.String
+		jsonUpload.SourceTaskRunID = sourceTaskRunID.String
+		jsonUpload.SourceJobID = sourceJobID.String
+		jsonUpload.SourceJobRunID = sourceJobRunID.String
 		stagingFilesList = append(stagingFilesList, &jsonUpload)
 	}
 
@@ -397,7 +407,8 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	}
 
 	now := timeutil.Now()
-	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, Waiting, "{}", "{}", "{}", firstEventAt, lastEventAt, now, now)
+	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task_id": "%s", "source_task_run_id": "%s", "source_job_id": "%s", "source_job_run_id": "%s"}`, jsonUploadsList[0].SourceBatchID, jsonUploadsList[0].SourceTaskID, jsonUploadsList[0].SourceTaskRunID, jsonUploadsList[0].SourceJobID, jsonUploadsList[0].SourceJobRunID))
+	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, Waiting, "{}", "{}", metadata, firstEventAt, lastEventAt, now, now)
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
@@ -634,6 +645,12 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
+		// cloud sources info
+		upload.SourceBatchID = gjson.GetBytes(upload.Metadata, "source_batch_id").String()
+		upload.SourceTaskID = gjson.GetBytes(upload.Metadata, "source_task_id").String()
+		upload.SourceTaskRunID = gjson.GetBytes(upload.Metadata, "source_task_run_id").String()
+		upload.SourceJobID = gjson.GetBytes(upload.Metadata, "source_job_id").String()
+		upload.SourceJobRunID = gjson.GetBytes(upload.Metadata, "source_job_run_id").String()
 
 		_, upload.FirstAttemptAt = warehouseutils.TimingFromJSONString(firstTiming)
 		var lastStatus string
@@ -983,18 +1000,19 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		firstEventAt = nil
 		lastEventAt = nil
 	}
+	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task_id": "%s", "source_task_run_id": "%s", "source_job_id": "%s", "source_job_run_id": "%s"}`, stagingFile.SourceBatchID, stagingFile.SourceTaskID, stagingFile.SourceTaskRunID, stagingFile.SourceJobID, stagingFile.SourceJobRunID))
 
 	pkgLogger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
 	schemaPayload, _ := json.Marshal(stagingFile.Schema)
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, total_events, first_event_at, last_event_at, created_at, updated_at)
-									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`, warehouseutils.WarehouseStagingFilesTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, total_events, first_event_at, last_event_at, created_at, updated_at, metadata)
+									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10)`, warehouseutils.WarehouseStagingFilesTable)
 	stmt, err := dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(stagingFile.Location, schemaPayload, stagingFile.BatchDestination.Source.ID, stagingFile.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, stagingFile.TotalEvents, firstEventAt, lastEventAt, timeutil.Now())
+	_, err = stmt.Exec(stagingFile.Location, schemaPayload, stagingFile.BatchDestination.Source.ID, stagingFile.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, stagingFile.TotalEvents, firstEventAt, lastEventAt, timeutil.Now(), metadata)
 	if err != nil {
 		panic(err)
 	}
@@ -1101,7 +1119,8 @@ func setupDB(connInfo string) {
 	setupTables(dbHandle)
 }
 
-func Start() {
+func Start(app app.Interface) {
+	application = app
 	time.Sleep(1 * time.Second)
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
 	if !isStandAlone() && !db.IsNormalMode() {
@@ -1137,6 +1156,13 @@ func Start() {
 	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
 		panic(err)
+	}
+
+	//Setting up reporting client
+	if CheckForWarehouseEnvVars() {
+		if application.Features().Reporting != nil {
+			application.Features().Reporting.GetReportingInstance().AddClient(types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
+		}
 	}
 
 	if isSlave() {

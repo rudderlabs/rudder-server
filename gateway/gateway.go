@@ -431,7 +431,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       gjson.GetBytes(body, "batch.0.rudderId").Str,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "job_run_id": "%s"}`, sourceID, counter, sourcesJobRunID)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "source_job_run_id": "%s"}`, sourceID, counter, sourcesJobRunID)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
@@ -669,7 +669,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	}
 	if reqPayload.JobRunID != "" {
 		jobRunIDParam := jobsdb.ParameterFilterT{
-			Name:     "job_run_id",
+			Name:     "source_job_run_id",
 			Value:    reqPayload.JobRunID,
 			Optional: false,
 		}

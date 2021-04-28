@@ -333,7 +333,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			return
 		}
 
-		job.setUploadStatus(getInProgressState(ExportedData))
+		job.setUploadStatus(UploadStatusOpts{Status: getInProgressState(ExportedData)})
 		loadErrors, err := job.loadIdentityTables(true)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Identity table upload errors: %v`, err)
@@ -342,6 +342,6 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			job.setUploadError(misc.ConcatErrors(loadErrors), Aborted)
 			return
 		}
-		job.setUploadStatus(ExportedData)
+		job.setUploadStatus(UploadStatusOpts{Status: ExportedData})
 	})
 }

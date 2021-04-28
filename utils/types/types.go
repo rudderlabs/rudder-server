@@ -3,6 +3,7 @@
 package types
 
 import (
+	"database/sql"
 	"net/http"
 	"time"
 )
@@ -39,6 +40,13 @@ type EventSchemasI interface {
 // ConfigEnvI is interface to inject env variables into config
 type ConfigEnvI interface {
 	ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte)
+}
+
+// ReportingI is interface to report metrics
+type ReportingI interface {
+	WaitForSetup(clientName string)
+	AddClient(c Config)
+	Report(metrics []*PUReportedMetric, txn *sql.Tx)
 }
 
 // ConfigT simple map config structure

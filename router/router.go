@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -84,6 +85,8 @@ type HandleT struct {
 	destinationResponseHandler             ResponseHandlerI
 	saveDestinationResponse                bool
 	drainJobHandler                        drain.DrainI
+	reporting                              utilTypes.ReportingI
+	reportingEnabled                       bool
 }
 
 type jobResponseT struct {
@@ -95,10 +98,15 @@ type jobResponseT struct {
 
 //JobParametersT struct holds source id and destination id of a job
 type JobParametersT struct {
-	SourceID      string `json:"source_id"`
-	DestinationID string `json:"destination_id"`
-	ReceivedAt    string `json:"received_at"`
-	TransformAt   string `json:"transform_at"`
+	SourceID        string `json:"source_id"`
+	DestinationID   string `json:"destination_id"`
+	ReceivedAt      string `json:"received_at"`
+	TransformAt     string `json:"transform_at"`
+	SourceBatchID   string `json:"source_batch_id"`
+	SourceTaskID    string `json:"source_task_id"`
+	SourceTaskRunID string `json:"source_task_run_id"`
+	SourceJobID     string `json:"source_job_id"`
+	SourceJobRunID  string `json:"source_job_run_id"`
 }
 
 type workerMessageT struct {
@@ -1048,10 +1056,46 @@ func (rt *HandleT) statusInsertLoop() {
 			//but approx is good enough at the cost of reduced computation.
 		}
 		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
+			reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
+			connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
+			statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
+
 			statusStat.Start()
 			var statusList []*jobsdb.JobStatusT
 			var routerAbortedJobs []*jobsdb.JobT
 			for _, resp := range responseList {
+				//Update metrics maps
+				//REPORTING - ROUTER - START
+				if rt.reporting != nil && rt.reportingEnabled {
+					var parameters JobParametersT
+					err := json.Unmarshal(resp.JobT.Parameters, &parameters)
+					if err != nil {
+						rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
+					}
+					key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
+					cd, ok := connectionDetailsMap[key]
+					if !ok {
+						cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
+						connectionDetailsMap[key] = cd
+					}
+					sd, ok := statusDetailsMap[key]
+					if !ok {
+						errorCode, err := strconv.Atoi(resp.status.ErrorCode)
+						if err != nil {
+							errorCode = 200 //TODO handle properly
+						}
+						sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload)
+						statusDetailsMap[key] = sd
+					}
+					if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 {
+						sd.Count++
+					}
+					if resp.status.JobState != jobsdb.Failed.State {
+						sd.Count++
+					}
+				}
+				//REPORTING - ROUTER - END
+
 				statusList = append(statusList, resp.status)
 
 				if resp.status.JobState == jobsdb.Aborted.State {
@@ -1076,6 +1120,22 @@ func (rt *HandleT) statusInsertLoop() {
 				}
 			}
 
+			//REPORTING - ROUTER - START
+			if rt.reporting != nil && rt.reportingEnabled {
+				utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+				for k, cd := range connectionDetailsMap {
+					m := &utilTypes.PUReportedMetric{
+						ConnectionDetails: *cd,
+						PUDetails:         *utilTypes.CreatePUDetails(utilTypes.DEST_TRANSFORMER, utilTypes.ROUTER, true, false),
+						StatusDetail:      statusDetailsMap[k],
+					}
+					if m.StatusDetail.Count != 0 {
+						reportMetrics = append(reportMetrics, m)
+					}
+				}
+			}
+			//REPORTING - ROUTER - END
+
 			if len(statusList) > 0 {
 				rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
 
@@ -1087,11 +1147,18 @@ func (rt *HandleT) statusInsertLoop() {
 					rt.errorDB.Store(routerAbortedJobs)
 				}
 				//Update the status
-				err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
+				txn := rt.jobsDB.BeginGlobalTransaction()
+				rt.jobsDB.AcquireUpdateJobStatusLocks()
+				err := rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil)
 				if err != nil {
-					rt.logger.Errorf("Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
+					rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
 					panic(err)
 				}
+				if rt.reporting != nil && rt.reportingEnabled {
+					rt.reporting.Report(reportMetrics, txn)
+				}
+				rt.jobsDB.CommitTransaction(txn)
+				rt.jobsDB.ReleaseUpdateJobStatusLocks()
 			}
 
 			if rt.guaranteeUserEventOrder {
@@ -1319,7 +1386,7 @@ func (rt *HandleT) generatorLoop() {
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
-		//Mark the jobs as executing
+		//Mark the jobs as aborted
 		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
 		if err != nil {
 			if len(drainList) > 0 {
@@ -1364,10 +1431,18 @@ func init() {
 }
 
 //Setup initializes this module
-func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT) {
+func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
+	rt.reporting = reporting
+	rt.reportingEnabled = config.GetBool("Reporting.enabled", true)
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
+
+	//waiting for reporting client setup
+	if rt.reporting != nil {
+		rt.reporting.WaitForSetup(utilTypes.CORE_REPORTING_CLIENT)
+	}
+
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
