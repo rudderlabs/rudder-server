@@ -39,7 +39,7 @@ var statsSamplingRate float32
 var DefaultStats Stats
 
 func init() {
-	statsEnabled = config.GetBool("enableStats", false)
+	statsEnabled = config.GetBool("enableStats", true)
 	statsTagsFormat = config.GetString("statsTagsFormat", "influxdb")
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
 	instanceID = config.GetEnv("INSTANCE_ID", "")

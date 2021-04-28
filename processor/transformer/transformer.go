@@ -194,9 +194,15 @@ func (trans *HandleT) transformWorker() {
 			//This is returned by our JS engine so should  be parsable
 			//but still handling it
 			if err != nil {
-				panic(err)
+				trans.logger.Errorf("Data sent to transformer : %v", string(rawJSON))
+				trans.logger.Errorf("Transformer returned : %v", string(respData))
+				respData = []byte(fmt.Sprintf("Failed to unmarshal transformer response: %s", string(respData)))
+				transformerResponses = nil
+				resp.StatusCode = 400
 			}
-		} else {
+		}
+
+		if resp.StatusCode != http.StatusOK {
 			for _, transformEvent := range job.data {
 				resp := TransformerResponseT{StatusCode: resp.StatusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 				transformerResponses = append(transformerResponses, resp)
