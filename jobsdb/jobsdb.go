@@ -2658,6 +2658,14 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
+	//The order of lock is very important. The migrateDSLoop
+	//takes lock in this order so reversing this will cause
+	//deadlocks
+	jd.dsMigrationLock.RLock()
+	jd.dsListLock.RLock()
+	defer jd.dsMigrationLock.RUnlock()
+	defer jd.dsListLock.RUnlock()
+
 	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList)
 	if err != nil {
 		jd.rollbackTx(err, txn)
@@ -2689,14 +2697,6 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 	sort.Slice(statusList, func(i, j int) bool {
 		return statusList[i].JobID < statusList[j].JobID
 	})
-
-	//The order of lock is very important. The migrateDSLoop
-	//takes lock in this order so reversing this will cause
-	//deadlocks
-	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
-	defer jd.dsMigrationLock.RUnlock()
-	defer jd.dsListLock.RUnlock()
 
 	//We scan through the list of jobs and map them to DS
 	var lastPos int
