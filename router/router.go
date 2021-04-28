@@ -271,7 +271,7 @@ func (worker *workerT) workerProcess() {
 					markedAsWaiting := worker.handleJobForPrevFailedUser(job, parameters, userID, previousFailedJobID)
 					if markedAsWaiting {
 						worker.rt.logger.Debugf(`Decrementing in throttle map for destination:%s since job:%d is marked as waiting for user:%s`, parameters.DestinationID, job.JobID, userID)
-						worker.rt.throttler.Dec(parameters.DestinationID, userID, 1, worker.throttledAtTime)
+						worker.rt.throttler.Dec(parameters.DestinationID, userID, 1, worker.throttledAtTime, throttler.ALL_LEVELS)
 						continue
 					}
 				}
@@ -596,7 +596,7 @@ func (worker *workerT) decrementInThrottleMap(apiCallsCount map[string]*destJobC
 						diff = diff / 2
 					}
 					pkgLogger.Debugf(`Decrementing user level throttle map by %d for dest:%s, user:%s`, diff, destID, userID)
-					worker.rt.throttler.Dec(destID, userID, diff, worker.throttledAtTime)
+					worker.rt.throttler.Dec(destID, userID, diff, worker.throttledAtTime, throttler.USER_LEVEL)
 				}
 			}
 		}
@@ -613,7 +613,7 @@ func (worker *workerT) decrementInThrottleMap(apiCallsCount map[string]*destJobC
 					diff = diff / 2
 				}
 				pkgLogger.Debugf(`Decrementing destination level throttle map by %d for dest:%s`, diff, destID)
-				worker.rt.throttler.Dec(destID, "", diff, worker.throttledAtTime)
+				worker.rt.throttler.Dec(destID, "", diff, worker.throttledAtTime, throttler.DESTINATION_LEVEL)
 			}
 		}
 	}

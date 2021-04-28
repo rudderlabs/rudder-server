@@ -9,11 +9,17 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
+const (
+	DESTINATION_LEVEL = "destination"
+	USER_LEVEL        = "user"
+	ALL_LEVELS        = "all"
+)
+
 //Throttler is an interface for throttling functions
 type Throttler interface {
 	CheckLimitReached(destID string, userID string, currentTime time.Time) bool
 	Inc(destID string, userID string, currentTime time.Time)
-	Dec(destID string, userID string, count int64, currentTime time.Time)
+	Dec(destID string, userID string, count int64, currentTime time.Time, atLevel string)
 	IsEnabled() bool
 	IsUserLevelEnabled() bool
 	IsDestLevelEnabled() bool
@@ -135,14 +141,14 @@ func (throttler *HandleT) Inc(destID string, userID string, currentTime time.Tim
 
 //Dec decrements the destLimiter and userLimiter counters by count passed
 //If destID or userID passed is empty, we don't decrement the counters.
-func (throttler *HandleT) Dec(destID string, userID string, count int64, currentTime time.Time) {
-	if throttler.destLimiter.enabled && destID != "" {
+func (throttler *HandleT) Dec(destID string, userID string, count int64, currentTime time.Time, atLevel string) {
+	if throttler.destLimiter.enabled && destID != "" && (atLevel == ALL_LEVELS || atLevel == DESTINATION_LEVEL) {
 		destKey := throttler.getDestKey(destID)
 		throttler.destLimiter.ratelimiter.Dec(destKey, count, currentTime)
 	}
-	if throttler.userLimiter.enabled && userID != "" {
+	if throttler.userLimiter.enabled && userID != "" && (atLevel == ALL_LEVELS || atLevel == USER_LEVEL) {
 		userKey := throttler.getUserKey(destID, userID)
-		throttler.destLimiter.ratelimiter.Dec(userKey, count, currentTime)
+		throttler.userLimiter.ratelimiter.Dec(userKey, count, currentTime)
 	}
 }
 
