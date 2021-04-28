@@ -85,6 +85,7 @@ type HandleT struct {
 	saveDestinationResponse                bool
 	drainJobHandler                        drain.DrainI
 	reporting                              utilTypes.ReportingI
+	reportingEnabled                       bool
 }
 
 type jobResponseT struct {
@@ -994,31 +995,33 @@ func (rt *HandleT) statusInsertLoop() {
 			for _, resp := range responseList {
 				//Update metrics maps
 				//REPORTING - ROUTER - START
-				var parameters JobParametersT
-				err := json.Unmarshal(resp.JobT.Parameters, &parameters)
-				if err != nil {
-					rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
-				}
-				key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
-				cd, ok := connectionDetailsMap[key]
-				if !ok {
-					cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
-					connectionDetailsMap[key] = cd
-				}
-				sd, ok := statusDetailsMap[key]
-				if !ok {
-					errorCode, err := strconv.Atoi(resp.status.ErrorCode)
+				if rt.reporting != nil && rt.reportingEnabled {
+					var parameters JobParametersT
+					err := json.Unmarshal(resp.JobT.Parameters, &parameters)
 					if err != nil {
-						errorCode = 200 //TODO handle properly
+						rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
 					}
-					sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload)
-					statusDetailsMap[key] = sd
-				}
-				if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 {
-					sd.Count++
-				}
-				if resp.status.JobState != jobsdb.Failed.State {
-					sd.Count++
+					key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
+					cd, ok := connectionDetailsMap[key]
+					if !ok {
+						cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
+						connectionDetailsMap[key] = cd
+					}
+					sd, ok := statusDetailsMap[key]
+					if !ok {
+						errorCode, err := strconv.Atoi(resp.status.ErrorCode)
+						if err != nil {
+							errorCode = 200 //TODO handle properly
+						}
+						sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload)
+						statusDetailsMap[key] = sd
+					}
+					if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 {
+						sd.Count++
+					}
+					if resp.status.JobState != jobsdb.Failed.State {
+						sd.Count++
+					}
 				}
 				//REPORTING - ROUTER - END
 
@@ -1046,17 +1049,21 @@ func (rt *HandleT) statusInsertLoop() {
 				}
 			}
 
-			utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
-			for k, cd := range connectionDetailsMap {
-				m := &utilTypes.PUReportedMetric{
-					ConnectionDetails: *cd,
-					PUDetails:         *utilTypes.CreatePUDetails(utilTypes.DEST_TRANSFORMER, utilTypes.ROUTER, true, false),
-					StatusDetail:      statusDetailsMap[k],
-				}
-				if m.StatusDetail.Count != 0 {
-					reportMetrics = append(reportMetrics, m)
+			//REPORTING - ROUTER - START
+			if rt.reporting != nil && rt.reportingEnabled {
+				utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+				for k, cd := range connectionDetailsMap {
+					m := &utilTypes.PUReportedMetric{
+						ConnectionDetails: *cd,
+						PUDetails:         *utilTypes.CreatePUDetails(utilTypes.DEST_TRANSFORMER, utilTypes.ROUTER, true, false),
+						StatusDetail:      statusDetailsMap[k],
+					}
+					if m.StatusDetail.Count != 0 {
+						reportMetrics = append(reportMetrics, m)
+					}
 				}
 			}
+			//REPORTING - ROUTER - END
 
 			if len(statusList) > 0 {
 				rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
@@ -1076,7 +1083,7 @@ func (rt *HandleT) statusInsertLoop() {
 					rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
 					panic(err)
 				}
-				if rt.reporting != nil {
+				if rt.reporting != nil && rt.reportingEnabled {
 					rt.reporting.Report(reportMetrics, txn)
 				}
 				rt.jobsDB.CommitTransaction(txn)
@@ -1349,6 +1356,7 @@ func init() {
 //Setup initializes this module
 func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
 	rt.reporting = reporting
+	rt.reportingEnabled = config.GetBool("Reporting.enabled", true)
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)

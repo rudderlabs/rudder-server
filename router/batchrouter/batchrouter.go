@@ -77,6 +77,7 @@ type HandleT struct {
 	maxFailedCountForJob     int
 	retryTimeWindow          time.Duration
 	reporting                types.ReportingI
+	reportingEnabled         bool
 }
 
 type BatchDestinationT struct {
@@ -504,30 +505,34 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		}
 		jobStateCounts[jobState][strconv.Itoa(attemptNum)] = jobStateCounts[jobState][strconv.Itoa(attemptNum)] + 1
 
-		//Update metrics maps
-		errorCode := getBRTErrorCode(jobState)
-		var parameters JobParametersT
-		err = json.Unmarshal(job.Parameters, &parameters)
-		if err != nil {
-			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+		//REPORTING - START
+		if brt.reporting != nil && brt.reportingEnabled {
+			//Update metrics maps
+			errorCode := getBRTErrorCode(jobState)
+			var parameters JobParametersT
+			err = json.Unmarshal(job.Parameters, &parameters)
+			if err != nil {
+				brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+			}
+			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode))
+			cd, ok := connectionDetailsMap[key]
+			if !ok {
+				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
+				connectionDetailsMap[key] = cd
+			}
+			sd, ok := statusDetailsMap[key]
+			if !ok {
+				sd = types.CreateStatusDetail(jobState, 0, errorCode, string(errorResp), job.EventPayload)
+				statusDetailsMap[key] = sd
+			}
+			if status.JobState == jobsdb.Failed.State && status.AttemptNum == 1 {
+				sd.Count++
+			}
+			if status.JobState != jobsdb.Failed.State {
+				sd.Count++
+			}
 		}
-		key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode))
-		cd, ok := connectionDetailsMap[key]
-		if !ok {
-			cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
-			connectionDetailsMap[key] = cd
-		}
-		sd, ok := statusDetailsMap[key]
-		if !ok {
-			sd = types.CreateStatusDetail(jobState, 0, errorCode, string(errorResp), job.EventPayload)
-			statusDetailsMap[key] = sd
-		}
-		if status.JobState == jobsdb.Failed.State && status.AttemptNum == 1 {
-			sd.Count++
-		}
-		if status.JobState != jobsdb.Failed.State {
-			sd.Count++
-		}
+		//REPORTING - END
 	}
 
 	//tracking batch router errors
@@ -558,21 +563,25 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		}
 	}
 
-	types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
-	terminalPU := true
-	if isWarehouse {
-		terminalPU = false
-	}
-	for k, cd := range connectionDetailsMap {
-		m := &types.PUReportedMetric{
-			ConnectionDetails: *cd,
-			PUDetails:         *types.CreatePUDetails(types.DEST_TRANSFORMER, types.BATCH_ROUTER, terminalPU, false),
-			StatusDetail:      statusDetailsMap[k],
+	//REPORTING - START
+	if brt.reporting != nil && brt.reportingEnabled {
+		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+		terminalPU := true
+		if isWarehouse {
+			terminalPU = false
 		}
-		if m.StatusDetail.Count != 0 {
-			reportMetrics = append(reportMetrics, m)
+		for k, cd := range connectionDetailsMap {
+			m := &types.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *types.CreatePUDetails(types.DEST_TRANSFORMER, types.BATCH_ROUTER, terminalPU, false),
+				StatusDetail:      statusDetailsMap[k],
+			}
+			if m.StatusDetail.Count != 0 {
+				reportMetrics = append(reportMetrics, m)
+			}
 		}
 	}
+	//REPORTING - END
 
 	//Mark the status of the jobs
 	txn := brt.jobsDB.BeginGlobalTransaction()
@@ -583,7 +592,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		panic(err)
 	}
 
-	if brt.reporting != nil {
+	if brt.reporting != nil && brt.reportingEnabled {
 		brt.reporting.Report(reportMetrics, txn)
 	}
 	brt.jobsDB.CommitTransaction(txn)
@@ -1087,6 +1096,7 @@ func init() {
 //Setup initializes this module
 func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI) {
 	brt.reporting = reporting
+	brt.reportingEnabled = config.GetBool("Reporting.enabled", true)
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
