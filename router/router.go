@@ -73,6 +73,7 @@ type HandleT struct {
 	batchOutputCountStat                   stats.RudderStats
 	batchInputOutputDiffCountStat          stats.RudderStats
 	eventsAbortedStat                      stats.RudderStats
+	drainedJobsStat                        stats.RudderStats
 	noOfWorkers                            int
 	allowAbortedUserJobsCountForProcessing int
 	throttledUserMap                       map[string]struct{} // used before calling findWorker. A temp storage to save <userid> whose job can be throttled.
@@ -1252,6 +1253,13 @@ func (rt *HandleT) generatorLoop() {
 		//Mark the jobs as executing
 		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
 		if err != nil {
+			if len(drainList) > 0 {
+				rt.drainedJobsStat = stats.NewTaggedStat(`router_drained_events`, stats.CountType, stats.Tags{
+					"destType": rt.destName,
+					"destId":   toDrainDestinationID,
+				})
+				rt.drainedJobsStat.Count(len(drainList))
+			}
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
