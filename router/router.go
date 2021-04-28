@@ -940,13 +940,14 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 
 			rt.logger.Debugf("[%v Router] :: userID found in abortedUserIDtoJobMap: %s. Allowing jobID: %d. returing worker", rt.destName, userID, job.JobID)
 			// incrementing abortedUserIDMap after all checks of backoff, throttle etc are made
+			// We don't need lock inside this defer func, because we already hold the lock above and this
+			// defer is called before defer Unlock
 			defer func() {
 				if toSendWorker != nil {
 					toSendWorker.abortedUserIDMap[userID] = toSendWorker.abortedUserIDMap[userID] + 1
 				}
 			}()
 		}
-
 		toSendWorker = worker
 	} else {
 		//This job can only be higher than blocking
