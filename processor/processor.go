@@ -89,11 +89,8 @@ type HandleT struct {
 	logger                         logger.LoggerI
 	eventSchemaHandler             types.EventSchemasI
 	dedupHandler                   dedup.DedupI
-<<<<<<< HEAD
 	reporting                      types.ReportingI
 	reportingEnabled               bool
-=======
->>>>>>> 45352c1d11c86f748f47f385b4074392d0895816
 	transformerFeatures            TransformFeaturesT
 }
 
