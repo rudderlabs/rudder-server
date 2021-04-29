@@ -91,20 +91,13 @@ type HandleT struct {
 	dedupHandler                   dedup.DedupI
 	reporting                      types.ReportingI
 	reportingEnabled               bool
-	transformerFeatures            TransformFeaturesT
+	transformerFeatures            json.RawMessage
 }
 
-var defaultTransformerFeatures TransformFeaturesT
-
-var defaultFeaturesString = `{
-	transformerVersion: 1,
-	routerTranform: {
+var defaultTransformerFeatures = `{
+	routerTransform: {
 	}
   }`
-
-type TransformFeaturesT struct {
-	TransformerFeature json.RawMessage `json:"features"`
-}
 
 type DestStatT struct {
 	id               string
@@ -368,14 +361,12 @@ func loadConfig() {
 
 func (proc *HandleT) getTransformerFeatureJson() {
 	const attempts = 10
-	var transformRequest TransformFeaturesT
-	_ = json.Unmarshal([]byte(defaultFeaturesString), &defaultTransformerFeatures)
 	for {
 		for i := 0; i < attempts; i++ {
 			url := transformerURL + "/features"
 			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
 			if err != nil {
-				proc.transformerFeatures = defaultTransformerFeatures
+				proc.transformerFeatures = []byte(defaultTransformerFeatures)
 				proc.logger.Error("error creating request - %s", err)
 				time.Sleep(200 * time.Millisecond)
 				continue
@@ -385,7 +376,7 @@ func (proc *HandleT) getTransformerFeatureJson() {
 			res, err := client.Do(req)
 
 			if err != nil {
-				proc.transformerFeatures = defaultTransformerFeatures
+				proc.transformerFeatures = []byte(defaultTransformerFeatures)
 				proc.logger.Error("error sending request - %s", err)
 				time.Sleep(200 * time.Millisecond)
 				continue
@@ -393,21 +384,20 @@ func (proc *HandleT) getTransformerFeatureJson() {
 			if res.StatusCode == 200 {
 				body, err := ioutil.ReadAll(res.Body)
 				if err == nil {
-					err := json.Unmarshal(body, &transformRequest)
 					if err != nil {
-						proc.transformerFeatures = defaultTransformerFeatures
+						proc.transformerFeatures = []byte(defaultTransformerFeatures)
 					} else {
-						proc.transformerFeatures = transformRequest
+						proc.transformerFeatures = body
 					}
 					res.Body.Close()
 					break
 				} else {
-					proc.transformerFeatures = defaultTransformerFeatures
+					proc.transformerFeatures = []byte(defaultTransformerFeatures)
 					res.Body.Close()
 					time.Sleep(200 * time.Millisecond)
 				}
 			} else {
-				proc.transformerFeatures = defaultTransformerFeatures
+				proc.transformerFeatures = []byte(defaultTransformerFeatures)
 				time.Sleep(200 * time.Millisecond)
 			}
 		}
@@ -1377,7 +1367,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		if transformAt == "processor" {
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 		} else {
-			if gjson.Get(string(proc.transformerFeatures.TransformerFeature), destination.DestinationDefinition.Name).String() == "" {
+			if gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String() == "" {
 				response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 				transformAt = "processor"
 			} else {
