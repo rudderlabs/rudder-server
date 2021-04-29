@@ -1,9 +1,12 @@
 package processor
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math"
+	"net/http"
 	"reflect"
 	"sort"
 	"strconv"
@@ -88,6 +91,20 @@ type HandleT struct {
 	dedupHandler                   dedup.DedupI
 	reporting                      types.ReportingI
 	reportingEnabled               bool
+	transformerFeatures            TransformFeaturesT
+}
+
+var defaultTransformerFeatures TransformRequestT
+
+var defaultFeaturesString = `{
+	transformerVersion: 1,
+	routerTranform: {
+	}
+  }`
+
+type TransformFeaturesT struct {
+	transformerVersion string
+	transformerFeature json.RawMessage
 }
 
 type DestStatT struct {
@@ -267,6 +284,10 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 		proc.backendConfigSubscriber()
 	})
 
+	rruntime.Go(func() {
+		proc.getTransformerFeatureJson()
+	})
+
 	proc.transformer.Setup()
 
 	proc.crashRecover()
@@ -315,6 +336,8 @@ var (
 	enableDedup                         bool
 	transformTimesPQLength              int
 	captureEventNameStats               bool
+	transformerURL                      string
+	pollInterval                        time.Duration
 )
 
 func loadConfig() {
@@ -339,6 +362,58 @@ func loadConfig() {
 	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
+	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	pollInterval = config.GetDuration("Processor.pollIntervalInS", time.Duration(5))
+
+}
+
+func (proc *HandleT) getTransformerFeatureJson() {
+	const attempts = 10
+	var transformRequest TransformRequestT
+	_ = json.Unmarshal([]byte(defaultFeaturesString), &defaultTransformerFeatures)
+	for {
+		for i := 0; i < attempts; i++ {
+			url := transformerURL + "/features"
+			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
+			if err != nil {
+				proc.transformerFeatures = defaultTransformerFeatures
+				proc.logger.Error("error creating request - %s", err)
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			tr := &http.Transport{}
+			client := &http.Client{Transport: tr}
+			res, err := client.Do(req)
+
+			if err != nil {
+				proc.transformerFeatures = defaultTransformerFeatures
+				proc.logger.Error("error sending request - %s", err)
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			if res.StatusCode == 200 {
+				body, err := ioutil.ReadAll(res.Body)
+				if err == nil {
+					err := json.Unmarshal(body, &transformRequest)
+					if err != nil {
+						proc.transformerFeatures = defaultTransformerFeatures
+					} else {
+						proc.transformerFeatures = transformRequest
+					}
+					res.Body.Close()
+					break
+				} else {
+					proc.transformerFeatures = defaultTransformerFeatures
+					res.Body.Close()
+					time.Sleep(200 * time.Millisecond)
+				}
+			} else {
+				proc.transformerFeatures = defaultTransformerFeatures
+				time.Sleep(200 * time.Millisecond)
+			}
+		}
+		time.Sleep(pollInterval)
+	}
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -1303,7 +1378,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		if transformAt == "processor" {
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 		} else {
-			response = convertToTransformerResponse(eventsToTransform)
+			if gjson.Get(string(proc.transformerFeatures.transformerFeature), destination.DestinationDefinition.Name).String() == "" {
+				response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+				transformAt = "processor"
+			} else {
+				response = convertToTransformerResponse(eventsToTransform)
+			}
 		}
 
 		endedAt = time.Now()
