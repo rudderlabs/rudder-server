@@ -17,6 +17,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/lib/pq"
+	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -30,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
@@ -37,6 +39,7 @@ import (
 )
 
 var (
+	application                         app.Interface
 	webPort                             int
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
@@ -64,11 +67,15 @@ var (
 	maxStagingFileReadBufferCapacityInK int
 	destinationsMap                     map[string]warehouseutils.WarehouseT // destID -> warehouse map
 	destinationsMapLock                 sync.RWMutex
+	sourceIDsByWorkspace                map[string][]string // workspaceID -> []sourceIDs
+	sourceIDsByWorkspaceLock            sync.RWMutex
 	longRunningUploadStatThresholdInMin time.Duration
 	pkgLogger                           logger.LoggerI
 	numLoadFileUploadWorkers            int
 	slaveUploadTimeout                  time.Duration
 	runningMode                         string
+	uploadStatusTrackFrequency          time.Duration
+	uploadBufferTimeInMin               int
 )
 
 var (
@@ -116,13 +123,13 @@ func init() {
 func loadConfig() {
 	//Port where WH is running
 	webPort = config.GetInt("Warehouse.webPort", 8082)
-	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
-	noOfWorkers = config.GetInt("Warehouse.noOfWorkers", 8)
-	noOfSlaveWorkerRoutines = config.GetInt("Warehouse.noOfSlaveWorkerRoutines", 4)
-	stagingFilesBatchSize = config.GetInt("Warehouse.stagingFilesBatchSize", 240)
-	uploadFreqInS = config.GetInt64("Warehouse.uploadFreqInS", 1800)
-	mainLoopSleep = config.GetDuration("Warehouse.mainLoopSleepInS", 1) * time.Second
-	crashRecoverWarehouses = []string{"RS"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL"}
+	config.RegisterIntConfigVariable(8, &noOfWorkers, true, 1, "Warehouse.noOfWorkers")
+	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
+	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
+	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
+	config.RegisterDurationConfigVariable(time.Duration(5), &mainLoopSleep, true, time.Second, "Warehouse.mainLoopSleepInS")
+	crashRecoverWarehouses = []string{"RS", "POSTGRES", "MSSQL"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
@@ -133,17 +140,20 @@ func loadConfig() {
 	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslmode = config.GetEnv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
-	warehouseSyncPreFetchCount = config.GetInt("Warehouse.warehouseSyncPreFetchCount", 10)
-	stagingFilesSchemaPaginationSize = config.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100)
-	warehouseSyncFreqIgnore = config.GetBool("Warehouse.warehouseSyncFreqIgnore", false)
-	minRetryAttempts = config.GetInt("Warehouse.minRetryAttempts", 3)
-	retryTimeWindow = config.GetDuration("Warehouse.retryTimeWindowInMins", time.Duration(180)) * time.Minute
+	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
+	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
+	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
+	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
+	config.RegisterDurationConfigVariable(time.Duration(180), &retryTimeWindow, true, time.Minute, "Warehouse.retryTimeWindowInMins")
 	destinationsMap = map[string]warehouseutils.WarehouseT{}
-	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 10240)
-	longRunningUploadStatThresholdInMin = config.GetDuration("Warehouse.longRunningUploadStatThresholdInMin", time.Duration(120)) * time.Minute
-	slaveUploadTimeout = config.GetDuration("Warehouse.slaveUploadTimeoutInMin", time.Duration(10)) * time.Minute
-	numLoadFileUploadWorkers = config.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
+	sourceIDsByWorkspace = map[string][]string{}
+	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
+	config.RegisterDurationConfigVariable(time.Duration(120), &longRunningUploadStatThresholdInMin, true, time.Minute, "Warehouse.longRunningUploadStatThresholdInMin")
+	config.RegisterDurationConfigVariable(time.Duration(10), &slaveUploadTimeout, true, time.Minute, "Warehouse.slaveUploadTimeoutInMin")
+	config.RegisterIntConfigVariable(8, &numLoadFileUploadWorkers, true, 1, "Warehouse.numLoadFileUploadWorkers")
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
+	uploadStatusTrackFrequency = config.GetDuration("Warehouse.uploadStatusTrackFrequencyInMin", time.Duration(30)) * time.Minute
+	uploadBufferTimeInMin = config.GetInt("Warehouse.uploadBufferTimeInMin", 180)
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -206,6 +216,13 @@ func (wh *HandleT) backendConfigSubscriber() {
 		allSources := config.Data.(backendconfig.ConfigT)
 
 		for _, source := range allSources.Sources {
+			sourceIDsByWorkspaceLock.Lock()
+			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
+				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
+			}
+			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
+			sourceIDsByWorkspaceLock.Unlock()
+
 			if len(source.Destinations) == 0 {
 				continue
 			}
@@ -333,7 +350,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at
+	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at, metadata->>'source_batch_id', metadata->>'source_task_id', metadata->>'source_task_run_id', metadata->>'source_job_id', metadata->>'source_job_run_id'
                                 FROM %[1]s
 								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
 								ORDER BY id ASC`,
@@ -346,14 +363,21 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 
 	var stagingFilesList []*StagingFileT
 	var firstEventAt, lastEventAt sql.NullTime
+	var sourceBatchID, sourceTaskID, sourceTaskRunID, sourceJobID, sourceJobRunID sql.NullString
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt)
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt, &sourceBatchID, &sourceTaskID, &sourceTaskRunID, &sourceJobID, &sourceJobRunID)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		jsonUpload.FirstEventAt = firstEventAt.Time
 		jsonUpload.LastEventAt = lastEventAt.Time
+		// add cloud sources metadata
+		jsonUpload.SourceBatchID = sourceBatchID.String
+		jsonUpload.SourceTaskID = sourceTaskID.String
+		jsonUpload.SourceTaskRunID = sourceTaskRunID.String
+		jsonUpload.SourceJobID = sourceJobID.String
+		jsonUpload.SourceJobRunID = sourceJobRunID.String
 		stagingFilesList = append(stagingFilesList, &jsonUpload)
 	}
 
@@ -383,7 +407,8 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	}
 
 	now := timeutil.Now()
-	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, Waiting, "{}", "{}", "{}", firstEventAt, lastEventAt, now, now)
+	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task_id": "%s", "source_task_run_id": "%s", "source_job_id": "%s", "source_job_run_id": "%s"}`, jsonUploadsList[0].SourceBatchID, jsonUploadsList[0].SourceTaskID, jsonUploadsList[0].SourceTaskRunID, jsonUploadsList[0].SourceJobID, jsonUploadsList[0].SourceJobRunID))
+	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, Waiting, "{}", "{}", metadata, firstEventAt, lastEventAt, now, now)
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
@@ -620,6 +645,12 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
+		// cloud sources info
+		upload.SourceBatchID = gjson.GetBytes(upload.Metadata, "source_batch_id").String()
+		upload.SourceTaskID = gjson.GetBytes(upload.Metadata, "source_task_id").String()
+		upload.SourceTaskRunID = gjson.GetBytes(upload.Metadata, "source_task_run_id").String()
+		upload.SourceJobID = gjson.GetBytes(upload.Metadata, "source_job_id").String()
+		upload.SourceJobRunID = gjson.GetBytes(upload.Metadata, "source_job_run_id").String()
 
 		_, upload.FirstAttemptAt = warehouseutils.TimingFromJSONString(firstTiming)
 		var lastStatus string
@@ -643,9 +674,16 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			continue
 		}
 
+		upload.SourceType = warehouse.Source.SourceDefinition.Name
+		upload.SourceCategory = warehouse.Source.SourceDefinition.Category
+
 		stagingFilesList, err := wh.getStagingFiles(warehouse, upload.StartStagingFileID, upload.EndStagingFileID)
 		if err != nil {
 			return nil, err
+		}
+		var stagingFileIDs []int64
+		for _, stagingFile := range stagingFilesList {
+			stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
 		}
 
 		whManager, err := manager.New(wh.destType)
@@ -654,12 +692,13 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		}
 
 		uploadJob := UploadJobT{
-			upload:       &upload,
-			stagingFiles: stagingFilesList,
-			warehouse:    warehouse,
-			whManager:    whManager,
-			dbHandle:     wh.dbHandle,
-			pgNotifier:   &wh.notifier,
+			upload:         &upload,
+			stagingFiles:   stagingFilesList,
+			stagingFileIDs: stagingFileIDs,
+			warehouse:      warehouse,
+			whManager:      whManager,
+			dbHandle:       wh.dbHandle,
+			pgNotifier:     &wh.notifier,
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)
@@ -704,6 +743,60 @@ func (wh *HandleT) runUploadJobAllocator() {
 		}
 
 		time.Sleep(config.GetDuration("Warehouse.uploadAllocatorSleepInS", 5) * time.Second)
+	}
+}
+
+func (wh *HandleT) uploadStatusTrack() {
+	for {
+		for _, warehouse := range wh.warehouses {
+			source := warehouse.Source
+			destination := warehouse.Destination
+
+			if !source.Enabled || !destination.Enabled {
+				continue
+			}
+
+			config := destination.Config
+			// Default frequency
+			syncFrequency := "1440"
+			if config[warehouseutils.SyncFrequency] != nil {
+				syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
+			}
+
+			timeWindow := uploadBufferTimeInMin
+			if value, err := strconv.Atoi(syncFrequency); err == nil {
+				timeWindow += value
+			}
+
+			sqlStatement := fmt.Sprintf(`
+				select created_at from %[1]s where source_id='%[2]s' and destination_id='%[3]s' order by created_at desc limit 1`,
+				warehouseutils.WarehouseStagingFilesTable, source.ID, destination.ID)
+
+			var createdAt sql.NullTime
+			err := wh.dbHandle.QueryRow(sqlStatement).Scan(&createdAt)
+			if err != nil && err != sql.ErrNoRows {
+				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+			}
+
+			lastSyncTime := time.Now().Add(time.Duration(-timeWindow) * time.Minute)
+			if !createdAt.Valid || createdAt.Time.Before(lastSyncTime) {
+				continue
+			}
+
+			sqlStatement = fmt.Sprintf(`
+				select cast( case when count(*) > 0 then 1 else 0 end as bit ) 
+					from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s') and updated_at > now() - interval '%[6]d MIN'`,
+				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, timeWindow)
+
+			var uploaded int
+			err = wh.dbHandle.QueryRow(sqlStatement).Scan(&uploaded)
+			if err != nil && err != sql.ErrNoRows {
+				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+			}
+
+			getUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name).Count(uploaded)
+		}
+		time.Sleep(uploadStatusTrackFrequency)
 	}
 }
 
@@ -763,12 +856,20 @@ func (wh *HandleT) Setup(whType string) {
 	})
 }
 
+func (wh *HandleT) monitorUploadStatus() {
+	pkgLogger.Infof("WH: Warehouse Idle upload tracker started")
+	rruntime.Go(func() {
+		wh.uploadStatusTrack()
+	})
+}
+
 var loadFileFormatMap = map[string]string{
 	"BQ":         "json",
 	"RS":         "csv",
 	"SNOWFLAKE":  "csv",
 	"POSTGRES":   "csv",
 	"CLICKHOUSE": "csv",
+	"MSSQL":      "csv",
 }
 
 func minimalConfigSubscriber() {
@@ -779,6 +880,12 @@ func minimalConfigSubscriber() {
 		pkgLogger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.ConfigT)
 		for _, source := range sources.Sources {
+			sourceIDsByWorkspaceLock.Lock()
+			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
+				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
+			}
+			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
+			sourceIDsByWorkspaceLock.Unlock()
 			for _, destination := range source.Destinations {
 				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh := &HandleT{
@@ -821,6 +928,7 @@ func monitorDestRouters() {
 						wh.Setup(destination.DestinationDefinition.Name)
 						wh.configSubscriberLock.Unlock()
 						dstToWhRouter[destination.DestinationDefinition.Name] = wh
+						wh.monitorUploadStatus()
 					} else {
 						pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
 						wh.configSubscriberLock.Lock()
@@ -892,18 +1000,19 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		firstEventAt = nil
 		lastEventAt = nil
 	}
+	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task_id": "%s", "source_task_run_id": "%s", "source_job_id": "%s", "source_job_run_id": "%s"}`, stagingFile.SourceBatchID, stagingFile.SourceTaskID, stagingFile.SourceTaskRunID, stagingFile.SourceJobID, stagingFile.SourceJobRunID))
 
 	pkgLogger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
 	schemaPayload, _ := json.Marshal(stagingFile.Schema)
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, total_events, first_event_at, last_event_at, created_at, updated_at)
-									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`, warehouseutils.WarehouseStagingFilesTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, total_events, first_event_at, last_event_at, created_at, updated_at, metadata)
+									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10)`, warehouseutils.WarehouseStagingFilesTable)
 	stmt, err := dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(stagingFile.Location, schemaPayload, stagingFile.BatchDestination.Source.ID, stagingFile.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, stagingFile.TotalEvents, firstEventAt, lastEventAt, timeutil.Now())
+	_, err = stmt.Exec(stagingFile.Location, schemaPayload, stagingFile.BatchDestination.Source.ID, stagingFile.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, stagingFile.TotalEvents, firstEventAt, lastEventAt, timeutil.Now(), metadata)
 	if err != nil {
 		panic(err)
 	}
@@ -1010,7 +1119,8 @@ func setupDB(connInfo string) {
 	setupTables(dbHandle)
 }
 
-func Start() {
+func Start(app app.Interface) {
+	application = app
 	time.Sleep(1 * time.Second)
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
 	if !isStandAlone() && !db.IsNormalMode() {
@@ -1022,7 +1132,13 @@ func Start() {
 	psqlInfo := getConnectionString()
 
 	setupDB(psqlInfo)
-	defer startWebHandler()
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Fatal(r)
+			panic(r)
+		}
+		startWebHandler()
+	}()
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
@@ -1040,6 +1156,13 @@ func Start() {
 	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
 		panic(err)
+	}
+
+	//Setting up reporting client
+	if CheckForWarehouseEnvVars() {
+		if application.Features().Reporting != nil {
+			application.Features().Reporting.GetReportingInstance().AddClient(types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
+		}
 	}
 
 	if isSlave() {

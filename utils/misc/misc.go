@@ -19,15 +19,15 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
-	"unicode"
-
-	//"runtime/debug"
 	"time"
+	"unicode"
 
 	"github.com/araddon/dateparse"
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	uuid "github.com/satori/go.uuid"
@@ -909,11 +909,23 @@ func GetTagName(id string, names ...string) string {
 }
 
 //UpdateJSONWithNewKeyVal enhances the json passed with key, val
-func UpdateJSONWithNewKeyVal(params []byte, key, val string) []byte {
+func UpdateJSONWithNewKeyVal(params []byte, key string, val interface{}) []byte {
 	updatedParams, err := sjson.SetBytes(params, key, val)
 	if err != nil {
 		return params
 	}
 
 	return updatedParams
+}
+
+func ConcatErrors(givenErrors []error) error {
+	var errorsToJoin []error
+	for _, err := range givenErrors {
+		if err == nil {
+			pkgLogger.Errorf("%v", string(debug.Stack()))
+			continue
+		}
+		errorsToJoin = append(errorsToJoin, err)
+	}
+	return multierror.Join(errorsToJoin)
 }

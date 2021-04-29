@@ -47,7 +47,7 @@ func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.RudderSt
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
-		"destination": job.warehouseID(),
+		"warehouseID": job.warehouseID(),
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
@@ -172,4 +172,13 @@ func recordStagedRowsStat(totalEvents int, destType, destID, sourceName, destNam
 		"warehouseID": getWarehouseTagName(destID, sourceName, destName),
 	}
 	stats.NewTaggedStat("rows_staged", stats.CountType, tags).Count(totalEvents)
+}
+
+func getUploadStatusStat(name, destType, destID, sourceName, destName string) stats.RudderStats {
+	tags := map[string]string{
+		"module":      moduleName,
+		"destType":    destType,
+		"warehouseID": getWarehouseTagName(destID, sourceName, destName),
+	}
+	return stats.NewTaggedStat(name, stats.CountType, tags)
 }

@@ -27,6 +27,7 @@ const (
 	SNOWFLAKE  = "SNOWFLAKE"
 	POSTGRES   = "POSTGRES"
 	CLICKHOUSE = "CLICKHOUSE"
+	MSSQL	   = "MSSQL"
 )
 
 const (
@@ -92,7 +93,7 @@ func init() {
 }
 
 func loadConfig() {
-	IdentityEnabledWarehouses = []string{"SNOWFLAKE"}
+	IdentityEnabledWarehouses = []string{"SNOWFLAKE", "BQ"}
 	enableIDResolution = config.GetBool("Warehouse.enableIDResolution", false)
 }
 
@@ -119,6 +120,12 @@ type StagingFileT struct {
 	FirstEventAt     string
 	LastEventAt      string
 	TotalEvents      int
+	// cloud sources specific info
+	SourceBatchID   string
+	SourceTaskID    string
+	SourceTaskRunID string
+	SourceJobID     string
+	SourceJobRunID  string
 }
 
 type UploaderI interface {
@@ -128,6 +135,7 @@ type UploaderI interface {
 	GetLoadFileLocations(options GetLoadFileLocationsOptionsT) []string
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFileLocation(tableName string) (string, error)
+	ShouldOnDedupUseNewRecord() bool
 }
 
 type GetLoadFileLocationsOptionsT struct {
@@ -538,6 +546,13 @@ func IdentityMergeRulesTableName(warehouse WarehouseT) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMergeRulesTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
+func IdentityMergeRulesWarehouseTableName(provider string) string {
+	return ToProviderCase(provider, IdentityMergeRulesTable)
+}
+func IdentityMappingsWarehouseTableName(provider string) string {
+	return ToProviderCase(provider, IdentityMappingsTable)
+}
+
 func IdentityMappingsTableName(warehouse WarehouseT) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMappingsTable, warehouse.Namespace, warehouse.Destination.ID)
 }
@@ -556,4 +571,10 @@ func DoubleQuoteAndJoinByComma(strs []string) string {
 		quotedSlice = append(quotedSlice, fmt.Sprintf("%q", str))
 	}
 	return strings.Join(quotedSlice, ",")
+}
+func GetTempFileExtension(destType string) string {
+	if destType == "BQ" {
+		return "json.gz"
+	}
+	return "csv.gz"
 }

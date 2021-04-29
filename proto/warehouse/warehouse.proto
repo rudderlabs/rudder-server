@@ -36,6 +36,7 @@ message WHUploadsRequest{
   string status = 4;
   int32 limit = 5;
   int32 offset = 6;
+  string workspace_id = 7;
 }
 
 message WHUploadsResponse{
@@ -45,6 +46,7 @@ message WHUploadsResponse{
 
 message WHUploadRequest{
   int64 upload_id = 1;
+  string workspace_id = 2;
 }
 
 message WHUploadResponse {

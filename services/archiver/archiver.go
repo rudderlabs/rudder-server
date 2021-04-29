@@ -20,11 +20,15 @@ var (
 )
 
 func init() {
-	backupRowsBatchSize = config.GetInt("Archiver.backupRowsBatchSize", 100)
+	loadConfig()
 	pkgLogger = logger.NewLogger().Child("archiver")
 }
 
-func isArchiverObjectStorageConfigured() bool {
+func loadConfig() {
+	config.RegisterIntConfigVariable(100, &backupRowsBatchSize, true, 1, "Archiver.backupRowsBatchSize")
+}
+
+func IsArchiverObjectStorageConfigured() bool {
 	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "")
 	bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
 	return provider != "" && bucket != ""
@@ -47,7 +51,7 @@ func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHan
 	}
 
 	// TODO: Should we skip deletion if object storage provider not configured?
-	if !isArchiverObjectStorageConfigured() {
+	if !IsArchiverObjectStorageConfigured() {
 		stmt = fmt.Sprintf(`DELETE FROM  %s WHERE id >= %d and id <= %d`, tableName, minID, maxID)
 		_, err = dbHandle.Exec(stmt)
 		if err != nil {

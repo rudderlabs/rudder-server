@@ -135,6 +135,43 @@ func (a Admin) HeapDump(path *string, reply *string) (err error) {
 	return nil
 }
 
+// StartCpuProfile starts writing cpu profile at given path using pprof
+func (a Admin) StartCpuProfile(path *string, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0755)
+	if err != nil {
+		return err
+	}
+	pkgLogger.Info("Starting cpu profile. Writing to ", *path)
+	err = pprof.StartCPUProfile(f)
+	if err != nil {
+		pkgLogger.Info("StartCPUProfile threw error. Cpu profiling may already be running or some other error occured.")
+		*reply = err.Error()
+	} else {
+		*reply = "Cpu profile is being written to " + *path
+	}
+	return nil
+}
+
+// StopCpuProfile stops writing already cpu profile
+func (a Admin) StopCpuProfile(noArgs struct{}, reply *string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
+		}
+	}()
+	pkgLogger.Info("Stopping cpu profile")
+	pprof.StopCPUProfile()
+	*reply = "Cpu profile stopped."
+	return nil
+}
+
 // ServerConfig fetches current configuration as set in viper
 func (a Admin) ServerConfig(noArgs struct{}, reply *string) (err error) {
 	defer func() {

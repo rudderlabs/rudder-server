@@ -162,7 +162,7 @@ func (sf *HandleT) columnExists(columnName string, tableName string) (exists boo
 
 func (sf *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	var count int
-	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s'`, sf.Namespace)
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '%s'`, sf.Namespace)
 	err = sf.Db.QueryRow(sqlStatement).Scan(&count)
 	// ignore err if no results for query
 	if err == sql.ErrNoRows {
@@ -302,15 +302,32 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		additionalJoinClause = fmt.Sprintf(`AND original."%[1]s" = staging."%[1]s" AND original."%[2]s" = staging."%[2]s"`, "TABLE_NAME", "COLUMN_NAME")
 	}
 
-	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s" AS original
+	keepLatestRecordOnDedup := sf.Uploader.ShouldOnDedupUseNewRecord()
+
+	if keepLatestRecordOnDedup {
+		sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s" AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY %[7]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM "%[2]s"
+											SELECT *, row_number() OVER (PARTITION BY %[8]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM "%[2]s"
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
-									ON (original."%[3]s" = staging."%[3]s" %[6]s)
+									ON (original."%[3]s" = staging."%[3]s" %[7]s)
+									WHEN MATCHED THEN
+									UPDATE SET %[6]s
 									WHEN NOT MATCHED THEN
-									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, additionalJoinClause, partitionKey)
+									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey)
+	} else {
+		sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s" AS original
+										USING (
+											SELECT * FROM (
+												SELECT *, row_number() OVER (PARTITION BY %[7]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM "%[2]s"
+											) AS q WHERE _rudder_staging_row_number = 1
+										) AS staging
+										ON (original."%[3]s" = staging."%[3]s" %[6]s)
+										WHEN NOT MATCHED THEN
+										INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, additionalJoinClause, partitionKey)
+	}
+
 	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -552,12 +569,14 @@ func (sf *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
 	schemaExists, err = sf.schemaExists(sf.Namespace)
 	if err != nil {
+		pkgLogger.Errorf("SF: Error checking if schema: %s exists: %v", sf.Namespace, err)
 		return err
 	}
-	if !schemaExists {
-		err = sf.createSchema()
+	if schemaExists {
+		pkgLogger.Infof("SF: Skipping creating schema: %s since it already exists", sf.Namespace)
+		return
 	}
-	return err
+	return sf.createSchema()
 }
 
 func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {

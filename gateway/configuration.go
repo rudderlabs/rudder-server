@@ -15,8 +15,8 @@ func loadConfig() {
 	maxDBBatchSize = config.GetInt("Gateway.maxDBBatchSize", 128)
 	//Timeout after which batch is formed anyway with whatever requests
 	//are available
-	userWebRequestBatchTimeout = (config.GetDuration("Gateway.userWebRequestBatchTimeoutInMS", time.Duration(15)) * time.Millisecond)
-	dbBatchWriteTimeout = (config.GetDuration("Gateway.dbBatchWriteTimeoutInMS", time.Duration(5)) * time.Millisecond)
+	config.RegisterDurationConfigVariable(time.Duration(15), &userWebRequestBatchTimeout, true, time.Millisecond, "Gateway.userWebRequestBatchTimeoutInMS")
+	config.RegisterDurationConfigVariable(time.Duration(5), &dbBatchWriteTimeout, true, time.Millisecond, "Gateway.dbBatchWriteTimeoutInMS")
 	//Multiple workers are used to batch user web requests
 	maxUserWebRequestWorkerProcess = config.GetInt("Gateway.maxUserWebRequestWorkerProcess", 64)
 	//Multiple DB writers are used to write data to DB
@@ -24,17 +24,18 @@ func loadConfig() {
 	// CustomVal is used as a key in the jobsDB customval column
 	CustomVal = config.GetString("Gateway.CustomVal", "GW")
 	// Maximum request size to gateway
-	maxReqSize = config.GetInt("Gateway.maxReqSizeInKB", 4000) * 1024
+	config.RegisterIntConfigVariable(4000, &maxReqSize, true, 1024, "Gateway.maxReqSizeInKB")
 	// Enable rate limit on incoming events. false by default
-	enableRateLimit = config.GetBool("Gateway.enableRateLimit", false)
+	config.RegisterBoolConfigVariable(false, &enableRateLimit, true, "Gateway.enableRateLimit")
 	// Enable suppress user feature. false by default
-	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
+	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", true)
 	// EventSchemas feature. false by default
 	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
-	allowReqsWithoutUserIDAndAnonymousID = config.GetBool("Gateway.allowReqsWithoutUserIDAndAnonymousID", false)
+	config.RegisterBoolConfigVariable(false, &allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
+	config.RegisterBoolConfigVariable(true, &gwAllowPartialWriteWithErrors, true, "Gateway.allowPartialWriteWithErrors")
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers

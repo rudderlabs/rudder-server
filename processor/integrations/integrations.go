@@ -24,7 +24,6 @@ var (
 
 func init() {
 	loadConfig()
-
 	// This is called in init and it should be a one time call. Making reflect calls during runtime is not a great idea.
 	// We unmarshal json response from transformer into PostParametersT struct.
 	// Since unmarshal doesn't check if the fields are present in the json or not and instead just initialze to zero value, we have to manually do this check on all fields before unmarshaling

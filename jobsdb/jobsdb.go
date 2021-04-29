@@ -71,10 +71,18 @@ type GetQueryParamsT struct {
 JobsDB interface contains public methods to access JobsDB data
 */
 type JobsDB interface {
-	Store(jobList []*JobT)
+	Store(jobList []*JobT) error
+	BeginGlobalTransaction() *sql.Tx
+	CommitTransaction(txn *sql.Tx)
+	StoreInTxn(txHandler *sql.Tx, jobList []*JobT) error
+	AcquireStoreLock()
+	ReleaseStoreLock()
 	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
 	CheckPGHealth() bool
-	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT)
+	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	UpdateJobStatusInTxn(txHandler *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	AcquireUpdateJobStatusLocks()
+	ReleaseUpdateJobStatusLocks()
 
 	GetToRetry(params GetQueryParamsT) []*JobT
 	GetUnprocessed(params GetQueryParamsT) []*JobT
@@ -89,6 +97,118 @@ AssertInterface contains public assert methods
 type AssertInterface interface {
 	assert(cond bool, errorString string)
 	assertError(err error)
+}
+
+var globalDBHandle *sql.DB
+
+//initGlobalDBHandle inits a sql.DB handle to be used across jobsdb instances
+func (jd *HandleT) initGlobalDBHandle() {
+	if globalDBHandle != nil {
+		return
+	}
+
+	psqlInfo := GetConnectionString()
+
+	var err error
+	globalDBHandle, err = sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+}
+
+//BeginGlobalTransaction starts a transaction on the globalDBHandle to be used across jobsdb instances
+func (jd *HandleT) BeginGlobalTransaction() *sql.Tx {
+	txn, err := globalDBHandle.Begin()
+	if err != nil {
+		panic(err)
+	}
+
+	return txn
+}
+
+//CommitTransaction commits the passed transaction
+func (jd *HandleT) CommitTransaction(txn *sql.Tx) {
+	err := txn.Commit()
+	if err != nil {
+		panic(err)
+	}
+}
+
+//NOTE: Acquire and Release lock functions are useful if we are performing writes across jobsdb instances using global db handle.
+
+//AcquireStoreLock acquires locks necessary for storing jobs in transaction
+func (jd *HandleT) AcquireStoreLock() {
+	//Only locks the list
+	jd.dsListLock.RLock()
+}
+
+//ReleaseStoreLock releases locks held to store jobs in transaction
+func (jd *HandleT) ReleaseStoreLock() {
+	jd.dsListLock.RUnlock()
+}
+
+//AcquireUpdateJobStatusLocks acquires locks necessary for updating job statuses in transaction
+func (jd *HandleT) AcquireUpdateJobStatusLocks() {
+	//The order of lock is very important. The migrateDSLoop
+	//takes lock in this order so reversing this will cause
+	//deadlocks
+	jd.dsMigrationLock.RLock()
+	jd.dsListLock.RLock()
+}
+
+//ReleaseUpdateJobStatusLocks releases locks held to update job statuses in transaction
+func (jd *HandleT) ReleaseUpdateJobStatusLocks() {
+	jd.dsListLock.RUnlock()
+	jd.dsMigrationLock.RUnlock()
+}
+
+/*
+StoreInTxn call is used to create new Jobs in transaction.
+IMP NOTE: AcquireStoreLock Should be called before calling this function
+*/
+func (jd *HandleT) StoreInTxn(txHandler *sql.Tx, jobList []*JobT) error {
+
+	queryStat := stats.NewTaggedStat("store_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat.Start()
+	defer queryStat.End()
+
+	dsList := jd.getDSList(false)
+	ds := dsList[len(dsList)-1]
+	err := jd.storeJobsDSInTxn(txHandler, ds, false, jobList)
+	if err != nil {
+		jd.rollbackTx(err, txHandler)
+		return err
+	}
+
+	//Empty customValFilters means we want to clear for all
+	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
+
+	return nil
+}
+
+/*
+UpdateJobStatusInTxn updates the status of a batch of jobs in the passed transaction
+customValFilters[] is passed so we can efficinetly mark empty cache
+Later we can move this to query
+IMP NOTE: AcquireUpdateJobStatusLocks Should be called before calling this function
+*/
+func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+
+	if len(statusList) == 0 {
+		return nil
+	}
+
+	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList)
+	if err != nil {
+		jd.rollbackTx(err, txn)
+		return err
+	}
+
+	for ds, stateList := range updatedStatesByDS {
+		jd.markClearEmptyResult(ds, stateList, customValFilters, parameterFilters, hasJobs, nil)
+	}
+
+	return nil
 }
 
 /*
@@ -122,6 +242,10 @@ type JobT struct {
 	EventPayload  json.RawMessage `json:"EventPayload"`
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
+}
+
+func (job *JobT) String() string {
+	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 }
 
 //The struct fields need to be exposed to JSON package
@@ -236,6 +360,14 @@ func (jd *HandleT) assertErrorAndRollbackTx(err error, tx *sql.Tx) {
 		jd.printLists(true)
 		jd.logger.Fatal(jd.dsEmptyResultCache)
 		panic(err)
+	}
+}
+
+func (jd *HandleT) rollbackTx(err error, tx *sql.Tx) {
+	if err != nil {
+		tx.Rollback()
+		jd.printLists(true)
+		jd.logger.Fatal(jd.dsEmptyResultCache)
 	}
 }
 
@@ -382,17 +514,17 @@ func loadConfig() {
 	refreshDSListLoopSleepDuration: How often is the loop (which refreshes DSList) run
 	maxTableSizeInMB: Maximum Table size in MB
 	*/
-	jobDoneMigrateThres = config.GetFloat64("JobsDB.jobDoneMigrateThres", 0.8)
-	jobStatusMigrateThres = config.GetFloat64("JobsDB.jobStatusMigrateThres", 5)
-	maxDSSize = config.GetInt("JobsDB.maxDSSize", 100000)
-	maxMigrateOnce = config.GetInt("JobsDB.maxMigrateOnce", 10)
-	maxMigrateDSProbe = config.GetInt("JobsDB.maxMigrateDSProbe", 10)
-	maxTableSize = (config.GetInt64("JobsDB.maxTableSizeInMB", 300) * 1000000)
-	backupRowsBatchSize = config.GetInt64("JobsDB.backupRowsBatchSize", 1000)
-	migrateDSLoopSleepDuration = (config.GetDuration("JobsDB.migrateDSLoopSleepDurationInS", time.Duration(30)) * time.Second)
-	addNewDSLoopSleepDuration = (config.GetDuration("JobsDB.addNewDSLoopSleepDurationInS", time.Duration(5)) * time.Second)
-	refreshDSListLoopSleepDuration = (config.GetDuration("JobsDB.refreshDSListLoopSleepDurationInS", time.Duration(5)) * time.Second)
-	backupCheckSleepDuration = (config.GetDuration("JobsDB.backupCheckSleepDurationIns", time.Duration(2)) * time.Second)
+	config.RegisterFloat64ConfigVariable(0.8, &jobDoneMigrateThres, true, "JobsDB.jobDoneMigrateThres")
+	config.RegisterFloat64ConfigVariable(5, &jobStatusMigrateThres, true, "JobsDB.jobStatusMigrateThres")
+	config.RegisterIntConfigVariable(100000, &maxDSSize, true, 1, "JobsDB.maxDSSize")
+	config.RegisterIntConfigVariable(10, &maxMigrateOnce, true, 1, "JobsDB.maxMigrateOnce")
+	config.RegisterIntConfigVariable(10, &maxMigrateDSProbe, true, 1, "JobsDB.maxMigrateDSProbe")
+	config.RegisterInt64ConfigVariable(300, &maxTableSize, true, 1000000, "JobsDB.maxTableSizeInMB")
+	config.RegisterInt64ConfigVariable(1000, &backupRowsBatchSize, true, 1, "JobsDB.backupRowsBatchSize")
+	config.RegisterDurationConfigVariable(time.Duration(30), &migrateDSLoopSleepDuration, true, time.Second, "JobsDB.migrateDSLoopSleepDurationInS")
+	config.RegisterDurationConfigVariable(time.Duration(5), &addNewDSLoopSleepDuration, true, time.Second, "JobsDB.addNewDSLoopSleepDurationInS")
+	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, "JobsDB.refreshDSListLoopSleepDurationInS")
+	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, "JobsDB.backupCheckSleepDurationIns")
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 
 }
@@ -420,6 +552,7 @@ in the retention time
 */
 func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
 
+	jd.initGlobalDBHandle()
 	jd.ownerType = ownerType
 	jd.logger = pkgLogger.Child(tablePrefix)
 	var err error
@@ -1351,10 +1484,12 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 	if copyID {
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
 			"event_payload", "created_at", "expire_at"))
-		jd.assertError(err)
 	} else {
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload"))
-		jd.assertError(err)
+	}
+
+	if err != nil {
+		return err
 	}
 
 	defer stmt.Close()
@@ -1365,7 +1500,9 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 		} else {
 			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 		}
-		jd.assertError(err)
+		if err != nil {
+			return err
+		}
 	}
 	_, err = stmt.Exec()
 
@@ -2512,27 +2649,41 @@ UpdateJobStatus updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) {
+func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
 
 	if len(statusList) == 0 {
-		return
+		return nil
 	}
 
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
+	//The order of lock is very important. The migrateDSLoop
+	//takes lock in this order so reversing this will cause
+	//deadlocks
+	jd.dsMigrationLock.RLock()
+	jd.dsListLock.RLock()
+	defer jd.dsMigrationLock.RUnlock()
+	defer jd.dsListLock.RUnlock()
+
 	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList)
-	jd.assertErrorAndRollbackTx(err, txn)
+	if err != nil {
+		jd.rollbackTx(err, txn)
+		jd.logger.Infof("[[ %s ]]: Error occured while updating job statuses. Returning err, %v", jd.tablePrefix, err)
+		return err
+	}
 
 	err = txn.Commit()
 	jd.assertError(err)
 	for ds, stateList := range updatedStatesByDS {
 		jd.markClearEmptyResult(ds, stateList, customValFilters, parameterFilters, hasJobs, nil)
 	}
+
+	return nil
 }
 
 /*
-UpdateJobStatusInTxn updates the status of a batch of jobs
+updateJobStatusInTxn updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
@@ -2546,14 +2697,6 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 	sort.Slice(statusList, func(i, j int) bool {
 		return statusList[i].JobID < statusList[j].JobID
 	})
-
-	//The order of lock is very important. The migrateDSLoop
-	//takes lock in this order so reversing this will cause
-	//deadlocks
-	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
-	defer jd.dsMigrationLock.RUnlock()
-	defer jd.dsListLock.RUnlock()
 
 	//We scan through the list of jobs and map them to DS
 	var lastPos int
@@ -2627,14 +2770,14 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 /*
 Store call is used to create new Jobs
 */
-func (jd *HandleT) Store(jobList []*JobT) {
+func (jd *HandleT) Store(jobList []*JobT) error {
 	//Only locks the list
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList(false)
 	err := jd.storeJobsDS(dsList[len(dsList)-1], false, jobList)
-	jd.assertError(err)
+	return err
 }
 
 /*

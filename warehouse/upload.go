@@ -10,13 +10,15 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -60,6 +62,10 @@ const (
 	TableUploadExported                = "exported_data"
 )
 
+const (
+	CloudSourceCateogry = "cloud"
+)
+
 var stateTransitions map[string]*uploadStateT
 
 type uploadStateT struct {
@@ -73,6 +79,8 @@ type UploadT struct {
 	ID                 int64
 	Namespace          string
 	SourceID           string
+	SourceType         string
+	SourceCategory     string
 	DestinationID      string
 	DestinationType    string
 	StartStagingFileID int64
@@ -89,6 +97,12 @@ type UploadT struct {
 	Metadata           json.RawMessage
 	FirstEventAt       time.Time
 	LastEventAt        time.Time
+	// cloud sources specific info
+	SourceBatchID   string
+	SourceTaskID    string
+	SourceTaskRunID string
+	SourceJobID     string
+	SourceJobRunID  string
 }
 
 type UploadJobT struct {
@@ -97,6 +111,7 @@ type UploadJobT struct {
 	warehouse           warehouseutils.WarehouseT
 	whManager           manager.ManagerI
 	stagingFiles        []*StagingFileT
+	stagingFileIDs      []int64
 	pgNotifier          *pgnotifier.PgNotifierT
 	schemaHandle        *SchemaHandleT
 	schemaLock          sync.Mutex
@@ -137,6 +152,7 @@ func setMaxParallelLoads() {
 		"BQ":         config.GetInt("Warehouse.bigquery.maxParallelLoads", 20),
 		"RS":         config.GetInt("Warehouse.redshift.maxParallelLoads", 3),
 		"POSTGRES":   config.GetInt("Warehouse.postgres.maxParallelLoads", 3),
+		"MSSQL":      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
 		"SNOWFLAKE":  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
 		"CLICKHOUSE": config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
 	}
@@ -242,13 +258,13 @@ func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
 				table_name,
 				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
 				FROM %[1]s
-				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
+				WHERE staging_file_id IN (%[2]v)
 		)
 		SELECT SUM(total_events)
 			FROM row_numbered_load_files
 			WHERE
-				row_number=1 AND table_name != '%[6]s'`,
-		warehouseutils.WarehouseLoadFilesTable, job.upload.StartLoadFileID, job.upload.EndLoadFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID, warehouseutils.DiscardsTable)
+				row_number=1 AND table_name != '%[3]s'`,
+		warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(job.stagingFileIDs, ","), warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable))
 	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
@@ -276,9 +292,11 @@ func (job *UploadJobT) run() (err error) {
 
 	// set last_exec_at to record last upload start time
 	// sync scheduling with syncStartAt depends on this determine to start upload or not
-	job.setUploadColumns(
-		UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
-	)
+	// job.setUploadColumns(
+	// 	UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
+	// )
+
+	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}}})
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
@@ -321,7 +339,7 @@ func (job *UploadJobT) run() (err error) {
 	for {
 		err = nil
 
-		job.setUploadStatus(nextUploadState.inProgress)
+		job.setUploadStatus(UploadStatusOpts{Status: nextUploadState.inProgress})
 		pkgLogger.Debugf("[WH] Upload: %d, Current state: %s", job.upload.ID, nextUploadState.inProgress)
 
 		targetStatus := nextUploadState.completed
@@ -452,9 +470,10 @@ func (job *UploadJobT) run() (err error) {
 
 			wg.Wait()
 			if len(loadErrors) > 0 {
-				err = multierror.Join(loadErrors)
+				err = misc.ConcatErrors(loadErrors)
 				break
 			}
+			job.generateUploadSuccessMetrics()
 
 			newStatus = nextUploadState.completed
 
@@ -473,7 +492,34 @@ func (job *UploadJobT) run() (err error) {
 		}
 
 		pkgLogger.Debugf("[WH] Upload: %d, Next state: %s", job.upload.ID, newStatus)
-		job.setUploadStatus(newStatus)
+
+		uploadStatusOpts := UploadStatusOpts{Status: newStatus}
+		if newStatus == ExportedData {
+			reportingMetric := types.PUReportedMetric{
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:        job.upload.SourceID,
+					DestinationID:   job.upload.DestinationID,
+					SourceBatchID:   job.upload.SourceBatchID,
+					SourceTaskID:    job.upload.SourceTaskID,
+					SourceTaskRunID: job.upload.SourceTaskRunID,
+					SourceJobID:     job.upload.SourceJobID,
+					SourceJobRunID:  job.upload.SourceJobRunID,
+				},
+				PUDetails: types.PUDetails{
+					InPU:       types.BATCH_ROUTER,
+					PU:         types.WAREHOUSE,
+					TerminalPU: true,
+				},
+				StatusDetail: &types.StatusDetail{
+					Status:      jobsdb.Succeeded.State,
+					StatusCode:  200,
+					Count:       job.getTotalRowsInStagingFiles(),
+					SampleEvent: []byte("{}"),
+				},
+			}
+			uploadStatusOpts.ReportingMetric = reportingMetric
+		}
+		job.setUploadStatus(uploadStatusOpts)
 
 		if newStatus == ExportedData {
 			break
@@ -504,7 +550,7 @@ func (job *UploadJobT) exportUserTables() (err error) {
 		job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 		if len(loadErrors) > 0 {
-			err = multierror.Join(loadErrors)
+			err = misc.ConcatErrors(loadErrors)
 			return
 		}
 	}
@@ -528,7 +574,7 @@ func (job *UploadJobT) exportIdentities() (err error) {
 			job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 			if len(loadErrors) > 0 {
-				err = multierror.Join(loadErrors)
+				err = misc.ConcatErrors(loadErrors)
 				return
 			}
 		}
@@ -547,11 +593,10 @@ func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 	job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 	if len(loadErrors) > 0 {
-		err = multierror.Join(loadErrors)
+		err = misc.ConcatErrors(loadErrors)
 		return
 	}
 
-	job.generateUploadSuccessMetrics()
 	return
 }
 
@@ -762,7 +807,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 		}
 		if !hasLoadFiles {
 			wg.Done()
-			if misc.ContainsString(alwaysMarkExported, tableName) {
+			if misc.ContainsString(alwaysMarkExported, strings.ToLower(tableName)) {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)
 				tableUpload.setStatus(TableUploadExported)
 			}
@@ -932,7 +977,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	if generated, _ := job.areIdentityTablesLoadFilesGenerated(); !generated {
 		err := job.resolveIdentities(populateHistoricIdentities)
 		if err != nil {
-			pkgLogger.Errorf(`SF: ID Resolution operation failed: %v`, err)
+			pkgLogger.Errorf(` ID Resolution operation failed: %v`, err)
 			errorMap[job.identityMergeRulesTableName()] = err
 			return job.processLoadTableResponse(errorMap)
 		}
@@ -1055,22 +1100,45 @@ func (job *UploadJobT) getUploadFirstAttemptTime() (timing time.Time) {
 	return timing
 }
 
-func (job *UploadJobT) setUploadStatus(status string, additionalFields ...UploadColumnT) (err error) {
-	pkgLogger.Debugf("[WH]: Setting status of %s for wh_upload:%v", status, job.upload.ID)
-	marshalledTimings, timings := job.getNewTimings(status)
+type UploadStatusOpts struct {
+	Status           string
+	AdditionalFields []UploadColumnT
+	ReportingMetric  types.PUReportedMetric
+}
+
+func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
+	pkgLogger.Debugf("[WH]: Setting status of %s for wh_upload:%v", statusOpts.Status, job.upload.ID)
+	marshalledTimings, timings := job.getNewTimings(statusOpts.Status)
 	opts := []UploadColumnT{
-		{Column: UploadStatusField, Value: status},
+		{Column: UploadStatusField, Value: statusOpts.Status},
 		{Column: UploadTimingsField, Value: marshalledTimings},
 		{Column: UploadUpdatedAtField, Value: timeutil.Now()},
 	}
 
-	job.upload.Status = status
+	job.upload.Status = statusOpts.Status
 	job.upload.Timings = timings
-	additionalFields = append(additionalFields, opts...)
+	additionalFields := append(statusOpts.AdditionalFields, opts...)
 
-	return job.setUploadColumns(
-		additionalFields...,
-	)
+	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
+
+	if statusOpts.ReportingMetric != (types.PUReportedMetric{}) {
+		txn, err := dbHandle.Begin()
+		uploadColumnOpts.Txn = txn
+		err = job.setUploadColumns(uploadColumnOpts)
+		if err != nil {
+			return err
+		}
+
+		if application.Features().Reporting != nil {
+			application.Features().Reporting.GetReportingInstance().Report([]*types.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
+		}
+		err = txn.Commit()
+		return err
+	}
+	return job.setUploadColumns(uploadColumnOpts)
+	// return job.setUploadColumns(
+	// 	additionalFields...,
+	// )
 }
 
 // SetSchema
@@ -1080,9 +1148,10 @@ func (job *UploadJobT) setSchema(consolidatedSchema warehouseutils.SchemaT) erro
 		panic(err)
 	}
 	job.upload.Schema = consolidatedSchema
-	return job.setUploadColumns(
-		UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
-	)
+	// return job.setUploadColumns(
+	// 	UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
+	// )
+	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema}}})
 }
 
 // Set LoadFileIDs
@@ -1090,27 +1159,37 @@ func (job *UploadJobT) setLoadFileIDs(startLoadFileID int64, endLoadFileID int64
 	job.upload.StartLoadFileID = startLoadFileID
 	job.upload.EndLoadFileID = endLoadFileID
 
-	return job.setUploadColumns(
-		UploadColumnT{Column: UploadStartLoadFileIDField, Value: startLoadFileID},
-		UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
-	)
+	// return job.setUploadColumns(
+	// 	UploadColumnT{Column: UploadStartLoadFileIDField, Value: startLoadFileID},
+	// 	UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
+	// )
+	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadStartLoadFileIDField, Value: startLoadFileID}, UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID}}})
+}
+
+type UploadColumnsOpts struct {
+	Fields []UploadColumnT
+	Txn    *sql.Tx
 }
 
 // SetUploadColumns sets any column values passed as args in UploadColumnT format for WarehouseUploadsTable
-func (job *UploadJobT) setUploadColumns(fields ...UploadColumnT) (err error) {
+func (job *UploadJobT) setUploadColumns(opts UploadColumnsOpts) (err error) {
 	var columns string
 	values := []interface{}{job.upload.ID}
 	// setting values using syntax $n since Exec can correctly format time.Time strings
-	for idx, f := range fields {
+	for idx, f := range opts.Fields {
 		// start with $2 as $1 is upload.ID
 		columns += fmt.Sprintf(`%s=$%d`, f.Column, idx+2)
-		if idx < len(fields)-1 {
+		if idx < len(opts.Fields)-1 {
 			columns += ","
 		}
 		values = append(values, f.Value)
 	}
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, warehouseutils.WarehouseUploadsTable, columns)
-	_, err = dbHandle.Exec(sqlStatement, values...)
+	if opts.Txn != nil {
+		_, err = opts.Txn.Exec(sqlStatement, values...)
+	} else {
+		_, err = dbHandle.Exec(sqlStatement, values...)
+	}
 
 	return err
 }
@@ -1122,7 +1201,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 
 	upload := job.upload
 
-	job.setUploadStatus(state)
+	job.setUploadStatus(UploadStatusOpts{Status: state})
 	var e map[string]map[string]interface{}
 	json.Unmarshal(job.upload.Error, &e)
 	if e == nil {
@@ -1152,7 +1231,11 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 		}
 	}
 
-	metadata := make(map[string]string)
+	var metadata map[string]string
+	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
+	if unmarshallErr != nil {
+		metadata = make(map[string]string)
+	}
 	lastAttempt := upload.LastAttemptAt
 	if lastAttempt.IsZero() {
 		lastAttempt = timeutil.Now()
@@ -1164,8 +1247,87 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	}
 
 	serializedErr, _ := json.Marshal(&e)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, metadata=$3, updated_at=$4 WHERE id=$5`, warehouseutils.WarehouseUploadsTable)
-	_, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, metadataJSON, timeutil.Now(), upload.ID)
+	// sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, metadata=$3, updated_at=$4 WHERE id=$5`, warehouseutils.WarehouseUploadsTable)
+
+	uploadColumns := []UploadColumnT{
+		{Column: "status", Value: state},
+		{Column: "metadata", Value: metadataJSON},
+		{Column: "error", Value: serializedErr},
+		{Column: "updated_at", Value: timeutil.Now()},
+	}
+
+	txn, err := job.dbHandle.Begin()
+	if err != nil {
+		panic(err)
+	}
+	err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
+	if err != nil {
+		panic(err)
+	}
+
+	inputCount := job.getTotalRowsInStagingFiles()
+	outputCount, _ := getTotalEventsUploaded(job.upload.ID)
+	failCount := inputCount - outputCount
+	reportingStatus := jobsdb.Failed.State
+	if state == Aborted {
+		reportingStatus = jobsdb.Aborted.State
+	}
+
+	reportingMetrics := []*types.PUReportedMetric{{
+		ConnectionDetails: types.ConnectionDetails{
+			SourceID:        job.upload.SourceID,
+			DestinationID:   job.upload.DestinationID,
+			SourceBatchID:   job.upload.SourceBatchID,
+			SourceTaskID:    job.upload.SourceTaskID,
+			SourceTaskRunID: job.upload.SourceTaskRunID,
+			SourceJobID:     job.upload.SourceJobID,
+			SourceJobRunID:  job.upload.SourceJobRunID,
+		},
+		PUDetails: types.PUDetails{
+			InPU:       types.BATCH_ROUTER,
+			PU:         types.WAREHOUSE,
+			TerminalPU: true,
+		},
+		StatusDetail: &types.StatusDetail{
+			Status:         reportingStatus,
+			StatusCode:     400, // TODO: Change this to error specific code
+			Count:          failCount,
+			SampleEvent:    []byte("{}"),
+			SampleResponse: string(serializedErr),
+		},
+	}}
+	if outputCount > 0 {
+		reportingMetrics = append(reportingMetrics, &types.PUReportedMetric{
+			ConnectionDetails: types.ConnectionDetails{
+				SourceID:        job.upload.SourceID,
+				DestinationID:   job.upload.DestinationID,
+				SourceBatchID:   job.upload.SourceBatchID,
+				SourceTaskID:    job.upload.SourceTaskID,
+				SourceTaskRunID: job.upload.SourceTaskRunID,
+				SourceJobID:     job.upload.SourceJobID,
+				SourceJobRunID:  job.upload.SourceJobRunID,
+			},
+			PUDetails: types.PUDetails{
+				InPU:       types.BATCH_ROUTER,
+				PU:         types.WAREHOUSE,
+				TerminalPU: true,
+			},
+			StatusDetail: &types.StatusDetail{
+				Status:         jobsdb.Succeeded.State,
+				StatusCode:     400, // TODO: Change this to error specific code
+				Count:          failCount,
+				SampleEvent:    []byte("{}"),
+				SampleResponse: string(serializedErr),
+			},
+		})
+	}
+	if application.Features().Reporting != nil {
+		application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn)
+	}
+	err = txn.Commit()
+
+	// TODO: Add reporting metrics in txn
+	// _, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, metadataJSON, timeutil.Now(), upload.ID)
 
 	job.upload.Status = state
 	job.upload.Error = serializedErr
@@ -1226,10 +1388,6 @@ func (job *UploadJobT) hasLoadFiles(tableName string) (bool, error) {
 }
 
 func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileID int64, err error) {
-	var stagingFileIDs []int64
-	for _, stagingFile := range job.stagingFiles {
-		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
-	}
 	stmt := fmt.Sprintf(`
 		SELECT
 			MIN(id), MAX(id)
@@ -1246,13 +1404,28 @@ func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID int64, endLoadFileI
 			grouped_load_files.row_number = 1;
 	`, warehouseutils.WarehouseLoadFilesTable)
 
-	pkgLogger.Debugf(`Querying for load_file_id range for the uploadJob:%d with stagingFileIDs:%v Query:%v`, job.upload.ID, stagingFileIDs, stmt)
+	pkgLogger.Debugf(`Querying for load_file_id range for the uploadJob:%d with stagingFileIDs:%v Query:%v`, job.upload.ID, job.stagingFileIDs, stmt)
 	var minID, maxID sql.NullInt64
-	err = job.dbHandle.QueryRow(stmt, pq.Array(stagingFileIDs)).Scan(&minID, &maxID)
+	err = job.dbHandle.QueryRow(stmt, pq.Array(job.stagingFileIDs)).Scan(&minID, &maxID)
 	if err != nil {
-		return 0, 0, fmt.Errorf("Error while querying for load_file_id range for uploadJob:%d with stagingFileIDs:%v : %w", job.upload.ID, stagingFileIDs, err)
+		return 0, 0, fmt.Errorf("Error while querying for load_file_id range for uploadJob:%d with stagingFileIDs:%v : %w", job.upload.ID, job.stagingFileIDs, err)
 	}
 	return minID.Int64, maxID.Int64, nil
+}
+
+func (job *UploadJobT) deleteLoadFiles(stagingFiles []*StagingFileT) {
+	var stagingFileIDs []int64
+	for _, stagingFile := range stagingFiles {
+		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
+	}
+
+	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]s WHERE staging_file_id IN (%v)`, warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(stagingFileIDs, ","))
+	pkgLogger.Debugf(`Deleting any load files present for staging files (upload:%d) before generating them for the staging files again. Query: %s`, job.upload.ID, sqlStatement)
+
+	_, err := job.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		pkgLogger.Errorf(`Error deleting any load files present for staging files (upload:%d) before generating them for the staging files again, Query: %s`, job.upload.ID, sqlStatement)
+	}
 }
 
 func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64, endLoadFileID int64, err error) {
@@ -1277,6 +1450,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			}
 		}
 	}
+	job.deleteLoadFiles(toProcessStagingFiles)
 
 	job.setStagingFilesStatus(toProcessStagingFiles, warehouseutils.StagingFileExecutingState, nil)
 
@@ -1362,7 +1536,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	wg.Wait()
 
 	if len(saveLoadFileErrs) > 0 {
-		err = multierror.Join(saveLoadFileErrs)
+		err = misc.ConcatErrors(saveLoadFileErrs)
 		pkgLogger.Errorf(`[WH]: Encountered errors in creating load file records in wh_load_files: %v`, err)
 		return startLoadFileID, endLoadFileID, err
 	}
@@ -1461,7 +1635,7 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	}
 
 	var mappingsLocation sql.NullString
-	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
+	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable))
 	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mappingsLocation)
 	if err != nil {
 		return
@@ -1498,14 +1672,14 @@ func (job *UploadJobT) GetLoadFileLocations(options warehouseutils.GetLoadFileLo
 				location,
 				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
 				FROM %[1]s
-				WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s' %[6]s
+				WHERE staging_file_id IN (%[2]v) %[3]s
 		)
 		SELECT location
 			FROM row_numbered_load_files
 			WHERE
 				row_number=1
-			%[7]s`,
-		warehouseutils.WarehouseLoadFilesTable, startID, endID, job.warehouse.Source.ID, job.warehouse.Destination.ID, tableFilterSQL, limitSQL)
+			%[4]s`,
+		warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(job.stagingFileIDs, ","), tableFilterSQL, limitSQL)
 
 	pkgLogger.Debugf(`Fetching loadFileLocations: %v`, sqlStatement)
 	rows, err := dbHandle.Query(sqlStatement)
@@ -1554,6 +1728,13 @@ func (job *UploadJobT) GetSingleLoadFileLocation(tableName string) (string, erro
 	var location string
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&location)
 	return location, err
+}
+
+func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
+	if job.upload.SourceCategory == CloudSourceCateogry {
+		return true
+	}
+	return false
 }
 
 /*
