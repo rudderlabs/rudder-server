@@ -35,6 +35,12 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 
 	rudderCoreBaseSetup()
 
+	//Setting up reporting client
+	if embedded.App.Features().Reporting != nil {
+		reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+		reporting.AddClient(types.Config{ConnInfo: jobsdb.GetConnectionString()})
+	}
+
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
 	var batchRouterDB jobsdb.HandleT
