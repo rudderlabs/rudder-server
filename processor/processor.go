@@ -101,8 +101,7 @@ var defaultFeaturesString = `{
   }`
 
 type TransformFeaturesT struct {
-	transformerVersion string          `json:"version"`
-	transformerFeature json.RawMessage `json:"features"`
+	TransformerFeature json.RawMessage `json:"features"`
 }
 
 type DestStatT struct {
@@ -1130,7 +1129,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		if transformAt == "processor" {
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 		} else {
-			if gjson.Get(string(proc.transformerFeatures.transformerFeature), destination.DestinationDefinition.Name).String() == "" {
+			if gjson.Get(string(proc.transformerFeatures.TransformerFeature), destination.DestinationDefinition.Name).String() == "" {
 				response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 				transformAt = "processor"
 			} else {
