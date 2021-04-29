@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -49,13 +50,21 @@ const partitionField = "received_at"
 // clickhouse doesnt support bool, they recommend to use Uint8 and set 1,0
 
 var rudderDataTypesMapToClickHouse = map[string]string{
-	"int":      "Int64",
-	"float":    "Float64",
-	"string":   "String",
-	"datetime": "DateTime",
-	"boolean":  "UInt8",
+	"int":             "Int64",
+	"array(int)":      "Array(Int64)",
+	"float":           "Float64",
+	"array(float)":    "Array(Float64)",
+	"string":          "String",
+	"array(string)":   "Array(String)",
+	"datetime":        "DateTime",
+	"array(datetime)": "Array(DateTime)",
+	"boolean":         "UInt8",
+	"array(boolean)":  "Array(UInt8)",
 }
-
+var clickhouseSpecificColumnNameMappings = map[string]string{
+	"event":      "LowCardinality(String)",
+	"event_text": "LowCardinality(String)",
+}
 var datatypeDefaultValuesMap = map[string]interface{}{
 	"int":      0,
 	"float":    0.0,
@@ -64,24 +73,31 @@ var datatypeDefaultValuesMap = map[string]interface{}{
 }
 
 var clickhouseDataTypesMapToRudder = map[string]string{
-	"Int8":               "int",
-	"Int16":              "int",
-	"Int32":              "int",
-	"Int64":              "int",
-	"Float32":            "float",
-	"Float64":            "float",
-	"String":             "string",
-	"DateTime":           "datetime",
-	"UInt8":              "boolean",
-	"Nullable(Int8)":     "int",
-	"Nullable(Int16)":    "int",
-	"Nullable(Int32)":    "int",
-	"Nullable(Int64)":    "int",
-	"Nullable(Float32)":  "float",
-	"Nullable(Float64)":  "float",
-	"Nullable(String)":   "string",
-	"Nullable(DateTime)": "datetime",
-	"Nullable(UInt8)":    "boolean",
+	"Int8":                             "int",
+	"Int16":                            "int",
+	"Int32":                            "int",
+	"Int64":                            "int",
+	"Array(Int64)":                     "array(int)",
+	"Float32":                          "float",
+	"Float64":                          "float",
+	"Array(Float64)":                   "array(float)",
+	"String":                           "string",
+	"Array(String)":                    "array(string)",
+	"DateTime":                         "datetime",
+	"Array(DateTime)":                  "array(datetime)",
+	"UInt8":                            "boolean",
+	"Array(UInt8)":                     "array(boolean)",
+	"LowCardinality(String)":           "string",
+	"LowCardinality(Nullable(String))": "string",
+	"Nullable(Int8)":                   "int",
+	"Nullable(Int16)":                  "int",
+	"Nullable(Int32)":                  "int",
+	"Nullable(Int64)":                  "int",
+	"Nullable(Float32)":                "float",
+	"Nullable(Float64)":                "float",
+	"Nullable(String)":                 "string",
+	"Nullable(DateTime)":               "datetime",
+	"Nullable(UInt8)":                  "boolean",
 	"SimpleAggregateFunction(anyLast, Nullable(Int8))":     "int",
 	"SimpleAggregateFunction(anyLast, Nullable(Int16))":    "int",
 	"SimpleAggregateFunction(anyLast, Nullable(Int32))":    "int",
@@ -151,8 +167,7 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("false", &queryDebugLogs, true, "Warehouse.clickhouse.queryDebugLogs")
 	config.RegisterStringConfigVariable("1000", &blockSize, true, "Warehouse.clickhouse.blockSize")
 	config.RegisterStringConfigVariable("10", &poolSize, true, "Warehouse.clickhouse.poolSize")
-	config.RegisterBoolConfigVariable(false, &disableNullable, true, "Warehouse.clickhouse.disableNullable")
-
+	config.RegisterBoolConfigVariable(false, &disableNullable, false, "Warehouse.clickhouse.disableNullable")
 }
 
 /*
@@ -195,7 +210,7 @@ func columnsWithDataTypes(tableName string, columns map[string]string, notNullab
 	var arr []string
 	for columnName, dataType := range columns {
 		codec := getClickHouseCodecForColumnType(dataType, tableName)
-		columnType := getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
+		columnType := getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
 		arr = append(arr, fmt.Sprintf(`%s %s %s`, columnName, columnType, codec))
 	}
 	return strings.Join(arr[:], ",")
@@ -211,19 +226,32 @@ func getClickHouseCodecForColumnType(columnType string, tableName string) string
 	return ""
 }
 
+func getClickhouseColumnTypeForSpecificColumn(columnName string, columnType string, isNullable bool) string {
+	specificColumnType := columnType
+	if strings.Contains(specificColumnType, "Array") {
+		return specificColumnType
+	}
+	if isNullable {
+		specificColumnType = fmt.Sprintf("Nullable(%s)", specificColumnType)
+	}
+	if _, ok := clickhouseSpecificColumnNameMappings[columnName]; ok {
+		specificColumnType = clickhouseSpecificColumnNameMappings[columnName]
+	}
+
+	return specificColumnType
+
+}
+
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
-func getClickHouseColumnTypeForSpecificTable(tableName string, columnType string, notNullableKey bool) string {
-	if notNullableKey {
-		return columnType
+func getClickHouseColumnTypeForSpecificTable(tableName string, columnName string, columnType string, notNullableKey bool) string {
+	if notNullableKey || (tableName != warehouseutils.IdentifiesTable && disableNullable) {
+		return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, false)
 	}
 	// Nullable is not disabled for users and identity table
 	if tableName == warehouseutils.UsersTable {
-		return fmt.Sprintf(`SimpleAggregateFunction(anyLast, Nullable(%s))`, columnType)
+		return fmt.Sprintf(`SimpleAggregateFunction(anyLast, %s)`, getClickhouseColumnTypeForSpecificColumn(columnName, columnType, true))
 	}
-	if tableName != warehouseutils.IdentifiesTable && disableNullable {
-		return columnType
-	}
-	return fmt.Sprintf(`Nullable(%s)`, columnType)
+	return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, true)
 }
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
@@ -284,6 +312,65 @@ func generateArgumentString(arg string, length int) string {
 	return strings.Join(args, ",")
 }
 
+func castStringToArray(data string, dataType string) interface{} {
+	switch dataType {
+	case "array(int)":
+		dataInt := make([]int64, 0)
+		err := json.Unmarshal([]byte(data), &dataInt)
+		if err != nil {
+			pkgLogger.Error("Error while unmarshalling data into array of int: %s", err.Error())
+		}
+		return dataInt
+	case "array(float)":
+		dataFloat := make([]float64, 0)
+		err := json.Unmarshal([]byte(data), &dataFloat)
+		if err != nil {
+			pkgLogger.Error("Error while unmarshalling data into array of float: %s", err.Error())
+		}
+		return dataFloat
+	case "array(string)":
+		dataInterface := make([]interface{}, 0)
+		err := json.Unmarshal([]byte(data), &dataInterface)
+		if err != nil {
+			pkgLogger.Error("Error while unmarshalling data into array of interface: %s", err.Error())
+		}
+		dataString := make([]string, 0)
+		for _, value := range dataInterface {
+			if _, ok := value.(string); ok {
+				dataString = append(dataString, value.(string))
+			} else {
+				bytes, _ := json.Marshal(value)
+				dataString = append(dataString, string(bytes))
+			}
+		}
+		return dataString
+	case "array(datetime)":
+		dataTime := make([]time.Time, 0)
+		err := json.Unmarshal([]byte(data), &dataTime)
+		if err != nil {
+			pkgLogger.Error("Error while unmarshalling data into array of date time: %s", err.Error())
+		}
+		return dataTime
+	case "array(boolean)":
+		dataBool := make([]bool, 0)
+		err := json.Unmarshal([]byte(data), &dataBool)
+		if err != nil {
+			pkgLogger.Error("Error while unmarshalling data into array of bool: %s", err.Error())
+			return dataBool
+		}
+		dataInt := make([]int32, len(dataBool))
+		for _, val := range dataBool {
+			if val {
+				dataInt = append(dataInt, 1)
+			} else {
+				dataInt = append(dataInt, 0)
+			}
+		}
+		return dataBool
+	}
+	return data
+}
+
 // typecastDataFromType typeCasts string data to the mentioned data type
 func typecastDataFromType(data string, dataType string) interface{} {
 	var dataI interface{}
@@ -303,7 +390,12 @@ func typecastDataFromType(data string, dataType string) interface{} {
 			dataI = 1
 		}
 	default:
-		return data
+		if strings.Contains(dataType, "array") {
+			dataI = castStringToArray(data, dataType)
+		} else {
+			return data
+		}
+
 	}
 	if err != nil {
 		if disableNullable {
@@ -514,7 +606,7 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 
 // AddColumn adds column:columnName with dataType columnType to the tableName
 func (ch *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, columnName, getClickHouseColumnTypeForSpecificTable(tableName, rudderDataTypesMapToClickHouse[columnType], false))
+	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN IF NOT EXISTS %s %s`, ch.Namespace, tableName, columnName, getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[columnType], false))
 	pkgLogger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return

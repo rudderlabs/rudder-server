@@ -577,3 +577,7 @@ func GetWHSchemaVersion() string {
 func GetVarCharMaxForRS() bool {
 	return GetBool("Warehouse.redshift.setVarCharMax", false)
 }
+
+func GetArraySupportForCH() bool {
+	return GetBool("Warehouse.clickhouse.enableArraySupport", false)
+}
