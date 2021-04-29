@@ -258,6 +258,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 		return &proto.WHUploadResponse{}, err
 	}
 	if !uploadReq.authorizeSource(upload.SourceId) {
+		pkgLogger.Errorf(`Unauthorized request for upload:%d with sourceId:%s`, uploadReq.UploadId, upload.SourceId)
 		return &proto.WHUploadResponse{}, errors.New("Unauthorized request")
 	}
 	upload.CreatedAt = timestamppb.New(createdAt.Time)
