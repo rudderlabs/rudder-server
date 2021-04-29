@@ -118,7 +118,10 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 			defer resp.Body.Close()
 		}
 
-		contentTypeHeader := resp.Header.Get("Content-Type")
+		var contentTypeHeader string
+		if resp != nil && resp.Header != nil {
+			contentTypeHeader = resp.Header.Get("Content-Type")
+		}
 		if contentTypeHeader == "" {
 			//Detecting content type of the respBody
 			contentTypeHeader = http.DetectContentType(respBody)
