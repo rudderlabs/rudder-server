@@ -24,12 +24,13 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
@@ -75,6 +76,8 @@ type HandleT struct {
 	noOfWorkers              int
 	maxFailedCountForJob     int
 	retryTimeWindow          time.Duration
+	reporting                types.ReportingI
+	reportingEnabled         bool
 }
 
 type BatchDestinationT struct {
@@ -88,6 +91,19 @@ type ObjectStorageT struct {
 	Provider        string
 	DestinationID   string
 	DestinationType string
+}
+
+//JobParametersT struct holds source id and destination id of a job
+type JobParametersT struct {
+	SourceID        string `json:"source_id"`
+	DestinationID   string `json:"destination_id"`
+	ReceivedAt      string `json:"received_at"`
+	TransformAt     string `json:"transform_at"`
+	SourceBatchID   string `json:"source_batch_id"`
+	SourceTaskID    string `json:"source_task_id"`
+	SourceTaskRunID string `json:"source_task_run_id"`
+	SourceJobID     string `json:"source_job_id"`
+	SourceJobRunID  string `json:"source_job_run_id"`
 }
 
 func (brt *HandleT) backendConfigSubscriber() {
@@ -362,16 +378,26 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 			}
 		}
 	}
+	var sampleParameters JobParametersT
+	err = json.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
+	if err != nil {
+		brt.logger.Error("Unmarshal of job parameters failed in postToWarehouse function. ", string(batchJobs.Jobs[0].Parameters))
+	}
 	payload := warehouseutils.StagingFileT{
 		Schema: schemaMap,
 		BatchDestination: warehouseutils.DestinationT{
 			Source:      batchJobs.BatchDestination.Source,
 			Destination: batchJobs.BatchDestination.Destination,
 		},
-		Location:     output.Key,
-		FirstEventAt: output.FirstEventAt,
-		LastEventAt:  output.LastEventAt,
-		TotalEvents:  output.TotalEvents,
+		Location:        output.Key,
+		FirstEventAt:    output.FirstEventAt,
+		LastEventAt:     output.LastEventAt,
+		TotalEvents:     output.TotalEvents,
+		SourceBatchID:   sampleParameters.SourceBatchID,
+		SourceTaskID:    sampleParameters.SourceTaskID,
+		SourceTaskRunID: sampleParameters.SourceTaskRunID,
+		SourceJobID:     sampleParameters.SourceJobID,
+		SourceJobRunID:  sampleParameters.SourceJobRunID,
 	}
 
 	jsonPayload, err := json.Marshal(&payload)
@@ -423,6 +449,9 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		warehouseServiceFailedTimeLock.Unlock()
 	}
 
+	reportMetrics := make([]*types.PUReportedMetric, 0)
+	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
+	statusDetailsMap := make(map[string]*types.StatusDetail)
 	jobStateCounts := make(map[string]map[string]int)
 	for _, job := range batchJobs.Jobs {
 		jobState := batchJobState
@@ -475,6 +504,35 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			jobStateCounts[jobState] = make(map[string]int)
 		}
 		jobStateCounts[jobState][strconv.Itoa(attemptNum)] = jobStateCounts[jobState][strconv.Itoa(attemptNum)] + 1
+
+		//REPORTING - START
+		if brt.reporting != nil && brt.reportingEnabled {
+			//Update metrics maps
+			errorCode := getBRTErrorCode(jobState)
+			var parameters JobParametersT
+			err = json.Unmarshal(job.Parameters, &parameters)
+			if err != nil {
+				brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+			}
+			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode))
+			cd, ok := connectionDetailsMap[key]
+			if !ok {
+				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
+				connectionDetailsMap[key] = cd
+			}
+			sd, ok := statusDetailsMap[key]
+			if !ok {
+				sd = types.CreateStatusDetail(jobState, 0, errorCode, string(errorResp), job.EventPayload)
+				statusDetailsMap[key] = sd
+			}
+			if status.JobState == jobsdb.Failed.State && status.AttemptNum == 1 {
+				sd.Count++
+			}
+			if status.JobState != jobsdb.Failed.State {
+				sd.Count++
+			}
+		}
+		//REPORTING - END
 	}
 
 	//tracking batch router errors
@@ -497,16 +555,58 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 
 	//Store the aborted jobs to errorDB
 	if abortedEvents != nil {
-		brt.errorDB.Store(abortedEvents)
+		err := brt.errorDB.Store(abortedEvents)
+		if err != nil {
+			brt.logger.Errorf("[Batch Router] Store into proc error table failed with error: %v", err)
+			brt.logger.Errorf("abortedEvents: %v", abortedEvents)
+			panic(err)
+		}
 	}
+
+	//REPORTING - START
+	if brt.reporting != nil && brt.reportingEnabled {
+		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+		terminalPU := true
+		if isWarehouse {
+			terminalPU = false
+		}
+		for k, cd := range connectionDetailsMap {
+			m := &types.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *types.CreatePUDetails(types.DEST_TRANSFORMER, types.BATCH_ROUTER, terminalPU, false),
+				StatusDetail:      statusDetailsMap[k],
+			}
+			if m.StatusDetail.Count != 0 {
+				reportMetrics = append(reportMetrics, m)
+			}
+		}
+	}
+	//REPORTING - END
+
 	//Mark the status of the jobs
-	err = brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
+	txn := brt.jobsDB.BeginGlobalTransaction()
+	brt.jobsDB.AcquireUpdateJobStatusLocks()
+	err = brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
 	if err != nil {
-		brt.logger.Errorf("Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+		brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
 		panic(err)
 	}
 
+	if brt.reporting != nil && brt.reportingEnabled {
+		brt.reporting.Report(reportMetrics, txn)
+	}
+	brt.jobsDB.CommitTransaction(txn)
+	brt.jobsDB.ReleaseUpdateJobStatusLocks()
+
 	sendDestStatusStats(batchJobs.BatchDestination, jobStateCounts, brt.destType, isWarehouse)
+}
+
+func getBRTErrorCode(state string) int {
+	if state == jobsdb.Succeeded.State {
+		return 200
+	}
+
+	return 500
 }
 
 func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {
@@ -972,18 +1072,18 @@ func (brt *HandleT) collectMetrics() {
 }
 
 func loadConfig() {
-	jobQueryBatchSize = config.GetInt("BatchRouter.jobQueryBatchSize", 100000)
-	mainLoopSleep = config.GetDuration("BatchRouter.mainLoopSleepInS", 2) * time.Second
-	uploadFreqInS = config.GetInt64("BatchRouter.uploadFreqInS", 30)
+	config.RegisterIntConfigVariable(100000, &jobQueryBatchSize, true, 1, "BatchRouter.jobQueryBatchSize")
+	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, "BatchRouter.mainLoopSleepInS")
+	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
-	warehouseServiceMaxRetryTimeinHr = config.GetDuration("batchRouter.warehouseServiceMaxRetryTimeinHr", 3) * time.Hour
+	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	encounteredMergeRuleMap = map[string]map[string]bool{}
 }
 
@@ -994,9 +1094,16 @@ func init() {
 }
 
 //Setup initializes this module
-func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destType string) {
+func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI) {
+	brt.reporting = reporting
+	brt.reportingEnabled = config.GetBool("Reporting.enabled", true)
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
+
+	//waiting for reporting client setup
+	if brt.reporting != nil {
+		brt.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
+	}
 
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.destType = destType
@@ -1004,9 +1111,8 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destTyp
 	brt.errorDB = errorDB
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
-	brt.maxFailedCountForJob = getBatchRouterConfigInt("maxFailedCountForJob", destType, 128)
-	brt.retryTimeWindow = getBatchRouterConfigDuration("retryTimeWindowInMins", destType, time.Duration(180)) * time.Minute
-
+	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
+	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindowInMins"}...)
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
 	brt.netHandle = client

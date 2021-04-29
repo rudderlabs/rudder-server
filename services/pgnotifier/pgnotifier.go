@@ -42,11 +42,6 @@ const (
 func init() {
 	loadPGNotifierConfig()
 	queueName = "pg_notifier_queue"
-	maxAttempt = config.GetInt("PgNotifier.maxAttempt", 3)
-	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
-	retriggerInterval = time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
-	retriggerCount = config.GetInt("PgNotifier.retriggerCount", 500)
-	retriggerExecutingTimeLimitInS = config.GetInt("PgNotifier.retriggerExecutingTimeLimitInS", 120)
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("pgnotifier")
 }
 
@@ -93,6 +88,11 @@ func loadPGNotifierConfig() {
 	pgNotifierDBport, _ = strconv.Atoi(config.GetEnv("PGNOTIFIER_DB_PORT", "5432"))
 	pgNotifierDBpassword = config.GetEnv("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
 	pgNotifierDBsslmode = config.GetEnv("PGNOTIFIER_DB_SSL_MODE", "disable")
+	maxAttempt = config.GetInt("PgNotifier.maxAttempt", 3)
+	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
+	retriggerInterval = time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
+	retriggerCount = config.GetInt("PgNotifier.retriggerCount", 500)
+	retriggerExecutingTimeLimitInS = config.GetInt("PgNotifier.retriggerExecutingTimeLimitInS", 120)
 }
 
 //New Given default connection info return pg notifiew object from it

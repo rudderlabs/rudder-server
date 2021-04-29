@@ -31,7 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	sourcedebugger "github.com/rudderlabs/rudder-server/services/source-debugger"
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -75,6 +75,7 @@ var (
 	enableEventSchemasFeature                                   bool
 	diagnosisTickerTime                                         time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                        bool
+	gwAllowPartialWriteWithErrors                               bool
 	pkgLogger                                                   logger.LoggerI
 	Diagnostics                                                 diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
@@ -158,14 +159,17 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 	gateway.userWebRequestWorkers = make([]*userWebRequestWorkerT, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
 		gateway.logger.Debug("User Web Request Worker Started", i)
+		tags := map[string]string{
+			"workerId": strconv.Itoa(i),
+		}
 		userWebRequestWorker := &userWebRequestWorkerT{
 			webRequestQ:    make(chan *webRequestT, maxUserWebRequestBatchSize),
 			batchRequestQ:  make(chan *batchWebRequestT),
 			reponseQ:       make(chan map[uuid.UUID]string),
 			workerID:       i,
-			batchTimeStat:  gateway.stats.NewStat("gateway.batch_time", stats.TimerType),
-			bufferFullStat: gateway.stats.NewStat(fmt.Sprintf("gateway.user_request_worker_%d_buffer_full", i), stats.CountType),
-			timeOutStat:    gateway.stats.NewStat(fmt.Sprintf("gateway.user_request_worker_%d_time_out", i), stats.CountType),
+			batchTimeStat:  gateway.stats.NewTaggedStat("gateway.batch_time", stats.TimerType, tags),
+			bufferFullStat: gateway.stats.NewTaggedStat("gateway.user_request_worker_buffer_full", stats.CountType, tags),
+			timeOutStat:    gateway.stats.NewTaggedStat("gateway.user_request_worker_time_out", stats.CountType, tags),
 		}
 		gateway.userWebRequestWorkers[i] = userWebRequestWorker
 		rruntime.Go(func() {
@@ -219,7 +223,6 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 }
 
 func (gateway *HandleT) dbWriterWorkerProcess(process int) {
-	gwAllowPartialWriteWithErrors := config.GetBool("Gateway.allowPartialWriteWithErrors", true)
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
 		jobList := make([]*jobsdb.JobT, 0)
 		var errorMessagesMap map[uuid.UUID]string
@@ -231,7 +234,12 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 		if gwAllowPartialWriteWithErrors {
 			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
 		} else {
-			gateway.jobsDB.Store(jobList)
+			err := gateway.jobsDB.Store(jobList)
+			if err != nil {
+				pkgLogger.Errorf("Store into gateway db failed with error: %v", err)
+				pkgLogger.Errorf("JobList: %+v", jobList)
+				panic(err)
+			}
 		}
 		gateway.dbWritesStat.Count(1)
 
@@ -337,7 +345,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				continue
 			}
-			gateway.requestSizeStat.Count(len(body))
+			gateway.requestSizeStat.SendTiming(time.Duration(len(body)))
 			if req.reqType != "batch" {
 				body, _ = sjson.SetBytes(body, "type", req.reqType)
 				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
@@ -417,13 +425,13 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
 			eventBatchesToRecord = append(eventBatchesToRecord, fmt.Sprintf("%s", body))
-
+			sourcesJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str // pick the job_run_id from the first event of batch. We are assuming job_run_id will be same for all events in a batch and the batch is coming from rudder-sources
 			id := uuid.NewV4()
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       gjson.GetBytes(body, "batch.0.rudderId").Str,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d}`, sourceID, counter)),
+				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "source_job_run_id": "%s"}`, sourceID, counter, sourcesJobRunID)),
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}
@@ -465,7 +473,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		}
 
 		userWebRequestWorker.batchTimeStat.End()
-		gateway.batchSizeStat.Count(len(breq.batchRequest))
+		gateway.batchSizeStat.SendTiming(time.Duration(len(breq.batchRequest)))
 		// update stats request wise
 		gateway.updateSourceStats(sourceStats, "gateway.write_key_requests", sourceTagMap)
 		gateway.updateSourceStats(sourceSuccessStats, "gateway.write_key_successful_requests", sourceTagMap)
@@ -597,6 +605,7 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 type pendingEventsRequestPayload struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
+	JobRunID      string `json:"job_run_id"`
 }
 
 func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
@@ -657,6 +666,15 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 				Optional: false,
 			},
 		}
+	}
+	if reqPayload.JobRunID != "" {
+		jobRunIDParam := jobsdb.ParameterFilterT{
+			Name:     "source_job_run_id",
+			Value:    reqPayload.JobRunID,
+			Optional: false,
+		}
+		gwParameterFilters = append(gwParameterFilters, jobRunIDParam)
+		rtParameterFilters = append(rtParameterFilters, jobRunIDParam)
 	}
 
 	var excludeGateway bool
@@ -1105,8 +1123,9 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 
-	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.CountType)
-	gateway.requestSizeStat = gateway.stats.NewStat("gateway.request_size", stats.CountType)
+	//For the lack of better stat type, using TimerType.
+	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.TimerType)
+	gateway.requestSizeStat = gateway.stats.NewStat("gateway.request_size", stats.TimerType)
 	gateway.dbWritesStat = gateway.stats.NewStat("gateway.db_writes", stats.CountType)
 	gateway.dbWorkersBufferFullStat = gateway.stats.NewStat("gateway.db_workers_buffer_full", stats.CountType)
 	gateway.dbWorkersTimeOutStat = gateway.stats.NewStat("gateway.db_workers_time_out", stats.CountType)

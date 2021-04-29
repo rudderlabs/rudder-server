@@ -51,6 +51,12 @@ type StagingFileT struct {
 	CreatedAt    time.Time
 	FirstEventAt time.Time
 	LastEventAt  time.Time
+	// cloud sources specific info
+	SourceBatchID   string
+	SourceTaskID    string
+	SourceTaskRunID string
+	SourceJobID     string
+	SourceJobRunID  string
 }
 
 type BatchRouterEventT struct {

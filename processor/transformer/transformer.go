@@ -34,7 +34,13 @@ type MetadataT struct {
 	SourceType      string `json:"sourceType"`
 	SourceCategory  string `json:"sourceCategory"`
 	DestinationID   string `json:"destinationId"`
+	JobRunID        string `json: "jobRunId"`
 	JobID           int64  `json:"jobId"`
+	SourceBatchID   string `json:"sourceBatchId"`
+	SourceJobID     string `json:"sourceJobId"`
+	SourceJobRunID  string `json:"sourceJobRunId"`
+	SourceTaskID    string `json:"sourceTaskId"`
+	SourceTaskRunID string `json:"sourceTaskRunId"`
 	DestinationType string `json:"destinationType"`
 	MessageID       string `json:"messageId"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
@@ -97,8 +103,8 @@ var (
 func loadConfig() {
 	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
 	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
-	maxRetry = config.GetInt("Processor.maxRetry", 30)
-	retrySleep = config.GetDuration("Processor.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
+	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, "Processor.retrySleepInMS")
 }
 
 func init() {
@@ -127,6 +133,7 @@ func (trans *HandleT) transformWorker() {
 		}
 		retryCount := 0
 		var resp *http.Response
+		var respData []byte
 		//We should rarely have error communicating with our JS
 		reqFailed := false
 
@@ -134,6 +141,13 @@ func (trans *HandleT) transformWorker() {
 			transformRequestTimerStat.Start()
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
+
+			if err == nil {
+				//If no err returned by client.Post, reading body.
+				//If reading body fails, retrying.
+				respData, err = ioutil.ReadAll(resp.Body)
+			}
+
 			if err != nil {
 				transformRequestTimerStat.End()
 				reqFailed = true
@@ -175,18 +189,20 @@ func (trans *HandleT) transformWorker() {
 		}
 
 		var transformerResponses []TransformerResponseT
-		respData, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			panic(err)
-		}
 		if resp.StatusCode == http.StatusOK {
 			err = json.Unmarshal(respData, &transformerResponses)
 			//This is returned by our JS engine so should  be parsable
 			//but still handling it
 			if err != nil {
-				panic(err)
+				trans.logger.Errorf("Data sent to transformer : %v", string(rawJSON))
+				trans.logger.Errorf("Transformer returned : %v", string(respData))
+				respData = []byte(fmt.Sprintf("Failed to unmarshal transformer response: %s", string(respData)))
+				transformerResponses = nil
+				resp.StatusCode = 400
 			}
-		} else {
+		}
+
+		if resp.StatusCode != http.StatusOK {
 			for _, transformEvent := range job.data {
 				resp := TransformerResponseT{StatusCode: resp.StatusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 				transformerResponses = append(transformerResponses, resp)

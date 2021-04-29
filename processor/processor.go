@@ -24,7 +24,8 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/destination-debugger"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -85,6 +86,8 @@ type HandleT struct {
 	logger                         logger.LoggerI
 	eventSchemaHandler             types.EventSchemasI
 	dedupHandler                   dedup.DedupI
+	reporting                      types.ReportingI
+	reportingEnabled               bool
 }
 
 type DestStatT struct {
@@ -94,6 +97,30 @@ type DestStatT struct {
 	sessionTransform stats.RudderStats
 	userTransform    stats.RudderStats
 	destTransform    stats.RudderStats
+}
+
+type ParametersT struct {
+	SourceID        string `json:"source_id"`
+	DestinationID   string `json:"destination_id"`
+	ReceivedAt      string `json:"received_at"`
+	TransformAt     string `json:"transform_at"`
+	MessageID       string `json:"message_id"`
+	GatewayJobID    int64  `json:"gateway_job_id"`
+	SourceBatchID   string `json:"source_batch_id"`
+	SourceTaskID    string `json:"source_task_id"`
+	SourceTaskRunID string `json:"source_task_run_id"`
+	SourceJobID     string `json:"source_job_id"`
+	SourceJobRunID  string `json:"source_job_run_id"`
+}
+
+type MetricMetadata struct {
+	sourceID        string
+	destinationID   string
+	sourceBatchID   string
+	sourceTaskID    string
+	sourceTaskRunID string
+	sourceJobID     string
+	sourceJobRunID  string
 }
 
 func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) *DestStatT {
@@ -178,7 +205,9 @@ func (proc *HandleT) Status() interface{} {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool) {
+func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI) {
+	proc.reporting = reporting
+	proc.reportingEnabled = config.GetBool("Reporting.enabled", true)
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -237,6 +266,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
+
 	proc.transformer.Setup()
 
 	proc.crashRecover()
@@ -288,27 +318,27 @@ var (
 )
 
 func loadConfig() {
-	loopSleep = config.GetDuration("Processor.loopSleepInMS", time.Duration(10)) * time.Millisecond
-	maxLoopSleep = config.GetDuration("Processor.maxLoopSleepInMS", time.Duration(5000)) * time.Millisecond
-	fixedLoopSleep = config.GetDuration("Processor.fixedLoopSleepInMS", time.Duration(0)) * time.Millisecond
-	transformBatchSize = config.GetInt("Processor.transformBatchSize", 50)
-	userTransformBatchSize = config.GetInt("Processor.userTransformBatchSize", 200)
-	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 20)
+	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, "Processor.maxLoopSleepInMS")
+	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, "Processor.loopSleepInMS")
+	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Processor.fixedLoopSleepInMS")
+	config.RegisterIntConfigVariable(50, &transformBatchSize, true, 1, "Processor.transformBatchSize")
+	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
+	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 100)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	// Enable dedup of incoming events by default
 	enableDedup = config.GetBool("Dedup.enableDedup", false)
-	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES"}
+	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
 	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
-	maxEventsToProcess = config.GetInt("Processor.maxLoopProcessEvents", 10000)
-	avgEventsInRequest = config.GetInt("Processor.avgEventsInRequest", 1)
+	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
+	config.RegisterIntConfigVariable(1, &avgEventsInRequest, true, 1, "Processor.avgEventsInRequest")
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
 	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
 	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
 	// Capture event name as a tag in event level stats
-	captureEventNameStats = config.GetBool("Processor.Stats.captureEventName", false)
+	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -649,21 +679,51 @@ func enhanceWithTimeFields(event *transformer.TransformerEventT, singularEventMa
 	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
+func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source backendconfig.SourceT) *transformer.MetadataT {
+	commonMetadata := transformer.MetadataT{}
+
+	eventBytes, err := json.Marshal(singularEvent)
+	if err != nil {
+		//Marshalling should never fail. But still panicking.
+		panic(fmt.Errorf("[Processor] couldn't marshal singularEvent. singularEvent: %v\n", singularEvent))
+	}
+	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+	commonMetadata.RudderID = batchEvent.UserID
+	commonMetadata.JobID = batchEvent.JobID
+	commonMetadata.MessageID = singularEvent["messageId"].(string)
+	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
+	commonMetadata.SourceBatchID = gjson.GetBytes(eventBytes, "context.sources.batch_id").String()
+	commonMetadata.SourceTaskID = gjson.GetBytes(eventBytes, "context.sources.task_id").String()
+	commonMetadata.SourceTaskRunID = gjson.GetBytes(eventBytes, "context.sources.task_run_id").String()
+	commonMetadata.SourceJobID = gjson.GetBytes(eventBytes, "context.sources.job_id").String()
+	commonMetadata.SourceJobRunID = gjson.GetBytes(eventBytes, "context.sources.job_run_id").String()
+	commonMetadata.SourceType = source.SourceDefinition.Name
+	commonMetadata.SourceCategory = source.SourceDefinition.Category
+
+	return &commonMetadata
+}
+
 // add metadata to each singularEvent which will be returned by transformer in response
-func enhanceWithMetadata(event *transformer.TransformerEventT, batchEvent *jobsdb.JobT, destination backendconfig.DestinationT, source backendconfig.SourceT, receivedAt time.Time) {
+func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transformer.TransformerEventT, destination backendconfig.DestinationT) {
 	metadata := transformer.MetadataT{}
-	metadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
-	metadata.SourceType = source.SourceDefinition.Name
-	metadata.SourceCategory = source.SourceDefinition.Category
+	metadata.SourceType = commonMetadata.SourceType
+	metadata.SourceCategory = commonMetadata.SourceCategory
+	metadata.SourceID = commonMetadata.SourceID
+	metadata.RudderID = commonMetadata.RudderID
+	metadata.JobID = commonMetadata.JobID
+	metadata.MessageID = commonMetadata.MessageID
+	metadata.ReceivedAt = commonMetadata.ReceivedAt
+	metadata.SourceBatchID = commonMetadata.SourceBatchID
+	metadata.SourceTaskID = commonMetadata.SourceTaskID
+	metadata.SourceTaskRunID = commonMetadata.SourceTaskRunID
+	metadata.SourceJobID = commonMetadata.SourceJobID
+	metadata.SourceJobRunID = commonMetadata.SourceJobRunID
+
 	metadata.DestinationID = destination.ID
-	metadata.RudderID = batchEvent.UserID
-	metadata.JobID = batchEvent.JobID
 	metadata.DestinationType = destination.DestinationDefinition.Name
-	metadata.MessageID = event.Message["messageId"].(string)
 	if event.SessionID != "" {
 		metadata.SessionID = event.SessionID
 	}
-	metadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
 	event.Metadata = metadata
 }
 
@@ -708,13 +768,26 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 	}
 }
 
-func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, commonMetaData transformer.MetadataT, destination backendconfig.DestinationT) []transformer.TransformerEventT {
+func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, commonMetaData transformer.MetadataT, destination backendconfig.DestinationT) ([]transformer.TransformerEventT, []*types.PUReportedMetric, map[string]int64, map[string]MetricMetadata) {
+	successMetrics := make([]*types.PUReportedMetric, 0)
+	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
+	statusDetailsMap := make(map[string]*types.StatusDetail)
+	successCountMap := make(map[string]int64)
+	successCountMetadataMap := make(map[string]MetricMetadata)
 	var eventsToTransform []transformer.TransformerEventT
 	for _, userTransformedEvent := range response.Events {
+		//Update metrics maps
+		proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, []byte(`{}`))
+
 		eventMetadata := commonMetaData
 		eventMetadata.MessageIDs = userTransformedEvent.Metadata.MessageIDs
 		eventMetadata.MessageID = userTransformedEvent.Metadata.MessageID
 		eventMetadata.JobID = userTransformedEvent.Metadata.JobID
+		eventMetadata.SourceBatchID = userTransformedEvent.Metadata.SourceBatchID
+		eventMetadata.SourceTaskID = userTransformedEvent.Metadata.SourceTaskID
+		eventMetadata.SourceTaskRunID = userTransformedEvent.Metadata.SourceTaskRunID
+		eventMetadata.SourceJobID = userTransformedEvent.Metadata.SourceJobID
+		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
 		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
@@ -725,26 +798,83 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		}
 		eventsToTransform = append(eventsToTransform, updatedEvent)
 	}
-	return eventsToTransform
+
+	//REPORTING - START
+	if proc.reporting != nil && proc.reportingEnabled {
+		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+
+		for k, cd := range connectionDetailsMap {
+			m := &types.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *types.CreatePUDetails(types.GATEWAY, types.USER_TRANSFORMER, false, false),
+				StatusDetail:      statusDetailsMap[k],
+			}
+			successMetrics = append(successMetrics, m)
+		}
+	}
+	//REPORTING - END
+
+	return eventsToTransform, successMetrics, successCountMap, successCountMetadataMap
 }
 
-func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventT, stage string) []*jobsdb.JobT {
+func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata, countMap map[string]int64, connectionDetailsMap map[string]*types.ConnectionDetails, statusDetailsMap map[string]*types.StatusDetail, event transformer.TransformerResponseT, status string, payload json.RawMessage) {
+	if proc.reporting != nil && proc.reportingEnabled {
+		countKey := fmt.Sprintf("%s:%s:%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID)
+		if _, ok := countMap[countKey]; !ok {
+			countMap[countKey] = 0
+		}
+		countMap[countKey] = countMap[countKey] + 1
+		if countMetadataMap != nil {
+			if _, ok := countMetadataMap[countKey]; !ok {
+				countMetadataMap[countKey] = MetricMetadata{sourceID: event.Metadata.SourceID, destinationID: event.Metadata.DestinationID, sourceBatchID: event.Metadata.SourceBatchID, sourceTaskID: event.Metadata.SourceTaskID, sourceTaskRunID: event.Metadata.SourceTaskRunID, sourceJobID: event.Metadata.SourceJobID, sourceJobRunID: event.Metadata.SourceJobRunID}
+			}
+		}
+
+		key := fmt.Sprintf("%s:%s:%s:%s:%d", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, status, event.StatusCode)
+		cd, ok := connectionDetailsMap[key]
+		if !ok {
+			cd = types.CreateConnectionDetail(event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, event.Metadata.SourceTaskID, event.Metadata.SourceTaskRunID, event.Metadata.SourceJobID, event.Metadata.SourceJobRunID)
+			connectionDetailsMap[key] = cd
+		}
+		sd, ok := statusDetailsMap[key]
+		if !ok {
+			sd = types.CreateStatusDetail(status, 0, event.StatusCode, event.Error, payload)
+			statusDetailsMap[key] = sd
+		}
+		sd.Count++
+	}
+}
+
+func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string, transformationEnabled bool) ([]*jobsdb.JobT, []*types.PUReportedMetric, map[string]int64) {
+	failedMetrics := make([]*types.PUReportedMetric, 0)
+	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
+	statusDetailsMap := make(map[string]*types.StatusDetail)
+	failedCountMap := make(map[string]int64)
 	var failedEventsToStore []*jobsdb.JobT
 	for _, failedEvent := range response.FailedEvents {
 		var messages []types.SingularEventT
 		if len(failedEvent.Metadata.MessageIDs) > 0 {
 			messageIds := failedEvent.Metadata.MessageIDs
 			for _, msgID := range messageIds {
-				messages = append(messages, eventsByMessageID[msgID])
+				messages = append(messages, eventsByMessageID[msgID].SingularEvent)
 			}
 		} else {
-			messages = append(messages, eventsByMessageID[failedEvent.Metadata.MessageID])
+			messages = append(messages, eventsByMessageID[failedEvent.Metadata.MessageID].SingularEvent)
 		}
 		payload, err := json.Marshal(messages)
 		if err != nil {
 			proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal list of failed events: %v`, err)
 			continue
 		}
+
+		//Using first element in messages array for sample event
+		sampleEvent, err := json.Marshal(messages[0])
+		if err != nil {
+			proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal first element in failed events: %v`, err)
+			sampleEvent = []byte(`{}`)
+		}
+		//Update metrics maps
+		proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
 
 		id := uuid.NewV4()
 		// marshal error to escape any quotes in error string etc.
@@ -757,7 +887,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		newFailedJob := jobsdb.JobT{
 			UUID:         id,
 			EventPayload: payload,
-			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "error": %s, "status_code": "%v", "stage": "%s"}`, commonMetaData.SourceID, commonMetaData.DestinationID, string(marshalledErr), failedEvent.StatusCode, stage)),
+			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "source_job_run_id": "%s", "error": %s, "status_code": "%v", "stage": "%s"}`, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Metadata.JobRunID, string(marshalledErr), failedEvent.StatusCode, stage)),
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			CustomVal:    commonMetaData.DestinationType,
@@ -773,7 +903,35 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 
 		procErrorStat.Increment()
 	}
-	return failedEventsToStore
+
+	//REPORTING - START
+	if proc.reporting != nil && proc.reportingEnabled {
+		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+
+		var inPU, pu string
+		if stage == transformer.DestTransformerStage {
+			if transformationEnabled {
+				inPU = types.USER_TRANSFORMER
+			} else {
+				inPU = types.GATEWAY
+			}
+			pu = types.DEST_TRANSFORMER
+		} else if stage == transformer.UserTransformerStage {
+			inPU = types.GATEWAY
+			pu = types.USER_TRANSFORMER
+		}
+		for k, cd := range connectionDetailsMap {
+			m := &types.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
+				StatusDetail:      statusDetailsMap[k],
+			}
+			failedMetrics = append(failedMetrics, m)
+		}
+	}
+	//REPORTING - END
+
+	return failedEventsToStore, failedMetrics, failedCountMap
 }
 
 func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, writeKey string) {
@@ -813,6 +971,29 @@ func (proc *HandleT) updateSourceEventStatsDetailed(event types.SingularEventT, 
 		}
 	}
 }
+
+func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadata, inCountMap, successCountMap, failedCountMap map[string]int64) []*types.PUReportedMetric {
+	//Calculate diff and append to reportMetrics
+	//diff = succesCount + abortCount - inCount
+	diffMetrics := make([]*types.PUReportedMetric, 0)
+	for key, inCount := range inCountMap {
+		successCount, _ := successCountMap[key]
+		failedCount, _ := failedCountMap[key]
+		diff := successCount + failedCount - inCount
+		if diff != 0 {
+			metricMetadata := inCountMetadataMap[key]
+			metric := &types.PUReportedMetric{
+				ConnectionDetails: *types.CreateConnectionDetail(metricMetadata.sourceID, metricMetadata.destinationID, metricMetadata.sourceBatchID, metricMetadata.sourceTaskID, metricMetadata.sourceTaskRunID, metricMetadata.sourceJobID, metricMetadata.sourceJobRunID),
+				PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
+				StatusDetail:      types.CreateStatusDetail(types.DiffStatus, diff, 0, "", []byte(`{}`)),
+			}
+			diffMetrics = append(diffMetrics, metric)
+		}
+	}
+
+	return diffMetrics
+}
+
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 
 	proc.pStatsJobs.Start()
@@ -823,7 +1004,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
-	var eventsByMessageID = make(map[string]types.SingularEventT)
+	var eventsByMessageID = make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 
 	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
@@ -844,6 +1025,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.marshalSingularEvents.Start()
 	uniqueMessageIds := make(map[string]struct{})
 	var sourceDupStats = make(map[string]int)
+
+	reportMetrics := make([]*types.PUReportedMetric, 0)
+	inCountMap := make(map[string]int64)
+	inCountMetadataMap := make(map[string]MetricMetadata)
+	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
+	statusDetailsMap := make(map[string]*types.StatusDetail)
 
 	for idx, batchEvent := range jobList {
 
@@ -883,7 +1070,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				uniqueMessageIds[messageId] = struct{}{}
 				//We count this as one, not destination specific ones
 				totalEvents++
-				eventsByMessageID[messageId] = singularEvent
+				eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{SingularEvent: singularEvent, ReceivedAt: receivedAt}
 
 				//Getting all the destinations which are enabled for this
 				//event
@@ -898,6 +1085,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					proc.logger.Debug("No enabled destinations")
 					continue
 				}
+
+				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(singularEvent, batchEvent, receivedAt, sourceForSingularEvent)
 				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 				for _, destType := range enabledDestTypes {
 					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
@@ -922,7 +1111,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						shallowEventCopy.Message["request_ip"] = requestIP
 
 						enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-						enhanceWithMetadata(&shallowEventCopy, batchEvent, destination, sourceForSingularEvent, receivedAt)
+						enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, destination)
 
 						metadata := shallowEventCopy.Metadata
 						srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
@@ -935,6 +1124,32 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 							shallowEventCopy)
 					}
 				}
+
+				//REPORTING - GATEWAY metrics - START
+				if proc.reporting != nil && proc.reportingEnabled {
+					//Grouping events by sourceid + destinationid + source batch id to find the count
+					key := fmt.Sprintf("%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID)
+					if _, ok := inCountMap[key]; !ok {
+						inCountMap[key] = 0
+					}
+					inCountMap[key] = inCountMap[key] + 1
+					if _, ok := inCountMetadataMap[key]; !ok {
+						inCountMetadataMap[key] = MetricMetadata{sourceID: commonMetadataFromSingularEvent.SourceID, sourceBatchID: commonMetadataFromSingularEvent.SourceBatchID, sourceTaskID: commonMetadataFromSingularEvent.SourceTaskID, sourceTaskRunID: commonMetadataFromSingularEvent.SourceTaskRunID, sourceJobID: commonMetadataFromSingularEvent.SourceJobID, sourceJobRunID: commonMetadataFromSingularEvent.SourceJobRunID}
+					}
+
+					cd, ok := connectionDetailsMap[key]
+					if !ok {
+						cd = types.CreateConnectionDetail(commonMetadataFromSingularEvent.SourceID, "", commonMetadataFromSingularEvent.SourceBatchID, commonMetadataFromSingularEvent.SourceTaskID, commonMetadataFromSingularEvent.SourceTaskRunID, commonMetadataFromSingularEvent.SourceJobID, commonMetadataFromSingularEvent.SourceJobRunID)
+						connectionDetailsMap[key] = cd
+					}
+					sd, ok := statusDetailsMap[key]
+					if !ok {
+						sd = types.CreateStatusDetail(jobsdb.Succeeded.State, 0, 200, "", []byte(`{}`))
+						statusDetailsMap[key] = sd
+					}
+					sd.Count++
+				}
+				//REPORTING - GATEWAY metrics - END
 			}
 		}
 
@@ -950,6 +1165,20 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		statusList = append(statusList, &newStatus)
 	}
+
+	//REPORTING - GATEWAY metrics - START
+	if proc.reporting != nil && proc.reportingEnabled {
+		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+		for k, cd := range connectionDetailsMap {
+			m := &types.PUReportedMetric{
+				ConnectionDetails: *cd,
+				PUDetails:         *types.CreatePUDetails("", types.GATEWAY, false, true),
+				StatusDetail:      statusDetailsMap[k],
+			}
+			reportMetrics = append(reportMetrics, m)
+		}
+	}
+	//REPORTING - GATEWAY metrics - END
 
 	proc.statNumEvents.Count(totalEvents)
 
@@ -981,6 +1210,24 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		transformationEnabled := destinationTransformationEnabledMap[destID]
 		configSubscriberLock.RUnlock()
 
+		//REPORTING - START
+		if proc.reporting != nil && proc.reportingEnabled {
+			//Grouping events by sourceid + destinationid + source batch id to find the count
+			inCountMap = make(map[string]int64)
+			inCountMetadataMap = make(map[string]MetricMetadata)
+			for _, event := range eventList {
+				key := fmt.Sprintf("%s:%s:%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID)
+				if _, ok := inCountMap[key]; !ok {
+					inCountMap[key] = 0
+				}
+				if _, ok := inCountMetadataMap[key]; !ok {
+					inCountMetadataMap[key] = MetricMetadata{sourceID: event.Metadata.SourceID, destinationID: event.Metadata.DestinationID, sourceBatchID: event.Metadata.SourceBatchID, sourceTaskID: event.Metadata.SourceTaskID, sourceTaskRunID: event.Metadata.SourceTaskRunID, sourceJobID: event.Metadata.SourceJobID, sourceJobRunID: event.Metadata.SourceJobRunID}
+				}
+				inCountMap[key] = inCountMap[key] + 1
+			}
+		}
+		//REPORTING - END
+
 		url := integrations.GetDestinationURL(destType)
 		var response transformer.ResponseT
 		var eventsToTransform []transformer.TransformerEventT
@@ -1005,13 +1252,31 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: timeTaken, Index: -1}, &proc.userTransformEventsByTimeTaken)
 			}
 
-			eventsToTransform = proc.getDestTransformerEvents(response, commonMetaData, destination)
-			failedJobs := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage)
+			var successMetrics []*types.PUReportedMetric
+			var successCountMap map[string]int64
+			var successCountMetadataMap map[string]MetricMetadata
+			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination)
+			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
 			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
+
+			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: &destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIds})
+
+			//REPORTING - START
+			if proc.reporting != nil && proc.reportingEnabled {
+				diffMetrics := getDiffMetrics(types.GATEWAY, types.USER_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+				reportMetrics = append(reportMetrics, successMetrics...)
+				reportMetrics = append(reportMetrics, failedMetrics...)
+				reportMetrics = append(reportMetrics, diffMetrics...)
+
+				//successCountMap will be inCountMap for destination transform
+				inCountMap = successCountMap
+				inCountMetadataMap = successCountMetadataMap
+			}
+			//REPORTING - END
 		} else {
 			proc.logger.Debug("No custom transformation")
 			eventsToTransform = eventList
@@ -1050,14 +1315,21 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
 		destStat.numOutputEvents.Count(len(destTransformEventList))
 
-		failedJobs := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage)
+		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled)
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 		}
 		procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
 
+		successMetrics := make([]*types.PUReportedMetric, 0)
+		connectionDetailsMap := make(map[string]*types.ConnectionDetails)
+		statusDetailsMap := make(map[string]*types.StatusDetail)
+		successCountMap := make(map[string]int64)
 		//Save the JSON in DB. This is what the router uses
 		for _, destEvent := range destTransformEventList {
+			//Update metrics maps
+			proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, destEvent, jobsdb.Succeeded.State, []byte(`{}`))
+
 			destEventJSON, err := json.Marshal(destEvent.Output)
 			//Should be a valid JSON since its our transformation
 			//but we handle anyway
@@ -1076,16 +1348,40 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			receivedAt := destEvent.Metadata.ReceivedAt
 			messageId := destEvent.Metadata.MessageID
 			jobId := destEvent.Metadata.JobID
+			sourceBatchId := destEvent.Metadata.SourceBatchID
+			sourceTaskId := destEvent.Metadata.SourceTaskID
+			sourceTaskRunId := destEvent.Metadata.SourceTaskRunID
+			sourceJobId := destEvent.Metadata.SourceJobID
+			sourceJobRunId := destEvent.Metadata.SourceJobRunID
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
 			if rudderID == "" {
 				rudderID = "random-" + id.String()
 			}
 
+			params := ParametersT{
+				SourceID:        sourceID,
+				DestinationID:   destID,
+				ReceivedAt:      receivedAt,
+				TransformAt:     transformAt,
+				MessageID:       messageId,
+				GatewayJobID:    jobId,
+				SourceBatchID:   sourceBatchId,
+				SourceTaskID:    sourceTaskId,
+				SourceTaskRunID: sourceTaskRunId,
+				SourceJobID:     sourceJobId,
+				SourceJobRunID:  sourceJobRunId,
+			}
+			marshalledParams, err := json.Marshal(params)
+			if err != nil {
+				proc.logger.Errorf("[Processor] Failed to marshal parameters object. Parameters: %v", params)
+				panic(err)
+			}
+
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       rudderID,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "%v", "received_at": "%v", "transform_at": "%v", "message_id" : "%v" , "gateway_job_id" : "%v"}`, sourceID, destID, receivedAt, transformAt, messageId, jobId)),
+				Parameters:   marshalledParams,
 				CreatedAt:    time.Now(),
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
@@ -1097,6 +1393,31 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				destJobs = append(destJobs, &newJob)
 			}
 		}
+
+		//REPORTING - PROCESSOR metrics - START
+		if proc.reporting != nil && proc.reportingEnabled {
+			types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+
+			inPU := types.GATEWAY
+			if transformationEnabled {
+				inPU = types.USER_TRANSFORMER
+			}
+			for k, cd := range connectionDetailsMap {
+				m := &types.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *types.CreatePUDetails(inPU, types.DEST_TRANSFORMER, false, false),
+					StatusDetail:      statusDetailsMap[k],
+				}
+				successMetrics = append(successMetrics, m)
+			}
+
+			diffMetrics := getDiffMetrics(inPU, types.DEST_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+
+			reportMetrics = append(reportMetrics, failedMetrics...)
+			reportMetrics = append(reportMetrics, successMetrics...)
+			reportMetrics = append(reportMetrics, diffMetrics...)
+		}
+		//REPORTING - PROCESSOR metrics - END
 	}
 
 	proc.destProcessing.End()
@@ -1109,12 +1430,22 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-		proc.routerDB.Store(destJobs)
+		err := proc.routerDB.Store(destJobs)
+		if err != nil {
+			proc.logger.Errorf("Store into router table failed with error: %v", err)
+			proc.logger.Errorf("destJobs: %v", destJobs)
+			panic(err)
+		}
 		proc.statDestNumOutputEvents.Count(len(destJobs))
 	}
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
-		proc.batchRouterDB.Store(batchDestJobs)
+		err := proc.batchRouterDB.Store(batchDestJobs)
+		if err != nil {
+			proc.logger.Errorf("Store into batch router table failed with error: %v", err)
+			proc.logger.Errorf("batchDestJobs: %v", batchDestJobs)
+			panic(err)
+		}
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
 
@@ -1124,15 +1455,26 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 	if len(procErrorJobs) > 0 {
 		proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobs))
-		proc.errorDB.Store(procErrorJobs)
+		err := proc.errorDB.Store(procErrorJobs)
+		if err != nil {
+			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
+			proc.logger.Errorf("procErrorJobs: %v", procErrorJobs)
+			panic(err)
+		}
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
 
-	err := proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+	txn := proc.gatewayDB.BeginGlobalTransaction()
+	proc.gatewayDB.AcquireUpdateJobStatusLocks()
+	err := proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{gateway.CustomVal}, nil)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
 		panic(err)
 	}
+	if proc.reporting != nil && proc.reportingEnabled {
+		proc.reporting.Report(reportMetrics, txn)
+	}
+
 	if enableDedup {
 		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
 		if len(uniqueMessageIds) > 0 {
@@ -1143,6 +1485,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
+	proc.gatewayDB.CommitTransaction(txn)
+	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.statDBW.End()
 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
@@ -1287,6 +1631,11 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 func (proc *HandleT) mainLoop() {
 	//waiting till the backend config is received
 	proc.backendConfig.WaitForConfig()
+
+	//waiting for reporting client setup
+	if proc.reporting != nil {
+		proc.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
+	}
 
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)

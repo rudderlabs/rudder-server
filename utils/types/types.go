@@ -2,10 +2,19 @@
 
 package types
 
-import "net/http"
+import (
+	"database/sql"
+	"net/http"
+	"time"
+)
 
 //SingularEventT single event structrue
 type SingularEventT map[string]interface{}
+
+type SingularEventWithReceivedAt struct {
+	SingularEvent SingularEventT
+	ReceivedAt    time.Time
+}
 
 //GatewayBatchRequestT batch request structure
 type GatewayBatchRequestT struct {
@@ -31,6 +40,13 @@ type EventSchemasI interface {
 // ConfigEnvI is interface to inject env variables into config
 type ConfigEnvI interface {
 	ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte)
+}
+
+// ReportingI is interface to report metrics
+type ReportingI interface {
+	WaitForSetup(clientName string)
+	AddClient(c Config)
+	Report(metrics []*PUReportedMetric, txn *sql.Tx)
 }
 
 // ConfigT simple map config structure
