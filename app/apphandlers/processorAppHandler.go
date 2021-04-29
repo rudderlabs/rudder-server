@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -42,6 +43,12 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 	pkgLogger.Info("Processor starting")
 
 	rudderCoreBaseSetup()
+
+	//Setting up reporting client
+	if processor.App.Features().Reporting != nil {
+		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+		reporting.AddClient(types.Config{ConnInfo: jobsdb.GetConnectionString()})
+	}
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 

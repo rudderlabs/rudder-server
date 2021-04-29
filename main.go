@@ -15,7 +15,6 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -155,12 +154,6 @@ func main() {
 		stats.StopRuntimeStats()
 		os.Exit(1)
 	}()
-
-	//Setting up reporting client
-	if application.Features().Reporting != nil {
-		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
-		reporting.AddClient(types.Config{ConnInfo: jobsdb.GetConnectionString()})
-	}
 
 	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
