@@ -366,7 +366,7 @@ func (proc *HandleT) getTransformerFeatureJson() {
 			url := transformerURL + "/features"
 			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
 			if err != nil {
-				proc.transformerFeatures = []byte(defaultTransformerFeatures)
+				proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 				proc.logger.Error("error creating request - %s", err)
 				time.Sleep(200 * time.Millisecond)
 				continue
@@ -376,7 +376,7 @@ func (proc *HandleT) getTransformerFeatureJson() {
 			res, err := client.Do(req)
 
 			if err != nil {
-				proc.transformerFeatures = []byte(defaultTransformerFeatures)
+				proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 				proc.logger.Error("error sending request - %s", err)
 				time.Sleep(200 * time.Millisecond)
 				continue
@@ -385,19 +385,19 @@ func (proc *HandleT) getTransformerFeatureJson() {
 				body, err := ioutil.ReadAll(res.Body)
 				if err == nil {
 					if err != nil {
-						proc.transformerFeatures = []byte(defaultTransformerFeatures)
+						proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 					} else {
-						proc.transformerFeatures = body
+						proc.transformerFeatures = json.RawMessage(body)
 					}
 					res.Body.Close()
 					break
 				} else {
-					proc.transformerFeatures = []byte(defaultTransformerFeatures)
+					proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 					res.Body.Close()
 					time.Sleep(200 * time.Millisecond)
 				}
 			} else {
-				proc.transformerFeatures = []byte(defaultTransformerFeatures)
+				proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 				time.Sleep(200 * time.Millisecond)
 			}
 		}
@@ -1367,6 +1367,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		if transformAt == "processor" {
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 		} else {
+			fmt.Printf("routerTransform.%s", destination.DestinationDefinition.Name)
+			fmt.Printf(string(proc.transformerFeatures))
 			if gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String() == "" {
 				response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 				transformAt = "processor"
