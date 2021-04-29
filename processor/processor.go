@@ -94,7 +94,7 @@ type HandleT struct {
 	transformerFeatures            TransformFeaturesT
 }
 
-var defaultTransformerFeatures TransformRequestT
+var defaultTransformerFeatures TransformFeaturesT
 
 var defaultFeaturesString = `{
 	transformerVersion: 1,
@@ -103,8 +103,8 @@ var defaultFeaturesString = `{
   }`
 
 type TransformFeaturesT struct {
-	transformerVersion string
-	transformerFeature json.RawMessage
+	transformerVersion string          `json:"version"`
+	transformerFeature json.RawMessage `json:"features"`
 }
 
 type DestStatT struct {
@@ -369,7 +369,7 @@ func loadConfig() {
 
 func (proc *HandleT) getTransformerFeatureJson() {
 	const attempts = 10
-	var transformRequest TransformRequestT
+	var transformRequest TransformFeaturesT
 	_ = json.Unmarshal([]byte(defaultFeaturesString), &defaultTransformerFeatures)
 	for {
 		for i := 0; i < attempts; i++ {
