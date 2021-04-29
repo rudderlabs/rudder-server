@@ -223,6 +223,9 @@ func getClickHouseCodecForColumnType(columnType string, tableName string) string
 
 func getClickhouseColumnTypeForSpecificColumn(columnName string, columnType string, isNullable bool) string {
 	specificColumnType := columnType
+	if strings.Contains(specificColumnType, "Array") {
+		return specificColumnType
+	}
 	if isNullable {
 		specificColumnType = fmt.Sprintf("Nullable(%s)", specificColumnType)
 	}
