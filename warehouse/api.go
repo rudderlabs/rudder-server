@@ -258,7 +258,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 		return &proto.WHUploadResponse{}, err
 	}
 	if !uploadReq.authorizeSource(upload.SourceId) {
-		pkgLogger.Errorf(`Unauthorized request for upload:%d with sourceId:%s`, uploadReq.UploadId, upload.SourceId)
+		pkgLogger.Errorf(`Unauthorized request for upload:%d with sourceId:%s in workspaceId:%s`, uploadReq.UploadId, upload.SourceId, uploadReq.WorkspaceID)
 		return &proto.WHUploadResponse{}, errors.New("Unauthorized request")
 	}
 	upload.CreatedAt = timestamppb.New(createdAt.Time)
@@ -386,8 +386,10 @@ func (uploadReq UploadReqT) authorizeSource(sourceID string) bool {
 	sourceIDsByWorkspaceLock.RLock()
 	defer sourceIDsByWorkspaceLock.RUnlock()
 	if authorizedSourceIDs, ok = sourceIDsByWorkspace[uploadReq.WorkspaceID]; !ok {
+		pkgLogger.Errorf(`Did not find sourceId's in workspace:%s. CurrentList:%v`, uploadReq.WorkspaceID, sourceIDsByWorkspace)
 		return false
 	}
+	pkgLogger.Debugf(`Authorized sourceId's for workspace:%s - %v`, uploadReq.WorkspaceID, authorizedSourceIDs)
 	return misc.ContainsString(authorizedSourceIDs, sourceID)
 }
 
@@ -395,6 +397,7 @@ func (uploadsReq UploadsReqT) authorizedSources() (sourceIDs []string) {
 	sourceIDsByWorkspaceLock.RLock()
 	defer sourceIDsByWorkspaceLock.RUnlock()
 	var ok bool
+	pkgLogger.Debugf(`Getting authorizedSourceIDs for workspace:%s`, uploadsReq.WorkspaceID)
 	if sourceIDs, ok = sourceIDsByWorkspace[uploadsReq.WorkspaceID]; !ok {
 		sourceIDs = []string{}
 	}
