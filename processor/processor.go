@@ -92,6 +92,7 @@ type HandleT struct {
 	reporting                      types.ReportingI
 	reportingEnabled               bool
 	transformerFeatures            json.RawMessage
+	featuresLock                   sync.RWMutex
 }
 
 var defaultTransformerFeatures = `{
@@ -361,12 +362,13 @@ func loadConfig() {
 
 func (proc *HandleT) getTransformerFeatureJson() {
 	const attempts = 10
+	var isUnLocked = false
+	proc.featuresLock.Lock()
 	for {
 		for i := 0; i < attempts; i++ {
 			url := transformerURL + "/features"
 			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
 			if err != nil {
-				proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 				proc.logger.Error("error creating request - %s", err)
 				time.Sleep(200 * time.Millisecond)
 				continue
@@ -376,7 +378,6 @@ func (proc *HandleT) getTransformerFeatureJson() {
 			res, err := client.Do(req)
 
 			if err != nil {
-				proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 				proc.logger.Error("error sending request - %s", err)
 				time.Sleep(200 * time.Millisecond)
 				continue
@@ -384,22 +385,22 @@ func (proc *HandleT) getTransformerFeatureJson() {
 			if res.StatusCode == 200 {
 				body, err := ioutil.ReadAll(res.Body)
 				if err == nil {
-					if err != nil {
-						proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
-					} else {
-						proc.transformerFeatures = json.RawMessage(body)
-					}
+					proc.transformerFeatures = json.RawMessage(body)
 					res.Body.Close()
 					break
 				} else {
-					proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 					res.Body.Close()
 					time.Sleep(200 * time.Millisecond)
 				}
-			} else {
+			} else if res.StatusCode == 404 {
 				proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 				time.Sleep(200 * time.Millisecond)
+				break
 			}
+		}
+		if proc.transformerFeatures != nil && !isUnLocked {
+			isUnLocked = true
+			proc.featuresLock.Unlock()
 		}
 		time.Sleep(pollInterval)
 	}
@@ -1700,7 +1701,6 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 func (proc *HandleT) mainLoop() {
 	//waiting till the backend config is received
 	proc.backendConfig.WaitForConfig()
-
 	//waiting for reporting client setup
 	if proc.reporting != nil {
 		proc.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
@@ -1710,6 +1710,7 @@ func (proc *HandleT) mainLoop() {
 	currLoopSleep := time.Duration(0)
 
 	for {
+		proc.featuresLock.RLock()
 		if proc.handlePendingGatewayJobs() {
 			currLoopSleep = time.Duration(0)
 		} else {
@@ -1720,7 +1721,7 @@ func (proc *HandleT) mainLoop() {
 			time.Sleep(currLoopSleep)
 		}
 		time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
-
+		proc.featuresLock.RUnlock()
 	}
 }
 
