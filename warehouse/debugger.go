@@ -91,7 +91,7 @@ func (wh *HandleT) recordDeliveryStatus(destID string, uploadID int64) {
 		ErrorCode:     errorCode,
 		ErrorResponse: errorRespB,
 	}
-	destinationdebugger.RecordEventDeliveryStatus(destinationID, &deliveryStatus)
+	destinationdebugger.RecordEventDeliveryStatus(destinationID, &deliveryStatus, destinationsMap[destinationID].Destination.DestinationDefinition.MaskKeys, true)
 }
 
 // syncLiveWarehouseStatus fetch last 10 records order by updated_at desc and sends uploadIds in reverse order to recordDeliveryStatus.

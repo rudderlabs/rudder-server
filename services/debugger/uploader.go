@@ -10,6 +10,8 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 var (
@@ -17,6 +19,8 @@ var (
 	maxBatchSize, maxRetry, maxESQueueSize int
 	batchTimeout, retrySleep               time.Duration
 	pkgLogger                              logger.LoggerI
+	maskKeysJSON                           string
+	shouldMaskKeys                         bool
 )
 
 type Transformer interface {
@@ -63,9 +67,25 @@ func (uploader *Uploader) Setup() {
 
 //RecordEvent is used to put the event batch in the eventBatchChannel,
 //which will be processed by handleEvents.
-func (uploader *Uploader) RecordEvent(data interface{}) bool {
+func (uploader *Uploader) RecordEvent(data interface{}, maskKeys string, isMaskAllowed bool) bool {
 	uploader.eventBatchChannel <- data
+	maskKeysJSON = maskKeys
+	shouldMaskKeys = isMaskAllowed
 	return true
+}
+
+func (uploader *Uploader) scrubKeys(rawJson []byte) []byte {
+	result := gjson.GetBytes(rawJson, "keys")
+	var err error
+	result.ForEach(func(_, vjson gjson.Result) bool {
+		rawJson, err = sjson.SetBytes(rawJson, vjson.String(), "xxxxxxxxxxx")
+		if err != nil {
+			return false
+		}
+		return true // keep iterating
+	})
+
+	return rawJson
 }
 
 func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
@@ -74,7 +94,12 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 	if err != nil {
 		return
 	}
-
+	var scrubbedRawJSON []byte
+	if shouldMaskKeys {
+		scrubbedRawJSON = uploader.scrubKeys(rawJSON)
+	} else {
+		scrubbedRawJSON = rawJSON
+	}
 	client := &http.Client{}
 	url := uploader.url
 
@@ -82,7 +107,7 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 	var resp *http.Response
 	//Sending event schema to Config Backend
 	for {
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(rawJSON)))
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(scrubbedRawJSON)))
 		if err != nil {
 			misc.AssertErrorIfDev(err)
 			return

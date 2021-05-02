@@ -763,7 +763,7 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 				ErrorCode:     statusCode,
 				ErrorResponse: []byte(fmt.Sprintf(`{"error": %s}`, procErr)),
 			}
-			destinationdebugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
+			destinationdebugger.RecordEventDeliveryStatus(destID, &deliveryStatus, "", false)
 		}
 	}
 }

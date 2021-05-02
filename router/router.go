@@ -83,6 +83,7 @@ type HandleT struct {
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
 	destinationResponseHandler             ResponseHandlerI
+	destinationMaskKeys                    string
 	saveDestinationResponse                bool
 	drainJobHandler                        drain.DrainI
 	reporting                              utilTypes.ReportingI
@@ -816,7 +817,7 @@ func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMe
 			ErrorCode:     status.ErrorCode,
 			ErrorResponse: status.ErrorResponse,
 		}
-		destinationdebugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
+		destinationdebugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus, worker.rt.destinationMaskKeys, true)
 	}
 }
 
@@ -1533,6 +1534,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == rt.destName {
 						rt.destinationsMap[destination.ID] = destination
 						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
+						rt.destinationMaskKeys = destination.DestinationDefinition.MaskKeys
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 							rt.saveDestinationResponse = value
 						}

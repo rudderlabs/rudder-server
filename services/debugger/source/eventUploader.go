@@ -83,7 +83,7 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 		return false
 	}
 
-	uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatch})
+	uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatch}, "", false)
 	return true
 }
 

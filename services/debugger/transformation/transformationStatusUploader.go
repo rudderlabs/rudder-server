@@ -113,7 +113,7 @@ func RecordTransformationStatus(transformStatus *TransformStatusT) bool {
 		return false
 	}
 
-	uploader.RecordEvent(transformStatus)
+	uploader.RecordEvent(transformStatus, "", false)
 	return true
 }
 

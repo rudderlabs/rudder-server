@@ -656,7 +656,7 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 		ErrorCode:     "",
 		ErrorResponse: errorResp,
 	}
-	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
+	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus, batchDestination.Destination.DestinationDefinition.MaskKeys, true)
 }
 
 func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUploadOutput) {
