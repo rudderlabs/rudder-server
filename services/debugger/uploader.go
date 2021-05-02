@@ -79,10 +79,7 @@ func (uploader *Uploader) scrubKeys(rawJson []byte) []byte {
 	var err error
 	result.ForEach(func(_, vjson gjson.Result) bool {
 		rawJson, err = sjson.SetBytes(rawJson, vjson.String(), "xxxxxxxxxxx")
-		if err == nil {
-			return true
-		}
-		return false // keep iterating
+		return err == nil // keep iterating
 	})
 
 	return rawJson
