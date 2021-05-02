@@ -75,14 +75,14 @@ func (uploader *Uploader) RecordEvent(data interface{}, maskKeys string, isMaskA
 }
 
 func (uploader *Uploader) scrubKeys(rawJson []byte) []byte {
-	result := gjson.GetBytes(rawJson, "keys")
+	result := gjson.Get(maskKeysJSON, "keys")
 	var err error
 	result.ForEach(func(_, vjson gjson.Result) bool {
 		rawJson, err = sjson.SetBytes(rawJson, vjson.String(), "xxxxxxxxxxx")
-		if err != nil {
-			return false
+		if err == nil {
+			return true
 		}
-		return true // keep iterating
+		return false // keep iterating
 	})
 
 	return rawJson
