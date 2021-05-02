@@ -84,6 +84,7 @@ type DestinationDefinitionT struct {
 	DisplayName   string
 	Config        map[string]interface{}
 	ResponseRules map[string]interface{}
+	MaskKeys      string
 }
 
 type SourceDefinitionT struct {
