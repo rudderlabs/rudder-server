@@ -1160,7 +1160,7 @@ func Start(app app.Interface) {
 	}
 
 	//Setting up reporting client
-	if CheckForWarehouseEnvVars() {
+	if CheckForWarehouseEnvVars() && jobsdb.GetConnectionString() != psqlInfo {
 		if application.Features().Reporting != nil {
 			reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 			reporting.AddClient(types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
