@@ -19,6 +19,7 @@ type ConnHandler struct {
 func (cm *ConnectionManager) establishConnection() (*ConnHandler, error) {
 	var conn net.Conn
 	var err error
+	cm.Logger.Infof(`Establishing connection to %s using TLS:%v`, cm.url, cm.UseTLS)
 	if cm.UseTLS {
 		conn, err = tls.Dial("tcp", cm.url, &tls.Config{})
 	} else {
