@@ -1,6 +1,7 @@
 package queuemanager
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
@@ -18,6 +20,7 @@ var (
 	QueueManager QueueManagerI
 	webPort      int
 	pkgLogger    logger.LoggerI
+	dbHandle     *sql.DB
 )
 
 var Eb utils.PublishSubscriber = new(utils.EventBus)
@@ -53,6 +56,11 @@ func (qm *QueueManagerT) Subscribe(channel chan utils.DataEvent) {
 // Setup backend config
 func Setup() {
 	pkgLogger.Infof("setting up queuemanager. starting http handler on port: %v", webPort)
+	var err error
+	dbHandle, err = sql.Open("postgres", jobsdb.GetConnectionString())
+	if err != nil {
+		panic(fmt.Errorf("failed to connect to DB. Err: %v", err))
+	}
 	QueueManager = new(QueueManagerT)
 
 	/*srvMux := mux.NewRouter()
@@ -102,8 +110,26 @@ func ClearHandler(w http.ResponseWriter, r *http.Request) {
 		errorMessage = "Empty source id"
 		return
 	}
+	sqlStatement := `INSERT INTO operations (operation, payload, done)
+								VALUES ($1, $2, $3)
+								RETURNING id`
 
-	w.Write([]byte(fmt.Sprintf("{ \"op_id\": %d }", 1)))
+	var stmt *sql.Stmt
+	stmt, err = dbHandle.Prepare(sqlStatement)
+	if err != nil {
+		errorMessage = fmt.Sprintf("Failed to prepare statement. Err: %v", err)
+		return
+	}
+
+	row := stmt.QueryRow(sqlStatement, "CLEAR", payload, false)
+	var opID int64
+	err = row.Scan(&opID)
+	if err != nil {
+		errorMessage = fmt.Sprintf("Failed to scan opID. Err: %v", err)
+		return
+	}
+
+	w.Write([]byte(fmt.Sprintf("{ \"op_id\": %d }", opID)))
 }
 
 func getPayloadAndWriteKey(w http.ResponseWriter, r *http.Request) ([]byte, string, error) {
