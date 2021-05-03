@@ -321,13 +321,13 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, "Processor.maxLoopSleepInMS")
 	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, "Processor.loopSleepInMS")
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Processor.fixedLoopSleepInMS")
-	config.RegisterIntConfigVariable(50, &transformBatchSize, true, 1, "Processor.transformBatchSize")
+	config.RegisterIntConfigVariable(100, &transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 100)
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	// Enable dedup of incoming events by default
-	enableDedup = config.GetBool("Dedup.enableDedup", false)
+	enableDedup = config.GetBool("Dedup.enableDedup", true)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
