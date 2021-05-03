@@ -214,7 +214,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
 		allSources := config.Data.(backendconfig.ConfigT)
-
+		pkgLogger.Infof(`Received updated workspace config`)
 		for _, source := range allSources.Sources {
 			sourceIDsByWorkspaceLock.Lock()
 			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
@@ -283,10 +283,11 @@ func (wh *HandleT) backendConfigSubscriber() {
 		}
 		if val, ok := allSources.ConnectionFlags.Services["warehouse"]; ok {
 			if UploadAPI.connectionManager != nil {
+				pkgLogger.Infof(`Checking if connection needs to be made or establish one to CP Router at %s`, allSources.ConnectionFlags.URL)
 				UploadAPI.connectionManager.Apply(allSources.ConnectionFlags.URL, val)
 			}
 		}
-		pkgLogger.Debug("[WH] Unlocking config sub lock: %s", wh.destType)
+		pkgLogger.Infof("Releasing config subscriber lock: %s", wh.destType)
 		wh.configSubscriberLock.Unlock()
 		wh.initialConfigFetched = true
 	}
@@ -784,7 +785,7 @@ func (wh *HandleT) uploadStatusTrack() {
 			}
 
 			sqlStatement = fmt.Sprintf(`
-				select cast( case when count(*) > 0 then 1 else 0 end as bit ) 
+				select cast( case when count(*) > 0 then 1 else 0 end as bit )
 					from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s') and updated_at > now() - interval '%[6]d MIN'`,
 				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, timeWindow)
 
@@ -1161,7 +1162,8 @@ func Start(app app.Interface) {
 	//Setting up reporting client
 	if CheckForWarehouseEnvVars() {
 		if application.Features().Reporting != nil {
-			application.Features().Reporting.GetReportingInstance().AddClient(types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
+			reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+			reporting.AddClient(types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
 		}
 	}
 
