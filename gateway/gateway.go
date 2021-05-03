@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
+	queuemanager "github.com/rudderlabs/rudder-server/queue-manager"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -1007,6 +1008,7 @@ func (gateway *HandleT) StartWebHandler() {
 	}
 
 	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler))
+	srvMux.HandleFunc("/v1/clear", gateway.stat(queuemanager.ClearHandler))
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
