@@ -18,10 +18,10 @@ import (
 )
 
 type Config struct {
-	Credentials   string              `json:"credentials"`
-	SheetId       string              `json:"sheetId"`
-	EventSheetMap []map[string]string `json:"eventSheetMapping"`
-	EventKeyMap   []map[string]string `json:"eventKeyMap"`
+	Credentials string              `json:"credentials"`
+	SheetId     string              `json:"sheetId"`
+	SheetName   string              `json:"sheetName"`
+	EventKeyMap []map[string]string `json:"eventKeyMap"`
 }
 
 type Credentials struct {
@@ -46,6 +46,7 @@ func init() {
 func NewProducer(destinationConfig interface{}) (*GoogleAPIService, error) {
 	var config Config
 	var credentialsFile Credentials
+	var headerRowStr []string
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleSheets] Error while marshalling destination config :: %w", err)
@@ -83,29 +84,19 @@ func NewProducer(destinationConfig interface{}) (*GoogleAPIService, error) {
 		return &googleAPIService, err
 	}
 
-	// Storing All the Spread-Sheets (Pages withing a single Google-sheets) where the events are
-	// required to be mapped
-	// Example: | Sheet1 | Sheet2 | Sheet3 | ..
-	var sheets []string
-	for _, eventtosheetmap := range config.EventSheetMap {
-		sheets = append(sheets, eventtosheetmap["to"])
-	}
-
+	// ** Preparing the Header Data **
 	// Creating the array of string which are then coverted in to an array of interface which are to
 	// be added as header to each of the above spreadsheets.
 	// Example: | First Name | Last Name | Birth Day | Item Purchased | ..
-	var headerRowStr []string
 	for _, eventmap := range config.EventKeyMap {
 		headerRowStr = append(headerRowStr, eventmap["to"])
 	}
 	headerRow := getSheetsData(headerRowStr)
 
 	// *** Adding the header ***
-	// Iterating each sheets we adding the header for them if any error occurs here we throw it causing an error in creation of destination, else if all operation occurs successfuly we complete the NewProducer processes successfully
-	for _, sheet := range sheets {
-		// Inserting header to the sheet
-		err = insertDataToSheet(config.SheetId, sheet, headerRow, true)
-	}
+	// Inserting header to the sheet
+	err = insertDataToSheet(config.SheetId, config.SheetName, headerRow, true)
+
 	return &googleAPIService, err
 }
 
