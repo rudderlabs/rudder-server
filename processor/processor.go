@@ -258,7 +258,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	admin.RegisterStatusHandler("processor", proc)
 	proc.destStats = make(map[string]*DestStatT)
 	if enableEventSchemasFeature {
-		proc.eventSchemaHandler = event_schema.GetInstance()
+		proc.eventSchemaHandler = event_schema.GetInstance(event_schema.InstanceOpts{})
 	}
 	if enableDedup {
 		proc.dedupHandler = dedup.GetInstance(clearDB)

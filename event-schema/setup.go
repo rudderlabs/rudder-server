@@ -8,11 +8,15 @@ var (
 	eventSchemaManager types.EventSchemasI
 )
 
+type InstanceOpts struct {
+	DisableInMemoryCache bool
+}
+
 // GetInstance returns an instance of EventSchemaManagerT
-func GetInstance() types.EventSchemasI {
+func GetInstance(opts InstanceOpts) types.EventSchemasI {
 	pkgLogger.Info("[[ EventSchemas ]] Setting up EventSchemas FeatureValue")
 	if eventSchemaManager == nil {
-		schemaManager := &EventSchemaManagerT{}
+		schemaManager := &EventSchemaManagerT{disableInMemoryCache: opts.DisableInMemoryCache}
 		schemaManager.Setup()
 		eventSchemaManager = schemaManager
 	}
