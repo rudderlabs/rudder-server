@@ -78,6 +78,10 @@ func NewProducer(destinationConfig interface{}) (*GoogleAPIService, error) {
 	googleAPIService.Jwt = jwtconfig
 	service, err := generateServiceWithRefreshToken(*jwtconfig)
 	googleAPIService.Service = service
+	// If err is not nil then retrun
+	if err != nil {
+		return &googleAPIService, err
+	}
 
 	// Storing All the Spread-Sheets (Pages withing a single Google-sheets) where the events are
 	// required to be mapped
