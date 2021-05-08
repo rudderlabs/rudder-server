@@ -1367,19 +1367,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		transformAtFromFeaturesFile := gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String()
 
-		if transformAt == transformAtFromFeaturesFile {
-			if transformAt == "processor" {
-				response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
-			} else {
-				response = convertToTransformerResponse(eventsToTransform)
-			}
+		if transformAt == "router" && transformAtFromFeaturesFile != "" {
+			response = convertToTransformerResponse(eventsToTransform)
 		} else {
-			if transformAtFromFeaturesFile == "" || transformAtFromFeaturesFile == "processor" {
-				response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
-				transformAt = "processor"
-			} else {
-				response = convertToTransformerResponse(eventsToTransform)
-			}
+			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+			transformAt = "processor"
 		}
 
 		endedAt = time.Now()
