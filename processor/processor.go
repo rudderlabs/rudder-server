@@ -97,6 +97,7 @@ type HandleT struct {
 
 var defaultTransformerFeatures = `{
 	routerTransform: {
+	  "MARKETO": true
 	}
   }`
 
@@ -1364,11 +1365,16 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		if transformAtOverrideFound {
 			transformAt = config.GetString("Processor."+destination.DestinationDefinition.Name+".transformAt", "processor")
 		}
+		transformAtFromFeaturesFile := gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String()
 
-		if transformAt == "processor" {
-			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+		if transformAt == transformAtFromFeaturesFile {
+			if transformAt == "processor" {
+				response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+			} else {
+				response = convertToTransformerResponse(eventsToTransform)
+			}
 		} else {
-			if gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String() == "" {
+			if transformAtFromFeaturesFile == "" || transformAtFromFeaturesFile == "processor" {
 				response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
 				transformAt = "processor"
 			} else {
