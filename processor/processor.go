@@ -1354,7 +1354,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		startedAt = time.Now()
 
 		transformAt := "processor"
-		if val, ok := destination.DestinationDefinition.Config["transformAt"].(string); ok {
+		if val, ok := destination.DestinationDefinition.Config["transformAtV1"].(string); ok {
 			transformAt = val
 		}
 		//Check for overrides through env
