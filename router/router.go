@@ -485,10 +485,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
 				transformAt := destinationJob.JobMetadataArray[0].TransformAt
 				//Batched jobs and router transformed jobs can have more than 1 metadatas. So, don't increment userID.
-				userID := ""
-				if len(destinationJob.JobMetadataArray) == 1 {
-					userID = destinationJob.JobMetadataArray[0].UserID
-				}
 
 				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
 
