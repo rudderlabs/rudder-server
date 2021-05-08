@@ -15,6 +15,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/drain"
@@ -399,24 +400,28 @@ func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) []byte {
 	return resp
 }
 
-func getIterableJSON(payload []byte, transformAt string) gjson.Result {
-	var result gjson.Result
-	var body []byte
+func getIterableStruct(payload []byte, transformAt string) []integrations.PostParametersT {
 	var err error
+	var response integrations.PostParametersT
+	responseArray := make([]integrations.PostParametersT, 0)
 	if transformAt == "router" {
-		if !misc.ValidBytes(payload) {
-			body, err = sjson.SetRawBytes(BatchRTEvent, "batch", payload)
+		err = json.Unmarshal(payload, &response)
+		if err != nil {
+			err = json.Unmarshal(payload, &responseArray)
 		} else {
-			body, err = sjson.SetRawBytes(BatchEvent, "batch.0", payload)
+			responseArray = append(responseArray, response)
 		}
+
 	} else {
-		body, err = sjson.SetRawBytes(BatchEvent, "batch.0", payload)
+		err = json.Unmarshal(payload, &response)
+		if err == nil {
+			responseArray = append(responseArray, response)
+		}
 	}
 	if err != nil {
-		panic(fmt.Errorf("Setting Payload through sjson failed with err %v", err))
+		panic(fmt.Errorf("setting Payload through sjson failed with err %v", err))
 	}
-	result = gjson.GetBytes(body, "batch")
-	return result
+	return responseArray
 }
 
 func (worker *workerT) handleWorkerDestinationJobs() {
@@ -495,17 +500,16 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
-					result := getIterableJSON(destinationJob.Message, transformAt)
-					result.ForEach(func(_, vjson gjson.Result) bool {
-						respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost([]byte(vjson.String()))
+					result := getIterableStruct(destinationJob.Message, transformAt)
+					for _, val := range result {
+						respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val, destinationJob.Message)
 						if isSuccessStatus(respStatusCode) {
 							respBody = respBody + " " + respBodyTemp
-							return true
 						} else {
 							respBody = respBodyTemp
-							return false
+							break
 						}
-					})
+					}
 				}
 				ch <- struct{}{}
 
