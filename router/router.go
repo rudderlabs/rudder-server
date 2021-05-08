@@ -169,19 +169,6 @@ type failureMetric struct {
 	ErrorResponse     json.RawMessage `json:"error_response"`
 }
 
-var BatchEvent = []byte(`
-	{
-		"batch": [
-		]
-	}
-`)
-
-var BatchRTEvent = []byte(`
-	{
-		"batch": 
-	}
-`)
-
 func isSuccessStatus(status int) bool {
 	return status >= 200 && status < 300
 }

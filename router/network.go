@@ -29,10 +29,11 @@ type NetHandleT struct {
 func (network *NetHandleT) sendPost(structData integrations.PostParametersT, jsonData json.RawMessage) (statusCode int, respBody string) {
 	client := network.httpClient
 	//Parse the response to get parameters
-	postInfo, err := integrations.GetPostInfo(jsonData, structData)
+	_, err := integrations.ValidatePostInfo(jsonData)
 	if err != nil {
 		return 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 	}
+	postInfo := structData
 	isRest := postInfo.Type == "REST"
 
 	isMultipart := len(postInfo.Files) > 0

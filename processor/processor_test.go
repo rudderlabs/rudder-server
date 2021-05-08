@@ -1500,6 +1500,7 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 
 func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
 	var clearDB = false
+	SetDisableDedupFeature(false)
 	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
 
 	// make sure the mock backend config has sent the configuration
