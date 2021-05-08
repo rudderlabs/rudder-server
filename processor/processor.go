@@ -92,7 +92,6 @@ type HandleT struct {
 	reporting                      types.ReportingI
 	reportingEnabled               bool
 	transformerFeatures            json.RawMessage
-	featuresLock                   sync.RWMutex
 }
 
 var defaultTransformerFeatures = `{
@@ -332,6 +331,7 @@ var (
 	captureEventNameStats               bool
 	transformerURL                      string
 	pollInterval                        time.Duration
+	isUnLocked                          bool
 )
 
 func loadConfig() {
@@ -363,8 +363,6 @@ func loadConfig() {
 
 func (proc *HandleT) getTransformerFeatureJson() {
 	const attempts = 10
-	var isUnLocked = false
-	proc.featuresLock.Lock()
 	for {
 		for i := 0; i < attempts; i++ {
 			url := transformerURL + "/features"
@@ -401,7 +399,6 @@ func (proc *HandleT) getTransformerFeatureJson() {
 		}
 		if proc.transformerFeatures != nil && !isUnLocked {
 			isUnLocked = true
-			proc.featuresLock.Unlock()
 		}
 		time.Sleep(pollInterval)
 	}
@@ -1708,18 +1705,22 @@ func (proc *HandleT) mainLoop() {
 	currLoopSleep := time.Duration(0)
 
 	for {
-		proc.featuresLock.RLock()
-		if proc.handlePendingGatewayJobs() {
-			currLoopSleep = time.Duration(0)
-		} else {
-			currLoopSleep = 2*currLoopSleep + loopSleep
-			if currLoopSleep > maxLoopSleep {
-				currLoopSleep = maxLoopSleep
+		if isUnLocked {
+			if proc.handlePendingGatewayJobs() {
+				currLoopSleep = time.Duration(0)
+			} else {
+				currLoopSleep = 2*currLoopSleep + loopSleep
+				if currLoopSleep > maxLoopSleep {
+					currLoopSleep = maxLoopSleep
+				}
+				time.Sleep(currLoopSleep)
 			}
-			time.Sleep(currLoopSleep)
+			time.Sleep(fixedLoopSleep)
+		} else {
+			time.Sleep(fixedLoopSleep)
 		}
-		time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
-		proc.featuresLock.RUnlock()
+
+		// adding sleep here to reduce cpu load on postgres when we have less rps
 	}
 }
 
