@@ -189,7 +189,7 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
 	}
 }
 
-func (wh *HandleT) initPrePopulateDestIndetitiesUpload(warehouse warehouseutils.WarehouseT) UploadT {
+func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.WarehouseT) UploadT {
 	schema := make(map[string]map[string]string)
 	// TODO: DRY this code
 	identityRules := map[string]string{
@@ -263,7 +263,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		defer setDestHistoricIndetitiesPopulated(warehouse)
 		defer wh.setFailedStat(warehouse, err)
 
-		// check for pending loads (populateHistoricIdentites)
+		// check for pending loads (populateHistoricIdentities)
 		var hasPendingLoad bool
 		var upload UploadT
 		upload, hasPendingLoad = wh.getPendingPopulateIdentitiesLoad(warehouse)
@@ -278,7 +278,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			var hasData bool
 			hasData, err = wh.hasWarehouseData(warehouse)
 			if err != nil {
-				pkgLogger.Errorf(`[WH]: Error checking for data in %s:%s:%s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name)
+				pkgLogger.Errorf(`[WH]: Error checking for data in %s:%s:%s, err: %s`, wh.destType, warehouse.Destination.ID, warehouse.Destination.Name, err.Error())
 				return
 			}
 			if !hasData {
@@ -287,7 +287,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			}
 			pkgLogger.Infof("[WH]: Did not find local identity tables..")
 			pkgLogger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", wh.destType, warehouse.Destination.ID)
-			upload = wh.initPrePopulateDestIndetitiesUpload(warehouse)
+			upload = wh.initPrePopulateDestIdentitiesUpload(warehouse)
 		}
 
 		whManager, err := manager.New(wh.destType)
@@ -333,7 +333,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			return
 		}
 
-		job.setUploadStatus(getInProgressState(ExportedData))
+		job.setUploadStatus(UploadStatusOpts{Status: getInProgressState(ExportedData)})
 		loadErrors, err := job.loadIdentityTables(true)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Identity table upload errors: %v`, err)
@@ -342,6 +342,6 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			job.setUploadError(misc.ConcatErrors(loadErrors), Aborted)
 			return
 		}
-		job.setUploadStatus(ExportedData)
+		job.setUploadStatus(UploadStatusOpts{Status: ExportedData})
 	})
 }

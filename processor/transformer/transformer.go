@@ -36,6 +36,11 @@ type MetadataT struct {
 	DestinationID   string `json:"destinationId"`
 	JobRunID        string `json: "jobRunId"`
 	JobID           int64  `json:"jobId"`
+	SourceBatchID   string `json:"sourceBatchId"`
+	SourceJobID     string `json:"sourceJobId"`
+	SourceJobRunID  string `json:"sourceJobRunId"`
+	SourceTaskID    string `json:"sourceTaskId"`
+	SourceTaskRunID string `json:"sourceTaskRunId"`
 	DestinationType string `json:"destinationType"`
 	MessageID       string `json:"messageId"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
@@ -189,9 +194,15 @@ func (trans *HandleT) transformWorker() {
 			//This is returned by our JS engine so should  be parsable
 			//but still handling it
 			if err != nil {
-				panic(err)
+				trans.logger.Errorf("Data sent to transformer : %v", string(rawJSON))
+				trans.logger.Errorf("Transformer returned : %v", string(respData))
+				respData = []byte(fmt.Sprintf("Failed to unmarshal transformer response: %s", string(respData)))
+				transformerResponses = nil
+				resp.StatusCode = 400
 			}
-		} else {
+		}
+
+		if resp.StatusCode != http.StatusOK {
 			for _, transformEvent := range job.data {
 				resp := TransformerResponseT{StatusCode: resp.StatusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 				transformerResponses = append(transformerResponses, resp)

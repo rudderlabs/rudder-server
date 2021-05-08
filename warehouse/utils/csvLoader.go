@@ -38,6 +38,10 @@ func (loader *CsvLoader) AddColumn(columnName string, val interface{}) {
 	loader.csvRow = append(loader.csvRow, valString)
 }
 
+func (loader *CsvLoader) AddRow(columnNames []string, row []string) {
+	loader.csvRow = append(loader.csvRow, row...)
+}
+
 func (loader *CsvLoader) AddEmptyColumn(columnName string) {
 	loader.AddColumn(columnName, "")
 }

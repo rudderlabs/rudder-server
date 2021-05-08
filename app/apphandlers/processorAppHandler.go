@@ -10,11 +10,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types"
 
 	// This is necessary for compatibility with enterprise features
 	_ "github.com/rudderlabs/rudder-server/imports"
@@ -42,6 +44,12 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 
 	rudderCoreBaseSetup()
 
+	//Setting up reporting client
+	if processor.App.Features().Reporting != nil {
+		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+		reporting.AddClient(types.Config{ConnInfo: jobsdb.GetConnectionString()})
+	}
+
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
 	transformationdebugger.Setup()
@@ -58,14 +66,19 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false)
 	}
 
+	var reportingI types.ReportingI
+	if processor.App.Features().Reporting != nil {
+		reportingI = processor.App.Features().Reporting.GetReportingInstance()
+	}
+
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
 				clearDB := false
-				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 			}
 			startRouterFunc := func() {
-				StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB)
+				StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -75,8 +88,8 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 		}
 	}
 
-	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
-	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB)
+	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 
 	startHealthWebHandler()
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI

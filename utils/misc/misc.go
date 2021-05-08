@@ -909,7 +909,7 @@ func GetTagName(id string, names ...string) string {
 }
 
 //UpdateJSONWithNewKeyVal enhances the json passed with key, val
-func UpdateJSONWithNewKeyVal(params []byte, key, val string) []byte {
+func UpdateJSONWithNewKeyVal(params []byte, key string, val interface{}) []byte {
 	updatedParams, err := sjson.SetBytes(params, key, val)
 	if err != nil {
 		return params

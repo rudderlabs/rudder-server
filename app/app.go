@@ -84,6 +84,10 @@ func (a *App) initEnterpriseFeatures() {
 	if configEnvFeatureSetup != nil {
 		a.features.ConfigEnv = configEnvFeatureSetup(a)
 	}
+
+	if reportingFeatureSetup != nil {
+		a.features.Reporting = reportingFeatureSetup(a)
+	}
 }
 
 // Options returns this application's options

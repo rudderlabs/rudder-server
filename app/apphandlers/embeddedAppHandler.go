@@ -14,6 +14,7 @@ import (
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types"
 
 	// This is necessary for compatibility with enterprise features
 	_ "github.com/rudderlabs/rudder-server/imports"
@@ -33,6 +34,12 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	pkgLogger.Info("Main starting")
 
 	rudderCoreBaseSetup()
+
+	//Setting up reporting client
+	if embedded.App.Features().Reporting != nil {
+		reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+		reporting.AddClient(types.Config{ConnInfo: jobsdb.GetConnectionString()})
+	}
 
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
@@ -57,15 +64,19 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	}
 
 	enableGateway := true
+	var reportingI types.ReportingI
+	if embedded.App.Features().Reporting != nil {
+		reportingI = embedded.App.Features().Reporting.GetReportingInstance()
+	}
 
 	if embedded.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
 				clearDB := false
-				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
+				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 			}
 			startRouterFunc := func() {
-				StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB)
+				StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -76,8 +87,8 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 		}
 	}
 
-	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB)
-	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB)
+	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 
 	if enableGateway {
 		var gateway gateway.HandleT

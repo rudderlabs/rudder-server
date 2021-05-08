@@ -137,6 +137,10 @@ func GetDestinationURL(destType string) string {
 			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + rsAlterStringToTextQueryParam
 		}
+		if destType == "CLICKHOUSE" {
+			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", config.GetArraySupportForCH()))
+			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + enableArraySupport
+		}
 		return destinationEndPoint + "?" + whSchemaVersionQueryParam
 	}
 	return destinationEndPoint

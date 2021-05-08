@@ -4,16 +4,25 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/coinpaprika/ratelimiter"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/router/throttler/ratelimiter"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+)
+
+const (
+	DESTINATION_LEVEL = "destination"
+	USER_LEVEL        = "user"
+	ALL_LEVELS        = "all"
 )
 
 //Throttler is an interface for throttling functions
 type Throttler interface {
-	CheckLimitReached(destID string, userID string) bool
-	Inc(destID string, userID string)
+	CheckLimitReached(destID string, userID string, currentTime time.Time) bool
+	Inc(destID string, userID string, currentTime time.Time)
+	Dec(destID string, userID string, count int64, currentTime time.Time, atLevel string)
 	IsEnabled() bool
+	IsUserLevelEnabled() bool
+	IsDestLevelEnabled() bool
 }
 
 type Limiter struct {
@@ -89,13 +98,11 @@ func (throttler *HandleT) SetUp(destName string) {
 }
 
 //LimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
-func (throttler *HandleT) CheckLimitReached(destID string, userID string) bool {
-	destKey := throttler.getDestKey(destID)
-	userKey := throttler.getUserKey(destID, userID)
-
+func (throttler *HandleT) CheckLimitReached(destID string, userID string, currentTime time.Time) bool {
 	var destLevelLimitReached bool
 	if throttler.destLimiter.enabled {
-		limitStatus, err := throttler.destLimiter.ratelimiter.Check(destKey)
+		destKey := throttler.getDestKey(destID)
+		limitStatus, err := throttler.destLimiter.ratelimiter.Check(destKey, currentTime)
 		if err != nil {
 			// TODO: handle this
 			pkgLogger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, throttler.destinationName, err)
@@ -106,7 +113,8 @@ func (throttler *HandleT) CheckLimitReached(destID string, userID string) bool {
 
 	var userLevelLimitReached bool
 	if !destLevelLimitReached && throttler.userLimiter.enabled {
-		limitStatus, err := throttler.userLimiter.ratelimiter.Check(userKey)
+		userKey := throttler.getUserKey(destID, userID)
+		limitStatus, err := throttler.userLimiter.ratelimiter.Check(userKey, currentTime)
 		if err != nil {
 			// TODO: handle this
 			pkgLogger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, throttler.destinationName, err)
@@ -120,20 +128,40 @@ func (throttler *HandleT) CheckLimitReached(destID string, userID string) bool {
 
 //Inc increases the destLimiter and userLimiter counters.
 //If destID or userID passed is empty, we don't increment the counters.
-func (throttler *HandleT) Inc(destID string, userID string) {
-	destKey := throttler.getDestKey(destID)
-	userKey := throttler.getUserKey(destID, userID)
-
+func (throttler *HandleT) Inc(destID string, userID string, currentTime time.Time) {
 	if throttler.destLimiter.enabled && destID != "" {
-		throttler.destLimiter.ratelimiter.Inc(destKey)
+		destKey := throttler.getDestKey(destID)
+		throttler.destLimiter.ratelimiter.Inc(destKey, currentTime)
 	}
 	if throttler.userLimiter.enabled && userID != "" {
-		throttler.userLimiter.ratelimiter.Inc(userKey)
+		userKey := throttler.getUserKey(destID, userID)
+		throttler.userLimiter.ratelimiter.Inc(userKey, currentTime)
+	}
+}
+
+//Dec decrements the destLimiter and userLimiter counters by count passed
+//If destID or userID passed is empty, we don't decrement the counters.
+func (throttler *HandleT) Dec(destID string, userID string, count int64, currentTime time.Time, atLevel string) {
+	if throttler.destLimiter.enabled && destID != "" && (atLevel == ALL_LEVELS || atLevel == DESTINATION_LEVEL) {
+		destKey := throttler.getDestKey(destID)
+		throttler.destLimiter.ratelimiter.Dec(destKey, count, currentTime)
+	}
+	if throttler.userLimiter.enabled && userID != "" && (atLevel == ALL_LEVELS || atLevel == USER_LEVEL) {
+		userKey := throttler.getUserKey(destID, userID)
+		throttler.userLimiter.ratelimiter.Dec(userKey, count, currentTime)
 	}
 }
 
 func (throttler *HandleT) IsEnabled() bool {
 	return throttler.destLimiter.enabled || throttler.userLimiter.enabled
+}
+
+func (throttler *HandleT) IsUserLevelEnabled() bool {
+	return throttler.userLimiter.enabled
+}
+
+func (throttler *HandleT) IsDestLevelEnabled() bool {
+	return throttler.destLimiter.enabled
 }
 
 func (throttler *HandleT) getDestKey(destID string) string {

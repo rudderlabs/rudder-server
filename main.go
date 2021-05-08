@@ -70,8 +70,8 @@ func printVersion() {
 	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
-func startWarehouseService() {
-	warehouse.Start()
+func startWarehouseService(application app.Interface) {
+	warehouse.Start(application)
 }
 
 func canStartServer() bool {
@@ -166,7 +166,7 @@ func main() {
 	// initialize warehouse service after core to handle non-normal recovery modes
 	if appTypeStr != app.GATEWAY && canStartWarehouse() {
 		rruntime.Go(func() {
-			startWarehouseService()
+			startWarehouseService(application)
 		})
 	}
 
