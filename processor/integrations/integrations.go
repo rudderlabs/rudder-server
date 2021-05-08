@@ -60,7 +60,7 @@ type PostParametersT struct {
 }
 
 // GetPostInfo parses the transformer response
-func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err error) {
+func GetPostInfo(transformRaw json.RawMessage, structData PostParametersT) (postInfo PostParametersT, err error) {
 	parsedJSON := gjson.ParseBytes(transformRaw)
 	errorMessages := make([]string, 0)
 	for _, v := range postParametersTFields {
@@ -74,11 +74,8 @@ func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err er
 		err = errors.New(strings.Join(errorMessages, "\n"))
 		return postInfo, err
 	}
-	unMarshalError := json.Unmarshal(transformRaw, &postInfo)
-	if unMarshalError != nil {
-		err = fmt.Errorf("Error while unmarshalling response from transformer : %s, Error: %w", transformRaw, unMarshalError)
-	}
-	return postInfo, err
+
+	return structData, err
 }
 
 //FilterClientIntegrations parses the destination names from the
