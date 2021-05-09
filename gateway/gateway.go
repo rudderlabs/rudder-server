@@ -113,6 +113,12 @@ type userWebRequestWorkerT struct {
 	bufferFullStat, timeOutStat stats.RudderStats
 }
 
+type ParametersT struct {
+	SourceID       string `json:"source_id"`
+	BatchID        uint64 `json:"batch_id"`
+	SourceJobRunID string `json:"source_job_run_id"`
+}
+
 //HandleT is the struct returned by the Setup call
 type HandleT struct {
 	application                                                app.Interface
@@ -427,11 +433,23 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			eventBatchesToRecord = append(eventBatchesToRecord, fmt.Sprintf("%s", body))
 			sourcesJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str // pick the job_run_id from the first event of batch. We are assuming job_run_id will be same for all events in a batch and the batch is coming from rudder-sources
 			id := uuid.NewV4()
+
+			params := ParametersT{
+				SourceID:       sourceID,
+				BatchID:        counter,
+				SourceJobRunID: sourcesJobRunID,
+			}
+			marshalledParams, err := json.Marshal(params)
+			if err != nil {
+				gateway.logger.Errorf("[Gateway] Failed to marshal parameters object. Parameters: %v", params)
+				panic(err)
+			}
+
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       gjson.GetBytes(body, "batch.0.rudderId").Str,
-				Parameters:   []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "source_job_run_id": "%s"}`, sourceID, counter, sourcesJobRunID)),
+				Parameters:   marshalledParams,
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 			}

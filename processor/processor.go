@@ -884,10 +884,24 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			marshalledErr = []byte(`"Unknown error: rudder-server failed to marshal error returned by rudder-transformer"`)
 		}
 
+		params := map[string]interface{}{
+			"source_id":         commonMetaData.SourceID,
+			"destination_id":    commonMetaData.DestinationID,
+			"source_job_run_id": failedEvent.Metadata.JobRunID,
+			"error":             string(marshalledErr),
+			"status_code":       failedEvent.StatusCode,
+			"stage":             stage,
+		}
+		marshalledParams, err := json.Marshal(params)
+		if err != nil {
+			proc.logger.Errorf("[Processor] Failed to marshal parameters object. Parameters: %v", params)
+			panic(err)
+		}
+
 		newFailedJob := jobsdb.JobT{
 			UUID:         id,
 			EventPayload: payload,
-			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "source_job_run_id": "%s", "error": %s, "status_code": "%v", "stage": "%s"}`, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Metadata.JobRunID, string(marshalledErr), failedEvent.StatusCode, stage)),
+			Parameters:   marshalledParams,
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			CustomVal:    commonMetaData.DestinationType,
