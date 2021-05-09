@@ -172,6 +172,13 @@ func insertDataToSheet(spreadSheetId string, spreadSheetTab string, data []inter
 	vr.Range = spreadSheetTab + "!A1"
 	vr.Values = append(vr.Values, data)
 	var err error
+
+	// Fail safety to avoid nil pointer exception, as googleAPIService is being mutated when token
+	// is expired
+	if googleAPIService.Service == nil {
+		return fmt.Errorf("Failed to initialize google-sheets client")
+	}
+
 	if isHeader {
 		// In case we have a header Row we want to update it always at the the top of sheet
 		// hence we are using update.
