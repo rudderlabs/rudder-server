@@ -176,7 +176,7 @@ func insertDataToSheet(spreadSheetId string, spreadSheetTab string, data []inter
 	// Fail safety to avoid nil pointer exception, as googleAPIService is being mutated when token
 	// is expired
 	if googleAPIService.Service == nil {
-		return fmt.Errorf("Failed to initialize google-sheets client")
+		return fmt.Errorf("[GoogleSheets] error  :: Failed to initialize google-sheets client")
 	}
 
 	if isHeader {
