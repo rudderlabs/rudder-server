@@ -88,6 +88,8 @@ func NewProducer(destinationConfig interface{}) (*GoogleAPIService, error) {
 	// Creating the array of string which are then coverted in to an array of interface which are to
 	// be added as header to each of the above spreadsheets.
 	// Example: | First Name | Last Name | Birth Day | Item Purchased | ..
+	// Here messageId is by default the first column
+	headerRowStr = append(headerRowStr, "messageId")
 	for _, eventmap := range config.EventKeyMap {
 		headerRowStr = append(headerRowStr, eventmap["to"])
 	}
@@ -182,14 +184,14 @@ func insertDataToSheet(spreadSheetId string, spreadSheetTab string, data []inter
 	}
 	if err != nil && strings.Contains(err.Error(), "token expired and refresh token is not set") {
 		var serviceErr error
-		pkgLogger.Debug("[Google Sheets]Token Expired :: Generating New Client")
+		pkgLogger.Info("[Google Sheets]Token Expired :: Generating New Client")
 		// Here we are updating the client with new generated client
 		googleAPIService.Service, serviceErr = generateServiceWithRefreshToken(*googleAPIService.Jwt)
 		if serviceErr != nil {
-			pkgLogger.Error("[Google Sheets]Token Expired :: Failed to Generate New Client", serviceErr.Error())
+			pkgLogger.Info("[Google Sheets]Token Expired :: Failed to Generate New Client", serviceErr.Error())
 			return serviceErr
 		}
-		pkgLogger.Debug("[Google Sheets]Token Expired :: Generated New Client")
+		pkgLogger.Info("[Google Sheets]Token Expired :: Generated New Client")
 		return insertDataToSheet(spreadSheetId, spreadSheetTab, data, isHeader)
 	} else if err != nil {
 		return err
