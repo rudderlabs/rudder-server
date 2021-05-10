@@ -877,25 +877,19 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
 
 		id := uuid.NewV4()
-		// marshal error to escape any quotes in error string etc.
-		marshalledErr, err := json.Marshal(failedEvent.Error)
-		if err != nil {
-			proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to marshal failedEvent error: %v`, failedEvent.Error)
-			marshalledErr = []byte(`"Unknown error: rudder-server failed to marshal error returned by rudder-transformer"`)
-		}
 
 		params := map[string]interface{}{
 			"source_id":         commonMetaData.SourceID,
 			"destination_id":    commonMetaData.DestinationID,
 			"source_job_run_id": failedEvent.Metadata.JobRunID,
-			"error":             string(marshalledErr),
+			"error":             failedEvent.Error,
 			"status_code":       failedEvent.StatusCode,
 			"stage":             stage,
 		}
 		marshalledParams, err := json.Marshal(params)
 		if err != nil {
 			proc.logger.Errorf("[Processor] Failed to marshal parameters object. Parameters: %v", params)
-			panic(err)
+			marshalledParams = []byte(`"rudder-server processor failed to marshal params"`)
 		}
 
 		newFailedJob := jobsdb.JobT{
