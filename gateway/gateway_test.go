@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"time"
 
 	"github.com/golang/mock/gomock"
@@ -265,8 +266,14 @@ var _ = Describe("Gateway", func() {
 
 		assertJobMetadata := func(job *jobsdb.JobT, batchLength int, batchId int) {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
-			
-			Expect(job.Parameters).To(Equal(json.RawMessage(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "source_job_run_id": ""}`, SourceIDEnabled, batchId))))
+
+			var paramsMap, expectedParamsMap map[string]interface{}
+			json.Unmarshal(job.Parameters, &paramsMap)
+			expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "source_job_run_id": ""}`, SourceIDEnabled, batchId))
+			json.Unmarshal(expectedStr, &expectedParamsMap)
+			equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
+			Expect(equals).To(Equal(true))
+
 			Expect(job.CustomVal).To(Equal(CustomVal))
 
 			responseData := []byte(job.EventPayload)
