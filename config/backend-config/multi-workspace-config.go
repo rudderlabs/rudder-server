@@ -104,7 +104,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 		}
 		sourcesJSON.Sources = append(sourcesJSON.Sources, workspaceConfig.Sources...)
 	}
-
+	sourcesJSON.ConnectionFlags.Services["warehouse"] = true // always set connection flags to true for hosted warehouse service
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.Lock()
 	multiWorkspaceConfig.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
 	multiWorkspaceConfig.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap

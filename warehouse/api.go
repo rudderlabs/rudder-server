@@ -92,6 +92,11 @@ type UploadAPIT struct {
 var UploadAPI UploadAPIT
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
+	workspaceToken := config.GetWorkspaceToken()
+	isMultiWorkspace := config.GetEnvAsBool("HOSTED_SERVICE", false)
+	if isMultiWorkspace {
+		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+	}
 	UploadAPI = UploadAPIT{
 		enabled:  true,
 		dbHandle: dbHandle,
@@ -99,7 +104,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
 		connectionManager: &controlplane.ConnectionManager{
 			AuthInfo: controlplane.AuthInfo{
 				Service:        "warehouse",
-				WorkspaceToken: config.GetWorkspaceToken(),
+				WorkspaceToken: workspaceToken,
 				InstanceID:     config.GetEnv("instance_id", "1"),
 			},
 			RetryInterval: 0,
