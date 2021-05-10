@@ -1267,17 +1267,16 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 		sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ds.JobStatusTable)
 		_, err = jd.dbHandle.Exec(sqlStatement)
 	} else {
-		sqlStatement = fmt.Sprintf(`DROP TABLE %s`, ds.JobStatusTable)
 		err = jd.dropDSWithPsqlLock(ds.JobStatusTable)
 	}
 	jd.assertError(err)
 
 	if allowMissing {
 		sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ds.JobTable)
+		_, err = jd.dbHandle.Exec(sqlStatement)
 	} else {
-		sqlStatement = fmt.Sprintf(`DROP TABLE %s`, ds.JobTable)
+		err = jd.dropDSWithPsqlLock(ds.JobTable)
 	}
-	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
