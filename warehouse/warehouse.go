@@ -408,7 +408,18 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	}
 
 	now := timeutil.Now()
-	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task_id": "%s", "source_task_run_id": "%s", "source_job_id": "%s", "source_job_run_id": "%s"}`, jsonUploadsList[0].SourceBatchID, jsonUploadsList[0].SourceTaskID, jsonUploadsList[0].SourceTaskRunID, jsonUploadsList[0].SourceJobID, jsonUploadsList[0].SourceJobRunID))
+	metadataMap := map[string]string{
+		"source_batch_id":    jsonUploadsList[0].SourceBatchID,
+		"source_task_id":     jsonUploadsList[0].SourceTaskID,
+		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
+		"source_job_id":      jsonUploadsList[0].SourceJobID,
+		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
+	}
+	marshalledMetaData, err := json.Marshal(metadataMap)
+	if err != nil {
+		panic(err)
+	}
+	metadata := marshalledMetaData
 	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, Waiting, "{}", "{}", metadata, firstEventAt, lastEventAt, now, now)
 
 	var uploadID int64
@@ -1001,7 +1012,18 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		firstEventAt = nil
 		lastEventAt = nil
 	}
-	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task_id": "%s", "source_task_run_id": "%s", "source_job_id": "%s", "source_job_run_id": "%s"}`, stagingFile.SourceBatchID, stagingFile.SourceTaskID, stagingFile.SourceTaskRunID, stagingFile.SourceJobID, stagingFile.SourceJobRunID))
+	metadataMap := map[string]string{
+		"source_batch_id":    stagingFile.SourceBatchID,
+		"source_task_id":     stagingFile.SourceTaskID,
+		"source_task_run_id": stagingFile.SourceTaskRunID,
+		"source_job_id":      stagingFile.SourceJobID,
+		"source_job_run_id":  stagingFile.SourceJobRunID,
+	}
+	marshalledMetaData, err := json.Marshal(metadataMap)
+	if err != nil {
+		panic(err)
+	}
+	metadata := marshalledMetaData
 
 	pkgLogger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
 	schemaPayload, _ := json.Marshal(stagingFile.Schema)
