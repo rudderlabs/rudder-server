@@ -877,17 +877,25 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
 
 		id := uuid.NewV4()
-		// marshal error to escape any quotes in error string etc.
-		marshalledErr, err := json.Marshal(failedEvent.Error)
+
+		params := map[string]interface{}{
+			"source_id":         commonMetaData.SourceID,
+			"destination_id":    commonMetaData.DestinationID,
+			"source_job_run_id": failedEvent.Metadata.JobRunID,
+			"error":             failedEvent.Error,
+			"status_code":       failedEvent.StatusCode,
+			"stage":             stage,
+		}
+		marshalledParams, err := json.Marshal(params)
 		if err != nil {
-			proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to marshal failedEvent error: %v`, failedEvent.Error)
-			marshalledErr = []byte(`"Unknown error: rudder-server failed to marshal error returned by rudder-transformer"`)
+			proc.logger.Errorf("[Processor] Failed to marshal parameters. Parameters: %v", params)
+			marshalledParams = []byte(`{"error": "Processor failed to marshal params"}`)
 		}
 
 		newFailedJob := jobsdb.JobT{
 			UUID:         id,
 			EventPayload: payload,
-			Parameters:   []byte(fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "source_job_run_id": "%s", "error": %s, "status_code": "%v", "stage": "%s"}`, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Metadata.JobRunID, string(marshalledErr), failedEvent.StatusCode, stage)),
+			Parameters:   marshalledParams,
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			CustomVal:    commonMetaData.DestinationType,
