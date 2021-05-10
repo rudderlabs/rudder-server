@@ -1235,21 +1235,50 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	//happens during recovering from failed migration.
 	//For every other case, the table must exist
 	var sqlStatement string
-	if allowMissing {
-		sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ds.JobStatusTable)
-	} else {
-		sqlStatement = fmt.Sprintf(`DROP TABLE %s`, ds.JobStatusTable)
+	var err error
+	txn, err := jd.dbHandle.Begin()
+	if err != nil {
+		panic(err)
 	}
-	_, err := jd.dbHandle.Exec(sqlStatement)
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)
+	stmt, err := txn.Prepare(sqlStatement)
+	jd.assertError(err)
+	_, err = stmt.Exec()
+	jd.assertError(err)
+
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)
+	_, err = txn.Prepare(sqlStatement)
+	jd.assertError(err)
+	_, err = stmt.Exec()
 	jd.assertError(err)
 
 	if allowMissing {
+		sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ds.JobStatusTable)
+		_, err = txn.Prepare(sqlStatement)
+		jd.assertError(err)
+		_, err = stmt.Exec()
+		jd.assertError(err)
 		sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ds.JobTable)
+		_, err = txn.Prepare(sqlStatement)
+		jd.assertError(err)
+		_, err = stmt.Exec()
+		jd.assertError(err)
 	} else {
+		sqlStatement = fmt.Sprintf(`DROP TABLE %s`, ds.JobStatusTable)
+		_, err = txn.Prepare(sqlStatement)
+		jd.assertError(err)
+		_, err = stmt.Exec()
+		jd.assertError(err)
 		sqlStatement = fmt.Sprintf(`DROP TABLE %s`, ds.JobTable)
+		_, err = txn.Prepare(sqlStatement)
+		jd.assertError(err)
+		_, err = stmt.Exec()
+		jd.assertError(err)
 	}
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	jd.assertError(err)
+	err = txn.Commit()
+	if err != nil {
+		panic(err)
+	}
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {

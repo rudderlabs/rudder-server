@@ -180,8 +180,37 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 	queryStat = stats.NewTaggedStat(statName+"unprocessed_jobs_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
+	txn, err := jd.DbHandle.Begin()
+	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) begin err. Err: %w", ds, err)
+
+		return 0
+	}
 
 	var sqlStatement string
+
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
+	stmt, err := txn.Prepare(sqlStatement)
+	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) prepare err. Err: %w", ds, err)
+		return 0
+	}
+	_, err = stmt.Exec()
+	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) exec err. Err: %w", ds, err)
+		return 0
+	}
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
+	stmt, err = txn.Prepare(sqlStatement)
+	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) prepare err. Err: %w", ds, err)
+		return 0
+	}
+	_, err = stmt.Exec()
+	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) exec err. Err: %w", ds, err)
+		return 0
+	}
 
 	var selectColumn string
 	if jd.tablePrefix == "gw" {
@@ -207,9 +236,12 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 
 	jd.logger.Debug(sqlStatement)
 
-	row := jd.DbHandle.QueryRow(sqlStatement)
+	row := txn.QueryRow(sqlStatement)
+
+	defer txn.Commit()
+
 	var count sql.NullInt64
-	err := row.Scan(&count)
+	err = row.Scan(&count)
 	if err != nil && err != sql.ErrNoRows {
 		jd.logger.Errorf("Returning 0 because failed to fetch unprocessed count from dataset: %v. Err: %w", ds, err)
 		return 0
@@ -298,13 +330,44 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 		sourceQuery = ""
 	}
 
+	txn, err := jd.DbHandle.Begin()
+	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) begin err. Err: %w", ds, err)
+		return 0
+	}
+
+	var sqlStatement string
+
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
+	stmt, err := txn.Prepare(sqlStatement)
+	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) prepare err. Err: %w", ds, err)
+		return 0
+	}
+	_, err = stmt.Exec()
+	if err != nil {
+		return 0
+	}
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
+	stmt, err = txn.Prepare(sqlStatement)
+	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) prepare err. Err: %w", ds, err)
+		return 0
+	}
+	_, err = stmt.Exec()
+
+	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) exec err. Err: %w", ds, err)
+		return 0
+	}
+
 	var selectColumn string
 	if jd.tablePrefix == "gw" {
 		selectColumn = fmt.Sprintf("%[1]s.event_payload->'batch' as batch", ds.JobTable)
 	} else {
 		selectColumn = fmt.Sprintf("COUNT(%[1]s.job_id)", ds.JobTable)
 	}
-	sqlStatement := fmt.Sprintf(`SELECT %[6]s FROM
+	sqlStatement = fmt.Sprintf(`SELECT %[6]s FROM
                                                %[1]s,
                                                (SELECT job_id, retry_time FROM %[2]s WHERE id IN
                                                    (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
@@ -320,9 +383,11 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 
 	jd.logger.Debug(sqlStatement)
 
-	row := jd.DbHandle.QueryRow(sqlStatement, time.Now())
+	row := txn.QueryRow(sqlStatement, time.Now())
+	defer txn.Commit()
+
 	var count sql.NullInt64
-	err := row.Scan(&count)
+	err = row.Scan(&count)
 	if err != nil && err != sql.ErrNoRows {
 		jd.logger.Errorf("Returning 0 because failed to fetch processed count from dataset: %v. Err: %w", ds, err)
 		return 0
