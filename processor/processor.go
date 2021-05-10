@@ -341,6 +341,13 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
 }
 
+//SetDisableDedupFeature overrides SetDisableDedupFeature configuration and returns previous value
+func SetDisableDedupFeature(b bool) bool {
+	prev := enableDedup
+	enableDedup = b
+	return prev
+}
+
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	proc.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
