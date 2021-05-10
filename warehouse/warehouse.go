@@ -408,18 +408,17 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	}
 
 	now := timeutil.Now()
-	metadataMap := map[string]string{
+	metadataMap := map[string]interface{}{
 		"source_batch_id":    jsonUploadsList[0].SourceBatchID,
 		"source_task_id":     jsonUploadsList[0].SourceTaskID,
 		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
 		"source_job_id":      jsonUploadsList[0].SourceJobID,
 		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
 	}
-	marshalledMetaData, err := json.Marshal(metadataMap)
+	metadata, err := json.Marshal(metadataMap)
 	if err != nil {
 		panic(err)
 	}
-	metadata := marshalledMetaData
 	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, Waiting, "{}", "{}", metadata, firstEventAt, lastEventAt, now, now)
 
 	var uploadID int64
@@ -1012,18 +1011,17 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		firstEventAt = nil
 		lastEventAt = nil
 	}
-	metadataMap := map[string]string{
+	metadataMap := map[string]interface{}{
 		"source_batch_id":    stagingFile.SourceBatchID,
 		"source_task_id":     stagingFile.SourceTaskID,
 		"source_task_run_id": stagingFile.SourceTaskRunID,
 		"source_job_id":      stagingFile.SourceJobID,
 		"source_job_run_id":  stagingFile.SourceJobRunID,
 	}
-	marshalledMetaData, err := json.Marshal(metadataMap)
+	metadata, err := json.Marshal(metadataMap)
 	if err != nil {
 		panic(err)
 	}
-	metadata := marshalledMetaData
 
 	pkgLogger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
 	schemaPayload, _ := json.Marshal(stagingFile.Schema)

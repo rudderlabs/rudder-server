@@ -435,8 +435,8 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 			marshalledParams, err := json.Marshal(params)
 			if err != nil {
-				gateway.logger.Errorf("[Gateway] Failed to marshal parameters object. Parameters: %v", params)
-				marshalledParams = []byte(`"rudder-server gateway failed to marshal params"`)
+				gateway.logger.Errorf("[Gateway] Failed to marshal parameters map. Parameters: %+v", params)
+				marshalledParams = []byte(`"error": "rudder-server gateway failed to marshal params"`)
 			}
 
 			//Should be function of body

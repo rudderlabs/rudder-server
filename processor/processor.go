@@ -888,8 +888,8 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		}
 		marshalledParams, err := json.Marshal(params)
 		if err != nil {
-			proc.logger.Errorf("[Processor] Failed to marshal parameters object. Parameters: %v", params)
-			marshalledParams = []byte(`"rudder-server processor failed to marshal params"`)
+			proc.logger.Errorf("[Processor] Failed to marshal parameters. Parameters: %v", params)
+			marshalledParams = []byte(`"error": "Processor failed to marshal params"`)
 		}
 
 		newFailedJob := jobsdb.JobT{
