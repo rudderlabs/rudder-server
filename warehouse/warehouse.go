@@ -1163,10 +1163,10 @@ func Start(app app.Interface) {
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
-		rruntime.Go(func() {
-			minimalConfigSubscriber()
-		})
 		if isMaster() {
+			rruntime.Go(func() {
+				minimalConfigSubscriber()
+			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 		}
 		return
