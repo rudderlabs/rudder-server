@@ -3,6 +3,7 @@ package backendconfig
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/config"
 	"net/http"
 	"sync"
 	"time"
@@ -104,7 +105,8 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 		}
 		sourcesJSON.Sources = append(sourcesJSON.Sources, workspaceConfig.Sources...)
 	}
-	sourcesJSON.ConnectionFlags.Services["warehouse"] = true // always set connection flags to true for hosted warehouse service
+	sourcesJSON.ConnectionFlags.URL = config.GetEnv("CP_ROUTER_URL", "")
+	sourcesJSON.ConnectionFlags.Services = map[string]bool{"warehouse": true} // always set connection flags to true for hosted warehouse service
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.Lock()
 	multiWorkspaceConfig.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
 	multiWorkspaceConfig.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
