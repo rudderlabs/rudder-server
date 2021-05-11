@@ -408,7 +408,17 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	}
 
 	now := timeutil.Now()
-	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task_id": "%s", "source_task_run_id": "%s", "source_job_id": "%s", "source_job_run_id": "%s"}`, jsonUploadsList[0].SourceBatchID, jsonUploadsList[0].SourceTaskID, jsonUploadsList[0].SourceTaskRunID, jsonUploadsList[0].SourceJobID, jsonUploadsList[0].SourceJobRunID))
+	metadataMap := map[string]interface{}{
+		"source_batch_id":    jsonUploadsList[0].SourceBatchID,
+		"source_task_id":     jsonUploadsList[0].SourceTaskID,
+		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
+		"source_job_id":      jsonUploadsList[0].SourceJobID,
+		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
+	}
+	metadata, err := json.Marshal(metadataMap)
+	if err != nil {
+		panic(err)
+	}
 	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, Waiting, "{}", "{}", metadata, firstEventAt, lastEventAt, now, now)
 
 	var uploadID int64
@@ -770,8 +780,8 @@ func (wh *HandleT) uploadStatusTrack() {
 			}
 
 			sqlStatement := fmt.Sprintf(`
-				select created_at from %[1]s where source_id='%[2]s' and destination_id='%[3]s' order by created_at desc limit 1`,
-				warehouseutils.WarehouseStagingFilesTable, source.ID, destination.ID)
+				select created_at from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and created_at > now() - interval '%[4]d MIN' and created_at < now() - interval '%[5]d MIN' order by created_at desc limit 1`,
+				warehouseutils.WarehouseStagingFilesTable, source.ID, destination.ID, 2*timeWindow, timeWindow)
 
 			var createdAt sql.NullTime
 			err := wh.dbHandle.QueryRow(sqlStatement).Scan(&createdAt)
@@ -779,15 +789,14 @@ func (wh *HandleT) uploadStatusTrack() {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}
 
-			lastSyncTime := time.Now().Add(time.Duration(-timeWindow) * time.Minute)
-			if !createdAt.Valid || createdAt.Time.Before(lastSyncTime) {
+			if !createdAt.Valid {
 				continue
 			}
 
 			sqlStatement = fmt.Sprintf(`
 				select cast( case when count(*) > 0 then 1 else 0 end as bit )
-					from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s') and updated_at > now() - interval '%[6]d MIN'`,
-				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, timeWindow)
+				from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s' or status like '%[6]s') and updated_at > '%[7]s'`,
+				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, "%_failed", createdAt.Time.Format(misc.RFC3339Milli))
 
 			var uploaded int
 			err = wh.dbHandle.QueryRow(sqlStatement).Scan(&uploaded)
@@ -1001,7 +1010,17 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		firstEventAt = nil
 		lastEventAt = nil
 	}
-	metadata := []byte(fmt.Sprintf(`{"source_batch_id": "%s", "source_task_id": "%s", "source_task_run_id": "%s", "source_job_id": "%s", "source_job_run_id": "%s"}`, stagingFile.SourceBatchID, stagingFile.SourceTaskID, stagingFile.SourceTaskRunID, stagingFile.SourceJobID, stagingFile.SourceJobRunID))
+	metadataMap := map[string]interface{}{
+		"source_batch_id":    stagingFile.SourceBatchID,
+		"source_task_id":     stagingFile.SourceTaskID,
+		"source_task_run_id": stagingFile.SourceTaskRunID,
+		"source_job_id":      stagingFile.SourceJobID,
+		"source_job_run_id":  stagingFile.SourceJobRunID,
+	}
+	metadata, err := json.Marshal(metadataMap)
+	if err != nil {
+		panic(err)
+	}
 
 	pkgLogger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
 	schemaPayload, _ := json.Marshal(stagingFile.Schema)
@@ -1144,10 +1163,10 @@ func Start(app app.Interface) {
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
-		rruntime.Go(func() {
-			minimalConfigSubscriber()
-		})
 		if isMaster() {
+			rruntime.Go(func() {
+				minimalConfigSubscriber()
+			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 		}
 		return
