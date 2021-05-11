@@ -159,6 +159,9 @@ func main() {
 	if canStartServer() {
 		appHandler.HandleRecovery(options)
 		rruntime.Go(func() {
+			if options.StandByMode {
+				misc.KeepProcessAlive()
+			}
 			appHandler.StartRudderCore(options)
 		})
 	}
