@@ -182,6 +182,8 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 	defer queryStat.End()
 	txn, err := jd.DbHandle.Begin()
 	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) begin err. Err: %w", ds, err)
+
 		return 0
 	}
 
@@ -190,19 +192,23 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
 	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) prepare err. Err: %w", ds, err)
 		return 0
 	}
 	_, err = stmt.Exec()
 	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) exec err. Err: %w", ds, err)
 		return 0
 	}
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
 	stmt, err = txn.Prepare(sqlStatement)
 	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) prepare err. Err: %w", ds, err)
 		return 0
 	}
 	_, err = stmt.Exec()
 	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) exec err. Err: %w", ds, err)
 		return 0
 	}
 
@@ -232,10 +238,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 
 	row := txn.QueryRow(sqlStatement)
 
-	err = txn.Commit()
-	if err != nil {
-		return 0
-	}
+	defer txn.Commit()
 
 	var count sql.NullInt64
 	err = row.Scan(&count)
@@ -329,6 +332,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 
 	txn, err := jd.DbHandle.Begin()
 	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) begin err. Err: %w", ds, err)
 		return 0
 	}
 
@@ -337,6 +341,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
 	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) prepare err. Err: %w", ds, err)
 		return 0
 	}
 	_, err = stmt.Exec()
@@ -346,11 +351,13 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
 	stmt, err = txn.Prepare(sqlStatement)
 	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) prepare err. Err: %w", ds, err)
 		return 0
 	}
 	_, err = stmt.Exec()
 
 	if err != nil {
+		jd.logger.Errorf("transaction on ds(%v) exec err. Err: %w", ds, err)
 		return 0
 	}
 
@@ -377,10 +384,8 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	jd.logger.Debug(sqlStatement)
 
 	row := txn.QueryRow(sqlStatement, time.Now())
-	err = txn.Commit()
-	if err != nil {
-		return 0
-	}
+	defer txn.Commit()
+
 	var count sql.NullInt64
 	err = row.Scan(&count)
 	if err != nil && err != sql.ErrNoRows {
