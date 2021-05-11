@@ -1227,31 +1227,6 @@ func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
 	return maxDSIndex
 }
 
-func (jd *HandleT) dropDSWithPsqlLock(tableName string) error {
-	var errArr []error
-	var err error
-	var errString string
-
-	sqlStatement := fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, tableName)
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	errArr = append(errArr, err)
-	sqlStatement = fmt.Sprintf(`DROP TABLE %s;`, tableName)
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	errArr = append(errArr, err)
-	sqlStatement = `COMMIT TRANSACTION;`
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	errArr = append(errArr, err)
-	for _, errVal := range errArr {
-		if errVal != nil {
-			errString = errString + errVal.Error()
-		}
-	}
-	if errString == "" {
-		return nil
-	}
-	return errors.New(errString)
-}
-
 //Drop a dataset
 func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 
