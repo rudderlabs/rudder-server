@@ -32,6 +32,9 @@ type LoggerI interface {
 const defaultRetryInterval time.Duration = time.Second
 
 func (cm *ConnectionManager) Apply(url string, active bool) {
+	if url == "" {
+		return
+	}
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 

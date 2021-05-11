@@ -283,7 +283,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 		}
 		if val, ok := allSources.ConnectionFlags.Services["warehouse"]; ok {
 			if UploadAPI.connectionManager != nil {
-				pkgLogger.Infof(`Checking if connection needs to be made or establish one to CP Router at %s`, allSources.ConnectionFlags.URL)
 				UploadAPI.connectionManager.Apply(allSources.ConnectionFlags.URL, val)
 			}
 		}
@@ -780,8 +779,8 @@ func (wh *HandleT) uploadStatusTrack() {
 			}
 
 			sqlStatement := fmt.Sprintf(`
-				select created_at from %[1]s where source_id='%[2]s' and destination_id='%[3]s' order by created_at desc limit 1`,
-				warehouseutils.WarehouseStagingFilesTable, source.ID, destination.ID)
+				select created_at from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and created_at > now() - interval '%[4]d MIN' and created_at < now() - interval '%[5]d MIN' order by created_at desc limit 1`,
+				warehouseutils.WarehouseStagingFilesTable, source.ID, destination.ID, 2*timeWindow, timeWindow)
 
 			var createdAt sql.NullTime
 			err := wh.dbHandle.QueryRow(sqlStatement).Scan(&createdAt)
@@ -789,15 +788,14 @@ func (wh *HandleT) uploadStatusTrack() {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 			}
 
-			lastSyncTime := time.Now().Add(time.Duration(-timeWindow) * time.Minute)
-			if !createdAt.Valid || createdAt.Time.Before(lastSyncTime) {
+			if !createdAt.Valid {
 				continue
 			}
 
 			sqlStatement = fmt.Sprintf(`
 				select cast( case when count(*) > 0 then 1 else 0 end as bit )
-					from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s') and updated_at > now() - interval '%[6]d MIN'`,
-				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, timeWindow)
+				from %[1]s where source_id='%[2]s' and destination_id='%[3]s' and (status='%[4]s' or status='%[5]s' or status like '%[6]s') and updated_at > '%[7]s'`,
+				warehouseutils.WarehouseUploadsTable, source.ID, destination.ID, ExportedData, Aborted, "%_failed", createdAt.Time.Format(misc.RFC3339Milli))
 
 			var uploaded int
 			err = wh.dbHandle.QueryRow(sqlStatement).Scan(&uploaded)
@@ -1164,10 +1162,10 @@ func Start(app app.Interface) {
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degared mode...")
-		rruntime.Go(func() {
-			minimalConfigSubscriber()
-		})
 		if isMaster() {
+			rruntime.Go(func() {
+				minimalConfigSubscriber()
+			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 		}
 		return
