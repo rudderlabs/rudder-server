@@ -188,13 +188,20 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 	var sqlStatement string
 
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
-	_, err = jd.DbHandle.Exec(sqlStatement)
+	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
 		return 0
 	}
-
-	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)
-	_, err = jd.DbHandle.Exec(sqlStatement)
+	_, err = stmt.Exec()
+	if err != nil {
+		return 0
+	}
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
+	stmt, err = txn.Prepare(sqlStatement)
+	if err != nil {
+		return 0
+	}
+	_, err = stmt.Exec()
 	if err != nil {
 		return 0
 	}
@@ -223,7 +230,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 
 	jd.logger.Debug(sqlStatement)
 
-	row := jd.DbHandle.QueryRow(sqlStatement)
+	row := txn.QueryRow(sqlStatement)
 
 	err = txn.Commit()
 	if err != nil {
@@ -328,13 +335,21 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	var sqlStatement string
 
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
-	_, err = jd.DbHandle.Exec(sqlStatement)
+	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
 		return 0
 	}
+	_, err = stmt.Exec()
+	if err != nil {
+		return 0
+	}
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
+	stmt, err = txn.Prepare(sqlStatement)
+	if err != nil {
+		return 0
+	}
+	_, err = stmt.Exec()
 
-	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)
-	_, err = jd.DbHandle.Exec(sqlStatement)
 	if err != nil {
 		return 0
 	}
@@ -361,7 +376,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 
 	jd.logger.Debug(sqlStatement)
 
-	row := jd.DbHandle.QueryRow(sqlStatement, time.Now())
+	row := txn.QueryRow(sqlStatement, time.Now())
 	err = txn.Commit()
 	if err != nil {
 		return 0
