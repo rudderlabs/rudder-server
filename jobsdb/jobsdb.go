@@ -1231,7 +1231,8 @@ func (jd *HandleT) dropDSWithPsqlLock(tableName string) error {
 	var errArr []error
 	var err error
 	var errString string
-	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, tableName)
+
+	sqlStatement := fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, tableName)
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	errArr = append(errArr, err)
 	sqlStatement = fmt.Sprintf(`DROP TABLE %s;`, tableName)
