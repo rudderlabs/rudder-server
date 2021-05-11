@@ -1178,7 +1178,8 @@ func Start(app app.Interface) {
 	}
 
 	//Setting up reporting client
-	if CheckForWarehouseEnvVars() && jobsdb.GetConnectionString() != psqlInfo {
+	// only if standalone or embeded connecting to diff DB for warehouse
+	if (isStandAlone() && isMaster()) || (jobsdb.GetConnectionString() != psqlInfo) {
 		if application.Features().Reporting != nil {
 			reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 			reporting.AddClient(types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})

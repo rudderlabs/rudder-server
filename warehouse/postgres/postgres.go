@@ -614,7 +614,7 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprintf(`select t.table_name, c.column_name, c.data_type from INFORMATION_SCHEMA.TABLES t LEFT JOIN INFORMATION_SCHEMA.COLUMNS c on t.table_name = c.table_name WHERE t.table_schema = '%s' and t.table_name not like '%s%s'`, pg.Namespace, stagingTablePrefix, "%")
+	sqlStatement := fmt.Sprintf(`select t.table_name, c.column_name, c.data_type from INFORMATION_SCHEMA.TABLES t LEFT JOIN INFORMATION_SCHEMA.COLUMNS c ON (t.table_name = c.table_name and t.table_schema = c.table_schema) WHERE t.table_schema = '%s' and t.table_name not like '%s%s'`, pg.Namespace, stagingTablePrefix, "%")
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
