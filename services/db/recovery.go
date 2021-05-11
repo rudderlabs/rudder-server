@@ -19,6 +19,7 @@ const (
 	normalMode    = "normal"
 	degradedMode  = "degraded"
 	migrationMode = "migration"
+	standbyMode   = "standby"
 )
 
 type RecoveryHandler interface {
@@ -110,12 +111,14 @@ func CheckOccurences(occurences []int64, numTimes int, numSecs int) (occurred bo
 	return
 }
 
-func getForceRecoveryMode(forceNormal bool, forceDegraded bool) string {
+func getForceRecoveryMode(forceNormal bool, forceDegraded bool, forceStandBy bool) string {
 	switch {
 	case forceNormal:
 		return normalMode
 	case forceDegraded:
 		return degradedMode
+	case forceStandBy:
+		return standbyMode
 	}
 	return ""
 
@@ -127,6 +130,8 @@ func getNextMode(currentMode string) string {
 		return degradedMode
 	case degradedMode:
 		return degradedMode
+	case standbyMode:
+		return standbyMode
 	case migrationMode: //Staying in the migrationMode forever on repeated restarts.
 		return migrationMode
 	}
@@ -141,6 +146,8 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 		recoveryHandler = &NormalModeHandler{recoveryData: recoveryData}
 	case degradedMode:
 		recoveryHandler = &DegradedModeHandler{recoveryData: recoveryData}
+	case standbyMode:
+		recoveryHandler = &StandByModeHandler{recoveryData: recoveryData}
 	case migrationMode:
 		recoveryHandler = &MigrationModeHandler{recoveryData: recoveryData}
 	default:
@@ -175,6 +182,8 @@ func sendRecoveryModeStat(appType string) {
 			recoveryModeStat.Gauge(1)
 		case degradedMode:
 			recoveryModeStat.Gauge(2)
+		case standbyMode:
+			recoveryModeStat.Gauge(3)
 		case migrationMode:
 			recoveryModeStat.Gauge(4)
 		}

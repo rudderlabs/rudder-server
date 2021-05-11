@@ -7,7 +7,7 @@ import (
 )
 
 // HandleNullRecovery decides the recovery Mode (normal/migration) in which app should run
-func HandleNullRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode string, currTime int64, appType string) {
+func HandleNullRecovery(forceNormal bool, forceDegraded bool, forceStandBy bool, forceMigrationMode string, currTime int64, appType string) {
 
 	enabled := config.GetBool("recovery.enabled", true)
 	if !enabled {
