@@ -1231,9 +1231,6 @@ func (jd *HandleT) dropDSWithPsqlLock(tableName string) error {
 	var errArr []error
 	var err error
 	var errString string
-	sqlStatement := `BEGIN TRANSACTION;`
-	_, err = jd.dbHandle.Exec(sqlStatement)
-	errArr = append(errArr, err)
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, tableName)
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	errArr = append(errArr, err)
@@ -1263,21 +1260,37 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	//For every other case, the table must exist
 	var sqlStatement string
 	var err error
-	if allowMissing {
-		sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ds.JobStatusTable)
-		_, err = jd.dbHandle.Exec(sqlStatement)
-	} else {
-		err = jd.dropDSWithPsqlLock(ds.JobStatusTable)
+	txn, err := jd.dbHandle.Begin()
+	if err != nil {
+		panic(err)
 	}
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)
+	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
 	if allowMissing {
+		sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ds.JobStatusTable)
+		_, err = jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
 		sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ds.JobTable)
 		_, err = jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
 	} else {
-		err = jd.dropDSWithPsqlLock(ds.JobTable)
+		sqlStatement = fmt.Sprintf(`DROP TABLE %s`, ds.JobStatusTable)
+		_, err = jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
+		sqlStatement = fmt.Sprintf(`DROP TABLE %s`, ds.JobTable)
+		_, err = jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
 	}
-	jd.assertError(err)
+	err = txn.Commit()
+	if err != nil {
+		panic(err)
+	}
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
