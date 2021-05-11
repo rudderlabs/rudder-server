@@ -133,7 +133,7 @@ func archiveUploads(dbHandle *sql.DB) {
 				continue
 			}
 		} else {
-			pkgLogger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archivef`)
+			pkgLogger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archived for upload:%d`, uploadID)
 		}
 
 		// delete staging files
@@ -161,32 +161,34 @@ func archiveUploads(dbHandle *sql.DB) {
 
 		// archive load files
 		var storedLoadFilesLocation string
-		if archiver.IsArchiverObjectStorageConfigured() {
-			filterSQL := fmt.Sprintf(`staging_file_id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
-			storedLoadFilesLocation, err = backupRecords(backupRecordsArgs{
-				tableName:      warehouseutils.WarehouseLoadFilesTable,
-				sourceID:       sourceID,
-				destID:         destID,
-				tableFilterSQL: filterSQL,
-				uploadID:       uploadID,
-			})
+		if len(stagingFileIDs) > 0 {
+			if archiver.IsArchiverObjectStorageConfigured() {
+				filterSQL := fmt.Sprintf(`staging_file_id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
+				storedLoadFilesLocation, err = backupRecords(backupRecordsArgs{
+					tableName:      warehouseutils.WarehouseLoadFilesTable,
+					sourceID:       sourceID,
+					destID:         destID,
+					tableFilterSQL: filterSQL,
+					uploadID:       uploadID,
+				})
 
+				if err != nil {
+					pkgLogger.Errorf(`Error backing up load files for upload:%d : %v`, uploadID, err)
+					txn.Rollback()
+					continue
+				}
+			} else {
+				pkgLogger.Infof(`Object storage not configured to archive upload related load file records. Deleting the ones that need to be archived for upload:%d`, uploadID)
+			}
+
+			// delete load files
+			stmt = fmt.Sprintf(`DELETE FROM %s WHERE staging_file_id = ANY($1)`, warehouseutils.WarehouseLoadFilesTable)
+			_, err = txn.Exec(stmt, pq.Array(stagingFileIDs))
 			if err != nil {
-				pkgLogger.Errorf(`Error backing up load files for upload:%d : %v`, uploadID, err)
+				pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 				txn.Rollback()
 				continue
 			}
-		} else {
-			pkgLogger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archivef`)
-		}
-
-		// delete load files
-		stmt = fmt.Sprintf(`DELETE FROM %s WHERE staging_file_id = ANY($1)`, warehouseutils.WarehouseLoadFilesTable)
-		_, err = txn.Exec(stmt, pq.Array(stagingFileIDs))
-		if err != nil {
-			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-			txn.Rollback()
-			continue
 		}
 
 		// update upload metadata
