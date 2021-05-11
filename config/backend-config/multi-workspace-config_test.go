@@ -74,7 +74,9 @@ var _ = Describe("workspace-config", func() {
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d2")).To(Equal("testWordSpaceId"))
 			Expect(backendConfig.GetWorkspaceIDForWriteKey("d")).To(Equal("testWordSpaceId"))
 			Expect(ok).To(BeTrue())
-			Expect(config).To(Equal(SampleBackendConfig))
+			mutliConfig := SampleBackendConfig
+			mutliConfig.ConnectionFlags.Services = map[string]bool{"warehouse": true}
+			Expect(config).To(Equal(mutliConfig))
 		})
 
 		It("Expect to execute request with the correct body and headers and return successfull response", func() {

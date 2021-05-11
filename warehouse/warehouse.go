@@ -283,7 +283,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 		}
 		if val, ok := allSources.ConnectionFlags.Services["warehouse"]; ok {
 			if UploadAPI.connectionManager != nil {
-				pkgLogger.Infof(`Checking if connection needs to be made or establish one to CP Router at %s`, allSources.ConnectionFlags.URL)
 				UploadAPI.connectionManager.Apply(allSources.ConnectionFlags.URL, val)
 			}
 		}
