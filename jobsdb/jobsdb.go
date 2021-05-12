@@ -1244,9 +1244,7 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	var sqlStatement string
 	var err error
 	txn, err := jd.dbHandle.Begin()
-	if err != nil {
-		panic(err)
-	}
+	jd.assertError(err)
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)
 	jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 
@@ -1265,9 +1263,7 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 		jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	}
 	err = txn.Commit()
-	if err != nil {
-		panic(err)
-	}
+	jd.assertError(err)
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
