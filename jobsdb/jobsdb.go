@@ -1407,7 +1407,7 @@ func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 
 	//Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
-		if jd.BackupSettings.BackupEnabled {
+		if jd.BackupSettings.BackupEnabled && isBackupConfigured() {
 			jd.renameDS(ds, false)
 		} else {
 			jd.dropDS(ds, false)
@@ -2209,6 +2209,11 @@ func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanager.GetProviderConfigFromEnv(),
 	})
+}
+
+func isBackupConfigured() bool {
+	backupConfig := filemanager.GetProviderConfigFromEnv()
+	return backupConfig["bucketName"] != "" && backupConfig["prefix"] != ""
 }
 
 func (jd *HandleT) isEmpty(ds dataSetT) bool {
