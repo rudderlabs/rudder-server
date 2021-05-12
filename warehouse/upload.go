@@ -116,6 +116,7 @@ type UploadJobT struct {
 	pgNotifier          *pgnotifier.PgNotifierT
 	schemaHandle        *SchemaHandleT
 	schemaLock          sync.Mutex
+	uploadLock          sync.Mutex
 	hasAllTablesSkipped bool
 	tableUploadStatuses []*TableUploadStatusT
 }
@@ -296,7 +297,8 @@ func (job *UploadJobT) run() (err error) {
 	// job.setUploadColumns(
 	// 	UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
 	// )
-
+	//job.uploadLock.Lock()
+	//defer job.uploadLock.Unlock()
 	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}}})
 
 	if len(job.stagingFiles) == 0 {
@@ -1195,9 +1197,49 @@ func (job *UploadJobT) setUploadColumns(opts UploadColumnsOpts) (err error) {
 	return err
 }
 
+func (job *UploadJobT) triggerUploadNow() (err error) {
+	job.uploadLock.Lock()
+	defer job.uploadLock.Unlock()
+	upload := job.upload
+	//TODO: can it be in waiting state only?
+	newjobState := Waiting
+	var metadata map[string]string
+	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
+	if unmarshallErr != nil {
+		metadata = make(map[string]string)
+	}
+	metadata["nextRetryTime"] = time.Now().Add(-time.Hour * 1).Format(time.RFC3339)
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+		//metadataJSON = []byte("{}")
+	}
+
+	uploadColumns := []UploadColumnT{
+		{Column: "status", Value: newjobState},
+		{Column: "metadata", Value: metadataJSON},
+		{Column: "updated_at", Value: timeutil.Now()},
+	}
+
+	txn, err := job.dbHandle.Begin()
+	if err != nil {
+		panic(err)
+	}
+	err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
+	if err != nil {
+		panic(err)
+	}
+	err = txn.Commit()
+
+	job.upload.Status = newjobState
+	//job.upload.Error = serializedErr
+	return err
+}
+
 func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
 	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
-
+	job.uploadLock.Lock()
+	defer job.uploadLock.Unlock()
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 
 	upload := job.upload

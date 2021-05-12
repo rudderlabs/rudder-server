@@ -311,6 +311,31 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	return &upload, nil
 }
 
+func (uploadReq UploadReqT) TriggerWHUpload() (error) {
+	err := uploadReq.validateReq()
+	if err != nil {
+		return err
+	}
+	query := uploadReq.generateQuery(`id, metadata`)
+	uploadReq.API.log.Debug(query)
+	var uploadJobT UploadJobT
+	var upload UploadT
+
+	row := uploadReq.API.dbHandle.QueryRow(query)
+	err = row.Scan(&upload.ID, &upload.Metadata)
+	if err != nil {
+		uploadReq.API.log.Errorf(err.Error())
+		return err
+	}
+	uploadJobT.upload = &upload
+	uploadJobT.dbHandle = uploadReq.API.dbHandle
+	err = uploadJobT.triggerUploadNow()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, error) {
 	err := tableUploadReq.validateReq()
 	if err != nil {
