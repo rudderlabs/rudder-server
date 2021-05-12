@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"net/http"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go"
+	"github.com/gorilla/mux"
 
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 
@@ -23,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -155,22 +159,68 @@ func main() {
 		os.Exit(1)
 	}()
 
-	misc.AppStartTime = time.Now().Unix()
-	if canStartServer() {
-		appHandler.HandleRecovery(options)
-		rruntime.Go(func() {
-			appHandler.StartRudderCore(options)
-		})
-	}
-
-	// initialize warehouse service after core to handle non-normal recovery modes
-	if appTypeStr != app.GATEWAY && canStartWarehouse() {
-		rruntime.Go(func() {
-			startWarehouseService(application)
-		})
-	}
-
 	rruntime.Go(admin.StartServer)
 
-	misc.KeepProcessAlive()
+	misc.AppStartTime = time.Now().Unix()
+	//If the server is standby mode, then no major services (gateway, processor, routers...) run
+	if options.StandByMode {
+		appHandler.HandleRecovery(options)
+		startStandbyWebHandler()
+	} else {
+		if canStartServer() {
+			appHandler.HandleRecovery(options)
+			rruntime.Go(func() {
+				appHandler.StartRudderCore(options)
+			})
+		}
+
+		// initialize warehouse service after core to handle non-normal recovery modes
+		if appTypeStr != app.GATEWAY && canStartWarehouse() {
+			rruntime.Go(func() {
+				startWarehouseService(application)
+			})
+		}
+
+		misc.KeepProcessAlive()
+	}
+}
+
+func startStandbyWebHandler() {
+	webPort := getWebPort()
+	srvMux := mux.NewRouter()
+	srvMux.HandleFunc("/health", standbyHealthHandler)
+	srvMux.HandleFunc("/", standbyHealthHandler)
+	srvMux.HandleFunc("/version", versionHandler)
+
+	srv := &http.Server{
+		Addr:              ":" + strconv.Itoa(webPort),
+		Handler:           bugsnag.Handler(srvMux),
+		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
+		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
+		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 10*time.Second),
+		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
+		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
+	}
+	pkgLogger.Fatal(srv.ListenAndServe())
+}
+
+func getWebPort() int {
+	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
+	switch appTypeStr {
+	case app.GATEWAY:
+		return config.GetInt("Gateway.webPort", 8080)
+	case app.PROCESSOR:
+		return config.GetInt("Processor.webPort", 8086)
+	case app.EMBEDDED:
+		return config.GetInt("Gateway.webPort", 8080)
+	}
+
+	panic(errors.New("invalid app type"))
+}
+
+//StandbyHealthHandler is the http handler for health endpoint
+func standbyHealthHandler(w http.ResponseWriter, r *http.Request) {
+	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
+	healthVal := fmt.Sprintf(`{"appType": "%s", "mode":"%s"}`, appTypeStr, strings.ToUpper(db.CurrentMode))
+	w.Write([]byte(healthVal))
 }
