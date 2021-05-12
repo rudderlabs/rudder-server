@@ -2212,8 +2212,7 @@ func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
 }
 
 func isBackupConfigured() bool {
-	backupConfig := filemanager.GetProviderConfigFromEnv()
-	return backupConfig["bucketName"] != ""
+	return config.GetEnv("JOBS_BACKUP_BUCKET", "") != ""
 }
 
 func (jd *HandleT) isEmpty(ds dataSetT) bool {
