@@ -60,7 +60,7 @@ type PostParametersT struct {
 }
 
 // GetPostInfo parses the transformer response
-func ValidatePostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err error) {
+func ValidatePostInfo(transformRaw json.RawMessage) error {
 	parsedJSON := gjson.ParseBytes(transformRaw)
 	errorMessages := make([]string, 0)
 	for _, v := range postParametersTFields {
@@ -71,11 +71,11 @@ func ValidatePostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, e
 	}
 	if len(errorMessages) > 0 {
 		errorMessages = append(errorMessages, fmt.Sprintf("in transformer response : %v", parsedJSON))
-		err = errors.New(strings.Join(errorMessages, "\n"))
-		return postInfo, err
+		err := errors.New(strings.Join(errorMessages, "\n"))
+		return err
 	}
 
-	return postInfo, nil
+	return nil
 }
 
 //FilterClientIntegrations parses the destination names from the

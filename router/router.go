@@ -479,22 +479,27 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
-							panic(fmt.Errorf("Different sources are grouped together"))
+							panic(fmt.Errorf("different sources are grouped together"))
 						}
 						if destinationID != destinationJobMetadata.DestinationID {
-							panic(fmt.Errorf("Different destinations are grouped together"))
+							panic(fmt.Errorf("different destinations are grouped together"))
 						}
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
-					result := getIterableStruct(destinationJob.Message, transformAt)
-					for _, val := range result {
-						respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val, destinationJob.Message)
-						if isSuccessStatus(respStatusCode) {
-							respBody = respBody + " " + respBodyTemp
-						} else {
-							respBody = respBodyTemp
-							break
+					err := integrations.ValidatePostInfo(destinationJob.Message)
+					if err != nil {
+						respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
+					} else {
+						result := getIterableStruct(destinationJob.Message, transformAt)
+						for _, val := range result {
+							respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val)
+							if isSuccessStatus(respStatusCode) {
+								respBody = respBody + " " + respBodyTemp
+							} else {
+								respBody = respBodyTemp
+								break
+							}
 						}
 					}
 				}
@@ -699,9 +704,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	if respBody != "" {
 		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "response", respBody)
 	}
-	if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
-		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
-	}
 
 	if isSuccessStatus(respStatusCode) {
 		atomic.AddUint64(&worker.rt.successCount, 1)
@@ -725,6 +727,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		//Saving payload to DB only
 		//1. if job failed and
 		//2. if router job undergoes batching or dest transform.
+		if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
+			status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+		}
 		// the job failed
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
 		worker.failedJobs++
