@@ -28,7 +28,6 @@ package event_schema
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -227,9 +226,6 @@ func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *Sche
 * but since this method does mostly in-memory operations and has locks, there might not be much perfomance improvement.
 */
 func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
-	if manager.disableInMemoryCache {
-		panic(errors.New(`EventSchemaManagerT handleEvent called when disableInMemoryCache is set to true`))
-	}
 	eventType, ok := event["type"].(string)
 	if !ok {
 		pkgLogger.Debugf("[EventSchemas] Invalid or no eventType")

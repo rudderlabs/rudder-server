@@ -1165,8 +1165,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	}
 
 	if enableEventSchemasFeature {
-		appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
-		gateway.eventSchemaHandler = event_schema.GetInstance(event_schema.InstanceOpts{DisableInMemoryCache: appTypeStr == app.GATEWAY})
+		gateway.eventSchemaHandler = event_schema.GetInstance()
 	}
 
 	rruntime.Go(func() {
