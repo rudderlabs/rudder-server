@@ -161,12 +161,12 @@ func main() {
 
 	rruntime.Go(admin.StartServer)
 
+	misc.AppStartTime = time.Now().Unix()
 	//If the server is standby mode, then no major services (gateway, processor, routers...) run
 	if options.StandByMode {
 		appHandler.HandleRecovery(options)
 		startStandbyWebHandler()
 	} else {
-		misc.AppStartTime = time.Now().Unix()
 		if canStartServer() {
 			appHandler.HandleRecovery(options)
 			rruntime.Go(func() {

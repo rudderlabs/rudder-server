@@ -38,6 +38,8 @@ type RecoveryDataT struct {
 	ReadableDegradedModeStartTimes  []string
 	MigrationModeStartTimes         []int64
 	ReadableMigrationModeStartTimes []string
+	StandbyModeStartTimes           []int64
+	ReadableStandbyModeStartTimes   []string
 	Mode                            string
 }
 
