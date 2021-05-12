@@ -390,10 +390,10 @@ func (proc *HandleT) getTransformerFeatureJson() {
 				} else {
 					res.Body.Close()
 					time.Sleep(200 * time.Millisecond)
+					continue
 				}
 			} else if res.StatusCode == 404 {
 				proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
-				time.Sleep(200 * time.Millisecond)
 				break
 			}
 		}
@@ -1715,12 +1715,10 @@ func (proc *HandleT) mainLoop() {
 				}
 				time.Sleep(currLoopSleep)
 			}
-			time.Sleep(fixedLoopSleep)
+			time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
 		} else {
 			time.Sleep(fixedLoopSleep)
 		}
-
-		// adding sleep here to reduce cpu load on postgres when we have less rps
 	}
 }
 
