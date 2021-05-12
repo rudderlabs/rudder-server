@@ -167,6 +167,20 @@ func (jd *ReadonlyHandleT) GetUnprocessedCount(customValFilters []string, parame
 	return totalCount
 }
 
+func (jd *ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) error {
+	stmt, err := txn.Prepare(sqlStatement)
+	if err != nil {
+		return err
+	}
+
+	_, err = stmt.Exec()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 /*
 stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
@@ -182,33 +196,23 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 	defer queryStat.End()
 	txn, err := jd.DbHandle.Begin()
 	if err != nil {
-		jd.logger.Errorf("transaction on ds(%v) begin err. Err: %w", ds, err)
-
+		jd.logger.Errorf("transaction begin err. Dataset: %v. Err: %w", ds, err)
 		return 0
 	}
 
 	var sqlStatement string
 
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
-	stmt, err := txn.Prepare(sqlStatement)
+	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
-		jd.logger.Errorf("transaction on ds(%v) prepare err. Err: %w", ds, err)
+		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %w", sqlStatement, err)
 		return 0
 	}
-	_, err = stmt.Exec()
-	if err != nil {
-		jd.logger.Errorf("transaction on ds(%v) exec err. Err: %w", ds, err)
-		return 0
-	}
+
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
-	stmt, err = txn.Prepare(sqlStatement)
+	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
-		jd.logger.Errorf("transaction on ds(%v) prepare err. Err: %w", ds, err)
-		return 0
-	}
-	_, err = stmt.Exec()
-	if err != nil {
-		jd.logger.Errorf("transaction on ds(%v) exec err. Err: %w", ds, err)
+		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %w", sqlStatement, err)
 		return 0
 	}
 
@@ -339,25 +343,16 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	var sqlStatement string
 
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
-	stmt, err := txn.Prepare(sqlStatement)
+	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
-		jd.logger.Errorf("transaction on ds(%v) prepare err. Err: %w", ds, err)
+		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %w", sqlStatement, err)
 		return 0
 	}
-	_, err = stmt.Exec()
-	if err != nil {
-		return 0
-	}
-	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
-	stmt, err = txn.Prepare(sqlStatement)
-	if err != nil {
-		jd.logger.Errorf("transaction on ds(%v) prepare err. Err: %w", ds, err)
-		return 0
-	}
-	_, err = stmt.Exec()
 
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
+	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
-		jd.logger.Errorf("transaction on ds(%v) exec err. Err: %w", ds, err)
+		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %w", sqlStatement, err)
 		return 0
 	}
 
