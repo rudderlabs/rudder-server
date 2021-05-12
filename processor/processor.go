@@ -1364,7 +1364,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		transformAtFromFeaturesFile := gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String()
 
-		if transformAt == "router" && transformAtFromFeaturesFile != "" {
+		//If transformAt is
+		//none OR
+		//router and transformer supports router transform, then no destination transformation happens.
+		if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
 			response = convertToTransformerResponse(eventsToTransform)
 		} else {
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
