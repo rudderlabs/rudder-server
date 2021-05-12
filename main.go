@@ -158,10 +158,10 @@ func main() {
 	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
 		appHandler.HandleRecovery(options)
+		if options.StandByMode {
+			misc.KeepProcessAlive()
+		}
 		rruntime.Go(func() {
-			if options.StandByMode {
-				misc.KeepProcessAlive()
-			}
 			appHandler.StartRudderCore(options)
 		})
 	}

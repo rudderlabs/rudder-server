@@ -20,6 +20,8 @@ func HandleNullRecovery(forceNormal bool, forceDegraded bool, forceStandBy bool,
 	if IsValidMigrationMode(forceMigrationMode) {
 		pkgLogger.Info("Setting server mode to Migration. If this is not intended remove environment variables related to Migration.")
 		forceMode = migrationMode
+	} else {
+		forceMode = getForceRecoveryMode(false, false, forceStandBy)
 	}
 
 	recoveryData := getRecoveryData()
