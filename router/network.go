@@ -26,13 +26,8 @@ type NetHandleT struct {
 
 //sendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
-func (network *NetHandleT) sendPost(structData integrations.PostParametersT, jsonData json.RawMessage) (statusCode int, respBody string) {
+func (network *NetHandleT) sendPost(structData integrations.PostParametersT) (statusCode int, respBody string) {
 	client := network.httpClient
-	//Parse the response to get parameters
-	_, err := integrations.ValidatePostInfo(jsonData)
-	if err != nil {
-		return 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
-	}
 	postInfo := structData
 	isRest := postInfo.Type == "REST"
 

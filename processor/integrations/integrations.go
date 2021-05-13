@@ -1,13 +1,13 @@
 package integrations
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/warehouse"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"k8s.io/apimachinery/pkg/util/json"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
@@ -60,7 +60,11 @@ type PostParametersT struct {
 }
 
 // GetPostInfo parses the transformer response
-func ValidatePostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err error) {
+func ValidatePostInfo(transformRawParams PostParametersT) error {
+	transformRaw, err := json.Marshal(transformRawParams)
+	if err != nil {
+		return err
+	}
 	parsedJSON := gjson.ParseBytes(transformRaw)
 	errorMessages := make([]string, 0)
 	for _, v := range postParametersTFields {
@@ -71,11 +75,11 @@ func ValidatePostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, e
 	}
 	if len(errorMessages) > 0 {
 		errorMessages = append(errorMessages, fmt.Sprintf("in transformer response : %v", parsedJSON))
-		err = errors.New(strings.Join(errorMessages, "\n"))
-		return postInfo, err
+		err := errors.New(strings.Join(errorMessages, "\n"))
+		return err
 	}
 
-	return postInfo, nil
+	return nil
 }
 
 //FilterClientIntegrations parses the destination names from the

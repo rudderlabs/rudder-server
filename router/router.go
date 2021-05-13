@@ -470,10 +470,10 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				diagnosisStartTime := time.Now()
 				sourceID := destinationJob.JobMetadataArray[0].SourceID
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
-				transformAt := destinationJob.JobMetadataArray[0].TransformAt
 				//Batched jobs and router transformed jobs can have more than 1 metadatas. So, don't increment userID.
 
 				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
+				transformAt := destinationJob.JobMetadataArray[0].TransformAt
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
@@ -481,22 +481,28 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
-							panic(fmt.Errorf("Different sources are grouped together"))
+							panic(fmt.Errorf("different sources are grouped together"))
 						}
 						if destinationID != destinationJobMetadata.DestinationID {
-							panic(fmt.Errorf("Different destinations are grouped together"))
+							panic(fmt.Errorf("different destinations are grouped together"))
 						}
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
+					fmt.Println(string(destinationJob.Message))
 					result := getIterableStruct(destinationJob.Message, transformAt)
 					for _, val := range result {
-						respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val, destinationJob.Message)
-						if isSuccessStatus(respStatusCode) {
-							respBody = respBody + " " + respBodyTemp
+						err := integrations.ValidatePostInfo(val)
+						if err != nil {
+							respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 						} else {
-							respBody = respBodyTemp
-							break
+							respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val)
+							if isSuccessStatus(respStatusCode) {
+								respBody = respBody + " " + respBodyTemp
+							} else {
+								respBody = respBodyTemp
+								break
+							}
 						}
 					}
 				}
