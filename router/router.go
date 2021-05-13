@@ -489,7 +489,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
-					fmt.Println(string(destinationJob.Message))
 					result := getIterableStruct(destinationJob.Message, transformAt)
 					for _, val := range result {
 						err := integrations.ValidatePostInfo(val)
