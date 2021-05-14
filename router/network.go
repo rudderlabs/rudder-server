@@ -1,7 +1,6 @@
 package router
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -30,6 +29,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 	client := network.httpClient
 	//Parse the response to get parameters
 	postInfo, err := integrations.GetPostInfo(jsonData)
+
 	if err != nil {
 		return 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 	}
@@ -56,8 +56,30 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 			}
 
 		}
+		var payload *strings.Reader
+		// support for JSON and FORM body type
+		if len(bodyValue) > 0 {
+			switch bodyFormat {
+			case "JSON":
+				jsonValue, err := json.Marshal(bodyValue)
+				if err != nil {
+					panic(err)
+				}
+				payload = strings.NewReader(string(jsonValue))
+			case "FORM":
+				formValues := url.Values{}
+				for key, val := range bodyValue {
+					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
+				}
+				payload = strings.NewReader(formValues.Encode())
 
-		req, err := http.NewRequest(requestMethod, postInfo.URL, nil)
+			default:
+				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
+
+			}
+		}
+
+		req, err := http.NewRequest(requestMethod, postInfo.URL, payload)
 		if err != nil {
 			network.logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
 			return 400, fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
@@ -78,43 +100,19 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 
 		req.URL.RawQuery = queryParams.Encode()
 
-		// support for JSON and FORM body type
-		if len(bodyValue) > 0 {
-			switch bodyFormat {
-			case "JSON":
-				jsonValue, err := json.Marshal(bodyValue)
-				if err != nil {
-					panic(err)
-				}
-				req.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
-
-			case "FORM":
-				formValues := url.Values{}
-				for key, val := range bodyValue {
-					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
-				}
-				req.Body = ioutil.NopCloser(strings.NewReader(formValues.Encode()))
-
-			default:
-				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
-
-			}
-		}
-
 		headerKV := postInfo.Headers
 		for key, val := range headerKV {
 			req.Header.Add(key, val.(string))
 		}
 
 		req.Header.Add("User-Agent", "RudderLabs")
-
 		resp, err := client.Do(req)
 
 		var respBody []byte
 
 		if resp != nil && resp.Body != nil {
 			respBody, _ = ioutil.ReadAll(resp.Body)
-			network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
+			network.logger.Info(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 			defer resp.Body.Close()
 		}
 
