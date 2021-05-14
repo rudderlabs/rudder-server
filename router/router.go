@@ -151,6 +151,7 @@ var (
 	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                time.Duration
 	toDrainDestinationID                                          string
+	toAbortDestinationIDs                                         string
 )
 
 type requestMetric struct {
@@ -197,6 +198,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Router.fixedLoopSleepInMS")
 	failedEventsCacheSize = config.GetInt("Router.failedEventsCacheSize", 10)
 	config.RegisterStringConfigVariable("NONE", &toDrainDestinationID, true, "Router.drainDestinationID")
+	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -448,6 +450,13 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
+				deliveryLatencyStat := stats.NewTaggedStat("delivery_latency", stats.TimerType, stats.Tags{
+					"module":      "router",
+					"destType":    worker.rt.destName,
+					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
+				})
+				deliveryLatencyStat.Start()
+
 				ch := worker.trackStuckDelivery()
 				if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
@@ -473,6 +482,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				attemptedToSendTheJob = true
 
 				worker.deliveryTimeStat.End()
+				deliveryLatencyStat.End()
 				// END: request to destination endpoint
 
 				if isSuccessStatus(respStatusCode) {
@@ -1418,7 +1428,8 @@ func (rt *HandleT) generatorLoop() {
 }
 
 func isToBeDrained(job *jobsdb.JobT) bool {
-	return toDrainDestinationID != "NONE" && gjson.GetBytes(job.Parameters, "destination_id").String() == toDrainDestinationID
+	return strings.Contains(toAbortDestinationIDs, gjson.GetBytes(job.Parameters, "destination_id").String())
+	// return toDrainDestinationID != "NONE" && gjson.GetBytes(job.Parameters, "destination_id").String() == toDrainDestinationID
 }
 
 func (rt *HandleT) crashRecover() {
