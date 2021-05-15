@@ -14,6 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -185,9 +186,17 @@ func downloadTestFileForBatchDestination(testObjectKey string, provider string, 
 
 }
 
+func TestDestinationConnection(destination backendconfig.DestinationT) string {
+	netHandle := &router.NetHandleT{}
+	netHandle.Setup(destination.DestinationDefinition.Name, time.Duration(50))
+	respStatusCode, _ := netHandle.SendPost([]byte("destination Message"))
+	return string(respStatusCode)
+}
+
 func TestBatchDestinationConnection(destination backendconfig.DestinationT) string {
 	testFileName := createTestFileForBatchDestination(destination.ID)
 	keyPrefixes := []string{config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload"), destination.ID, time.Now().Format("01-02-2006")}
+	//just uploading the test file will test for successfull connection
 	_, err := uploadTestFileForBatchDestination(testFileName, keyPrefixes, destination.DestinationDefinition.Name, destination)
 	var error string
 	if err != nil {
