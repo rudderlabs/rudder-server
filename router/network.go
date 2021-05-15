@@ -112,7 +112,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 
 		if resp != nil && resp.Body != nil {
 			respBody, _ = ioutil.ReadAll(resp.Body)
-			network.logger.Info(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
+			network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 			defer resp.Body.Close()
 		}
 
