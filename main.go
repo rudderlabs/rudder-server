@@ -192,6 +192,9 @@ func startStandbyWebHandler() {
 	srvMux.HandleFunc("/", standbyHealthHandler)
 	srvMux.HandleFunc("/version", versionHandler)
 
+	// route everything else to defaultHandler:
+	srvMux.PathPrefix("/").HandlerFunc(standbyDefaultHandler)
+
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
 		Handler:           bugsnag.Handler(srvMux),
@@ -223,4 +226,9 @@ func standbyHealthHandler(w http.ResponseWriter, r *http.Request) {
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
 	healthVal := fmt.Sprintf(`{"appType": "%s", "mode":"%s"}`, appTypeStr, strings.ToUpper(db.CurrentMode))
 	w.Write([]byte(healthVal))
+}
+
+//StandbyDefaultHandler is the http handler for health endpoint
+func standbyDefaultHandler(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "Server is in standby mode. Please retry after sometime", 500)
 }
