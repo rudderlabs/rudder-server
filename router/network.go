@@ -30,7 +30,6 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 	client := network.httpClient
 	//Parse the response to get parameters
 	postInfo, err := integrations.GetPostInfo(jsonData)
-
 	if err != nil {
 		return 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 	}
@@ -57,6 +56,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 			}
 
 		}
+
 		var payload io.Reader
 		// support for JSON and FORM body type
 		if len(bodyValue) > 0 {
@@ -73,10 +73,8 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
 				}
 				payload = strings.NewReader(formValues.Encode())
-
 			default:
 				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
-
 			}
 		}
 
@@ -107,6 +105,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 		}
 
 		req.Header.Add("User-Agent", "RudderLabs")
+
 		resp, err := client.Do(req)
 
 		var respBody []byte
