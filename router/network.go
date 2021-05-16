@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -56,7 +57,7 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 			}
 
 		}
-		var payload *strings.Reader
+		var payload io.Reader
 		// support for JSON and FORM body type
 		if len(bodyValue) > 0 {
 			switch bodyFormat {
