@@ -775,8 +775,34 @@ func HasAWSKeysInConfig(config interface{}) bool {
 	return true
 }
 
-func GetObjectStorageConfig(provider string, objectStorageConfig interface{}) map[string]interface{} {
+func GetRudderObjectStorageAccessKeys() (accessKeyID, accessKey string) {
+	return config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", ""), config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+}
+
+func GetRudderObjectStorageConfig() (storageConfig map[string]interface{}) {
+	// TODO: add error log if s3 keys are not available
+	storageConfig = make(map[string]interface{})
+	storageConfig["bucketName"] = config.GetEnv("RUDDER_WAREHOUSE_BUCKET", "rudder-warehouse-storage")
+	storageConfig["prefix"] = config.GetEnv("RUDDER_WAREHOUSE_BUCKET_PREFIX", config.GetNamespaceIdentifier())
+	storageConfig["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+	storageConfig["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+	return
+}
+
+func IsConfiguredToUseRudderObjectStorage(storageConfig map[string]interface{}) bool {
+	if boolInterface, ok := storageConfig["useRudderStorage"]; ok {
+		if b, ok := boolInterface.(bool); ok {
+			return b
+		}
+	}
+	return false
+}
+
+func GetObjectStorageConfig(provider string, objectStorageConfig interface{}, useRudderStorage bool) map[string]interface{} {
 	objectStorageConfigMap := objectStorageConfig.(map[string]interface{})
+	if useRudderStorage {
+		return GetRudderObjectStorageConfig()
+	}
 	if provider == "S3" && !HasAWSKeysInConfig(objectStorageConfig) {
 		clonedObjectStorageConfig := make(map[string]interface{})
 		for k, v := range objectStorageConfigMap {

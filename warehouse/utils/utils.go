@@ -27,7 +27,7 @@ const (
 	SNOWFLAKE  = "SNOWFLAKE"
 	POSTGRES   = "POSTGRES"
 	CLICKHOUSE = "CLICKHOUSE"
-	MSSQL	   = "MSSQL"
+	MSSQL      = "MSSQL"
 )
 
 const (
@@ -120,6 +120,7 @@ type StagingFileT struct {
 	FirstEventAt     string
 	LastEventAt      string
 	TotalEvents      int
+	UseRudderStorage bool
 	// cloud sources specific info
 	SourceBatchID   string
 	SourceTaskID    string
@@ -136,6 +137,7 @@ type UploaderI interface {
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFileLocation(tableName string) (string, error)
 	ShouldOnDedupUseNewRecord() bool
+	UseRudderStorage() bool
 }
 
 type GetLoadFileLocationsOptionsT struct {
@@ -487,11 +489,14 @@ func SnowflakeCloudProvider(config interface{}) string {
 	return provider
 }
 
-func ObjectStorageType(destType string, config interface{}) string {
+func ObjectStorageType(destType string, config interface{}, useRudderStorage bool) string {
+	c := config.(map[string]interface{})
+	if useRudderStorage {
+		return "S3"
+	}
 	if destType == "RS" || destType == "BQ" {
 		return ObjectStorageMap[destType]
 	}
-	c := config.(map[string]interface{})
 	if destType == "SNOWFLAKE" {
 		provider, ok := c["cloudProvider"].(string)
 		if provider == "" || !ok {

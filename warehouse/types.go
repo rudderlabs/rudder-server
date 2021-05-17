@@ -22,6 +22,7 @@ type PayloadT struct {
 	DestinationType     string
 	DestinationConfig   interface{}
 	UniqueLoadGenID     string
+	UseRudderStorage    bool
 	Output              []loadFileUploadOutputT
 }
 
@@ -43,14 +44,15 @@ type LoadFileJobT struct {
 }
 
 type StagingFileT struct {
-	ID           int64
-	Location     string
-	SourceID     string
-	Schema       json.RawMessage
-	Status       string // enum
-	CreatedAt    time.Time
-	FirstEventAt time.Time
-	LastEventAt  time.Time
+	ID               int64
+	Location         string
+	SourceID         string
+	Schema           json.RawMessage
+	Status           string // enum
+	CreatedAt        time.Time
+	FirstEventAt     time.Time
+	LastEventAt      time.Time
+	UseRudderStorage bool
 	// cloud sources specific info
 	SourceBatchID   string
 	SourceTaskID    string
