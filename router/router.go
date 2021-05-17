@@ -706,9 +706,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	if respBody != "" {
 		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "response", respBody)
 	}
-	if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
-		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
-	}
 
 	if isSuccessStatus(respStatusCode) {
 		atomic.AddUint64(&worker.rt.successCount, 1)
@@ -732,6 +729,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		//Saving payload to DB only
 		//1. if job failed and
 		//2. if router job undergoes batching or dest transform.
+		if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
+			status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+		}
 		// the job failed
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
 		worker.failedJobs++
