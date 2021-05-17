@@ -3,17 +3,12 @@ package queuemanager
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/ioutil"
-	"net/http"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/tidwall/gjson"
 )
 
 var (
@@ -23,17 +18,18 @@ var (
 	dbHandle     *sql.DB
 )
 
-var Eb utils.PublishSubscriber = new(utils.EventBus)
+type OperationtT struct {
+	ID           int64
+	Operation    string
+	EventPayload json.RawMessage
+	done         bool
+	CreatedAt    time.Time
+}
 
 type QueueManagerI interface {
-	Subscribe(channel chan utils.DataEvent)
+	InsertOperation(payload []byte) error
 }
 type QueueManagerT struct {
-}
-
-type clearQueueRequestPayload struct {
-	SourceID      string `json:"source_id"`
-	DestinationID string `json:"destination_id"`
 }
 
 func loadConfig() {
@@ -46,111 +42,32 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("queuemanager")
 }
 
-/*
-Subscribe subscribes a channel to a specific topic
-*/
-func (qm *QueueManagerT) Subscribe(channel chan utils.DataEvent) {
-	Eb.Subscribe("queuemanager", channel)
-}
-
-// Setup backend config
 func Setup() {
-	pkgLogger.Infof("setting up queuemanager. starting http handler on port: %v", webPort)
+	pkgLogger.Info("setting up queuemanager.")
 	var err error
 	dbHandle, err = sql.Open("postgres", jobsdb.GetConnectionString())
 	if err != nil {
 		panic(fmt.Errorf("failed to connect to DB. Err: %v", err))
 	}
 	QueueManager = new(QueueManagerT)
-
-	/*srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/", healthHandler)
-	srv := &http.Server{
-		Addr:              ":" + strconv.Itoa(webPort),
-		Handler:           bugsnag.Handler(srvMux),
-		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
-		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
-		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 10*time.Second),
-		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
-		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
-	}
-	pkgLogger.Fatal(srv.ListenAndServe())*/
-
 }
 
-func ClearHandler(w http.ResponseWriter, r *http.Request) {
-	pkgLogger.LogRequest(r)
-	var errorMessage string
-	defer func() {
-		if errorMessage != "" {
-			pkgLogger.Debug(errorMessage)
-			http.Error(w, response.GetStatus(errorMessage), 400)
-		}
-	}()
-
-	payload, _, err := getPayloadAndWriteKey(w, r)
-	if err != nil {
-		errorMessage = err.Error()
-		return
-	}
-
-	if !gjson.ValidBytes(payload) {
-		errorMessage = response.GetStatus(response.InvalidJSON)
-		return
-	}
-
-	var reqPayload clearQueueRequestPayload
-	err = json.Unmarshal(payload, &reqPayload)
-	if err != nil {
-		errorMessage = err.Error()
-		return
-	}
-
-	if reqPayload.SourceID == "" {
-		errorMessage = "Empty source id"
-		return
-	}
+func (qm *QueueManagerT) InsertOperation(payload []byte) error {
 	sqlStatement := `INSERT INTO operations (operation, payload, done)
-								VALUES ($1, $2, $3)
-								RETURNING id`
+	VALUES ($1, $2, $3)
+	RETURNING id`
 
-	var stmt *sql.Stmt
-	stmt, err = dbHandle.Prepare(sqlStatement)
+	stmt, err := dbHandle.Prepare(sqlStatement)
 	if err != nil {
-		errorMessage = fmt.Sprintf("Failed to prepare statement. Err: %v", err)
-		return
+		return err
 	}
 
 	row := stmt.QueryRow(sqlStatement, "CLEAR", payload, false)
 	var opID int64
 	err = row.Scan(&opID)
 	if err != nil {
-		errorMessage = fmt.Sprintf("Failed to scan opID. Err: %v", err)
-		return
+		return err
 	}
 
-	w.Write([]byte(fmt.Sprintf("{ \"op_id\": %d }", opID)))
-}
-
-func getPayloadAndWriteKey(w http.ResponseWriter, r *http.Request) ([]byte, string, error) {
-	var err error
-	writeKey, _, ok := r.BasicAuth()
-	if !ok || writeKey == "" {
-		err = errors.New(response.NoWriteKeyInBasicAuth)
-		return []byte{}, "", err
-	}
-	payload, err := getPayloadFromRequest(r)
-	if err != nil {
-		return []byte{}, writeKey, err
-	}
-	return payload, writeKey, err
-}
-
-func getPayloadFromRequest(r *http.Request) ([]byte, error) {
-	if r.Body != nil {
-		payload, err := ioutil.ReadAll(r.Body)
-		r.Body.Close()
-		return payload, err
-	}
-	return []byte{}, errors.New(response.RequestBodyNil)
+	return nil
 }
