@@ -1,19 +1,17 @@
 package integrations
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/warehouse"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"k8s.io/apimachinery/pkg/util/json"
-
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 )
 
