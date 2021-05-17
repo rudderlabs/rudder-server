@@ -95,7 +95,7 @@ type HandleT struct {
 }
 
 var defaultTransformerFeatures = `{
-	routerTransform: {
+	"routerTransform": {
 	  "MARKETO": true
 	}
   }`
