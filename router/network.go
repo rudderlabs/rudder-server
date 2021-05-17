@@ -1,10 +1,10 @@
 package router
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -57,7 +57,28 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 
 		}
 
-		req, err := http.NewRequest(requestMethod, postInfo.URL, nil)
+		var payload io.Reader
+		// support for JSON and FORM body type
+		if len(bodyValue) > 0 {
+			switch bodyFormat {
+			case "JSON":
+				jsonValue, err := json.Marshal(bodyValue)
+				if err != nil {
+					panic(err)
+				}
+				payload = strings.NewReader(string(jsonValue))
+			case "FORM":
+				formValues := url.Values{}
+				for key, val := range bodyValue {
+					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
+				}
+				payload = strings.NewReader(formValues.Encode())
+			default:
+				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
+			}
+		}
+
+		req, err := http.NewRequest(requestMethod, postInfo.URL, payload)
 		if err != nil {
 			network.logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
 			return 400, fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
@@ -77,29 +98,6 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 		}
 
 		req.URL.RawQuery = queryParams.Encode()
-
-		// support for JSON and FORM body type
-		if len(bodyValue) > 0 {
-			switch bodyFormat {
-			case "JSON":
-				jsonValue, err := json.Marshal(bodyValue)
-				if err != nil {
-					panic(err)
-				}
-				req.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
-
-			case "FORM":
-				formValues := url.Values{}
-				for key, val := range bodyValue {
-					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
-				}
-				req.Body = ioutil.NopCloser(strings.NewReader(formValues.Encode()))
-
-			default:
-				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
-
-			}
-		}
 
 		headerKV := postInfo.Headers
 		for key, val := range headerKV {
