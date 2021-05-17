@@ -15,6 +15,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/drain"
@@ -386,11 +387,36 @@ func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) []byte {
 	return resp
 }
 
+func getIterableStruct(payload []byte, transformAt string) []integrations.PostParametersT {
+	var err error
+	var response integrations.PostParametersT
+	responseArray := make([]integrations.PostParametersT, 0)
+	if transformAt == "router" {
+		err = json.Unmarshal(payload, &response)
+		if err != nil {
+			err = json.Unmarshal(payload, &responseArray)
+		} else {
+			responseArray = append(responseArray, response)
+		}
+
+	} else {
+		err = json.Unmarshal(payload, &response)
+		if err == nil {
+			responseArray = append(responseArray, response)
+		}
+	}
+	if err != nil {
+		panic(fmt.Errorf("setting Payload through sjson failed with err %v", err))
+	}
+	return responseArray
+}
+
 func (worker *workerT) handleWorkerDestinationJobs() {
 	worker.batchTimeStat.Start()
 
 	var respStatusCode, prevRespStatusCode int
 	var respBody string
+	var respBodyTemp string
 	handledJobMetadatas := make(map[int64]*types.JobMetadataT)
 
 	var destinationResponseHandler ResponseHandlerI
@@ -444,7 +470,9 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				diagnosisStartTime := time.Now()
 				sourceID := destinationJob.JobMetadataArray[0].SourceID
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
+
 				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
+				transformAt := destinationJob.JobMetadataArray[0].TransformAt
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
@@ -452,15 +480,29 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
-							panic(fmt.Errorf("Different sources are grouped together"))
+							panic(fmt.Errorf("different sources are grouped together"))
 						}
 						if destinationID != destinationJobMetadata.DestinationID {
-							panic(fmt.Errorf("Different destinations are grouped together"))
+							panic(fmt.Errorf("different destinations are grouped together"))
 						}
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
-					respStatusCode, respBody = worker.rt.netHandle.sendPost(destinationJob.Message)
+					result := getIterableStruct(destinationJob.Message, transformAt)
+					for _, val := range result {
+						err := integrations.ValidatePostInfo(val)
+						if err != nil {
+							respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
+						} else {
+							respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val)
+							if isSuccessStatus(respStatusCode) {
+								respBody = respBody + " " + respBodyTemp
+							} else {
+								respBody = respBodyTemp
+								break
+							}
+						}
+					}
 				}
 				ch <- struct{}{}
 
