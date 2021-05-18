@@ -25,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	queuemanager "github.com/rudderlabs/rudder-server/queue-manager"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -146,9 +145,6 @@ func main() {
 	}
 
 	backendconfig.Setup(pollRegulations, configEnvHandler)
-	rruntime.Go(func() {
-		queuemanager.Setup()
-	})
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)

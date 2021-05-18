@@ -8,7 +8,9 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	queuemanager "github.com/rudderlabs/rudder-server/queue-manager"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -86,6 +88,11 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 			embedded.App.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
 		}
 	}
+
+	queuemanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+	rruntime.Go(func() {
+		queuemanager.QueueManager.StartProcessLoop()
+	})
 
 	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)

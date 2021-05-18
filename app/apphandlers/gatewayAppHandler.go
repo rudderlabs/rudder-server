@@ -8,6 +8,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	queuemanager "github.com/rudderlabs/rudder-server/queue-manager"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -39,6 +40,8 @@ func (gatewayApp *GatewayApp) StartRudderCore(options *app.Options) {
 
 	migrationMode := gatewayApp.App.Options().MigrationMode
 	gatewayDB.Setup(jobsdb.Write, options.ClearDB, "gw", gwDBRetention, migrationMode, false)
+
+	queuemanager.Setup(&gatewayDB, nil, nil)
 
 	enableGateway := true
 

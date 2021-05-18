@@ -615,11 +615,6 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
-type clearQueueRequestPayload struct {
-	SourceID      string `json:"source_id"`
-	DestinationID string `json:"destination_id"`
-}
-
 func (gateway *HandleT) ClearHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.LogRequest(r)
 	var errorMessage string
@@ -641,7 +636,7 @@ func (gateway *HandleT) ClearHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var reqPayload clearQueueRequestPayload
+	var reqPayload queuemanager.ClearQueueRequestPayload
 	err = json.Unmarshal(payload, &reqPayload)
 	if err != nil {
 		errorMessage = err.Error()
@@ -653,7 +648,7 @@ func (gateway *HandleT) ClearHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = queuemanager.QueueManager.InsertOperation(payload)
+	err = queuemanager.GetQueueManager().InsertOperation(payload)
 	if err != nil {
 		errorMessage = err.Error()
 		return
