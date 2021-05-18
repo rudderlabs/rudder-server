@@ -28,13 +28,17 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	}
 	var uploadSession *session.Session
 	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
+		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
 		uploadSession = session.Must(session.NewSession(&aws.Config{
-			Region: aws.String(region),
+			Region:                        aws.String(region),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	} else {
+		pkgLogger.Debug("Credentials found in the destination's config. Using them.")
 		uploadSession = session.Must(session.NewSession(&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			Region:                        aws.String(region),
+			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	}
 	s3manager := awsS3Manager.NewUploader(uploadSession)
@@ -80,13 +84,17 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 	}
 	var sess *session.Session
 	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
+		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
 		sess = session.Must(session.NewSession(&aws.Config{
-			Region: aws.String(region),
+			Region:                        aws.String(region),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	} else {
+		pkgLogger.Debug("Credentials found in the destination's config.")
 		sess = session.Must(session.NewSession(&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			Region:                        aws.String(region),
+			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	}
 	downloader := s3manager.NewDownloader(sess)
@@ -95,7 +103,6 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
 		})
-
 	return err
 }
 
@@ -132,13 +139,17 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error
 	}
 	var sess *session.Session
 	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
+		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
 		sess = session.Must(session.NewSession(&aws.Config{
-			Region: aws.String(region),
+			Region:                        aws.String(region),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	} else {
+		pkgLogger.Debug("Credentials found in the destination's config.")
 		sess = session.Must(session.NewSession(&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			Region:                        aws.String(region),
+			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	}
 
