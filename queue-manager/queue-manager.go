@@ -114,7 +114,7 @@ func (qm *QueueManagerT) StartProcessLoop() {
 		row := qm.dbHandle.QueryRow(sqlStatement)
 		err = row.Scan(&op.ID, &op.Operation, &op.Payload, &op.done)
 		if err == sql.ErrNoRows {
-			pkgLogger.Infof("No rows found. Sql: %s,", sqlStatement) //TODO change to Debugf
+			pkgLogger.Debugf("No rows found. Sql: %s,", sqlStatement)
 			time.Sleep(5 * time.Second)
 			continue
 		}

@@ -44,16 +44,74 @@ func GetClearOperationHandlerInstance(gatewayDB, routerDB, batchRouterDB jobsdb.
 }
 
 func (handler *ClearOperationHandlerT) Exec(payload []byte) (bool, error) {
-	//TODO fill clear code
-	time.Sleep(time.Second)
-
 	var reqPayload ClearQueueRequestPayload
 	err := json.Unmarshal(payload, &reqPayload)
 	if err != nil {
 		return false, err
 	}
 
-	//clearFromJobsdb(clearOperationHandler.gatewayDB)
+	parameterFilters := []jobsdb.ParameterFilterT{
+		{
+			Name:     "source_id",
+			Value:    reqPayload.SourceID,
+			Optional: false,
+		},
+	}
+
+	//Clear From GatewayDB
+	handler.clearFromJobsdb(clearOperationHandler.gatewayDB, parameterFilters, false, false)
+	//Clear From RouterDB
+	handler.clearFromJobsdb(clearOperationHandler.routerDB, parameterFilters, true, true)
+	//Clear From BatchRouterDB
+	handler.clearFromJobsdb(clearOperationHandler.batchRouterDB, parameterFilters, false, true)
 
 	return false, nil
+}
+
+func (handler *ClearOperationHandlerT) clearFromJobsdb(db jobsdb.JobsDB, parameterFilters []jobsdb.ParameterFilterT, throttled, waiting bool) {
+
+	for {
+		var retryList, throttledList, waitList, unprocessedList []*jobsdb.JobT
+		toQuery := jobQueryBatchSize
+		retryList = db.GetToRetry(jobsdb.GetQueryParamsT{Count: toQuery, ParameterFilters: parameterFilters})
+		toQuery -= len(retryList)
+		if throttled {
+			throttledList = db.GetThrottled(jobsdb.GetQueryParamsT{Count: toQuery, ParameterFilters: parameterFilters})
+			toQuery -= len(throttledList)
+		}
+		if waiting {
+			waitList = db.GetWaiting(jobsdb.GetQueryParamsT{Count: toQuery, ParameterFilters: parameterFilters})
+			toQuery -= len(waitList)
+		}
+		unprocessedList = db.GetUnprocessed(jobsdb.GetQueryParamsT{Count: toQuery, ParameterFilters: parameterFilters})
+
+		combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
+
+		if len(combinedList) == 0 {
+			pkgLogger.Infof("ClearQueueManager: clearFromJobsdb Complete. No more Jobs to clear from %s db for params: %#v", db.GetTablePrefix(), parameterFilters)
+			break
+		}
+
+		var statusList []*jobsdb.JobStatusT
+		for _, job := range combinedList {
+			status := jobsdb.JobStatusT{
+				JobID:         job.JobID,
+				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+				JobState:      jobsdb.Aborted.State,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "",
+				ErrorResponse: []byte(`{}`), // check
+			}
+			statusList = append(statusList, &status)
+		}
+		//Mark the jobs statuses
+		err := db.UpdateJobStatus(statusList, []string{}, parameterFilters)
+		if err != nil {
+			pkgLogger.Errorf("ClearQueueManager: Error occurred while marking jobs statuses as aborted. Panicking. ParameterFilters:%#v, Err: %v", parameterFilters, err)
+			panic(err)
+		}
+
+		pkgLogger.Infof("cleared %d jobs from %s db", len(statusList), db.GetTablePrefix)
+	}
 }

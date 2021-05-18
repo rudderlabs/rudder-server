@@ -85,10 +85,13 @@ type JobsDB interface {
 	ReleaseUpdateJobStatusLocks()
 
 	GetToRetry(params GetQueryParamsT) []*JobT
+	GetWaiting(params GetQueryParamsT) []*JobT
+	GetThrottled(params GetQueryParamsT) []*JobT
 	GetUnprocessed(params GetQueryParamsT) []*JobT
 	GetExecuting(params GetQueryParamsT) []*JobT
 
 	Status() interface{}
+	GetTablePrefix() string
 }
 
 /*
