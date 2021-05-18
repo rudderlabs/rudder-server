@@ -2121,14 +2121,17 @@ func (jd *HandleT) backupDSLoop() {
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
 
-		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
-		success := jd.backupDS(backupDSRange)
-		if !success {
-			jd.removeTableJSONDumps()
+		var opID int64
+		if isBackupConfigured() {
+			opID = jd.JournalMarkStart(backupDSOperation, opPayload)
+			success := jd.backupDS(backupDSRange)
+			if !success {
+				jd.removeTableJSONDumps()
+				jd.JournalMarkDone(opID)
+				continue
+			}
 			jd.JournalMarkDone(opID)
-			continue
 		}
-		jd.JournalMarkDone(opID)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
