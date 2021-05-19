@@ -199,7 +199,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Router.fixedLoopSleepInMS")
 	failedEventsCacheSize = config.GetInt("Router.failedEventsCacheSize", 10)
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
-	config.RegisterBoolConfigVariable(false, &abortDisabledDestinationJobs, true, "Router.abortDisabledDestinationJobs")
+	config.RegisterBoolConfigVariable(true, &abortDisabledDestinationJobs, true, "Router.abortDisabledDestinationJobs")
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -1403,7 +1403,8 @@ func (rt *HandleT) generatorLoop() {
 		throttledAtTime := time.Now()
 		//Identify jobs which can be processed
 		for _, job := range combinedList {
-			if rt.isToBeDrained(job) {
+			destID := destinationID(job)
+			if rt.isToBeDrained(job, destID) {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -1414,11 +1415,10 @@ func (rt *HandleT) generatorLoop() {
 					ErrorResponse: []byte(`{"reason": "Job confifgured to be aborted via ENV" }`),
 				}
 				drainList = append(drainList, &status)
-				destinationID := destinationID(job)
-				if _, ok := drainCountByDest[destinationID]; !ok {
-					drainCountByDest[destinationID] = 0
+				if _, ok := drainCountByDest[destID]; !ok {
+					drainCountByDest[destID] = 0
 				}
-				drainCountByDest[destinationID] = drainCountByDest[destinationID] + 1
+				drainCountByDest[destID] = drainCountByDest[destID] + 1
 				continue
 			}
 			w := rt.findWorker(job, throttledAtTime)
@@ -1481,15 +1481,15 @@ func destinationID(job *jobsdb.JobT) string {
 	return gjson.GetBytes(job.Parameters, "destination_id").String()
 }
 
-func (rt *HandleT) isToBeDrained(job *jobsdb.JobT) bool {
+func (rt *HandleT) isToBeDrained(job *jobsdb.JobT, destID string) bool {
 	if abortDisabledDestinationJobs {
-		if d, ok := rt.destinationsMap[destinationID(job)]; ok && !d.Enabled {
+		if d, ok := rt.destinationsMap[destID]; ok && !d.Enabled {
 			return true
 		}
 	}
 	if toAbortDestinationIDs != "" {
 		abortIDs := strings.Split(toAbortDestinationIDs, ",")
-		return misc.ContainsString(abortIDs, destinationID(job))
+		return misc.ContainsString(abortIDs, destID)
 	}
 	return false
 }
