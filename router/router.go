@@ -152,7 +152,6 @@ var (
 	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
-	abortDisabledDestinationJobs                                  bool
 )
 
 type requestMetric struct {
@@ -199,7 +198,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Router.fixedLoopSleepInMS")
 	failedEventsCacheSize = config.GetInt("Router.failedEventsCacheSize", 10)
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
-	config.RegisterBoolConfigVariable(true, &abortDisabledDestinationJobs, true, "Router.abortDisabledDestinationJobs")
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -1412,7 +1410,7 @@ func (rt *HandleT) generatorLoop() {
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
-					ErrorResponse: []byte(`{"reason": "Job confifgured to be aborted via ENV" }`),
+					ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or confifgured to be aborted via ENV" }`),
 				}
 				drainList = append(drainList, &status)
 				if _, ok := drainCountByDest[destID]; !ok {
@@ -1482,10 +1480,8 @@ func destinationID(job *jobsdb.JobT) string {
 }
 
 func (rt *HandleT) isToBeDrained(job *jobsdb.JobT, destID string) bool {
-	if abortDisabledDestinationJobs {
-		if d, ok := rt.destinationsMap[destID]; ok && !d.Enabled {
-			return true
-		}
+	if d, ok := rt.destinationsMap[destID]; ok && !d.Enabled {
+		return true
 	}
 	if toAbortDestinationIDs != "" {
 		abortIDs := strings.Split(toAbortDestinationIDs, ",")
