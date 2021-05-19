@@ -103,5 +103,5 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 }
 
 func (embedded *EmbeddedApp) HandleRecovery(options *app.Options) {
-	db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.EMBEDDED)
+	db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.EMBEDDED)
 }
