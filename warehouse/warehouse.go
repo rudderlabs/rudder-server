@@ -214,6 +214,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
 		allSources := config.Data.(backendconfig.ConfigT)
+		sourceIDsByWorkspace = map[string][]string{}
 		pkgLogger.Infof(`Received updated workspace config`)
 		for _, source := range allSources.Sources {
 			sourceIDsByWorkspaceLock.Lock()
@@ -888,6 +889,7 @@ func minimalConfigSubscriber() {
 		config := <-ch
 		pkgLogger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.ConfigT)
+		sourceIDsByWorkspace = map[string][]string{}
 		for _, source := range sources.Sources {
 			sourceIDsByWorkspaceLock.Lock()
 			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
