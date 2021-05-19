@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -364,7 +368,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			// this prevents not setting sourceID in gw job if disabled before setting it
 			sourceID := gateway.getSourceIDForWriteKey(writeKey)
 			if !gateway.isWriteKeyEnabled(writeKey) {
-				req.done <- response.GetStatus(response.InvalidWriteKey)
+				req.done <- response.GetStatus("")
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
@@ -603,6 +607,7 @@ func (gateway *HandleT) webGroupHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (gateway *HandleT) pixelPageHandler(w http.ResponseWriter, r *http.Request) {
+
 	gateway.pixelHandler(w, r, "page")
 }
 
@@ -756,6 +761,10 @@ func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Req
 	return payload, writeKey, err
 }
 
+func (gateway *HandleT) pixelWebHandler(w http.ResponseWriter, r *http.Request, reqType string) {
+	gateway.pixelWebRequestHandler(gateway.rrh, w, r, reqType)
+}
+
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	gateway.webRequestHandler(gateway.rrh, w, r, reqType)
 }
@@ -783,6 +792,50 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	}
 	gateway.logger.Debug(response.GetStatus(response.Ok))
 	w.Write([]byte(response.GetStatus(response.Ok)))
+}
+
+func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
+
+	gateway.logger.LogRequest(r)
+	atomic.AddUint64(&gateway.recvCount, 1)
+	var errorMessage string
+	defer func() {
+		if errorMessage != "" {
+			gateway.logger.Debug(errorMessage)
+			http.Error(w, response.GetStatus(errorMessage), 400)
+		}
+	}()
+	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r)
+	if err != nil {
+		errorMessage = err.Error()
+		return
+	}
+	errorMessage = rh.ProcessRequest(gateway, &w, r, reqType, payload, writeKey)
+	atomic.AddUint64(&gateway.ackCount, 1)
+	gateway.trackRequestMetrics(errorMessage)
+	if errorMessage != "" {
+		return
+	}
+	gateway.logger.Debug(response.GetStatus(""))
+
+	w.Header().Set("Content-Type", "image/gif")
+
+	m := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	rudderColor := color.RGBA{100, 65, 139, 0}
+	draw.Draw(m, m.Bounds(), &image.Uniform{rudderColor}, image.ZP, draw.Src)
+
+	var img image.Image = m
+	buffer := new(bytes.Buffer)
+	if err := jpeg.Encode(buffer, img, nil); err != nil {
+		fmt.Sprintf("Failed to encode")
+	}
+
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Length", strconv.Itoa(len(buffer.Bytes())))
+	if _, err := w.Write(buffer.Bytes()); err != nil {
+		fmt.Sprintf("Failed to write")
+	}
+
 }
 
 //ProcessRequest on ImportRequestHandler splits payload by user and throws them into the webrequestQ and waits for all their responses before returning
@@ -933,17 +986,17 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 			// convert the pixel request(r) to a web request(req)
 			err := gateway.setWebPayload(req, queryParams, reqType)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, "", http.StatusOK)
 				return
 			}
 
 			// send req to webHandler
-			gateway.webHandler(w, req, reqType)
+			gateway.pixelWebHandler(w, req, reqType)
 		} else {
-			http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
+			http.Error(w, "", http.StatusOK)
 		}
 	} else {
-		http.Error(w, response.InvalidRequestMethod, http.StatusBadRequest)
+		http.Error(w, "", http.StatusOK)
 	}
 }
 
