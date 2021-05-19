@@ -24,7 +24,7 @@ type OperationtT struct {
 }
 
 type QueueManagerI interface {
-	InsertOperation(payload []byte) error
+	InsertOperation(payload []byte) (int64, error)
 	StartProcessLoop()
 }
 type QueueManagerT struct {
@@ -35,7 +35,7 @@ type QueueManagerT struct {
 }
 
 type OperationHandlerI interface {
-	Exec(payload []byte) (bool, error)
+	Exec(payload []byte) error
 }
 
 func init() {
@@ -65,23 +65,32 @@ func GetQueueManager() QueueManagerI {
 	return QueueManager
 }
 
-func (qm *QueueManagerT) InsertOperation(payload []byte) error {
+func (qm *QueueManagerT) InsertOperation(payload []byte) (int64, error) {
 	sqlStatement := `INSERT INTO operations (operation, payload, done, op_status)
 	VALUES ($1, $2, $3, $4)
 	RETURNING id`
 
 	stmt, err := qm.dbHandle.Prepare(sqlStatement)
 	if err != nil {
-		return err
+		return -1, err
 	}
 
 	row := stmt.QueryRow("CLEAR", payload, false, "queued")
 	var opID int64
 	err = row.Scan(&opID)
 	if err != nil {
-		return err
+		return -1, err
 	}
 
+	return opID, nil
+}
+
+func (qm *QueueManagerT) MarkOperationStart(opID int64) error {
+	sqlStatement := `UPDATE operations SET op_status=$3, start_time=$2 WHERE id=$1`
+	_, err := qm.dbHandle.Exec(sqlStatement, opID, time.Now().UTC(), "executing")
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -125,21 +134,18 @@ func (qm *QueueManagerT) StartProcessLoop() {
 		}
 		stmt.Close()
 
-		pkgLogger.Infof("%#v", op)
+		qm.MarkOperationStart(op.ID)
+
+		pkgLogger.Debugf("%#v", op)
 		opHandler := qm.getHandler(op.Operation)
 		if opHandler == nil {
 			pkgLogger.Errorf("No handler found for operation: %s", op.Operation)
 			status = "dropped"
 		} else {
-			retry, err := opHandler.Exec(op.Payload)
+			err := opHandler.Exec(op.Payload)
 			if err != nil {
 				pkgLogger.Errorf("Operation(%s) execution failed with error: %w", op.Operation, err)
-				if retry {
-					time.Sleep(5 * time.Second)
-					continue
-				} else {
-					status = "failed"
-				}
+				status = "failed"
 			}
 		}
 

@@ -43,11 +43,11 @@ func GetClearOperationHandlerInstance(gatewayDB, routerDB, batchRouterDB jobsdb.
 	return clearOperationHandler
 }
 
-func (handler *ClearOperationHandlerT) Exec(payload []byte) (bool, error) {
+func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 	var reqPayload ClearQueueRequestPayload
 	err := json.Unmarshal(payload, &reqPayload)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	parameterFilters := []jobsdb.ParameterFilterT{
@@ -65,7 +65,7 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) (bool, error) {
 	//Clear From BatchRouterDB
 	handler.clearFromJobsdb(clearOperationHandler.batchRouterDB, parameterFilters, false, true)
 
-	return false, nil
+	return nil
 }
 
 func (handler *ClearOperationHandlerT) clearFromJobsdb(db jobsdb.JobsDB, parameterFilters []jobsdb.ParameterFilterT, throttled, waiting bool) {
@@ -96,12 +96,12 @@ func (handler *ClearOperationHandlerT) clearFromJobsdb(db jobsdb.JobsDB, paramet
 		for _, job := range combinedList {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+				AttemptNum:    job.LastJobStatus.AttemptNum,
 				JobState:      jobsdb.Aborted.State,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
-				ErrorResponse: []byte(`{}`), // check
+				ErrorResponse: []byte(`{"reason": "aborted as per request"}`), // check
 			}
 			statusList = append(statusList, &status)
 		}

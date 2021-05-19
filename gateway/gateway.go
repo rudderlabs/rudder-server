@@ -648,13 +648,13 @@ func (gateway *HandleT) ClearHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = queuemanager.GetQueueManager().InsertOperation(payload)
+	opID, err := queuemanager.GetQueueManager().InsertOperation(payload)
 	if err != nil {
 		errorMessage = err.Error()
 		return
 	}
 
-	w.Write([]byte(`{"status": "OK"}`))
+	w.Write([]byte(fmt.Sprintf(`{"op_id": %d}`, opID)))
 }
 
 type pendingEventsRequestPayload struct {
