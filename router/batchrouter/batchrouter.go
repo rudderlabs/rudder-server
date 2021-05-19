@@ -230,8 +230,8 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 			mergeProp1 := gjson.GetBytes(job.EventPayload, "metadata.mergePropOne").String()
 			mergeProp2 := gjson.GetBytes(job.EventPayload, "metadata.mergePropTwo").String()
 			ruleIdentifier := fmt.Sprintf(`%s::%s`, mergeProp1, mergeProp2)
-			encounteredMergeRuleMapLock.Lock()
 			configSubscriberLock.Lock()
+			encounteredMergeRuleMapLock.Lock()
 			if _, ok := encounteredMergeRuleMap[warehouseConnIdentifier][ruleIdentifier]; ok {
 				encounteredMergeRuleMapLock.Unlock()
 				configSubscriberLock.Unlock()
