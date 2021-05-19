@@ -11,6 +11,7 @@ import (
 type Options struct {
 	NormalMode    bool
 	DegradedMode  bool
+	StandByMode   bool
 	MigrationMode string
 	ClearDB       bool
 	Cpuprofile    string
@@ -23,6 +24,7 @@ func LoadOptions() *Options {
 	// Parse command line options
 	normalMode := flag.Bool("normal-mode", false, "a bool")
 	degradedMode := flag.Bool("degraded-mode", false, "a bool")
+	standbyMode := flag.Bool("standby-mode", false, "a bool")
 	clearDB := flag.Bool("cleardb", false, "a bool")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to `file`")
 	memprofile := flag.String("memprofile", "", "write memory profile to `file`")
@@ -33,6 +35,8 @@ func LoadOptions() *Options {
 		*normalMode = true
 	} else if serverMode == "degraded" {
 		*degradedMode = true
+	} else if serverMode == "standby" {
+		*standbyMode = true
 	}
 
 	flag.Parse()
@@ -40,6 +44,7 @@ func LoadOptions() *Options {
 	return &Options{
 		NormalMode:    *normalMode,
 		DegradedMode:  *degradedMode,
+		StandByMode:   *standbyMode,
 		MigrationMode: getMigrationMode(),
 		ClearDB:       *clearDB,
 		Cpuprofile:    *cpuprofile,

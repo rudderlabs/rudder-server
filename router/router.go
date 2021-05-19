@@ -15,6 +15,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/drain"
@@ -150,7 +151,7 @@ var (
 	pkgLogger                                                     logger.LoggerI
 	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                time.Duration
-	toDrainDestinationID                                          string
+	toAbortDestinationIDs                                         string
 )
 
 type requestMetric struct {
@@ -196,7 +197,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(300), &maxRetryBackoff, true, time.Second, "Router.maxRetryBackoffInS")
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Router.fixedLoopSleepInMS")
 	failedEventsCacheSize = config.GetInt("Router.failedEventsCacheSize", 10)
-	config.RegisterStringConfigVariable("NONE", &toDrainDestinationID, true, "Router.drainDestinationID")
+	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -386,11 +387,36 @@ func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) []byte {
 	return resp
 }
 
+func getIterableStruct(payload []byte, transformAt string) []integrations.PostParametersT {
+	var err error
+	var response integrations.PostParametersT
+	responseArray := make([]integrations.PostParametersT, 0)
+	if transformAt == "router" {
+		err = json.Unmarshal(payload, &response)
+		if err != nil {
+			err = json.Unmarshal(payload, &responseArray)
+		} else {
+			responseArray = append(responseArray, response)
+		}
+
+	} else {
+		err = json.Unmarshal(payload, &response)
+		if err == nil {
+			responseArray = append(responseArray, response)
+		}
+	}
+	if err != nil {
+		panic(fmt.Errorf("setting Payload through sjson failed with err %v", err))
+	}
+	return responseArray
+}
+
 func (worker *workerT) handleWorkerDestinationJobs() {
 	worker.batchTimeStat.Start()
 
 	var respStatusCode, prevRespStatusCode int
 	var respBody string
+	var respBodyTemp string
 	handledJobMetadatas := make(map[int64]*types.JobMetadataT)
 
 	var destinationResponseHandler ResponseHandlerI
@@ -444,23 +470,46 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				diagnosisStartTime := time.Now()
 				sourceID := destinationJob.JobMetadataArray[0].SourceID
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
+
 				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
+				transformAt := destinationJob.JobMetadataArray[0].TransformAt
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
+				deliveryLatencyStat := stats.NewTaggedStat("delivery_latency", stats.TimerType, stats.Tags{
+					"module":      "router",
+					"destType":    worker.rt.destName,
+					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
+				})
+				deliveryLatencyStat.Start()
+
 				ch := worker.trackStuckDelivery()
 				if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
-							panic(fmt.Errorf("Different sources are grouped together"))
+							panic(fmt.Errorf("different sources are grouped together"))
 						}
 						if destinationID != destinationJobMetadata.DestinationID {
-							panic(fmt.Errorf("Different destinations are grouped together"))
+							panic(fmt.Errorf("different destinations are grouped together"))
 						}
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
-					respStatusCode, respBody = worker.rt.netHandle.sendPost(destinationJob.Message)
+					result := getIterableStruct(destinationJob.Message, transformAt)
+					for _, val := range result {
+						err := integrations.ValidatePostInfo(val)
+						if err != nil {
+							respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
+						} else {
+							respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val)
+							if isSuccessStatus(respStatusCode) {
+								respBody = respBody + " " + respBodyTemp
+							} else {
+								respBody = respBodyTemp
+								break
+							}
+						}
+					}
 				}
 				ch <- struct{}{}
 
@@ -473,6 +522,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				attemptedToSendTheJob = true
 
 				worker.deliveryTimeStat.End()
+				deliveryLatencyStat.End()
 				// END: request to destination endpoint
 
 				if isSuccessStatus(respStatusCode) {
@@ -1343,6 +1393,7 @@ func (rt *HandleT) generatorLoop() {
 
 		var statusList []*jobsdb.JobStatusT
 		var drainList []*jobsdb.JobStatusT
+		drainCountByDest := make(map[string]int)
 
 		var toProcess []workerJobT
 
@@ -1350,7 +1401,8 @@ func (rt *HandleT) generatorLoop() {
 		throttledAtTime := time.Now()
 		//Identify jobs which can be processed
 		for _, job := range combinedList {
-			if isToBeDrained(job) {
+			destID := destinationID(job)
+			if rt.isToBeDrained(job, destID) {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -1358,9 +1410,13 @@ func (rt *HandleT) generatorLoop() {
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
-					ErrorResponse: []byte(`{"reason": "Job confifgured to be aborted via ENV" }`),
+					ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or confifgured to be aborted via ENV" }`),
 				}
 				drainList = append(drainList, &status)
+				if _, ok := drainCountByDest[destID]; !ok {
+					drainCountByDest[destID] = 0
+				}
+				drainCountByDest[destID] = drainCountByDest[destID] + 1
 				continue
 			}
 			w := rt.findWorker(job, throttledAtTime)
@@ -1387,17 +1443,19 @@ func (rt *HandleT) generatorLoop() {
 			panic(err)
 		}
 		//Mark the jobs as aborted
-		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
-		if err != nil {
-			if len(drainList) > 0 {
+		if len(drainList) > 0 {
+			err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
+			if err != nil {
+				pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
+				panic(err)
+			}
+			for destID, count := range drainCountByDest {
 				rt.drainedJobsStat = stats.NewTaggedStat(`router_drained_events`, stats.CountType, stats.Tags{
 					"destType": rt.destName,
-					"destId":   toDrainDestinationID,
+					"destId":   destID,
 				})
-				rt.drainedJobsStat.Count(len(drainList))
+				rt.drainedJobsStat.Count(count)
 			}
-			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
-			panic(err)
 		}
 
 		//Send the jobs to the jobQ
@@ -1417,8 +1475,19 @@ func (rt *HandleT) generatorLoop() {
 	}
 }
 
-func isToBeDrained(job *jobsdb.JobT) bool {
-	return toDrainDestinationID != "NONE" && gjson.GetBytes(job.Parameters, "destination_id").String() == toDrainDestinationID
+func destinationID(job *jobsdb.JobT) string {
+	return gjson.GetBytes(job.Parameters, "destination_id").String()
+}
+
+func (rt *HandleT) isToBeDrained(job *jobsdb.JobT, destID string) bool {
+	if d, ok := rt.destinationsMap[destID]; ok && !d.Enabled {
+		return true
+	}
+	if toAbortDestinationIDs != "" {
+		abortIDs := strings.Split(toAbortDestinationIDs, ",")
+		return misc.ContainsString(abortIDs, destID)
+	}
+	return false
 }
 
 func (rt *HandleT) crashRecover() {

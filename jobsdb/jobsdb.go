@@ -334,7 +334,7 @@ var dbErrorMap = map[string]string{
 // instanceBackupFailedAndAborted = true => the individual jobdb backsup failed and aborted jobs only
 // pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
 func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
-	masterBackupEnabled := config.GetBool("JobsDB.backup.enabled", false)
+	masterBackupEnabled := config.GetBool("JobsDB.backup.enabled", true)
 	instanceBackupEnabled := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix), false)
 	instanceBackupFailedAndAborted := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix), false)
 	pathPrefix := config.GetString(fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix), jd.tablePrefix)
@@ -1227,6 +1227,13 @@ func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
 	return maxDSIndex
 }
 
+func (jd *HandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) {
+	stmt, err := txn.Prepare(sqlStatement)
+	jd.assertError(err)
+	_, err = stmt.Exec()
+	jd.assertError(err)
+}
+
 //Drop a dataset
 func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 
@@ -1235,20 +1242,27 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	//happens during recovering from failed migration.
 	//For every other case, the table must exist
 	var sqlStatement string
-	if allowMissing {
-		sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ds.JobStatusTable)
-	} else {
-		sqlStatement = fmt.Sprintf(`DROP TABLE %s`, ds.JobStatusTable)
-	}
-	_, err := jd.dbHandle.Exec(sqlStatement)
+	var err error
+	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)
+	jd.prepareAndExecStmtInTxn(txn, sqlStatement)
+
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)
+	jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 
 	if allowMissing {
+		sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ds.JobStatusTable)
+		jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 		sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ds.JobTable)
+		jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	} else {
+		sqlStatement = fmt.Sprintf(`DROP TABLE %s`, ds.JobStatusTable)
+		jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 		sqlStatement = fmt.Sprintf(`DROP TABLE %s`, ds.JobTable)
+		jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	}
-	_, err = jd.dbHandle.Exec(sqlStatement)
+	err = txn.Commit()
 	jd.assertError(err)
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
@@ -1407,7 +1421,7 @@ func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 
 	//Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
-		if jd.BackupSettings.BackupEnabled {
+		if jd.BackupSettings.BackupEnabled && isBackupConfigured() {
 			jd.renameDS(ds, false)
 		} else {
 			jd.dropDS(ds, false)
@@ -2121,14 +2135,17 @@ func (jd *HandleT) backupDSLoop() {
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
 
-		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
-		success := jd.backupDS(backupDSRange)
-		if !success {
-			jd.removeTableJSONDumps()
+		var opID int64
+		if isBackupConfigured() {
+			opID = jd.JournalMarkStart(backupDSOperation, opPayload)
+			success := jd.backupDS(backupDSRange)
+			if !success {
+				jd.removeTableJSONDumps()
+				jd.JournalMarkDone(opID)
+				continue
+			}
 			jd.JournalMarkDone(opID)
-			continue
 		}
-		jd.JournalMarkDone(opID)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
@@ -2209,6 +2226,10 @@ func (jd *HandleT) getFileUploader() (filemanager.FileManager, error) {
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanager.GetProviderConfigFromEnv(),
 	})
+}
+
+func isBackupConfigured() bool {
+	return config.GetEnv("JOBS_BACKUP_BUCKET", "") != ""
 }
 
 func (jd *HandleT) isEmpty(ds dataSetT) bool {

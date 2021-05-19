@@ -1,9 +1,12 @@
 package processor
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math"
+	"net/http"
 	"reflect"
 	"sort"
 	"strconv"
@@ -88,7 +91,15 @@ type HandleT struct {
 	dedupHandler                   dedup.DedupI
 	reporting                      types.ReportingI
 	reportingEnabled               bool
+	transformerFeatures            json.RawMessage
 }
+
+var defaultTransformerFeatures = `{
+	"routerTransform": {
+	  "MARKETO": true,
+	  "HS": true
+	}
+  }`
 
 type DestStatT struct {
 	id               string
@@ -267,6 +278,10 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 		proc.backendConfigSubscriber()
 	})
 
+	rruntime.Go(func() {
+		proc.getTransformerFeatureJson()
+	})
+
 	proc.transformer.Setup()
 
 	proc.crashRecover()
@@ -315,6 +330,9 @@ var (
 	enableDedup                         bool
 	transformTimesPQLength              int
 	captureEventNameStats               bool
+	transformerURL                      string
+	pollInterval                        time.Duration
+	isUnLocked                          bool
 )
 
 func loadConfig() {
@@ -339,6 +357,52 @@ func loadConfig() {
 	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
+	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	pollInterval = config.GetDuration("Processor.pollIntervalInS", time.Duration(5)) * time.Second
+
+}
+
+func (proc *HandleT) getTransformerFeatureJson() {
+	const attempts = 10
+	for {
+		for i := 0; i < attempts; i++ {
+			url := transformerURL + "/features"
+			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
+			if err != nil {
+				proc.logger.Error("error creating request - %s", err)
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			tr := &http.Transport{}
+			client := &http.Client{Transport: tr}
+			res, err := client.Do(req)
+
+			if err != nil {
+				proc.logger.Error("error sending request - %s", err)
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			if res.StatusCode == 200 {
+				body, err := ioutil.ReadAll(res.Body)
+				if err == nil {
+					proc.transformerFeatures = json.RawMessage(body)
+					res.Body.Close()
+					break
+				} else {
+					res.Body.Close()
+					time.Sleep(200 * time.Millisecond)
+					continue
+				}
+			} else if res.StatusCode == 404 {
+				proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
+				break
+			}
+		}
+		if proc.transformerFeatures != nil && !isUnLocked {
+			isUnLocked = true
+		}
+		time.Sleep(pollInterval)
+	}
 }
 
 //SetDisableDedupFeature overrides SetDisableDedupFeature configuration and returns previous value
@@ -1306,7 +1370,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		startedAt = time.Now()
 
 		transformAt := "processor"
-		if val, ok := destination.DestinationDefinition.Config["transformAt"].(string); ok {
+		if val, ok := destination.DestinationDefinition.Config["transformAtV1"].(string); ok {
 			transformAt = val
 		}
 		//Check for overrides through env
@@ -1314,11 +1378,16 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		if transformAtOverrideFound {
 			transformAt = config.GetString("Processor."+destination.DestinationDefinition.Name+".transformAt", "processor")
 		}
+		transformAtFromFeaturesFile := gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String()
 
-		if transformAt == "processor" {
-			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
-		} else {
+		//If transformAt is none
+		// OR
+		//router and transformer supports router transform, then no destination transformation happens.
+		if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
 			response = convertToTransformerResponse(eventsToTransform)
+		} else {
+			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+			transformAt = "processor"
 		}
 
 		endedAt = time.Now()
@@ -1646,7 +1715,6 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 func (proc *HandleT) mainLoop() {
 	//waiting till the backend config is received
 	proc.backendConfig.WaitForConfig()
-
 	//waiting for reporting client setup
 	if proc.reporting != nil {
 		proc.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
@@ -1656,17 +1724,20 @@ func (proc *HandleT) mainLoop() {
 	currLoopSleep := time.Duration(0)
 
 	for {
-		if proc.handlePendingGatewayJobs() {
-			currLoopSleep = time.Duration(0)
-		} else {
-			currLoopSleep = 2*currLoopSleep + loopSleep
-			if currLoopSleep > maxLoopSleep {
-				currLoopSleep = maxLoopSleep
+		if isUnLocked {
+			if proc.handlePendingGatewayJobs() {
+				currLoopSleep = time.Duration(0)
+			} else {
+				currLoopSleep = 2*currLoopSleep + loopSleep
+				if currLoopSleep > maxLoopSleep {
+					currLoopSleep = maxLoopSleep
+				}
+				time.Sleep(currLoopSleep)
 			}
-			time.Sleep(currLoopSleep)
+			time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
+		} else {
+			time.Sleep(fixedLoopSleep)
 		}
-		time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
-
 	}
 }
 

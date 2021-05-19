@@ -214,14 +214,14 @@ func (wh *HandleT) backendConfigSubscriber() {
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
 		allSources := config.Data.(backendconfig.ConfigT)
+		sourceIDsByWorkspaceLock.Lock()
+		sourceIDsByWorkspace = map[string][]string{}
 		pkgLogger.Infof(`Received updated workspace config`)
 		for _, source := range allSources.Sources {
-			sourceIDsByWorkspaceLock.Lock()
 			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
 				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
 			}
 			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
-			sourceIDsByWorkspaceLock.Unlock()
 
 			if len(source.Destinations) == 0 {
 				continue
@@ -287,6 +287,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 			}
 		}
 		pkgLogger.Infof("Releasing config subscriber lock: %s", wh.destType)
+		sourceIDsByWorkspaceLock.Unlock()
 		wh.configSubscriberLock.Unlock()
 		wh.initialConfigFetched = true
 	}
@@ -888,13 +889,13 @@ func minimalConfigSubscriber() {
 		config := <-ch
 		pkgLogger.Debug("Got config from config-backend", config)
 		sources := config.Data.(backendconfig.ConfigT)
+		sourceIDsByWorkspaceLock.Lock()
+		sourceIDsByWorkspace = map[string][]string{}
 		for _, source := range sources.Sources {
-			sourceIDsByWorkspaceLock.Lock()
 			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
 				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
 			}
 			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
-			sourceIDsByWorkspaceLock.Unlock()
 			for _, destination := range source.Destinations {
 				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh := &HandleT{
@@ -906,6 +907,7 @@ func minimalConfigSubscriber() {
 				}
 			}
 		}
+		sourceIDsByWorkspaceLock.Unlock()
 		if val, ok := sources.ConnectionFlags.Services["warehouse"]; ok {
 			if UploadAPI.connectionManager != nil {
 				UploadAPI.connectionManager.Apply(sources.ConnectionFlags.URL, val)

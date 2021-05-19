@@ -6,14 +6,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/warehouse"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 )
 
@@ -60,7 +58,11 @@ type PostParametersT struct {
 }
 
 // GetPostInfo parses the transformer response
-func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err error) {
+func ValidatePostInfo(transformRawParams PostParametersT) error {
+	transformRaw, err := json.Marshal(transformRawParams)
+	if err != nil {
+		return err
+	}
 	parsedJSON := gjson.ParseBytes(transformRaw)
 	errorMessages := make([]string, 0)
 	for _, v := range postParametersTFields {
@@ -71,14 +73,11 @@ func GetPostInfo(transformRaw json.RawMessage) (postInfo PostParametersT, err er
 	}
 	if len(errorMessages) > 0 {
 		errorMessages = append(errorMessages, fmt.Sprintf("in transformer response : %v", parsedJSON))
-		err = errors.New(strings.Join(errorMessages, "\n"))
-		return postInfo, err
+		err := errors.New(strings.Join(errorMessages, "\n"))
+		return err
 	}
-	unMarshalError := json.Unmarshal(transformRaw, &postInfo)
-	if unMarshalError != nil {
-		err = fmt.Errorf("Error while unmarshalling response from transformer : %s, Error: %w", transformRaw, unMarshalError)
-	}
-	return postInfo, err
+
+	return nil
 }
 
 //FilterClientIntegrations parses the destination names from the

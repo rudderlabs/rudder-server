@@ -96,11 +96,12 @@ type SchemaVersionMapT map[string]map[string]*SchemaVersionT
 
 // EventSchemaManagerT handles all event-schemas related features
 type EventSchemaManagerT struct {
-	dbHandle          *sql.DB
-	eventModelMap     EventModelMapT
-	schemaVersionMap  SchemaVersionMapT
-	eventModelLock    sync.RWMutex
-	schemaVersionLock sync.RWMutex
+	dbHandle             *sql.DB
+	eventModelMap        EventModelMapT
+	schemaVersionMap     SchemaVersionMapT
+	eventModelLock       sync.RWMutex
+	schemaVersionLock    sync.RWMutex
+	disableInMemoryCache bool
 }
 
 var (
@@ -638,7 +639,9 @@ func (manager *EventSchemaManagerT) Setup() {
 	manager.eventModelMap = make(EventModelMapT)
 	manager.schemaVersionMap = make(SchemaVersionMapT)
 
-	manager.populateEventSchemas()
+	if !manager.disableInMemoryCache {
+		manager.populateEventSchemas()
+	}
 	eventSchemaChannel = make(chan *GatewayEventBatchT, 10000)
 
 	for i := 0; i < noOfWorkers; i++ {
