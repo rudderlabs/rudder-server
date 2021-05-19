@@ -1414,7 +1414,7 @@ func (rt *HandleT) generatorLoop() {
 					ErrorResponse: []byte(`{"reason": "Job confifgured to be aborted via ENV" }`),
 				}
 				drainList = append(drainList, &status)
-				destinationID := gjson.GetBytes(job.Parameters, "destination_id").String()
+				destinationID := destinationID(job)
 				if _, ok := drainCountByDest[destinationID]; !ok {
 					drainCountByDest[destinationID] = 0
 				}
@@ -1477,17 +1477,19 @@ func (rt *HandleT) generatorLoop() {
 	}
 }
 
+func destinationID(job *jobsdb.JobT) string {
+	return gjson.GetBytes(job.Parameters, "destination_id").String()
+}
+
 func (rt *HandleT) isToBeDrained(job *jobsdb.JobT) bool {
 	if abortDisabledDestinationJobs {
-		destinationID := gjson.GetBytes(job.Parameters, "destination_id").String()
-		if d, ok := rt.destinationsMap[destinationID]; ok && !d.Enabled {
+		if d, ok := rt.destinationsMap[destinationID(job)]; ok && !d.Enabled {
 			return true
 		}
 	}
 	if toAbortDestinationIDs != "" {
-		destinationID := gjson.GetBytes(job.Parameters, "destination_id").String()
 		abortIDs := strings.Split(toAbortDestinationIDs, ",")
-		return misc.ContainsString(abortIDs, destinationID)
+		return misc.ContainsString(abortIDs, destinationID(job))
 	}
 	return false
 }
