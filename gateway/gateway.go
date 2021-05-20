@@ -807,6 +807,7 @@ func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.Respons
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r)
 	if err != nil {
+		errorMessage = err.Error()
 	}
 	errorMessage = rh.ProcessRequest(gateway, &w, r, reqType, payload, writeKey)
 
