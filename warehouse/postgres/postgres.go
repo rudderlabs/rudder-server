@@ -166,9 +166,10 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			pkgLogger.Errorf("PG: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
+		storageProvider := warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 		downloader, err := filemanager.New(&filemanager.SettingsT{
-			Provider: warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config),
-			Config:   pg.Warehouse.Destination.Config,
+			Provider: storageProvider,
+			Config:   misc.GetObjectStorageConfig(storageProvider, pg.Warehouse.Destination.Config, pg.Uploader.UseRudderStorage()),
 		})
 		if err != nil {
 			pkgLogger.Errorf("PG: Error in setting up a downloader for destionationID : %s Error : %v", pg.Warehouse.Destination.ID, err)
@@ -551,8 +552,8 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 func (pg *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
-	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, warehouse.Destination.Config)
 	pg.Uploader = uploader
+	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 
 	pg.Db, err = connect(pg.getConnectionCredentials())
 	return err
