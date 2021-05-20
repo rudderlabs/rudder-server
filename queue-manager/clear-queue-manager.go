@@ -74,10 +74,10 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 	var rm router.RoutersManagerI
 	for {
 		rm, err = router.GetRoutersManager()
-		if err == nil {
+		if err == nil && rm != nil && rm.AreRoutersReady() {
 			break
 		}
-		pkgLogger.Infof("RoutersManager is nil. Retrying after a second")
+		pkgLogger.Infof("RoutersManager is nil or Routers are not ready. Retrying after a second")
 		time.Sleep(time.Second)
 	}
 	rm.PauseAll()
@@ -93,6 +93,7 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 	handler.clearFromJobsdb(clearOperationHandler.batchRouterDB, parameterFilters, false, true)
 
 	pm.Resume()
+	rm.ResumeAll()
 
 	return nil
 }

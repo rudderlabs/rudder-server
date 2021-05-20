@@ -174,5 +174,10 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, re
 				}
 			}
 		}
+
+		rm, err := router.GetRoutersManager()
+		if rm != nil && err == nil {
+			rm.SetRoutersReady()
+		}
 	}
 }

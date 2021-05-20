@@ -12,10 +12,13 @@ type RoutersManagerI interface {
 	Pause(destType string)
 	ResumeAll()
 	Resume(destType string)
+	SetRoutersReady()
+	AreRoutersReady() bool
 }
 
 type RoutersManagerT struct {
-	Routers map[string]*HandleT
+	Routers      map[string]*HandleT
+	RoutersReady bool
 }
 
 func RoutersManagerSetup() {
@@ -32,6 +35,14 @@ func GetRoutersManager() (RoutersManagerI, error) {
 	}
 
 	return RoutersManager, nil
+}
+
+func (rm *RoutersManagerT) SetRoutersReady() {
+	rm.RoutersReady = true
+}
+
+func (rm *RoutersManagerT) AreRoutersReady() bool {
+	return rm.RoutersReady
 }
 
 func (rm *RoutersManagerT) AddRouter(router *HandleT) {
