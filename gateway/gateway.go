@@ -796,28 +796,6 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 
 func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
 
-	gateway.logger.LogRequest(r)
-	atomic.AddUint64(&gateway.recvCount, 1)
-	var errorMessage string
-	defer func() {
-		if errorMessage != "" {
-			gateway.logger.Debug(errorMessage)
-			//http.Error(w, response.GetStatus(errorMessage), 400)
-		}
-	}()
-	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r)
-	if err != nil {
-		errorMessage = err.Error()
-	}
-	errorMessage = rh.ProcessRequest(gateway, &w, r, reqType, payload, writeKey)
-
-	atomic.AddUint64(&gateway.ackCount, 1)
-	gateway.trackRequestMetrics(errorMessage)
-
-	gateway.logger.Debug(response.GetStatus(""))
-
-	w.Header().Set("Content-Type", "image/gif")
-
 	m := image.NewRGBA(image.Rect(0, 0, 1, 1))
 	rudderColor := color.RGBA{100, 65, 139, 0}
 	draw.Draw(m, m.Bounds(), &image.Uniform{rudderColor}, image.Point{}, draw.Src)
@@ -834,6 +812,25 @@ func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.Respons
 		return
 	}
 
+	gateway.logger.LogRequest(r)
+	atomic.AddUint64(&gateway.recvCount, 1)
+	var errorMessage string
+	defer func() {
+		if errorMessage != "" {
+			gateway.logger.Debug(errorMessage)
+			//http.Error(w, response.GetStatus(errorMessage), 400)
+		}
+	}()
+	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r)
+	if err != nil {
+		return
+	}
+	errorMessage = rh.ProcessRequest(gateway, &w, r, reqType, payload, writeKey)
+
+	atomic.AddUint64(&gateway.ackCount, 1)
+	gateway.trackRequestMetrics(errorMessage)
+
+	gateway.logger.Debug(response.GetStatus(""))
 }
 
 //ProcessRequest on ImportRequestHandler splits payload by user and throws them into the webrequestQ and waits for all their responses before returning
