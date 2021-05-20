@@ -982,12 +982,10 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 
 	// convert the pixel request(r) to a web request(req)
 	err := gateway.setWebPayload(req, queryParams, reqType)
-	if err != nil {
-
+	if err != nil || err == nil {
+		// send req to webHandler
+		gateway.pixelWebHandler(w, req, reqType)
 	}
-
-	// send req to webHandler
-	gateway.pixelWebHandler(w, req, reqType)
 
 }
 
