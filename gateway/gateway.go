@@ -368,7 +368,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			// this prevents not setting sourceID in gw job if disabled before setting it
 			sourceID := gateway.getSourceIDForWriteKey(writeKey)
 			if !gateway.isWriteKeyEnabled(writeKey) {
-				req.done <- response.GetStatus("")
+				req.done <- response.GetStatus(response.InvalidWriteKey)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
@@ -802,20 +802,17 @@ func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.Respons
 	defer func() {
 		if errorMessage != "" {
 			gateway.logger.Debug(errorMessage)
-			http.Error(w, response.GetStatus(errorMessage), 400)
+			//http.Error(w, response.GetStatus(errorMessage), 400)
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r)
 	if err != nil {
-		errorMessage = err.Error()
-		return
 	}
 	errorMessage = rh.ProcessRequest(gateway, &w, r, reqType, payload, writeKey)
+
 	atomic.AddUint64(&gateway.ackCount, 1)
 	gateway.trackRequestMetrics(errorMessage)
-	if errorMessage != "" {
-		return
-	}
+
 	gateway.logger.Debug(response.GetStatus(""))
 
 	w.Header().Set("Content-Type", "image/gif")
@@ -970,34 +967,28 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType st
 }
 
 func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, reqType string) {
-	if r.Method == http.MethodGet {
-		queryParams := r.URL.Query()
-		if writeKey, present := queryParams["writeKey"]; present && writeKey[0] != "" {
-			// make a new request
-			req, _ := http.NewRequest(http.MethodPost, "", nil)
 
-			// set basic auth header
-			req.SetBasicAuth(writeKey[0], "")
-			delete(queryParams, "writeKey")
+	queryParams := r.URL.Query()
+	writeKey := queryParams["writeKey"]
+	// make a new request
+	req, _ := http.NewRequest(http.MethodPost, "", nil)
 
-			// set X-Forwarded-For header
-			req.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
+	// set basic auth header
+	req.SetBasicAuth(writeKey[0], "")
+	delete(queryParams, "writeKey")
 
-			// convert the pixel request(r) to a web request(req)
-			err := gateway.setWebPayload(req, queryParams, reqType)
-			if err != nil {
-				http.Error(w, "", http.StatusOK)
-				return
-			}
+	// set X-Forwarded-For header
+	req.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
 
-			// send req to webHandler
-			gateway.pixelWebHandler(w, req, reqType)
-		} else {
-			http.Error(w, "", http.StatusOK)
-		}
-	} else {
-		http.Error(w, "", http.StatusOK)
+	// convert the pixel request(r) to a web request(req)
+	err := gateway.setWebPayload(req, queryParams, reqType)
+	if err != nil {
+
 	}
+
+	// send req to webHandler
+	gateway.pixelWebHandler(w, req, reqType)
+
 }
 
 func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, reqType string) {
