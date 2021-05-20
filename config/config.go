@@ -561,6 +561,14 @@ func GetWorkspaceToken() string {
 	return GetEnv("CONFIG_BACKEND_TOKEN", "")
 }
 
+func GetNamespaceIdentifier() string {
+	k8sNamespace := GetKubeNamespace()
+	if k8sNamespace != "" {
+		return k8sNamespace
+	}
+	return "none"
+}
+
 // returns value stored in KUBE_NAMESPACE env var
 func GetKubeNamespace() string {
 	return GetEnv("KUBE_NAMESPACE", "")

@@ -97,6 +97,7 @@ type UploadT struct {
 	Metadata           json.RawMessage
 	FirstEventAt       time.Time
 	LastEventAt        time.Time
+	UseRudderStorage   bool
 	// cloud sources specific info
 	SourceBatchID   string
 	SourceTaskID    string
@@ -365,7 +366,7 @@ func (job *UploadJobT) run() (err error) {
 		case GeneratedLoadFiles:
 			newStatus = nextUploadState.failed
 			// generate load files for all staging files(including succeeded) if hasSchemaChanged or if its snowflake(to have all load files in same folder in bucket) or set via toml/env
-			generateAll := hasSchemaChanged || misc.ContainsString(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", false)
+			generateAll := hasSchemaChanged || misc.ContainsString(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
 			var startLoadFileID, endLoadFileID int64
 			startLoadFileID, endLoadFileID, err = job.createLoadFiles(generateAll)
 			if err != nil {
@@ -1475,6 +1476,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				DestinationType:     destType,
 				DestinationConfig:   job.warehouse.Destination.Config,
 				UniqueLoadGenID:     uniqueLoadGenID,
+				UseRudderStorage:    job.upload.UseRudderStorage,
 			}
 
 			payloadJSON, err := json.Marshal(payload)
@@ -1735,6 +1737,10 @@ func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
 		return true
 	}
 	return false
+}
+
+func (job *UploadJobT) UseRudderStorage() bool {
+	return job.upload.UseRudderStorage
 }
 
 /*

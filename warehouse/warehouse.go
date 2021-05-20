@@ -351,7 +351,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at, metadata->>'source_batch_id', metadata->>'source_task_id', metadata->>'source_task_run_id', metadata->>'source_job_id', metadata->>'source_job_run_id'
+	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at, metadata->>'source_batch_id', metadata->>'source_task_id', metadata->>'source_task_run_id', metadata->>'source_job_id', metadata->>'source_job_run_id', metadata->>'use_rudder_storage'
                                 FROM %[1]s
 								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
 								ORDER BY id ASC`,
@@ -365,14 +365,16 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	var stagingFilesList []*StagingFileT
 	var firstEventAt, lastEventAt sql.NullTime
 	var sourceBatchID, sourceTaskID, sourceTaskRunID, sourceJobID, sourceJobRunID sql.NullString
+	var UseRudderStorage sql.NullBool
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt, &sourceBatchID, &sourceTaskID, &sourceTaskRunID, &sourceJobID, &sourceJobRunID)
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt, &sourceBatchID, &sourceTaskID, &sourceTaskRunID, &sourceJobID, &sourceJobRunID, &UseRudderStorage)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		jsonUpload.FirstEventAt = firstEventAt.Time
 		jsonUpload.LastEventAt = lastEventAt.Time
+		jsonUpload.UseRudderStorage = UseRudderStorage.Bool
 		// add cloud sources metadata
 		jsonUpload.SourceBatchID = sourceBatchID.String
 		jsonUpload.SourceTaskID = sourceTaskID.String
@@ -409,6 +411,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 	now := timeutil.Now()
 	metadataMap := map[string]interface{}{
+		"use_rudder_storage": jsonUploadsList[0].UseRudderStorage,
 		"source_batch_id":    jsonUploadsList[0].SourceBatchID,
 		"source_task_id":     jsonUploadsList[0].SourceTaskID,
 		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
@@ -465,20 +468,39 @@ func setLastProcessedMarker(warehouse warehouseutils.WarehouseT) {
 }
 
 func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT) {
-	count := 0
+	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
 	// Then we create 10 new entries in wh_uploads table each with 100 staging files
-	for {
-		lastIndex := count + stagingFilesBatchSize
-		if lastIndex >= len(stagingFilesList) {
-			lastIndex = len(stagingFilesList)
+	// for {
+	// 	lastIndex := count + stagingFilesBatchSize
+	// 	if lastIndex >= len(stagingFilesList) {
+	// 		lastIndex = len(stagingFilesList)
+	// 	}
+
+	// 	wh.initUpload(warehouse, stagingFilesList[count:lastIndex])
+	// 	count += stagingFilesBatchSize
+	// 	if count >= len(stagingFilesList) {
+	// 		break
+	// 	}
+	// }
+
+	var stagingFilesInUpload []*StagingFileT
+	var counter int
+	initUpload := func() {
+		wh.initUpload(warehouse, stagingFilesInUpload)
+		stagingFilesInUpload = []*StagingFileT{}
+		counter = 0
+	}
+	for idx, sFile := range stagingFilesList {
+		if idx > 0 && counter > 0 && sFile.UseRudderStorage != stagingFilesList[idx-1].UseRudderStorage {
+			initUpload()
 		}
 
-		wh.initUpload(warehouse, stagingFilesList[count:lastIndex])
-		count += stagingFilesBatchSize
-		if count >= len(stagingFilesList) {
-			break
+		stagingFilesInUpload = append(stagingFilesInUpload, sFile)
+		counter++
+		if counter == stagingFilesBatchSize || idx == len(stagingFilesList)-1 {
+			initUpload()
 		}
 	}
 }
@@ -610,7 +632,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 	sqlStatement := fmt.Sprintf(`
 			SELECT
-					id, status, schema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming
+					id, status, schema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming, metadata->>'use_rudder_storage'
 				FROM (
 					SELECT
 						ROW_NUMBER() OVER (PARTITION BY destination_id, namespace ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
@@ -651,11 +673,13 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		var schema json.RawMessage
 		var firstTiming sql.NullString
 		var lastTiming sql.NullString
-		err := rows.Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error, &upload.Metadata, &firstTiming, &lastTiming)
+		var useRudderStorage sql.NullBool
+		err := rows.Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error, &upload.Metadata, &firstTiming, &lastTiming, &useRudderStorage)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
+		upload.UseRudderStorage = useRudderStorage.Bool
 		// cloud sources info
 		upload.SourceBatchID = gjson.GetBytes(upload.Metadata, "source_batch_id").String()
 		upload.SourceTaskID = gjson.GetBytes(upload.Metadata, "source_task_id").String()
@@ -1012,6 +1036,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		lastEventAt = nil
 	}
 	metadataMap := map[string]interface{}{
+		"use_rudder_storage": stagingFile.UseRudderStorage,
 		"source_batch_id":    stagingFile.SourceBatchID,
 		"source_task_id":     stagingFile.SourceTaskID,
 		"source_task_run_id": stagingFile.SourceTaskRunID,

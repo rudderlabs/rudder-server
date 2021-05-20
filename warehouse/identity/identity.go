@@ -345,7 +345,7 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 	objectLocations := idr.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
-		objectName, err := warehouseutils.GetObjectName(objectLocation, idr.Warehouse.Destination.Config, warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config))
+		objectName, err := warehouseutils.GetObjectName(objectLocation, idr.Warehouse.Destination.Config, warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage()))
 		if err != nil {
 			pkgLogger.Errorf("IDR: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
 			return nil, err
@@ -367,9 +367,10 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 			pkgLogger.Errorf("IDR: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
+		storageProvider := warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage())
 		downloader, err := filemanager.New(&filemanager.SettingsT{
-			Provider: warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config),
-			Config:   idr.Warehouse.Destination.Config,
+			Provider: storageProvider,
+			Config:   misc.GetObjectStorageConfig(storageProvider, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage()),
 		})
 		if err != nil {
 			pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.Warehouse.Destination.DestinationDefinition.Name, err)
@@ -395,9 +396,10 @@ func (idr *HandleT) uploadFile(filePath string, txn *sql.Tx, tableName string, t
 	if err != nil {
 		panic(err)
 	}
+	storageProvider := warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage())
 	uploader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config),
-		Config:   idr.Warehouse.Destination.Config,
+		Provider: storageProvider,
+		Config:   misc.GetObjectStorageConfig(storageProvider, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage()),
 	})
 	if err != nil {
 		pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.Warehouse.Destination.DestinationDefinition.Name, err)

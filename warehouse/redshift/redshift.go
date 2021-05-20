@@ -212,7 +212,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	defer file.Close()
 	uploader, _ := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
-		Config:   misc.GetObjectStorageConfig("S3", rs.Warehouse.Destination.Config),
+		Config:   misc.GetObjectStorageConfig("S3", rs.Warehouse.Destination.Config, rs.Uploader.UseRudderStorage()),
 	})
 
 	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
@@ -449,7 +449,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 func (rs *HandleT) getTemporaryCredForCopy() (string, string, string, error) {
 
 	var accessKey, accessKeyID string
-	if misc.HasAWSKeysInConfig(rs.Warehouse.Destination.Config) {
+	if misc.HasAWSKeysInConfig(rs.Warehouse.Destination.Config) && !misc.IsConfiguredToUseRudderObjectStorage(rs.Warehouse.Destination.Config) {
 		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse)
 		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, rs.Warehouse)
 	} else {
@@ -461,7 +461,7 @@ func (rs *HandleT) getTemporaryCredForCopy() (string, string, string, error) {
 	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
 
 	//sts.New(mySession, aws.NewConfig().WithRegion("us-west-2"))
-	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{})
+	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &warehouseutils.AWSCredsExpiryInS})
 	if err != nil {
 		return "", "", "", err
 	}
