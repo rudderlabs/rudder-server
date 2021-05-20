@@ -114,9 +114,10 @@ func StartProcessor(clearDB *bool, enableProcessor bool, gatewayDB, routerDB, ba
 	}
 
 	if enableProcessor {
-		var processor = processor.NewProcessor()
-		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting)
-		processor.Start()
+		var processorInstance = processor.NewProcessor()
+		processor.ProcessorManagerSetup(processorInstance)
+		processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting)
+		processorInstance.Start()
 
 		processorLoaded = true
 	}
@@ -132,6 +133,7 @@ func StartRouter(enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb
 	}
 
 	if enableRouter {
+		router.RoutersManagerSetup()
 		go monitorDestRouters(routerDB, batchRouterDB, procErrorDB, reporting)
 		routerLoaded = true
 	}

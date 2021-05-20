@@ -6,6 +6,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor"
+	"github.com/rudderlabs/rudder-server/router"
 )
 
 type ClearOperationHandlerT struct {
@@ -58,12 +60,39 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 		},
 	}
 
+	var pm processor.ProcessorManagerI
+	for {
+		pm, err = processor.GetProcessorManager()
+		if err == nil {
+			break
+		}
+		pkgLogger.Infof("ProcessorManager is nil. Retrying after a second")
+		time.Sleep(time.Second)
+	}
+	pm.Pause()
+
+	var rm router.RoutersManagerI
+	for {
+		rm, err = router.GetRoutersManager()
+		if err == nil {
+			break
+		}
+		pkgLogger.Infof("RoutersManager is nil. Retrying after a second")
+		time.Sleep(time.Second)
+	}
+	rm.PauseAll()
+
+	//TODO remove
+	time.Sleep(15 * time.Second)
+
 	//Clear From GatewayDB
 	handler.clearFromJobsdb(clearOperationHandler.gatewayDB, parameterFilters, false, false)
 	//Clear From RouterDB
 	handler.clearFromJobsdb(clearOperationHandler.routerDB, parameterFilters, true, true)
 	//Clear From BatchRouterDB
 	handler.clearFromJobsdb(clearOperationHandler.batchRouterDB, parameterFilters, false, true)
+
+	pm.Resume()
 
 	return nil
 }
@@ -112,6 +141,6 @@ func (handler *ClearOperationHandlerT) clearFromJobsdb(db jobsdb.JobsDB, paramet
 			panic(err)
 		}
 
-		pkgLogger.Infof("cleared %d jobs from %s db", len(statusList), db.GetTablePrefix)
+		pkgLogger.Infof("cleared %d jobs from %s db", len(statusList), db.GetTablePrefix())
 	}
 }
