@@ -210,7 +210,7 @@ func (sf *HandleT) getTemporaryCredForCopy(accessKeyID, accessKey string) (strin
 	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
 
 	//sts.New(mySession, aws.NewConfig().WithRegion("us-west-2"))
-	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{})
+	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &warehouseutils.AWSCredsExpiryInS})
 	if err != nil {
 		return "", "", "", err
 	}

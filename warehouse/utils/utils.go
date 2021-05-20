@@ -72,6 +72,7 @@ var (
 	serverIP                  string
 	IdentityEnabledWarehouses []string
 	enableIDResolution        bool
+	AWSCredsExpiryInS         int64
 )
 
 var ObjectStorageMap = map[string]string{
@@ -95,6 +96,7 @@ func init() {
 func loadConfig() {
 	IdentityEnabledWarehouses = []string{"SNOWFLAKE", "BQ"}
 	enableIDResolution = config.GetBool("Warehouse.enableIDResolution", false)
+	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 }
 
 type WarehouseT struct {
