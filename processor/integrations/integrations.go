@@ -155,3 +155,8 @@ func GetUserTransformURL(processSessions bool) string {
 	}
 	return destTransformURL + "/customTransform"
 }
+
+//GetTrackingPlanValidationURL returns the port of running user transform
+func GetTrackingPlanValidationURL() string {
+	return destTransformURL + "/v0/validate"
+}

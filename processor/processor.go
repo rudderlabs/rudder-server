@@ -1280,6 +1280,23 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			DestinationID:   destID,
 			DestinationType: destination.DestinationDefinition.Name,
 		}
+		configT, ok := proc.backendConfig.Get()
+		if(!ok) {
+			pkgLogger.Errorf("unable to get backend config")
+		}
+		sourceTpId := ""
+		for _, source := range configT.Sources {
+			if (source.ID == sourceID && !source.TrackingPlanConnection.Deleted) {
+				sourceTpId = source.TrackingPlanConnection.TrackingPlanId
+			}
+		}
+		//Doing it here before passed to user/dest transformation
+		if (sourceTpId != "") {
+			startedAt = time.Now()
+			response := proc.transformer.Transform(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize, false)
+			endedAt = time.Now()
+			timeTaken = endedAt.Sub(startedAt).Seconds()
+		}
 
 		destStat := proc.destStats[destID]
 		destStat.numEvents.Count(len(eventList))

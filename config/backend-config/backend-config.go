@@ -103,14 +103,15 @@ type DestinationT struct {
 }
 
 type SourceT struct {
-	ID               string
-	Name             string
-	SourceDefinition SourceDefinitionT
-	Config           map[string]interface{}
-	Enabled          bool
-	WorkspaceID      string
-	Destinations     []DestinationT
-	WriteKey         string
+	ID                     string
+	Name                   string
+	SourceDefinition       SourceDefinitionT
+	Config                 map[string]interface{}
+	Enabled                bool
+	WorkspaceID            string
+	Destinations           []DestinationT
+	WriteKey               string
+	TrackingPlanConnection SourceTrackingPlanT
 }
 
 type WorkspaceRegulationT struct {
@@ -129,11 +130,12 @@ type SourceRegulationT struct {
 }
 
 type ConfigT struct {
-	EnableMetrics   bool            `json:"enableMetrics"`
-	WorkspaceID     string          `json:"workspaceId"`
-	Sources         []SourceT       `json:"sources"`
-	Libraries       LibrariesT      `json:"libraries"`
-	ConnectionFlags ConnectionFlags `json:"flags"`
+	EnableMetrics      bool                  `json:"enableMetrics"`
+	WorkspaceID        string                `json:"workspaceId"`
+	Sources            []SourceT             `json:"sources"`
+	Libraries          LibrariesT            `json:"libraries"`
+	ConnectionFlags    ConnectionFlags       `json:"flags"`
+	SourceTrackingPlan []SourceTrackingPlanT `json:"sourceTrackingPlans"`
 }
 
 type ConnectionFlags struct {
@@ -175,6 +177,12 @@ type LibraryT struct {
 }
 
 type LibrariesT []LibraryT
+
+type SourceTrackingPlanT struct {
+	SourceId string //can be removed, if kept at source level
+	TrackingPlanId string
+	Deleted bool
+}
 
 type BackendConfig interface {
 	SetUp()
@@ -238,6 +246,7 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	var modifiedConfig ConfigT
 	modifiedConfig.Libraries = config.Libraries
 	modifiedConfig.Sources = make([]SourceT, 0)
+	modifiedConfig.SourceTrackingPlan = config.SourceTrackingPlan
 	for _, source := range config.Sources {
 		destinations := make([]DestinationT, 0)
 		for _, destination := range source.Destinations {
