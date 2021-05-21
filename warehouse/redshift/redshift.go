@@ -212,7 +212,11 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	defer file.Close()
 	uploader, _ := filemanager.New(&filemanager.SettingsT{
 		Provider: "S3",
-		Config:   misc.GetObjectStorageConfig("S3", rs.Warehouse.Destination.Config, rs.Uploader.UseRudderStorage()),
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         "S3",
+			Config:           rs.Warehouse.Destination.Config,
+			UseRudderStorage: rs.Uploader.UseRudderStorage(),
+		}),
 	})
 
 	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())

@@ -284,7 +284,11 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		storageProvider := warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 		downloader, err := filemanager.New(&filemanager.SettingsT{
 			Provider: storageProvider,
-			Config:   misc.GetObjectStorageConfig(storageProvider, ch.Warehouse.Destination.Config, ch.Uploader.UseRudderStorage()),
+			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+				Provider:         storageProvider,
+				Config:           ch.Warehouse.Destination.Config,
+				UseRudderStorage: ch.Uploader.UseRudderStorage(),
+			}),
 		})
 		if err != nil {
 			pkgLogger.Errorf("CH: Error in setting up a downloader for destionationID : %s Error : %v", ch.Warehouse.Destination.ID, err)
