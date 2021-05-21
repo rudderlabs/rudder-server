@@ -307,6 +307,12 @@ type HandleT struct {
 	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.LoggerI
 	ownerType                     OwnerType
+	storeChannel                  chan writeJob
+	storeWithRetryChannel         chan writeJob
+	updateJobStatusChannel        chan writeJob
+	getToRetryChannel             chan readJob
+	getUnprocessedChannel         chan readJob
+	getExecutingChannel           chan readJob
 }
 
 //The struct which is written to the journal
@@ -490,6 +496,16 @@ var (
 	useJoinForUnprocessed                        bool
 	backupRowsBatchSize                          int64
 	pkgLogger                                    logger.LoggerI
+	enableWriterQueue                            bool
+	enableReaderQueue                            bool
+	maxReaders                                   int
+	maxWriters                                   int
+	storeChannelBufferLength                     int
+	storeWithRetryChannelBufferLength            int
+	updateJobStatusChannelBufferLength           int
+	getToRetryChannelBufferLength                int
+	getUnprocessedChannelBufferLength            int
+	getExecutingChannelBufferLength              int
 )
 
 //Different scenarios for addNewDS
@@ -532,7 +548,16 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, "JobsDB.refreshDSListLoopSleepDurationInS")
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, "JobsDB.backupCheckSleepDurationIns")
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
-
+	enableWriterQueue = config.GetBool("JobsDB.enableWriterQueue", true)
+	enableReaderQueue = config.GetBool("JobsDB.enableReaderQueue", true)
+	config.RegisterIntConfigVariable(10, &maxWriters, true, 1, "jobsDB.maxWriters")
+	config.RegisterIntConfigVariable(10, &maxReaders, true, 1, "jobsDB.maxReaders")
+	config.RegisterIntConfigVariable(1000, &storeChannelBufferLength, true, 1, "jobsDB.storeChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &storeWithRetryChannelBufferLength, true, 1, "jobsDB.storeWithRetryChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &updateJobStatusChannelBufferLength, true, 1, "jobsDB.updateJobStatusChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &getToRetryChannelBufferLength, true, 1, "jobsDB.getToRetryChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &getUnprocessedChannelBufferLength, true, 1, "jobsDB.getUnprocessedChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &getExecutingChannelBufferLength, true, 1, "jobsDB.getExecutingChannelBufferLength")
 }
 
 func init() {
@@ -585,6 +610,19 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
 	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
+
+	//check if it's enabled here
+	//if enableWriterQueue {} ?
+	jd.storeChannel = make(chan writeJob, storeChannelBufferLength)
+	jd.storeWithRetryChannel = make(chan writeJob, storeWithRetryChannelBufferLength)
+	jd.updateJobStatusChannel = make(chan writeJob, updateJobStatusChannelBufferLength)
+	jd.initDBWriters()
+	//for readers as well
+	//if enableReaderQueue {} ?
+	jd.getToRetryChannel = make(chan readJob, getToRetryChannelBufferLength)
+	jd.getUnprocessedChannel = make(chan readJob, getUnprocessedChannelBufferLength)
+	jd.getExecutingChannel = make(chan readJob, getExecutingChannelBufferLength)
+	jd.initDBReaders()
 
 	switch ownerType {
 	case Read:
@@ -674,6 +712,64 @@ func (jd *HandleT) readerWriterSetup() {
 	rruntime.Go(func() {
 		runArchiver(jd.tablePrefix, jd.dbHandle)
 	})
+}
+
+type writeJob struct {
+	jobsList             []*JobT
+	jobStatusesList      []*JobStatusT
+	customValFiltersList []string
+	parameterFiltersList []ParameterFilterT
+	errorResponse        chan error
+	errorMapResponse     chan map[uuid.UUID]string
+}
+
+func (jd *HandleT) initDBWriters() {
+	for i := 0; i < maxWriters; i++ {
+		go jd.dbWriter()
+	}
+}
+
+func (jd *HandleT) dbWriter() {
+	for {
+		select {
+		case storeReq := <-jd.storeChannel:
+			err := jd.store(storeReq.jobsList)
+			storeReq.errorResponse <- err
+		case storeWithRetryReq := <-jd.storeWithRetryChannel:
+			errMap := jd.storeWithRetryEach(storeWithRetryReq.jobsList)
+			storeWithRetryReq.errorMapResponse <- errMap
+		case updateJobStatusReq := <-jd.updateJobStatusChannel:
+			err := jd.updateJobStatus(updateJobStatusReq.jobStatusesList, updateJobStatusReq.customValFiltersList, updateJobStatusReq.parameterFiltersList)
+			updateJobStatusReq.errorResponse <- err
+		}
+	}
+}
+
+type readJob struct {
+	getQueryParams GetQueryParamsT
+	jobsListChan   chan []*JobT
+}
+
+func (jd *HandleT) initDBReaders() {
+	for i := 0; i < maxReaders; i++ {
+		go jd.dbReader()
+	}
+}
+
+func (jd *HandleT) dbReader() {
+	for {
+		select {
+		case getToRetryReq := <-jd.getToRetryChannel:
+			jobsList := jd.getToRetry(getToRetryReq.getQueryParams)
+			getToRetryReq.jobsListChan <- jobsList
+		case getUnprocessedReq := <-jd.getUnprocessedChannel:
+			jobsList := jd.getUnprocessed(getUnprocessedReq.getQueryParams)
+			getUnprocessedReq.jobsListChan <- jobsList
+		case getExecutingReq := <-jd.getExecutingChannel:
+			jobsList := jd.getExecuting(getExecutingReq.getQueryParams)
+			getExecutingReq.jobsListChan <- jobsList
+		}
+	}
 }
 
 /*
@@ -2688,12 +2784,29 @@ func (jd *HandleT) RecoverFromMigrationJournal() {
 	jd.recoverFromCrash(ReadWrite, migratorRoutine)
 }
 
+func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+	if enableWriterQueue {
+		respCh := make(chan error)
+		writeJobRequest := writeJob{
+			jobStatusesList:      statusList,
+			customValFiltersList: customValFilters,
+			parameterFiltersList: parameterFilters,
+			errorResponse:        respCh,
+		}
+		jd.updateJobStatusChannel <- writeJobRequest
+		err := <-respCh
+		return err
+	} else {
+		return jd.updateJobStatus(statusList, customValFilters, parameterFilters)
+	}
+}
+
 /*
-UpdateJobStatus updates the status of a batch of jobs
+updateJobStatus updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+func (jd *HandleT) updateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
 
 	if len(statusList) == 0 {
 		return nil
@@ -2811,10 +2924,25 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 	return
 }
 
-/*
-Store call is used to create new Jobs
-*/
 func (jd *HandleT) Store(jobList []*JobT) error {
+	if enableWriterQueue {
+		respCh := make(chan error)
+		writeJobRequest := writeJob{
+			jobsList:      jobList,
+			errorResponse: respCh,
+		}
+		jd.storeChannel <- writeJobRequest
+		err := <-respCh
+		return err
+	} else {
+		return jd.store(jobList)
+	}
+}
+
+/*
+store call is used to create new Jobs
+*/
+func (jd *HandleT) store(jobList []*JobT) error {
 	//Only locks the list
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
@@ -2824,10 +2952,25 @@ func (jd *HandleT) Store(jobList []*JobT) error {
 	return err
 }
 
-/*
-StoreWithRetryEach call is used to create new Jobs. This retries if the bulk store fails and retries for each job returning error messages for jobs failed to store
-*/
 func (jd *HandleT) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
+	if enableWriterQueue {
+		respCh := make(chan map[uuid.UUID]string)
+		writeJobRequest := writeJob{
+			jobsList:         jobList,
+			errorMapResponse: respCh,
+		}
+		jd.storeWithRetryChannel <- writeJobRequest
+		errMap := <-respCh
+		return errMap
+	} else {
+		return jd.storeWithRetryEach(jobList)
+	}
+}
+
+/*
+storeWithRetryEach call is used to create new Jobs. This retries if the bulk store fails and retries for each job returning error messages for jobs failed to store
+*/
+func (jd *HandleT) storeWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
 
 	//Only locks the list
 	jd.dsListLock.RLock()
@@ -2853,11 +2996,25 @@ func (jd *HandleT) printLists(console bool) {
 
 }
 
+func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
+	if enableReaderQueue {
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+		}
+		jd.getUnprocessedChannel <- readJobRequest
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getUnprocessed(params)
+	}
+}
+
 /*
-GetUnprocessed returns the unprocessed events. Unprocessed events are
+getUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
-func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 	if params.Count == 0 {
 		return []*JobT{}
 	}
@@ -3101,11 +3258,25 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 	return outJobs
 }
 
+func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
+	if enableReaderQueue {
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+		}
+		jd.getToRetryChannel <- readJobRequest
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getToRetry(params)
+	}
+}
+
 /*
-GetToRetry returns events which need to be retried.
+getToRetry returns events which need to be retried.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getToRetry(params GetQueryParamsT) []*JobT {
 	params.StateFilters = []string{Failed.State}
 	return jd.GetProcessed(params)
 }
@@ -3128,10 +3299,24 @@ func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
 	return jd.GetProcessed(params)
 }
 
-/*
-GetExecuting returns events which  in executing state
-*/
 func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
+	if enableReaderQueue {
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+		}
+		jd.getExecutingChannel <- readJobRequest
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getExecuting(params)
+	}
+}
+
+/*
+getExecuting returns events which  in executing state
+*/
+func (jd *HandleT) getExecuting(params GetQueryParamsT) []*JobT {
 	params.StateFilters = []string{Executing.State}
 	return jd.GetProcessed(params)
 }
