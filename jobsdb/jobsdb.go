@@ -310,9 +310,7 @@ type HandleT struct {
 	storeChannel                  chan writeJob
 	storeWithRetryChannel         chan writeJob
 	updateJobStatusChannel        chan writeJob
-	getToRetryChannel             chan readJob
-	getUnprocessedChannel         chan readJob
-	getExecutingChannel           chan readJob
+	readChannel                   chan readJob
 }
 
 //The struct which is written to the journal
@@ -503,9 +501,7 @@ var (
 	storeChannelBufferLength                     int
 	storeWithRetryChannelBufferLength            int
 	updateJobStatusChannelBufferLength           int
-	getToRetryChannelBufferLength                int
-	getUnprocessedChannelBufferLength            int
-	getExecutingChannelBufferLength              int
+	readChannelBufferLength                      int
 )
 
 //Different scenarios for addNewDS
@@ -555,9 +551,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(1000, &storeChannelBufferLength, true, 1, "jobsDB.storeChannelBufferLength")
 	config.RegisterIntConfigVariable(1000, &storeWithRetryChannelBufferLength, true, 1, "jobsDB.storeWithRetryChannelBufferLength")
 	config.RegisterIntConfigVariable(1000, &updateJobStatusChannelBufferLength, true, 1, "jobsDB.updateJobStatusChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &getToRetryChannelBufferLength, true, 1, "jobsDB.getToRetryChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &getUnprocessedChannelBufferLength, true, 1, "jobsDB.getUnprocessedChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &getExecutingChannelBufferLength, true, 1, "jobsDB.getExecutingChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &readChannelBufferLength, true, 1, "jobsDB.readChannelBufferLength")
 }
 
 func init() {
@@ -619,9 +613,7 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.initDBWriters()
 	//for readers as well
 	//if enableReaderQueue {} ?
-	jd.getToRetryChannel = make(chan readJob, getToRetryChannelBufferLength)
-	jd.getUnprocessedChannel = make(chan readJob, getUnprocessedChannelBufferLength)
-	jd.getExecutingChannel = make(chan readJob, getExecutingChannelBufferLength)
+	jd.readChannel = make(chan readJob, readChannelBufferLength)
 	jd.initDBReaders()
 
 	switch ownerType {
@@ -748,6 +740,7 @@ func (jd *HandleT) dbWriter() {
 type readJob struct {
 	getQueryParams GetQueryParamsT
 	jobsListChan   chan []*JobT
+	reqType        string
 }
 
 func (jd *HandleT) initDBReaders() {
@@ -757,17 +750,13 @@ func (jd *HandleT) initDBReaders() {
 }
 
 func (jd *HandleT) dbReader() {
-	for {
-		select {
-		case getToRetryReq := <-jd.getToRetryChannel:
-			jobsList := jd.getToRetry(getToRetryReq.getQueryParams)
-			getToRetryReq.jobsListChan <- jobsList
-		case getUnprocessedReq := <-jd.getUnprocessedChannel:
-			jobsList := jd.getUnprocessed(getUnprocessedReq.getQueryParams)
-			getUnprocessedReq.jobsListChan <- jobsList
-		case getExecutingReq := <-jd.getExecutingChannel:
-			jobsList := jd.getExecuting(getExecutingReq.getQueryParams)
-			getExecutingReq.jobsListChan <- jobsList
+	for readReq := range jd.readChannel {
+		if readReq.reqType == "retry" {
+			readReq.jobsListChan <- jd.getToRetry(readReq.getQueryParams)
+		} else if readReq.reqType == "unprocessed" {
+			readReq.jobsListChan <- jd.getUnprocessed(readReq.getQueryParams)
+		} else {
+			readReq.jobsListChan <- jd.getExecuting(readReq.getQueryParams)
 		}
 	}
 }
@@ -3001,8 +2990,9 @@ func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
+			reqType:        "unprocessed",
 		}
-		jd.getUnprocessedChannel <- readJobRequest
+		jd.readChannel <- readJobRequest
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
@@ -3263,8 +3253,9 @@ func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
+			reqType:        "retry",
 		}
-		jd.getToRetryChannel <- readJobRequest
+		jd.readChannel <- readJobRequest
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
@@ -3304,8 +3295,9 @@ func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
+			reqType:        "executing",
 		}
-		jd.getExecutingChannel <- readJobRequest
+		jd.readChannel <- readJobRequest
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
