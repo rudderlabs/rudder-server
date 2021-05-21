@@ -301,12 +301,16 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			}
 			var recordInterface1 []interface{}
 			for index, value := range recordInterface {
+				strValue, ok := value.(string)
+				if (!ok) {
+					pkgLogger.Errorf("MS : Found nil value for type : %s, column : %s",tableSchemaInUpload[sortedColumnKeys[index]],sortedColumnKeys[index])
+				}
 				valueType := tableSchemaInUpload[sortedColumnKeys[index]]
 				switch valueType {
 				case "int":
 					{
 						var convertedValue int
-						if convertedValue, err = strconv.Atoi(value.(string)); err != nil {
+						if convertedValue, err = strconv.Atoi(strValue); err != nil {
 							pkgLogger.Errorf("MS : Mismatch in table datatypes found for int")
 						}
 						recordInterface1 = append(recordInterface1, convertedValue)
@@ -315,7 +319,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					{
 						var convertedValue time.Time
 						//TODO : handling milli?
-						convertedValue, err = time.Parse(time.RFC3339, value.(string))
+						convertedValue, err = time.Parse(time.RFC3339, strValue)
 						if err != nil {
 							pkgLogger.Errorf("MS : Mismatch in table datatypes found for datetime")
 						}
@@ -325,7 +329,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				case "boolean":
 					{
 						var convertedValue bool
-						if convertedValue, err = strconv.ParseBool(value.(string)); err != nil {
+						if convertedValue, err = strconv.ParseBool(strValue); err != nil {
 							pkgLogger.Errorf("MS : Mismatch in table datatypes found for boolean")
 						}
 						recordInterface1 = append(recordInterface1, convertedValue)
