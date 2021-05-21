@@ -5,9 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image"
-	"image/color"
-	"image/draw"
 	"image/jpeg"
 	"io/ioutil"
 	"math"
@@ -798,11 +795,7 @@ var buffer *bytes.Buffer = new(bytes.Buffer)
 
 func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
 
-	m := image.NewRGBA(image.Rect(0, 0, 1, 1))
-	rudderColor := color.RGBA{100, 65, 139, 0}
-	draw.Draw(m, m.Bounds(), &image.Uniform{rudderColor}, image.Point{}, draw.Src)
-	var img image.Image = m
-	if err := jpeg.Encode(buffer, img, nil); err != nil {
+	if err := jpeg.Encode(buffer, response.GetPixelResponse(), nil); err != nil {
 		return
 	}
 

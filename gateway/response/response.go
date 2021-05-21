@@ -2,6 +2,9 @@ package response
 
 import (
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
 	"net/http"
 )
 
@@ -87,6 +90,14 @@ func GetStatus(key string) string {
 	}
 
 	return key
+}
+
+func GetPixelResponse() image.Image {
+	m := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	rudderColor := color.RGBA{100, 65, 139, 0}
+	draw.Draw(m, m.Bounds(), &image.Uniform{rudderColor}, image.Point{}, draw.Src)
+	var img image.Image = m
+	return img
 }
 
 func GetStatusCode(key string) int {
