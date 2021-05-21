@@ -370,7 +370,11 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 		storageProvider := warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage())
 		downloader, err := filemanager.New(&filemanager.SettingsT{
 			Provider: storageProvider,
-			Config:   misc.GetObjectStorageConfig(storageProvider, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage()),
+			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+				Provider:         storageProvider,
+				Config:           idr.Warehouse.Destination.Config,
+				UseRudderStorage: idr.Uploader.UseRudderStorage(),
+			}),
 		})
 		if err != nil {
 			pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.Warehouse.Destination.DestinationDefinition.Name, err)
@@ -399,7 +403,11 @@ func (idr *HandleT) uploadFile(filePath string, txn *sql.Tx, tableName string, t
 	storageProvider := warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage())
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: storageProvider,
-		Config:   misc.GetObjectStorageConfig(storageProvider, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage()),
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         storageProvider,
+			Config:           idr.Warehouse.Destination.Config,
+			UseRudderStorage: idr.Uploader.UseRudderStorage(),
+		}),
 	})
 	if err != nil {
 		pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.Warehouse.Destination.DestinationDefinition.Name, err)

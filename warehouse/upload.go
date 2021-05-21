@@ -1232,10 +1232,10 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 		}
 	}
 
-	var metadata map[string]string
+	var metadata map[string]interface{}
 	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
 	if unmarshallErr != nil {
-		metadata = make(map[string]string)
+		metadata = make(map[string]interface{})
 	}
 	lastAttempt := upload.LastAttemptAt
 	if lastAttempt.IsZero() {
@@ -1477,6 +1477,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				DestinationConfig:   job.warehouse.Destination.Config,
 				UniqueLoadGenID:     uniqueLoadGenID,
 				UseRudderStorage:    job.upload.UseRudderStorage,
+				RudderStoragePrefix: misc.GetRudderObjectStoragePrefix(),
 			}
 
 			payloadJSON, err := json.Marshal(payload)

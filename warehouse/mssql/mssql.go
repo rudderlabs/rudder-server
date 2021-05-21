@@ -186,7 +186,11 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		storageProvider := warehouseutils.ObjectStorageType(ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
 		downloader, err := filemanager.New(&filemanager.SettingsT{
 			Provider: storageProvider,
-			Config:   misc.GetObjectStorageConfig(storageProvider, ms.Warehouse.Destination.Config, ms.Uploader.UseRudderStorage()),
+			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+				Provider:         storageProvider,
+				Config:           ms.Warehouse.Destination.Config,
+				UseRudderStorage: ms.Uploader.UseRudderStorage(),
+			}),
 		})
 		if err != nil {
 			pkgLogger.Errorf("MS: Error in setting up a downloader for destionationID : %s Error : %v", ms.Warehouse.Destination.ID, err)

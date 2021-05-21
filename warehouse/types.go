@@ -23,6 +23,7 @@ type PayloadT struct {
 	DestinationConfig   interface{}
 	UniqueLoadGenID     string
 	UseRudderStorage    bool
+	RudderStoragePrefix string
 	Output              []loadFileUploadOutputT
 }
 
