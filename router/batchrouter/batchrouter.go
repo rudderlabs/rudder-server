@@ -294,7 +294,10 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	useRudderStorage := isWarehouse && misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
-		Config:   misc.GetObjectStorageConfig(provider, batchJobs.BatchDestination.Destination.Config, useRudderStorage),
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         provider,
+			Config:           batchJobs.BatchDestination.Destination.Config,
+			UseRudderStorage: useRudderStorage}),
 	})
 	if err != nil {
 		panic(err)

@@ -81,7 +81,12 @@ func (job *PayloadT) getFileManager() (filemanager.FileManager, error) {
 	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage)
 	fileManager, err := filemanager.New(&filemanager.SettingsT{
 		Provider: storageProvider,
-		Config:   misc.GetObjectStorageConfig(storageProvider, job.DestinationConfig, job.UseRudderStorage),
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:                    storageProvider,
+			Config:                      job.DestinationConfig,
+			UseRudderStorage:            job.UseRudderStorage,
+			RudderStoragePrefixOverride: job.RudderStoragePrefix,
+		}),
 	})
 	return fileManager, err
 }
