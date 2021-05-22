@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -794,19 +795,43 @@ func (worker *workerT) workerProcess() {
 						if output.Error == nil {
 							brt.recordUploadStats(*batchJobs.BatchDestination, output)
 						}
+						rruntime.Go(func() {
+							switch {
+							case misc.ContainsString(objectStorageDestinations, brt.destType):
+								destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+								destUploadStat.Start()
+								// output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
+								output := StorageUploadOutput{Error: errors.New("not happening")}
+								brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, false)
+								brt.setJobStatus(batchJobs, false, output.Error, false)
+								misc.RemoveFilePaths(output.LocalFilePaths...)
+								if output.JournalOpID > 0 {
+									brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
+								}
+								if output.Error == nil {
+									brt.recordUploadStats(*batchJobs.BatchDestination, output)
+								}
 
-						destUploadStat.End()
-					case misc.ContainsString(warehouseDestinations, brt.destType):
-						useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
-						objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
-						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
-						destUploadStat.Start()
-						output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
-						postToWarehouseErr := false
-						if output.Error == nil && output.Key != "" {
-							output.Error = brt.postToWarehouse(batchJobs, output)
-							if output.Error != nil {
-								postToWarehouseErr = true
+								destUploadStat.End()
+							case misc.ContainsString(warehouseDestinations, brt.destType):
+								objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config)
+								destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
+								destUploadStat.Start()
+								// output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
+								output := StorageUploadOutput{Error: errors.New("not happening")}
+								postToWarehouseErr := false
+								if output.Error == nil && output.Key != "" {
+									output.Error = brt.postToWarehouse(batchJobs, output)
+									if output.Error != nil {
+										postToWarehouseErr = true
+									}
+									warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
+									warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
+								}
+								brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, true)
+								brt.setJobStatus(batchJobs, true, output.Error, postToWarehouseErr)
+								misc.RemoveFilePaths(output.LocalFilePaths...)
+								destUploadStat.End()
 							}
 							warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
 							warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
