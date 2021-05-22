@@ -493,7 +493,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							panic(fmt.Errorf("different destinations are grouped together"))
 						}
 					}
-					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
+					// respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
+					respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, "fsfds")
 				} else {
 					result := getIterableStruct(destinationJob.Message, transformAt)
 					for _, val := range result {
@@ -501,7 +502,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 						if err != nil {
 							respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 						} else {
-							respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val)
+							// respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val)
+							respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, "fsfds")
 							if isSuccessStatus(respStatusCode) {
 								respBody = respBody + " " + respBodyTemp
 							} else {
