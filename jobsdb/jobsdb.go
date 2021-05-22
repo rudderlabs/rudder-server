@@ -311,6 +311,8 @@ type HandleT struct {
 	storeWithRetryChannel         chan writeJob
 	updateJobStatusChannel        chan writeJob
 	readChannel                   chan readJob
+	enableWriterQueue             bool
+	enableReaderQueue             bool
 }
 
 //The struct which is written to the journal
@@ -494,8 +496,6 @@ var (
 	useJoinForUnprocessed                        bool
 	backupRowsBatchSize                          int64
 	pkgLogger                                    logger.LoggerI
-	enableWriterQueue                            bool
-	enableReaderQueue                            bool
 	maxReaders                                   int
 	maxWriters                                   int
 	storeChannelBufferLength                     int
@@ -544,14 +544,12 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, "JobsDB.refreshDSListLoopSleepDurationInS")
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, "JobsDB.backupCheckSleepDurationIns")
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
-	enableWriterQueue = config.GetBool("JobsDB.enableWriterQueue", true)
-	enableReaderQueue = config.GetBool("JobsDB.enableReaderQueue", true)
-	config.RegisterIntConfigVariable(10, &maxWriters, true, 1, "jobsDB.maxWriters")
-	config.RegisterIntConfigVariable(10, &maxReaders, true, 1, "jobsDB.maxReaders")
-	config.RegisterIntConfigVariable(1000, &storeChannelBufferLength, true, 1, "jobsDB.storeChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &storeWithRetryChannelBufferLength, true, 1, "jobsDB.storeWithRetryChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &updateJobStatusChannelBufferLength, true, 1, "jobsDB.updateJobStatusChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &readChannelBufferLength, true, 1, "jobsDB.readChannelBufferLength")
+	config.RegisterIntConfigVariable(10, &maxWriters, false, 1, "jobsDB.maxWriters")
+	config.RegisterIntConfigVariable(10, &maxReaders, false, 1, "jobsDB.maxReaders")
+	config.RegisterIntConfigVariable(1000, &storeChannelBufferLength, false, 1, "jobsDB.storeChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &storeWithRetryChannelBufferLength, false, 1, "jobsDB.storeWithRetryChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &updateJobStatusChannelBufferLength, false, 1, "jobsDB.updateJobStatusChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &readChannelBufferLength, false, 1, "jobsDB.readChannelBufferLength")
 }
 
 func init() {
@@ -605,6 +603,8 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
 	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
 
+	jd.enableWriterQueue = config.GetBool(fmt.Sprintf("JobsDB.%v.enableWriterQueue", jd.tablePrefix), true)
+	jd.enableReaderQueue = config.GetBool(fmt.Sprintf("JobsDB.%v.enableReaderQueue", jd.tablePrefix), true)
 	//check if it's enabled here
 	//if enableWriterQueue {} ?
 	jd.storeChannel = make(chan writeJob, storeChannelBufferLength)
@@ -2774,7 +2774,7 @@ func (jd *HandleT) RecoverFromMigrationJournal() {
 }
 
 func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
-	if enableWriterQueue {
+	if jd.enableWriterQueue {
 		respCh := make(chan error)
 		writeJobRequest := writeJob{
 			jobStatusesList:      statusList,
@@ -2914,7 +2914,7 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 }
 
 func (jd *HandleT) Store(jobList []*JobT) error {
-	if enableWriterQueue {
+	if jd.enableWriterQueue {
 		respCh := make(chan error)
 		writeJobRequest := writeJob{
 			jobsList:      jobList,
@@ -2942,7 +2942,7 @@ func (jd *HandleT) store(jobList []*JobT) error {
 }
 
 func (jd *HandleT) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
-	if enableWriterQueue {
+	if jd.enableWriterQueue {
 		respCh := make(chan map[uuid.UUID]string)
 		writeJobRequest := writeJob{
 			jobsList:         jobList,
@@ -2986,7 +2986,7 @@ func (jd *HandleT) printLists(console bool) {
 }
 
 func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
-	if enableReaderQueue {
+	if jd.enableReaderQueue {
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
@@ -3249,7 +3249,7 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 }
 
 func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
-	if enableReaderQueue {
+	if jd.enableReaderQueue {
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
@@ -3291,7 +3291,7 @@ func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
 }
 
 func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
-	if enableReaderQueue {
+	if jd.enableReaderQueue {
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
