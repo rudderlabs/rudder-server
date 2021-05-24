@@ -792,7 +792,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 
 func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
 	w.Header().Set("Content-Type", "image/gif")
-	fmt.Fprintf(w, response.GetPixelResponse())
+	w.Write([]byte(response.GetPixelResponse()))
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
