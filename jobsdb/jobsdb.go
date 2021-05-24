@@ -607,7 +607,8 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.initDBWriters()
 	//for readers as well
 	//if enableReaderQueue {} ?
-	jd.readChannel = make(chan readJob, readChannelBufferLength)
+	//jd.readChannel = make(chan readJob, readChannelBufferLength)
+	jd.readChannel = make(chan readJob)
 	jd.initDBReaders()
 
 	switch ownerType {
@@ -745,6 +746,21 @@ func (jd *HandleT) initDBReaders() {
 
 func (jd *HandleT) dbReader() {
 	for readReq := range jd.readChannel {
+		pkgLogger.Info("%s: readReq received. params: %v", readReq.getQueryParams)
+		stateFilter := readReq.getQueryParams.StateFilters
+		customValFilters := readReq.getQueryParams.CustomValFilters
+
+		var queryStat stats.RudderStats
+		statName := ""
+		if len(customValFilters) > 0 {
+			statName = statName + customValFilters[0] + "_"
+		}
+		if len(stateFilter) > 0 {
+			statName = statName + stateFilter[0] + "_"
+		}
+		queryStat = stats.NewTaggedStat(statName+"reqreceived", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+		queryStat.Start()
+
 		if readReq.reqType == "retry" {
 			readReq.jobsListChan <- jd.getToRetry(readReq.getQueryParams)
 		} else if readReq.reqType == "throttled" {
@@ -758,6 +774,8 @@ func (jd *HandleT) dbReader() {
 		} else {
 			panic(fmt.Errorf("unknown read request type: %s", readReq.reqType))
 		}
+
+		queryStat.End()
 	}
 }
 
@@ -2989,7 +3007,10 @@ func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
 			jobsListChan:   make(chan []*JobT),
 			reqType:        "unprocessed",
 		}
+		queryStat = stats.NewTaggedStat(statName+"unprocessed_wrapper_wait", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+		queryStat.Start()
 		jd.readChannel <- readJobRequest
+		queryStat.End()
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
@@ -3272,7 +3293,10 @@ func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
 			jobsListChan:   make(chan []*JobT),
 			reqType:        "retry",
 		}
+		queryStat = stats.NewTaggedStat(statName+"processed_wrapper_wait", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+		queryStat.Start()
 		jd.readChannel <- readJobRequest
+		queryStat.End()
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
@@ -3320,7 +3344,10 @@ func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
 			jobsListChan:   make(chan []*JobT),
 			reqType:        "waiting",
 		}
+		queryStat = stats.NewTaggedStat(statName+"processed_wrapper_wait", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+		queryStat.Start()
 		jd.readChannel <- readJobRequest
+		queryStat.End()
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
@@ -3368,7 +3395,10 @@ func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
 			jobsListChan:   make(chan []*JobT),
 			reqType:        "throttled",
 		}
+		queryStat = stats.NewTaggedStat(statName+"processed_wrapper_wait", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+		queryStat.Start()
 		jd.readChannel <- readJobRequest
+		queryStat.End()
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
@@ -3412,7 +3442,10 @@ func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
 			jobsListChan:   make(chan []*JobT),
 			reqType:        "executing",
 		}
+		queryStat = stats.NewTaggedStat(statName+"processed_wrapper_wait", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+		queryStat.Start()
 		jd.readChannel <- readJobRequest
+		queryStat.End()
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
