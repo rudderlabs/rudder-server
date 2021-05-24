@@ -390,7 +390,7 @@ func (bc *CommonBackendConfig) WaitForConfig() {
 		}
 		initializedLock.RUnlock()
 		pkgLogger.Info("Waiting for initializing backend config")
-		time.Sleep(time.Duration(pollInterval))
+		time.Sleep(5 * time.Second) //TODO revert
 	}
 }
 
