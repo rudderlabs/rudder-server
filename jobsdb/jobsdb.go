@@ -538,12 +538,12 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, "JobsDB.refreshDSListLoopSleepDurationInS")
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, "JobsDB.backupCheckSleepDurationIns")
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
-	config.RegisterIntConfigVariable(10, &maxWriters, false, 1, "jobsDB.maxWriters")
-	config.RegisterIntConfigVariable(10, &maxReaders, false, 1, "jobsDB.maxReaders")
-	config.RegisterIntConfigVariable(1000, &storeChannelBufferLength, false, 1, "jobsDB.storeChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &storeWithRetryChannelBufferLength, false, 1, "jobsDB.storeWithRetryChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &updateJobStatusChannelBufferLength, false, 1, "jobsDB.updateJobStatusChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &readChannelBufferLength, false, 1, "jobsDB.readChannelBufferLength")
+	config.RegisterIntConfigVariable(10, &maxWriters, false, 1, "JobsDB.maxWriters")
+	config.RegisterIntConfigVariable(10, &maxReaders, false, 1, "JobsDB.maxReaders")
+	config.RegisterIntConfigVariable(1000, &storeChannelBufferLength, false, 1, "JobsDB.storeChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &storeWithRetryChannelBufferLength, false, 1, "JobsDB.storeWithRetryChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &updateJobStatusChannelBufferLength, false, 1, "JobsDB.updateJobStatusChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &readChannelBufferLength, false, 1, "JobsDB.readChannelBufferLength")
 }
 
 func init() {
