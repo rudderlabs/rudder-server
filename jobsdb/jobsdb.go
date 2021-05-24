@@ -1270,6 +1270,16 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
+	if jd.tablePrefix == "rt" {
+		sqlStatement = fmt.Sprintf(`CREATE INDEX ON %s(custom_val)`, newDS.JobTable)
+		_, err = jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
+	} else if jd.tablePrefix == "batch_rt" {
+		sqlStatement = fmt.Sprintf(`CREATE INDEX ON %s USING GIN (parameters jsonb_path_ops);`, newDS.JobTable)
+		_, err = jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
+	}
+
 	sqlStatement = fmt.Sprintf(`CREATE TABLE %s (
                                      id BIGSERIAL PRIMARY KEY,
                                      job_id BIGINT REFERENCES %s(job_id),
