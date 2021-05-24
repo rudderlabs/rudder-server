@@ -959,11 +959,9 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 	req.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
 
 	// convert the pixel request(r) to a web request(req)
-	err := gateway.setWebPayload(req, queryParams, reqType)
-	if err != nil || err == nil {
-		// send req to webHandler
-		gateway.pixelWebHandler(w, req, reqType)
-	}
+	_ = gateway.setWebPayload(req, queryParams, reqType)
+	// send req to webHandler
+	gateway.pixelWebHandler(w, req, reqType)
 
 }
 
