@@ -753,10 +753,16 @@ func (jd *HandleT) dbReader() {
 	for readReq := range jd.readChannel {
 		if readReq.reqType == "retry" {
 			readReq.jobsListChan <- jd.getToRetry(readReq.getQueryParams)
+		} else if readReq.reqType == "throttled" {
+			readReq.jobsListChan <- jd.getThrottled(readReq.getQueryParams)
+		} else if readReq.reqType == "waiting" {
+			readReq.jobsListChan <- jd.getWaiting(readReq.getQueryParams)
 		} else if readReq.reqType == "unprocessed" {
 			readReq.jobsListChan <- jd.getUnprocessed(readReq.getQueryParams)
-		} else {
+		} else if readReq.reqType == "executing" {
 			readReq.jobsListChan <- jd.getExecuting(readReq.getQueryParams)
+		} else {
+			panic(fmt.Errorf("unknown read request type: %s", readReq.reqType))
 		}
 	}
 }
@@ -2986,6 +2992,20 @@ func (jd *HandleT) printLists(console bool) {
 }
 
 func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+
+	customValFilters := params.CustomValFilters
+	var queryStat stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	queryStat = stats.NewTaggedStat(statName+"unprocessed_wrapper", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat.Start()
+	defer queryStat.End()
+
 	if jd.enableReaderQueue {
 		readJobRequest := readJob{
 			getQueryParams: params,
@@ -3249,6 +3269,26 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 }
 
 func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+
+	params.StateFilters = []string{Failed.State}
+	stateFilter := params.StateFilters
+	customValFilters := params.CustomValFilters
+
+	var queryStat stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	if len(stateFilter) > 0 {
+		statName = statName + stateFilter[0] + "_"
+	}
+	queryStat = stats.NewTaggedStat(statName+"processed_wrapper", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat.Start()
+	defer queryStat.End()
+
 	if jd.enableReaderQueue {
 		readJobRequest := readJob{
 			getQueryParams: params,
@@ -3277,6 +3317,45 @@ GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
 func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+
+	params.StateFilters = []string{Waiting.State}
+	stateFilter := params.StateFilters
+	customValFilters := params.CustomValFilters
+
+	var queryStat stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	if len(stateFilter) > 0 {
+		statName = statName + stateFilter[0] + "_"
+	}
+	queryStat = stats.NewTaggedStat(statName+"processed_wrapper", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat.Start()
+	defer queryStat.End()
+
+	if jd.enableReaderQueue {
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+			reqType:        "waiting",
+		}
+		jd.readChannel <- readJobRequest
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getWaiting(params)
+	}
+}
+
+/*
+GetWaiting returns events which are under processing
+This is a wrapper over GetProcessed call above
+*/
+func (jd *HandleT) getWaiting(params GetQueryParamsT) []*JobT {
 	params.StateFilters = []string{Waiting.State}
 	return jd.GetProcessed(params)
 }
@@ -3286,11 +3365,70 @@ GetThrottled returns events which were throttled before
 This is a wrapper over GetProcessed call above
 */
 func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+
+	params.StateFilters = []string{Throttled.State}
+	stateFilter := params.StateFilters
+	customValFilters := params.CustomValFilters
+
+	var queryStat stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	if len(stateFilter) > 0 {
+		statName = statName + stateFilter[0] + "_"
+	}
+	queryStat = stats.NewTaggedStat(statName+"processed_wrapper", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat.Start()
+	defer queryStat.End()
+
+	if jd.enableReaderQueue {
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+			reqType:        "throttled",
+		}
+		jd.readChannel <- readJobRequest
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getThrottled(params)
+	}
+}
+
+/*
+GetThrottled returns events which were throttled before
+This is a wrapper over GetProcessed call above
+*/
+func (jd *HandleT) getThrottled(params GetQueryParamsT) []*JobT {
 	params.StateFilters = []string{Throttled.State}
 	return jd.GetProcessed(params)
 }
 
 func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+
+	params.StateFilters = []string{Executing.State}
+	stateFilter := params.StateFilters
+	customValFilters := params.CustomValFilters
+
+	var queryStat stats.RudderStats
+	statName := ""
+	if len(customValFilters) > 0 {
+		statName = statName + customValFilters[0] + "_"
+	}
+	if len(stateFilter) > 0 {
+		statName = statName + stateFilter[0] + "_"
+	}
+	queryStat = stats.NewTaggedStat(statName+"processed_wrapper", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat.Start()
+	defer queryStat.End()
+
 	if jd.enableReaderQueue {
 		readJobRequest := readJob{
 			getQueryParams: params,
