@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image/jpeg"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -791,20 +790,9 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	w.Write([]byte(response.GetStatus(response.Ok)))
 }
 
-var buffer *bytes.Buffer = new(bytes.Buffer)
-
 func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
-
-	if err := jpeg.Encode(buffer, response.GetPixelResponse(), nil); err != nil {
-		return
-	}
-
-	w.Header().Set("Content-Type", "image/jpeg")
-	w.Header().Set("Content-Length", strconv.Itoa(len(buffer.Bytes())))
-	if _, err := w.Write(buffer.Bytes()); err != nil {
-		return
-	}
-
+	w.Header().Set("Content-Type", "image/gif")
+	fmt.Fprintf(w, response.GetPixelResponse())
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
