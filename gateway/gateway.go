@@ -603,7 +603,6 @@ func (gateway *HandleT) webGroupHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (gateway *HandleT) pixelPageHandler(w http.ResponseWriter, r *http.Request) {
-
 	gateway.pixelHandler(w, r, "page")
 }
 
@@ -809,8 +808,6 @@ func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.Respons
 
 	atomic.AddUint64(&gateway.ackCount, 1)
 	gateway.trackRequestMetrics(errorMessage)
-
-	gateway.logger.Debug(response.GetStatus(""))
 }
 
 //ProcessRequest on ImportRequestHandler splits payload by user and throws them into the webrequestQ and waits for all their responses before returning
