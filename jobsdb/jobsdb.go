@@ -136,6 +136,7 @@ func (jd *HandleT) CommitTransaction(txn *sql.Tx) {
 
 //NOTE: Acquire and Release lock functions are useful if we are performing writes across jobsdb instances using global db handle.
 
+
 //AcquireStoreLock acquires locks necessary for storing jobs in transaction
 func (jd *HandleT) AcquireStoreLock() {
 	//Only locks the list
