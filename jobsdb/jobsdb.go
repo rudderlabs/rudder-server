@@ -1621,6 +1621,15 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 		return err
 	}
 
+	tags := map[string]string{
+		"type":   "write",
+		"prefix": jd.tablePrefix,
+		"filter": "store/store_with_retry",
+		"type_2": "storeJobsDSInTxn",
+	}
+	write_query_count_stat := stats.NewTaggedStat("jobs_db_query", stats.CountType, tags)
+	write_query_count := 0
+
 	defer stmt.Close()
 	for _, job := range jobList {
 		if copyID {
@@ -1632,7 +1641,9 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 		if err != nil {
 			return err
 		}
+		write_query_count++
 	}
+	write_query_count_stat.Count(write_query_count)
 	_, err = stmt.Exec()
 
 	return err
@@ -1645,6 +1656,14 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 	jd.assertError(err)
 	defer stmt.Close()
 	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
+	tags := map[string]string{
+		"type":   "write",
+		"prefix": jd.tablePrefix,
+		"filter": "store_with_retry",
+		"type_2": "storeJobDS",
+	}
+	write_query_count_stat := stats.NewTaggedStat("jobs_db_query", stats.CountType, tags)
+	write_query_count_stat.Count(1)
 	if err == nil {
 		//Empty customValFilters means we want to clear for all
 		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
@@ -1889,6 +1908,16 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		defer rows.Close()
 	}
 
+	tags := map[string]string{
+		"type":   "read",
+		"prefix": jd.tablePrefix,
+		"filter": params.StateFilters[0],
+		"type_2": "processed",
+	}
+	processed_db_query_count := stats.NewTaggedStat("jobs_db_query", stats.CountType, tags)
+	processed_db_query_count.Count(1)
+	processed_rows_count := stats.NewTaggedStat("rows_count", stats.CountType, tags)
+
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
@@ -1900,6 +1929,8 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		jd.assertError(err)
 		jobList = append(jobList, &job)
 	}
+
+	processed_rows_count.Count(len(jobList))
 
 	result := hasJobs
 	if len(jobList) == 0 {
@@ -1998,6 +2029,18 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		jobList = append(jobList, &job)
 	}
 
+	tags := map[string]string{
+		"type":   "read",
+		"prefix": jd.tablePrefix,
+		"filter": "unprocessed",
+		"type_2": "unprocessed",
+	}
+	unproessed_db_query_count := stats.NewTaggedStat("jobs_db_query", stats.CountType, tags)
+	unproessed_db_query_count.Count(1)
+
+	unprocessed_row_count := stats.NewTaggedStat("rows_count", stats.CountType, tags)
+	unprocessed_row_count.Count(len(jobList))
+
 	result := hasJobs
 	dsList := jd.getDSList(false)
 	//if jobsdb owner is a reader and if ds is the right most one, ignoring setting result as noJobs
@@ -2047,6 +2090,7 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 		return
 	}
 
+	updaet_status_query_count := 0
 	updatedStatesMap := map[string]bool{}
 	for _, status := range statusList {
 		//  Handle the case when google analytics returns gif in response
@@ -2056,6 +2100,7 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 		}
 		_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
 			status.RetryTime, status.ErrorCode, string(status.ErrorResponse))
+		updaet_status_query_count++
 		if err != nil {
 			return
 		}
@@ -2065,6 +2110,14 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 		updatedStates = append(updatedStates, k)
 	}
 
+	tags := map[string]string{
+		"type":   "write",
+		"prefix": jd.tablePrefix,
+		"filter": "UpdateJobStatus",
+		"type_2": "updateJobStatusDSInTxn",
+	}
+	update_status_stat := stats.NewTaggedStat("jobs_db_query", stats.CountType, tags)
+	update_status_stat.Count(updaet_status_query_count)
 	_, err = stmt.Exec()
 	if err != nil {
 		return
@@ -2798,6 +2851,16 @@ func (jd *HandleT) RecoverFromMigrationJournal() {
 }
 
 func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+
+	tags := map[string]string{
+		"type":   "write",
+		"prefix": jd.tablePrefix,
+		"filter": "UpdateJobStatus",
+		"type_2": "UpdateJobStatus",
+	}
+	row_count_stat := stats.NewTaggedStat("rows_count", stats.CountType, tags)
+	row_count_stat.Count(len(statusList))
+
 	if jd.enableWriterQueue {
 		respCh := make(chan error)
 		writeJobRequest := writeJob{
@@ -2938,6 +3001,16 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 }
 
 func (jd *HandleT) Store(jobList []*JobT) error {
+
+	tags := map[string]string{
+		"type":   "write",
+		"prefix": jd.tablePrefix,
+		"filter": "Store",
+		"type_2": "Store",
+	}
+	row_count_stat := stats.NewTaggedStat("rows_count", stats.CountType, tags)
+	row_count_stat.Count(len(jobList))
+
 	if jd.enableWriterQueue {
 		respCh := make(chan error)
 		writeJobRequest := writeJob{
@@ -2966,6 +3039,16 @@ func (jd *HandleT) store(jobList []*JobT) error {
 }
 
 func (jd *HandleT) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
+
+	tags := map[string]string{
+		"type":   "write",
+		"prefix": jd.tablePrefix,
+		"filter": "StoreWithRetryEach",
+		"type_2": "StoreWithRetryEach",
+	}
+	row_count_stat := stats.NewTaggedStat("rows_count", stats.CountType, tags)
+	row_count_stat.Count(len(jobList))
+
 	if jd.enableWriterQueue {
 		respCh := make(chan map[uuid.UUID]string)
 		writeJobRequest := writeJob{
