@@ -434,7 +434,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 		u1e3 will send
 		u2e3 will send
 	*/
-
+	respStatusCode = 400
+	respBody = "abort on purpose"
 	failedUserIDsMap := make(map[string]struct{})
 	apiCallsCount := make(map[string]*destJobCountsT)
 	for _, destinationJob := range worker.destinationJobs {
@@ -458,9 +459,11 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							panic(fmt.Errorf("Different destinations are grouped together"))
 						}
 					}
-					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
+					//respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
+					time.Sleep(40 * time.Millisecond)
 				} else {
-					respStatusCode, respBody = worker.rt.netHandle.sendPost(destinationJob.Message)
+					//respStatusCode, respBody = worker.rt.netHandle.sendPost(destinationJob.Message)
+					time.Sleep(40 * time.Millisecond)
 				}
 				ch <- struct{}{}
 
