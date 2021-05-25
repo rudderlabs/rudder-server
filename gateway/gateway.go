@@ -790,7 +790,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 }
 
 func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
-	setPixelResponseType(w)
+	sendPixelResponse(w)
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
@@ -941,7 +941,7 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType st
 	return nil
 }
 
-func setPixelResponseType(w http.ResponseWriter) {
+func sendPixelResponse(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "image/gif")
 	w.Write([]byte(response.GetPixelResponse()))
 }
@@ -953,7 +953,7 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 	// make a new request
 	req, err := http.NewRequest(http.MethodPost, "", nil)
 	if err != nil {
-		setPixelResponseType(w)
+		sendPixelResponse(w)
 		return
 	}
 	// set basic auth header
@@ -968,7 +968,7 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 	if err == nil {
 		gateway.pixelWebHandler(w, req, reqType)
 	} else {
-		setPixelResponseType(w)
+		sendPixelResponse(w)
 	}
 }
 
