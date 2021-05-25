@@ -790,8 +790,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 }
 
 func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
-	w.Header().Set("Content-Type", "image/gif")
-	w.Write([]byte(response.GetPixelResponse()))
+	setPixelResponseType(w)
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
@@ -802,6 +801,7 @@ func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.Respons
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r)
 	if err != nil {
+		errorMessage = err.Error()
 		return
 	}
 	errorMessage = rh.ProcessRequest(gateway, &w, r, reqType, payload, writeKey)
@@ -941,13 +941,21 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType st
 	return nil
 }
 
+func setPixelResponseType(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "image/gif")
+	w.Write([]byte(response.GetPixelResponse()))
+}
+
 func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 
 	queryParams := r.URL.Query()
 	writeKey := queryParams["writeKey"]
 	// make a new request
-	req, _ := http.NewRequest(http.MethodPost, "", nil)
-
+	req, err := http.NewRequest(http.MethodPost, "", nil)
+	if err != nil {
+		setPixelResponseType(w)
+		return
+	}
 	// set basic auth header
 	req.SetBasicAuth(writeKey[0], "")
 	delete(queryParams, "writeKey")
@@ -956,10 +964,12 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 	req.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
 
 	// convert the pixel request(r) to a web request(req)
-	_ = gateway.setWebPayload(req, queryParams, reqType)
-	// send req to webHandler
-	gateway.pixelWebHandler(w, req, reqType)
-
+	err = gateway.setWebPayload(req, queryParams, reqType)
+	if err == nil {
+		gateway.pixelWebHandler(w, req, reqType)
+	} else {
+		setPixelResponseType(w)
+	}
 }
 
 func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, reqType string) {
