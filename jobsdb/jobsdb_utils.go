@@ -185,11 +185,13 @@ func constructQuery(jd AssertInterface, paramKey string, paramList []string, que
 }
 
 //constructParameterJSONQuery construct and return query
-func constructParameterJSONQuery(jd AssertInterface, table string, parameterFilters []ParameterFilterT) string {
+func constructParameterJSONQuery(jd AssertInterface, table string, parameterFilters []ParameterFilterT, switchQuery bool) string {
 	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
-	var allKeyValues, mandatoryKeyValues, opNullConditions []string
+	var allKeyValues, mandatoryKeyValues, opNullConditions, hashConditions []string
 	for _, parameter := range parameterFilters {
 		allKeyValues = append(allKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
+		hashConditions = append(hashConditions, fmt.Sprintf(`%s.parameters ->> '%s' = '%s'`, table, parameter.Name, parameter.Value))
+
 		if parameter.Optional {
 			opNullConditions = append(opNullConditions, fmt.Sprintf(`%s.parameters -> '%s' IS NULL`, table, parameter.Name))
 		} else {
@@ -200,7 +202,11 @@ func constructParameterJSONQuery(jd AssertInterface, table string, parameterFilt
 	if len(opNullConditions) > 0 {
 		opQuery += fmt.Sprintf(` OR (%s.parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
 	}
-	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
+	if switchQuery {
+		return strings.Join(hashConditions, " AND ")
+	}
+	sqlquery := fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
+	return sqlquery
 }
 
 //Admin Handlers

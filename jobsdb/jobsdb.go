@@ -482,6 +482,7 @@ var (
 	refreshDSListLoopSleepDuration               time.Duration
 	backupCheckSleepDuration                     time.Duration
 	useJoinForUnprocessed                        bool
+	useNonJSONQuery                              bool
 	backupRowsBatchSize                          int64
 	pkgLogger                                    logger.LoggerI
 )
@@ -526,6 +527,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, "JobsDB.refreshDSListLoopSleepDurationInS")
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, "JobsDB.backupCheckSleepDurationIns")
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
+	useNonJSONQuery = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 
 }
 
@@ -1166,7 +1168,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 		_, err = jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	} else if jd.tablePrefix == "batch_rt" {
-		sqlStatement = fmt.Sprintf(`CREATE INDEX ON %s USING GIN (parameters jsonb_path_ops);`, newDS.JobTable)
+		sqlStatement = fmt.Sprintf(`CREATE INDEX ON %s USING BTREE (((parameters->'destination_id')));`, newDS.JobTable)
 		_, err = jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	}
@@ -1741,7 +1743,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 
 	if len(parameterFilters) > 0 {
 		jd.assert(!getAll, "getAll is true")
-		sourceQuery += " AND " + constructParameterJSONQuery(jd, ds.JobTable, parameterFilters)
+		sourceQuery += " AND " + constructParameterJSONQuery(jd, ds.JobTable, parameterFilters, useNonJSONQuery)
 	} else {
 		sourceQuery = ""
 	}
@@ -1790,7 +1792,6 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
                                              %[4]s %[5]s
                                              AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[6]s`,
 			ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
-
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
 		jd.assertError(err)
 		defer stmt.Close()
@@ -1873,7 +1874,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	}
 
 	if len(parameterFilters) > 0 {
-		sqlStatement += " AND " + constructParameterJSONQuery(jd, ds.JobTable, parameterFilters)
+		sqlStatement += " AND " + constructParameterJSONQuery(jd, ds.JobTable, parameterFilters, useNonJSONQuery)
 	}
 
 	if order {
@@ -1886,7 +1887,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	rows, err = jd.dbHandle.Query(sqlStatement)
 	jd.assertError(err)
 	defer rows.Close()
-
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
@@ -3003,7 +3003,7 @@ func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 	}
 
 	if len(parameterFilters) > 0 {
-		sourceQuery += constructParameterJSONQuery(jd, ds.JobTable, parameterFilters)
+		sourceQuery += constructParameterJSONQuery(jd, ds.JobTable, parameterFilters, useNonJSONQuery)
 	} else {
 		sourceQuery = ""
 	}
