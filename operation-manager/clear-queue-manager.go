@@ -8,6 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
 )
 
 type ClearOperationHandlerT struct {
@@ -82,6 +83,17 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 	}
 	rm.PauseAll()
 
+	var brm batchrouter.BatchRoutersManagerI
+	for {
+		brm, err = batchrouter.GetBatchRoutersManager()
+		if err == nil && brm != nil && brm.AreBatchRoutersReady() {
+			break
+		}
+		pkgLogger.Infof("BatchRoutersManager is nil or BatchRouters are not ready. Retrying after a second")
+		time.Sleep(time.Second)
+	}
+	brm.PauseAll()
+
 	//Clear From GatewayDB
 	handler.clearFromJobsdb(clearOperationHandler.gatewayDB, parameterFilters, false, false)
 	//Clear From RouterDB
@@ -91,6 +103,7 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 
 	pm.Resume()
 	rm.ResumeAll()
+	brm.ResumeAll()
 
 	return nil
 }

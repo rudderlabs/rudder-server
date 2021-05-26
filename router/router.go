@@ -285,6 +285,7 @@ func (worker *workerT) workerProcess() {
 			pause.respChannel <- true
 			if pause.waitForResume {
 				<-worker.resumeChannel
+				pkgLogger.Infof("Router worker %d is resumed. Dest type: %s", worker.workerID, worker.rt.destName)
 			}
 		case message := <-worker.channel:
 			if worker.rt.pausingWorkers {
@@ -1271,6 +1272,7 @@ func (rt *HandleT) statusInsertLoop() {
 			pkgLogger.Infof("statusInsertLoop loop is paused. Dest type: %s", rt.destName)
 			pause.respChannel <- true
 			<-rt.statusLoopResumeChannel
+			pkgLogger.Infof("statusInsertLoop loop is resumed. Dest type: %s", rt.destName)
 		case jobStatus := <-rt.responseQ:
 			rt.logger.Debugf("[%v Router] :: Got back status error %v and state %v for job %v", rt.destName, jobStatus.status.ErrorCode,
 				jobStatus.status.JobState, jobStatus.status.JobID)

@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
-	OperationManager OperationManagerI
-	pkgLogger        logger.LoggerI
+	OperationManager        OperationManagerI
+	pkgLogger               logger.LoggerI
+	enableOperationsManager bool
 )
 
 type OperationtT struct {
@@ -40,6 +42,7 @@ type OperationHandlerI interface {
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("operationmanager")
+	enableOperationsManager = config.GetBool("Operations.enabled", true)
 }
 
 func Setup(gatewayDB, routerDB, batchRouterDB jobsdb.JobsDB) {
@@ -66,6 +69,10 @@ func GetOperationManager() OperationManagerI {
 }
 
 func (om *OperationManagerT) InsertOperation(payload []byte) (int64, error) {
+	if !enableOperationsManager {
+		return -1, fmt.Errorf("operation manager is disabled")
+	}
+
 	sqlStatement := `INSERT INTO operations (operation, payload, done, op_status)
 	VALUES ($1, $2, $3, $4)
 	RETURNING id`
@@ -104,6 +111,11 @@ func (om *OperationManagerT) MarkOperationDone(opID int64, status string) error 
 }
 
 func (om *OperationManagerT) StartProcessLoop() {
+	if !enableOperationsManager {
+		pkgLogger.Infof("operation manager is disabled. Not starting process loop.")
+		return
+	}
+
 	for {
 		status := "succeeded"
 		var op OperationtT
