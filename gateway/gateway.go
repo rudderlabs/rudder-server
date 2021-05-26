@@ -20,7 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
-	queuemanager "github.com/rudderlabs/rudder-server/queue-manager"
+	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -636,7 +636,7 @@ func (gateway *HandleT) ClearHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var reqPayload queuemanager.ClearQueueRequestPayload
+	var reqPayload operationmanager.ClearQueueRequestPayload
 	err = json.Unmarshal(payload, &reqPayload)
 	if err != nil {
 		errorMessage = err.Error()
@@ -648,7 +648,7 @@ func (gateway *HandleT) ClearHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opID, err := queuemanager.GetQueueManager().InsertOperation(payload)
+	opID, err := operationmanager.GetOperationManager().InsertOperation(payload)
 	if err != nil {
 		errorMessage = err.Error()
 		return

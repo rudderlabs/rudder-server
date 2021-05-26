@@ -1,4 +1,4 @@
-package queuemanager
+package operationmanager
 
 import (
 	"encoding/json"
@@ -31,7 +31,7 @@ func init() {
 }
 
 func loadConfig() {
-	config.RegisterIntConfigVariable(100000, &jobQueryBatchSize, true, 1, "QueueManager.jobQueryBatchSize")
+	config.RegisterIntConfigVariable(100000, &jobQueryBatchSize, true, 1, "ClearQueueManager.jobQueryBatchSize")
 }
 
 func GetClearOperationHandlerInstance(gatewayDB, routerDB, batchRouterDB jobsdb.JobsDB) *ClearOperationHandlerT {

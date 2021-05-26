@@ -1,4 +1,4 @@
-package queuemanager
+package operationmanager
 
 import (
 	"database/sql"
@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	QueueManager QueueManagerI
-	pkgLogger    logger.LoggerI
+	OperationManager OperationManagerI
+	pkgLogger        logger.LoggerI
 )
 
 type OperationtT struct {
@@ -23,11 +23,11 @@ type OperationtT struct {
 	CreatedAt time.Time
 }
 
-type QueueManagerI interface {
+type OperationManagerI interface {
 	InsertOperation(payload []byte) (int64, error)
 	StartProcessLoop()
 }
-type QueueManagerT struct {
+type OperationManagerT struct {
 	dbHandle      *sql.DB
 	gatewayDB     jobsdb.JobsDB
 	routerDB      jobsdb.JobsDB
@@ -39,38 +39,38 @@ type OperationHandlerI interface {
 }
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("queuemanager")
+	pkgLogger = logger.NewLogger().Child("operationmanager")
 }
 
 func Setup(gatewayDB, routerDB, batchRouterDB jobsdb.JobsDB) {
-	pkgLogger.Info("setting up queuemanager.")
+	pkgLogger.Info("setting up operation manager.")
 	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
 	if err != nil {
 		panic(fmt.Errorf("failed to connect to DB. Err: %v", err))
 	}
-	qm := new(QueueManagerT)
+	qm := new(OperationManagerT)
 	qm.dbHandle = dbHandle
 	qm.gatewayDB = gatewayDB
 	qm.routerDB = routerDB
 	qm.batchRouterDB = batchRouterDB
 
-	QueueManager = qm
+	OperationManager = qm
 }
 
-func GetQueueManager() QueueManagerI {
-	if QueueManager == nil {
-		panic("QueueManager is not initialized. Call Setup first.")
+func GetOperationManager() OperationManagerI {
+	if OperationManager == nil {
+		panic("OperationManager is not initialized. Call Setup first.")
 	}
 
-	return QueueManager
+	return OperationManager
 }
 
-func (qm *QueueManagerT) InsertOperation(payload []byte) (int64, error) {
+func (om *OperationManagerT) InsertOperation(payload []byte) (int64, error) {
 	sqlStatement := `INSERT INTO operations (operation, payload, done, op_status)
 	VALUES ($1, $2, $3, $4)
 	RETURNING id`
 
-	stmt, err := qm.dbHandle.Prepare(sqlStatement)
+	stmt, err := om.dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		return -1, err
 	}
@@ -85,25 +85,25 @@ func (qm *QueueManagerT) InsertOperation(payload []byte) (int64, error) {
 	return opID, nil
 }
 
-func (qm *QueueManagerT) MarkOperationStart(opID int64) error {
+func (om *OperationManagerT) MarkOperationStart(opID int64) error {
 	sqlStatement := `UPDATE operations SET op_status=$3, start_time=$2 WHERE id=$1`
-	_, err := qm.dbHandle.Exec(sqlStatement, opID, time.Now().UTC(), "executing")
+	_, err := om.dbHandle.Exec(sqlStatement, opID, time.Now().UTC(), "executing")
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (qm *QueueManagerT) MarkOperationDone(opID int64, status string) error {
+func (om *OperationManagerT) MarkOperationDone(opID int64, status string) error {
 	sqlStatement := `UPDATE operations SET done=$2, op_status=$4, end_time=$3 WHERE id=$1`
-	_, err := qm.dbHandle.Exec(sqlStatement, opID, true, time.Now().UTC(), status)
+	_, err := om.dbHandle.Exec(sqlStatement, opID, true, time.Now().UTC(), status)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (qm *QueueManagerT) StartProcessLoop() {
+func (om *OperationManagerT) StartProcessLoop() {
 	for {
 		status := "succeeded"
 		var op OperationtT
@@ -113,14 +113,14 @@ func (qm *QueueManagerT) StartProcessLoop() {
 									done=False
 									ORDER BY id asc limit 1`
 
-		stmt, err := qm.dbHandle.Prepare(sqlStatement)
+		stmt, err := om.dbHandle.Prepare(sqlStatement)
 		if err != nil {
 			pkgLogger.Errorf("Failed to prepare sql: %s", sqlStatement)
 			time.Sleep(5 * time.Second)
 			continue
 		}
 
-		row := qm.dbHandle.QueryRow(sqlStatement)
+		row := om.dbHandle.QueryRow(sqlStatement)
 		err = row.Scan(&op.ID, &op.Operation, &op.Payload, &op.done)
 		if err == sql.ErrNoRows {
 			pkgLogger.Debugf("No rows found. Sql: %s,", sqlStatement)
@@ -134,10 +134,10 @@ func (qm *QueueManagerT) StartProcessLoop() {
 		}
 		stmt.Close()
 
-		qm.MarkOperationStart(op.ID)
+		om.MarkOperationStart(op.ID)
 
 		pkgLogger.Debugf("%#v", op)
-		opHandler := qm.getHandler(op.Operation)
+		opHandler := om.getHandler(op.Operation)
 		if opHandler == nil {
 			pkgLogger.Errorf("No handler found for operation: %s", op.Operation)
 			status = "dropped"
@@ -149,15 +149,15 @@ func (qm *QueueManagerT) StartProcessLoop() {
 			}
 		}
 
-		qm.MarkOperationDone(op.ID, status)
+		om.MarkOperationDone(op.ID, status)
 
 		time.Sleep(5 * time.Second)
 	}
 }
 
-func (qm *QueueManagerT) getHandler(operation string) OperationHandlerI {
+func (om *OperationManagerT) getHandler(operation string) OperationHandlerI {
 	if operation == "CLEAR" {
-		return GetClearOperationHandlerInstance(qm.gatewayDB, qm.routerDB, qm.batchRouterDB)
+		return GetClearOperationHandlerInstance(om.gatewayDB, om.routerDB, om.batchRouterDB)
 	}
 
 	return nil

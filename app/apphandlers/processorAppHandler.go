@@ -12,7 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	queuemanager "github.com/rudderlabs/rudder-server/queue-manager"
+	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -90,9 +90,9 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 		}
 	}
 
-	queuemanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+	operationmanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
 	rruntime.Go(func() {
-		queuemanager.QueueManager.StartProcessLoop()
+		operationmanager.OperationManager.StartProcessLoop()
 	})
 
 	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
