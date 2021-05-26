@@ -46,9 +46,7 @@ func (rm *RoutersManagerT) AreRoutersReady() bool {
 }
 
 func (rm *RoutersManagerT) AddRouter(router *HandleT) {
-	if _, ok := rm.Routers[router.destName]; !ok {
-		rm.Routers[router.destName] = router
-	}
+	rm.Routers[router.destName] = router
 }
 
 func (rm *RoutersManagerT) Pause(destType string) {

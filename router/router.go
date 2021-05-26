@@ -1269,7 +1269,6 @@ func (rt *HandleT) statusInsertLoop() {
 			countStat.Count(len(responseList))
 			statusStat.End()
 			pkgLogger.Infof("statusInsertLoop loop is paused. Dest type: %s", rt.destName)
-			rt.paused = true
 			pause.respChannel <- true
 			<-rt.statusLoopResumeChannel
 		case jobStatus := <-rt.responseQ:
@@ -1389,20 +1388,20 @@ func (rt *HandleT) generatorLoop() {
 	generatorStat := stats.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
 	countStat := stats.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": rt.destName})
 
-	timeout := time.After(200 * time.Millisecond)
+	timeout := time.After(10 * time.Millisecond)
 	for {
 		select {
 		case pause := <-rt.generatorPauseChannel:
 			pkgLogger.Infof("Generator loop is paused. Dest type: %s", rt.destName)
 			pause.respChannel <- true
 			<-rt.generatorResumeChannel
+			pkgLogger.Infof("Generator loop is resumed. Dest type: %s", rt.destName)
 		case <-timeout:
-			rt.paused = false
 			if rt.pausingWorkers {
 				time.Sleep(time.Second)
 				continue
 			}
-			timeout = time.After(200 * time.Millisecond)
+			timeout = time.After(10 * time.Millisecond)
 			generatorStat.Start()
 
 			if rt.guaranteeUserEventOrder {
@@ -1738,9 +1737,15 @@ func (rt *HandleT) Pause() {
 		worker.retryForJobMap = make(map[int64]time.Time)
 		worker.abortedUserIDMap = make(map[string]int)
 	}
+
+	rt.paused = true
 }
 
 //Resume will resume the router
+//Resuming all the router components in the reverse order in which they were paused.
+//1. resume status insert loop queue
+//2. resume all the worker channels
+//3. resume generator
 func (rt *HandleT) Resume() {
 	rt.pauseLock.Lock()
 	defer rt.pauseLock.Unlock()
@@ -1759,4 +1764,6 @@ func (rt *HandleT) Resume() {
 
 	//Resume generator
 	rt.generatorResumeChannel <- true
+
+	rt.paused = false
 }

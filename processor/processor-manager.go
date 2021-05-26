@@ -31,10 +31,10 @@ func GetProcessorManager() (ProcessorManagerI, error) {
 	return ProcessorManager, nil
 }
 
-func (qm *ProcessorManagerT) Pause() {
-	qm.Processor.Pause()
+func (pm *ProcessorManagerT) Pause() {
+	pm.Processor.Pause()
 }
 
-func (qm *ProcessorManagerT) Resume() {
-	qm.Processor.Resume()
+func (pm *ProcessorManagerT) Resume() {
+	pm.Processor.Resume()
 }
