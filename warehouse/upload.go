@@ -1235,8 +1235,6 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
 	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
-	job.uploadLock.Lock()
-	defer job.uploadLock.Unlock()
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 
 	upload := job.upload
