@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/gateway/response"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -1089,40 +1088,6 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(healthVal))
 }
 
-func uploadHandler(w http.ResponseWriter, r *http.Request) {
-	pkgLogger.LogRequest(r)
-	pkgLogger.Info("WH upload handler called")
-	//vars := mux.Vars(r)
-	//uploadId, ok := vars["uplid"]
-	keys, ok := r.URL.Query()["uplid"]
-	uploadId := keys[0]
-	if !ok {
-		http.Error(w, response.MakeResponse("Mandatory field: EventID missing"), 400)
-		return
-	}
-	uplId, err := strconv.Atoi(uploadId)
-	if err!= nil {
-		return
-	}
-	sqlStmt := fmt.Sprintf(`select id, metadata from %s  where id = %d`, warehouseutils.WarehouseUploadsTable, uplId)
-	var uploadJobT UploadJobT
-	var upload UploadT
-
-	row := dbHandle.QueryRow(sqlStmt)
-	err = row.Scan(&upload.ID, &upload.Metadata)
-	if err != nil {
-		return
-	}
-	uploadJobT.upload = &upload
-	uploadJobT.dbHandle = dbHandle
-	err = uploadJobT.triggerUploadNow()
-	if err != nil {
-		return
-	}
-	return
-	w.Write([]byte("upload requested"))
-}
-
 func getConnectionString() string {
 	if !CheckForWarehouseEnvVars() {
 		return jobsdb.GetConnectionString()
@@ -1140,7 +1105,6 @@ func startWebHandler() {
 	if isMaster() {
 		backendconfig.WaitForConfig()
 		http.HandleFunc("/v1/process", processHandler)
-		http.HandleFunc("/upload", uploadHandler)
 		pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 	} else {
 		pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)

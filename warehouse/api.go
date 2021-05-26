@@ -325,7 +325,7 @@ func (uploadReq UploadReqT) TriggerWHUpload() (error) {
 	}
 	if !uploadReq.authorizeSource(upload.SourceID) {
 		pkgLogger.Errorf(`Unauthorized request for upload:%d with sourceId:%s in workspaceId:%s`, uploadReq.UploadId, upload.SourceID, uploadReq.WorkspaceID)
-		errors.New("Unauthorized request")
+		return errors.New("Unauthorized request")
 	}
 	uploadJobT.upload = &upload
 	uploadJobT.dbHandle = uploadReq.API.dbHandle
