@@ -128,7 +128,7 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 }
 
 func (handler *ClearOperationHandlerT) clearFromJobsdb(db jobsdb.JobsDB, parameterFilters []jobsdb.ParameterFilterT, throttled, waiting bool) {
-	startTime := time.Now()
+	startTime := time.Now().UTC()
 	for {
 		var pendingList, unprocessedList []*jobsdb.JobT
 		toQuery := jobQueryBatchSize
