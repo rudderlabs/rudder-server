@@ -82,9 +82,6 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 	}
 	rm.PauseAll()
 
-	//TODO remove
-	time.Sleep(15 * time.Second)
-
 	//Clear From GatewayDB
 	handler.clearFromJobsdb(clearOperationHandler.gatewayDB, parameterFilters, false, false)
 	//Clear From RouterDB
