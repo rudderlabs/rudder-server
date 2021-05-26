@@ -297,8 +297,8 @@ func (job *UploadJobT) run() (err error) {
 	// job.setUploadColumns(
 	// 	UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
 	// )
-	//job.uploadLock.Lock()
-	//defer job.uploadLock.Unlock()
+	job.uploadLock.Lock()
+	defer job.uploadLock.Unlock()
 	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}}})
 
 	if len(job.stagingFiles) == 0 {
@@ -1201,7 +1201,6 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	job.uploadLock.Lock()
 	defer job.uploadLock.Unlock()
 	upload := job.upload
-	//TODO: can it be in waiting state only?
 	newjobState := Waiting
 	var metadata map[string]string
 	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
@@ -1212,7 +1211,6 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return err
-		//metadataJSON = []byte("{}")
 	}
 
 	uploadColumns := []UploadColumnT{
@@ -1232,7 +1230,6 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	err = txn.Commit()
 
 	job.upload.Status = newjobState
-	//job.upload.Error = serializedErr
 	return err
 }
 
