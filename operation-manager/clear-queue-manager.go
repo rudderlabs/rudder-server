@@ -99,26 +99,23 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 }
 
 func (handler *ClearOperationHandlerT) clearFromJobsdb(db jobsdb.JobsDB, parameterFilters []jobsdb.ParameterFilterT, throttled, waiting bool) {
-
+	startTime := time.Now()
 	for {
-		var retryList, throttledList, waitList, unprocessedList []*jobsdb.JobT
+		var pendingList, unprocessedList []*jobsdb.JobT
 		toQuery := jobQueryBatchSize
-		retryList = db.GetToRetry(jobsdb.GetQueryParamsT{Count: toQuery, ParameterFilters: parameterFilters})
-		toQuery -= len(retryList)
-		if throttled {
-			throttledList = db.GetThrottled(jobsdb.GetQueryParamsT{Count: toQuery, ParameterFilters: parameterFilters})
-			toQuery -= len(throttledList)
-		}
-		if waiting {
-			waitList = db.GetWaiting(jobsdb.GetQueryParamsT{Count: toQuery, ParameterFilters: parameterFilters})
-			toQuery -= len(waitList)
-		}
-		unprocessedList = db.GetUnprocessed(jobsdb.GetQueryParamsT{Count: toQuery, ParameterFilters: parameterFilters})
+		getParams := jobsdb.GetQueryParamsT{Count: toQuery, ParameterFilters: parameterFilters}
+		getParams.StateFilters = []string{jobsdb.Failed.State, jobsdb.Throttled.State, jobsdb.Waiting.State}
+		pendingList = db.GetProcessed(getParams)
+		toQuery -= len(pendingList)
+		getParams = jobsdb.GetQueryParamsT{Count: toQuery, ParameterFilters: parameterFilters}
+		getParams.UseTimeFilter = true
+		getParams.Before = startTime
+		unprocessedList = db.GetUnprocessed(getParams)
 
-		combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
+		combinedList := append(unprocessedList, pendingList...)
 
 		if len(combinedList) == 0 {
-			pkgLogger.Infof("ClearQueueManager: clearFromJobsdb Complete. No more Jobs to clear from %s db for params: %#v", db.GetTablePrefix(), parameterFilters)
+			pkgLogger.Infof("ClearQueueManager: clearFromJobsdb Complete. No more Jobs to clear from %s db for params: %#v", db.GetIdentifier(), parameterFilters)
 			break
 		}
 
@@ -142,6 +139,6 @@ func (handler *ClearOperationHandlerT) clearFromJobsdb(db jobsdb.JobsDB, paramet
 			panic(err)
 		}
 
-		pkgLogger.Infof("cleared %d jobs from %s db", len(statusList), db.GetTablePrefix())
+		pkgLogger.Infof("cleared %d jobs from %s db", len(statusList), db.GetIdentifier())
 	}
 }

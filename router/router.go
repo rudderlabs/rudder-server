@@ -1397,11 +1397,11 @@ func (rt *HandleT) generatorLoop() {
 			<-rt.generatorResumeChannel
 			pkgLogger.Infof("Generator loop is resumed. Dest type: %s", rt.destName)
 		case <-timeout:
+			timeout = time.After(10 * time.Millisecond)
 			if rt.pausingWorkers {
 				time.Sleep(time.Second)
 				continue
 			}
-			timeout = time.After(10 * time.Millisecond)
 			generatorStat.Start()
 
 			if rt.guaranteeUserEventOrder {
