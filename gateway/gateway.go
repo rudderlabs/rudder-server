@@ -949,25 +949,30 @@ func sendPixelResponse(w http.ResponseWriter) {
 func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 
 	queryParams := r.URL.Query()
-	writeKey := queryParams["writeKey"]
-	// make a new request
-	req, err := http.NewRequest(http.MethodPost, "", nil)
-	if err != nil {
-		sendPixelResponse(w)
-		return
-	}
-	// set basic auth header
-	req.SetBasicAuth(writeKey[0], "")
-	delete(queryParams, "writeKey")
+	if queryParams["writeKey"] != nil {
+		writeKey := queryParams["writeKey"]
+		// make a new request
+		req, err := http.NewRequest(http.MethodPost, "", nil)
+		if err != nil {
+			sendPixelResponse(w)
+			return
+		}
+		// set basic auth header
+		req.SetBasicAuth(writeKey[0], "")
+		delete(queryParams, "writeKey")
 
-	// set X-Forwarded-For header
-	req.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
+		// set X-Forwarded-For header
+		req.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
 
-	// convert the pixel request(r) to a web request(req)
-	err = gateway.setWebPayload(req, queryParams, reqType)
-	if err == nil {
-		gateway.pixelWebHandler(w, req, reqType)
+		// convert the pixel request(r) to a web request(req)
+		err = gateway.setWebPayload(req, queryParams, reqType)
+		if err == nil {
+			gateway.pixelWebHandler(w, req, reqType)
+		} else {
+			sendPixelResponse(w)
+		}
 	} else {
+		gateway.logger.Debug("Write Key not found")
 		sendPixelResponse(w)
 	}
 }
