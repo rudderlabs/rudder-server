@@ -25,6 +25,7 @@ var (
 type ClearQueueRequestPayload struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
+	JobRunID      string `json:"job_run_id"`
 }
 
 func init() {
@@ -53,12 +54,30 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 		return err
 	}
 
-	parameterFilters := []jobsdb.ParameterFilterT{
-		{
+	var parameterFilters []jobsdb.ParameterFilterT
+	if reqPayload.SourceID != "" {
+		parameterFilters = append(parameterFilters, jobsdb.ParameterFilterT{
 			Name:     "source_id",
 			Value:    reqPayload.SourceID,
 			Optional: false,
 		},
+		)
+	}
+	if reqPayload.DestinationID != "" {
+		parameterFilters = append(parameterFilters, jobsdb.ParameterFilterT{
+			Name:     "destination_id",
+			Value:    reqPayload.DestinationID,
+			Optional: false,
+		},
+		)
+	}
+	if reqPayload.JobRunID != "" {
+		parameterFilters = append(parameterFilters, jobsdb.ParameterFilterT{
+			Name:     "source_job_run_id",
+			Value:    reqPayload.JobRunID,
+			Optional: false,
+		},
+		)
 	}
 
 	var pm processor.ProcessorManagerI

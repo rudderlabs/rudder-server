@@ -643,8 +643,8 @@ func (gateway *HandleT) ClearHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if reqPayload.SourceID == "" {
-		errorMessage = "Empty source id"
+	if reqPayload.SourceID == "" && reqPayload.DestinationID == "" && reqPayload.JobRunID == "" {
+		errorMessage = "Neither source id nor destination id nor job run id provided"
 		return
 	}
 
