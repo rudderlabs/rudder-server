@@ -794,6 +794,7 @@ func (worker *workerT) workerProcess() {
 						if output.Error == nil {
 							brt.recordUploadStats(*batchJobs.BatchDestination, output)
 						}
+
 						destUploadStat.End()
 					case misc.ContainsString(warehouseDestinations, brt.destType):
 						useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
@@ -806,7 +807,6 @@ func (worker *workerT) workerProcess() {
 							output.Error = brt.postToWarehouse(batchJobs, output)
 							if output.Error != nil {
 								postToWarehouseErr = true
-
 							}
 							warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
 							warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
