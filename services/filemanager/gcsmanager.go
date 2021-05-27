@@ -58,10 +58,19 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 	return UploadOutput{Location: objectURL(attrs), ObjectName: fileName}, err
 }
 
+func (manager *GCSManager) getClient() (*storage.Client, error) {
+	var err error
+	if manager.client == nil {
+		ctx := context.Background()
+		manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+	}
+	return manager.client, err
+}
+
 func (manager *GCSManager) Download(output *os.File, key string) error {
 	ctx := context.Background()
 
-	client, err := storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+	client, err := manager.getClient()
 
 	if err != nil {
 		return err
@@ -97,6 +106,7 @@ func (manager *GCSManager) GetDownloadKeyFromFileLocation(location string) strin
 
 type GCSManager struct {
 	Config *GCSConfig
+	client *storage.Client
 }
 
 func GetGCSConfig(config map[string]interface{}) *GCSConfig {

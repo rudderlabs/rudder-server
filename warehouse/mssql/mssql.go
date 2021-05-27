@@ -159,6 +159,19 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 
 func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	objectLocations := ms.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
+	storageProvider := warehouseutils.ObjectStorageType(ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
+	downloader, err := filemanager.New(&filemanager.SettingsT{
+		Provider: storageProvider,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         storageProvider,
+			Config:           ms.Warehouse.Destination.Config,
+			UseRudderStorage: ms.Uploader.UseRudderStorage(),
+		}),
+	})
+	if err != nil {
+		pkgLogger.Errorf("MS: Error in setting up a downloader for destionationID : %s Error : %v", ms.Warehouse.Destination.ID, err)
+		return nil, err
+	}
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		object, err := warehouseutils.GetObjectName(objectLocation, ms.Warehouse.Destination.Config, ms.ObjectStorage)
@@ -181,19 +194,6 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		objectFile, err := os.Create(ObjectPath)
 		if err != nil {
 			pkgLogger.Errorf("MS: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
-			return nil, err
-		}
-		storageProvider := warehouseutils.ObjectStorageType(ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
-		downloader, err := filemanager.New(&filemanager.SettingsT{
-			Provider: storageProvider,
-			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-				Provider:         storageProvider,
-				Config:           ms.Warehouse.Destination.Config,
-				UseRudderStorage: ms.Uploader.UseRudderStorage(),
-			}),
-		})
-		if err != nil {
-			pkgLogger.Errorf("MS: Error in setting up a downloader for destionationID : %s Error : %v", ms.Warehouse.Destination.ID, err)
 			return nil, err
 		}
 		err = downloader.Download(objectFile, object)
