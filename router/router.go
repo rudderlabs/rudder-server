@@ -121,6 +121,7 @@ type JobParametersT struct {
 	SourceTaskRunID string `json:"source_task_run_id"`
 	SourceJobID     string `json:"source_job_id"`
 	SourceJobRunID  string `json:"source_job_run_id"`
+	MessageID       string `json:"message_id"`
 }
 
 type workerMessageT struct {
@@ -1129,17 +1130,18 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 
+	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
 	for _, resp := range *responseList {
+		var parameters JobParametersT
+		err := json.Unmarshal(resp.JobT.Parameters, &parameters)
+		if err != nil {
+			rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
+		}
 		//Update metrics maps
 		//REPORTING - ROUTER - START
 		if rt.reporting != nil && rt.reportingEnabled {
-			var parameters JobParametersT
-			err := json.Unmarshal(resp.JobT.Parameters, &parameters)
-			if err != nil {
-				rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
-			}
 			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
 			cd, ok := connectionDetailsMap[key]
 			if !ok {
@@ -1168,6 +1170,12 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 		if resp.status.JobState == jobsdb.Aborted.State {
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
+			if parameters.SourceJobRunID != "" {
+				if _, ok := jobRunIDAbortedEventsMap[parameters.SourceJobRunID]; !ok {
+					jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = []*FailedEventRowT{}
+				}
+				jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceJobRunID], &FailedEventRowT{DestinationID: parameters.DestinationID, MsgID: parameters.MessageID})
+			}
 		}
 
 		//tracking router errors
@@ -1221,6 +1229,10 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		if err != nil {
 			rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
 			panic(err)
+		}
+		//Save msgids of aborted jobs
+		if len(jobRunIDAbortedEventsMap) > 0 {
+			GetFailedEventsManager().SaveFailedMsgIDs(jobRunIDAbortedEventsMap, txn)
 		}
 		if rt.reporting != nil && rt.reportingEnabled {
 			rt.reporting.Report(reportMetrics, txn)

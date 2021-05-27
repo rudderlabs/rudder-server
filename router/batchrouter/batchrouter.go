@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/router"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
@@ -107,6 +108,7 @@ type JobParametersT struct {
 	SourceTaskRunID string `json:"source_task_run_id"`
 	SourceJobID     string `json:"source_job_id"`
 	SourceJobRunID  string `json:"source_job_run_id"`
+	MessageID       string `json:"message_id"`
 }
 
 func (brt *HandleT) backendConfigSubscriber() {
@@ -430,6 +432,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		batchJobState string
 		errorResp     []byte
 	)
+	jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
 	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
 	if err != nil {
@@ -482,10 +485,22 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			errorResp = []byte(errorRespString)
 		}
 
+		var parameters JobParametersT
+		err = json.Unmarshal(job.Parameters, &parameters)
+		if err != nil {
+			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+		}
+
 		timeElapsed := time.Since(firstAttemptedAt)
 		if jobState == jobsdb.Failed.State && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 			abortedEvents = append(abortedEvents, job)
+			if parameters.SourceJobRunID != "" {
+				if _, ok := jobRunIDAbortedEventsMap[parameters.SourceJobRunID]; !ok {
+					jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = []*router.FailedEventRowT{}
+				}
+				jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceJobRunID], &router.FailedEventRowT{DestinationID: parameters.DestinationID, MsgID: parameters.MessageID})
+			}
 			jobState = jobsdb.Aborted.State
 		} else {
 			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
@@ -494,6 +509,12 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 				if time.Since(warehouseServiceFailedTime) > warehouseServiceMaxRetryTimeinHr {
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					abortedEvents = append(abortedEvents, job)
+					if parameters.SourceJobRunID != "" {
+						if _, ok := jobRunIDAbortedEventsMap[parameters.SourceJobRunID]; !ok {
+							jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = []*router.FailedEventRowT{}
+						}
+						jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceJobRunID], &router.FailedEventRowT{DestinationID: parameters.DestinationID, MsgID: parameters.MessageID})
+					}
 					jobState = jobsdb.Aborted.State
 				}
 				warehouseServiceFailedTimeLock.RUnlock()
@@ -519,11 +540,6 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		if brt.reporting != nil && brt.reportingEnabled {
 			//Update metrics maps
 			errorCode := getBRTErrorCode(jobState)
-			var parameters JobParametersT
-			err = json.Unmarshal(job.Parameters, &parameters)
-			if err != nil {
-				brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
-			}
 			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode))
 			cd, ok := connectionDetailsMap[key]
 			if !ok {
@@ -602,6 +618,10 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		panic(err)
 	}
 
+	//Save msgids of aborted jobs
+	if len(jobRunIDAbortedEventsMap) > 0 {
+		router.GetFailedEventsManager().SaveFailedMsgIDs(jobRunIDAbortedEventsMap, txn)
+	}
 	if brt.reporting != nil && brt.reportingEnabled {
 		brt.reporting.Report(reportMetrics, txn)
 	}
