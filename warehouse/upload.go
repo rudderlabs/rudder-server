@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -856,6 +857,24 @@ func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error
 	return
 }
 
+func (job *UploadJobT) getTotalCount(tName string) (int64, error) {
+	var total int64
+	operation := func() error {
+		var countErr error
+		total, countErr = job.whManager.GetTotalCountInTable(tName)
+		return countErr
+	}
+	expBackoff := backoff.NewExponentialBackOff()
+	expBackoff.InitialInterval = 5 * time.Second
+	expBackoff.RandomizationFactor = 0
+	expBackoff.Reset()
+	backoffWithMaxRetry := backoff.WithMaxRetries(expBackoff, 5)
+	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		pkgLogger.Errorf(`Error getting total count in table:%s error: %v`, tName, err)
+	})
+	return total, err
+}
+
 func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	tableUpload := NewTableUpload(job.upload.ID, tName)
 	alteredSchema, err = job.updateSchema(tName)
@@ -871,7 +890,7 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	var totalBeforeLoad, totalAfterLoad int64
 	if generateTableLoadCountVerificationsMetrics {
 		var countErr error
-		totalBeforeLoad, countErr = job.whManager.GetTotalCountInTable(tName)
+		totalBeforeLoad, countErr = job.getTotalCount(tName)
 		if countErr != nil {
 			pkgLogger.Errorf(`Error getting total count in table:%s before load: %v`, tName, countErr)
 		}
@@ -885,7 +904,7 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 
 	if generateTableLoadCountVerificationsMetrics {
 		var countErr error
-		totalAfterLoad, countErr = job.whManager.GetTotalCountInTable(tName)
+		totalAfterLoad, countErr = job.getTotalCount(tName)
 		if countErr != nil {
 			pkgLogger.Errorf(`Error getting total count in table:%s after load: %v`, tName, countErr)
 		}
