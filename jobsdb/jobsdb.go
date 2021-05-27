@@ -304,6 +304,7 @@ type HandleT struct {
 	readChannel                   chan readJob
 	enableWriterQueue             bool
 	enableReaderQueue             bool
+	enableDBIndexing              bool
 }
 
 //The struct which is written to the journal
@@ -536,7 +537,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, "JobsDB.refreshDSListLoopSleepDurationInS")
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, "JobsDB.backupCheckSleepDurationIns")
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
-	useCustomValParamCache = config.GetBool("JobsDB.CacheUsingCustomValParam", true)
+	config.RegisterBoolConfigVariable(true, &useCustomValParamCache, true, "JobsDB.CacheUsingCustomValParam")
 	config.RegisterIntConfigVariable(10, &maxWriters, false, 1, "JobsDB.maxWriters")
 	config.RegisterIntConfigVariable(10, &maxReaders, false, 1, "JobsDB.maxReaders")
 	config.RegisterIntConfigVariable(1000, &storeChannelBufferLength, false, 1, "JobsDB.storeChannelBufferLength")
@@ -609,6 +610,8 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	//jd.readChannel = make(chan readJob, readChannelBufferLength)
 	jd.readChannel = make(chan readJob)
 	jd.initDBReaders()
+
+	jd.enableDBIndexing = config.GetBool(fmt.Sprintf("JobsDB.%v.enableDBIndexing", jd.tablePrefix), false)
 
 	switch ownerType {
 	case Read:
@@ -1269,14 +1272,16 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
-	if jd.tablePrefix == "rt" {
-		sqlStatement = fmt.Sprintf(`CREATE INDEX ON %s(custom_val)`, newDS.JobTable)
-		_, err = jd.dbHandle.Exec(sqlStatement)
-		jd.assertError(err)
-	} else if jd.tablePrefix == "batch_rt" {
-		sqlStatement = fmt.Sprintf(`CREATE INDEX ON %s USING GIN (parameters jsonb_path_ops);`, newDS.JobTable)
-		_, err = jd.dbHandle.Exec(sqlStatement)
-		jd.assertError(err)
+	if jd.enableDBIndexing {
+		if jd.tablePrefix == "rt" {
+			sqlStatement = fmt.Sprintf(`CREATE INDEX ON %s(custom_val)`, newDS.JobTable)
+			_, err = jd.dbHandle.Exec(sqlStatement)
+			jd.assertError(err)
+		} else if jd.tablePrefix == "batch_rt" {
+			sqlStatement = fmt.Sprintf(`CREATE INDEX ON %s USING GIN (parameters jsonb_path_ops);`, newDS.JobTable)
+			_, err = jd.dbHandle.Exec(sqlStatement)
+			jd.assertError(err)
+		}
 	}
 
 	sqlStatement = fmt.Sprintf(`CREATE TABLE %s (
@@ -1638,14 +1643,12 @@ func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]struct{}
 			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
 		}
 	} else if jd.tablePrefix == "batch_rt" {
-		i := 0
 		for cv, cVal := range CVPMap {
 			for pv := range cVal {
 				param := ParameterFilterT{
 					Name:  "destination_id",
 					Value: pv,
 				}
-				i++
 				jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, []ParameterFilterT{param}, hasJobs, nil)
 			}
 		}
