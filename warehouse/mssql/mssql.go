@@ -5,6 +5,14 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -13,13 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
-	"io"
-	"net/url"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
 )
 
 var (
@@ -182,9 +183,14 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			pkgLogger.Errorf("MS: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
+		storageProvider := warehouseutils.ObjectStorageType(ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
 		downloader, err := filemanager.New(&filemanager.SettingsT{
-			Provider: warehouseutils.ObjectStorageType(ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.Config),
-			Config:   ms.Warehouse.Destination.Config,
+			Provider: storageProvider,
+			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+				Provider:         storageProvider,
+				Config:           ms.Warehouse.Destination.Config,
+				UseRudderStorage: ms.Uploader.UseRudderStorage(),
+			}),
 		})
 		if err != nil {
 			pkgLogger.Errorf("MS: Error in setting up a downloader for destionationID : %s Error : %v", ms.Warehouse.Destination.ID, err)
@@ -293,43 +299,55 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					recordInterface = append(recordInterface, value)
 				}
 			}
-			var recordInterface1 []interface{}
+			var finalColumnValues []interface{}
 			for index, value := range recordInterface {
 				valueType := tableSchemaInUpload[sortedColumnKeys[index]]
+				if value == nil {
+					pkgLogger.Errorf("MS : Found nil value for type : %s, column : %s", valueType, sortedColumnKeys[index])
+					finalColumnValues = append(finalColumnValues, nil)
+					continue
+				}
+				strValue := value.(string)
 				switch valueType {
 				case "int":
 					{
 						var convertedValue int
-						if convertedValue, err = strconv.Atoi(value.(string)); err != nil {
-							pkgLogger.Errorf("MS : Mismatch in table datatypes found for int")
+						if convertedValue, err = strconv.Atoi(strValue); err != nil {
+							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+							finalColumnValues = append(finalColumnValues, nil)
+						} else {
+							finalColumnValues = append(finalColumnValues, convertedValue)
 						}
-						recordInterface1 = append(recordInterface1, convertedValue)
+
 					}
 				case "datetime":
 					{
 						var convertedValue time.Time
 						//TODO : handling milli?
-						convertedValue, err = time.Parse(time.RFC3339, value.(string))
-						if err != nil {
-							pkgLogger.Errorf("MS : Mismatch in table datatypes found for datetime")
+						if convertedValue, err = time.Parse(time.RFC3339, strValue); err != nil {
+							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+							finalColumnValues = append(finalColumnValues, nil)
+						} else {
+							finalColumnValues = append(finalColumnValues, convertedValue)
 						}
 						//TODO : handling all cases?
-						recordInterface1 = append(recordInterface1, convertedValue)
 					}
 				case "boolean":
 					{
 						var convertedValue bool
-						if convertedValue, err = strconv.ParseBool(value.(string)); err != nil {
-							pkgLogger.Errorf("MS : Mismatch in table datatypes found for boolean")
+						if convertedValue, err = strconv.ParseBool(strValue); err != nil {
+							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+							finalColumnValues = append(finalColumnValues, nil)
+						} else {
+							finalColumnValues = append(finalColumnValues, convertedValue)
 						}
-						recordInterface1 = append(recordInterface1, convertedValue)
 					}
 				default:
-					recordInterface1 = append(recordInterface1, value)
+					finalColumnValues = append(finalColumnValues, value)
 				}
 			}
 
-			_, err = stmt.Exec(recordInterface1...)
+			_, err = stmt.Exec(finalColumnValues...)
 			if err != nil {
 				pkgLogger.Errorf("MS: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
 				txn.Rollback()
@@ -581,8 +599,8 @@ func (ms *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 func (ms *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
-	ms.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.MSSQL, warehouse.Destination.Config)
 	ms.Uploader = uploader
+	ms.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.MSSQL, warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
 
 	ms.Db, err = connect(ms.getConnectionCredentials())
 	return err

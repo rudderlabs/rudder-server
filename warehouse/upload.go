@@ -97,6 +97,7 @@ type UploadT struct {
 	Metadata           json.RawMessage
 	FirstEventAt       time.Time
 	LastEventAt        time.Time
+	UseRudderStorage   bool
 	// cloud sources specific info
 	SourceBatchID   string
 	SourceTaskID    string
@@ -115,6 +116,7 @@ type UploadJobT struct {
 	pgNotifier          *pgnotifier.PgNotifierT
 	schemaHandle        *SchemaHandleT
 	schemaLock          sync.Mutex
+	uploadLock          sync.Mutex
 	hasAllTablesSkipped bool
 	tableUploadStatuses []*TableUploadStatusT
 }
@@ -295,7 +297,8 @@ func (job *UploadJobT) run() (err error) {
 	// job.setUploadColumns(
 	// 	UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
 	// )
-
+	job.uploadLock.Lock()
+	defer job.uploadLock.Unlock()
 	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}}})
 
 	if len(job.stagingFiles) == 0 {
@@ -365,7 +368,7 @@ func (job *UploadJobT) run() (err error) {
 		case GeneratedLoadFiles:
 			newStatus = nextUploadState.failed
 			// generate load files for all staging files(including succeeded) if hasSchemaChanged or if its snowflake(to have all load files in same folder in bucket) or set via toml/env
-			generateAll := hasSchemaChanged || misc.ContainsString(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", false)
+			generateAll := hasSchemaChanged || misc.ContainsString(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
 			var startLoadFileID, endLoadFileID int64
 			startLoadFileID, endLoadFileID, err = job.createLoadFiles(generateAll)
 			if err != nil {
@@ -1194,9 +1197,44 @@ func (job *UploadJobT) setUploadColumns(opts UploadColumnsOpts) (err error) {
 	return err
 }
 
+func (job *UploadJobT) triggerUploadNow() (err error) {
+	job.uploadLock.Lock()
+	defer job.uploadLock.Unlock()
+	upload := job.upload
+	newjobState := Waiting
+	var metadata map[string]string
+	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
+	if unmarshallErr != nil {
+		metadata = make(map[string]string)
+	}
+	metadata["nextRetryTime"] = time.Now().Add(-time.Hour * 1).Format(time.RFC3339)
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+
+	uploadColumns := []UploadColumnT{
+		{Column: "status", Value: newjobState},
+		{Column: "metadata", Value: metadataJSON},
+		{Column: "updated_at", Value: timeutil.Now()},
+	}
+
+	txn, err := job.dbHandle.Begin()
+	if err != nil {
+		panic(err)
+	}
+	err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
+	if err != nil {
+		panic(err)
+	}
+	err = txn.Commit()
+
+	job.upload.Status = newjobState
+	return err
+}
+
 func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
 	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
-
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 
 	upload := job.upload
@@ -1231,16 +1269,12 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 		}
 	}
 
-	var metadata map[string]string
+	var metadata map[string]interface{}
 	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
 	if unmarshallErr != nil {
-		metadata = make(map[string]string)
+		metadata = make(map[string]interface{})
 	}
-	lastAttempt := upload.LastAttemptAt
-	if lastAttempt.IsZero() {
-		lastAttempt = timeutil.Now()
-	}
-	metadata["nextRetryTime"] = lastAttempt.Add(durationBeforeNextAttempt(upload.Attempts)).Format(time.RFC3339)
+	metadata["nextRetryTime"] = timeutil.Now().Add(durationBeforeNextAttempt(upload.Attempts + 1)).Format(time.RFC3339)
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		metadataJSON = []byte("{}")
@@ -1475,6 +1509,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				DestinationType:     destType,
 				DestinationConfig:   job.warehouse.Destination.Config,
 				UniqueLoadGenID:     uniqueLoadGenID,
+				UseRudderStorage:    job.upload.UseRudderStorage,
+				RudderStoragePrefix: misc.GetRudderObjectStoragePrefix(),
 			}
 
 			payloadJSON, err := json.Marshal(payload)
@@ -1735,6 +1771,10 @@ func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
 		return true
 	}
 	return false
+}
+
+func (job *UploadJobT) UseRudderStorage() bool {
+	return job.upload.UseRudderStorage
 }
 
 /*

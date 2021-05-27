@@ -131,7 +131,10 @@ func createTestFileForBatchDestination(destinationID string) string {
 func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, provider string, destination backendconfig.DestinationT) (objectName string, err error) {
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
-		Config:   misc.GetObjectStorageConfig(provider, destination.Config),
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         provider,
+			Config:           destination.Config,
+			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config)}),
 	})
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to initiate filemanager config for testing this destination id %s: err %v", destination.ID, err)
@@ -154,7 +157,10 @@ func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, pr
 func downloadTestFileForBatchDestination(testObjectKey string, provider string, destination backendconfig.DestinationT) (err error) {
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
-		Config:   misc.GetObjectStorageConfig(provider, destination.Config),
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         provider,
+			Config:           destination.Config,
+			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config)}),
 	})
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to initiate filemanager config for testing this destination id %s: err %v", destination.ID, err)
@@ -203,7 +209,7 @@ func TestWarehouseDestinationConnection(destination backendconfig.DestinationT) 
 		panic(err)
 	}
 	testFileNameWithPath := createTestFileForBatchDestination(destination.ID)
-	storageProvider := warehouseutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config)
+	storageProvider := warehouseutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config, misc.IsConfiguredToUseRudderObjectStorage(destination.Config))
 	keyPrefixes := []string{rudderConnectionTestingFolder, destination.ID, time.Now().Format("01-02-2006")}
 	objectKeyName, err := uploadTestFileForBatchDestination(testFileNameWithPath, keyPrefixes, storageProvider, destination)
 	if err != nil {

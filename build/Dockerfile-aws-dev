@@ -1,5 +1,5 @@
 FROM frolvlad/alpine-glibc
-RUN apk add --no-cache ca-certificates postgresql-client
+RUN apk add --no-cache ca-certificates postgresql-client curl
 ADD rudder-server /
 ADD rudder-server-with-race /
 ADD ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli

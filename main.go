@@ -50,7 +50,7 @@ var major, minor, commit, buildDate, builtBy, gitURL, patch string
 
 func loadConfig() {
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", false)
+	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", true)
 }
 
 func init() {
