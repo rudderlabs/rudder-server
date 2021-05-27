@@ -20,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
-	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
@@ -42,8 +41,16 @@ func RegisterAdminHandlers(readonlyProcErrorDB jobsdb.ReadonlyJobsDB) {
 	admin.RegisterAdminHandler("ProcErrors", &stash.StashRpcHandler{ReadOnlyJobsDB: readonlyProcErrorDB})
 }
 
+type PauseT struct {
+	respChannel chan bool
+}
+
 //HandleT is an handle to this object used in main.go
 type HandleT struct {
+	paused                         bool
+	pauseLock                      sync.Mutex
+	pauseChannel                   chan *PauseT
+	resumeChannel                  chan bool
 	backendConfig                  backendconfig.BackendConfig
 	processSessions                bool
 	sessionThresholdEvents         int
@@ -217,6 +224,8 @@ func (proc *HandleT) Status() interface{} {
 
 //Setup initializes the module
 func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI) {
+	proc.pauseChannel = make(chan *PauseT)
+	proc.resumeChannel = make(chan bool)
 	proc.reporting = reporting
 	proc.reportingEnabled = config.GetBool("Reporting.enabled", true)
 	proc.logger = pkgLogger
@@ -333,6 +342,7 @@ var (
 	transformerURL                      string
 	pollInterval                        time.Duration
 	isUnLocked                          bool
+	GWCustomVal                         string
 )
 
 func loadConfig() {
@@ -359,7 +369,8 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
 	pollInterval = config.GetDuration("Processor.pollIntervalInS", time.Duration(5)) * time.Second
-
+	// GWCustomVal is used as a key in the jobsDB customval column
+	GWCustomVal = config.GetString("Gateway.CustomVal", "GW")
 }
 
 func (proc *HandleT) getTransformerFeatureJson() {
@@ -1550,7 +1561,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	txn := proc.gatewayDB.BeginGlobalTransaction()
 	proc.gatewayDB.AcquireUpdateJobStatusLocks()
-	err := proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{gateway.CustomVal}, nil)
+	err := proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{GWCustomVal}, nil)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
 		panic(err)
@@ -1638,7 +1649,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	var retryList, unprocessedList []*jobsdb.JobT
 	var totalRetryEvents, totalUnprocessedEvents int
 
-	unTruncatedRetryList := proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{gateway.CustomVal}, Count: toQuery})
+	unTruncatedRetryList := proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: toQuery})
 	retryList, totalRetryEvents = getTruncatedEventList(unTruncatedRetryList, maxEventsToProcess)
 
 	if len(unTruncatedRetryList) >= dbReadBatchSize || totalRetryEvents >= maxEventsToProcess {
@@ -1646,7 +1657,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	} else {
 		eventsLeftToProcess := maxEventsToProcess - totalRetryEvents
 		toQuery = misc.MinInt(eventsLeftToProcess, dbReadBatchSize)
-		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{gateway.CustomVal}, Count: toQuery})
+		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: toQuery})
 		unprocessedList, totalUnprocessedEvents = getTruncatedEventList(unTruncatedUnProcessedList, eventsLeftToProcess)
 	}
 
@@ -1697,7 +1708,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 			}
 			statusList = append(statusList, &newStatus)
 		}
-		err := proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+		err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while marking gateway jobs statuses as executing. Panicking. Err: %v", err)
 			panic(err)
@@ -1723,27 +1734,38 @@ func (proc *HandleT) mainLoop() {
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
 
+	timeout := time.After(200 * time.Millisecond)
 	for {
-		if isUnLocked {
-			if proc.handlePendingGatewayJobs() {
-				currLoopSleep = time.Duration(0)
-			} else {
-				currLoopSleep = 2*currLoopSleep + loopSleep
-				if currLoopSleep > maxLoopSleep {
-					currLoopSleep = maxLoopSleep
+		select {
+		case pause := <-proc.pauseChannel:
+			pkgLogger.Info("Processor is paused.")
+			proc.paused = true
+			pause.respChannel <- true
+			<-proc.resumeChannel
+		case <-timeout:
+			proc.paused = false
+			timeout = time.After(200 * time.Millisecond)
+			if isUnLocked {
+				if proc.handlePendingGatewayJobs() {
+					currLoopSleep = time.Duration(0)
+				} else {
+					currLoopSleep = 2*currLoopSleep + loopSleep
+					if currLoopSleep > maxLoopSleep {
+						currLoopSleep = maxLoopSleep
+					}
+					time.Sleep(currLoopSleep)
 				}
-				time.Sleep(currLoopSleep)
+				time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
+			} else {
+				time.Sleep(fixedLoopSleep)
 			}
-			time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
-		} else {
-			time.Sleep(fixedLoopSleep)
 		}
 	}
 }
 
 func (proc *HandleT) crashRecover() {
 	for {
-		execList := proc.gatewayDB.GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gateway.CustomVal}, Count: dbReadBatchSize})
+		execList := proc.gatewayDB.GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: dbReadBatchSize})
 
 		if len(execList) == 0 {
 			break
@@ -1764,7 +1786,7 @@ func (proc *HandleT) crashRecover() {
 			}
 			statusList = append(statusList, &status)
 		}
-		err := proc.gatewayDB.UpdateJobStatus(statusList, []string{gateway.CustomVal}, nil)
+		err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while marking gateway jobs statuses as failed. Panicking. Err: %v", err)
 			panic(err)
@@ -1780,4 +1802,30 @@ func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string
 		sourceStatsD := proc.stats.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)
 	}
+}
+
+//Pause is a blocking call.
+//Pause returns after the processor is paused.
+func (proc *HandleT) Pause() {
+	proc.pauseLock.Lock()
+	defer proc.pauseLock.Unlock()
+
+	if proc.paused {
+		return
+	}
+
+	respChannel := make(chan bool)
+	proc.pauseChannel <- &PauseT{respChannel: respChannel}
+	<-respChannel
+}
+
+func (proc *HandleT) Resume() {
+	proc.pauseLock.Lock()
+	defer proc.pauseLock.Unlock()
+
+	if !proc.paused {
+		return
+	}
+
+	proc.resumeChannel <- true
 }

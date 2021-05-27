@@ -65,6 +65,8 @@ type GetQueryParamsT struct {
 	StateFilters                  []string
 	Count                         int
 	IgnoreCustomValFiltersInQuery bool
+	UseTimeFilter                 bool
+	Before                        time.Time
 }
 
 /*
@@ -85,10 +87,14 @@ type JobsDB interface {
 	ReleaseUpdateJobStatusLocks()
 
 	GetToRetry(params GetQueryParamsT) []*JobT
+	GetWaiting(params GetQueryParamsT) []*JobT
+	GetThrottled(params GetQueryParamsT) []*JobT
+	GetProcessed(params GetQueryParamsT) []*JobT
 	GetUnprocessed(params GetQueryParamsT) []*JobT
 	GetExecuting(params GetQueryParamsT) []*JobT
 
 	Status() interface{}
+	GetIdentifier() string
 }
 
 /*
@@ -1851,6 +1857,10 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		sqlStatement += " AND " + constructParameterJSONQuery(jd, ds.JobTable, parameterFilters)
 	}
 
+	if params.UseTimeFilter {
+		sqlStatement += " AND created_at < $1"
+	}
+
 	if order {
 		sqlStatement += fmt.Sprintf(" ORDER BY %s.job_id", ds.JobTable)
 	}
@@ -1858,8 +1868,16 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 	}
 
-	rows, err = jd.dbHandle.Query(sqlStatement)
-	jd.assertError(err)
+	if params.UseTimeFilter {
+		stmt, err := jd.dbHandle.Prepare(sqlStatement)
+		jd.assertError(err)
+		defer stmt.Close()
+		rows, err = stmt.Query(params.Before)
+		jd.assertError(err)
+	} else {
+		rows, err = jd.dbHandle.Query(sqlStatement)
+		jd.assertError(err)
+	}
 	defer rows.Close()
 
 	var jobList []*JobT
@@ -2244,7 +2262,12 @@ func (jd *HandleT) isEmpty(ds dataSetT) bool {
 	panic("Unable to get count on this dataset")
 }
 
-//GetTablePrefix returns the table prefix of the jobsdb
+//GetIdentifier returns the identifier of the jobsdb. Here it is tablePrefix.
+func (jd *HandleT) GetIdentifier() string {
+	return jd.tablePrefix
+}
+
+//GetTablePrefix returns the table prefix of the jobsdb.
 func (jd *HandleT) GetTablePrefix() string {
 	return jd.tablePrefix
 }

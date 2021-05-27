@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
+	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -614,6 +615,48 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
+func (gateway *HandleT) ClearHandler(w http.ResponseWriter, r *http.Request) {
+	pkgLogger.LogRequest(r)
+	var errorMessage string
+	defer func() {
+		if errorMessage != "" {
+			pkgLogger.Debug(errorMessage)
+			http.Error(w, response.GetStatus(errorMessage), 400)
+		}
+	}()
+
+	payload, _, err := gateway.getPayloadAndWriteKey(w, r)
+	if err != nil {
+		errorMessage = err.Error()
+		return
+	}
+
+	if !gjson.ValidBytes(payload) {
+		errorMessage = response.GetStatus(response.InvalidJSON)
+		return
+	}
+
+	var reqPayload operationmanager.ClearQueueRequestPayload
+	err = json.Unmarshal(payload, &reqPayload)
+	if err != nil {
+		errorMessage = err.Error()
+		return
+	}
+
+	if reqPayload.SourceID == "" && reqPayload.DestinationID == "" && reqPayload.JobRunID == "" {
+		errorMessage = "Neither source id nor destination id nor job run id provided"
+		return
+	}
+
+	opID, err := operationmanager.GetOperationManager().InsertOperation(payload)
+	if err != nil {
+		errorMessage = err.Error()
+		return
+	}
+
+	w.Write([]byte(fmt.Sprintf(`{"op_id": %d}`, opID)))
+}
+
 type pendingEventsRequestPayload struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
@@ -1037,6 +1080,7 @@ func (gateway *HandleT) StartWebHandler() {
 	}
 
 	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler))
+	srvMux.HandleFunc("/v1/clear", gateway.stat(gateway.ClearHandler))
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
