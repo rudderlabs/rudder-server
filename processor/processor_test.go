@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -1183,7 +1184,13 @@ var _ = Describe("Processor", func() {
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(job.CustomVal).To(Equal("enabled-destination-a-definition-name"))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(fmt.Sprintf(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": "400", "stage": "dest_transformer"}`, i+1)))
+
+				var paramsMap, expectedParamsMap map[string]interface{}
+				json.Unmarshal(job.Parameters, &paramsMap)
+				expectedStr := []byte(fmt.Sprintf(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer"}`, i+1))
+				json.Unmarshal(expectedStr, &expectedParamsMap)
+				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
+				Expect(equals).To(Equal(true))
 
 				// compare payloads
 				var payload []map[string]interface{}
@@ -1294,7 +1301,13 @@ var _ = Describe("Processor", func() {
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(job.CustomVal).To(Equal("MINIO"))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": "400", "stage": "user_transformer"}`))
+
+				var paramsMap, expectedParamsMap map[string]interface{}
+				json.Unmarshal(job.Parameters, &paramsMap)
+				expectedStr := []byte(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": 400, "stage": "user_transformer"}`)
+				json.Unmarshal(expectedStr, &expectedParamsMap)
+				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
+				Expect(equals).To(Equal(true))
 
 				// compare payloads
 				var payload []map[string]interface{}
@@ -1500,6 +1513,7 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 
 func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
 	var clearDB = false
+	SetDisableDedupFeature(false)
 	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
 
 	// make sure the mock backend config has sent the configuration

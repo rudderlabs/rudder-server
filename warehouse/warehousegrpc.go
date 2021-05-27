@@ -41,3 +41,13 @@ func (w *warehousegrpc) GetWHUpload(context context.Context, request *proto.WHUp
 func (w *warehousegrpc) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error) {
 	return wrapperspb.Bool(UploadAPI.enabled), nil
 }
+
+func (w *warehousegrpc) TriggerWHUpload(context context.Context, request *proto.WHUploadRequest) (*emptypb.Empty, error) {
+	uploadReq := UploadReqT{
+		UploadId:    request.UploadId,
+		WorkspaceID: request.WorkspaceId,
+		API:         UploadAPI,
+	}
+	err := uploadReq.TriggerWHUpload()
+	return new(emptypb.Empty), err
+}

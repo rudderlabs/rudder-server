@@ -257,9 +257,14 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnName string
 // DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	objectLocations := ch.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
+	storageProvider := warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 	downloader, err := filemanager.New(&filemanager.SettingsT{
-		Provider: warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config),
-		Config:   ch.Warehouse.Destination.Config,
+		Provider: storageProvider,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         storageProvider,
+			Config:           ch.Warehouse.Destination.Config,
+			UseRudderStorage: ch.Uploader.UseRudderStorage(),
+		}),
 	})
 	if err != nil {
 		pkgLogger.Errorf("CH: Error in setting up a downloader for destionationID : %s Error : %v", ch.Warehouse.Destination.ID, err)
@@ -648,8 +653,8 @@ func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
-	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config)
 	ch.Uploader = uploader
+	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 
 	ch.Db, err = connect(ch.getConnectionCredentials(), true)
 	return err

@@ -49,7 +49,7 @@ type ReportByStatus struct {
 }
 
 type InstanceDetails struct {
-	WorksapceID string `json:"workspaceId"`
+	WorkspaceID string `json:"workspaceId"`
 	Namespace   string `json:"namespace"`
 	InstanceID  string `json:"instanceId"`
 }

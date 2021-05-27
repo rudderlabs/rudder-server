@@ -166,9 +166,14 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			pkgLogger.Errorf("PG: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
+		storageProvider := warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 		downloader, err := filemanager.New(&filemanager.SettingsT{
-			Provider: warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config),
-			Config:   pg.Warehouse.Destination.Config,
+			Provider: storageProvider,
+			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+				Provider:         storageProvider,
+				Config:           pg.Warehouse.Destination.Config,
+				UseRudderStorage: pg.Uploader.UseRudderStorage(),
+			}),
 		})
 		if err != nil {
 			pkgLogger.Errorf("PG: Error in setting up a downloader for destionationID : %s Error : %v", pg.Warehouse.Destination.ID, err)
@@ -551,8 +556,8 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 func (pg *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
-	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, warehouse.Destination.Config)
 	pg.Uploader = uploader
+	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 
 	pg.Db, err = connect(pg.getConnectionCredentials())
 	return err
@@ -614,7 +619,7 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprintf(`select t.table_name, c.column_name, c.data_type from INFORMATION_SCHEMA.TABLES t LEFT JOIN INFORMATION_SCHEMA.COLUMNS c on t.table_name = c.table_name WHERE t.table_schema = '%s' and t.table_name not like '%s%s'`, pg.Namespace, stagingTablePrefix, "%")
+	sqlStatement := fmt.Sprintf(`select t.table_name, c.column_name, c.data_type from INFORMATION_SCHEMA.TABLES t LEFT JOIN INFORMATION_SCHEMA.COLUMNS c ON (t.table_name = c.table_name and t.table_schema = c.table_schema) WHERE t.table_schema = '%s' and t.table_name not like '%s%s'`, pg.Namespace, stagingTablePrefix, "%")
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {

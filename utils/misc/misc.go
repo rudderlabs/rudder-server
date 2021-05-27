@@ -775,9 +775,51 @@ func HasAWSKeysInConfig(config interface{}) bool {
 	return true
 }
 
-func GetObjectStorageConfig(provider string, objectStorageConfig interface{}) map[string]interface{} {
-	objectStorageConfigMap := objectStorageConfig.(map[string]interface{})
-	if provider == "S3" && !HasAWSKeysInConfig(objectStorageConfig) {
+func GetRudderObjectStorageAccessKeys() (accessKeyID, accessKey string) {
+	return config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", ""), config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+}
+
+func GetRudderObjectStoragePrefix() (prefix string) {
+	return config.GetEnv("RUDDER_WAREHOUSE_BUCKET_PREFIX", config.GetNamespaceIdentifier())
+}
+
+func GetRudderObjectStorageConfig(prefixOverride string) (storageConfig map[string]interface{}) {
+	// TODO: add error log if s3 keys are not available
+	storageConfig = make(map[string]interface{})
+	storageConfig["bucketName"] = config.GetEnv("RUDDER_WAREHOUSE_BUCKET", "rudder-warehouse-storage")
+	storageConfig["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+	storageConfig["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+	// set prefix from override for shared slave type nodes
+	if prefixOverride != "" {
+		storageConfig["prefix"] = prefixOverride
+	} else {
+		storageConfig["prefix"] = config.GetEnv("RUDDER_WAREHOUSE_BUCKET_PREFIX", config.GetNamespaceIdentifier())
+	}
+	return
+}
+
+func IsConfiguredToUseRudderObjectStorage(storageConfig map[string]interface{}) bool {
+	if boolInterface, ok := storageConfig["useRudderStorage"]; ok {
+		if b, ok := boolInterface.(bool); ok {
+			return b
+		}
+	}
+	return false
+}
+
+type ObjectStorageOptsT struct {
+	Provider                    string
+	Config                      interface{}
+	UseRudderStorage            bool
+	RudderStoragePrefixOverride string
+}
+
+func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
+	objectStorageConfigMap := opts.Config.(map[string]interface{})
+	if opts.UseRudderStorage {
+		return GetRudderObjectStorageConfig(opts.RudderStoragePrefixOverride)
+	}
+	if opts.Provider == "S3" && !HasAWSKeysInConfig(opts.Config) {
 		clonedObjectStorageConfig := make(map[string]interface{})
 		for k, v := range objectStorageConfigMap {
 			clonedObjectStorageConfig[k] = v

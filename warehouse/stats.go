@@ -36,6 +36,8 @@ func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.RudderStat
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
 		"warehouseID": job.warehouseID(),
+		"destID":      job.upload.DestinationID,
+		"sourceID":    job.upload.SourceID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
@@ -48,6 +50,8 @@ func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.RudderSt
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
 		"warehouseID": job.warehouseID(),
+		"destID":      job.upload.DestinationID,
+		"sourceID":    job.upload.SourceID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
@@ -60,6 +64,8 @@ func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.RudderStat
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
 		"warehouseID": job.warehouseID(),
+		"destID":      job.upload.DestinationID,
+		"sourceID":    job.upload.SourceID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
@@ -72,6 +78,8 @@ func (jobRun *JobRunT) timerStat(name string) stats.RudderStats {
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
 		"warehouseID": jobRun.warehouseID(),
+		"destID":      jobRun.job.DestinationID,
+		"sourceID":    jobRun.job.SourceID,
 	})
 }
 
@@ -80,6 +88,8 @@ func (jobRun *JobRunT) counterStat(name string) stats.RudderStats {
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
 		"warehouseID": jobRun.warehouseID(),
+		"destID":      jobRun.job.DestinationID,
+		"sourceID":    jobRun.job.SourceID,
 	})
 }
 

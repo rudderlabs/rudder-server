@@ -7,7 +7,7 @@ import (
 )
 
 // HandleNullRecovery decides the recovery Mode (normal/migration) in which app should run
-func HandleNullRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode string, currTime int64, appType string) {
+func HandleNullRecovery(forceNormal bool, forceDegraded bool, forceStandBy bool, forceMigrationMode string, currTime int64, appType string) {
 
 	enabled := config.GetBool("recovery.enabled", true)
 	if !enabled {
@@ -20,6 +20,8 @@ func HandleNullRecovery(forceNormal bool, forceDegraded bool, forceMigrationMode
 	if IsValidMigrationMode(forceMigrationMode) {
 		pkgLogger.Info("Setting server mode to Migration. If this is not intended remove environment variables related to Migration.")
 		forceMode = migrationMode
+	} else {
+		forceMode = getForceRecoveryMode(false, false, forceStandBy)
 	}
 
 	recoveryData := getRecoveryData()

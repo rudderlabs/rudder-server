@@ -158,14 +158,15 @@ type batchRequestMetric struct {
 }
 
 type StorageUploadOutput struct {
-	Config         map[string]interface{}
-	Key            string
-	LocalFilePaths []string
-	JournalOpID    int64
-	Error          error
-	FirstEventAt   string
-	LastEventAt    string
-	TotalEvents    int
+	Config           map[string]interface{}
+	Key              string
+	LocalFilePaths   []string
+	JournalOpID      int64
+	Error            error
+	FirstEventAt     string
+	LastEventAt      string
+	TotalEvents      int
+	UseRudderStorage bool
 }
 
 type ErrorResponseT struct {
@@ -230,8 +231,8 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 			mergeProp1 := gjson.GetBytes(job.EventPayload, "metadata.mergePropOne").String()
 			mergeProp2 := gjson.GetBytes(job.EventPayload, "metadata.mergePropTwo").String()
 			ruleIdentifier := fmt.Sprintf(`%s::%s`, mergeProp1, mergeProp2)
-			encounteredMergeRuleMapLock.Lock()
 			configSubscriberLock.Lock()
+			encounteredMergeRuleMapLock.Lock()
 			if _, ok := encounteredMergeRuleMap[warehouseConnIdentifier][ruleIdentifier]; ok {
 				encounteredMergeRuleMapLock.Unlock()
 				configSubscriberLock.Unlock()
@@ -290,9 +291,13 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 
 	brt.logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
+	useRudderStorage := isWarehouse && misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 	uploader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: provider,
-		Config:   misc.GetObjectStorageConfig(provider, batchJobs.BatchDestination.Destination.Config),
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         provider,
+			Config:           batchJobs.BatchDestination.Destination.Config,
+			UseRudderStorage: useRudderStorage}),
 	})
 	if err != nil {
 		panic(err)
@@ -339,13 +344,14 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 
 	return StorageUploadOutput{
-		Config:         batchJobs.BatchDestination.Destination.Config,
-		Key:            uploadOutput.ObjectName,
-		LocalFilePaths: []string{gzipFilePath},
-		JournalOpID:    opID,
-		FirstEventAt:   firstEventAt,
-		LastEventAt:    lastEventAt,
-		TotalEvents:    len(batchJobs.Jobs) - dedupedIDMergeRuleJobs,
+		Config:           batchJobs.BatchDestination.Destination.Config,
+		Key:              uploadOutput.ObjectName,
+		LocalFilePaths:   []string{gzipFilePath},
+		JournalOpID:      opID,
+		FirstEventAt:     firstEventAt,
+		LastEventAt:      lastEventAt,
+		TotalEvents:      len(batchJobs.Jobs) - dedupedIDMergeRuleJobs,
+		UseRudderStorage: useRudderStorage,
 	}
 }
 
@@ -389,15 +395,16 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 			Source:      batchJobs.BatchDestination.Source,
 			Destination: batchJobs.BatchDestination.Destination,
 		},
-		Location:        output.Key,
-		FirstEventAt:    output.FirstEventAt,
-		LastEventAt:     output.LastEventAt,
-		TotalEvents:     output.TotalEvents,
-		SourceBatchID:   sampleParameters.SourceBatchID,
-		SourceTaskID:    sampleParameters.SourceTaskID,
-		SourceTaskRunID: sampleParameters.SourceTaskRunID,
-		SourceJobID:     sampleParameters.SourceJobID,
-		SourceJobRunID:  sampleParameters.SourceJobRunID,
+		Location:         output.Key,
+		FirstEventAt:     output.FirstEventAt,
+		LastEventAt:      output.LastEventAt,
+		TotalEvents:      output.TotalEvents,
+		UseRudderStorage: output.UseRudderStorage,
+		SourceBatchID:    sampleParameters.SourceBatchID,
+		SourceTaskID:     sampleParameters.SourceTaskID,
+		SourceTaskRunID:  sampleParameters.SourceTaskRunID,
+		SourceJobID:      sampleParameters.SourceJobID,
+		SourceJobRunID:   sampleParameters.SourceJobRunID,
 	}
 
 	jsonPayload, err := json.Marshal(&payload)
@@ -780,7 +787,8 @@ func (brt *HandleT) initWorkers() {
 
 								destUploadStat.End()
 							case misc.ContainsString(warehouseDestinations, brt.destType):
-								objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config)
+								useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
+								objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 								destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 								destUploadStat.Start()
 								output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)

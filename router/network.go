@@ -1,10 +1,10 @@
 package router
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -26,13 +26,9 @@ type NetHandleT struct {
 
 //sendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
-func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody string) {
+func (network *NetHandleT) sendPost(structData integrations.PostParametersT) (statusCode int, respBody string) {
 	client := network.httpClient
-	//Parse the response to get parameters
-	postInfo, err := integrations.GetPostInfo(jsonData)
-	if err != nil {
-		return 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
-	}
+	postInfo := structData
 	isRest := postInfo.Type == "REST"
 
 	isMultipart := len(postInfo.Files) > 0
@@ -57,7 +53,28 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 
 		}
 
-		req, err := http.NewRequest(requestMethod, postInfo.URL, nil)
+		var payload io.Reader
+		// support for JSON and FORM body type
+		if len(bodyValue) > 0 {
+			switch bodyFormat {
+			case "JSON":
+				jsonValue, err := json.Marshal(bodyValue)
+				if err != nil {
+					panic(err)
+				}
+				payload = strings.NewReader(string(jsonValue))
+			case "FORM":
+				formValues := url.Values{}
+				for key, val := range bodyValue {
+					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
+				}
+				payload = strings.NewReader(formValues.Encode())
+			default:
+				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
+			}
+		}
+
+		req, err := http.NewRequest(requestMethod, postInfo.URL, payload)
 		if err != nil {
 			network.logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
 			return 400, fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
@@ -77,29 +94,6 @@ func (network *NetHandleT) sendPost(jsonData []byte) (statusCode int, respBody s
 		}
 
 		req.URL.RawQuery = queryParams.Encode()
-
-		// support for JSON and FORM body type
-		if len(bodyValue) > 0 {
-			switch bodyFormat {
-			case "JSON":
-				jsonValue, err := json.Marshal(bodyValue)
-				if err != nil {
-					panic(err)
-				}
-				req.Body = ioutil.NopCloser(bytes.NewReader(jsonValue))
-
-			case "FORM":
-				formValues := url.Values{}
-				for key, val := range bodyValue {
-					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
-				}
-				req.Body = ioutil.NopCloser(strings.NewReader(formValues.Encode()))
-
-			default:
-				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
-
-			}
-		}
 
 		headerKV := postInfo.Headers
 		for key, val := range headerKV {

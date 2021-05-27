@@ -78,9 +78,15 @@ func (jobRun *JobRunT) setStagingFileDownloadPath() (filePath string) {
 
 // Get fileManager
 func (job *PayloadT) getFileManager() (filemanager.FileManager, error) {
+	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage)
 	fileManager, err := filemanager.New(&filemanager.SettingsT{
-		Provider: warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig),
-		Config:   misc.GetObjectStorageConfig(warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), job.DestinationConfig),
+		Provider: storageProvider,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:                    storageProvider,
+			Config:                      job.DestinationConfig,
+			UseRudderStorage:            job.UseRudderStorage,
+			RudderStoragePrefixOverride: job.RudderStoragePrefix,
+		}),
 	})
 	return fileManager, err
 }
@@ -221,7 +227,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 		return filemanager.UploadOutput{}, err
 	}
 	defer file.Close()
-	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig), tableName, job.StagingFileID)
+	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s in staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	uploadLocation, err := uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
 	return uploadLocation, err
 }

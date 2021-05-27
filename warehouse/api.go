@@ -92,6 +92,11 @@ type UploadAPIT struct {
 var UploadAPI UploadAPIT
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
+	workspaceToken := config.GetWorkspaceToken()
+	isMultiWorkspace := config.GetEnvAsBool("HOSTED_SERVICE", false)
+	if isMultiWorkspace {
+		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+	}
 	UploadAPI = UploadAPIT{
 		enabled:  true,
 		dbHandle: dbHandle,
@@ -99,7 +104,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
 		connectionManager: &controlplane.ConnectionManager{
 			AuthInfo: controlplane.AuthInfo{
 				Service:        "warehouse",
-				WorkspaceToken: config.GetWorkspaceToken(),
+				WorkspaceToken: workspaceToken,
 				InstanceID:     config.GetEnv("instance_id", "1"),
 			},
 			RetryInterval: 0,
@@ -182,7 +187,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 	if err != nil {
 		return
 	}
-	query := uploadsReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, timings, metadata->>'nextRetryTime'`)
+	query := uploadsReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime'`)
 	uploadsReq.API.log.Info(query)
 	rows, err := uploadsReq.API.dbHandle.Query(query)
 	if err != nil {
@@ -195,8 +200,8 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		var uploadError string
 		var timingsObject sql.NullString
 		var totalUploads int32
-		var firstEventAt, lastEventAt sql.NullTime
-		err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &timingsObject, &nextRetryTimeStr, &totalUploads)
+		var firstEventAt, lastEventAt, lastExecAt, updatedAt sql.NullTime
+		err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &totalUploads)
 		if err != nil {
 			uploadsReq.API.log.Errorf(err.Error())
 			return &proto.WHUploadsResponse{}, err
@@ -223,14 +228,12 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 				upload.NextRetryTime = timestamppb.New(nextRetryTime)
 			}
 		}
-		// set duration as time between first and last recorded timings
-		// for ongoing/retrying uploads set diff between first and current time
-		_, firstTime := warehouseutils.GetFirstTiming(timingsObject)
+		// set duration as time between updatedAt and lastExec recorded timings
+		// for ongoing/retrying uploads set diff between lastExec and current time
 		if upload.Status == ExportedData || upload.Status == Aborted {
-			_, lastTime := warehouseutils.GetLastTiming(timingsObject)
-			upload.Duration = int32(lastTime.Sub(firstTime) / time.Second)
+			upload.Duration = int32(updatedAt.Time.Sub(lastExecAt.Time) / time.Second)
 		} else {
-			upload.Duration = int32(timeutil.Now().Sub(firstTime) / time.Second)
+			upload.Duration = int32(timeutil.Now().Sub(lastExecAt.Time) / time.Second)
 		}
 		upload.Tables = make([]*proto.WHTable, 0)
 		uploads = append(uploads, &upload)
@@ -244,15 +247,15 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	if err != nil {
 		return &proto.WHUploadResponse{}, err
 	}
-	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, created_at, first_event_at, last_event_at, last_exec_at, timings, metadata->>'nextRetryTime'`)
+	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, created_at, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime'`)
 	uploadReq.API.log.Debug(query)
 	var upload proto.WHUploadResponse
 	var nextRetryTimeStr sql.NullString
-	var firstEventAt, lastEventAt, createdAt, lastExecAt sql.NullTime
+	var firstEventAt, lastEventAt, createdAt, lastExecAt, updatedAt sql.NullTime
 	var timingsObject sql.NullString
 	var uploadError string
 	row := uploadReq.API.dbHandle.QueryRow(query)
-	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &createdAt, &firstEventAt, &lastEventAt, &lastExecAt, &timingsObject, &nextRetryTimeStr)
+	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &createdAt, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr)
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadResponse{}, err
@@ -284,14 +287,12 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 			upload.NextRetryTime = timestamppb.New(nextRetryTime)
 		}
 	}
-	// set duration as time between first and last recorded timings
-	// for ongoing/retrying uploads set diff between first and current time
-	_, firstTime := warehouseutils.GetFirstTiming(timingsObject)
+	// set duration as time between updatedAt and lastExec recorded timings
+	// for ongoing/retrying uploads set diff between lastExec and current time
 	if upload.Status == ExportedData || upload.Status == Aborted {
-		_, lastTime := warehouseutils.GetLastTiming(timingsObject)
-		upload.Duration = int32(lastTime.Sub(firstTime) / time.Second)
+		upload.Duration = int32(updatedAt.Time.Sub(lastExecAt.Time) / time.Second)
 	} else {
-		upload.Duration = int32(timeutil.Now().Sub(firstTime) / time.Second)
+		upload.Duration = int32(timeutil.Now().Sub(lastExecAt.Time) / time.Second)
 	}
 	tableUploadReq := TableUploadReqT{
 		UploadID: upload.Id,
@@ -304,6 +305,35 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	}
 	upload.Tables = tables
 	return &upload, nil
+}
+
+func (uploadReq UploadReqT) TriggerWHUpload() (error) {
+	err := uploadReq.validateReq()
+	if err != nil {
+		return err
+	}
+	query := uploadReq.generateQuery(`id, source_id, destination_id, metadata`)
+	uploadReq.API.log.Debug(query)
+	var uploadJobT UploadJobT
+	var upload UploadT
+
+	row := uploadReq.API.dbHandle.QueryRow(query)
+	err = row.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.Metadata)
+	if err != nil {
+		uploadReq.API.log.Errorf(err.Error())
+		return err
+	}
+	if !uploadReq.authorizeSource(upload.SourceID) {
+		pkgLogger.Errorf(`Unauthorized request for upload:%d with sourceId:%s in workspaceId:%s`, uploadReq.UploadId, upload.SourceID, uploadReq.WorkspaceID)
+		return errors.New("Unauthorized request")
+	}
+	uploadJobT.upload = &upload
+	uploadJobT.dbHandle = uploadReq.API.dbHandle
+	err = uploadJobT.triggerUploadNow()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, error) {
