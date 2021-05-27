@@ -122,7 +122,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 	destLock, ok := customManager.destinationLockMap[destID]
 	customManager.configSubscriberLock.RUnlock()
 	if !ok {
-		panic(fmt.Sprintf("[CDM %s] Unexpected state: Lock missing for %s", customManager.destType, destID))
+		return 500, fmt.Sprintf("[CDM %s] Unexpected state: Lock missing for %s. Config might not have been updated. Please wait for a min before sending events.", customManager.destType, destID)
 	}
 
 	destLock.RLock()

@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
+	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
 	"github.com/bugsnag/bugsnag-go"
@@ -614,6 +615,48 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
+func (gateway *HandleT) ClearHandler(w http.ResponseWriter, r *http.Request) {
+	pkgLogger.LogRequest(r)
+	var errorMessage string
+	defer func() {
+		if errorMessage != "" {
+			pkgLogger.Debug(errorMessage)
+			http.Error(w, response.GetStatus(errorMessage), 400)
+		}
+	}()
+
+	payload, _, err := gateway.getPayloadAndWriteKey(w, r)
+	if err != nil {
+		errorMessage = err.Error()
+		return
+	}
+
+	if !gjson.ValidBytes(payload) {
+		errorMessage = response.GetStatus(response.InvalidJSON)
+		return
+	}
+
+	var reqPayload operationmanager.ClearQueueRequestPayload
+	err = json.Unmarshal(payload, &reqPayload)
+	if err != nil {
+		errorMessage = err.Error()
+		return
+	}
+
+	if reqPayload.SourceID == "" && reqPayload.DestinationID == "" && reqPayload.JobRunID == "" {
+		errorMessage = "Neither source id nor destination id nor job run id provided"
+		return
+	}
+
+	opID, err := operationmanager.GetOperationManager().InsertOperation(payload)
+	if err != nil {
+		errorMessage = err.Error()
+		return
+	}
+
+	w.Write([]byte(fmt.Sprintf(`{"op_id": %d}`, opID)))
+}
+
 type pendingEventsRequestPayload struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
@@ -756,6 +799,10 @@ func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Req
 	return payload, writeKey, err
 }
 
+func (gateway *HandleT) pixelWebHandler(w http.ResponseWriter, r *http.Request, reqType string) {
+	gateway.pixelWebRequestHandler(gateway.rrh, w, r, reqType)
+}
+
 func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	gateway.webRequestHandler(gateway.rrh, w, r, reqType)
 }
@@ -783,6 +830,27 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	}
 	gateway.logger.Debug(response.GetStatus(response.Ok))
 	w.Write([]byte(response.GetStatus(response.Ok)))
+}
+
+func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
+	sendPixelResponse(w)
+	gateway.logger.LogRequest(r)
+	atomic.AddUint64(&gateway.recvCount, 1)
+	var errorMessage string
+	defer func() {
+		if errorMessage != "" {
+			gateway.logger.Debug(errorMessage)
+		}
+	}()
+	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r)
+	if err != nil {
+		errorMessage = err.Error()
+		return
+	}
+	errorMessage = rh.ProcessRequest(gateway, &w, r, reqType, payload, writeKey)
+
+	atomic.AddUint64(&gateway.ackCount, 1)
+	gateway.trackRequestMetrics(errorMessage)
 }
 
 //ProcessRequest on ImportRequestHandler splits payload by user and throws them into the webrequestQ and waits for all their responses before returning
@@ -916,34 +984,39 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType st
 	return nil
 }
 
+func sendPixelResponse(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "image/gif")
+	w.Write([]byte(response.GetPixelResponse()))
+}
+
 func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, reqType string) {
-	if r.Method == http.MethodGet {
-		queryParams := r.URL.Query()
-		if writeKey, present := queryParams["writeKey"]; present && writeKey[0] != "" {
-			// make a new request
-			req, _ := http.NewRequest(http.MethodPost, "", nil)
 
-			// set basic auth header
-			req.SetBasicAuth(writeKey[0], "")
-			delete(queryParams, "writeKey")
+	queryParams := r.URL.Query()
+	if queryParams["writeKey"] != nil {
+		writeKey := queryParams["writeKey"]
+		// make a new request
+		req, err := http.NewRequest(http.MethodPost, "", nil)
+		if err != nil {
+			sendPixelResponse(w)
+			return
+		}
+		// set basic auth header
+		req.SetBasicAuth(writeKey[0], "")
+		delete(queryParams, "writeKey")
 
-			// set X-Forwarded-For header
-			req.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
+		// set X-Forwarded-For header
+		req.Header.Add("X-Forwarded-For", r.Header.Get("X-Forwarded-For"))
 
-			// convert the pixel request(r) to a web request(req)
-			err := gateway.setWebPayload(req, queryParams, reqType)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-
-			// send req to webHandler
-			gateway.webHandler(w, req, reqType)
+		// convert the pixel request(r) to a web request(req)
+		err = gateway.setWebPayload(req, queryParams, reqType)
+		if err == nil {
+			gateway.pixelWebHandler(w, req, reqType)
 		} else {
-			http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
+			sendPixelResponse(w)
 		}
 	} else {
-		http.Error(w, response.InvalidRequestMethod, http.StatusBadRequest)
+		gateway.logger.Debug("Write Key not found")
+		sendPixelResponse(w)
 	}
 }
 
@@ -1007,6 +1080,7 @@ func (gateway *HandleT) StartWebHandler() {
 	}
 
 	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler))
+	srvMux.HandleFunc("/v1/clear", gateway.stat(gateway.ClearHandler))
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,

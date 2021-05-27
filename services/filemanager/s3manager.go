@@ -72,9 +72,13 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	return UploadOutput{Location: output.Location, ObjectName: fileName}, err
 }
 
-func (manager *S3Manager) Download(output *os.File, key string) error {
+func (manager *S3Manager) getDownloadClient() (*awsS3Manager.Downloader, error) {
+	if manager.downloadClient != nil {
+		return manager.downloadClient, nil
+	}
+
 	if manager.Config.Bucket == "" {
-		return errors.New("no storage bucket configured to downloader")
+		return nil, errors.New("no storage bucket configured to downloader")
 	}
 
 	getRegionSession := session.Must(session.NewSession())
@@ -98,7 +102,17 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	}
-	downloader := s3manager.NewDownloader(sess)
+	manager.downloadClient = s3manager.NewDownloader(sess)
+
+	return manager.downloadClient, nil
+}
+
+func (manager *S3Manager) Download(output *os.File, key string) error {
+	downloader, err := manager.getDownloadClient()
+	if err != nil {
+		return err
+	}
+
 	_, err = downloader.Download(output,
 		&s3.GetObjectInput{
 			Bucket: aws.String(manager.Config.Bucket),
@@ -175,7 +189,8 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error
 }
 
 type S3Manager struct {
-	Config *S3Config
+	Config         *S3Config
+	downloadClient *awsS3Manager.Downloader
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {
