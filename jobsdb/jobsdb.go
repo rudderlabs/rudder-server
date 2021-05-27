@@ -1388,6 +1388,9 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	err = txn.Commit()
 	jd.assertError(err)
 
+	//Bursting Cache for this dataset
+	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
+
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
 		jd.statDropDSPeriod.End()
