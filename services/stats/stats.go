@@ -92,6 +92,12 @@ type RudderStatsT struct {
 
 //Setup creates a new statsd client
 func Setup() {
+	DefaultStats = &HandleT{}
+
+	if !statsEnabled {
+		return
+	}
+
 	var err error
 	conn = statsd.Address(statsdServerURL)
 	//TODO: Add tags by calling a function...
@@ -107,8 +113,6 @@ func Setup() {
 			collectRuntimeStats(client)
 		})
 	}
-
-	DefaultStats = &HandleT{}
 }
 
 // NewStat creates a new RudderStats with provided Name and Type
@@ -135,6 +139,16 @@ func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags) 
 }
 
 func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
+	//If stats is not enabled, returning a dummy struct
+	if !statsEnabled {
+		return &RudderStatsT{
+			Name:        Name,
+			StatType:    StatType,
+			Client:      nil,
+			dontProcess: true,
+		}
+	}
+
 	tagStr := StatType
 	for tagName, tagVal := range tags {
 		tagName = strings.ReplaceAll(tagName, ":", "-")
@@ -264,6 +278,10 @@ func collectRuntimeStats(client *statsd.Client) {
 
 // StopRuntimeStats stops collection of runtime stats.
 func StopRuntimeStats() {
+	if !statsEnabled {
+		return
+	}
+
 	close(rc.Done)
 }
 

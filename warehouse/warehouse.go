@@ -1068,7 +1068,6 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	dbService := ""
 	pgNotifierService := ""
-
 	if runningMode != DegradedMode {
 		if !CheckPGHealth(notifier.GetDBHandle()) {
 			http.Error(w, "Cannot connect to pgNotifierService", http.StatusInternalServerError)

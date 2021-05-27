@@ -23,6 +23,7 @@ type WarehouseClient interface {
 	GetHealth(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*wrapperspb.BoolValue, error)
 	GetWHUploads(ctx context.Context, in *WHUploadsRequest, opts ...grpc.CallOption) (*WHUploadsResponse, error)
 	GetWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*WHUploadResponse, error)
+	TriggerWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type warehouseClient struct {
@@ -60,6 +61,15 @@ func (c *warehouseClient) GetWHUpload(ctx context.Context, in *WHUploadRequest, 
 	return out, nil
 }
 
+func (c *warehouseClient) TriggerWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, "/proto.Warehouse/TriggerWHUpload", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WarehouseServer is the server API for Warehouse service.
 // All implementations must embed UnimplementedWarehouseServer
 // for forward compatibility
@@ -67,6 +77,7 @@ type WarehouseServer interface {
 	GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error)
 	GetWHUploads(context.Context, *WHUploadsRequest) (*WHUploadsResponse, error)
 	GetWHUpload(context.Context, *WHUploadRequest) (*WHUploadResponse, error)
+	TriggerWHUpload(context.Context, *WHUploadRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -82,6 +93,9 @@ func (UnimplementedWarehouseServer) GetWHUploads(context.Context, *WHUploadsRequ
 }
 func (UnimplementedWarehouseServer) GetWHUpload(context.Context, *WHUploadRequest) (*WHUploadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetWHUpload not implemented")
+}
+func (UnimplementedWarehouseServer) TriggerWHUpload(context.Context, *WHUploadRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TriggerWHUpload not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
 
@@ -150,6 +164,24 @@ func _Warehouse_GetWHUpload_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Warehouse_TriggerWHUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WHUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WarehouseServer).TriggerWHUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.Warehouse/TriggerWHUpload",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WarehouseServer).TriggerWHUpload(ctx, req.(*WHUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Warehouse_ServiceDesc is the grpc.ServiceDesc for Warehouse service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -168,6 +200,10 @@ var Warehouse_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetWHUpload",
 			Handler:    _Warehouse_GetWHUpload_Handler,
+		},
+		{
+			MethodName: "TriggerWHUpload",
+			Handler:    _Warehouse_TriggerWHUpload_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
