@@ -14,7 +14,7 @@ import (
 )
 
 // NewProducer delegates the call to the appropriate based on parameter destination for creating producer
-func NewProducer(destinationConfig interface{}, destType string) (interface{}, error) {
+func NewProducer(destinationConfig interface{}, destType string, destID string) (interface{}, error) {
 
 	switch destType {
 	case "AZURE_EVENT_HUB":
@@ -39,7 +39,7 @@ func NewProducer(destinationConfig interface{}, destType string) (interface{}, e
 		producer, err := googlepubsub.NewProducer(destinationConfig)
 		return producer, err
 	case "GOOGLESHEETS":
-		producer, err := googlesheets.NewProducer(destinationConfig)
+		producer, err := googlesheets.NewProducer(destinationConfig, destID)
 		return producer, err
 	case "PERSONALIZE":
 		producer, err := personalize.NewProducer(destinationConfig)
@@ -73,7 +73,7 @@ type StreamProducer interface {
 }
 
 // Produce delegates call to appropriate manager based on parameter destination
-func Produce(jsonData json.RawMessage, destType string, producer interface{}, config interface{}) (int, string, string) {
+func Produce(jsonData json.RawMessage, destType string, producer interface{}, config interface{}, destID string) (int, string, string) {
 	switch destType {
 	case "KINESIS":
 		return kinesis.Produce(jsonData, producer, config)
@@ -86,7 +86,7 @@ func Produce(jsonData json.RawMessage, destType string, producer interface{}, co
 	case "GOOGLEPUBSUB":
 		return googlepubsub.Produce(jsonData, producer, config)
 	case "GOOGLESHEETS":
-		return googlesheets.Produce(jsonData, producer, config)
+		return googlesheets.Produce(jsonData, producer, config, destID)
 	case "PERSONALIZE":
 		return personalize.Produce(jsonData, producer, config)
 	default:
