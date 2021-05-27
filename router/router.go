@@ -494,7 +494,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 						}
 					}
 					// respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
-					respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, "fsfds")
+					time.Sleep(40 * time.Millisecond)
+					respStatusCode, respBody = 200, fmt.Sprintf(`200 sleeping for 40ms`)
 				} else {
 					result := getIterableStruct(destinationJob.Message, transformAt)
 					for _, val := range result {
@@ -503,7 +504,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 						} else {
 							// respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val)
-							respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, "fsfds")
+							time.Sleep(40 * time.Millisecond)
+							respStatusCode, respBody = 200, fmt.Sprintf(`200 sleeping for 40ms`)
 							if isSuccessStatus(respStatusCode) {
 								respBody = respBody + " " + respBodyTemp
 							} else {

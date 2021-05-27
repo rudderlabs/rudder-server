@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -767,7 +766,8 @@ func (brt *HandleT) initWorkers() {
 								destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 								destUploadStat.Start()
 								// output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
-								output := StorageUploadOutput{Error: errors.New("not happening")}
+								time.Sleep(3 * time.Second)
+								output := StorageUploadOutput{Error: nil}
 								brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, false)
 								brt.setJobStatus(batchJobs, false, output.Error, false)
 								misc.RemoveFilePaths(output.LocalFilePaths...)
@@ -784,7 +784,8 @@ func (brt *HandleT) initWorkers() {
 								destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 								destUploadStat.Start()
 								// output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
-								output := StorageUploadOutput{Error: errors.New("not happening")}
+								time.Sleep(3 * time.Second)
+								output := StorageUploadOutput{Error: nil}
 								postToWarehouseErr := false
 								if output.Error == nil && output.Key != "" {
 									output.Error = brt.postToWarehouse(batchJobs, output)
