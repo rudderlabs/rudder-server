@@ -92,25 +92,27 @@ type RudderStatsT struct {
 
 //Setup creates a new statsd client
 func Setup() {
-	var err error
-	conn = statsd.Address(statsdServerURL)
+	DefaultStats = &HandleT{}
+
 	if !statsEnabled {
-		//TODO: Add tags by calling a function...
-		client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), defaultTags())
-		if err != nil {
-			// If nothing is listening on the target port, an error is returned and
-			// the returned client does nothing but is still usable. So we can
-			// just log the error and go on.
-			pkgLogger.Error(err)
-		}
-		if client != nil {
-			rruntime.Go(func() {
-				collectRuntimeStats(client)
-			})
-		}
+		return
 	}
 
-	DefaultStats = &HandleT{}
+	var err error
+	conn = statsd.Address(statsdServerURL)
+	//TODO: Add tags by calling a function...
+	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), defaultTags())
+	if err != nil {
+		// If nothing is listening on the target port, an error is returned and
+		// the returned client does nothing but is still usable. So we can
+		// just log the error and go on.
+		pkgLogger.Error(err)
+	}
+	if client != nil {
+		rruntime.Go(func() {
+			collectRuntimeStats(client)
+		})
+	}
 }
 
 // NewStat creates a new RudderStats with provided Name and Type
@@ -137,12 +139,6 @@ func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags) 
 }
 
 func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
-	tagStr := StatType
-	for tagName, tagVal := range tags {
-		tagName = strings.ReplaceAll(tagName, ":", "-")
-		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
-	}
-
 	//If stats is not enabled, returning a dummy struct
 	if !statsEnabled {
 		return &RudderStatsT{
@@ -151,6 +147,12 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 			Client:      nil,
 			dontProcess: true,
 		}
+	}
+
+	tagStr := StatType
+	for tagName, tagVal := range tags {
+		tagName = strings.ReplaceAll(tagName, ":", "-")
+		tagStr += fmt.Sprintf(`|%s|%s`, tagName, tagVal)
 	}
 
 	taggedClientsMapLock.RLock()
@@ -276,6 +278,10 @@ func collectRuntimeStats(client *statsd.Client) {
 
 // StopRuntimeStats stops collection of runtime stats.
 func StopRuntimeStats() {
+	if !statsEnabled {
+		return
+	}
+
 	close(rc.Done)
 }
 
