@@ -37,14 +37,13 @@ type GoogleAPIService struct {
 }
 
 var pkgLogger logger.LoggerI
-var googleAPIService *GoogleAPIService
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("googlesheets")
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, destId string) (*GoogleAPIService, error) {
+func NewProducer(destinationConfig interface{}, destId string) (*sheets.Service, error) {
 	var config Config
 	var credentialsFile Credentials
 	var headerRowStr []string
@@ -79,18 +78,15 @@ func NewProducer(destinationConfig interface{}, destId string) (*GoogleAPIServic
 	}
 
 	service, err := generateServiceWithRefreshToken(*jwtconfig)
-
-	googleAPIService = &GoogleAPIService{
-		Jwt:     jwtconfig,
-		Service: service,
-	}
+	// googleAPIService.Jwt = jwtconfig
+	// googleAPIService.Service = service
 
 	// If err is not nil then retrun
 	if err != nil {
-		return googleAPIService, err
+		return service, err
 	}
 
-	fmt.Println("---------------newProducer", googleAPIService, destId)
+	fmt.Println("---------------newProducer", service, destId)
 	// ** Preparing the Header Data **
 	// Creating the array of string which are then coverted in to an array of interface which are to
 	// be added as header to each of the above spreadsheets.
@@ -104,15 +100,15 @@ func NewProducer(destinationConfig interface{}, destId string) (*GoogleAPIServic
 
 	// *** Adding the header ***
 	// Inserting header to the sheet
-	err = insertDataToSheet(config.SheetId, config.SheetName, headerRow, true, destId)
+	err = insertDataToSheet(service, config.SheetId, config.SheetName, headerRow, true, destId)
 
-	return googleAPIService, err
+	return service, err
 }
 
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}, destId string) (statusCode int, respStatus string, responseMessage string) {
 
-	fmt.Println("---------------produce", googleAPIService, destId)
-
+	sheetsClient := producer.(*sheets.Service)
+	fmt.Println("---------------produce", sheetsClient, destId)
 	// Here we recieve the transformed json with all the required mappings
 	parsedJSON := gjson.ParseBytes(jsonData)
 	// Storing sheet_id and sheet_name for the specific message
@@ -137,7 +133,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	// In this section we are appending the actual messages into the sheet
 	// After parsing the parsedJSON as a row specific data which we are storing in message,
 	// and appending event (message) to the sheet
-	err := insertDataToSheet(spreadSheetId, spreadSheet, message, false, destId)
+	err := insertDataToSheet(sheetsClient, spreadSheetId, spreadSheet, message, false, destId)
 	if err != nil {
 		statCode, serviceMessage := handleServiceError(err)
 		respStatus = "Failure"
@@ -174,7 +170,7 @@ func generateServiceWithRefreshToken(jwtconfig jwt.Config) (*sheets.Service, err
 // Returns error for failure cases of API calls otherwise returns nil
 // In case of Access Token expiry it handles by creating a new client
 // with new access token and recursively calling the function in order to prevent event loss
-func insertDataToSheet(spreadSheetId string, spreadSheetTab string, data []interface{}, isHeader bool, destId string) error {
+func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, spreadSheetTab string, data []interface{}, isHeader bool, destId string) error {
 	// Creating value range for inserting row into sheet
 	var vr sheets.ValueRange
 	vr.MajorDimension = "ROWS"
@@ -184,36 +180,22 @@ func insertDataToSheet(spreadSheetId string, spreadSheetTab string, data []inter
 
 	// Fail safety to avoid nil pointer exception, as googleAPIService is being mutated when token
 	// is expired
-	fmt.Println("---------------insertDataToSheet", googleAPIService, destId)
-	if googleAPIService.Service == nil {
+	fmt.Println("---------------insertDataToSheet", sheetsClient, destId)
+	if sheetsClient == nil {
 		return fmt.Errorf("[GoogleSheets] error  :: Failed to initialize google-sheets client")
 	}
 
 	if isHeader {
 		// In case we have a header Row we want to update it always at the the top of sheet
 		// hence we are using update.
-		_, err = googleAPIService.Service.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
+		_, err = sheetsClient.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 
 	} else {
 		// In case of a event Row we want to append it sequentially below the header hence we
 		// are using append
-		_, err = googleAPIService.Service.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
+		_, err = sheetsClient.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 	}
-	if err != nil && strings.Contains(err.Error(), "token expired and refresh token is not set") {
-		var serviceErr error
-		pkgLogger.Info("[Google Sheets]Token Expired :: Generating New Client")
-		// Here we are updating the client with new generated client
-		googleAPIService.Service, serviceErr = generateServiceWithRefreshToken(*googleAPIService.Jwt)
-		if serviceErr != nil {
-			pkgLogger.Info("[Google Sheets]Token Expired :: Failed to Generate New Client", serviceErr.Error())
-			return serviceErr
-		}
-		pkgLogger.Info("[Google Sheets]Token Expired :: Generated New Client")
-		return insertDataToSheet(spreadSheetId, spreadSheetTab, data, isHeader, destId)
-	} else if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 // Method to return array of values from a json.
@@ -261,6 +243,11 @@ func getSheetsData(typedata []string) []interface{} {
 func handleServiceError(err error) (statusCode int, responseMessage string) {
 	statusCode = 500
 	responseMessage = err.Error()
+	if strings.Contains(err.Error(), "token expired and refresh token is not set") {
+		statusCode = 721
+		responseMessage = err.Error()
+	}
+
 	if reflect.TypeOf(err).String() == "*googleapi.Error" {
 		serviceErr := err.(*googleapi.Error)
 		statusCode = serviceErr.Code
