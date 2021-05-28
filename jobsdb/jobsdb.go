@@ -544,12 +544,12 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, "JobsDB.refreshDSListLoopSleepDurationInS")
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, "JobsDB.backupCheckSleepDurationIns")
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
-	config.RegisterIntConfigVariable(10, &maxWriters, false, 1, "jobsDB.maxWriters")
-	config.RegisterIntConfigVariable(10, &maxReaders, false, 1, "jobsDB.maxReaders")
-	config.RegisterIntConfigVariable(1000, &storeChannelBufferLength, false, 1, "jobsDB.storeChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &storeWithRetryChannelBufferLength, false, 1, "jobsDB.storeWithRetryChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &updateJobStatusChannelBufferLength, false, 1, "jobsDB.updateJobStatusChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &readChannelBufferLength, false, 1, "jobsDB.readChannelBufferLength")
+	config.RegisterIntConfigVariable(10, &maxWriters, false, 1, "JobsDB.maxWriters")
+	config.RegisterIntConfigVariable(10, &maxReaders, false, 1, "JobsDB.maxReaders")
+	config.RegisterIntConfigVariable(1000, &storeChannelBufferLength, false, 1, "JobsDB.storeChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &storeWithRetryChannelBufferLength, false, 1, "JobsDB.storeWithRetryChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &updateJobStatusChannelBufferLength, false, 1, "JobsDB.updateJobStatusChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &readChannelBufferLength, false, 1, "JobsDB.readChannelBufferLength")
 }
 
 func init() {
@@ -605,15 +605,11 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 
 	jd.enableWriterQueue = config.GetBool(fmt.Sprintf("JobsDB.%v.enableWriterQueue", jd.tablePrefix), true)
 	jd.enableReaderQueue = config.GetBool(fmt.Sprintf("JobsDB.%v.enableReaderQueue", jd.tablePrefix), true)
-	//check if it's enabled here
-	//if enableWriterQueue {} ?
 	jd.storeChannel = make(chan writeJob, storeChannelBufferLength)
 	jd.storeWithRetryChannel = make(chan writeJob, storeWithRetryChannelBufferLength)
 	jd.updateJobStatusChannel = make(chan writeJob, updateJobStatusChannelBufferLength)
+	jd.readChannel = make(chan readJob)
 	jd.initDBWriters()
-	//for readers as well
-	//if enableReaderQueue {} ?
-	jd.readChannel = make(chan readJob, readChannelBufferLength)
 	jd.initDBReaders()
 
 	switch ownerType {
@@ -753,10 +749,16 @@ func (jd *HandleT) dbReader() {
 	for readReq := range jd.readChannel {
 		if readReq.reqType == "retry" {
 			readReq.jobsListChan <- jd.getToRetry(readReq.getQueryParams)
+		} else if readReq.reqType == "throttled" {
+			readReq.jobsListChan <- jd.getThrottled(readReq.getQueryParams)
+		} else if readReq.reqType == "waiting" {
+			readReq.jobsListChan <- jd.getWaiting(readReq.getQueryParams)
 		} else if readReq.reqType == "unprocessed" {
 			readReq.jobsListChan <- jd.getUnprocessed(readReq.getQueryParams)
-		} else {
+		} else if readReq.reqType == "executing" {
 			readReq.jobsListChan <- jd.getExecuting(readReq.getQueryParams)
+		} else {
+			panic(fmt.Errorf("unknown read request type: %s", readReq.reqType))
 		}
 	}
 }
@@ -2986,6 +2988,9 @@ func (jd *HandleT) printLists(console bool) {
 }
 
 func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
 	if jd.enableReaderQueue {
 		readJobRequest := readJob{
 			getQueryParams: params,
@@ -3249,6 +3254,9 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 }
 
 func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
 	if jd.enableReaderQueue {
 		readJobRequest := readJob{
 			getQueryParams: params,
@@ -3277,6 +3285,28 @@ GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
 func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+	if jd.enableReaderQueue {
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+			reqType:        "waiting",
+		}
+		jd.readChannel <- readJobRequest
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getWaiting(params)
+	}
+}
+
+/*
+GetWaiting returns events which are under processing
+This is a wrapper over GetProcessed call above
+*/
+func (jd *HandleT) getWaiting(params GetQueryParamsT) []*JobT {
 	params.StateFilters = []string{Waiting.State}
 	return jd.GetProcessed(params)
 }
@@ -3286,11 +3316,36 @@ GetThrottled returns events which were throttled before
 This is a wrapper over GetProcessed call above
 */
 func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+	if jd.enableReaderQueue {
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+			reqType:        "throttled",
+		}
+		jd.readChannel <- readJobRequest
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getThrottled(params)
+	}
+}
+
+/*
+GetThrottled returns events which were throttled before
+This is a wrapper over GetProcessed call above
+*/
+func (jd *HandleT) getThrottled(params GetQueryParamsT) []*JobT {
 	params.StateFilters = []string{Throttled.State}
 	return jd.GetProcessed(params)
 }
 
 func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
 	if jd.enableReaderQueue {
 		readJobRequest := readJob{
 			getQueryParams: params,
