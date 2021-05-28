@@ -602,8 +602,8 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
 	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
 
-	jd.enableWriterQueue = config.GetBool(fmt.Sprintf("JobsDB.%v.enableWriterQueue", jd.tablePrefix), true)
-	jd.enableReaderQueue = config.GetBool(fmt.Sprintf("JobsDB.%v.enableReaderQueue", jd.tablePrefix), true)
+	config.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, fmt.Sprintf("JobsDB.%v.enableWriterQueue", jd.tablePrefix))
+	config.RegisterBoolConfigVariable(true, &jd.enableReaderQueue, true, fmt.Sprintf("JobsDB.%v.enableReaderQueue", jd.tablePrefix))
 	jd.storeChannel = make(chan writeJob, storeChannelBufferLength)
 	jd.storeWithRetryChannel = make(chan writeJob, storeWithRetryChannelBufferLength)
 	jd.updateJobStatusChannel = make(chan writeJob, updateJobStatusChannelBufferLength)
@@ -1592,15 +1592,12 @@ func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]struct
 		var parameters map[string]interface{}
 		err := json.Unmarshal(params, &parameters)
 		if err != nil {
-			fmt.Println(err)
-			return
+			panic(fmt.Errorf("failed to unmarshal params(%s) with error %w", string(params), err))
 		}
+
 		var dest_id string
-		for paramKey, paramValue := range parameters {
-			if paramKey == "destination_id" {
-				dest_id = fmt.Sprintf("%v", paramValue)
-				break
-			}
+		if _, ok := parameters["destination_id"].(string); ok {
+			dest_id = parameters["destination_id"].(string)
 		}
 		if _, ok := CVPMap[customVal][dest_id]; !ok {
 			CVPMap[customVal][dest_id] = struct{}{}
@@ -2970,6 +2967,10 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 	return
 }
 
+/*
+Store call is used to create new Jobs
+If enableWriterQueue is true, this goes through writer worker pool.
+*/
 func (jd *HandleT) Store(jobList []*JobT) error {
 	if jd.enableWriterQueue {
 		respCh := make(chan error)
@@ -3042,6 +3043,11 @@ func (jd *HandleT) printLists(console bool) {
 
 }
 
+/*
+GetUnprocessed returns the unprocessed events. Unprocessed events are
+those whose state hasn't been marked in the DB.
+If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
+*/
 func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
 	if params.Count == 0 {
 		return []*JobT{}
@@ -3308,6 +3314,10 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 	return outJobs
 }
 
+/*
+GetToRetry returns events which need to be retried.
+If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
+*/
 func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
 	if params.Count == 0 {
 		return []*JobT{}
@@ -3337,7 +3347,7 @@ func (jd *HandleT) getToRetry(params GetQueryParamsT) []*JobT {
 
 /*
 GetWaiting returns events which are under processing
-This is a wrapper over GetProcessed call above
+If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
 	if params.Count == 0 {
@@ -3368,7 +3378,7 @@ func (jd *HandleT) getWaiting(params GetQueryParamsT) []*JobT {
 
 /*
 GetThrottled returns events which were throttled before
-This is a wrapper over GetProcessed call above
+If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
 	if params.Count == 0 {

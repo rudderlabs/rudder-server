@@ -113,6 +113,48 @@ func (mr *MockJobsDBMockRecorder) GetExecuting(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetExecuting", reflect.TypeOf((*MockJobsDB)(nil).GetExecuting), arg0)
 }
 
+// GetIdentifier mocks base method
+func (m *MockJobsDB) GetIdentifier() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetIdentifier")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetIdentifier indicates an expected call of GetIdentifier
+func (mr *MockJobsDBMockRecorder) GetIdentifier() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIdentifier", reflect.TypeOf((*MockJobsDB)(nil).GetIdentifier))
+}
+
+// GetProcessed mocks base method
+func (m *MockJobsDB) GetProcessed(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProcessed", arg0)
+	ret0, _ := ret[0].([]*jobsdb.JobT)
+	return ret0
+}
+
+// GetProcessed indicates an expected call of GetProcessed
+func (mr *MockJobsDBMockRecorder) GetProcessed(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProcessed", reflect.TypeOf((*MockJobsDB)(nil).GetProcessed), arg0)
+}
+
+// GetThrottled mocks base method
+func (m *MockJobsDB) GetThrottled(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetThrottled", arg0)
+	ret0, _ := ret[0].([]*jobsdb.JobT)
+	return ret0
+}
+
+// GetThrottled indicates an expected call of GetThrottled
+func (mr *MockJobsDBMockRecorder) GetThrottled(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetThrottled", reflect.TypeOf((*MockJobsDB)(nil).GetThrottled), arg0)
+}
+
 // GetToRetry mocks base method
 func (m *MockJobsDB) GetToRetry(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
 	m.ctrl.T.Helper()
@@ -139,6 +181,20 @@ func (m *MockJobsDB) GetUnprocessed(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT 
 func (mr *MockJobsDBMockRecorder) GetUnprocessed(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUnprocessed", reflect.TypeOf((*MockJobsDB)(nil).GetUnprocessed), arg0)
+}
+
+// GetWaiting mocks base method
+func (m *MockJobsDB) GetWaiting(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetWaiting", arg0)
+	ret0, _ := ret[0].([]*jobsdb.JobT)
+	return ret0
+}
+
+// GetWaiting indicates an expected call of GetWaiting
+func (mr *MockJobsDBMockRecorder) GetWaiting(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWaiting", reflect.TypeOf((*MockJobsDB)(nil).GetWaiting), arg0)
 }
 
 // ReleaseStoreLock mocks base method
