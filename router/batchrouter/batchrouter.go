@@ -58,6 +58,7 @@ var (
 	encounteredMergeRuleMapLock        sync.RWMutex
 	pkgLogger                          logger.LoggerI
 	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	disableOutgoingTraffic             bool
 )
 
 type HandleT struct {
@@ -196,7 +197,10 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[stri
 	}
 }
 
-func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
+func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool, disableOutgoingTraffic bool) StorageUploadOutput {
+	if disableOutgoingTraffic {
+		return StorageUploadOutput{Error: nil}
+	}
 	var localTmpDirName string
 	if isWarehouse {
 		localTmpDirName = "/rudder-warehouse-staging-uploads/"
@@ -784,7 +788,7 @@ func (worker *workerT) workerProcess() {
 					case misc.ContainsString(objectStorageDestinations, brt.destType):
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 						destUploadStat.Start()
-						output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
+						output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false, disableOutgoingTraffic)
 						brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, false)
 						brt.setJobStatus(batchJobs, false, output.Error, false)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
@@ -801,7 +805,7 @@ func (worker *workerT) workerProcess() {
 						objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 						destUploadStat.Start()
-						output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
+						output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true, disableOutgoingTraffic)
 						postToWarehouseErr := false
 						if output.Error == nil && output.Key != "" {
 							output.Error = brt.postToWarehouse(batchJobs, output)
@@ -1130,6 +1134,7 @@ func loadConfig() {
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	encounteredMergeRuleMap = map[string]map[string]bool{}
+	config.RegisterBoolConfigVariable(false, &disableOutgoingTraffic, true, "disableOutgoingTraffic")
 }
 
 func init() {

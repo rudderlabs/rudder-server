@@ -167,6 +167,7 @@ var (
 	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
+	disableOutgoingTraffic                                        bool
 )
 
 type requestMetric struct {
@@ -205,6 +206,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &jobsBatchTimeout, true, time.Second, "Router.jobsBatchTimeoutInSec")
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	config.RegisterDurationConfigVariable(time.Duration(5), &maxStatusUpdateWait, true, time.Second, "Router.maxStatusUpdateWaitInS")
+	config.RegisterBoolConfigVariable(false, &disableOutgoingTraffic, true, "disableOutgoingTraffic")
 
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
@@ -534,7 +536,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							panic(fmt.Errorf("different destinations are grouped together"))
 						}
 					}
-					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
+					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID, disableOutgoingTraffic)
 				} else {
 					result := getIterableStruct(destinationJob.Message, transformAt)
 					for _, val := range result {
@@ -542,7 +544,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 						if err != nil {
 							respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 						} else {
-							respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val)
+							respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val, disableOutgoingTraffic)
 							if isSuccessStatus(respStatusCode) {
 								respBody = respBody + " " + respBodyTemp
 							} else {

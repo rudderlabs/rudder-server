@@ -30,7 +30,7 @@ var (
 
 // DestinationManager implements the method to send the events to custom destinations
 type DestinationManager interface {
-	SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string)
+	SendData(jsonData json.RawMessage, sourceID string, destID string, disableOutgoingTraffic bool) (int, string)
 }
 
 // CustomManagerT handles this module
@@ -115,7 +115,10 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType str
 }
 
 // SendData gets the producer from streamDestinationsMap and sends data
-func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string) {
+func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID string, destID string, disableOutgoingTraffic bool) (int, string) {
+	if disableOutgoingTraffic {
+		return 200, `200: outgoing disabled`
+	}
 
 	customManager.configSubscriberLock.RLock()
 	destLock, ok := customManager.destinationLockMap[destID]
