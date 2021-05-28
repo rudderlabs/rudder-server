@@ -186,9 +186,6 @@ func (jd *HandleT) StoreInTxn(txHandler *sql.Tx, jobList []*JobT) error {
 		return err
 	}
 
-	//Empty customValFilters means we want to clear for all
-	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
-
 	return nil
 }
 
@@ -502,6 +499,7 @@ var (
 	storeWithRetryChannelBufferLength            int
 	updateJobStatusChannelBufferLength           int
 	readChannelBufferLength                      int
+	useNewCacheBurst                             bool
 )
 
 //Different scenarios for addNewDS
@@ -544,8 +542,9 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, "JobsDB.refreshDSListLoopSleepDurationInS")
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, "JobsDB.backupCheckSleepDurationIns")
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
-	config.RegisterIntConfigVariable(10, &maxWriters, false, 1, "JobsDB.maxWriters")
-	config.RegisterIntConfigVariable(10, &maxReaders, false, 1, "JobsDB.maxReaders")
+	config.RegisterBoolConfigVariable(true, &useNewCacheBurst, true, "JobsDB.useNewCacheBurst")
+	config.RegisterIntConfigVariable(1, &maxWriters, false, 1, "JobsDB.maxWriters")
+	config.RegisterIntConfigVariable(3, &maxReaders, false, 1, "JobsDB.maxReaders")
 	config.RegisterIntConfigVariable(1000, &storeChannelBufferLength, false, 1, "JobsDB.storeChannelBufferLength")
 	config.RegisterIntConfigVariable(1000, &storeWithRetryChannelBufferLength, false, 1, "JobsDB.storeWithRetryChannelBufferLength")
 	config.RegisterIntConfigVariable(1000, &updateJobStatusChannelBufferLength, false, 1, "JobsDB.updateJobStatusChannelBufferLength")
@@ -1358,6 +1357,9 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	err = txn.Commit()
 	jd.assertError(err)
 
+	//Bursting Cache for this dataset
+	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
+
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
 		jd.statDropDSPeriod.End()
@@ -1555,10 +1557,6 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 		return err
 	}
 
-	//Empty customValFilters means we want to clear for all
-	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
-	// fmt.Println("Bursting CACHE")
-
 	return nil
 }
 
@@ -1584,6 +1582,53 @@ func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []
 	return
 }
 
+// Creates a map of customVal:Params(Dest_type: []Dest_ids for brt and Dest_type: [] for rt)
+//and then loop over them to selectively clear cache instead of clearing the cache for the entire dataset
+func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]struct{}, customVal string, params []byte) {
+	if _, ok := CVPMap[customVal]; !ok {
+		CVPMap[customVal] = make(map[string]struct{})
+	}
+	if jd.tablePrefix == "batch_rt" {
+		var parameters map[string]interface{}
+		err := json.Unmarshal(params, &parameters)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		var dest_id string
+		for paramKey, paramValue := range parameters {
+			if paramKey == "destination_id" {
+				dest_id = fmt.Sprintf("%v", paramValue)
+				break
+			}
+		}
+		if _, ok := CVPMap[customVal][dest_id]; !ok {
+			CVPMap[customVal][dest_id] = struct{}{}
+		}
+	}
+}
+
+//mark cache empty after going over ds->customvals->params and for all stateFilters
+func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]struct{}) {
+	if jd.tablePrefix == "rt" {
+		for cv := range CVPMap {
+			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
+		}
+	} else if jd.tablePrefix == "batch_rt" {
+		for cv, cVal := range CVPMap {
+			for pv := range cVal {
+				param := ParameterFilterT{
+					Name:  "destination_id",
+					Value: pv,
+				}
+				jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, []ParameterFilterT{param}, hasJobs, nil)
+			}
+		}
+	} else {
+		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
+	}
+}
+
 func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, copyID bool, jobList []*JobT) error {
 	var stmt *sql.Stmt
 	var err error
@@ -1600,6 +1645,8 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 	}
 
 	defer stmt.Close()
+
+	customValParamMap := make(map[string]map[string]struct{})
 	for _, job := range jobList {
 		if copyID {
 			_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
@@ -1610,6 +1657,14 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 		if err != nil {
 			return err
 		}
+		if jd.tablePrefix == "batch_rt" || jd.tablePrefix == "rt" {
+			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters)
+		}
+	}
+	if useNewCacheBurst {
+		jd.clearCache(ds, customValParamMap)
+	} else {
+		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
 	}
 	_, err = stmt.Exec()
 
