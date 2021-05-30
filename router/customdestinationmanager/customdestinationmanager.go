@@ -71,7 +71,7 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 	switch customManager.managerType {
 	case STREAM:
 		var producer interface{}
-		producer, err = streammanager.NewProducer(destConfig, customManager.destType, destID)
+		producer, err = streammanager.NewProducer(destConfig, customManager.destType)
 		if err == nil {
 			customDestination = &CustomDestination{
 				Config: destConfig,
@@ -92,12 +92,12 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 	return err
 }
 
-func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client interface{}, config interface{}, destId string) (int, string) {
+func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client interface{}, config interface{}) (int, string) {
 	var statusCode int
 	var respBody string
 	switch customManager.managerType {
 	case STREAM:
-		statusCode, _, respBody = streammanager.Produce(jsonData, destType, client, config, destId)
+		statusCode, _, respBody = streammanager.Produce(jsonData, destType, client, config)
 		// in case we get response/ satus code for expired token need to try if we can recreate client
 	case KV:
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
@@ -141,11 +141,11 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 	}
 	destLock.RUnlock()
 
-	respStatusCode, respBody := customManager.send(jsonData, customManager.destType, customDestination.Client, customDestination.Config, destID)
+	respStatusCode, respBody := customManager.send(jsonData, customManager.destType, customDestination.Client, customDestination.Config)
 
 	if respStatusCode == 721 {
 		customManager.refreshClient(destID)
-		respStatusCode, respBody = customManager.send(jsonData, customManager.destType, customDestination.Client, customDestination.Config, destID)
+		respStatusCode, respBody = customManager.send(jsonData, customManager.destType, customDestination.Client, customDestination.Config)
 	}
 
 	return respStatusCode, respBody

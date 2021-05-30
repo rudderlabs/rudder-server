@@ -43,7 +43,7 @@ func init() {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, destId string) (*sheets.Service, error) {
+func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 	var config Config
 	var credentialsFile Credentials
 	var headerRowStr []string
@@ -78,15 +78,12 @@ func NewProducer(destinationConfig interface{}, destId string) (*sheets.Service,
 	}
 
 	service, err := generateServiceWithRefreshToken(*jwtconfig)
-	// googleAPIService.Jwt = jwtconfig
-	// googleAPIService.Service = service
 
 	// If err is not nil then retrun
 	if err != nil {
 		return service, err
 	}
 
-	fmt.Println("---------------newProducer", service, destId)
 	// ** Preparing the Header Data **
 	// Creating the array of string which are then coverted in to an array of interface which are to
 	// be added as header to each of the above spreadsheets.
@@ -100,24 +97,17 @@ func NewProducer(destinationConfig interface{}, destId string) (*sheets.Service,
 
 	// *** Adding the header ***
 	// Inserting header to the sheet
-	err = insertDataToSheet(service, config.SheetId, config.SheetName, headerRow, true, destId)
+	err = insertDataToSheet(service, config.SheetId, config.SheetName, headerRow, true)
 
 	return service, err
 }
 
-func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}, destId string) (statusCode int, respStatus string, responseMessage string) {
+func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
 
 	sheetsClient := producer.(*sheets.Service)
-	fmt.Println("---------------produce", sheetsClient, destId)
-	// Here we recieve the transformed json with all the required mappings
 	parsedJSON := gjson.ParseBytes(jsonData)
-	// Storing sheet_id and sheet_name for the specific message
 	spreadSheetId := parsedJSON.Get("spreadSheetId").String()
 	spreadSheet := parsedJSON.Get("spreadSheet").String()
-
-	// Here we extract the values of the transformed json into a string array
-	// because google sheets-api works with array of data if any error occurs here we
-	// log it as parse error for that event
 	values, parseErr := parseTransformedData(parsedJSON)
 
 	if parseErr != nil {
@@ -129,11 +119,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 	message := getSheetsData(values)
 
-	// *** Appending actual Rudder event as Row ***
-	// In this section we are appending the actual messages into the sheet
-	// After parsing the parsedJSON as a row specific data which we are storing in message,
-	// and appending event (message) to the sheet
-	err := insertDataToSheet(sheetsClient, spreadSheetId, spreadSheet, message, false, destId)
+	err := insertDataToSheet(sheetsClient, spreadSheetId, spreadSheet, message, false)
 	if err != nil {
 		statCode, serviceMessage := handleServiceError(err)
 		respStatus = "Failure"
@@ -146,8 +132,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	return 200, respStatus, responseMessage
 }
 
-// This method produces a google-sheets client from a jwt.Config client by
-// retrieveing access token
+// This method produces a google-sheets client from a jwt.Config client by retrieveing access token
 func generateServiceWithRefreshToken(jwtconfig jwt.Config) (*sheets.Service, error) {
 	ctx := context.Background()
 	var oauthconfig *oauth2.Config
@@ -155,8 +140,7 @@ func generateServiceWithRefreshToken(jwtconfig jwt.Config) (*sheets.Service, err
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleSheets] error  :: error in GoogleSheets while Retrieving token for service account:: %w", err)
 	}
-	// Once the token is received we are generating the oauth-config client which are using for
-	// generating the google-sheets service
+	// Once the token is received we are generating the oauth-config client which are using for generating the google-sheets service
 	client := oauthconfig.Client(ctx, token)
 	sheetService, err := sheets.New(client)
 	if err != nil {
@@ -166,11 +150,8 @@ func generateServiceWithRefreshToken(jwtconfig jwt.Config) (*sheets.Service, err
 }
 
 // Wrapper func to insert headerData or rowData based on boolean flag.
-// This method uses global googleApiService Client for making API Calls to google-sheets.
 // Returns error for failure cases of API calls otherwise returns nil
-// In case of Access Token expiry it handles by creating a new client
-// with new access token and recursively calling the function in order to prevent event loss
-func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, spreadSheetTab string, data []interface{}, isHeader bool, destId string) error {
+func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, spreadSheetTab string, data []interface{}, isHeader bool) error {
 	// Creating value range for inserting row into sheet
 	var vr sheets.ValueRange
 	vr.MajorDimension = "ROWS"
@@ -178,21 +159,14 @@ func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sprea
 	vr.Values = append(vr.Values, data)
 	var err error
 
-	// Fail safety to avoid nil pointer exception, as googleAPIService is being mutated when token
-	// is expired
-	fmt.Println("---------------insertDataToSheet", sheetsClient, destId)
 	if sheetsClient == nil {
 		return fmt.Errorf("[GoogleSheets] error  :: Failed to initialize google-sheets client")
 	}
 
 	if isHeader {
-		// In case we have a header Row we want to update it always at the the top of sheet
-		// hence we are using update.
 		_, err = sheetsClient.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 
 	} else {
-		// In case of a event Row we want to append it sequentially below the header hence we
-		// are using append
 		_, err = sheetsClient.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 	}
 	return err
@@ -211,7 +185,6 @@ func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sprea
 // 		}
 // }
 func parseTransformedData(source gjson.Result) ([]string, error) {
-	//var sourcemap map[string]gjson.Result
 	messagefields := source.Get("message")
 	values := make([]string, len(messagefields.Map()))
 	var pos int
@@ -239,7 +212,7 @@ func getSheetsData(typedata []string) []interface{} {
 }
 
 // This method is created for fail safety, if in any case when err type is not googleapi.Error
-// we should not crash with a type error.
+// server should not crash with a type error.
 func handleServiceError(err error) (statusCode int, responseMessage string) {
 	statusCode = 500
 	responseMessage = err.Error()
