@@ -98,7 +98,6 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType str
 	switch customManager.managerType {
 	case STREAM:
 		statusCode, _, respBody = streammanager.Produce(jsonData, destType, client, config)
-		// in case we get response/ satus code for expired token need to try if we can recreate client
 	case KV:
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
 
