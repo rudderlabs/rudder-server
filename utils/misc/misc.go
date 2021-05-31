@@ -789,6 +789,7 @@ func GetRudderObjectStorageConfig(prefixOverride string) (storageConfig map[stri
 	storageConfig["bucketName"] = config.GetEnv("RUDDER_WAREHOUSE_BUCKET", "rudder-warehouse-storage")
 	storageConfig["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
 	storageConfig["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+	storageConfig["enableSSE"] = config.GetEnvAsBool("RUDDER_WAREHOUSE_BUCKET_SSE", true)
 	// set prefix from override for shared slave type nodes
 	if prefixOverride != "" {
 		storageConfig["prefix"] = prefixOverride
