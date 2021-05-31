@@ -1079,8 +1079,6 @@ func (gateway *HandleT) StartWebHandler() {
 		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys))
 	}
 
-	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler))
-
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
 		AllowCredentials: true,
@@ -1106,11 +1104,14 @@ func (gateway *HandleT) StartWebHandler() {
 
 //internal endpoint for clearQueue
 //listens on a different port
+//moved pending-events here
+//writetimeout made 60sec
 func (gateway *HandleT) StartClearHandler() {
 	gateway.logger.Infof("Starting ClearHandler in %d", ClearWebPort)
 	srvMux := mux.NewRouter()
 	srvMux.Use(headerMiddleware)
 	srvMux.HandleFunc("/v1/clear", gateway.stat(gateway.ClearHandler))
+	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler))
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
@@ -1123,7 +1124,7 @@ func (gateway *HandleT) StartClearHandler() {
 		Handler:           c.Handler(bugsnag.Handler(srvMux)),
 		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
 		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
-		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 10*time.Second),
+		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 60*time.Second),
 		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
 		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
 	}
