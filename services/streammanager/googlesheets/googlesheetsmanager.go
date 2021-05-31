@@ -31,11 +31,6 @@ type Credentials struct {
 	TokenUrl   string `json:"token_uri"`
 }
 
-type GoogleAPIService struct {
-	Jwt     *jwt.Config
-	Service *sheets.Service
-}
-
 var pkgLogger logger.LoggerI
 
 func init() {
@@ -81,6 +76,7 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 
 	// If err is not nil then retrun
 	if err != nil {
+		pkgLogger.Errorf("[Googlesheets] error  :: %v", err)
 		return service, err
 	}
 
@@ -113,6 +109,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if parseErr != nil {
 		respStatus = "Failure"
 		responseMessage = "[GoogleSheets] error :: Failed to parse transformed data ::" + parseErr.Error()
+		pkgLogger.Errorf("[Googlesheets] error while parsing transformed data :: %v", parseErr)
 		return 400, respStatus, responseMessage
 
 	}
@@ -124,6 +121,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		statCode, serviceMessage := handleServiceError(err)
 		respStatus = "Failure"
 		responseMessage = "[GoogleSheets] error :: Failed to insert Payload :: " + serviceMessage
+		pkgLogger.Errorf("[Googlesheets] error while inserting data to sheet :: %v", err)
 		return statCode, respStatus, responseMessage
 	}
 
