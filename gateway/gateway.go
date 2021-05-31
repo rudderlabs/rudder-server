@@ -63,22 +63,22 @@ type batchWebRequestT struct {
 }
 
 var (
-	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess int
-	maxUserWebRequestBatchSize, maxDBBatchSize                  int
-	userWebRequestBatchTimeout, dbBatchWriteTimeout             time.Duration
-	enabledWriteKeysSourceMap                                   map[string]backendconfig.SourceT
-	enabledWriteKeyWebhookMap                                   map[string]string
-	sourceIDToNameMap                                           map[string]string
-	configSubscriberLock                                        sync.RWMutex
-	maxReqSize                                                  int
-	enableRateLimit                                             bool
-	enableSuppressUserFeature                                   bool
-	enableEventSchemasFeature                                   bool
-	diagnosisTickerTime                                         time.Duration
-	allowReqsWithoutUserIDAndAnonymousID                        bool
-	gwAllowPartialWriteWithErrors                               bool
-	pkgLogger                                                   logger.LoggerI
-	Diagnostics                                                 diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess   int
+	maxUserWebRequestBatchSize, maxDBBatchSize                    int
+	userWebRequestBatchTimeout, dbBatchWriteTimeout, apiCallSleep time.Duration
+	enabledWriteKeysSourceMap                                     map[string]backendconfig.SourceT
+	enabledWriteKeyWebhookMap                                     map[string]string
+	sourceIDToNameMap                                             map[string]string
+	configSubscriberLock                                          sync.RWMutex
+	maxReqSize                                                    int
+	enableRateLimit                                               bool
+	enableSuppressUserFeature                                     bool
+	enableEventSchemasFeature                                     bool
+	diagnosisTickerTime                                           time.Duration
+	allowReqsWithoutUserIDAndAnonymousID                          bool
+	gwAllowPartialWriteWithErrors                                 bool
+	pkgLogger                                                     logger.LoggerI
+	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -750,6 +750,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 
 	totalPendingCount := gwPendingCount + rtPendingCount
 
+	time.Sleep(apiCallSleep)
 	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", totalPendingCount)))
 }
 

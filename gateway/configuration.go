@@ -36,6 +36,8 @@ func loadConfig() {
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
 	config.RegisterBoolConfigVariable(false, &allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
 	config.RegisterBoolConfigVariable(true, &gwAllowPartialWriteWithErrors, true, "Gateway.allowPartialWriteWithErrors")
+
+	config.RegisterDurationConfigVariable(time.Duration(5), &apiCallSleep, true, time.Second, "Gateway.apiCallSleepInS")
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers
