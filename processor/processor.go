@@ -1273,6 +1273,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 		destination := eventList[0].Destination
+		//TODO: should trackingplanID be set here? what if tp is changed after events are sent? replay case?
 		commonMetaData := transformer.MetadataT{
 			SourceID:        sourceID,
 			SourceType:      eventList[0].Metadata.SourceType,
@@ -1290,13 +1291,57 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				sourceTpId = source.TrackingPlanConnection.TrackingPlanId
 			}
 		}
+		var response transformer.ResponseT
 		//Doing it here before passed to user/dest transformation
 		if (sourceTpId != "") {
 			startedAt = time.Now()
-			response := proc.transformer.Transform(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize, false)
+			response = proc.transformer.Transform(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize, false)
 			endedAt = time.Now()
 			timeTaken = endedAt.Sub(startedAt).Seconds()
+			fmt.Println(response)
 		}
+		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, false)
+		if _, ok := procErrorJobsByDestID[destID]; !ok {
+			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
+		}
+		procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
+
+		var procErrorJobs []*jobsdb.JobT
+		for _, jobs := range procErrorJobsByDestID {
+			procErrorJobs = append(procErrorJobs, jobs...)
+		}
+		if len(procErrorJobs) > 0 {
+			proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobs))
+			err := proc.errorDB.Store(procErrorJobs)
+			if err != nil {
+				proc.logger.Errorf("Store into proc error table failed with error: %v", err)
+				proc.logger.Errorf("procErrorJobs: %v", procErrorJobs)
+				panic(err)
+			}
+			recordEventDeliveryStatus(procErrorJobsByDestID)
+		}
+		txn := proc.gatewayDB.BeginGlobalTransaction()
+		proc.gatewayDB.AcquireUpdateJobStatusLocks()
+		err := proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{gateway.CustomVal}, nil)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
+			panic(err)
+		}
+		proc.gatewayDB.CommitTransaction(txn)
+		proc.gatewayDB.ReleaseUpdateJobStatusLocks()
+		var jobIds []int64
+		for _, job := range failedJobs {
+			jobIds = append(jobIds, job.JobID)
+		}
+		var newEventList []transformer.TransformerEventT
+		for _, event := range eventList{
+			if !misc.Contains(jobIds, event.Metadata.JobID) {
+				newEventList = append(newEventList, event)
+			}
+		}
+
+		eventList = newEventList
+
 
 		destStat := proc.destStats[destID]
 		destStat.numEvents.Count(len(eventList))
@@ -1325,7 +1370,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//REPORTING - END
 
 		url := integrations.GetDestinationURL(destType)
-		var response transformer.ResponseT
 		var eventsToTransform []transformer.TransformerEventT
 		// Send to custom transformer only if the destination has a transformer enabled
 		if transformationEnabled {
@@ -1416,7 +1460,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
 		destStat.numOutputEvents.Count(len(destTransformEventList))
 
-		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled)
+		failedJobs, failedMetrics, failedCountMap = proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled)
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 		}
