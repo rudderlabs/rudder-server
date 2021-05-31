@@ -58,7 +58,7 @@ var (
 	encounteredMergeRuleMapLock        sync.RWMutex
 	pkgLogger                          logger.LoggerI
 	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
-	disableOutgoingTraffic             bool
+	disableEgress                      bool
 )
 
 type HandleT struct {
@@ -198,7 +198,7 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[stri
 }
 
 func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
-	if disableOutgoingTraffic {
+	if disableEgress {
 		return StorageUploadOutput{Error: nil}
 	}
 
@@ -1135,7 +1135,7 @@ func loadConfig() {
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	encounteredMergeRuleMap = map[string]map[string]bool{}
-	config.RegisterBoolConfigVariable(false, &disableOutgoingTraffic, true, "disableOutgoingTraffic")
+	config.RegisterBoolConfigVariable(false, &disableEgress, true, "disableEgress")
 }
 
 func init() {

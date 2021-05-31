@@ -167,7 +167,7 @@ var (
 	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
-	disableOutgoingTraffic                                        bool
+	disableEgress                                                 bool
 )
 
 type requestMetric struct {
@@ -206,7 +206,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &jobsBatchTimeout, true, time.Second, "Router.jobsBatchTimeoutInSec")
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	config.RegisterDurationConfigVariable(time.Duration(5), &maxStatusUpdateWait, true, time.Second, "Router.maxStatusUpdateWaitInS")
-	config.RegisterBoolConfigVariable(false, &disableOutgoingTraffic, true, "disableOutgoingTraffic")
+	config.RegisterBoolConfigVariable(false, &disableEgress, true, "disableEgress")
 
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
