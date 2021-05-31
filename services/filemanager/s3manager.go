@@ -2,12 +2,14 @@ package filemanager
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -72,9 +74,68 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	return UploadOutput{Location: output.Location, ObjectName: fileName}, err
 }
 
-func (manager *S3Manager) getDownloadClient() (*awsS3Manager.Downloader, error) {
-	if manager.downloadClient != nil {
-		return manager.downloadClient, nil
+func (manager *S3Manager) Download(output *os.File, key string) error {
+	sess, err := manager.getSession()
+	if err != nil {
+		return fmt.Errorf(`Error starting S3 session: %v`, err)
+	}
+
+	downloader := s3manager.NewDownloader(sess)
+
+	_, err = downloader.Download(output,
+		&s3.GetObjectInput{
+			Bucket: aws.String(manager.Config.Bucket),
+			Key:    aws.String(key),
+		})
+	return err
+}
+
+func (manager *S3Manager) DeleteObjects(keys []string) (err error) {
+	sess, err := manager.getSession()
+	if err != nil {
+		return fmt.Errorf(`Error starting S3 session: %v`, err)
+	}
+
+	var objects []*s3.ObjectIdentifier
+	for _, key := range keys {
+		objects = append(objects, &s3.ObjectIdentifier{Key: aws.String(key)})
+	}
+
+	svc := s3.New(sess)
+
+	batchSize := 1000 // max accepted by DeleteObjects API
+	for i := 0; i < len(objects); i += batchSize {
+		j := i + batchSize
+		if j > len(objects) {
+			j = len(objects)
+		}
+		input := &s3.DeleteObjectsInput{
+			Bucket: aws.String(manager.Config.Bucket),
+			Delete: &s3.Delete{
+				Objects: objects[i:j],
+			},
+		}
+		_, err := svc.DeleteObjects(input)
+		if err != nil {
+			if aerr, ok := err.(awserr.Error); ok {
+				switch aerr.Code() {
+				default:
+					pkgLogger.Errorf(`Error while deleting S3 objects: %v, error code: %v`, aerr.Error(), aerr.Code())
+				}
+			} else {
+				// Print the error, cast err to awserr.Error to get the Code and
+				// Message from an error.
+				pkgLogger.Errorf(`Error while deleting S3 objects: %v`, aerr.Error())
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (manager *S3Manager) getSession() (*session.Session, error) {
+	if manager.session != nil {
+		return manager.session, nil
 	}
 
 	if manager.Config.Bucket == "" {
@@ -102,23 +163,7 @@ func (manager *S3Manager) getDownloadClient() (*awsS3Manager.Downloader, error) 
 			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	}
-	manager.downloadClient = s3manager.NewDownloader(sess)
-
-	return manager.downloadClient, nil
-}
-
-func (manager *S3Manager) Download(output *os.File, key string) error {
-	downloader, err := manager.getDownloadClient()
-	if err != nil {
-		return err
-	}
-
-	_, err = downloader.Download(output,
-		&s3.GetObjectInput{
-			Bucket: aws.String(manager.Config.Bucket),
-			Key:    aws.String(key),
-		})
-	return err
+	return sess, nil
 }
 
 func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string {
@@ -131,6 +176,7 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 	https://bucket-name.s3.amazonaws.com/key - >> key
 */
 func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, error) {
+	// TODO: Fix regex for buckets having dots in the name
 	reg, err := regexp.Compile(`^https.+\.s3\..*amazonaws\.com\/`)
 	if err != nil {
 		return "", err
@@ -189,8 +235,8 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error
 }
 
 type S3Manager struct {
-	Config         *S3Config
-	downloadClient *awsS3Manager.Downloader
+	Config  *S3Config
+	session *session.Session
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {
