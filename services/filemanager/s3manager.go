@@ -3,8 +3,8 @@ package filemanager
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -176,12 +176,16 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 	https://bucket-name.s3.amazonaws.com/key - >> key
 */
 func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, error) {
-	// TODO: Fix regex for buckets having dots in the name
-	reg, err := regexp.Compile(`^https.+\.s3\..*amazonaws\.com\/`)
+	uri, err := url.Parse(location)
 	if err != nil {
 		return "", err
 	}
-	return reg.ReplaceAllString(location, ""), nil
+	host := uri.Host
+	path := uri.Path[1:]
+	if strings.Contains(host, manager.Config.Bucket) {
+		return path, nil
+	}
+	return strings.TrimPrefix(path, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 }
 
 type S3Object struct {
