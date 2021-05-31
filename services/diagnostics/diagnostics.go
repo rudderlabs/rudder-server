@@ -16,6 +16,7 @@ const (
 	SourcesCount           = "no_of_sources"
 	DesitanationCount      = "no_of_destinations"
 	ServerStarted          = "server_started"
+	InternalHandlerStarted = "internal_handler_started"
 	ConfigIdentify         = "identify"
 	GatewayEvents          = "gateway_events"
 	GatewaySuccess         = "gateway_success"
@@ -40,17 +41,18 @@ const (
 )
 
 var (
-	EnableDiagnostics               bool
-	endpoint                        string
-	writekey                        string
-	EnableServerStartMetric         bool
-	EnableConfigIdentifyMetric      bool
-	EnableServerStartedMetric       bool
-	EnableConfigProcessedMetric     bool
-	EnableGatewayMetric             bool
-	EnableRouterMetric              bool
-	EnableBatchRouterMetric         bool
-	EnableDestinationFailuresMetric bool
+	EnableDiagnostics                bool
+	endpoint                         string
+	writekey                         string
+	EnableServerStartMetric          bool
+	EnableInternalHandlerStartMetric bool
+	EnableConfigIdentifyMetric       bool
+	EnableServerStartedMetric        bool
+	EnableConfigProcessedMetric      bool
+	EnableGatewayMetric              bool
+	EnableRouterMetric               bool
+	EnableBatchRouterMetric          bool
+	EnableDestinationFailuresMetric  bool
 )
 var Diagnostics DiagnosticsI
 
@@ -76,6 +78,7 @@ func loadConfig() {
 	endpoint = config.GetString("Diagnostics.endpoint", "https://rudderstack-dataplane.rudderstack.com")
 	writekey = config.GetString("Diagnostics.writekey", "1aWPBIROQvFYW9FHxgc03nUsLza")
 	EnableServerStartMetric = config.GetBool("Diagnostics.enableServerStartMetric", true)
+	EnableInternalHandlerStartMetric = config.GetBool("Diagnostics.EnableInternalHandlerStartMetric", true)
 	EnableConfigIdentifyMetric = config.GetBool("Diagnostics.enableConfigIdentifyMetric", true)
 	EnableServerStartedMetric = config.GetBool("Diagnostics.enableServerStartedMetric", true)
 	EnableConfigProcessedMetric = config.GetBool("Diagnostics.enableConfigProcessedMetric", true)

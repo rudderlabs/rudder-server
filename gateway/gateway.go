@@ -1053,30 +1053,30 @@ func (gateway *HandleT) StartWebHandler() {
 	gateway.logger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
 	srvMux.Use(headerMiddleware)
-	srvMux.HandleFunc("/v1/batch", gateway.stat(gateway.webBatchHandler))
-	srvMux.HandleFunc("/v1/identify", gateway.stat(gateway.webIdentifyHandler))
-	srvMux.HandleFunc("/v1/track", gateway.stat(gateway.webTrackHandler))
-	srvMux.HandleFunc("/v1/page", gateway.stat(gateway.webPageHandler))
-	srvMux.HandleFunc("/v1/screen", gateway.stat(gateway.webScreenHandler))
-	srvMux.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler))
-	srvMux.HandleFunc("/v1/merge", gateway.stat(gateway.webMergeHandler))
-	srvMux.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler))
-	srvMux.HandleFunc("/health", gateway.healthHandler)
-	srvMux.HandleFunc("/v1/import", gateway.stat(gateway.webImportHandler))
-	srvMux.HandleFunc("/", gateway.healthHandler)
-	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler))
-	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler))
-	srvMux.HandleFunc("/version", gateway.versionHandler)
-	srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler))
-	srvMux.HandleFunc("/beacon/v1/batch", gateway.stat(gateway.beaconBatchHandler))
+	srvMux.HandleFunc("/v1/batch", gateway.stat(gateway.webBatchHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/identify", gateway.stat(gateway.webIdentifyHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/track", gateway.stat(gateway.webTrackHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/page", gateway.stat(gateway.webPageHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/screen", gateway.stat(gateway.webScreenHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/alias", gateway.stat(gateway.webAliasHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/merge", gateway.stat(gateway.webMergeHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler)).Methods("POST")
+	srvMux.HandleFunc("/health", gateway.healthHandler).Methods("GET")
+	srvMux.HandleFunc("/v1/import", gateway.stat(gateway.webImportHandler)).Methods("POST")
+	srvMux.HandleFunc("/", gateway.healthHandler).Methods("GET")
+	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler)).Methods("POST")
+	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler)).Methods("POST")
+	srvMux.HandleFunc("/version", gateway.versionHandler).Methods("GET")
+	srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler)).Methods("POST")
+	srvMux.HandleFunc("/beacon/v1/batch", gateway.stat(gateway.beaconBatchHandler)).Methods("POST")
 
 	if enableEventSchemasFeature {
-		srvMux.HandleFunc("/schemas/event-models", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels))
-		srvMux.HandleFunc("/schemas/event-versions", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions))
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts))
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata))
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata))
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys))
+		srvMux.HandleFunc("/schemas/event-models", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels)).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-versions", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions)).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts)).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata)).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata)).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys)).Methods("GET")
 	}
 
 	c := cors.New(cors.Options{
@@ -1106,12 +1106,12 @@ func (gateway *HandleT) StartWebHandler() {
 //listens on a different port
 //moved pending-events here
 //writetimeout made 60sec
-func (gateway *HandleT) StartClearHandler() {
+func (gateway *HandleT) StartInternalHandler() {
 	gateway.logger.Infof("Starting ClearHandler in %d", ClearWebPort)
 	srvMux := mux.NewRouter()
 	srvMux.Use(headerMiddleware)
-	srvMux.HandleFunc("/v1/clear", gateway.stat(gateway.ClearHandler))
-	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler))
+	srvMux.HandleFunc("/v1/clear", gateway.stat(gateway.ClearHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler)).Methods("POST")
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
@@ -1119,6 +1119,11 @@ func (gateway *HandleT) StartClearHandler() {
 		AllowedHeaders:   []string{"*"},
 		MaxAge:           900, // 15 mins
 	})
+	if diagnostics.EnableInternalHandlerStartMetric {
+		Diagnostics.Track(diagnostics.InternalHandlerStarted, map[string]interface{}{
+			diagnostics.InternalHandlerStarted: time.Now(),
+		})
+	}
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(ClearWebPort),
 		Handler:           c.Handler(bugsnag.Handler(srvMux)),
