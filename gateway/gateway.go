@@ -63,22 +63,22 @@ type batchWebRequestT struct {
 }
 
 var (
-	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess int
-	maxUserWebRequestBatchSize, maxDBBatchSize                  int
-	userWebRequestBatchTimeout, dbBatchWriteTimeout             time.Duration
-	enabledWriteKeysSourceMap                                   map[string]backendconfig.SourceT
-	enabledWriteKeyWebhookMap                                   map[string]string
-	sourceIDToNameMap                                           map[string]string
-	configSubscriberLock                                        sync.RWMutex
-	maxReqSize                                                  int
-	enableRateLimit                                             bool
-	enableSuppressUserFeature                                   bool
-	enableEventSchemasFeature                                   bool
-	diagnosisTickerTime                                         time.Duration
-	allowReqsWithoutUserIDAndAnonymousID                        bool
-	gwAllowPartialWriteWithErrors                               bool
-	pkgLogger                                                   logger.LoggerI
-	Diagnostics                                                 diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess, ClearWebPort int
+	maxUserWebRequestBatchSize, maxDBBatchSize                                int
+	userWebRequestBatchTimeout, dbBatchWriteTimeout                           time.Duration
+	enabledWriteKeysSourceMap                                                 map[string]backendconfig.SourceT
+	enabledWriteKeyWebhookMap                                                 map[string]string
+	sourceIDToNameMap                                                         map[string]string
+	configSubscriberLock                                                      sync.RWMutex
+	maxReqSize                                                                int
+	enableRateLimit                                                           bool
+	enableSuppressUserFeature                                                 bool
+	enableEventSchemasFeature                                                 bool
+	diagnosisTickerTime                                                       time.Duration
+	allowReqsWithoutUserIDAndAnonymousID                                      bool
+	gwAllowPartialWriteWithErrors                                             bool
+	pkgLogger                                                                 logger.LoggerI
+	Diagnostics                                                               diagnostics.DiagnosticsI = diagnostics.Diagnostics
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -1080,7 +1080,6 @@ func (gateway *HandleT) StartWebHandler() {
 	}
 
 	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler))
-	srvMux.HandleFunc("/v1/clear", gateway.stat(gateway.ClearHandler))
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
@@ -1095,6 +1094,32 @@ func (gateway *HandleT) StartWebHandler() {
 	}
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
+		Handler:           c.Handler(bugsnag.Handler(srvMux)),
+		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
+		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
+		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 10*time.Second),
+		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
+		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
+	}
+	gateway.logger.Fatal(srv.ListenAndServe())
+}
+
+//internal endpoint for clearQueue
+//listens on a different port
+func (gateway *HandleT) StartClearHandler() {
+	gateway.logger.Infof("Starting ClearHandler in %d", ClearWebPort)
+	srvMux := mux.NewRouter()
+	srvMux.Use(headerMiddleware)
+	srvMux.HandleFunc("/v1/clear", gateway.stat(gateway.ClearHandler))
+
+	c := cors.New(cors.Options{
+		AllowOriginFunc:  reflectOrigin,
+		AllowCredentials: true,
+		AllowedHeaders:   []string{"*"},
+		MaxAge:           900, // 15 mins
+	})
+	srv := &http.Server{
+		Addr:              ":" + strconv.Itoa(ClearWebPort),
 		Handler:           c.Handler(bugsnag.Handler(srvMux)),
 		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
 		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
