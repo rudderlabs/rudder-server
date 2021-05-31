@@ -128,3 +128,7 @@ type GCSConfig struct {
 	Prefix      string
 	Credentials string
 }
+
+func (manager *GCSManager) DeleteObjects(locations []string) (err error) {
+	return
+}

@@ -138,6 +138,10 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string) ([]*SpacesObj
 	return spacesObjects, nil
 }
 
+func (manager *DOSpacesManager) DeleteObjects(locations []string) (err error) {
+	return
+}
+
 type DOSpacesManager struct {
 	Config *DOSpacesConfig
 }
