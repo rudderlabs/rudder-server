@@ -873,15 +873,15 @@ func (worker *workerT) sendRouterResponseCountStat(destinationJobMetadata *types
 
 func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
 	destinationTag := misc.GetTagName(destination.ID, destination.Name)
-	eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
-		"module":         "router",
-		"destType":       worker.rt.destName,
-		"destination":    destinationTag,
-		"attempt_number": strconv.Itoa(status.AttemptNum),
-	})
-	eventsDeliveredStat.Count(1)
-	if destinationJobMetadata.ReceivedAt != "" {
-		if status.JobState == jobsdb.Succeeded.State {
+	if status.JobState == jobsdb.Succeeded.State {
+		eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
+			"module":         "router",
+			"destType":       worker.rt.destName,
+			"destination":    destinationTag,
+			"attempt_number": strconv.Itoa(status.AttemptNum),
+		})
+		eventsDeliveredStat.Count(1)
+		if destinationJobMetadata.ReceivedAt != "" {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
 			if err == nil {
 				eventsDeliveryTimeStat := stats.NewTaggedStat(
