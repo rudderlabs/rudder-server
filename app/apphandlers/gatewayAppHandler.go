@@ -60,7 +60,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(options *app.Options) {
 		rateLimiter.SetUp()
 		gateway.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
 		gateway.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, gatewayApp.VersionHandler)
-		go gateway.StartInternalHandler()
+		go gateway.StartAdminHandler()
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI

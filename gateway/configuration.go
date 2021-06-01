@@ -9,8 +9,8 @@ import (
 func loadConfig() {
 	//Port where GW is running
 	webPort = config.GetInt("Gateway.webPort", 8080)
-	//Port for Clear Calls
-	ClearWebPort = config.GetInt("Gateway.ClearWebPort", 8089)
+	//Port where AdminHandler is running
+	adminWebPort = config.GetInt("Gateway.adminWebPort", 8089)
 	//Number of incoming requests that are batched before handing off to write workers
 	maxUserWebRequestBatchSize = config.GetInt("Gateway.maxUserRequestBatchSize", 128)
 	//Number of userWorkerBatchRequest that are batched before initiating write

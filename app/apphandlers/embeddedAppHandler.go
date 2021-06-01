@@ -104,7 +104,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 		rateLimiter.SetUp()
 		gateway.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
 		gateway.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
-		go gateway.StartInternalHandler()
+		go gateway.StartAdminHandler()
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
