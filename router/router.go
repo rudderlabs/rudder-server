@@ -506,6 +506,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	apiCallsCount := make(map[string]*destJobCountsT)
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
+		respBodyArr := make([]string, 0)
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
 			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, destinationJob) {
 				diagnosisStartTime := time.Now()
@@ -540,17 +541,19 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					for _, val := range result {
 						err := integrations.ValidatePostInfo(val)
 						if err != nil {
-							respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
+							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
+							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
 							respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val)
 							if isSuccessStatus(respStatusCode) {
-								respBody = respBody + " " + respBodyTemp
+								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
-								respBody = respBodyTemp
+								respBodyArr = []string{respBodyTemp}
 								break
 							}
 						}
 					}
+					respBody = strings.Join(respBodyArr, " ")
 				}
 				ch <- struct{}{}
 
@@ -869,10 +872,17 @@ func (worker *workerT) sendRouterResponseCountStat(destinationJobMetadata *types
 }
 
 func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
+	destinationTag := misc.GetTagName(destination.ID, destination.Name)
+	eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
+		"module":         "router",
+		"destType":       worker.rt.destName,
+		"destination":    destinationTag,
+		"attempt_number": strconv.Itoa(status.AttemptNum),
+	})
+	eventsDeliveredStat.Count(1)
 	if destinationJobMetadata.ReceivedAt != "" {
 		if status.JobState == jobsdb.Succeeded.State {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
-			destinationTag := misc.GetTagName(destination.ID, destination.Name)
 			if err == nil {
 				eventsDeliveryTimeStat := stats.NewTaggedStat(
 					"event_delivery_time", stats.TimerType, map[string]string{
@@ -884,13 +894,6 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 			}
-			eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
-				"module":         "router",
-				"destType":       worker.rt.destName,
-				"destination":    destinationTag,
-				"attempt_number": strconv.Itoa(status.AttemptNum),
-			})
-			eventsDeliveredStat.Count(1)
 		}
 	}
 }
@@ -1620,8 +1623,8 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindowInMins"}
-	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
-	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
+	config.RegisterIntConfigVariable(0, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
+	config.RegisterDurationConfigVariable(0, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	rt.drainJobHandler = drain.Setup(rt.jobsDB)
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 
