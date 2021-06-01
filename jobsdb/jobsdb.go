@@ -735,7 +735,7 @@ func (jd *HandleT) dbWriter() {
 			updateJobStatusReq.errorResponse <- err
 		case deleteExecutingReq := <-jd.deleteExecutingChannel:
 			jd.DeleteJobStatus(deleteExecutingReq.deleteParams)
-			deleteExecutingReq.errorResponse <- errors.New("deleted")
+			deleteExecutingReq.errorResponse <- nil
 		}
 	}
 }
