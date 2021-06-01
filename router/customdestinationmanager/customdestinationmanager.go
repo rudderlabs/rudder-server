@@ -144,6 +144,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 
 	if respStatusCode == 721 {
 		customManager.refreshClient(destID)
+		customDestination = customManager.destinationsMap[destID]
 		respStatusCode, respBody = customManager.send(jsonData, customManager.destType, customDestination.Client, customDestination.Config)
 	}
 
