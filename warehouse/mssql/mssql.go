@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -342,6 +343,14 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 							finalColumnValues = append(finalColumnValues, convertedValue)
 						}
 					}
+				case "string":
+					{
+						//This is needed to enable diacritic support Ex: Ü,ç Ç,©,∆,ß,á,ù,ñ,ê
+						//A substitute to this PR; https://github.com/denisenkom/go-mssqldb/pull/576/files
+						//An alternate to this approach is to use nvarchar(instead of varchar)
+						byteArr := str2ucs2(strValue)
+						finalColumnValues = append(finalColumnValues, byteArr)
+					}
 				default:
 					finalColumnValues = append(finalColumnValues, value)
 				}
@@ -404,6 +413,17 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	pkgLogger.Infof("MS: Complete load for table:%s", tableName)
 	return
+}
+
+//Taken from https://github.com/denisenkom/go-mssqldb/blob/master/tds.go
+func str2ucs2(s string) []byte {
+	res := utf16.Encode([]rune(s))
+	ucs2 := make([]byte, 2*len(res))
+	for i := 0; i < len(res); i++ {
+		ucs2[2*i] = byte(res[i])
+		ucs2[2*i+1] = byte(res[i] >> 8)
+	}
+	return ucs2
 }
 
 func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
