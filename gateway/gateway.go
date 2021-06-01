@@ -1070,6 +1070,8 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler)).Methods("POST")
 	srvMux.HandleFunc("/beacon/v1/batch", gateway.stat(gateway.beaconBatchHandler)).Methods("POST")
 
+	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler)).Methods("POST")
+
 	if enableEventSchemasFeature {
 		srvMux.HandleFunc("/schemas/event-models", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels)).Methods("GET")
 		srvMux.HandleFunc("/schemas/event-versions", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions)).Methods("GET")
@@ -1102,9 +1104,8 @@ func (gateway *HandleT) StartWebHandler() {
 	gateway.logger.Fatal(srv.ListenAndServe())
 }
 
-//internal endpoint for clearQueue
+//internal endpoint for clearQueue and pending-events
 //listens on a different port
-//moved pending-events here
 //writetimeout made 60sec
 func (gateway *HandleT) StartInternalHandler() {
 	gateway.logger.Infof("Starting ClearHandler in %d", ClearWebPort)
