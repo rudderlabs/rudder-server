@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
@@ -26,6 +27,7 @@ var (
 	Destinations             []string
 	customManagerMap         map[string]*CustomManagerT
 	pkgLogger                logger.LoggerI
+	disableEgress            bool
 )
 
 // DestinationManager implements the method to send the events to custom destinations
@@ -59,6 +61,7 @@ func loadConfig() {
 	KVStoreDestinations = []string{"REDIS"}
 	Destinations = append(ObjectStreamDestinations, KVStoreDestinations...)
 	customManagerMap = make(map[string]*CustomManagerT)
+	disableEgress = config.GetBool("disableEgress", false)
 }
 
 // newClient delegates the call to the appropriate manager
@@ -116,6 +119,9 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType str
 
 // SendData gets the producer from streamDestinationsMap and sends data
 func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string) {
+	if disableEgress {
+		return 200, `200: outgoing disabled`
+	}
 
 	customManager.configSubscriberLock.RLock()
 	destLock, ok := customManager.destinationLockMap[destID]
