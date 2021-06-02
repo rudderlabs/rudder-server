@@ -32,6 +32,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/tidwall/gjson"
 
 	"strconv"
 	"strings"
@@ -754,15 +755,15 @@ func (jd *HandleT) initDBReaders() {
 
 func (jd *HandleT) dbReader() {
 	for readReq := range jd.readChannel {
-		if readReq.reqType == "retry" {
+		if readReq.reqType == Failed.State {
 			readReq.jobsListChan <- jd.getToRetry(readReq.getQueryParams)
-		} else if readReq.reqType == "throttled" {
+		} else if readReq.reqType == Throttled.State {
 			readReq.jobsListChan <- jd.getThrottled(readReq.getQueryParams)
-		} else if readReq.reqType == "waiting" {
+		} else if readReq.reqType == Waiting.State {
 			readReq.jobsListChan <- jd.getWaiting(readReq.getQueryParams)
-		} else if readReq.reqType == "unprocessed" {
+		} else if readReq.reqType == NotProcessed.State {
 			readReq.jobsListChan <- jd.getUnprocessed(readReq.getQueryParams)
-		} else if readReq.reqType == "executing" {
+		} else if readReq.reqType == Executing.State {
 			readReq.jobsListChan <- jd.getExecuting(readReq.getQueryParams)
 		} else {
 			panic(fmt.Errorf("unknown read request type: %s", readReq.reqType))
@@ -1597,16 +1598,7 @@ func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]struct
 		CVPMap[customVal] = make(map[string]struct{})
 	}
 	if jd.tablePrefix == "batch_rt" {
-		var parameters map[string]interface{}
-		err := json.Unmarshal(params, &parameters)
-		if err != nil {
-			panic(fmt.Errorf("failed to unmarshal params(%s) with error %w", string(params), err))
-		}
-
-		var dest_id string
-		if _, ok := parameters["destination_id"].(string); ok {
-			dest_id = parameters["destination_id"].(string)
-		}
+		dest_id := gjson.GetBytes(params, "destination_id").String()
 		if _, ok := CVPMap[customVal][dest_id]; !ok {
 			CVPMap[customVal][dest_id] = struct{}{}
 		}
@@ -3064,7 +3056,7 @@ func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
-			reqType:        "unprocessed",
+			reqType:        NotProcessed.State,
 		}
 		jd.readChannel <- readJobRequest
 		jobsList := <-readJobRequest.jobsListChan
@@ -3334,7 +3326,7 @@ func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
-			reqType:        "retry",
+			reqType:        Failed.State,
 		}
 		jd.readChannel <- readJobRequest
 		jobsList := <-readJobRequest.jobsListChan
@@ -3365,7 +3357,7 @@ func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
-			reqType:        "waiting",
+			reqType:        Waiting.State,
 		}
 		jd.readChannel <- readJobRequest
 		jobsList := <-readJobRequest.jobsListChan
@@ -3396,7 +3388,7 @@ func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
-			reqType:        "throttled",
+			reqType:        Throttled.State,
 		}
 		jd.readChannel <- readJobRequest
 		jobsList := <-readJobRequest.jobsListChan
@@ -3423,7 +3415,7 @@ func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
-			reqType:        "executing",
+			reqType:        Executing.State,
 		}
 		jd.readChannel <- readJobRequest
 		jobsList := <-readJobRequest.jobsListChan
