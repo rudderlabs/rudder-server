@@ -93,7 +93,7 @@ func parseWriteKey(req *http.Request) (writeKey string, found bool) {
 func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reason string, code int, stat string) {
 	var writeKeyFailStats = make(map[string]int)
 	misc.IncrementMapByKey(writeKeyFailStats, stat, 1)
-	webhook.gwHandle.UpdateSourceStats(writeKeyFailStats, "gateway.write_key_failed_requests", map[string]string{stat: stat})
+	webhook.gwHandle.UpdateSourceStats(writeKeyFailStats, "gateway.write_key_failed_requests", map[string]string{stat: stat, "reqType": "webhook"})
 	pkgLogger.Debugf("Webhook: Failing request since: %v", reason)
 	statusCode := 400
 	if code != 0 {

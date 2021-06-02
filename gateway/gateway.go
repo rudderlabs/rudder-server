@@ -150,6 +150,7 @@ func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket str
 		tags := map[string]string{
 			"source":   sourceTag,
 			"writeKey": sourceTagMap[sourceTag],
+			"reqType":  sourceTagMap["reqType"],
 		}
 		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)
@@ -323,6 +324,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			writeKey := req.writeKey
 			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 			sourceTagMap[sourceTag] = writeKey
+			sourceTagMap["reqType"] = req.reqType
 			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
 
 			ipAddr := req.ipAddr
@@ -625,7 +627,7 @@ func (gateway *HandleT) ClearHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	payload, _, err := gateway.getPayloadAndWriteKey(w, r)
+	payload, _, err := gateway.getPayloadAndWriteKey(w, r, "clear")
 	if err != nil {
 		errorMessage = err.Error()
 		return
@@ -674,7 +676,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}()
 
-	payload, _, err := gateway.getPayloadAndWriteKey(w, r)
+	payload, _, err := gateway.getPayloadAndWriteKey(w, r, "pending-events")
 	if err != nil {
 		errorMessage = err.Error()
 		return
@@ -779,21 +781,21 @@ func (gateway *HandleT) ProcessWebRequest(w *http.ResponseWriter, r *http.Reques
 	return gateway.rrh.ProcessRequest(gateway, w, r, reqType, payload, writeKey)
 }
 
-func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Request) ([]byte, string, error) {
+func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Request, reqType string) ([]byte, string, error) {
 	var sourceFailStats = make(map[string]int)
 	var err error
 	writeKey, _, ok := r.BasicAuth()
 	if !ok || writeKey == "" {
 		err = errors.New(response.NoWriteKeyInBasicAuth)
 		misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{"noWriteKey": "noWriteKey"})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType})
 		return []byte{}, "", err
 	}
 	payload, err := gateway.getPayloadFromRequest(r)
 	if err != nil {
 		sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
 		return []byte{}, writeKey, err
 	}
 	return payload, writeKey, err
@@ -817,7 +819,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 			http.Error(w, response.GetStatus(errorMessage), 400)
 		}
 	}()
-	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r)
+	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
 	if err != nil {
 		errorMessage = err.Error()
 		return
@@ -842,7 +844,7 @@ func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.Respons
 			gateway.logger.Debug(errorMessage)
 		}
 	}()
-	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r)
+	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
 	if err != nil {
 		errorMessage = err.Error()
 		return
