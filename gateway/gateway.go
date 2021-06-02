@@ -1079,6 +1079,7 @@ func (gateway *HandleT) StartWebHandler() {
 		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys)).Methods("GET")
 	}
 
+	//todo: remove in next release
 	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler)).Methods("POST")
 
 	c := cors.New(cors.Options{
@@ -1113,13 +1114,8 @@ func (gateway *HandleT) StartAdminHandler() {
 	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler)).Methods("POST")
 
 	srv := &http.Server{
-		Addr:              ":" + strconv.Itoa(adminWebPort),
-		Handler:           bugsnag.Handler(srvMux),
-		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
-		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
-		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 60*time.Second),
-		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
-		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
+		Addr:    ":" + strconv.Itoa(adminWebPort),
+		Handler: bugsnag.Handler(srvMux),
 	}
 	gateway.logger.Fatal(srv.ListenAndServe())
 }
