@@ -77,7 +77,6 @@ type JobsDB interface {
 	Store(jobList []*JobT) error
 	BeginGlobalTransaction() *sql.Tx
 	CommitTransaction(txn *sql.Tx)
-	StoreInTxn(txHandler *sql.Tx, jobList []*JobT) error
 	AcquireStoreLock()
 	ReleaseStoreLock()
 	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
@@ -167,27 +166,6 @@ func (jd *HandleT) AcquireUpdateJobStatusLocks() {
 func (jd *HandleT) ReleaseUpdateJobStatusLocks() {
 	jd.dsListLock.RUnlock()
 	jd.dsMigrationLock.RUnlock()
-}
-
-/*
-StoreInTxn call is used to create new Jobs in transaction.
-IMP NOTE: AcquireStoreLock Should be called before calling this function
-*/
-func (jd *HandleT) StoreInTxn(txHandler *sql.Tx, jobList []*JobT) error {
-
-	queryStat := stats.NewTaggedStat("store_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
-
-	dsList := jd.getDSList(false)
-	ds := dsList[len(dsList)-1]
-	err := jd.storeJobsDSInTxn(txHandler, ds, false, jobList)
-	if err != nil {
-		jd.rollbackTx(err, txHandler)
-		return err
-	}
-
-	return nil
 }
 
 /*
@@ -312,6 +290,14 @@ type HandleT struct {
 	readChannel                   chan readJob
 	enableWriterQueue             bool
 	enableReaderQueue             bool
+	maxReaders                    int
+	maxWriters                    int
+	ClearCacheKeys                ClearCacheKeysT
+}
+
+type ClearCacheKeysT struct {
+	CustomVal        bool
+	ParameterFilters bool
 }
 
 //The struct which is written to the journal
@@ -495,13 +481,6 @@ var (
 	useJoinForUnprocessed                        bool
 	backupRowsBatchSize                          int64
 	pkgLogger                                    logger.LoggerI
-	maxReaders                                   int
-	maxWriters                                   int
-	storeChannelBufferLength                     int
-	storeWithRetryChannelBufferLength            int
-	updateJobStatusChannelBufferLength           int
-	deleteExecutingChannelBufferLength           int
-	readChannelBufferLength                      int
 	useNewCacheBurst                             bool
 )
 
@@ -546,13 +525,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, "JobsDB.backupCheckSleepDurationIns")
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 	config.RegisterBoolConfigVariable(true, &useNewCacheBurst, true, "JobsDB.useNewCacheBurst")
-	config.RegisterIntConfigVariable(1, &maxWriters, false, 1, "JobsDB.maxWriters")
-	config.RegisterIntConfigVariable(3, &maxReaders, false, 1, "JobsDB.maxReaders")
-	config.RegisterIntConfigVariable(1000, &storeChannelBufferLength, false, 1, "JobsDB.storeChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &storeWithRetryChannelBufferLength, false, 1, "JobsDB.storeWithRetryChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &updateJobStatusChannelBufferLength, false, 1, "JobsDB.updateJobStatusChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &deleteExecutingChannelBufferLength, false, 1, "JobsDB.deleteExecutingChannelBufferLength")
-	config.RegisterIntConfigVariable(1000, &readChannelBufferLength, false, 1, "JobsDB.readChannelBufferLength")
 }
 
 func init() {
@@ -576,8 +548,8 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
-
+func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, clearCacheKeys ClearCacheKeysT) {
+	jd.ClearCacheKeys = clearCacheKeys
 	jd.initGlobalDBHandle()
 	jd.ownerType = ownerType
 	jd.logger = pkgLogger.Child(tablePrefix)
@@ -606,13 +578,20 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
 	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
 
-	config.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, fmt.Sprintf("JobsDB.%v.enableWriterQueue", jd.tablePrefix))
-	config.RegisterBoolConfigVariable(true, &jd.enableReaderQueue, true, fmt.Sprintf("JobsDB.%v.enableReaderQueue", jd.tablePrefix))
-	jd.storeChannel = make(chan writeJob, storeChannelBufferLength)
-	jd.storeWithRetryChannel = make(chan writeJob, storeWithRetryChannelBufferLength)
-	jd.updateJobStatusChannel = make(chan writeJob, updateJobStatusChannelBufferLength)
-	jd.deleteExecutingChannel = make(chan writeJob, deleteExecutingChannelBufferLength)
+	enableWriterQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableWriterQueue", "JobsDB." + "enableWriterQueue"}
+	config.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, enableWriterQueueKeys...)
+	enableReaderQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableReaderQueue", "JobsDB." + "enableReaderQueue"}
+	config.RegisterBoolConfigVariable(true, &jd.enableReaderQueue, true, enableReaderQueueKeys...)
+	jd.storeChannel = make(chan writeJob)
+	jd.storeWithRetryChannel = make(chan writeJob)
+	jd.updateJobStatusChannel = make(chan writeJob)
+	jd.deleteExecutingChannel = make(chan writeJob)
 	jd.readChannel = make(chan readJob)
+
+	maxWritersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxWriters", "JobsDB." + "maxWriters"}
+	config.RegisterIntConfigVariable(1, &jd.maxWriters, false, 1, maxWritersKeys...)
+	maxReadersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxReaders", "JobsDB." + "maxReaders"}
+	config.RegisterIntConfigVariable(3, &jd.maxReaders, false, 1, maxReadersKeys...)
 	jd.initDBWriters()
 	jd.initDBReaders()
 
@@ -717,7 +696,7 @@ type writeJob struct {
 }
 
 func (jd *HandleT) initDBWriters() {
-	for i := 0; i < maxWriters; i++ {
+	for i := 0; i < jd.maxWriters; i++ {
 		go jd.dbWriter()
 	}
 }
@@ -748,7 +727,7 @@ type readJob struct {
 }
 
 func (jd *HandleT) initDBReaders() {
-	for i := 0; i < maxReaders; i++ {
+	for i := 0; i < jd.maxReaders; i++ {
 		go jd.dbReader()
 	}
 }
@@ -766,7 +745,7 @@ func (jd *HandleT) dbReader() {
 		} else if readReq.reqType == Executing.State {
 			readReq.jobsListChan <- jd.getExecuting(readReq.getQueryParams)
 		} else {
-			panic(fmt.Errorf("unknown read request type: %s", readReq.reqType))
+			panic(fmt.Errorf("[[ %s ]] unknown read request type: %s", jd.tablePrefix, readReq.reqType))
 		}
 	}
 }
@@ -1367,7 +1346,7 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	jd.assertError(err)
 
 	//Bursting Cache for this dataset
-	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
+	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, dropDSFromCache, nil)
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
@@ -1594,24 +1573,23 @@ func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []
 // Creates a map of customVal:Params(Dest_type: []Dest_ids for brt and Dest_type: [] for rt)
 //and then loop over them to selectively clear cache instead of clearing the cache for the entire dataset
 func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]struct{}, customVal string, params []byte) {
-	if _, ok := CVPMap[customVal]; !ok {
-		CVPMap[customVal] = make(map[string]struct{})
-	}
-	if jd.tablePrefix == "batch_rt" {
-		dest_id := gjson.GetBytes(params, "destination_id").String()
-		if _, ok := CVPMap[customVal][dest_id]; !ok {
-			CVPMap[customVal][dest_id] = struct{}{}
+	if jd.ClearCacheKeys.CustomVal {
+		if _, ok := CVPMap[customVal]; !ok {
+			CVPMap[customVal] = make(map[string]struct{})
+		}
+
+		if jd.ClearCacheKeys.ParameterFilters {
+			dest_id := gjson.GetBytes(params, "destination_id").String()
+			if _, ok := CVPMap[customVal][dest_id]; !ok {
+				CVPMap[customVal][dest_id] = struct{}{}
+			}
 		}
 	}
 }
 
 //mark cache empty after going over ds->customvals->params and for all stateFilters
 func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]struct{}) {
-	if jd.tablePrefix == "rt" {
-		for cv := range CVPMap {
-			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
-		}
-	} else if jd.tablePrefix == "batch_rt" {
+	if jd.ClearCacheKeys.CustomVal && jd.ClearCacheKeys.ParameterFilters {
 		for cv, cVal := range CVPMap {
 			for pv := range cVal {
 				param := ParameterFilterT{
@@ -1620,6 +1598,10 @@ func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]struct{}
 				}
 				jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, []ParameterFilterT{param}, hasJobs, nil)
 			}
+		}
+	} else if jd.ClearCacheKeys.CustomVal {
+		for cv := range CVPMap {
+			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
 		}
 	} else {
 		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
@@ -1654,9 +1636,8 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 		if err != nil {
 			return err
 		}
-		if jd.tablePrefix == "batch_rt" || jd.tablePrefix == "rt" {
-			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters)
-		}
+
+		jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters)
 	}
 	if useNewCacheBurst {
 		jd.clearCache(ds, customValParamMap)
@@ -1693,8 +1674,9 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 type cacheValue string
 
 const (
-	hasJobs cacheValue = "Has Jobs"
-	noJobs  cacheValue = "No Jobs"
+	hasJobs         cacheValue = "Has Jobs"
+	noJobs          cacheValue = "No Jobs"
+	dropDSFromCache cacheValue = "Drop DS From Cache"
 	/*
 	* willTryToSet value is used to prevent wrongly setting empty result when
 	* a db update (new jobs or job status updates) happens during get(Un)Processed db query is in progress.
@@ -1725,7 +1707,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 	//We process ALL only during internal migration and caching empty
 	//results is not important
 	if len(stateFilters) == 0 || len(customValFilters) == 0 {
-		if value == hasJobs {
+		if value == hasJobs || value == dropDSFromCache {
 			delete(jd.dsEmptyResultCache, ds)
 		}
 		return
