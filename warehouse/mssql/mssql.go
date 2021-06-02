@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -25,25 +26,35 @@ import (
 )
 
 var (
-	stagingTablePrefix string
-	pkgLogger          logger.LoggerI
+	stagingTablePrefix   string
+	pkgLogger            logger.LoggerI
+	diacriticLengthLimit = diacriticLimit()
 )
 
 const (
-	host     = "host"
-	dbName   = "database"
-	user     = "user"
-	password = "password"
-	port     = "port"
-	sslMode  = "sslMode"
+	host                   = "host"
+	dbName                 = "database"
+	user                   = "user"
+	password               = "password"
+	port                   = "port"
+	sslMode                = "sslMode"
+	mssqlStringLengthLimit = 512
 )
+
+func diacriticLimit() int {
+	if mssqlStringLengthLimit%2 != 0 {
+		return mssqlStringLengthLimit - 1
+	} else {
+		return mssqlStringLengthLimit
+	}
+}
 
 const PROVIDER = "MSSQL"
 
 var rudderDataTypesMapToMssql = map[string]string{
 	"int":      "bigint",
 	"float":    "decimal(28,10)",
-	"string":   "varchar(max)",
+	"string":   "varchar(512)",
 	"datetime": "datetimeoffset",
 	"boolean":  "bit",
 	"json":     "jsonb",
@@ -348,7 +359,21 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 						//This is needed to enable diacritic support Ex: Ü,ç Ç,©,∆,ß,á,ù,ñ,ê
 						//A substitute to this PR; https://github.com/denisenkom/go-mssqldb/pull/576/files
 						//An alternate to this approach is to use nvarchar(instead of varchar)
-						byteArr := str2ucs2(strValue)
+						if len(strValue) > mssqlStringLengthLimit {
+							strValue = strValue[:mssqlStringLengthLimit]
+						}
+						byteArr := []byte("")
+						if hasDiacritics(strValue) {
+							pkgLogger.Debug("diacritics " + strValue)
+							byteArr = str2ucs2(strValue)
+							// This is needed as with above operation every character occupies 2 bytes
+							if len(byteArr) > diacriticLengthLimit {
+								byteArr = byteArr[:diacriticLengthLimit]
+							}
+						} else {
+							pkgLogger.Debug("non-diacritic : " + strValue)
+							byteArr = []byte(strValue)
+						}
 						finalColumnValues = append(finalColumnValues, byteArr)
 					}
 				default:
@@ -424,6 +449,15 @@ func str2ucs2(s string) []byte {
 		ucs2[2*i+1] = byte(res[i] >> 8)
 	}
 	return ucs2
+}
+
+func hasDiacritics(str string) bool {
+	for _, x := range str {
+		if utf8.RuneLen(rune(x)) > 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
