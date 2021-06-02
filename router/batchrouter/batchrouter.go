@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -58,7 +59,10 @@ var (
 	encounteredMergeRuleMapLock        sync.RWMutex
 	pkgLogger                          logger.LoggerI
 	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	disableEgress                      bool
 )
+
+const DISABLED_EGRESS = "200: outgoing disabled"
 
 type HandleT struct {
 	paused                   bool
@@ -197,6 +201,10 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[stri
 }
 
 func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
+	if disableEgress {
+		return StorageUploadOutput{Error: errors.New(DISABLED_EGRESS)}
+	}
+
 	var localTmpDirName string
 	if isWarehouse {
 		localTmpDirName = "/rudder-warehouse-staging-uploads/"
@@ -432,7 +440,11 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	)
 	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
-	if err != nil {
+	if err != nil && err.Error() == DISABLED_EGRESS {
+		brt.logger.Debugf("BRT: Outgoing traffic disabled : %v at %v", batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
+		batchJobState = jobsdb.Succeeded.State
+		errorResp = []byte(fmt.Sprintf(`{"success":"%s"}`, DISABLED_EGRESS))
+	} else if err != nil {
 		brt.logger.Errorf("BRT: Error uploading to object storage: %v %v", err, batchJobs.BatchDestination.Source.ID)
 		batchJobState = jobsdb.Failed.State
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
@@ -1130,6 +1142,7 @@ func loadConfig() {
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	encounteredMergeRuleMap = map[string]map[string]bool{}
+	disableEgress = config.GetBool("disableEgress", false)
 }
 
 func init() {

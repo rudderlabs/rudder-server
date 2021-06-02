@@ -177,3 +177,7 @@ type AzureBlobStorageConfig struct {
 	AccountName string
 	AccountKey  string
 }
+
+func (manager *AzureBlobStorageManager) DeleteObjects(locations []string) (err error) {
+	return
+}

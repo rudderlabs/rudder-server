@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -1210,6 +1211,10 @@ func Start(app app.Interface) {
 			reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 			reporting.AddClient(types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
 		}
+	}
+
+	if isStandAlone() && isMaster() {
+		destinationdebugger.Setup()
 	}
 
 	if isSlave() {

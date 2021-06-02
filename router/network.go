@@ -27,6 +27,9 @@ type NetHandleT struct {
 //sendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
 func (network *NetHandleT) sendPost(structData integrations.PostParametersT) (statusCode int, respBody string) {
+	if disableEgress {
+		return 200, `200: outgoing disabled`
+	}
 	client := network.httpClient
 	postInfo := structData
 	isRest := postInfo.Type == "REST"
