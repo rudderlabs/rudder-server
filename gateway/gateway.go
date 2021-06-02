@@ -812,7 +812,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	var errorMessage string
 	defer func() {
 		if errorMessage != "" {
-			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
+			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(errorMessage)))
 			http.Error(w, response.GetStatus(errorMessage), 400)
 		}
 	}()
