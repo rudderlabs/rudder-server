@@ -307,6 +307,7 @@ type HandleT struct {
 	storeChannel                  chan writeJob
 	storeWithRetryChannel         chan writeJob
 	updateJobStatusChannel        chan writeJob
+	deleteExecutingChannel        chan writeJob
 	readChannel                   chan readJob
 	enableWriterQueue             bool
 	enableReaderQueue             bool
@@ -498,6 +499,7 @@ var (
 	storeChannelBufferLength                     int
 	storeWithRetryChannelBufferLength            int
 	updateJobStatusChannelBufferLength           int
+	deleteExecutingChannelBufferLength           int
 	readChannelBufferLength                      int
 	useNewCacheBurst                             bool
 )
@@ -548,6 +550,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(1000, &storeChannelBufferLength, false, 1, "JobsDB.storeChannelBufferLength")
 	config.RegisterIntConfigVariable(1000, &storeWithRetryChannelBufferLength, false, 1, "JobsDB.storeWithRetryChannelBufferLength")
 	config.RegisterIntConfigVariable(1000, &updateJobStatusChannelBufferLength, false, 1, "JobsDB.updateJobStatusChannelBufferLength")
+	config.RegisterIntConfigVariable(1000, &deleteExecutingChannelBufferLength, false, 1, "JobsDB.deleteExecutingChannelBufferLength")
 	config.RegisterIntConfigVariable(1000, &readChannelBufferLength, false, 1, "JobsDB.readChannelBufferLength")
 }
 
@@ -607,6 +610,7 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.storeChannel = make(chan writeJob, storeChannelBufferLength)
 	jd.storeWithRetryChannel = make(chan writeJob, storeWithRetryChannelBufferLength)
 	jd.updateJobStatusChannel = make(chan writeJob, updateJobStatusChannelBufferLength)
+	jd.deleteExecutingChannel = make(chan writeJob, deleteExecutingChannelBufferLength)
 	jd.readChannel = make(chan readJob)
 	jd.initDBWriters()
 	jd.initDBReaders()
@@ -708,6 +712,7 @@ type writeJob struct {
 	parameterFiltersList []ParameterFilterT
 	errorResponse        chan error
 	errorMapResponse     chan map[uuid.UUID]string
+	deleteParams         GetQueryParamsT
 }
 
 func (jd *HandleT) initDBWriters() {
@@ -728,6 +733,9 @@ func (jd *HandleT) dbWriter() {
 		case updateJobStatusReq := <-jd.updateJobStatusChannel:
 			err := jd.updateJobStatus(updateJobStatusReq.jobStatusesList, updateJobStatusReq.customValFiltersList, updateJobStatusReq.parameterFiltersList)
 			updateJobStatusReq.errorResponse <- err
+		case deleteExecutingReq := <-jd.deleteExecutingChannel:
+			jd.DeleteJobStatus(deleteExecutingReq.deleteParams)
+			deleteExecutingReq.errorResponse <- nil
 		}
 	}
 }
@@ -3439,7 +3447,17 @@ This is only done during recovery, which happens during the server start.
 */
 func (jd *HandleT) DeleteExecuting(params GetQueryParamsT) {
 	params.StateFilters = []string{Executing.State}
-	jd.DeleteJobStatus(params)
+	if jd.enableWriterQueue {
+		respCh := make(chan error)
+		writeJobRequest := writeJob{
+			deleteParams:  params,
+			errorResponse: respCh,
+		}
+		jd.deleteExecutingChannel <- writeJobRequest
+		<-writeJobRequest.errorResponse
+	} else {
+		jd.DeleteJobStatus(params)
+	}
 }
 
 /*
