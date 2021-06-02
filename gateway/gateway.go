@@ -237,8 +237,8 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 		} else {
 			err := gateway.jobsDB.Store(jobList)
 			if err != nil {
-				pkgLogger.Errorf("Store into gateway db failed with error: %v", err)
-				pkgLogger.Errorf("JobList: %+v", jobList)
+				gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
+				gateway.logger.Errorf("JobList: %+v", jobList)
 				panic(err)
 			}
 		}
@@ -421,7 +421,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 			}
 
-			gateway.logger.Debug("IP address is ", ipAddr)
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
@@ -550,7 +549,7 @@ func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request
 func (gateway *HandleT) eventSchemaWebHandler(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !enableEventSchemasFeature {
-			gateway.logger.Debug("EventSchemas feature is disabled. You can enabled it through enableEventSchemasFeature flag in config.toml")
+			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, response.MakeResponse("EventSchemas feature is disabled")))
 			http.Error(w, response.MakeResponse("EventSchemas feature is disabled"), 400)
 			return
 		}
@@ -616,12 +615,12 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 }
 
 func (gateway *HandleT) ClearHandler(w http.ResponseWriter, r *http.Request) {
-	pkgLogger.LogRequest(r)
+	gateway.logger.LogRequest(r)
 	var errorMessage string
 	defer func() {
 		if errorMessage != "" {
-			pkgLogger.Debug(errorMessage)
-			http.Error(w, response.GetStatus(errorMessage), 400)
+			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
+			http.Error(w, errorMessage, 400)
 		}
 	}()
 
@@ -669,8 +668,8 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	var errorMessage string
 	defer func() {
 		if errorMessage != "" {
-			gateway.logger.Debug(errorMessage)
-			http.Error(w, response.GetStatus(errorMessage), 400)
+			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
+			http.Error(w, errorMessage, 400)
 		}
 	}()
 
@@ -813,7 +812,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	var errorMessage string
 	defer func() {
 		if errorMessage != "" {
-			gateway.logger.Debug(errorMessage)
+			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
 			http.Error(w, response.GetStatus(errorMessage), 400)
 		}
 	}()
@@ -828,7 +827,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	if errorMessage != "" {
 		return
 	}
-	gateway.logger.Debug(response.GetStatus(response.Ok))
+	gateway.logger.Debug(fmt.Sprintf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok)))
 	w.Write([]byte(response.GetStatus(response.Ok)))
 }
 
@@ -839,7 +838,7 @@ func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.Respons
 	var errorMessage string
 	defer func() {
 		if errorMessage != "" {
-			gateway.logger.Debug(errorMessage)
+			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Error while handling request: %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r)
@@ -1015,7 +1014,7 @@ func (gateway *HandleT) pixelHandler(w http.ResponseWriter, r *http.Request, req
 			sendPixelResponse(w)
 		}
 	} else {
-		gateway.logger.Debug("Write Key not found")
+		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Error while handling request: Write Key not found", misc.GetIPFromReq(r), r.URL.Path))
 		sendPixelResponse(w)
 	}
 }
