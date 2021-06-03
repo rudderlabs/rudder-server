@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	STREAM = "stream"
-	KV     = "kv"
+	STREAM              = "stream"
+	KV                  = "kv"
+	CLIENT_EXPIRED_CODE = 721
 )
 
 var (
@@ -142,9 +143,13 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 
 	respStatusCode, respBody := customManager.send(jsonData, customManager.destType, customDestination.Client, customDestination.Config)
 
-	if respStatusCode == 721 {
+	if respStatusCode == CLIENT_EXPIRED_CODE {
+		destLock.Lock()
 		customManager.refreshClient(destID)
+		destLock.Unlock()
+		destLock.RLock()
 		customDestination = customManager.destinationsMap[destID]
+		destLock.RUnlock()
 		respStatusCode, respBody = customManager.send(jsonData, customManager.destType, customDestination.Client, customDestination.Config)
 	}
 
