@@ -145,8 +145,11 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 
 	if respStatusCode == CLIENT_EXPIRED_CODE {
 		destLock.Lock()
-		customManager.refreshClient(destID)
+		err := customManager.refreshClient(destID)
 		destLock.Unlock()
+		if err != nil {
+			return 400, fmt.Sprintf("[CDM %s] Unable to refresh client for %s %s", customManager.destType, destID, err.Error())
+		}
 		destLock.RLock()
 		customDestination = customManager.destinationsMap[destID]
 		destLock.RUnlock()
