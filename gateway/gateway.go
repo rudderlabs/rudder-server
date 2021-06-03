@@ -1067,7 +1067,7 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler)).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler)).Methods("GET")
 	srvMux.HandleFunc("/version", gateway.versionHandler).Methods("GET")
-	srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/webhook", gateway.stat(gateway.webhookHandler.RequestHandler)).Methods("POST", "GET")
 	srvMux.HandleFunc("/beacon/v1/batch", gateway.stat(gateway.beaconBatchHandler)).Methods("POST")
 
 	if enableEventSchemasFeature {
