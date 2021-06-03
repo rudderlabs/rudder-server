@@ -292,12 +292,12 @@ type HandleT struct {
 	enableReaderQueue             bool
 	maxReaders                    int
 	maxWriters                    int
-	ClearCacheKeys                ClearCacheKeysT
+	queryFilterKeys               QueryFiltersT
 }
 
-type ClearCacheKeysT struct {
+type QueryFiltersT struct {
 	CustomVal        bool
-	ParameterFilters bool
+	ParameterFilters []string
 }
 
 //The struct which is written to the journal
@@ -548,8 +548,8 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, clearCacheKeys ClearCacheKeysT) {
-	jd.ClearCacheKeys = clearCacheKeys
+func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+	jd.queryFilterKeys = queryFilterKeys
 	jd.initGlobalDBHandle()
 	jd.ownerType = ownerType
 	jd.logger = pkgLogger.Child(tablePrefix)
@@ -1573,15 +1573,20 @@ func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []
 // Creates a map of customVal:Params(Dest_type: []Dest_ids for brt and Dest_type: [] for rt)
 //and then loop over them to selectively clear cache instead of clearing the cache for the entire dataset
 func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]struct{}, customVal string, params []byte) {
-	if jd.ClearCacheKeys.CustomVal {
+	if jd.queryFilterKeys.CustomVal {
 		if _, ok := CVPMap[customVal]; !ok {
 			CVPMap[customVal] = make(map[string]struct{})
 		}
 
-		if jd.ClearCacheKeys.ParameterFilters {
-			dest_id := gjson.GetBytes(params, "destination_id").String()
-			if _, ok := CVPMap[customVal][dest_id]; !ok {
-				CVPMap[customVal][dest_id] = struct{}{}
+		if len(jd.queryFilterKeys.ParameterFilters) > 0 {
+			var vals []string
+			for _, key := range jd.queryFilterKeys.ParameterFilters {
+				val := gjson.GetBytes(params, key).String()
+				vals = append(vals, fmt.Sprintf("%s##%s", key, val))
+			}
+			key := strings.Join(vals, "::")
+			if _, ok := CVPMap[customVal][key]; !ok {
+				CVPMap[customVal][key] = struct{}{}
 			}
 		}
 	}
@@ -1589,17 +1594,24 @@ func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]struct
 
 //mark cache empty after going over ds->customvals->params and for all stateFilters
 func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]struct{}) {
-	if jd.ClearCacheKeys.CustomVal && jd.ClearCacheKeys.ParameterFilters {
+	if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
 		for cv, cVal := range CVPMap {
+			parameterFilters := []ParameterFilterT{}
 			for pv := range cVal {
-				param := ParameterFilterT{
-					Name:  "destination_id",
-					Value: pv,
+				tokens := strings.Split(pv, "::")
+				for _, token := range tokens {
+					p := strings.Split(token, "##")
+					param := ParameterFilterT{
+						Name:  p[0],
+						Value: p[1],
+					}
+					parameterFilters = append(parameterFilters, param)
 				}
-				jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, []ParameterFilterT{param}, hasJobs, nil)
 			}
+
+			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
 		}
-	} else if jd.ClearCacheKeys.CustomVal {
+	} else if jd.queryFilterKeys.CustomVal {
 		for cv := range CVPMap {
 			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
 		}

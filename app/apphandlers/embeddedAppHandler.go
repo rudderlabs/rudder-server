@@ -10,6 +10,8 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
+	"github.com/rudderlabs/rudder-server/router"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -57,12 +59,12 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	migrationMode := embedded.App.Options().MigrationMode
 
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
-	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, false, jobsdb.ClearCacheKeysT{})
+	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
 	if enableProcessor {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
-		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, jobsdb.ClearCacheKeysT{CustomVal: true})
-		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, jobsdb.ClearCacheKeysT{CustomVal: true, ParameterFilters: true})
-		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.ClearCacheKeysT{})
+		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
+		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
+		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
 	}
 
 	enableGateway := true
