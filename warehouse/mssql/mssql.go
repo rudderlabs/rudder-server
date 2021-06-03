@@ -70,6 +70,7 @@ var mssqlDataTypesMapToRudder = map[string]string{
 	"real":                     "float",
 	"text":                     "string",
 	"varchar":                  "string",
+	"nvarchar":                 "string",
 	"char":                     "string",
 	"datetimeoffset":           "datetime",
 	"timestamp with time zone": "datetime",
@@ -370,11 +371,11 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 							if len(byteArr) > diacriticLengthLimit {
 								byteArr = byteArr[:diacriticLengthLimit]
 							}
+							finalColumnValues = append(finalColumnValues, byteArr)
 						} else {
 							pkgLogger.Debug("non-diacritic : " + strValue)
-							byteArr = []byte(strValue)
+							finalColumnValues = append(finalColumnValues, strValue)
 						}
-						finalColumnValues = append(finalColumnValues, byteArr)
 					}
 				default:
 					finalColumnValues = append(finalColumnValues, value)
