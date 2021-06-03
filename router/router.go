@@ -167,6 +167,7 @@ var (
 	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
+	QueryFilters                                                  jobsdb.QueryFiltersT
 	disableEgress                                                 bool
 )
 
@@ -1576,6 +1577,7 @@ func (rt *HandleT) crashRecover() {
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
+	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
 }
 
 //Setup initializes this module
