@@ -19,6 +19,7 @@ type FileManager interface {
 	Download(*os.File, string) error
 	GetObjectNameFromLocation(string) (string, error)
 	GetDownloadKeyFromFileLocation(location string) string
+	DeleteObjects(locations []string) error
 }
 
 // SettingsT sets configuration for FileManager

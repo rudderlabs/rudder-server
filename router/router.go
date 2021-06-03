@@ -168,6 +168,7 @@ var (
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
 	QueryFilters                                                  jobsdb.QueryFiltersT
+	disableEgress                                                 bool
 )
 
 type requestMetric struct {
@@ -206,6 +207,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &jobsBatchTimeout, true, time.Second, "Router.jobsBatchTimeoutInSec")
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	config.RegisterDurationConfigVariable(time.Duration(5), &maxStatusUpdateWait, true, time.Second, "Router.maxStatusUpdateWaitInS")
+	disableEgress = config.GetBool("disableEgress", false)
 
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
@@ -507,6 +509,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	apiCallsCount := make(map[string]*destJobCountsT)
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
+		respBodyArr := make([]string, 0)
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
 			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, destinationJob) {
 				diagnosisStartTime := time.Now()
@@ -541,17 +544,19 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					for _, val := range result {
 						err := integrations.ValidatePostInfo(val)
 						if err != nil {
-							respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
+							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
+							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
 							respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val)
 							if isSuccessStatus(respStatusCode) {
-								respBody = respBody + " " + respBodyTemp
+								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
-								respBody = respBodyTemp
+								respBodyArr = []string{respBodyTemp}
 								break
 							}
 						}
 					}
+					respBody = strings.Join(respBodyArr, " ")
 				}
 				ch <- struct{}{}
 
@@ -870,10 +875,17 @@ func (worker *workerT) sendRouterResponseCountStat(destinationJobMetadata *types
 }
 
 func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
-	if destinationJobMetadata.ReceivedAt != "" {
-		if status.JobState == jobsdb.Succeeded.State {
+	destinationTag := misc.GetTagName(destination.ID, destination.Name)
+	if status.JobState == jobsdb.Succeeded.State {
+		eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
+			"module":         "router",
+			"destType":       worker.rt.destName,
+			"destination":    destinationTag,
+			"attempt_number": strconv.Itoa(status.AttemptNum),
+		})
+		eventsDeliveredStat.Count(1)
+		if destinationJobMetadata.ReceivedAt != "" {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
-			destinationTag := misc.GetTagName(destination.ID, destination.Name)
 			if err == nil {
 				eventsDeliveryTimeStat := stats.NewTaggedStat(
 					"event_delivery_time", stats.TimerType, map[string]string{
@@ -885,13 +897,6 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 			}
-			eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
-				"module":         "router",
-				"destType":       worker.rt.destName,
-				"destination":    destinationTag,
-				"attempt_number": strconv.Itoa(status.AttemptNum),
-			})
-			eventsDeliveredStat.Count(1)
 		}
 	}
 }

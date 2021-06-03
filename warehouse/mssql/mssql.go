@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -24,25 +26,35 @@ import (
 )
 
 var (
-	stagingTablePrefix string
-	pkgLogger          logger.LoggerI
+	stagingTablePrefix   string
+	pkgLogger            logger.LoggerI
+	diacriticLengthLimit = diacriticLimit()
 )
 
 const (
-	host     = "host"
-	dbName   = "database"
-	user     = "user"
-	password = "password"
-	port     = "port"
-	sslMode  = "sslMode"
+	host                   = "host"
+	dbName                 = "database"
+	user                   = "user"
+	password               = "password"
+	port                   = "port"
+	sslMode                = "sslMode"
+	mssqlStringLengthLimit = 512
 )
+
+func diacriticLimit() int {
+	if mssqlStringLengthLimit%2 != 0 {
+		return mssqlStringLengthLimit - 1
+	} else {
+		return mssqlStringLengthLimit
+	}
+}
 
 const PROVIDER = "MSSQL"
 
 var rudderDataTypesMapToMssql = map[string]string{
 	"int":      "bigint",
 	"float":    "decimal(28,10)",
-	"string":   "varchar(max)",
+	"string":   "varchar(512)",
 	"datetime": "datetimeoffset",
 	"boolean":  "bit",
 	"json":     "jsonb",
@@ -342,6 +354,28 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 							finalColumnValues = append(finalColumnValues, convertedValue)
 						}
 					}
+				case "string":
+					{
+						//This is needed to enable diacritic support Ex: Ü,ç Ç,©,∆,ß,á,ù,ñ,ê
+						//A substitute to this PR; https://github.com/denisenkom/go-mssqldb/pull/576/files
+						//An alternate to this approach is to use nvarchar(instead of varchar)
+						if len(strValue) > mssqlStringLengthLimit {
+							strValue = strValue[:mssqlStringLengthLimit]
+						}
+						byteArr := []byte("")
+						if hasDiacritics(strValue) {
+							pkgLogger.Debug("diacritics " + strValue)
+							byteArr = str2ucs2(strValue)
+							// This is needed as with above operation every character occupies 2 bytes
+							if len(byteArr) > diacriticLengthLimit {
+								byteArr = byteArr[:diacriticLengthLimit]
+							}
+						} else {
+							pkgLogger.Debug("non-diacritic : " + strValue)
+							byteArr = []byte(strValue)
+						}
+						finalColumnValues = append(finalColumnValues, byteArr)
+					}
 				default:
 					finalColumnValues = append(finalColumnValues, value)
 				}
@@ -404,6 +438,26 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	pkgLogger.Infof("MS: Complete load for table:%s", tableName)
 	return
+}
+
+//Taken from https://github.com/denisenkom/go-mssqldb/blob/master/tds.go
+func str2ucs2(s string) []byte {
+	res := utf16.Encode([]rune(s))
+	ucs2 := make([]byte, 2*len(res))
+	for i := 0; i < len(res); i++ {
+		ucs2[2*i] = byte(res[i])
+		ucs2[2*i+1] = byte(res[i] >> 8)
+	}
+	return ucs2
+}
+
+func hasDiacritics(str string) bool {
+	for _, x := range str {
+		if utf8.RuneLen(rune(x)) > 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
