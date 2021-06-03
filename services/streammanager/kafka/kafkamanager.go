@@ -3,6 +3,8 @@ package kafka
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
+	"github.com/xdg/scram"
 )
 
 // Config is the config that is required to send data to Kafka
@@ -21,6 +24,10 @@ type Config struct {
 	Port          string
 	SslEnabled    bool
 	CACertificate string
+	UseSASL 			bool
+	SaslType			string
+	Username 			string
+	Password 			string
 }
 
 //AzureEventHubConfig is the config that is required to send data to Azure Event Hub
@@ -92,7 +99,7 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 	var destConfig = Config{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[Confluent Cloud] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
+		return nil, fmt.Errorf("[Kafka] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
 	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
@@ -112,12 +119,70 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 			config.Net.TLS.Config = tlsConfig
 			config.Net.TLS.Enable = true
 		}
+		if destConfig.UseSASL {
+			err = SetSASLConfig(config, destConfig)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	producer, err := sarama.NewSyncProducer(hosts, config)
 
 	return producer, err
 }
+
+// Sets SASL authentication config for Kafka
+func SetSASLConfig(config *sarama.Config, destConfig Config) (err error) {
+	config.Net.SASL.Enable = true
+	config.Net.SASL.User = destConfig.Username
+	config.Net.SASL.Password = destConfig.Password
+	config.Net.SASL.Handshake = true
+	switch destConfig.SaslType {
+	case "plain":
+		config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+	case "sha512":
+		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &XDGSCRAMClient{HashGeneratorFcn: SHA512} }
+		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+	case "sha256":
+		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &XDGSCRAMClient{HashGeneratorFcn: SHA256} }
+		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
+	default:
+		return fmt.Errorf("invalid SASL type %s", destConfig.SaslType)
+	}
+	return nil
+}
+
+var (
+	SHA256 scram.HashGeneratorFcn = sha256.New
+	SHA512 scram.HashGeneratorFcn = sha512.New
+)
+
+type XDGSCRAMClient struct {
+	*scram.Client
+	*scram.ClientConversation
+	scram.HashGeneratorFcn
+}
+
+func (x *XDGSCRAMClient) Begin(userName, password, authzID string) (err error) {
+	x.Client, err = x.HashGeneratorFcn.NewClient(userName, password, authzID)
+	if err != nil {
+		return err
+	}
+	x.ClientConversation = x.Client.NewConversation()
+	return nil
+}
+
+func (x *XDGSCRAMClient) Step(challenge string) (response string, err error) {
+	response, err = x.ClientConversation.Step(challenge)
+	return
+}
+
+func (x *XDGSCRAMClient) Done() bool {
+	return x.ClientConversation.Done()
+}
+
+
 
 // NewProducerForAzureEventHub creates a producer for Azure event hub based on destination config
 func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProducer, error) {
