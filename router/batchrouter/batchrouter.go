@@ -58,6 +58,7 @@ var (
 	encounteredMergeRuleMapLock        sync.RWMutex
 	pkgLogger                          logger.LoggerI
 	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	QueryFilters                       jobsdb.QueryFiltersT
 )
 
 type HandleT struct {
@@ -689,6 +690,29 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 	}
 }
 
+func (worker *workerT) getValueForParameter(batchDest BatchDestinationT, parameter string) string {
+	switch {
+	case parameter == "destination_id":
+		return batchDest.Destination.ID
+	default:
+		panic(fmt.Errorf("BRT: %s: Unknown parameter(%s) to find value from batchDest %+v", worker.brt.destType, parameter, batchDest))
+	}
+}
+
+func (worker *workerT) constructParameterFilters(batchDest BatchDestinationT) []jobsdb.ParameterFilterT {
+	parameterFilters := make([]jobsdb.ParameterFilterT, 0)
+	for _, key := range QueryFilters.ParameterFilters {
+		parameterFilter := jobsdb.ParameterFilterT{
+			Name:     key,
+			Value:    worker.getValueForParameter(batchDest, key),
+			Optional: false,
+		}
+		parameterFilters = append(parameterFilters, parameterFilter)
+	}
+
+	return parameterFilters
+}
+
 func (worker *workerT) workerProcess() {
 	brt := worker.brt
 	for {
@@ -702,13 +726,7 @@ func (worker *workerT) workerProcess() {
 
 		case batchDest := <-brt.processQ:
 			toQuery := jobQueryBatchSize
-			parameterFilters := []jobsdb.ParameterFilterT{
-				{
-					Name:     "destination_id",
-					Value:    batchDest.Destination.ID,
-					Optional: false,
-				},
-			}
+			parameterFilters := worker.constructParameterFilters(batchDest)
 			brtQueryStat := stats.NewStat("batch_router.jobsdb_query_time", stats.TimerType)
 			brtQueryStat.Start()
 			brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
@@ -1134,6 +1152,8 @@ func init() {
 	loadConfig()
 	uploadedRawDataJobsCache = make(map[string]map[string]bool)
 	pkgLogger = logger.NewLogger().Child("batchrouter")
+
+	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true, ParameterFilters: []string{"destination_id"}}
 }
 
 //Setup initializes this module
