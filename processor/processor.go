@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -24,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
@@ -89,7 +89,6 @@ type HandleT struct {
 	statNumEvents                  stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
 	statBatchDestNumOutputEvents   stats.RudderStats
-	destStats                      map[string]*DestStatT
 	userToSessionIDMap             map[string]string
 	userJobPQ                      pqT
 	userPQLock                     sync.Mutex
@@ -109,12 +108,9 @@ var defaultTransformerFeatures = `{
   }`
 
 type DestStatT struct {
-	id               string
-	numEvents        stats.RudderStats
-	numOutputEvents  stats.RudderStats
-	sessionTransform stats.RudderStats
-	userTransform    stats.RudderStats
-	destTransform    stats.RudderStats
+	numEvents       stats.RudderStats
+	numOutputEvents stats.RudderStats
+	transformTime   stats.RudderStats
 }
 
 type ParametersT struct {
@@ -141,8 +137,10 @@ type MetricMetadata struct {
 	sourceJobRunID  string
 }
 
-func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) *DestStatT {
-	destinationTag := misc.GetTagName(destination.ID, destination.Name)
+const USER_TRANSFORMATION = "USER_TRANSFORMATION"
+const DEST_TRANSFORMATION = "DEST_TRANSFORMATION"
+
+func (proc *HandleT) buildStatTags(sourceID, workspaceID string, destination backendconfig.DestinationT, transformationType string) map[string]string {
 	var module = "router"
 	if batchrouter.IsObjectStorageDestination(destination.DestinationDefinition.Name) {
 		module = "batch_router"
@@ -150,23 +148,50 @@ func (proc *HandleT) newDestinationStat(destination backendconfig.DestinationT) 
 	if batchrouter.IsWarehouseDestination(destination.DestinationDefinition.Name) {
 		module = "warehouse"
 	}
-	tags := map[string]string{
-		"module":      module,
-		"destination": destinationTag,
-		"destType":    destination.DestinationDefinition.Name,
+
+	return map[string]string{
+		"module":         module,
+		"destination":    destination.ID,
+		"destType":       destination.DestinationDefinition.Name,
+		"source":         sourceID,
+		"workspaceId":    workspaceID,
+		"transformation": transformationType,
 	}
-	numEvents := proc.stats.NewTaggedStat("proc_num_events", stats.CountType, tags)
-	numOutputEvents := proc.stats.NewTaggedStat("proc_num_output_events", stats.CountType, tags)
-	sessionTransform := proc.stats.NewTaggedStat("proc_session_transform", stats.TimerType, tags)
-	userTransform := proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
-	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
+}
+
+func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, destination backendconfig.DestinationT, processSessions bool) *DestStatT {
+	tags := proc.buildStatTags(sourceID, workspaceID, destination, USER_TRANSFORMATION)
+
+	tags["transformation_id"] = destination.Transformations[0].ID
+	tags["transformation_version_id"] = destination.Transformations[0].VersionID
+
+	numEvents := proc.stats.NewTaggedStat("proc_num_ut_input_events", stats.CountType, tags)
+	numOutputEvents := proc.stats.NewTaggedStat("proc_num_ut_output_events", stats.CountType, tags)
+	var transformTime stats.RudderStats
+	if processSessions {
+		transformTime = proc.stats.NewTaggedStat("proc_session_transform", stats.TimerType, tags)
+	} else {
+		transformTime = proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
+	}
+
 	return &DestStatT{
-		id:               destination.ID,
-		numEvents:        numEvents,
-		numOutputEvents:  numOutputEvents,
-		sessionTransform: sessionTransform,
-		userTransform:    userTransform,
-		destTransform:    destTransform,
+		numEvents:       numEvents,
+		numOutputEvents: numOutputEvents,
+		transformTime:   transformTime,
+	}
+}
+
+func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID string, destination backendconfig.DestinationT) *DestStatT {
+	tags := proc.buildStatTags(sourceID, workspaceID, destination, DEST_TRANSFORMATION)
+
+	numEvents := proc.stats.NewTaggedStat("proc_num_dt_input_events", stats.CountType, tags)
+	numOutputEvents := proc.stats.NewTaggedStat("proc_num_dt_output_events", stats.CountType, tags)
+	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
+
+	return &DestStatT{
+		numEvents:       numEvents,
+		numOutputEvents: numOutputEvents,
+		transformTime:   destTransform,
 	}
 }
 
@@ -276,7 +301,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 		"module": "batch_router",
 	})
 	admin.RegisterStatusHandler("processor", proc)
-	proc.destStats = make(map[string]*DestStatT)
 	if enableEventSchemasFeature {
 		proc.eventSchemaHandler = event_schema.GetInstance()
 	}
@@ -441,10 +465,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
 					destinationTransformationEnabledMap[destination.ID] = len(destination.Transformations) > 0
-					_, ok := proc.destStats[destination.ID]
-					if !ok {
-						proc.destStats[destination.ID] = proc.newDestinationStat(destination)
-					}
 				}
 			}
 		}
@@ -770,6 +790,9 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 		panic(fmt.Errorf("[Processor] couldn't marshal singularEvent. singularEvent: %v\n", singularEvent))
 	}
 	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
+	commonMetadata.WorkspaceID = source.WorkspaceID
+	commonMetadata.Namespace = config.GetKubeNamespace()
+	commonMetadata.InstanceID = config.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
 	commonMetadata.MessageID = singularEvent["messageId"].(string)
@@ -791,6 +814,9 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.SourceType = commonMetadata.SourceType
 	metadata.SourceCategory = commonMetadata.SourceCategory
 	metadata.SourceID = commonMetadata.SourceID
+	metadata.WorkspaceID = commonMetadata.WorkspaceID
+	metadata.Namespace = commonMetadata.Namespace
+	metadata.InstanceID = commonMetadata.InstanceID
 	metadata.RudderID = commonMetadata.RudderID
 	metadata.JobID = commonMetadata.JobID
 	metadata.MessageID = commonMetadata.MessageID
@@ -1284,16 +1310,17 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 		destination := eventList[0].Destination
+		workspaceID := eventList[0].Metadata.WorkspaceID
 		commonMetaData := transformer.MetadataT{
 			SourceID:        sourceID,
 			SourceType:      eventList[0].Metadata.SourceType,
 			SourceCategory:  eventList[0].Metadata.SourceCategory,
+			WorkspaceID:     workspaceID,
+			Namespace:       config.GetKubeNamespace(),
+			InstanceID:      config.GetInstanceID(),
 			DestinationID:   destID,
 			DestinationType: destination.DestinationDefinition.Name,
 		}
-
-		destStat := proc.destStats[destID]
-		destStat.numEvents.Count(len(eventList))
 
 		configSubscriberLock.RLock()
 		destType := destinationIDtoTypeMap[destID]
@@ -1323,22 +1350,24 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		var eventsToTransform []transformer.TransformerEventT
 		// Send to custom transformer only if the destination has a transformer enabled
 		if transformationEnabled {
+			userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination, proc.processSessions)
+			userTransformationStat.numEvents.Count(len(eventList))
 			proc.logger.Debug("Custom Transform input size", len(eventList))
 			if proc.processSessions {
 				// If processSessions is true, Transform should break into a new batch only when user changes.
 				// This way all the events of a user session are never broken into separate batches
 				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
-				destStat.sessionTransform.Start()
+				userTransformationStat.transformTime.Start()
 				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, true)
-				destStat.sessionTransform.End()
+				userTransformationStat.transformTime.End()
 			} else {
 				// We need not worry about breaking up a single user sessions in this case
-				destStat.userTransform.Start()
+				userTransformationStat.transformTime.Start()
 				startedAt = time.Now()
 				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, false)
 				endedAt = time.Now()
 				timeTaken = endedAt.Sub(startedAt).Seconds()
-				destStat.userTransform.End()
+				userTransformationStat.transformTime.End()
 				proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: timeTaken, Index: -1}, &proc.userTransformEventsByTimeTaken)
 			}
 
@@ -1351,6 +1380,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
 			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
+			userTransformationStat.numOutputEvents.Count(len(eventsToTransform))
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
 
 			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: &destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIds})
@@ -1376,8 +1406,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			continue
 		}
 
+		destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, destination)
+		destTransformationStat.numEvents.Count(len(eventsToTransform))
 		proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
-		destStat.destTransform.Start()
+		destTransformationStat.transformTime.Start()
 		startedAt = time.Now()
 
 		transformAt := "processor"
@@ -1403,12 +1435,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		endedAt = time.Now()
 		timeTaken = endedAt.Sub(startedAt).Seconds()
-		destStat.destTransform.End()
+		destTransformationStat.transformTime.End()
 		proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventsToTransform, Stage: "destination-transformer", ProcessingTime: timeTaken, Index: -1}, &proc.destTransformEventsByTimeTaken)
 
 		destTransformEventList := response.Events
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
-		destStat.numOutputEvents.Count(len(destTransformEventList))
+		destTransformationStat.numOutputEvents.Count(len(destTransformEventList))
 
 		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled)
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
