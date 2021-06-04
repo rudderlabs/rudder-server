@@ -78,10 +78,31 @@ func RegisterReportingFeature(f ReportingFeatureSetup) {
 	reportingFeatureSetup = f
 }
 
+/*********************************
+Replay Feature
+*********************************/
+
+// ReplayFeature handles reporting statuses / errors to reporting service
+type ReplayFeature interface {
+	Setup(replayDB *jobsdb.HandleT, gwDB *jobsdb.HandleT, routerDB *jobsdb.HandleT)
+	// GetReportingInstance() types.ReportingI
+}
+
+// ReplayFeatureSetup is a function that initializes a Reporting feature
+type ReplayFeatureSetup func(Interface) ReplayFeature
+
+var replayFeatureSetup ReplayFeatureSetup
+
+// RegisterReplayFeature registers a config env feature implementation
+func RegisterReplayFeature(f ReplayFeatureSetup) {
+	replayFeatureSetup = f
+}
+
 // Features contains optional implementations of Enterprise only features.
 type Features struct {
 	Migrator     MigratorFeature
 	SuppressUser SuppressUserFeature
 	ConfigEnv    ConfigEnvFeature
 	Reporting    ReportingFeature
+	Replay       ReplayFeature
 }
