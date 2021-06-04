@@ -244,11 +244,6 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	txn, err := ms.Db.Begin()
-	if err != nil {
-		pkgLogger.Errorf("MS: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
-		return
-	}
 	// create temporary table
 	stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.ReplaceAll(uuid.NewV4().String(), "-", ""))
 	//prepared stmts cannot be used to create temp objects here. Will work in a txn, but will be purged after commit.
@@ -258,11 +253,20 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	sqlStatement := fmt.Sprintf(`select top 0 * into %[1]s.%[2]s from %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
 
 	pkgLogger.Debugf("MS: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
-	_, err = txn.Exec(sqlStatement)
+	_, err = ms.Db.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("MS: Error creating temporary table for table:%s: %v\n", tableName, err)
 		return
 	}
+
+	txn, err := ms.Db.Begin()
+	if err != nil {
+		pkgLogger.Errorf("MS: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
+		return
+	}
+
+	//_, err = txn.Exec(sqlStatement)
+
 	if !skipTempTableDelete {
 		defer ms.dropStagingTable(stagingTableName)
 	}
@@ -400,6 +404,9 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 			_, err = stmt.Exec(finalColumnValues...)
 			if err != nil {
+				// ERROR   mssql/mssql.go:391      MS: Error in exec statement for loading in staging table:rudder_staging_aliases_f2f629142a7643fd8405d1d48bdac91b:
+				//mssql: Column count in target table does not match column count specified in input.
+				//If BCP command, ensure format file column count matches destination table. If SSIS data import, check column mappings are consistent with target.
 				pkgLogger.Errorf("MS: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
 				txn.Rollback()
 				return
@@ -509,11 +516,10 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 						  	select %[1]s from %[2]s
 						  	where x.id = %[2]s.id
 							  and %[1]s is not null
-							  order by received_at desc
-						  	OFFSET 0 ROWS
-							FETCH NEXT 1 ROWS ONLY)
+							)
 						  end as %[1]s`, colName, ms.Namespace+"."+unionStagingTableName)
-
+//							 order by X.received_at desc OFFSET 0 ROWS
+		//							FETCH NEXT 1 ROWS ONLY
 		//IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortedened to below
 		//https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
 		//caseSubQuery := fmt.Sprintf(`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName)
@@ -548,10 +554,13 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 		strings.Join(firstValProps, ","),
 		ms.Namespace+"."+unionStagingTableName,
 	)
-
+//1 errors occurred:
+	//mssql: [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Subquery returned more than 1 value.
+	//This is not permitted when the subquery follows =, !=, <, <= , >, >= or when the subquery is used as an expression.
 	pkgLogger.Debugf("MS: Creating staging table for users: %s\n", sqlStatement)
 	_, err = ms.Db.Exec(sqlStatement)
 	if err != nil {
+		pkgLogger.Errorf("MS: Error Creating staging table for users: %s\n", sqlStatement)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -609,7 +618,8 @@ func (ms *HandleT) CreateSchema() (err error) {
 
 func (ms *HandleT) dropStagingTable(stagingTableName string) {
 	pkgLogger.Infof("MS: dropping table %+v\n", stagingTableName)
-	_, err := ms.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ms.Namespace+"."+stagingTableName))
+	//_, err := ms.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ms.Namespace+"."+stagingTableName))
+	_, err := ms.Db.Exec(fmt.Sprintf(`IF OBJECT_ID ('%[1]s','U') IS NOT NULL DROP TABLE %[1]s;`, ms.Namespace+"."+stagingTableName))
 	if err != nil {
 		pkgLogger.Errorf("MS:  Error dropping staging table %s in mssql: %v", ms.Namespace+"."+stagingTableName, err)
 	}
