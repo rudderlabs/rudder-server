@@ -13,6 +13,10 @@ type ResponseHandlerI interface {
 	IsSuccessStatus(respCode int, respBody string) (returnCode int)
 }
 
+type ResponseStatsHandlerI interface {
+	EvalStats(respBody string) (returnCode int)
+}
+
 //JSONResponseHandler handler for json response
 type JSONResponseHandler struct {
 	abortRules     []map[string]interface{}
@@ -25,6 +29,22 @@ type TXTResponseHandler struct {
 	abortRules     []map[string]interface{}
 	retryableRules []map[string]interface{}
 	throttledRules []map[string]interface{}
+}
+
+// JSONResponseStatsHandler for json response based stats
+type JSONResponseStatsHandler struct {
+	abortableErrorRule                   []map[string]interface{} // 400
+	expectingInstrumentationErrorRule    []map[string]interface{} // 601
+	nonExpectingInstrumentationErrorRule []map[string]interface{} // 602
+	configurationErrorRule               []map[string]interface{} // 603
+}
+
+// TXTResponseStatsHandler for text response based stats
+type TXTResponseStatsHandler struct {
+	abortableErrorRule                   []map[string]interface{}
+	expectingInstrumentationErrorRule    []map[string]interface{}
+	nonExpectingInstrumentationErrorRule []map[string]interface{}
+	configurationErrorRule               []map[string]interface{}
 }
 
 func getRulesArrForKey(key string, rules map[string]interface{}) []map[string]interface{} {
@@ -67,6 +87,46 @@ func New(responseRules map[string]interface{}) ResponseHandlerI {
 		return &JSONResponseHandler{abortRules: abortRules, retryableRules: retryableRules, throttledRules: throttledRules}
 	} else if responseRules["responseType"].(string) == "TXT" {
 		return &TXTResponseHandler{abortRules: abortRules, retryableRules: retryableRules, throttledRules: throttledRules}
+	}
+
+	return nil
+}
+
+//Get Response based stats handler. This will be use get stat rules for collecting response based stats
+func GetStatsHandler(responseRules map[string]interface{}) ResponseStatsHandlerI {
+	if responseType, ok := responseRules["responseType"]; !ok || reflect.TypeOf(responseType).Kind() != reflect.String {
+		return nil
+	}
+
+	if _, ok := responseRules["routerStatRules"]; !ok {
+		return nil
+	}
+
+	var routerStatRules map[string]interface{}
+	var ok bool
+	if routerStatRules, ok = responseRules["routerStatRules"].(map[string]interface{}); !ok {
+		return nil
+	}
+
+	abortableErrorRule := getRulesArrForKey("400", routerStatRules)
+	expectingInstrumentationErrorRule := getRulesArrForKey("601", routerStatRules)
+	nonExpectingInstrumentationErrorRule := getRulesArrForKey("602", routerStatRules)
+	configurationErrorRule := getRulesArrForKey("603", routerStatRules)
+
+	if responseRules["responseType"].(string) == "JSON" {
+		return &JSONResponseStatsHandler{
+			abortableErrorRule:                   abortableErrorRule,
+			expectingInstrumentationErrorRule:    expectingInstrumentationErrorRule,
+			nonExpectingInstrumentationErrorRule: nonExpectingInstrumentationErrorRule,
+			configurationErrorRule:               configurationErrorRule,
+		}
+	} else if responseRules["responseType"].(string) == "TXT" {
+		return &TXTResponseStatsHandler{
+			abortableErrorRule:                   abortableErrorRule,
+			expectingInstrumentationErrorRule:    expectingInstrumentationErrorRule,
+			nonExpectingInstrumentationErrorRule: nonExpectingInstrumentationErrorRule,
+			configurationErrorRule:               configurationErrorRule,
+		}
 	}
 
 	return nil
@@ -144,6 +204,34 @@ func (handler *JSONResponseHandler) IsSuccessStatus(respCode int, respBody strin
 	return respCode
 }
 
+//EvalStats -- return codes used to uniquely identify stats
+func (handler *JSONResponseStatsHandler) EvalStats(respBody string) (returnCode int) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			returnCode = 400
+		}
+	}()
+
+	if evalBody(respBody, handler.abortableErrorRule) {
+		return 400 //Stat code for abortable Error
+	}
+
+	if evalBody(respBody, handler.expectingInstrumentationErrorRule) {
+		return 601 //Stat code for expecting instrumentation Error
+	}
+
+	if evalBody(respBody, handler.nonExpectingInstrumentationErrorRule) {
+		return 602 //Stat code for non expecting instrumentation Error
+	}
+
+	if evalBody(respBody, handler.configurationErrorRule) {
+		return 603 //Stat code for configuration Error
+	}
+
+	return 400
+}
+
 //TXTResponseHandler -- start
 
 //IsSuccessStatus - returns the status code based on the response code and body
@@ -157,4 +245,16 @@ func (handler *TXTResponseHandler) IsSuccessStatus(respCode int, respBody string
 
 	returnCode = respCode
 	return returnCode
+}
+
+//EvalStats -- return codes used to uniquely identify stats
+func (handler *TXTResponseStatsHandler) EvalStats(respBody string) (returnCode int) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Error(r)
+			returnCode = 400
+		}
+	}()
+
+	return 400
 }

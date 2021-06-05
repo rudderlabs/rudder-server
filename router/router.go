@@ -97,6 +97,7 @@ type HandleT struct {
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
 	destinationResponseHandler             ResponseHandlerI
+	destinationResponseBasedStatsHandler   ResponseStatsHandlerI
 	saveDestinationResponse                bool
 	drainJobHandler                        drain.DrainI
 	reporting                              utilTypes.ReportingI
@@ -464,8 +465,10 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	handledJobMetadatas := make(map[int64]*types.JobMetadataT)
 
 	var destinationResponseHandler ResponseHandlerI
+	var destinationResponseBasedStatsHandler ResponseStatsHandlerI
 	worker.rt.configSubscriberLock.RLock()
 	destinationResponseHandler = worker.rt.destinationResponseHandler
+	destinationResponseBasedStatsHandler = worker.rt.destinationResponseBasedStatsHandler
 	saveDestinationResponse := worker.rt.saveDestinationResponse
 	worker.rt.configSubscriberLock.RUnlock()
 
@@ -563,6 +566,16 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				//Using reponse status code and body to get response code rudder router logic is based on.
 				if destinationResponseHandler != nil {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
+				}
+
+				if destinationResponseBasedStatsHandler != nil {
+					statsCode := destinationResponseBasedStatsHandler.EvalStats(respBody)
+					statsCodeStr := strconv.Itoa(statsCode)
+					responseStatClient := stats.NewTaggedStat("transformer_errors", stats.CountType, stats.Tags{
+						"code":        statsCodeStr,
+						"destination": worker.rt.destName,
+					})
+					responseStatClient.Increment()
 				}
 
 				prevRespStatusCode = respStatusCode
@@ -1619,6 +1632,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rt.failuresMetric = make(map[string][]failureMetric)
 
 	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
+	rt.destinationResponseBasedStatsHandler = GetStatsHandler(destinationDefinition.ResponseRules)
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
 	}
@@ -1694,6 +1708,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == rt.destName {
 						rt.destinationsMap[destination.ID] = destination
 						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
+						rt.destinationResponseBasedStatsHandler = GetStatsHandler(destination.DestinationDefinition.ResponseRules)
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 							rt.saveDestinationResponse = value
 						}
