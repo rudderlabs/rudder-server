@@ -177,6 +177,8 @@ var (
 	disableEgress                                                 bool
 )
 
+const STATS_STAGE = "router"
+
 type requestMetric struct {
 	RequestRetries       int
 	RequestAborted       int
@@ -1656,6 +1658,11 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	rt.drainJobHandler = drain.Setup(rt.jobsDB)
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
+	var transformedAt interface{}
+	var ok bool
+	if transformedAt, ok = destinationDefinition.Config["transformedAt"]; !ok || reflect.TypeOf(transformedAt).Kind() != reflect.String {
+		transformedAt = "UNDEFINED"
+	}
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
@@ -1669,21 +1676,29 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 		"destType": rt.destName,
 	})
 	// Stats based on dest response rules
-	rt.destResponseStat400 = stats.NewTaggedStat("transformer_errors", stats.CountType, stats.Tags{
-		"code":        "400",
-		"destination": rt.destName,
+	rt.destResponseStat400 = stats.NewTaggedStat("destination_error_pool", stats.CountType, stats.Tags{
+		"code":          "400",
+		"destination":   rt.destName,
+		"transformedAt": transformedAt.(string),
+		"stage":         STATS_STAGE,
 	})
-	rt.destResponseStat601 = stats.NewTaggedStat("transformer_errors", stats.CountType, stats.Tags{
-		"code":        "601",
-		"destination": rt.destName,
+	rt.destResponseStat601 = stats.NewTaggedStat("destination_error_pool", stats.CountType, stats.Tags{
+		"code":          "601",
+		"destination":   rt.destName,
+		"transformedAt": transformedAt.(string),
+		"stage":         STATS_STAGE,
 	})
-	rt.destResponseStat602 = stats.NewTaggedStat("transformer_errors", stats.CountType, stats.Tags{
-		"code":        "602",
-		"destination": rt.destName,
+	rt.destResponseStat602 = stats.NewTaggedStat("destination_error_pool", stats.CountType, stats.Tags{
+		"code":          "602",
+		"destination":   rt.destName,
+		"transformedAt": transformedAt.(string),
+		"stage":         STATS_STAGE,
 	})
-	rt.destResponseStat603 = stats.NewTaggedStat("transformer_errors", stats.CountType, stats.Tags{
-		"code":        "603",
-		"destination": rt.destName,
+	rt.destResponseStat603 = stats.NewTaggedStat("destination_error_pool", stats.CountType, stats.Tags{
+		"code":          "603",
+		"destination":   rt.destName,
+		"transformedAt": transformedAt.(string),
+		"stage":         STATS_STAGE,
 	})
 
 	rt.transformer = transformer.NewTransformer()
