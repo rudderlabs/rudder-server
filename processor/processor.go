@@ -1434,7 +1434,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		var canSendDestStats  = true
 		if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
 			response = convertToTransformerResponse(eventsToTransform)
-			canSendDestStats = false
+			if transformAt!="none"{
+				canSendDestStats = false
+			}
 		} else {
 			destTransformationStat.transformTime.Start()
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)

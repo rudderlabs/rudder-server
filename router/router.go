@@ -86,6 +86,8 @@ type HandleT struct {
 	logger                                 logger.LoggerI
 	batchInputCountStat                    stats.RudderStats
 	batchOutputCountStat                   stats.RudderStats
+	routerTransformInputCountStat          stats.RudderStats
+	routerTransformOutputCountStat         stats.RudderStats
 	batchInputOutputDiffCountStat          stats.RudderStats
 	eventsAbortedStat                      stats.RudderStats
 	drainedJobsStat                        stats.RudderStats
@@ -237,7 +239,9 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 }
 
 func (worker *workerT) routerTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
+	worker.rt.batchInputCountStat.Count(len(routerJobs))
 	destinationJobs := worker.rt.transformer.Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
+	worker.rt.batchOutputCountStat.Count(len(destinationJobs))
 	return destinationJobs
 }
 
@@ -340,14 +344,7 @@ func (worker *workerT) workerProcess() {
 				FirstAttemptedAt: firstAttemptedAt,
 				TransformAt:      parameters.TransformAt,
 				JobT:             job}
-			var tags = map[string]string{
-				"module":         "router",
-				"destination":    parameters.DestinationID,
-				"destType":       worker.rt.destName,
-				"source":        parameters.SourceID,
-				"workspaceId":    worker.rt.workSpaceIdMap[parameters.SourceID],
-				"transformation": "DEST_TRANSFORMATION",
-			}
+
 			worker.rt.configSubscriberLock.RLock()
 			destination := worker.rt.destinationsMap[parameters.DestinationID]
 			worker.rt.configSubscriberLock.RUnlock()
@@ -363,16 +360,12 @@ func (worker *workerT) workerProcess() {
 					worker.processDestinationJobs()
 				}
 			} else if parameters.TransformAt == "router" {
-				numEvents := stats.NewTaggedStat("proc_num_dt_input_events", stats.CountType, tags)
-				numOutputSuccessEvents := stats.NewTaggedStat("proc_num_dt_output_success_events", stats.CountType, tags)
-				numEvents.Count(len(worker.routerJobs))
 				worker.encounteredRouterTransform = true
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
 
 				if len(worker.routerJobs) >= noOfJobsToBatchInAWorker {
 					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
-					numOutputSuccessEvents.Count(len(worker.destinationJobs))
 					worker.processDestinationJobs()
 				}
 			} else {
@@ -1634,7 +1627,6 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
 	}
-	rt.workSpaceIdMap = make(map[string]string)
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
@@ -1652,6 +1644,14 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rt.batchOutputCountStat = stats.NewTaggedStat("router_batch_num_output_jobs", stats.CountType, stats.Tags{
 		"destType": rt.destName,
 	})
+
+	rt.routerTransformInputCountStat = stats.NewTaggedStat("router_transform_num_input_jobs", stats.CountType, stats.Tags{
+		"destType": rt.destName,
+	})
+	rt.routerTransformOutputCountStat = stats.NewTaggedStat("router_transform_num_output_jobs", stats.CountType, stats.Tags{
+		"destType": rt.destName,
+	})
+
 	rt.batchInputOutputDiffCountStat = stats.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, stats.Tags{
 		"destType": rt.destName,
 	})
@@ -1708,7 +1708,6 @@ func (rt *HandleT) backendConfigSubscriber() {
 						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 							rt.saveDestinationResponse = value
-							rt.workSpaceIdMap[source.ID] = source.WorkspaceID
 						}
 					}
 				}
