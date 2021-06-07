@@ -108,10 +108,10 @@ var defaultTransformerFeatures = `{
   }`
 
 type DestStatT struct {
-	numEvents       stats.RudderStats
+	numEvents              stats.RudderStats
 	numOutputSuccessEvents stats.RudderStats
-	numOutputFailedEvents stats.RudderStats
-	transformTime   stats.RudderStats
+	numOutputFailedEvents  stats.RudderStats
+	transformTime          stats.RudderStats
 }
 
 type ParametersT struct {
@@ -177,15 +177,17 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 	}
 
 	return &DestStatT{
-		numEvents:       numEvents,
+		numEvents:              numEvents,
 		numOutputSuccessEvents: numOutputSuccessEvents,
-		numOutputFailedEvents: numOutputFailedEvents,
-		transformTime:   transformTime,
+		numOutputFailedEvents:  numOutputFailedEvents,
+		transformTime:          transformTime,
 	}
 }
 
-func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID string, destination backendconfig.DestinationT) *DestStatT {
+func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, transformAt string, destination backendconfig.DestinationT) *DestStatT {
 	tags := proc.buildStatTags(sourceID, workspaceID, destination, DEST_TRANSFORMATION)
+
+	tags["transform_at"] = transformAt
 
 	numEvents := proc.stats.NewTaggedStat("proc_num_dt_input_events", stats.CountType, tags)
 	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_num_dt_output_success_events", stats.CountType, tags)
@@ -193,10 +195,10 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID stri
 	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
 
 	return &DestStatT{
-		numEvents:       numEvents,
+		numEvents:              numEvents,
 		numOutputSuccessEvents: numOutputSuccessEvents,
-		numOutputFailedEvents:numOutputFailedEvents,
-		transformTime:   destTransform,
+		numOutputFailedEvents:  numOutputFailedEvents,
+		transformTime:          destTransform,
 	}
 }
 
@@ -1412,8 +1414,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			continue
 		}
 
-		destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, destination)
-		//Not skipping the input events for transformAt = none/router
 		proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 		startedAt = time.Now()
 
@@ -1428,15 +1428,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		transformAtFromFeaturesFile := gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String()
 
+		destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 		//If transformAt is none
 		// OR
 		//router and transformer supports router transform, then no destination transformation happens.
-		var canSendDestStats  = true
 		if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
 			response = convertToTransformerResponse(eventsToTransform)
-			if transformAt!="none"{
-				canSendDestStats = false
-			}
 		} else {
 			destTransformationStat.transformTime.Start()
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
@@ -1452,11 +1449,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
 
 		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled)
-		if canSendDestStats{
-			destTransformationStat.numEvents.Count(len(eventsToTransform))
-			destTransformationStat.numOutputSuccessEvents.Count(len(destTransformEventList))
-			destTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
-		}
+		destTransformationStat.numEvents.Count(len(eventsToTransform))
+		destTransformationStat.numOutputSuccessEvents.Count(len(destTransformEventList))
+		destTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
 
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
