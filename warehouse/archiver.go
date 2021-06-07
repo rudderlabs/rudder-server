@@ -165,6 +165,7 @@ func archiveUploads(dbHandle *sql.DB) {
 			stagingFileIDs = append(stagingFileIDs, stagingFileID)
 			stagingFileLocations = append(stagingFileLocations, stagingFileLocation)
 		}
+		stagingFileRows.Close()
 
 		var storedStagingFilesLocation string
 		if archiver.IsArchiverObjectStorageConfigured() {
@@ -249,6 +250,7 @@ func archiveUploads(dbHandle *sql.DB) {
 					}
 					loadLocations = append(loadLocations, loc)
 				}
+				loadLocationRows.Close()
 				var paths []string
 				for _, loc := range loadLocations {
 					u, err := url.Parse(loc)
