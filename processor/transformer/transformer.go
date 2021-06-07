@@ -31,6 +31,9 @@ const supportedTransformerAPIVersion = 1
 
 type MetadataT struct {
 	SourceID        string `json:"sourceId"`
+	WorkspaceID     string `json:"workspaceId"`
+	Namespace       string `json:"namespace"`
+	InstanceID      string `json:"instanceId"`
 	SourceType      string `json:"sourceType"`
 	SourceCategory  string `json:"sourceCategory"`
 	DestinationID   string `json:"destinationId"`
