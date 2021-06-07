@@ -407,6 +407,9 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				// ERROR   mssql/mssql.go:391      MS: Error in exec statement for loading in staging table:rudder_staging_aliases_f2f629142a7643fd8405d1d48bdac91b:
 				//mssql: Column count in target table does not match column count specified in input.
 				//If BCP command, ensure format file column count matches destination table. If SSIS data import, check column mappings are consistent with target.
+				// ERROR   mssql/mssql.go:394      MS: Error in exec statement for loading in staging table:rudder_staging_pages_5b79a7ab4e434e0fa96b9f2253e6ba96:
+				//mssql: Column count in target table does not match column count specified in input.
+				//If BCP command, ensure format file column count matches destination table. If SSIS data import, check column mappings are consistent with target.
 				pkgLogger.Errorf("MS: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
 				txn.Rollback()
 				return
@@ -513,9 +516,10 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 		userColNames = append(userColNames, colName)
 		caseSubQuery := fmt.Sprintf(`case
 						  when (exists(select 1)) then (
-						  	select %[1]s from %[2]s
+						  	select top 1 %[1]s from %[2]s
 						  	where x.id = %[2]s.id
 							  and %[1]s is not null
+							order by X.received_at desc
 							)
 						  end as %[1]s`, colName, ms.Namespace+"."+unionStagingTableName)
 //							 order by X.received_at desc OFFSET 0 ROWS
