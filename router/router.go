@@ -103,7 +103,6 @@ type HandleT struct {
 	drainJobHandler                        drain.DrainI
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
-	workSpaceIdMap map[string]string
 }
 
 type jobResponseT struct {
