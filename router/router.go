@@ -101,6 +101,7 @@ type HandleT struct {
 	drainJobHandler                        drain.DrainI
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
+	workSpaceIdMap map[string]string
 }
 
 type jobResponseT struct {
@@ -339,28 +340,39 @@ func (worker *workerT) workerProcess() {
 				FirstAttemptedAt: firstAttemptedAt,
 				TransformAt:      parameters.TransformAt,
 				JobT:             job}
-
+			var tags = map[string]string{
+				"module":         "router",
+				"destination":    parameters.DestinationID,
+				"destType":       worker.rt.destName,
+				"source":        parameters.SourceID,
+				"workspaceId":    worker.rt.workSpaceIdMap[parameters.SourceID],
+				"transformation": "DEST_TRANSFORMATION",
+			}
 			worker.rt.configSubscriberLock.RLock()
 			destination := worker.rt.destinationsMap[parameters.DestinationID]
 			worker.rt.configSubscriberLock.RUnlock()
 
 			worker.recordCountsByDestAndUser(destination.ID, userID)
 			worker.encounteredRouterTransform = false
+
 			if worker.rt.enableBatching {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
-				worker.routerJobs = append(worker.routerJobs, routerJob)
-
+				worker.routerJobs = append(worker.routerJobs, routerJob)			
 				if len(worker.routerJobs) >= noOfJobsToBatchInAWorker {
 					worker.destinationJobs = worker.batch(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
 			} else if parameters.TransformAt == "router" {
+				numEvents := stats.NewTaggedStat("proc_num_dt_input_events", stats.CountType, tags)
+				numOutputSuccessEvents := stats.NewTaggedStat("proc_num_dt_output_success_events", stats.CountType, tags)
+				numEvents.Count(len(worker.routerJobs))
 				worker.encounteredRouterTransform = true
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
 
 				if len(worker.routerJobs) >= noOfJobsToBatchInAWorker {
 					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
+					numOutputSuccessEvents.Count(len(worker.destinationJobs))
 					worker.processDestinationJobs()
 				}
 			} else {
@@ -1622,7 +1634,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
 	}
-
+	rt.workSpaceIdMap = make(map[string]string)
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
@@ -1696,6 +1708,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 							rt.saveDestinationResponse = value
+							rt.workSpaceIdMap[source.ID] = source.WorkspaceID
 						}
 					}
 				}

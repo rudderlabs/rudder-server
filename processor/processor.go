@@ -109,7 +109,8 @@ var defaultTransformerFeatures = `{
 
 type DestStatT struct {
 	numEvents       stats.RudderStats
-	numOutputEvents stats.RudderStats
+	numOutputSuccessEvents stats.RudderStats
+	numOutputFailedEvents stats.RudderStats
 	transformTime   stats.RudderStats
 }
 
@@ -166,7 +167,8 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 	tags["transformation_version_id"] = destination.Transformations[0].VersionID
 
 	numEvents := proc.stats.NewTaggedStat("proc_num_ut_input_events", stats.CountType, tags)
-	numOutputEvents := proc.stats.NewTaggedStat("proc_num_ut_output_events", stats.CountType, tags)
+	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_num_ut_output_success_events", stats.CountType, tags)
+	numOutputFailedEvents := proc.stats.NewTaggedStat("proc_num_ut_output_failed_events", stats.CountType, tags)
 	var transformTime stats.RudderStats
 	if processSessions {
 		transformTime = proc.stats.NewTaggedStat("proc_session_transform", stats.TimerType, tags)
@@ -176,7 +178,8 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 
 	return &DestStatT{
 		numEvents:       numEvents,
-		numOutputEvents: numOutputEvents,
+		numOutputSuccessEvents: numOutputSuccessEvents,
+		numOutputFailedEvents: numOutputFailedEvents,
 		transformTime:   transformTime,
 	}
 }
@@ -185,12 +188,14 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID stri
 	tags := proc.buildStatTags(sourceID, workspaceID, destination, DEST_TRANSFORMATION)
 
 	numEvents := proc.stats.NewTaggedStat("proc_num_dt_input_events", stats.CountType, tags)
-	numOutputEvents := proc.stats.NewTaggedStat("proc_num_dt_output_events", stats.CountType, tags)
+	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_num_dt_output_success_events", stats.CountType, tags)
+	numOutputFailedEvents := proc.stats.NewTaggedStat("proc_num_dt_output_failed_events", stats.CountType, tags)
 	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
 
 	return &DestStatT{
 		numEvents:       numEvents,
-		numOutputEvents: numOutputEvents,
+		numOutputSuccessEvents: numOutputSuccessEvents,
+		numOutputFailedEvents:numOutputFailedEvents,
 		transformTime:   destTransform,
 	}
 }
@@ -1380,7 +1385,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
 			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
-			userTransformationStat.numOutputEvents.Count(len(eventsToTransform))
+			userTransformationStat.numOutputSuccessEvents.Count(len(eventsToTransform))
+			userTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
 
 			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: &destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIds})
@@ -1407,9 +1413,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 
 		destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, destination)
-		destTransformationStat.numEvents.Count(len(eventsToTransform))
+		//Not skipping the input events for transformAt = none/router
 		proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
-		destTransformationStat.transformTime.Start()
 		startedAt = time.Now()
 
 		transformAt := "processor"
@@ -1426,23 +1431,31 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//If transformAt is none
 		// OR
 		//router and transformer supports router transform, then no destination transformation happens.
+		var canSendDestStats  = true
 		if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
 			response = convertToTransformerResponse(eventsToTransform)
+			canSendDestStats = false
 		} else {
+			destTransformationStat.transformTime.Start()
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+			destTransformationStat.transformTime.End()
 			transformAt = "processor"
 		}
 
 		endedAt = time.Now()
 		timeTaken = endedAt.Sub(startedAt).Seconds()
-		destTransformationStat.transformTime.End()
 		proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventsToTransform, Stage: "destination-transformer", ProcessingTime: timeTaken, Index: -1}, &proc.destTransformEventsByTimeTaken)
 
 		destTransformEventList := response.Events
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
-		destTransformationStat.numOutputEvents.Count(len(destTransformEventList))
 
 		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled)
+		if canSendDestStats{
+			destTransformationStat.numEvents.Count(len(eventsToTransform))
+			destTransformationStat.numOutputSuccessEvents.Count(len(destTransformEventList))
+			destTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
+		}
+
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 		}
