@@ -268,6 +268,7 @@ func archiveUploads(dbHandle *sql.DB) {
 					continue
 				}
 			}
+			loadLocationRows.Close()
 		}
 
 		// update upload metadata
