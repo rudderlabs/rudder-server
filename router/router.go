@@ -1644,7 +1644,9 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rt.failuresMetric = make(map[string][]failureMetric)
 	if responseRules, ok := destinationDefinition.Config["responseRules"]; ok && reflect.TypeOf(responseRules).Kind() == reflect.Map {
 		rt.destinationResponseHandler = New(responseRules.(map[string]interface{}))
-		rt.destinationResponseBasedStatsHandler = GetStatsHandler(responseRules.(map[string]interface{}))
+	}
+	if alertRules, ok := destinationDefinition.Config["alertRules"]; ok && reflect.TypeOf(alertRules).Kind() == reflect.Map {
+		rt.destinationResponseBasedStatsHandler = GetStatsHandler(alertRules.(map[string]interface{}))
 	}
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
@@ -1752,7 +1754,9 @@ func (rt *HandleT) backendConfigSubscriber() {
 						rt.destinationsMap[destination.ID] = destination
 						if responseRules, ok := destination.DestinationDefinition.Config["responseRules"]; ok && reflect.TypeOf(responseRules).Kind() == reflect.Map {
 							rt.destinationResponseHandler = New(responseRules.(map[string]interface{}))
-							rt.destinationResponseBasedStatsHandler = GetStatsHandler(responseRules.(map[string]interface{}))
+						}
+						if alertRules, ok := destination.DestinationDefinition.Config["alertRules"]; ok && reflect.TypeOf(alertRules).Kind() == reflect.Map {
+							rt.destinationResponseBasedStatsHandler = GetStatsHandler(alertRules.(map[string]interface{}))
 						}
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 							rt.saveDestinationResponse = value

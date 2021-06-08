@@ -93,34 +93,34 @@ func New(responseRules map[string]interface{}) ResponseHandlerI {
 }
 
 //Get Response based stats handler. This will be use get stat rules for collecting response based stats
-func GetStatsHandler(responseRules map[string]interface{}) ResponseStatsHandlerI {
-	if responseType, ok := responseRules["responseType"]; !ok || reflect.TypeOf(responseType).Kind() != reflect.String {
+func GetStatsHandler(alertRules map[string]interface{}) ResponseStatsHandlerI {
+	if responseType, ok := alertRules["responseType"]; !ok || reflect.TypeOf(responseType).Kind() != reflect.String {
 		return nil
 	}
 
-	if _, ok := responseRules["routerStatRules"]; !ok {
+	if _, ok := alertRules["routerRules"]; !ok {
 		return nil
 	}
 
-	var routerStatRules map[string]interface{}
+	var routerRules map[string]interface{}
 	var ok bool
-	if routerStatRules, ok = responseRules["routerStatRules"].(map[string]interface{}); !ok {
+	if routerRules, ok = alertRules["routerRules"].(map[string]interface{}); !ok {
 		return nil
 	}
 
-	abortableErrorRule := getRulesArrForKey("400", routerStatRules)
-	expectingInstrumentationErrorRule := getRulesArrForKey("601", routerStatRules)
-	nonExpectingInstrumentationErrorRule := getRulesArrForKey("602", routerStatRules)
-	configurationErrorRule := getRulesArrForKey("603", routerStatRules)
+	abortableErrorRule := getRulesArrForKey("400", routerRules)
+	expectingInstrumentationErrorRule := getRulesArrForKey("601", routerRules)
+	nonExpectingInstrumentationErrorRule := getRulesArrForKey("602", routerRules)
+	configurationErrorRule := getRulesArrForKey("603", routerRules)
 
-	if responseRules["responseType"].(string) == "JSON" {
+	if alertRules["responseType"].(string) == "JSON" {
 		return &JSONResponseStatsHandler{
 			abortableErrorRule:                   abortableErrorRule,
 			expectingInstrumentationErrorRule:    expectingInstrumentationErrorRule,
 			nonExpectingInstrumentationErrorRule: nonExpectingInstrumentationErrorRule,
 			configurationErrorRule:               configurationErrorRule,
 		}
-	} else if responseRules["responseType"].(string) == "TXT" {
+	} else if alertRules["responseType"].(string) == "TXT" {
 		return &TXTResponseStatsHandler{
 			abortableErrorRule:                   abortableErrorRule,
 			expectingInstrumentationErrorRule:    expectingInstrumentationErrorRule,
