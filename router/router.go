@@ -1662,7 +1662,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 	var transformedAt interface{}
 	var ok bool
-	if transformedAt, ok = destinationDefinition.Config["transformedAt"]; !ok || reflect.TypeOf(transformedAt).Kind() != reflect.String {
+	if transformedAt, ok = destinationDefinition.Config["transformAt"]; !ok || reflect.TypeOf(transformedAt).Kind() != reflect.String {
 		transformedAt = "UNDEFINED"
 	}
 
