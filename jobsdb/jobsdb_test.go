@@ -1,9 +1,13 @@
 package jobsdb
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+	"github.com/rudderlabs/rudder-server/services/stats"
+	uuid "github.com/satori/go.uuid"
 )
 
 var _ = Describe("Calculate newDSIdx for internal migrations", func() {
@@ -168,4 +172,71 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 			},
 		),
 	)
+})
+
+var sampleTestJob = JobT{
+	Parameters:   []byte(`{"batch_id":1,"source_id":"1rNMpysD4lTuzglyfmPzsmihAbK","source_job_run_id":""}`),
+	EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"1rNMpxFxVdoaAdItcXTbVVWdonD","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"90ca6da0-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+	UserID:       "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+	UUID:         uuid.NewV4(),
+	CustomVal:    "GW",
+}
+
+//Concurrency Tests
+var _ = Describe("ReadWrite Channels and Workers", func() {
+	var testChan chan struct{}
+	BeforeEach(func() {
+		// pkgLogger = logger.NewLogger().Child("test")
+		stats.Setup()
+	})
+
+	Describe("Writers", func() {
+		Context("testing one job at a time. Sending a job to a writeworker thru storechannel", func() {
+			var testStoreDB *HandleT
+			BeforeEach(func() {
+				testStoreDB = &HandleT{}
+				testStoreDB.Setup(ReadWrite, false, "gw", 0*time.Hour, "", false, QueryFiltersT{})
+
+			})
+			AfterEach(func() {
+				testStoreDB.TearDown()
+			})
+			It("should go thru the channel", func() {
+				testChan = make(chan struct{})
+				testFunc = func() {
+					testChan <- struct{}{}
+				}
+				defer func() {
+					testFunc = func() {}
+				}()
+				Expect(testStoreDB.Store([]*JobT{&sampleTestJob})).To(BeNil())
+				<-testChan
+			})
+		})
+		Context("tesging two jobs at once: store, storewithretryeach", func() {
+			var testRetryDB *HandleT
+			BeforeEach(func() {
+				testRetryDB = &HandleT{}
+				testRetryDB.Setup(ReadWrite, false, "gw", 0*time.Hour, "", false, QueryFiltersT{})
+
+			})
+			AfterEach(func() {
+				testRetryDB.TearDown()
+			})
+			It("should go thru the channel", func() {
+				testChan = make(chan struct{}, 1)
+				testFunc = func() {
+					testChan <- struct{}{}
+					testChan <- struct{}{}
+				}
+				defer func() {
+					testFunc = func() {}
+				}()
+				Expect(testRetryDB.Store([]*JobT{&sampleTestJob})).To(BeNil())
+				<-testChan
+				Expect(testRetryDB.storeWithRetryEach([]*JobT{&sampleTestJob})).To(BeNil())
+				<-testChan
+			})
+		})
+	})
 })
