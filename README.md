@@ -1,4 +1,4 @@
-<p align="center"><a href="https://rudderstack.com"><img src="https://user-images.githubusercontent.com/59817155/121350875-cb442080-c948-11eb-96b4-47312c5eb933.png" alt="RudderStack - The smart customer data pipeline" height="125"/></a></p>
+<p align="center"><a href="https://rudderstack.com"><img src="https://user-images.githubusercontent.com/59817155/121355915-0137d380-c94e-11eb-92a7-c278a1d68d98.png" alt="RudderStack - The smart customer data pipeline" height="80"/></a></p>
 <h1 align="center"></h1>
 <p align="center"><b>Customer Data Platform for Developers</b></p>
 
