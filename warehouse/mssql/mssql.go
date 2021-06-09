@@ -234,23 +234,21 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
 	pkgLogger.Infof("MS: Starting load for table:%s", tableName)
 
-	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(ms.Uploader.GetTableSchemaInWarehouse(tableName))
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
-	extraColumns := []string{}
-	for _, column := range previousColumnKeys{
-		if !misc.ContainsString(sortedColumnKeys, column){
-			extraColumns = append(extraColumns, column)
-		}
-	}
 	fileNames, err := ms.DownloadLoadFiles(tableName)
 	defer misc.RemoveFilePaths(fileNames...)
 	if err != nil {
 		return
 	}
 
+	txn, err := ms.Db.Begin()
+	if err != nil {
+		pkgLogger.Errorf("MS: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
+		return
+	}
 	// create temporary table
 	stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.ReplaceAll(uuid.NewV4().String(), "-", ""))
 	//prepared stmts cannot be used to create temp objects here. Will work in a txn, but will be purged after commit.
@@ -260,23 +258,16 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	sqlStatement := fmt.Sprintf(`select top 0 * into %[1]s.%[2]s from %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
 
 	pkgLogger.Debugf("MS: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
+	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("MS: Error creating temporary table for table:%s: %v\n", tableName, err)
 		return
 	}
-
-	txn, err := ms.Db.Begin()
-	if err != nil {
-		pkgLogger.Errorf("MS: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
-		return
-	}
-
 	if !skipTempTableDelete {
 		defer ms.dropStagingTable(stagingTableName)
 	}
 
-	stmt, err := txn.Prepare(mssql.CopyIn(ms.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false}, append(sortedColumnKeys, extraColumns...)...))
+	stmt, err := txn.Prepare(mssql.CopyIn(ms.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false}, sortedColumnKeys...))
 	if err != nil {
 		pkgLogger.Errorf("MS: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
 		return
@@ -331,7 +322,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			for index, value := range recordInterface {
 				valueType := tableSchemaInUpload[sortedColumnKeys[index]]
 				if value == nil {
-					pkgLogger.Debugf("MS : Found nil value for type : %s, column : %s", valueType, sortedColumnKeys[index])
+					pkgLogger.Errorf("MS : Found nil value for type : %s, column : %s", valueType, sortedColumnKeys[index])
 					finalColumnValues = append(finalColumnValues, nil)
 					continue
 				}
@@ -406,12 +397,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					finalColumnValues = append(finalColumnValues, value)
 				}
 			}
-			// This is needed for the copyIn to proceed successfully for azure synapse else will face below err for missing old columns
-			// mssql: Column count in target table does not match column count specified in input.
-			// If BCP command, ensure format file column count matches destination table. If SSIS data import, check column mappings are consistent with target.
-			for range extraColumns{
-				finalColumnValues = append(finalColumnValues, nil)
-			}
+
 			_, err = stmt.Exec(finalColumnValues...)
 			if err != nil {
 				pkgLogger.Errorf("MS: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
@@ -520,12 +506,14 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 		userColNames = append(userColNames, colName)
 		caseSubQuery := fmt.Sprintf(`case
 						  when (exists(select 1)) then (
-						  	select top 1 %[1]s from %[2]s
+						  	select %[1]s from %[2]s
 						  	where x.id = %[2]s.id
 							  and %[1]s is not null
-							order by X.received_at desc
-							)
+							  order by received_at desc
+						  	OFFSET 0 ROWS
+							FETCH NEXT 1 ROWS ONLY)
 						  end as %[1]s`, colName, ms.Namespace+"."+unionStagingTableName)
+
 		//IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortedened to below
 		//https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
 		//caseSubQuery := fmt.Sprintf(`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName)
@@ -564,7 +552,6 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 	pkgLogger.Debugf("MS: Creating staging table for users: %s\n", sqlStatement)
 	_, err = ms.Db.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("MS: Error Creating staging table for users: %s\n", sqlStatement)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -622,7 +609,7 @@ func (ms *HandleT) CreateSchema() (err error) {
 
 func (ms *HandleT) dropStagingTable(stagingTableName string) {
 	pkgLogger.Infof("MS: dropping table %+v\n", stagingTableName)
-	_, err := ms.Db.Exec(fmt.Sprintf(`IF OBJECT_ID ('%[1]s','U') IS NOT NULL DROP TABLE %[1]s;`, ms.Namespace+"."+stagingTableName))
+	_, err := ms.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ms.Namespace+"."+stagingTableName))
 	if err != nil {
 		pkgLogger.Errorf("MS:  Error dropping staging table %s in mssql: %v", ms.Namespace+"."+stagingTableName, err)
 	}
