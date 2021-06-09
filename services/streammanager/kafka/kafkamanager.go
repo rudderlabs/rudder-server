@@ -1,10 +1,10 @@
 package kafka
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -24,10 +24,10 @@ type Config struct {
 	Port          string
 	SslEnabled    bool
 	CACertificate string
-	UseSASL 			bool
-	SaslType			string
-	Username 			string
-	Password 			string
+	UseSASL       bool
+	SaslType      string
+	Username      string
+	Password      string
 }
 
 //AzureEventHubConfig is the config that is required to send data to Azure Event Hub
@@ -50,6 +50,11 @@ var (
 	certificate                   tls.Certificate
 	kafkaDialTimeoutInSec         int64
 	kafkaWriteTimeoutInSec        int64
+)
+
+var (
+	SHA256 scram.HashGeneratorFcn = sha256.New
+	SHA512 scram.HashGeneratorFcn = sha512.New
 )
 
 var pkgLogger logger.LoggerI
@@ -91,6 +96,31 @@ func getDefaultConfiguration() *sarama.Config {
 	config.Producer.Return.Successes = true
 	config.Version = sarama.V1_0_0_0
 	return config
+}
+
+// Needed for SCRAM Authentication in Kafka
+type XDGSCRAMClient struct {
+	*scram.Client
+	*scram.ClientConversation
+	scram.HashGeneratorFcn
+}
+
+func (x *XDGSCRAMClient) Begin(userName, password, authzID string) (err error) {
+	x.Client, err = x.HashGeneratorFcn.NewClient(userName, password, authzID)
+	if err != nil {
+		return err
+	}
+	x.ClientConversation = x.Client.NewConversation()
+	return nil
+}
+
+func (x *XDGSCRAMClient) Step(challenge string) (response string, err error) {
+	response, err = x.ClientConversation.Step(challenge)
+	return
+}
+
+func (x *XDGSCRAMClient) Done() bool {
+	return x.ClientConversation.Done()
 }
 
 // NewProducer creates a producer based on destination config
@@ -152,37 +182,6 @@ func SetSASLConfig(config *sarama.Config, destConfig Config) (err error) {
 	}
 	return nil
 }
-
-var (
-	SHA256 scram.HashGeneratorFcn = sha256.New
-	SHA512 scram.HashGeneratorFcn = sha512.New
-)
-
-type XDGSCRAMClient struct {
-	*scram.Client
-	*scram.ClientConversation
-	scram.HashGeneratorFcn
-}
-
-func (x *XDGSCRAMClient) Begin(userName, password, authzID string) (err error) {
-	x.Client, err = x.HashGeneratorFcn.NewClient(userName, password, authzID)
-	if err != nil {
-		return err
-	}
-	x.ClientConversation = x.Client.NewConversation()
-	return nil
-}
-
-func (x *XDGSCRAMClient) Step(challenge string) (response string, err error) {
-	response, err = x.ClientConversation.Step(challenge)
-	return
-}
-
-func (x *XDGSCRAMClient) Done() bool {
-	return x.ClientConversation.Done()
-}
-
-
 
 // NewProducerForAzureEventHub creates a producer for Azure event hub based on destination config
 func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProducer, error) {
