@@ -1,6 +1,6 @@
-<p align="center"><a href="https://rudderstack.com"><img src="https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png" alt="RudderStack - The smart customer data pipeline" height="90"/></a></p>
+<p align="center"><a href="https://rudderstack.com"><img src="https://user-images.githubusercontent.com/59817155/121350875-cb442080-c948-11eb-96b4-47312c5eb933.png" alt="RudderStack - The smart customer data pipeline" height="125"/></a></p>
 <h1 align="center"></h1>
-<p align="center"><b>The smart customer data pipeline</b></p>
+<p align="center"><b>Customer Data Platform for Developers</b></p>
 
 <p align="center">
 	<a href="https://rudderstack.com"><img src="https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master" height="22"/></a>
@@ -20,7 +20,7 @@
 
 ## What is RudderStack?
 
-[RudderStack](https://rudderstack.com/) is a **customer data pipeline tool** for collecting, routing and processing data from your websites, apps, cloud tools, and data warehouse.
+As the leading **open-source Customer Data Platform** (CDP), [**RudderStack**](https://rudderstack.com/) provides data pipelines that make it easy to collect data from every application, website and SaaS platform, then activate it in your warehouse and business tools.
 
 With RudderStack, you can build customer data pipelines that connect your whole customer data stack and then make them smarter by triggering enrichment and activation in customer tools based on analysis in your data warehouse. Its easy-to-use SDKs and event source integrations, Cloud Extract integrations, transformations, and expansive library of destination and warehouse integrations makes building customer data pipelines for both event streaming and cloud-to-warehouse ELT simple.
 
