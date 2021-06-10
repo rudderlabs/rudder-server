@@ -541,7 +541,7 @@ func (gateway *HandleT) printStats() {
 
 func (gateway *HandleT) stat(wrappedFunc func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		latencyStat := gateway.stats.NewSampledTaggedStat("gateway.response_time", stats.TimerType, stats.Tags{})
+		latencyStat := gateway.stats.NewSampledTaggedStat("gateway.response_time", stats.TimerType, map[string]string{"reqType": r.URL.Path})
 		latencyStat.Start()
 		wrappedFunc(w, r)
 		latencyStat.End()
@@ -614,6 +614,39 @@ func (gateway *HandleT) pixelTrackHandler(w http.ResponseWriter, r *http.Request
 
 func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.beaconHandler(w, r, "batch")
+}
+
+func (gateway *HandleT) OperationStatusHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.logger.LogRequest(r)
+
+	writeKey, _, ok := r.BasicAuth()
+	if !ok || writeKey == "" {
+		errorMessage := response.GetStatus(response.NoWriteKeyInBasicAuth)
+		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
+		http.Error(w, errorMessage, 400)
+		return
+	}
+
+	queryParams := r.URL.Query()
+	if queryParams["op_id"] == nil {
+		errorMessage := "op_id not present in query params"
+		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
+		http.Error(w, errorMessage, 400)
+		return
+	}
+
+	op_id := queryParams["op_id"]
+	op_id_int, err := strconv.ParseInt(op_id[0], 10, 64)
+	if err != nil {
+		errorMessage := "op_id is not int"
+		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
+		http.Error(w, errorMessage, 400)
+		return
+	}
+
+	done, status := operationmanager.GetOperationManager().GetOperationStatus(op_id_int)
+
+	w.Write([]byte(fmt.Sprintf(`{"done": %v, "status": "%s"}`, done, status)))
 }
 
 func (gateway *HandleT) ClearHandler(w http.ResponseWriter, r *http.Request) {
@@ -1112,6 +1145,7 @@ func (gateway *HandleT) StartAdminHandler() {
 	srvMux := mux.NewRouter()
 	srvMux.Use(headerMiddleware)
 	srvMux.HandleFunc("/v1/clear", gateway.stat(gateway.ClearHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/clear", gateway.stat(gateway.OperationStatusHandler)).Methods("GET")
 	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler)).Methods("POST")
 
 	srv := &http.Server{

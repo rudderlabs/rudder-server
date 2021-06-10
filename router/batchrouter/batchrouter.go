@@ -59,6 +59,7 @@ var (
 	encounteredMergeRuleMapLock        sync.RWMutex
 	pkgLogger                          logger.LoggerI
 	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	QueryFilters                       jobsdb.QueryFiltersT
 	disableEgress                      bool
 )
 
@@ -701,6 +702,29 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 	}
 }
 
+func (worker *workerT) getValueForParameter(batchDest BatchDestinationT, parameter string) string {
+	switch {
+	case parameter == "destination_id":
+		return batchDest.Destination.ID
+	default:
+		panic(fmt.Errorf("BRT: %s: Unknown parameter(%s) to find value from batchDest %+v", worker.brt.destType, parameter, batchDest))
+	}
+}
+
+func (worker *workerT) constructParameterFilters(batchDest BatchDestinationT) []jobsdb.ParameterFilterT {
+	parameterFilters := make([]jobsdb.ParameterFilterT, 0)
+	for _, key := range QueryFilters.ParameterFilters {
+		parameterFilter := jobsdb.ParameterFilterT{
+			Name:     key,
+			Value:    worker.getValueForParameter(batchDest, key),
+			Optional: false,
+		}
+		parameterFilters = append(parameterFilters, parameterFilter)
+	}
+
+	return parameterFilters
+}
+
 func (worker *workerT) workerProcess() {
 	brt := worker.brt
 	for {
@@ -714,31 +738,23 @@ func (worker *workerT) workerProcess() {
 
 		case batchDest := <-brt.processQ:
 			toQuery := jobQueryBatchSize
-			parameterFilters := []jobsdb.ParameterFilterT{
-				{
-					Name:     "destination_id",
-					Value:    batchDest.Destination.ID,
-					Optional: false,
-				},
-			}
+			parameterFilters := worker.constructParameterFilters(batchDest)
 			brtQueryStat := stats.NewStat("batch_router.jobsdb_query_time", stats.TimerType)
 			brtQueryStat.Start()
 			brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
 			retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 			toQuery -= len(retryList)
-			waitList := brt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true}) //Jobs send to waiting state
-			toQuery -= len(waitList)
 			unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 			brtQueryStat.End()
 
-			combinedList := append(retryList, append(waitList, unprocessedList...)...)
+			combinedList := append(retryList, unprocessedList...)
 			if len(combinedList) == 0 {
 				brt.logger.Debugf("BRT: DB Read Complete. No BRT Jobs to process for parameter Filters: %v", parameterFilters)
 				setDestInProgress(batchDest.Destination.ID, false)
 				continue
 			}
-			brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, waitList: %v unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
+			brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryList), len(unprocessedList), len(combinedList))
 
 			var statusList []*jobsdb.JobStatusT
 
@@ -1149,6 +1165,8 @@ func init() {
 	loadConfig()
 	uploadedRawDataJobsCache = make(map[string]map[string]bool)
 	pkgLogger = logger.NewLogger().Child("batchrouter")
+
+	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true, ParameterFilters: []string{"destination_id"}}
 }
 
 //Setup initializes this module

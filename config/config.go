@@ -574,6 +574,10 @@ func GetKubeNamespace() string {
 	return GetEnv("KUBE_NAMESPACE", "")
 }
 
+func GetInstanceID() string {
+	return GetEnv("INSTANCE_ID", "1")
+}
+
 func SetWHSchemaVersion(version string) {
 	whSchemaVersion = version
 }

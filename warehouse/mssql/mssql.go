@@ -64,14 +64,21 @@ var mssqlDataTypesMapToRudder = map[string]string{
 	"integer":                  "int",
 	"smallint":                 "int",
 	"bigint":                   "int",
+	"tinyint":                  "int",
 	"double precision":         "float",
 	"numeric":                  "float",
 	"decimal":                  "float",
 	"real":                     "float",
+	"float":                    "float",
 	"text":                     "string",
 	"varchar":                  "string",
+	"nvarchar":                 "string",
+	"ntext":                    "string",
+	"nchar":                    "string",
 	"char":                     "string",
 	"datetimeoffset":           "datetime",
+	"date":                     "datetime",
+	"datetime2":                "datetime",
 	"timestamp with time zone": "datetime",
 	"timestamp":                "datetime",
 	"jsonb":                    "json",
@@ -332,6 +339,16 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 						}
 
 					}
+				case "float":
+					{
+						var convertedValue float64
+						if convertedValue, err = strconv.ParseFloat(strValue, 64); err != nil {
+							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+							finalColumnValues = append(finalColumnValues, nil)
+						} else {
+							finalColumnValues = append(finalColumnValues, convertedValue)
+						}
+					}
 				case "datetime":
 					{
 						var convertedValue time.Time
@@ -370,11 +387,11 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 							if len(byteArr) > diacriticLengthLimit {
 								byteArr = byteArr[:diacriticLengthLimit]
 							}
+							finalColumnValues = append(finalColumnValues, byteArr)
 						} else {
 							pkgLogger.Debug("non-diacritic : " + strValue)
-							byteArr = []byte(strValue)
+							finalColumnValues = append(finalColumnValues, strValue)
 						}
-						finalColumnValues = append(finalColumnValues, byteArr)
 					}
 				default:
 					finalColumnValues = append(finalColumnValues, value)

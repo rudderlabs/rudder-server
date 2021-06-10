@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	STREAM = "stream"
-	KV     = "kv"
+	STREAM              = "stream"
+	KV                  = "kv"
+	CLIENT_EXPIRED_CODE = 721
 )
 
 var (
@@ -139,7 +140,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 		err := customManager.newClient(destID)
 		destLock.Unlock()
 		if err != nil {
-			return 400, fmt.Sprintf("[CDM %s] Unable to create client for %s", customManager.destType, destID)
+			return 400, fmt.Sprintf("[CDM %s] Unable to create client for %s %s", customManager.destType, destID, err.Error())
 		}
 		destLock.RLock()
 		customDestination = customManager.destinationsMap[destID]
@@ -147,6 +148,20 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID
 	destLock.RUnlock()
 
 	respStatusCode, respBody := customManager.send(jsonData, customManager.destType, customDestination.Client, customDestination.Config)
+
+	if respStatusCode == CLIENT_EXPIRED_CODE {
+		destLock.Lock()
+		err := customManager.refreshClient(destID)
+		destLock.Unlock()
+		if err != nil {
+			return 400, fmt.Sprintf("[CDM %s] Unable to refresh client for %s %s", customManager.destType, destID, err.Error())
+		}
+		destLock.RLock()
+		customDestination = customManager.destinationsMap[destID]
+		destLock.RUnlock()
+		respStatusCode, respBody = customManager.send(jsonData, customManager.destType, customDestination.Client, customDestination.Config)
+	}
+
 	return respStatusCode, respBody
 }
 
@@ -161,6 +176,29 @@ func (customManager *CustomManagerT) close(destination backendconfig.Destination
 		kvManager.Close()
 	}
 	delete(customManager.destinationsMap, destID)
+}
+
+func (customManager *CustomManagerT) refreshClient(destID string) error {
+	customDestination, ok := customManager.destinationsMap[destID]
+
+	if ok {
+
+		pkgLogger.Infof("[CDM %s] [Token Expired] Closing Existing client for destination id: %s", customManager.destType, destID)
+		switch customManager.managerType {
+		case STREAM:
+			streammanager.CloseProducer(customDestination.Client, customManager.destType)
+		case KV:
+			kvManager, _ := customDestination.Client.(kvstoremanager.KVStoreManager)
+			kvManager.Close()
+		}
+	}
+	err := customManager.newClient(destID)
+	if err != nil {
+		pkgLogger.Errorf("[CDM %s] [Token Expired] Error while creating new client for destination id: %s", customManager.destType, destID)
+		return err
+	}
+	pkgLogger.Infof("[CDM %s] [Token Expired] Created new client for destination id: %s", customManager.destType, destID)
+	return nil
 }
 
 func (customManager *CustomManagerT) onConfigChange(destination backendconfig.DestinationT) error {
