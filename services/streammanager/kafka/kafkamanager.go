@@ -98,7 +98,7 @@ func getDefaultConfiguration() *sarama.Config {
 	return config
 }
 
-// Needed for SCRAM Authentication in Kafka
+// Boilerplate needed for SCRAM Authentication in Kafka
 type XDGSCRAMClient struct {
 	*scram.Client
 	*scram.ClientConversation
@@ -150,6 +150,7 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 			config.Net.TLS.Enable = true
 		}
 		if destConfig.UseSASL {
+			// SASL is enabled only with SSL
 			err = SetSASLConfig(config, destConfig)
 			if err != nil {
 				return nil, err
