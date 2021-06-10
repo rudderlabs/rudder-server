@@ -133,7 +133,7 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
-		return nil, fmt.Errorf("Error while unmarshalling dest config :: %w", err)
+		return nil, fmt.Errorf("[Kafka] Error while unmarshalling dest config :: %w", err)
 	}
 	hostName := destConfig.HostName + ":" + destConfig.Port
 	isSslEnabled := destConfig.SslEnabled
@@ -153,7 +153,7 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 			// SASL is enabled only with SSL
 			err = SetSASLConfig(config, destConfig)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("[Kafka] Error while setting SASL config :: %w", err)
 			}
 		}
 	}
@@ -179,7 +179,7 @@ func SetSASLConfig(config *sarama.Config, destConfig Config) (err error) {
 		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &XDGSCRAMClient{HashGeneratorFcn: SHA256} }
 		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
 	default:
-		return fmt.Errorf("invalid SASL type %s", destConfig.SaslType)
+		return fmt.Errorf("[Kafka] invalid SASL type %s", destConfig.SaslType)
 	}
 	return nil
 }
