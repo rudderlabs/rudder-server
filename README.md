@@ -1,6 +1,6 @@
-<p align="center"><a href="https://rudderstack.com"><img src="https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png" alt="RudderStack - The smart customer data pipeline" height="90"/></a></p>
+<p align="center"><a href="https://rudderstack.com"><img src="https://user-images.githubusercontent.com/59817155/121357083-1c571300-c94f-11eb-8cc7-ce6df13855c9.png" alt="RudderStack - The smart customer data pipeline" height="80"/></a></p>
 <h1 align="center"></h1>
-<p align="center"><b>The smart customer data pipeline</b></p>
+<p align="center"><b>Customer Data Platform for Developers</b></p>
 
 <p align="center">
 	<a href="https://rudderstack.com"><img src="https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master" height="22"/></a>
@@ -20,15 +20,15 @@
 
 ## What is RudderStack?
 
-[RudderStack](https://rudderstack.com/) is a **customer data pipeline tool** for collecting, routing and processing data from your websites, apps, cloud tools, and data warehouse.
+As the leading **open-source Customer Data Platform** (CDP), [**RudderStack**](https://rudderstack.com/) provides data pipelines that make it easy to collect data from every application, website and SaaS platform, then activate it in your warehouse and business tools.
 
 With RudderStack, you can build customer data pipelines that connect your whole customer data stack and then make them smarter by triggering enrichment and activation in customer tools based on analysis in your data warehouse. Its easy-to-use SDKs and event source integrations, Cloud Extract integrations, transformations, and expansive library of destination and warehouse integrations makes building customer data pipelines for both event streaming and cloud-to-warehouse ELT simple.
 
 <p align="center">
-<a href="https://rudderstack.com"><img src="https://user-images.githubusercontent.com/59817155/113259942-51aa0980-92eb-11eb-91ef-213630e563e0.gif" alt="RudderStack"></a></p>
+<a href="https://rudderstack.com"><img src="https://user-images.githubusercontent.com/59817155/121468374-4ef91e00-c9d8-11eb-8611-28bea18f609d.gif" alt="RudderStack"></a></p>
 
 
-Questions? Please join our [**Slack channel**](https://resources.rudderstack.com/join-rudderstack-slack) for support on the product.
+Questions? Join our [**Slack channel**](https://resources.rudderstack.com/join-rudderstack-slack) for support on the product.
 
 | Try **RudderStack Cloud Free** - a free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to start building a smarter customer data pipeline today, with RudderStack Cloud. |
 |:------|
