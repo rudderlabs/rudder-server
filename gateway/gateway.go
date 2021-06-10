@@ -755,7 +755,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 }
 
 type failedEventsRequestPayload struct {
-	JobRunID string `json:"job_run_id"`
+	TaskRunID string `json:"task_run_id"`
 }
 
 func (gateway *HandleT) fetchFailedEventsHandler(w http.ResponseWriter, r *http.Request) {
@@ -795,19 +795,19 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if reqPayload.JobRunID == "" {
-		errorMessage = "Empty job run id"
+	if reqPayload.TaskRunID == "" {
+		errorMessage = "Empty task run id"
 		return
 	}
 
 	if reqType == "fetch" {
-		failedEvents := router.GetFailedEventsManager().FetchFailedMsgIDs(reqPayload.JobRunID)
+		failedEvents := router.GetFailedEventsManager().FetchFailedMsgIDs(reqPayload.TaskRunID)
 		failedMsgIDsByDestinationID := make(map[string][]string)
 		for _, failedEvent := range failedEvents {
 			if _, ok := failedMsgIDsByDestinationID[failedEvent.DestinationID]; !ok {
 				failedMsgIDsByDestinationID[failedEvent.DestinationID] = []string{}
 			}
-			failedMsgIDsByDestinationID[failedEvent.DestinationID] = append(failedMsgIDsByDestinationID[failedEvent.DestinationID], failedEvent.MsgID)
+			failedMsgIDsByDestinationID[failedEvent.DestinationID] = append(failedMsgIDsByDestinationID[failedEvent.DestinationID], failedEvent.RecordID)
 		}
 
 		resp, err := json.Marshal(failedMsgIDsByDestinationID)
@@ -818,7 +818,7 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 
 		w.Write(resp)
 	} else if reqType == "clear" {
-		router.GetFailedEventsManager().DropFailedMsgIDs(reqPayload.JobRunID)
+		router.GetFailedEventsManager().DropFailedMsgIDs(reqPayload.TaskRunID)
 		w.Write([]byte("OK"))
 	}
 }

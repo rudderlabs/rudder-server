@@ -14,7 +14,7 @@ var (
 
 type FailedEventRowT struct {
 	DestinationID string
-	MsgID         string
+	RecordID      string
 }
 
 type FailedEventsManagerI interface {
@@ -45,21 +45,20 @@ func (fem *FailedEventsManagerT) SaveFailedMsgIDs(jobRunIDFailedEventsMap map[st
 	for jobRunID, failedEvents := range jobRunIDFailedEventsMap {
 		sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		destination_id TEXT NOT NULL,
-		message_id TEXT NOT NULL);`, jobRunID)
+		record_id TEXT NOT NULL);`, jobRunID)
 
 		_, err := txn.Exec(sqlStatement)
 		if err != nil {
 			panic(err)
 		}
 
-		stmt, err := txn.Prepare(pq.CopyIn(jobRunID, "destination_id", "message_id"))
+		stmt, err := txn.Prepare(pq.CopyIn(jobRunID, "destination_id", "record_id"))
 		if err != nil {
 			panic(err)
 		}
 
-		defer stmt.Close()
 		for _, failedEvent := range failedEvents {
-			_, err = stmt.Exec(failedEvent.DestinationID, failedEvent.MsgID)
+			_, err = stmt.Exec(failedEvent.DestinationID, failedEvent.RecordID)
 			if err != nil {
 				panic(err)
 			}
@@ -68,6 +67,7 @@ func (fem *FailedEventsManagerT) SaveFailedMsgIDs(jobRunIDFailedEventsMap map[st
 		if err != nil {
 			panic(err)
 		}
+		stmt.Close()
 	}
 }
 
@@ -85,7 +85,7 @@ func (fem *FailedEventsManagerT) FetchFailedMsgIDs(jobRunID string) []*FailedEve
 
 	var rows *sql.Rows
 	var err error
-	sqlStatement := fmt.Sprintf(`SELECT %[1]s.destination_id, %[1]s.message_id
+	sqlStatement := fmt.Sprintf(`SELECT %[1]s.destination_id, %[1]s.record_id
                                              FROM %[1]s `, jobRunID)
 	rows, err = fem.dbHandle.Query(sqlStatement)
 	if err != nil {
@@ -96,7 +96,7 @@ func (fem *FailedEventsManagerT) FetchFailedMsgIDs(jobRunID string) []*FailedEve
 
 	for rows.Next() {
 		var failedEvent FailedEventRowT
-		err := rows.Scan(&failedEvent.DestinationID, &failedEvent.MsgID)
+		err := rows.Scan(&failedEvent.DestinationID, &failedEvent.RecordID)
 		if err != nil {
 			panic(err)
 		}

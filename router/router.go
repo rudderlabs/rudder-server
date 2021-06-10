@@ -1170,11 +1170,12 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 		if resp.status.JobState == jobsdb.Aborted.State {
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
-			if parameters.SourceJobRunID != "" {
-				if _, ok := jobRunIDAbortedEventsMap[parameters.SourceJobRunID]; !ok {
-					jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = []*FailedEventRowT{}
+			if parameters.SourceTaskRunID != "" {
+				if _, ok := jobRunIDAbortedEventsMap[parameters.SourceTaskRunID]; !ok {
+					jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = []*FailedEventRowT{}
 				}
-				jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceJobRunID], &FailedEventRowT{DestinationID: parameters.DestinationID, MsgID: parameters.MessageID})
+				recordID := gjson.GetBytes(resp.JobT.EventPayload, "recordId").Str
+				jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceTaskRunID], &FailedEventRowT{DestinationID: parameters.DestinationID, RecordID: recordID})
 			}
 		}
 

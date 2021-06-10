@@ -492,14 +492,16 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		}
 
 		timeElapsed := time.Since(firstAttemptedAt)
+		recordId := gjson.GetBytes(job.EventPayload, "recordId").Str
 		if jobState == jobsdb.Failed.State && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 			abortedEvents = append(abortedEvents, job)
-			if parameters.SourceJobRunID != "" {
-				if _, ok := jobRunIDAbortedEventsMap[parameters.SourceJobRunID]; !ok {
-					jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = []*router.FailedEventRowT{}
+			if parameters.SourceTaskRunID != "" {
+				if _, ok := jobRunIDAbortedEventsMap[parameters.SourceTaskRunID]; !ok {
+					jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = []*router.FailedEventRowT{}
 				}
-				jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceJobRunID], &router.FailedEventRowT{DestinationID: parameters.DestinationID, MsgID: parameters.MessageID})
+
+				jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceTaskRunID], &router.FailedEventRowT{DestinationID: parameters.DestinationID, RecordID: recordId})
 			}
 			jobState = jobsdb.Aborted.State
 		} else {
@@ -510,10 +512,10 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					abortedEvents = append(abortedEvents, job)
 					if parameters.SourceJobRunID != "" {
-						if _, ok := jobRunIDAbortedEventsMap[parameters.SourceJobRunID]; !ok {
-							jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = []*router.FailedEventRowT{}
+						if _, ok := jobRunIDAbortedEventsMap[parameters.SourceTaskRunID]; !ok {
+							jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = []*router.FailedEventRowT{}
 						}
-						jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceJobRunID], &router.FailedEventRowT{DestinationID: parameters.DestinationID, MsgID: parameters.MessageID})
+						jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceTaskRunID], &router.FailedEventRowT{DestinationID: parameters.DestinationID, RecordID: recordId})
 					}
 					jobState = jobsdb.Aborted.State
 				}
