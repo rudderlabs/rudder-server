@@ -25,10 +25,10 @@ As the leading **open-source Customer Data Platform** (CDP), [**RudderStack**](h
 With RudderStack, you can build customer data pipelines that connect your whole customer data stack and then make them smarter by triggering enrichment and activation in customer tools based on analysis in your data warehouse. Its easy-to-use SDKs and event source integrations, Cloud Extract integrations, transformations, and expansive library of destination and warehouse integrations makes building customer data pipelines for both event streaming and cloud-to-warehouse ELT simple.
 
 <p align="center">
-<a href="https://rudderstack.com"><img src="https://user-images.githubusercontent.com/59817155/121467292-76e78200-c9d6-11eb-8696-cb3c45d94ef3.gif" alt="RudderStack"></a></p>
+<a href="https://rudderstack.com"><img src="https://user-images.githubusercontent.com/59817155/121468374-4ef91e00-c9d8-11eb-8611-28bea18f609d.gif" alt="RudderStack"></a></p>
 
 
-Questions? Please join our [**Slack channel**](https://resources.rudderstack.com/join-rudderstack-slack) for support on the product.
+Questions? Join our [**Slack channel**](https://resources.rudderstack.com/join-rudderstack-slack) for support on the product.
 
 | Try **RudderStack Cloud Free** - a free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to start building a smarter customer data pipeline today, with RudderStack Cloud. |
 |:------|
