@@ -367,6 +367,7 @@ var (
 	customDestinations                  []string
 	pkgLogger                           logger.LoggerI
 	enableEventSchemasFeature           bool
+	enableEventSchemasAPIOnly           bool
 	enableDedup                         bool
 	transformTimesPQLength              int
 	captureEventNameStats               bool
@@ -391,6 +392,7 @@ func loadConfig() {
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
 	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
+	enableEventSchemasAPIOnly = config.GetBool("EventSchemas.enableEventSchemasAPIOnly", false)
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 	config.RegisterIntConfigVariable(1, &avgEventsInRequest, true, 1, "Processor.avgEventsInRequest")
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
@@ -1712,7 +1714,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		return false
 	}
 	proc.eventSchemasTime.Start()
-	if enableEventSchemasFeature {
+	if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
 		for _, unprocessedJob := range unprocessedList {
 			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
 			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
