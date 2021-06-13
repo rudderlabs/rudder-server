@@ -14,9 +14,10 @@ import (
 )
 
 type Config struct {
-	Credentials     string              `json:"credentials"`
-	ProjectId       string              `json:"projectId"`
-	EventToTopicMap []map[string]string `json:"eventToTopicMap"`
+	Credentials         string              `json:"credentials"`
+	ProjectId           string              `json:"projectId"`
+	EventToTopicMap     []map[string]string `json:"eventToTopicMap"`
+	EventToAttributeMap []map[string]string `json:"eventToAttributeMap"`
 }
 
 type PubsubClient struct {
@@ -58,6 +59,7 @@ func NewProducer(destinationConfig interface{}) (*PubsubClient, error) {
 	pbsClient := &PubsubClient{client, topicMap}
 	return pbsClient, nil
 }
+
 func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	pbs, ok := producer.(*PubsubClient)
@@ -84,6 +86,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		statusCode := 400
 		return statusCode, respStatus, responseMessage
 	}
+
 	if parsedJSON.Get("topicId").Value() != nil {
 		topicIdString, ok := parsedJSON.Get("topicId").Value().(string)
 		if !ok {
@@ -105,7 +108,31 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			respStatus = "Failure"
 			return statusCode, respStatus, responseMessage
 		}
-		result := topic.Publish(ctx, &pubsub.Message{Data: []byte(value)})
+
+		attributes := parsedJSON.Get("attributes").Map()
+		var result *pubsub.PublishResult
+
+		if len(attributes) != 0 {
+			attributesMap := make(map[string]string)
+			for k, v := range attributes {
+				attributesMap[k] = v.Str
+			}
+			result = topic.Publish(
+				ctx,
+				&pubsub.Message{
+					Data:       []byte(value),
+					Attributes: attributesMap,
+				},
+			)
+		} else {
+			result = topic.Publish(
+				ctx,
+				&pubsub.Message{
+					Data: []byte(value),
+				},
+			)
+		}
+
 		serverID, err := result.Get(ctx)
 		if err != nil {
 			statusCode = getError(err)
