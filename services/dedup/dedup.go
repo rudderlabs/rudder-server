@@ -16,6 +16,7 @@ import (
 type DedupI interface {
 	FindDuplicates(messageIDs []string, allMessageIDsSet map[string]struct{}) (duplicateIndexes []int)
 	MarkProcessed(messageIDs []string)
+	PrintHistogram()
 }
 
 type DedupHandleT struct {
@@ -39,7 +40,28 @@ func init() {
 }
 func (d *DedupHandleT) setup(clearDB *bool) {
 	d.stats = stats.DefaultStats
+	badgerLogger = &loggerT{}
 	d.openBadger(clearDB)
+}
+
+var badgerLogger badger.Logger
+
+type loggerT struct{}
+
+func (l *loggerT) Errorf(s string, args ...interface{}) {
+	pkgLogger.Errorf(s, args)
+}
+
+func (l *loggerT) Warningf(s string, args ...interface{}) {
+	pkgLogger.Warnf(s, args)
+}
+
+func (l *loggerT) Infof(s string, args ...interface{}) {
+	pkgLogger.Infof(s, args)
+}
+
+func (l *loggerT) Debugf(s string, args ...interface{}) {
+	pkgLogger.Debugf(s, args)
 }
 
 func (d *DedupHandleT) openBadger(clearDB *bool) {
@@ -50,7 +72,8 @@ func (d *DedupHandleT) openBadger(clearDB *bool) {
 		panic(err)
 	}
 	path := fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
-	d.badgerDB, err = badger.Open(badger.DefaultOptions(path).WithTruncate(true))
+
+	d.badgerDB, err = badger.Open(badger.DefaultOptions(path).WithTruncate(true).WithLogger(badgerLogger))
 	if err != nil {
 		panic(err)
 	}
@@ -63,6 +86,10 @@ func (d *DedupHandleT) openBadger(clearDB *bool) {
 	rruntime.Go(func() {
 		d.gcBadgerDB()
 	})
+}
+
+func (d *DedupHandleT) PrintHistogram() {
+	d.badgerDB.PrintHistogram(nil)
 }
 
 func (d *DedupHandleT) gcBadgerDB() {
