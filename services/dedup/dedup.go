@@ -49,11 +49,11 @@ var badgerLogger badger.Logger
 type loggerT struct{}
 
 func (l *loggerT) Errorf(s string, args ...interface{}) {
-	pkgLogger.Infof(s, args)
+	pkgLogger.Errorf(s, args)
 }
 
 func (l *loggerT) Warningf(s string, args ...interface{}) {
-	pkgLogger.Infof(s, args)
+	pkgLogger.Warnf(s, args)
 }
 
 func (l *loggerT) Infof(s string, args ...interface{}) {
@@ -61,7 +61,7 @@ func (l *loggerT) Infof(s string, args ...interface{}) {
 }
 
 func (l *loggerT) Debugf(s string, args ...interface{}) {
-	pkgLogger.Infof(s, args)
+	pkgLogger.Debugf(s, args)
 }
 
 func (d *DedupHandleT) openBadger(clearDB *bool) {
