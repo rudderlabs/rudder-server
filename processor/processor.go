@@ -251,6 +251,11 @@ func (proc *HandleT) Status() interface{} {
 	for _, pqUserEvent := range proc.userTransformEventsByTimeTaken {
 		statusRes["user-transformer"] = append(statusRes["user-transformer"], *pqUserEvent)
 	}
+
+	if enableDedup {
+		proc.dedupHandler.PrintHistogram()
+	}
+
 	return statusRes
 }
 

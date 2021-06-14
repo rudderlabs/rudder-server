@@ -45,6 +45,10 @@ import (
 	"golang.org/x/net/trace"
 )
 
+// maxVlogFileSize is the maximum size of the vlog file which can be created. Vlog Offset is of
+// uint32, so limiting at max uint32.
+var maxVlogFileSize = math.MaxUint32
+
 // Values have their first byte being byteData or byteDelete. This helps us distinguish between
 // a key that has never been seen and a key that has been explicitly deleted.
 const (
@@ -256,7 +260,7 @@ func (lf *logFile) generateIV(offset uint32) []byte {
 func (lf *logFile) doneWriting(offset uint32) error {
 	// Sync before acquiring lock. (We call this from write() and thus know we have shared access
 	// to the fd.)
-	if err := y.FileSync(lf.fd); err != nil {
+	if err := lf.fd.Sync(); err != nil {
 		return errors.Wrapf(err, "Unable to sync value log: %q", lf.path)
 	}
 
@@ -290,7 +294,7 @@ func (lf *logFile) doneWriting(offset uint32) error {
 
 // You must hold lf.lock to sync()
 func (lf *logFile) sync() error {
-	return y.FileSync(lf.fd)
+	return lf.fd.Sync()
 }
 
 var errStop = errors.New("Stop iteration")
@@ -518,7 +522,7 @@ func (vlog *valueLog) rewrite(f *logFile, tr trace.Trace) error {
 		if err != nil {
 			return err
 		}
-		if discardEntry(e, vs) {
+		if discardEntry(e, vs, vlog.db) {
 			return nil
 		}
 
@@ -564,6 +568,11 @@ func (vlog *valueLog) rewrite(f *logFile, tr trace.Trace) error {
 
 			ne.Value = append([]byte{}, e.Value...)
 			es := int64(ne.estimateSize(vlog.opt.ValueThreshold))
+			// Consider size of value as well while considering the total size
+			// of the batch. There have been reports of high memory usage in
+			// rewrite because we don't consider the value size. See #1292.
+			es += int64(len(e.Value))
+
 			// Ensure length and size of wb is within transaction limits.
 			if int64(len(wb)+1) >= vlog.opt.maxBatchCount ||
 				size+es >= vlog.opt.maxBatchSize {
@@ -832,7 +841,6 @@ type lfDiscardStats struct {
 
 type valueLog struct {
 	dirPath string
-	elog    trace.EventLog
 
 	// guards our view of which files exist, which to be deleted, how many active iterators
 	filesLock        sync.RWMutex
@@ -992,14 +1000,26 @@ func (vlog *valueLog) createVlogFile(fid uint32) (*logFile, error) {
 		return nil, errFile(err, lf.path, "Create value log file")
 	}
 
+	removeFile := func() {
+		// Remove the file so that we don't get an error when createVlogFile is
+		// called for the same fid, again. This could happen if there is an
+		// transient error because of which we couldn't create a new file
+		// and the second attempt to create the file succeeds.
+		y.Check(os.Remove(lf.fd.Name()))
+	}
+
 	if err = lf.bootstrap(); err != nil {
+		removeFile()
 		return nil, err
 	}
 
 	if err = syncDir(vlog.dirPath); err != nil {
+		removeFile()
 		return nil, errFile(err, vlog.dirPath, "Sync value log dir")
 	}
+
 	if err = lf.mmap(2 * vlog.opt.ValueLogFileSize); err != nil {
+		removeFile()
 		return nil, errFile(err, lf.path, "Mmap value log file")
 	}
 
@@ -1038,6 +1058,8 @@ func (vlog *valueLog) replayLog(lf *logFile, offset uint32, replayFn logEntry) e
 	// End offset is different from file size. So, we should truncate the file
 	// to that size.
 	if !vlog.opt.Truncate {
+		vlog.db.opt.Warningf("Truncate Needed. File %s size: %d Endoffset: %d",
+			lf.fd.Name(), fi.Size(), endOffset)
 		return ErrTruncateNeeded
 	}
 
@@ -1054,6 +1076,7 @@ func (vlog *valueLog) replayLog(lf *logFile, offset uint32, replayFn logEntry) e
 		return lf.bootstrap()
 	}
 
+	vlog.db.opt.Infof("Truncating vlog file %s to offset: %d", lf.fd.Name(), endOffset)
 	if err := lf.fd.Truncate(int64(endOffset)); err != nil {
 		return errFile(err, lf.path, fmt.Sprintf(
 			"Truncation needed at offset %d. Can be done manually as well.", endOffset))
@@ -1072,10 +1095,7 @@ func (vlog *valueLog) init(db *DB) {
 		return
 	}
 	vlog.dirPath = vlog.opt.ValueDir
-	vlog.elog = y.NoEventLog
-	if vlog.opt.EventLogging {
-		vlog.elog = trace.NewEventLog("Badger", "Valuelog")
-	}
+
 	vlog.garbageCh = make(chan struct{}, 1) // Only allow one GC at a time.
 	vlog.lfDiscardStats = &lfDiscardStats{
 		m:         make(map[uint32]int64),
@@ -1222,15 +1242,20 @@ func (lf *logFile) init() error {
 	return nil
 }
 
+func (vlog *valueLog) stopFlushDiscardStats() {
+	if vlog.lfDiscardStats != nil {
+		vlog.lfDiscardStats.closer.Signal()
+	}
+}
+
 func (vlog *valueLog) Close() error {
-	if vlog.db.opt.InMemory {
+	if vlog == nil || vlog.db == nil || vlog.db.opt.InMemory {
 		return nil
 	}
 	// close flushDiscardStats.
 	vlog.lfDiscardStats.closer.SignalAndWait()
 
-	vlog.elog.Printf("Stopping garbage collection of values.")
-	defer vlog.elog.Finish()
+	vlog.opt.Debugf("Stopping garbage collection of values.")
 
 	var err error
 	for id, f := range vlog.filesMap {
@@ -1240,6 +1265,9 @@ func (vlog *valueLog) Close() error {
 		}
 
 		maxFid := vlog.maxFid
+		// TODO(ibrahim) - Do we need the following truncations on non-windows
+		// platforms? We expand the file only on windows and the vlog.woffset()
+		// should point to end of file on all other platforms.
 		if !vlog.opt.ReadOnly && id == maxFid {
 			// truncate writable log file to correct offset.
 			if truncErr := f.fd.Truncate(
@@ -1364,11 +1392,52 @@ func (vlog *valueLog) woffset() uint32 {
 	return atomic.LoadUint32(&vlog.writableLogOffset)
 }
 
+// validateWrites will check whether the given requests can fit into 4GB vlog file.
+// NOTE: 4GB is the maximum size we can create for vlog because value pointer offset is of type
+// uint32. If we create more than 4GB, it will overflow uint32. So, limiting the size to 4GB.
+func (vlog *valueLog) validateWrites(reqs []*request) error {
+	vlogOffset := uint64(vlog.woffset())
+	for _, req := range reqs {
+		// calculate size of the request.
+		size := estimateRequestSize(req)
+		estimatedVlogOffset := vlogOffset + size
+		if estimatedVlogOffset > uint64(maxVlogFileSize) {
+			return errors.Errorf("Request size offset %d is bigger than maximum offset %d",
+				estimatedVlogOffset, maxVlogFileSize)
+		}
+
+		if estimatedVlogOffset >= uint64(vlog.opt.ValueLogFileSize) {
+			// We'll create a new vlog file if the estimated offset is greater or equal to
+			// max vlog size. So, resetting the vlogOffset.
+			vlogOffset = 0
+			continue
+		}
+		// Estimated vlog offset will become current vlog offset if the vlog is not rotated.
+		vlogOffset = estimatedVlogOffset
+	}
+	return nil
+}
+
+// estimateRequestSize returns the size that needed to be written for the given request.
+func estimateRequestSize(req *request) uint64 {
+	size := uint64(0)
+	for _, e := range req.Entries {
+		size += uint64(maxHeaderSize + len(e.Key) + len(e.Value) + crc32.Size)
+	}
+	return size
+}
+
 // write is thread-unsafe by design and should not be called concurrently.
 func (vlog *valueLog) write(reqs []*request) error {
 	if vlog.db.opt.InMemory {
 		return nil
 	}
+	// Validate writes before writing to vlog. Because, we don't want to partially write and return
+	// an error.
+	if err := vlog.validateWrites(reqs); err != nil {
+		return err
+	}
+
 	vlog.filesLock.RLock()
 	maxFid := vlog.maxFid
 	curlf := vlog.filesMap[maxFid]
@@ -1379,7 +1448,7 @@ func (vlog *valueLog) write(reqs []*request) error {
 		if buf.Len() == 0 {
 			return nil
 		}
-		vlog.elog.Printf("Flushing buffer of size %d to vlog", buf.Len())
+		vlog.opt.Debugf("Flushing buffer of size %d to vlog", buf.Len())
 		n, err := curlf.fd.Write(buf.Bytes())
 		if err != nil {
 			return errors.Wrapf(err, "Unable to write to value log file: %q", curlf.path)
@@ -1387,7 +1456,7 @@ func (vlog *valueLog) write(reqs []*request) error {
 		buf.Reset()
 		y.NumWrites.Add(1)
 		y.NumBytesWritten.Add(int64(n))
-		vlog.elog.Printf("Done")
+		vlog.opt.Debugf("Done")
 		atomic.AddUint32(&vlog.writableLogOffset, uint32(n))
 		atomic.StoreUint32(&curlf.size, vlog.writableLogOffset)
 		return nil
@@ -1520,6 +1589,11 @@ func (vlog *valueLog) Read(vp valuePointer, s *y.Slice) ([]byte, func(), error) 
 			return nil, cb, err
 		}
 	}
+	if uint32(len(kv)) < h.klen+h.vlen {
+		vlog.db.opt.Logger.Errorf("Invalid read: vp: %+v", vp)
+		return nil, nil, errors.Errorf("Invalid read: Len: %d read at:[%d:%d]",
+			len(kv), h.klen, h.klen+h.vlen)
+	}
 	return kv[h.klen : h.klen+h.vlen], cb, nil
 }
 
@@ -1606,7 +1680,7 @@ func (vlog *valueLog) pickLog(head valuePointer, tr trace.Trace) (files []*logFi
 	return files
 }
 
-func discardEntry(e Entry, vs y.ValueStruct) bool {
+func discardEntry(e Entry, vs y.ValueStruct, db *DB) bool {
 	if vs.Version != y.ParseTs(e.Key) {
 		// Version not found. Discard.
 		return true
@@ -1621,6 +1695,16 @@ func discardEntry(e Entry, vs y.ValueStruct) bool {
 	if (vs.Meta & bitFinTxn) > 0 {
 		// Just a txn finish entry. Discard.
 		return true
+	}
+	if bytes.HasPrefix(e.Key, badgerMove) {
+		// Verify the actual key entry without the badgerPrefix has not been deleted.
+		// If this is not done the badgerMove entry will be kept forever moving from
+		// vlog to vlog during rewrites.
+		avs, err := db.get(e.Key[len(badgerMove):])
+		if err != nil {
+			return false
+		}
+		return avs.Version == 0
 	}
 	return false
 }
@@ -1694,7 +1778,7 @@ func (vlog *valueLog) doRunGC(lf *logFile, discardRatio float64, tr trace.Trace)
 		if err != nil {
 			return err
 		}
-		if discardEntry(e, vs) {
+		if discardEntry(e, vs, vlog.db) {
 			r.discard += esz
 			return nil
 		}
@@ -1717,7 +1801,7 @@ func (vlog *valueLog) doRunGC(lf *logFile, discardRatio float64, tr trace.Trace)
 			// This is still the active entry. This would need to be rewritten.
 
 		} else {
-			vlog.elog.Printf("Reason=%+v\n", r)
+			vlog.opt.Debugf("Reason=%+v\n", r)
 			buf, lf, err := vlog.readValueBytes(vp, s)
 			// we need to decide, whether to unlock the lock file immediately based on the
 			// loading mode. getUnlockCallback will take care of it.
