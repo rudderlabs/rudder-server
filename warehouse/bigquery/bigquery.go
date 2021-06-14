@@ -432,11 +432,7 @@ func (bq *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 		projectID:   bq.ProjectID,
 		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
 	})
-	if err != nil {
-		return
-	}
-	// TODO: Remove this
-	return bq.removePartitionExpiry()
+	return err
 }
 
 func (bq *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
