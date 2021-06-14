@@ -3307,7 +3307,7 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
 
-		//TODO remove
+		//TODO remove -
 		if i > config.GetInt("JobsDB.brt.dsprobe", 50) {
 			break
 		}
