@@ -278,7 +278,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		// TODO: Add this filter to optimize reading from identifies table since first event in upload
 		// rather than entire day's records
 		// commented it since firstEventAt is not stored in UTC format in earlier versions
-		firstEventAtFormatted := firstEventTime.Format(time.RFC3339Nano)
+		firstEventAtFormatted := firstEventTime.Format(misc.RFC3339Milli)
 		return fmt.Sprintf(`AND loaded_at >= TIMESTAMP('%v')`, firstEventAtFormatted)
 	}
 
