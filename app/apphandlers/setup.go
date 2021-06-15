@@ -26,7 +26,7 @@ import (
 var (
 	maxProcess                                                 int
 	gwDBRetention, routerDBRetention                           time.Duration
-	enableProcessor, enableRouter                              bool
+	enableProcessor, enableRouter, enableReplay                bool
 	objectStorageDestinations                                  []string
 	warehouseDestinations                                      []string
 	moduleLoadLock                                             sync.Mutex
@@ -71,6 +71,7 @@ func loadConfig() {
 	gwDBRetention = config.GetDuration("gwDBRetentionInHr", 0) * time.Hour
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
+	enableReplay = config.GetBool("Replay.enabled", false)
 	enableRouter = config.GetBool("enableRouter", true)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL"}
