@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -3103,7 +3104,7 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 		count -= len(jobs)
 
 		//TODO remove
-		if i > config.GetInt("JobsDB.brt.dsprobe", 50) {
+		if i > config.GetInt("JobsDB.brt.dsprobe", math.MaxInt32) {
 			break
 		}
 
@@ -3308,7 +3309,7 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 		count -= len(jobs)
 
 		//TODO remove -
-		if i > config.GetInt("JobsDB.brt.dsprobe", 50) {
+		if i > config.GetInt("JobsDB.brt.dsprobe", math.MaxInt32) {
 			break
 		}
 
