@@ -32,6 +32,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/tidwall/gjson"
 
 	"strconv"
 	"strings"
@@ -76,7 +77,6 @@ type JobsDB interface {
 	Store(jobList []*JobT) error
 	BeginGlobalTransaction() *sql.Tx
 	CommitTransaction(txn *sql.Tx)
-	StoreInTxn(txHandler *sql.Tx, jobList []*JobT) error
 	AcquireStoreLock()
 	ReleaseStoreLock()
 	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
@@ -166,30 +166,6 @@ func (jd *HandleT) AcquireUpdateJobStatusLocks() {
 func (jd *HandleT) ReleaseUpdateJobStatusLocks() {
 	jd.dsListLock.RUnlock()
 	jd.dsMigrationLock.RUnlock()
-}
-
-/*
-StoreInTxn call is used to create new Jobs in transaction.
-IMP NOTE: AcquireStoreLock Should be called before calling this function
-*/
-func (jd *HandleT) StoreInTxn(txHandler *sql.Tx, jobList []*JobT) error {
-
-	queryStat := stats.NewTaggedStat("store_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
-
-	dsList := jd.getDSList(false)
-	ds := dsList[len(dsList)-1]
-	err := jd.storeJobsDSInTxn(txHandler, ds, false, jobList)
-	if err != nil {
-		jd.rollbackTx(err, txHandler)
-		return err
-	}
-
-	//Empty customValFilters means we want to clear for all
-	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
-
-	return nil
 }
 
 /*
@@ -307,6 +283,21 @@ type HandleT struct {
 	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.LoggerI
 	ownerType                     OwnerType
+	storeChannel                  chan writeJob
+	storeWithRetryChannel         chan writeJob
+	updateJobStatusChannel        chan writeJob
+	deleteExecutingChannel        chan writeJob
+	readChannel                   chan readJob
+	enableWriterQueue             bool
+	enableReaderQueue             bool
+	maxReaders                    int
+	maxWriters                    int
+	queryFilterKeys               QueryFiltersT
+}
+
+type QueryFiltersT struct {
+	CustomVal        bool
+	ParameterFilters []string
 }
 
 //The struct which is written to the journal
@@ -490,6 +481,7 @@ var (
 	useJoinForUnprocessed                        bool
 	backupRowsBatchSize                          int64
 	pkgLogger                                    logger.LoggerI
+	useNewCacheBurst                             bool
 )
 
 //Different scenarios for addNewDS
@@ -532,7 +524,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, "JobsDB.refreshDSListLoopSleepDurationInS")
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, "JobsDB.backupCheckSleepDurationIns")
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
-
+	config.RegisterBoolConfigVariable(true, &useNewCacheBurst, true, "JobsDB.useNewCacheBurst")
 }
 
 func init() {
@@ -556,8 +548,8 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
-
+func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+	jd.queryFilterKeys = queryFilterKeys
 	jd.initGlobalDBHandle()
 	jd.ownerType = ownerType
 	jd.logger = pkgLogger.Child(tablePrefix)
@@ -585,6 +577,23 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
 	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
+
+	enableWriterQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableWriterQueue", "JobsDB." + "enableWriterQueue"}
+	config.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, enableWriterQueueKeys...)
+	enableReaderQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableReaderQueue", "JobsDB." + "enableReaderQueue"}
+	config.RegisterBoolConfigVariable(true, &jd.enableReaderQueue, true, enableReaderQueueKeys...)
+	jd.storeChannel = make(chan writeJob)
+	jd.storeWithRetryChannel = make(chan writeJob)
+	jd.updateJobStatusChannel = make(chan writeJob)
+	jd.deleteExecutingChannel = make(chan writeJob)
+	jd.readChannel = make(chan readJob)
+
+	maxWritersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxWriters", "JobsDB." + "maxWriters"}
+	config.RegisterIntConfigVariable(1, &jd.maxWriters, false, 1, maxWritersKeys...)
+	maxReadersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxReaders", "JobsDB." + "maxReaders"}
+	config.RegisterIntConfigVariable(3, &jd.maxReaders, false, 1, maxReadersKeys...)
+	jd.initDBWriters()
+	jd.initDBReaders()
 
 	switch ownerType {
 	case Read:
@@ -674,6 +683,71 @@ func (jd *HandleT) readerWriterSetup() {
 	rruntime.Go(func() {
 		runArchiver(jd.tablePrefix, jd.dbHandle)
 	})
+}
+
+type writeJob struct {
+	jobsList             []*JobT
+	jobStatusesList      []*JobStatusT
+	customValFiltersList []string
+	parameterFiltersList []ParameterFilterT
+	errorResponse        chan error
+	errorMapResponse     chan map[uuid.UUID]string
+	deleteParams         GetQueryParamsT
+}
+
+func (jd *HandleT) initDBWriters() {
+	for i := 0; i < jd.maxWriters; i++ {
+		go jd.dbWriter()
+	}
+}
+
+func (jd *HandleT) dbWriter() {
+	for {
+		select {
+		case storeReq := <-jd.storeChannel:
+			err := jd.store(storeReq.jobsList)
+			storeReq.errorResponse <- err
+		case storeWithRetryReq := <-jd.storeWithRetryChannel:
+			errMap := jd.storeWithRetryEach(storeWithRetryReq.jobsList)
+			storeWithRetryReq.errorMapResponse <- errMap
+		case updateJobStatusReq := <-jd.updateJobStatusChannel:
+			err := jd.updateJobStatus(updateJobStatusReq.jobStatusesList, updateJobStatusReq.customValFiltersList, updateJobStatusReq.parameterFiltersList)
+			updateJobStatusReq.errorResponse <- err
+		case deleteExecutingReq := <-jd.deleteExecutingChannel:
+			jd.DeleteJobStatus(deleteExecutingReq.deleteParams)
+			deleteExecutingReq.errorResponse <- nil
+		}
+	}
+}
+
+type readJob struct {
+	getQueryParams GetQueryParamsT
+	jobsListChan   chan []*JobT
+	reqType        string
+}
+
+func (jd *HandleT) initDBReaders() {
+	for i := 0; i < jd.maxReaders; i++ {
+		go jd.dbReader()
+	}
+}
+
+func (jd *HandleT) dbReader() {
+	for readReq := range jd.readChannel {
+		if readReq.reqType == Failed.State {
+			readReq.jobsListChan <- jd.getToRetry(readReq.getQueryParams)
+		} else if readReq.reqType == Throttled.State {
+			readReq.jobsListChan <- jd.getThrottled(readReq.getQueryParams)
+		} else if readReq.reqType == Waiting.State {
+			readReq.jobsListChan <- jd.getWaiting(readReq.getQueryParams)
+		} else if readReq.reqType == NotProcessed.State {
+			readReq.jobsListChan <- jd.getUnprocessed(readReq.getQueryParams)
+		} else if readReq.reqType == Executing.State {
+			readReq.jobsListChan <- jd.getExecuting(readReq.getQueryParams)
+		} else {
+			panic(fmt.Errorf("[[ %s ]] unknown read request type: %s", jd.tablePrefix, readReq.reqType))
+		}
+	}
 }
 
 /*
@@ -1271,6 +1345,9 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	err = txn.Commit()
 	jd.assertError(err)
 
+	//Bursting Cache for this dataset
+	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, dropDSFromCache, nil)
+
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
 		jd.statDropDSPeriod.End()
@@ -1468,10 +1545,6 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 		return err
 	}
 
-	//Empty customValFilters means we want to clear for all
-	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
-	// fmt.Println("Bursting CACHE")
-
 	return nil
 }
 
@@ -1497,6 +1570,56 @@ func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []
 	return
 }
 
+// Creates a map of customVal:Params(Dest_type: []Dest_ids for brt and Dest_type: [] for rt)
+//and then loop over them to selectively clear cache instead of clearing the cache for the entire dataset
+func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]struct{}, customVal string, params []byte) {
+	if jd.queryFilterKeys.CustomVal {
+		if _, ok := CVPMap[customVal]; !ok {
+			CVPMap[customVal] = make(map[string]struct{})
+		}
+
+		if len(jd.queryFilterKeys.ParameterFilters) > 0 {
+			var vals []string
+			for _, key := range jd.queryFilterKeys.ParameterFilters {
+				val := gjson.GetBytes(params, key).String()
+				vals = append(vals, fmt.Sprintf("%s##%s", key, val))
+			}
+			key := strings.Join(vals, "::")
+			if _, ok := CVPMap[customVal][key]; !ok {
+				CVPMap[customVal][key] = struct{}{}
+			}
+		}
+	}
+}
+
+//mark cache empty after going over ds->customvals->params and for all stateFilters
+func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]struct{}) {
+	if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
+		for cv, cVal := range CVPMap {
+			parameterFilters := []ParameterFilterT{}
+			for pv := range cVal {
+				tokens := strings.Split(pv, "::")
+				for _, token := range tokens {
+					p := strings.Split(token, "##")
+					param := ParameterFilterT{
+						Name:  p[0],
+						Value: p[1],
+					}
+					parameterFilters = append(parameterFilters, param)
+				}
+			}
+
+			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
+		}
+	} else if jd.queryFilterKeys.CustomVal {
+		for cv := range CVPMap {
+			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
+		}
+	} else {
+		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
+	}
+}
+
 func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, copyID bool, jobList []*JobT) error {
 	var stmt *sql.Stmt
 	var err error
@@ -1513,6 +1636,8 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 	}
 
 	defer stmt.Close()
+
+	customValParamMap := make(map[string]map[string]struct{})
 	for _, job := range jobList {
 		if copyID {
 			_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
@@ -1523,6 +1648,13 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 		if err != nil {
 			return err
 		}
+
+		jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters)
+	}
+	if useNewCacheBurst {
+		jd.clearCache(ds, customValParamMap)
+	} else {
+		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
 	}
 	_, err = stmt.Exec()
 
@@ -1554,8 +1686,9 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 type cacheValue string
 
 const (
-	hasJobs cacheValue = "Has Jobs"
-	noJobs  cacheValue = "No Jobs"
+	hasJobs         cacheValue = "Has Jobs"
+	noJobs          cacheValue = "No Jobs"
+	dropDSFromCache cacheValue = "Drop DS From Cache"
 	/*
 	* willTryToSet value is used to prevent wrongly setting empty result when
 	* a db update (new jobs or job status updates) happens during get(Un)Processed db query is in progress.
@@ -1586,7 +1719,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 	//We process ALL only during internal migration and caching empty
 	//results is not important
 	if len(stateFilters) == 0 || len(customValFilters) == 0 {
-		if value == hasJobs {
+		if value == hasJobs || value == dropDSFromCache {
 			delete(jd.dsEmptyResultCache, ds)
 		}
 		return
@@ -2688,12 +2821,29 @@ func (jd *HandleT) RecoverFromMigrationJournal() {
 	jd.recoverFromCrash(ReadWrite, migratorRoutine)
 }
 
+func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+	if jd.enableWriterQueue {
+		respCh := make(chan error)
+		writeJobRequest := writeJob{
+			jobStatusesList:      statusList,
+			customValFiltersList: customValFilters,
+			parameterFiltersList: parameterFilters,
+			errorResponse:        respCh,
+		}
+		jd.updateJobStatusChannel <- writeJobRequest
+		err := <-respCh
+		return err
+	} else {
+		return jd.updateJobStatus(statusList, customValFilters, parameterFilters)
+	}
+}
+
 /*
-UpdateJobStatus updates the status of a batch of jobs
+updateJobStatus updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+func (jd *HandleT) updateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
 
 	if len(statusList) == 0 {
 		return nil
@@ -2813,8 +2963,27 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 
 /*
 Store call is used to create new Jobs
+If enableWriterQueue is true, this goes through writer worker pool.
 */
 func (jd *HandleT) Store(jobList []*JobT) error {
+	if jd.enableWriterQueue {
+		respCh := make(chan error)
+		writeJobRequest := writeJob{
+			jobsList:      jobList,
+			errorResponse: respCh,
+		}
+		jd.storeChannel <- writeJobRequest
+		err := <-respCh
+		return err
+	} else {
+		return jd.store(jobList)
+	}
+}
+
+/*
+store call is used to create new Jobs
+*/
+func (jd *HandleT) store(jobList []*JobT) error {
 	//Only locks the list
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
@@ -2824,10 +2993,25 @@ func (jd *HandleT) Store(jobList []*JobT) error {
 	return err
 }
 
-/*
-StoreWithRetryEach call is used to create new Jobs. This retries if the bulk store fails and retries for each job returning error messages for jobs failed to store
-*/
 func (jd *HandleT) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
+	if jd.enableWriterQueue {
+		respCh := make(chan map[uuid.UUID]string)
+		writeJobRequest := writeJob{
+			jobsList:         jobList,
+			errorMapResponse: respCh,
+		}
+		jd.storeWithRetryChannel <- writeJobRequest
+		errMap := <-respCh
+		return errMap
+	} else {
+		return jd.storeWithRetryEach(jobList)
+	}
+}
+
+/*
+storeWithRetryEach call is used to create new Jobs. This retries if the bulk store fails and retries for each job returning error messages for jobs failed to store
+*/
+func (jd *HandleT) storeWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
 
 	//Only locks the list
 	jd.dsListLock.RLock()
@@ -2855,9 +3039,32 @@ func (jd *HandleT) printLists(console bool) {
 
 /*
 GetUnprocessed returns the unprocessed events. Unprocessed events are
-those whose state hasn't been marked in the DB
+those whose state hasn't been marked in the DB.
+If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+	if jd.enableReaderQueue {
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+			reqType:        NotProcessed.State,
+		}
+		jd.readChannel <- readJobRequest
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getUnprocessed(params)
+	}
+}
+
+/*
+getUnprocessed returns the unprocessed events. Unprocessed events are
+those whose state hasn't been marked in the DB
+*/
+func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 	if params.Count == 0 {
 		return []*JobT{}
 	}
@@ -3103,35 +3310,119 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 
 /*
 GetToRetry returns events which need to be retried.
-This is a wrapper over GetProcessed call above
+If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+	if jd.enableReaderQueue {
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+			reqType:        Failed.State,
+		}
+		jd.readChannel <- readJobRequest
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getToRetry(params)
+	}
+}
+
+/*
+getToRetry returns events which need to be retried.
+This is a wrapper over GetProcessed call above
+*/
+func (jd *HandleT) getToRetry(params GetQueryParamsT) []*JobT {
 	params.StateFilters = []string{Failed.State}
 	return jd.GetProcessed(params)
 }
 
 /*
 GetWaiting returns events which are under processing
-This is a wrapper over GetProcessed call above
+If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+	if jd.enableReaderQueue {
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+			reqType:        Waiting.State,
+		}
+		jd.readChannel <- readJobRequest
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getWaiting(params)
+	}
+}
+
+/*
+GetWaiting returns events which are under processing
+This is a wrapper over GetProcessed call above
+*/
+func (jd *HandleT) getWaiting(params GetQueryParamsT) []*JobT {
 	params.StateFilters = []string{Waiting.State}
 	return jd.GetProcessed(params)
 }
 
 /*
 GetThrottled returns events which were throttled before
-This is a wrapper over GetProcessed call above
+If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+	if jd.enableReaderQueue {
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+			reqType:        Throttled.State,
+		}
+		jd.readChannel <- readJobRequest
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getThrottled(params)
+	}
+}
+
+/*
+GetThrottled returns events which were throttled before
+This is a wrapper over GetProcessed call above
+*/
+func (jd *HandleT) getThrottled(params GetQueryParamsT) []*JobT {
 	params.StateFilters = []string{Throttled.State}
 	return jd.GetProcessed(params)
 }
 
-/*
-GetExecuting returns events which  in executing state
-*/
 func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+	if jd.enableReaderQueue {
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+			reqType:        Executing.State,
+		}
+		jd.readChannel <- readJobRequest
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getExecuting(params)
+	}
+}
+
+/*
+getExecuting returns events which  in executing state
+*/
+func (jd *HandleT) getExecuting(params GetQueryParamsT) []*JobT {
 	params.StateFilters = []string{Executing.State}
 	return jd.GetProcessed(params)
 }
@@ -3142,7 +3433,17 @@ This is only done during recovery, which happens during the server start.
 */
 func (jd *HandleT) DeleteExecuting(params GetQueryParamsT) {
 	params.StateFilters = []string{Executing.State}
-	jd.DeleteJobStatus(params)
+	if jd.enableWriterQueue {
+		respCh := make(chan error)
+		writeJobRequest := writeJob{
+			deleteParams:  params,
+			errorResponse: respCh,
+		}
+		jd.deleteExecutingChannel <- writeJobRequest
+		<-writeJobRequest.errorResponse
+	} else {
+		jd.DeleteJobStatus(params)
+	}
 }
 
 /*

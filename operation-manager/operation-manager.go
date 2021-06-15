@@ -28,6 +28,7 @@ type OperationtT struct {
 type OperationManagerI interface {
 	InsertOperation(payload []byte) (int64, error)
 	StartProcessLoop()
+	GetOperationStatus(opID int64) (bool, string)
 }
 type OperationManagerT struct {
 	dbHandle      *sql.DB
@@ -108,6 +109,35 @@ func (om *OperationManagerT) MarkOperationDone(opID int64, status string) error 
 		return err
 	}
 	return nil
+}
+
+func (om *OperationManagerT) GetOperationStatus(opID int64) (bool, string) {
+	sqlStatement := fmt.Sprintf(`SELECT done, op_status
+								FROM operations
+								WHERE
+								id=%d`, opID)
+
+	stmt, err := om.dbHandle.Prepare(sqlStatement)
+	if err != nil {
+		pkgLogger.Errorf("[GetOperationStatus] Failed to prepare sql: %s", sqlStatement)
+		return false, ""
+	}
+	defer stmt.Close()
+
+	var done bool
+	var status string
+	row := om.dbHandle.QueryRow(sqlStatement)
+	err = row.Scan(&done, &status)
+	if err == sql.ErrNoRows {
+		pkgLogger.Debugf("[GetOperationStatus] No rows found. Sql: %s,", sqlStatement)
+		return false, "op_id not found"
+	}
+	if err != nil {
+		pkgLogger.Errorf("[GetOperationStatus] Failed to scan row. Sql: %s, Err: %w", sqlStatement, err)
+		return false, ""
+	}
+
+	return done, status
 }
 
 func (om *OperationManagerT) StartProcessLoop() {
