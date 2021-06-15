@@ -82,13 +82,12 @@ func RegisterReportingFeature(f ReportingFeatureSetup) {
 Replay Feature
 *********************************/
 
-// ReplayFeature handles reporting statuses / errors to reporting service
+// ReplayFeature handles inserting of failed jobs into repsective gw/rt jobsdb
 type ReplayFeature interface {
 	Setup(replayDB *jobsdb.HandleT, gwDB *jobsdb.HandleT, routerDB *jobsdb.HandleT)
-	// GetReportingInstance() types.ReportingI
 }
 
-// ReplayFeatureSetup is a function that initializes a Reporting feature
+// ReplayFeatureSetup is a function that initializes a Replay feature
 type ReplayFeatureSetup func(Interface) ReplayFeature
 
 var replayFeatureSetup ReplayFeatureSetup

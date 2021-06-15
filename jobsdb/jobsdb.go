@@ -3167,8 +3167,8 @@ func (jd *HandleT) GetLastJobID() int64 {
 
 func (jd *HandleT) GetLastJob() *JobT {
 	jd.dsListLock.RLock()
+	defer jd.dsListLock.RUnlock()
 	dsList := jd.getDSList(false)
-	jd.dsListLock.RUnlock()
 	maxID := jd.GetMaxIDForDs(dsList[len(dsList)-1])
 
 	var job JobT
