@@ -322,7 +322,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			for index, value := range recordInterface {
 				valueType := tableSchemaInUpload[sortedColumnKeys[index]]
 				if value == nil {
-					pkgLogger.Errorf("MS : Found nil value for type : %s, column : %s", valueType, sortedColumnKeys[index])
+					pkgLogger.Debugf("MS : Found nil value for type : %s, column : %s", valueType, sortedColumnKeys[index])
 					finalColumnValues = append(finalColumnValues, nil)
 					continue
 				}
