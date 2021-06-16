@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -19,9 +20,10 @@ import (
 )
 
 var (
-	partitionExpiryUpdated     map[string]bool
-	partitionExpiryUpdatedLock sync.RWMutex
-	pkgLogger                  logger.LoggerI
+	partitionExpiryUpdated                map[string]bool
+	partitionExpiryUpdatedLock            sync.RWMutex
+	pkgLogger                             logger.LoggerI
+	setUsersLoadPartitionFirstEventFilter bool
 )
 
 type HandleT struct {
@@ -264,15 +266,20 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 
 	loadedAtFilter := func() string {
 		// get first event received_at time in this upload for identifies table
-		// firstEventAt := func() string {
-		// 	return warehouseutils.GetTableFirstEventAt(bq.DbHandle, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID, warehouseutils.IdentifiesTable, bq.Upload.StartLoadFileID, bq.Upload.EndLoadFileID)
-		// }
+		firstEventAt := func() time.Time {
+			return bq.Uploader.GetLoadFileGenStartTIme()
+		}
+
+		firstEventTime := firstEventAt()
+		if !setUsersLoadPartitionFirstEventFilter || firstEventTime.IsZero() {
+			return ""
+		}
 
 		// TODO: Add this filter to optimize reading from identifies table since first event in upload
 		// rather than entire day's records
 		// commented it since firstEventAt is not stored in UTC format in earlier versions
-		// return fmt.Sprintf(`AND loaded_at >= TIMESTAMP('%s')`, firstEventAt())
-		return ""
+		firstEventAtFormatted := firstEventTime.Format(misc.RFC3339Milli)
+		return fmt.Sprintf(`AND loaded_at >= TIMESTAMP('%v')`, firstEventAtFormatted)
 	}
 
 	userColMap := bq.Uploader.GetTableSchemaInWarehouse("users")
@@ -348,6 +355,8 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 
 func loadConfig() {
 	partitionExpiryUpdated = make(map[string]bool)
+	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
+
 }
 
 func init() {

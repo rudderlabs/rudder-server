@@ -1,4 +1,4 @@
-package mssql
+package azuresynapse
 
 import (
 	"compress/gzip"
@@ -49,7 +49,7 @@ func diacriticLimit() int {
 	}
 }
 
-const PROVIDER = "MSSQL"
+const PROVIDER = "AZURE_SYNAPSE"
 
 var rudderDataTypesMapToMssql = map[string]string{
 	"int":      "bigint",
@@ -127,7 +127,7 @@ func connect(cred credentialsT) (*sql.DB, error) {
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.port)
 	if err != nil {
-		pkgLogger.Errorf("Error parsing mssql connection port : %v", err)
+		pkgLogger.Errorf("Error parsing synapse connection port : %v", err)
 		return nil, err
 	}
 	connUrl := &url.URL{
@@ -136,31 +136,31 @@ func connect(cred credentialsT) (*sql.DB, error) {
 		Host:     fmt.Sprintf("%s:%d", cred.host, port),
 		RawQuery: query.Encode(),
 	}
-	pkgLogger.Debugf("mssql connection string : %s", connUrl.String())
+	pkgLogger.Debugf("synapse connection string : %s", connUrl.String())
 	var db *sql.DB
 	if db, err = sql.Open("sqlserver", connUrl.String()); err != nil {
-		return nil, fmt.Errorf("mssql connection error : (%v)", err)
+		return nil, fmt.Errorf("synapse connection error : (%v)", err)
 	}
 	return db, nil
 }
 
 func init() {
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("mssql")
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("synapse")
 }
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 }
 
-func (ms *HandleT) getConnectionCredentials() credentialsT {
+func (as *HandleT) getConnectionCredentials() credentialsT {
 	return credentialsT{
-		host:     warehouseutils.GetConfigValue(host, ms.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(dbName, ms.Warehouse),
-		user:     warehouseutils.GetConfigValue(user, ms.Warehouse),
-		password: warehouseutils.GetConfigValue(password, ms.Warehouse),
-		port:     warehouseutils.GetConfigValue(port, ms.Warehouse),
-		sslMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
+		host:     warehouseutils.GetConfigValue(host, as.Warehouse),
+		dbName:   warehouseutils.GetConfigValue(dbName, as.Warehouse),
+		user:     warehouseutils.GetConfigValue(user, as.Warehouse),
+		password: warehouseutils.GetConfigValue(password, as.Warehouse),
+		port:     warehouseutils.GetConfigValue(port, as.Warehouse),
+		sslMode:  warehouseutils.GetConfigValue(sslMode, as.Warehouse),
 	}
 }
 
@@ -172,57 +172,57 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (as *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
-func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations := ms.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
-	storageProvider := warehouseutils.ObjectStorageType(ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
+func (as *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
+	objectLocations := as.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
+	storageProvider := warehouseutils.ObjectStorageType(as.Warehouse.Destination.DestinationDefinition.Name, as.Warehouse.Destination.Config, as.Uploader.UseRudderStorage())
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,
-			Config:           ms.Warehouse.Destination.Config,
-			UseRudderStorage: ms.Uploader.UseRudderStorage(),
+			Config:           as.Warehouse.Destination.Config,
+			UseRudderStorage: as.Uploader.UseRudderStorage(),
 		}),
 	})
 	if err != nil {
-		pkgLogger.Errorf("MS: Error in setting up a downloader for destionationID : %s Error : %v", ms.Warehouse.Destination.ID, err)
+		pkgLogger.Errorf("AZ: Error in setting up a downloader for destionationID : %s Error : %v", as.Warehouse.Destination.ID, err)
 		return nil, err
 	}
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
-		object, err := warehouseutils.GetObjectName(objectLocation, ms.Warehouse.Destination.Config, ms.ObjectStorage)
+		object, err := warehouseutils.GetObjectName(objectLocation, as.Warehouse.Destination.Config, as.ObjectStorage)
 		if err != nil {
-			pkgLogger.Errorf("MS: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
+			pkgLogger.Errorf("AZ: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
 			return nil, err
 		}
 		dirName := "/rudder-warehouse-load-uploads-tmp/"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
-			pkgLogger.Errorf("MS: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("AZ: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
-		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.ID, time.Now().Unix()) + object
+		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, as.Warehouse.Destination.DestinationDefinition.Name, as.Warehouse.Destination.ID, time.Now().Unix()) + object
 		err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
 		if err != nil {
-			pkgLogger.Errorf("MS: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("AZ: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		objectFile, err := os.Create(ObjectPath)
 		if err != nil {
-			pkgLogger.Errorf("MS: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("AZ: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		err = downloader.Download(objectFile, object)
 		if err != nil {
-			pkgLogger.Errorf("MS: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("AZ: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		fileName := objectFile.Name()
 		if err = objectFile.Close(); err != nil {
-			pkgLogger.Errorf("MS: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("AZ: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
 			return nil, err
 		}
 		fileNames = append(fileNames, fileName)
@@ -231,59 +231,68 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 
 }
 
-func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
-	pkgLogger.Infof("MS: Starting load for table:%s", tableName)
+func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+	pkgLogger.Infof("AZ: Starting load for table:%s", tableName)
 
+	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(as.Uploader.GetTableSchemaInWarehouse(tableName))
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
-	fileNames, err := ms.DownloadLoadFiles(tableName)
+	extraColumns := []string{}
+	for _, column := range previousColumnKeys{
+		if !misc.ContainsString(sortedColumnKeys, column){
+			extraColumns = append(extraColumns, column)
+		}
+	}
+	fileNames, err := as.DownloadLoadFiles(tableName)
 	defer misc.RemoveFilePaths(fileNames...)
 	if err != nil {
 		return
 	}
 
-	txn, err := ms.Db.Begin()
-	if err != nil {
-		pkgLogger.Errorf("MS: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
-		return
-	}
 	// create temporary table
 	stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.ReplaceAll(uuid.NewV4().String(), "-", ""))
 	//prepared stmts cannot be used to create temp objects here. Will work in a txn, but will be purged after commit.
 	//https://github.com/denisenkom/go-mssqldb/issues/149, https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN
-	//sqlStatement := fmt.Sprintf(`CREATE  TABLE ##%[2]s like %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
+	//sqlStatement := fmt.Sprintf(`CREATE  TABLE ##%[2]s like %[1]s.%[3]s`, AZ.Namespace, stagingTableName, tableName)
 	//Hence falling back to creating normal tables
-	sqlStatement := fmt.Sprintf(`select top 0 * into %[1]s.%[2]s from %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
+	sqlStatement := fmt.Sprintf(`select top 0 * into %[1]s.%[2]s from %[1]s.%[3]s`, as.Namespace, stagingTableName, tableName)
 
-	pkgLogger.Debugf("MS: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
-	_, err = txn.Exec(sqlStatement)
+	pkgLogger.Debugf("AZ: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
+	_, err = as.Db.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("MS: Error creating temporary table for table:%s: %v\n", tableName, err)
+		pkgLogger.Errorf("AZ: Error creating temporary table for table:%s: %v\n", tableName, err)
 		return
 	}
-	if !skipTempTableDelete {
-		defer ms.dropStagingTable(stagingTableName)
+
+	txn, err := as.Db.Begin()
+	if err != nil {
+		pkgLogger.Errorf("AZ: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
+		return
 	}
 
-	stmt, err := txn.Prepare(mssql.CopyIn(ms.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false}, sortedColumnKeys...))
+	if !skipTempTableDelete {
+		defer as.dropStagingTable(stagingTableName)
+	}
+
+	stmt, err := txn.Prepare(mssql.CopyIn(as.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false}, append(sortedColumnKeys, extraColumns...)...))
 	if err != nil {
-		pkgLogger.Errorf("MS: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
+		pkgLogger.Errorf("AZ: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
 		return
 	}
 	for _, objectFileName := range fileNames {
 		var gzipFile *os.File
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
-			pkgLogger.Errorf("MS: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
+			pkgLogger.Errorf("AZ: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
 			return
 		}
 
 		var gzipReader *gzip.Reader
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
-			pkgLogger.Errorf("MS: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
+			pkgLogger.Errorf("AZ: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
 			gzipFile.Close()
 			return
 
@@ -295,10 +304,10 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			record, err = csvReader.Read()
 			if err != nil {
 				if err == io.EOF {
-					pkgLogger.Debugf("MS: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
+					pkgLogger.Debugf("AZ: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
 					break
 				} else {
-					pkgLogger.Errorf("MS: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
+					pkgLogger.Errorf("AZ: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
 					txn.Rollback()
 					return
 				}
@@ -322,7 +331,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			for index, value := range recordInterface {
 				valueType := tableSchemaInUpload[sortedColumnKeys[index]]
 				if value == nil {
-					pkgLogger.Debugf("MS : Found nil value for type : %s, column : %s", valueType, sortedColumnKeys[index])
+					pkgLogger.Debugf("AZ : Found nil value for type : %s, column : %s", valueType, sortedColumnKeys[index])
 					finalColumnValues = append(finalColumnValues, nil)
 					continue
 				}
@@ -332,7 +341,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					{
 						var convertedValue int
 						if convertedValue, err = strconv.Atoi(strValue); err != nil {
-							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+							pkgLogger.Errorf("AZ : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
 							finalColumnValues = append(finalColumnValues, nil)
 						} else {
 							finalColumnValues = append(finalColumnValues, convertedValue)
@@ -354,7 +363,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 						var convertedValue time.Time
 						//TODO : handling milli?
 						if convertedValue, err = time.Parse(time.RFC3339, strValue); err != nil {
-							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+							pkgLogger.Errorf("AZ : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
 							finalColumnValues = append(finalColumnValues, nil)
 						} else {
 							finalColumnValues = append(finalColumnValues, convertedValue)
@@ -365,7 +374,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					{
 						var convertedValue bool
 						if convertedValue, err = strconv.ParseBool(strValue); err != nil {
-							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+							pkgLogger.Errorf("AZ : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
 							finalColumnValues = append(finalColumnValues, nil)
 						} else {
 							finalColumnValues = append(finalColumnValues, convertedValue)
@@ -397,10 +406,15 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					finalColumnValues = append(finalColumnValues, value)
 				}
 			}
-
+			// This is needed for the copyIn to proceed successfully for azure synapse else will face below err for missing old columns
+			// mssql: Column count in target table does not match column count specified in input.
+			// If BCP command, ensure format file column count matches destination table. If SSIS data import, check column mappings are consistent with target.
+			for range extraColumns{
+				finalColumnValues = append(finalColumnValues, nil)
+			}
 			_, err = stmt.Exec(finalColumnValues...)
 			if err != nil {
-				pkgLogger.Errorf("MS: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
+				pkgLogger.Errorf("AZ: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
 				txn.Rollback()
 				return
 			}
@@ -413,7 +427,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	_, err = stmt.Exec()
 	if err != nil {
 		txn.Rollback()
-		pkgLogger.Errorf("MS: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
+		pkgLogger.Errorf("AZ: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		return
 
 	}
@@ -428,32 +442,32 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	var additionalJoinClause string
 	if tableName == warehouseutils.DiscardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = "%[1]s"."%[2]s"."%[3]s" AND _source.%[4]s = "%[1]s"."%[2]s"."%[4]s"`, ms.Namespace, tableName, "table_name", "column_name")
+		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = "%[1]s"."%[2]s"."%[3]s" AND _source.%[4]s = "%[1]s"."%[2]s"."%[4]s"`, as.Namespace, tableName, "table_name", "column_name")
 	}
-	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" FROM "%[1]s"."%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, ms.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
-	pkgLogger.Infof("MS: Deduplicate records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" FROM "%[1]s"."%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, as.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
+	pkgLogger.Infof("AZ: Deduplicate records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("MS: Error deleting from original table for dedup: %v\n", err)
+		pkgLogger.Errorf("AZ: Error deleting from original table for dedup: %v\n", err)
 		txn.Rollback()
 		return
 	}
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, ms.Namespace, tableName, sortedColumnString, stagingTableName, partitionKey)
-	pkgLogger.Infof("MS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, as.Namespace, tableName, sortedColumnString, stagingTableName, partitionKey)
+	pkgLogger.Infof("AZ: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 
 	if err != nil {
-		pkgLogger.Errorf("MS: Error inserting into original table: %v\n", err)
+		pkgLogger.Errorf("AZ: Error inserting into original table: %v\n", err)
 		txn.Rollback()
 		return
 	}
 
 	if err = txn.Commit(); err != nil {
-		pkgLogger.Errorf("MS: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
+		pkgLogger.Errorf("AZ: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		return
 	}
 
-	pkgLogger.Infof("MS: Complete load for table:%s", tableName)
+	pkgLogger.Infof("AZ: Complete load for table:%s", tableName)
 	return
 }
 
@@ -477,27 +491,27 @@ func hasDiacritics(str string) bool {
 	return false
 }
 
-func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
+func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
-	pkgLogger.Infof("MS: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := ms.loadTable(warehouseutils.IdentifiesTable, ms.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
+	pkgLogger.Infof("AZ: Starting load for identifies and users tables\n")
+	identifyStagingTable, err := as.loadTable(warehouseutils.IdentifiesTable, as.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
 	}
 
-	if len(ms.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
+	if len(as.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
 		return
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
 	unionStagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.NewV4().String(), "-", ""), "users_identifies_union"), 127)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.NewV4().String(), "-", ""), warehouseutils.UsersTable), 127)
-	defer ms.dropStagingTable(stagingTableName)
-	defer ms.dropStagingTable(unionStagingTableName)
-	defer ms.dropStagingTable(identifyStagingTable)
+	defer as.dropStagingTable(stagingTableName)
+	defer as.dropStagingTable(unionStagingTableName)
+	defer as.dropStagingTable(identifyStagingTable)
 
-	userColMap := ms.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
+	userColMap := as.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "id" {
@@ -506,14 +520,12 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 		userColNames = append(userColNames, colName)
 		caseSubQuery := fmt.Sprintf(`case
 						  when (exists(select 1)) then (
-						  	select %[1]s from %[2]s
+						  	select top 1 %[1]s from %[2]s
 						  	where x.id = %[2]s.id
 							  and %[1]s is not null
-							  order by received_at desc
-						  	OFFSET 0 ROWS
-							FETCH NEXT 1 ROWS ONLY)
-						  end as %[1]s`, colName, ms.Namespace+"."+unionStagingTableName)
-
+							order by X.received_at desc
+							)
+						  end as %[1]s`, colName, as.Namespace+"."+unionStagingTableName)
 		//IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortedened to below
 		//https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
 		//caseSubQuery := fmt.Sprintf(`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName)
@@ -528,10 +540,10 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 												(
 													SELECT user_id, %[4]s FROM %[3]s  WHERE user_id IS NOT NULL
 												)) a
-											`, ms.Namespace, ms.Namespace+"."+warehouseutils.UsersTable, ms.Namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), ms.Namespace+"."+unionStagingTableName)
+											`, as.Namespace, as.Namespace+"."+warehouseutils.UsersTable, as.Namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), as.Namespace+"."+unionStagingTableName)
 
-	pkgLogger.Debugf("MS: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
+	pkgLogger.Debugf("AZ: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
+	_, err = as.Db.Exec(sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -544,43 +556,43 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 											FROM %[3]s as x
 										) as xyz
 									) a`,
-		ms.Namespace+"."+stagingTableName,
+		as.Namespace+"."+stagingTableName,
 		strings.Join(firstValProps, ","),
-		ms.Namespace+"."+unionStagingTableName,
+		as.Namespace+"."+unionStagingTableName,
 	)
 
-	pkgLogger.Debugf("MS: Creating staging table for users: %s\n", sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
+	pkgLogger.Debugf("AZ: Creating staging table for users: %s\n", sqlStatement)
+	_, err = as.Db.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("MS: Error Creating staging table for users: %s\n", sqlStatement)
+		pkgLogger.Errorf("AZ: Error Creating staging table for users: %s\n", sqlStatement)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
 	// BEGIN TRANSACTION
-	tx, err := ms.Db.Begin()
+	tx, err := as.Db.Begin()
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
 	primaryKey := "id"
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" FROM %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, ms.Namespace, warehouseutils.UsersTable, ms.Namespace+"."+stagingTableName, primaryKey)
-	pkgLogger.Infof("MS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" FROM %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, as.Namespace, warehouseutils.UsersTable, as.Namespace+"."+stagingTableName, primaryKey)
+	pkgLogger.Infof("AZ: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("MS: Error deleting from original table for dedup: %v\n", err)
+		pkgLogger.Errorf("AZ: Error deleting from original table for dedup: %v\n", err)
 		tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, ms.Namespace, warehouseutils.UsersTable, ms.Namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
-	pkgLogger.Infof("MS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, as.Namespace, warehouseutils.UsersTable, as.Namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
+	pkgLogger.Infof("AZ: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 
 	if err != nil {
-		pkgLogger.Errorf("MS: Error inserting into users table from staging table: %v\n", err)
+		pkgLogger.Errorf("AZ: Error inserting into users table from staging table: %v\n", err)
 		tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -588,7 +600,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	err = tx.Commit()
 	if err != nil {
-		pkgLogger.Errorf("MS: Error in transaction commit for users table: %v\n", err)
+		pkgLogger.Errorf("AZ: Error in transaction commit for users table: %v\n", err)
 		tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -596,68 +608,68 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (ms *HandleT) CreateSchema() (err error) {
+func (as *HandleT) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
     EXEC('CREATE SCHEMA [%s]');
-`, ms.Namespace, ms.Namespace)
-	pkgLogger.Infof("MSSQL: Creating schema name in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
+`, as.Namespace, as.Namespace)
+	pkgLogger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+	_, err = as.Db.Exec(sqlStatement)
 	if err == io.EOF {
 		return nil
 	}
 	return
 }
 
-func (ms *HandleT) dropStagingTable(stagingTableName string) {
-	pkgLogger.Infof("MS: dropping table %+v\n", stagingTableName)
-	_, err := ms.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ms.Namespace+"."+stagingTableName))
+func (as *HandleT) dropStagingTable(stagingTableName string) {
+	pkgLogger.Infof("AZ: dropping table %+v\n", stagingTableName)
+	_, err := as.Db.Exec(fmt.Sprintf(`IF OBJECT_ID ('%[1]s','U') IS NOT NULL DROP TABLE %[1]s;`, as.Namespace+"."+stagingTableName))
 	if err != nil {
-		pkgLogger.Errorf("MS:  Error dropping staging table %s in mssql: %v", ms.Namespace+"."+stagingTableName, err)
+		pkgLogger.Errorf("AZ:  Error dropping staging table %s in synapse: %v", as.Namespace+"."+stagingTableName, err)
 	}
 }
 
-func (ms *HandleT) createTable(name string, columns map[string]string) (err error) {
+func (as *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 	CREATE TABLE %[1]s ( %v )`, name, columnsWithDataTypes(columns, ""))
 
-	pkgLogger.Infof("MS: Creating table in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
+	pkgLogger.Infof("AZ: Creating table in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+	_, err = as.Db.Exec(sqlStatement)
 	return
 }
 
-func (ms *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+func (as *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1  FROM SYS.COLUMNS WHERE OBJECT_ID = OBJECT_ID(N'%[1]s') AND name = '%[2]s')
 			ALTER TABLE %[1]s ADD %[2]s %[3]s`, tableName, columnName, rudderDataTypesMapToMssql[columnType])
-	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
+	pkgLogger.Infof("AZ: Adding column in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+	_, err = as.Db.Exec(sqlStatement)
 	return
 }
 
-func (ms *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (as *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace whereever possible
-	err = ms.createTable(ms.Namespace+"."+tableName, columnMap)
+	err = as.createTable(as.Namespace+"."+tableName, columnMap)
 	return err
 }
 
-func (ms *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
-	err = ms.addColumn(ms.Namespace+"."+tableName, columnName, columnType)
+func (as *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+	err = as.addColumn(as.Namespace+"."+tableName, columnName, columnType)
 	return err
 }
 
-func (ms *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (as *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
 	return
 }
 
-func (ms *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
-	ms.Warehouse = warehouse
-	ms.Db, err = connect(ms.getConnectionCredentials())
+func (as *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+	as.Warehouse = warehouse
+	as.Db, err = connect(as.getConnectionCredentials())
 	if err != nil {
 		return
 	}
 	pingResultChannel := make(chan error, 1)
-	defer ms.Db.Close()
+	defer as.Db.Close()
 	rruntime.Go(func() {
-		pingResultChannel <- ms.Db.Ping()
+		pingResultChannel <- as.Db.Ping()
 	})
 	var timeOut time.Duration = 5
 	select {
@@ -668,36 +680,36 @@ func (ms *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	return
 }
 
-func (ms *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
-	ms.Warehouse = warehouse
-	ms.Namespace = warehouse.Namespace
-	ms.Uploader = uploader
-	ms.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.MSSQL, warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
+func (as *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+	as.Warehouse = warehouse
+	as.Namespace = warehouse.Namespace
+	as.Uploader = uploader
+	as.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.AZURE_SYNAPSE, warehouse.Destination.Config, as.Uploader.UseRudderStorage())
 
-	ms.Db, err = connect(ms.getConnectionCredentials())
+	as.Db, err = connect(as.getConnectionCredentials())
 	return err
 }
 
-func (ms *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
-	ms.Warehouse = warehouse
-	ms.Namespace = warehouse.Namespace
-	ms.Db, err = connect(ms.getConnectionCredentials())
+func (as *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+	as.Warehouse = warehouse
+	as.Namespace = warehouse.Namespace
+	as.Db, err = connect(as.getConnectionCredentials())
 	if err != nil {
 		return err
 	}
-	defer ms.Db.Close()
-	ms.dropDanglingStagingTables()
+	defer as.Db.Close()
+	as.dropDanglingStagingTables()
 	return
 }
 
-func (ms *HandleT) dropDanglingStagingTables() bool {
+func (as *HandleT) dropDanglingStagingTables() bool {
 
 	sqlStatement := fmt.Sprintf(`select table_name
 								 from information_schema.tables
-								 where table_schema = '%s' AND table_name like '%s';`, ms.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
-	rows, err := ms.Db.Query(sqlStatement)
+								 where table_schema = '%s' AND table_name like '%s';`, as.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
+	rows, err := as.Db.Query(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("WH: MSSQL: Error dropping dangling staging tables in MSSQL: %v\nQuery: %s\n", err, sqlStatement)
+		pkgLogger.Errorf("WH: SYNAPSE: Error dropping dangling staging tables in synapse: %v\nQuery: %s\n", err, sqlStatement)
 		return false
 	}
 	defer rows.Close()
@@ -711,23 +723,23 @@ func (ms *HandleT) dropDanglingStagingTables() bool {
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
-	pkgLogger.Infof("WH: MSSQL: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
+	pkgLogger.Infof("WH: SYNAPSE: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
-		_, err := ms.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.Namespace, stagingTableName))
+		_, err := as.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, as.Namespace, stagingTableName))
 		if err != nil {
-			pkgLogger.Errorf("WH: MSSQL:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
+			pkgLogger.Errorf("WH: SYNAPSE:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
 			delSuccess = false
 		}
 	}
 	return delSuccess
 }
 
-// FetchSchema queries mssql and returns the schema associated with provided namespace
-func (ms *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
-	ms.Warehouse = warehouse
-	ms.Namespace = warehouse.Namespace
-	dbHandle, err := connect(ms.getConnectionCredentials())
+// FetchSchema queries SYNAPSE and returns the schema associated with provided namespace
+func (as *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+	as.Warehouse = warehouse
+	as.Namespace = warehouse.Namespace
+	dbHandle, err := connect(as.getConnectionCredentials())
 	if err != nil {
 		return
 	}
@@ -736,15 +748,15 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	schema = make(warehouseutils.SchemaT)
 	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type
 									FROM INFORMATION_SCHEMA.COLUMNS
-									WHERE table_schema = '%s' and table_name not like '%s%s'`, ms.Namespace, stagingTablePrefix, "%")
+									WHERE table_schema = '%s' and table_name not like '%s%s'`, as.Namespace, stagingTablePrefix, "%")
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != io.EOF {
-		pkgLogger.Errorf("MS: Error in fetching schema from mssql destination:%v, query: %v", ms.Warehouse.Destination.ID, sqlStatement)
+		pkgLogger.Errorf("AZ: Error in fetching schema from synapse destination:%v, query: %v", as.Warehouse.Destination.ID, sqlStatement)
 		return
 	}
 	if err == io.EOF {
-		pkgLogger.Infof("MS: No rows, while fetching schema from  destination:%v, query: %v", ms.Warehouse.Identifier, sqlStatement)
+		pkgLogger.Infof("AZ: No rows, while fetching schema from  destination:%v, query: %v", as.Warehouse.Identifier, sqlStatement)
 		return schema, nil
 	}
 	defer rows.Close()
@@ -752,7 +764,7 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		var tName, cName, cType string
 		err = rows.Scan(&tName, &cName, &cType)
 		if err != nil {
-			pkgLogger.Errorf("MS: Error in processing fetched schema from mssql destination:%v", ms.Warehouse.Destination.ID)
+			pkgLogger.Errorf("AZ: Error in processing fetched schema from synapse destination:%v", as.Warehouse.Destination.ID)
 			return
 		}
 		if _, ok := schema[tName]; !ok {
@@ -765,48 +777,48 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	return
 }
 
-func (ms *HandleT) LoadUserTables() map[string]error {
-	return ms.loadUserTables()
+func (as *HandleT) LoadUserTables() map[string]error {
+	return as.loadUserTables()
 }
 
-func (ms *HandleT) LoadTable(tableName string) error {
-	_, err := ms.loadTable(tableName, ms.Uploader.GetTableSchemaInUpload(tableName), false)
+func (as *HandleT) LoadTable(tableName string) error {
+	_, err := as.loadTable(tableName, as.Uploader.GetTableSchemaInUpload(tableName), false)
 	return err
 }
 
-func (ms *HandleT) Cleanup() {
-	if ms.Db != nil {
+func (as *HandleT) Cleanup() {
+	if as.Db != nil {
 		//extra check aside dropStagingTable(table)
-		ms.dropDanglingStagingTables()
-		ms.Db.Close()
+		as.dropDanglingStagingTables()
+		as.Db.Close()
 	}
 }
 
-func (ms *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (as *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (ms *HandleT) LoadIdentityMappingsTable() (err error) {
+func (as *HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (ms *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (as *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (ms *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, ms.Namespace, tableName)
-	err = ms.Db.QueryRow(sqlStatement).Scan(&total)
+func (as *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, as.Namespace, tableName)
+	err = as.Db.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
-		pkgLogger.Errorf(`MS: Error getting total count in table %s:%s`, ms.Namespace, tableName)
+		pkgLogger.Errorf(`AZ: Error getting total count in table %s:%s`, as.Namespace, tableName)
 	}
 	return
 }
 
-func (ms *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
-	ms.Warehouse = warehouse
-	ms.Namespace = warehouse.Namespace
-	dbHandle, err := connect(ms.getConnectionCredentials())
+func (as *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+	as.Warehouse = warehouse
+	as.Namespace = warehouse.Namespace
+	dbHandle, err := connect(as.getConnectionCredentials())
 	if err != nil {
 		return client.Client{}, err
 	}

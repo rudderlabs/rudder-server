@@ -3479,3 +3479,18 @@ func (jd *HandleT) GetLastJobID() int64 {
 	jd.dsListLock.RUnlock()
 	return jd.GetMaxIDForDs(dsList[len(dsList)-1])
 }
+
+func (jd *HandleT) GetLastJob() *JobT {
+	jd.dsListLock.RLock()
+	defer jd.dsListLock.RUnlock()
+	dsList := jd.getDSList(false)
+	maxID := jd.GetMaxIDForDs(dsList[len(dsList)-1])
+
+	var job JobT
+	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)
+	err := jd.dbHandle.QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
+	if err != nil && err != sql.ErrNoRows {
+		jd.assertError(err)
+	}
+	return &job
+}

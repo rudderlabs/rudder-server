@@ -77,28 +77,30 @@ type uploadStateT struct {
 }
 
 type UploadT struct {
-	ID                 int64
-	Namespace          string
-	SourceID           string
-	SourceType         string
-	SourceCategory     string
-	DestinationID      string
-	DestinationType    string
-	StartStagingFileID int64
-	EndStagingFileID   int64
-	StartLoadFileID    int64
-	EndLoadFileID      int64
-	Status             string
-	Schema             warehouseutils.SchemaT
-	Error              json.RawMessage
-	Timings            []map[string]string
-	FirstAttemptAt     time.Time
-	LastAttemptAt      time.Time
-	Attempts           int64
-	Metadata           json.RawMessage
-	FirstEventAt       time.Time
-	LastEventAt        time.Time
-	UseRudderStorage   bool
+	ID                   int64
+	Namespace            string
+	SourceID             string
+	SourceType           string
+	SourceCategory       string
+	DestinationID        string
+	DestinationType      string
+	StartStagingFileID   int64
+	EndStagingFileID     int64
+	StartLoadFileID      int64
+	EndLoadFileID        int64
+	Status               string
+	Schema               warehouseutils.SchemaT
+	Error                json.RawMessage
+	Timings              []map[string]string
+	FirstAttemptAt       time.Time
+	LastAttemptAt        time.Time
+	Attempts             int64
+	Metadata             json.RawMessage
+	FirstEventAt         time.Time
+	LastEventAt          time.Time
+	UseRudderStorage     bool
+	LoadFileGenStartTime time.Time
+	TimingsObj           sql.NullString
 	// cloud sources specific info
 	SourceBatchID   string
 	SourceTaskID    string
@@ -139,7 +141,7 @@ const (
 
 var (
 	alwaysMarkExported                               = []string{warehouseutils.DiscardsTable}
-	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{warehouseutils.SNOWFLAKE}
+	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{warehouseutils.SNOWFLAKE, warehouseutils.BQ}
 	warehousesToVerifyLoadFilesFolder                = []string{warehouseutils.SNOWFLAKE}
 )
 
@@ -1489,6 +1491,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", publishBatchSize, noOfWorkers, destType, destID)
 	uniqueLoadGenID := uuid.NewV4().String()
+	job.upload.LoadFileGenStartTime = timeutil.Now()
 
 	var wg sync.WaitGroup
 
@@ -1794,6 +1797,13 @@ func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
 
 func (job *UploadJobT) UseRudderStorage() bool {
 	return job.upload.UseRudderStorage
+}
+
+func (job *UploadJobT) GetLoadFileGenStartTIme() time.Time {
+	if !job.upload.LoadFileGenStartTime.IsZero() {
+		return job.upload.LoadFileGenStartTime
+	}
+	return warehouseutils.GetLoadFileGenTime(job.upload.TimingsObj)
 }
 
 /*
