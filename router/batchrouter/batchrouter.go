@@ -735,6 +735,14 @@ func (worker *workerT) constructParameterFilters(batchDest BatchDestinationT) []
 	return parameterFilters
 }
 
+func (brt *HandleT) isToBeDrained(job *jobsdb.JobT) bool {
+	destID := gjson.GetBytes(job.Parameters, "destination_id").String()
+	if d, ok := brt.destinationsMap[destID]; ok && !d.Destination.Enabled { //shouldn't this be `!(ok && d.Destination.Enabled)`?
+		return true
+	}
+	return false
+}
+
 func (worker *workerT) workerProcess() {
 	brt := worker.brt
 	for {
@@ -790,27 +798,49 @@ func (worker *workerT) workerProcess() {
 			}
 
 			var statusList []*jobsdb.JobStatusT
+			var drainList []*jobsdb.JobStatusT
 
 			jobsBySource := make(map[string][]*jobsdb.JobT)
 			for _, job := range combinedList {
-				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
-				if _, ok := jobsBySource[sourceID]; !ok {
-					jobsBySource[sourceID] = []*jobsdb.JobT{}
-				}
-				jobsBySource[sourceID] = append(jobsBySource[sourceID], job)
+				if brt.isToBeDrained(job) {
+					status := jobsdb.JobStatusT{
+						JobID:         job.JobID,
+						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+						JobState:      jobsdb.Aborted.State,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     "",
+						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or confifgured to be aborted via ENV" }`), // check
+					}
+					drainList = append(drainList, &status)
+				} else {
+					sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
+					if _, ok := jobsBySource[sourceID]; !ok {
+						jobsBySource[sourceID] = []*jobsdb.JobT{}
+					}
+					jobsBySource[sourceID] = append(jobsBySource[sourceID], job)
 
-				status := jobsdb.JobStatusT{
-					JobID:         job.JobID,
-					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-					JobState:      jobsdb.Executing.State,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
-					ErrorCode:     "",
-					ErrorResponse: []byte(`{}`), // check
+					status := jobsdb.JobStatusT{
+						JobID:         job.JobID,
+						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+						JobState:      jobsdb.Executing.State,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     "",
+						ErrorResponse: []byte(`{}`), // check
+					}
+					statusList = append(statusList, &status)
 				}
-				statusList = append(statusList, &status)
 			}
 
+			//Mark the drainList jobs as Aborted
+			if len(drainList) > 0 {
+				err := brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
+				if err != nil {
+					brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
+					panic(err)
+				}
+			}
 			//Mark the jobs as executing
 			err := brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 			if err != nil {
