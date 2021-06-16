@@ -353,7 +353,7 @@ func (worker *workerT) workerProcess() {
 
 			if worker.rt.enableBatching {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
-				worker.routerJobs = append(worker.routerJobs, routerJob)			
+				worker.routerJobs = append(worker.routerJobs, routerJob)
 				if len(worker.routerJobs) >= noOfJobsToBatchInAWorker {
 					worker.destinationJobs = worker.batch(worker.routerJobs)
 					worker.processDestinationJobs()
@@ -1493,7 +1493,7 @@ func (rt *HandleT) generatorLoop() {
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
 						ErrorCode:     "",
-						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or confifgured to be aborted via ENV" }`),
+						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled/disconnected or confifgured to be aborted via ENV" }`),
 					}
 					drainList = append(drainList, &status)
 					if _, ok := drainCountByDest[destID]; !ok {
@@ -1564,7 +1564,7 @@ func destinationID(job *jobsdb.JobT) string {
 }
 
 func (rt *HandleT) isToBeDrained(job *jobsdb.JobT, destID string) bool {
-	if d, ok := rt.destinationsMap[destID]; ok && !d.Enabled {
+	if d, ok := rt.destinationsMap[destID]; (ok && !d.Enabled) || !d.IsProcessorEnabled {
 		return true
 	}
 	if toAbortDestinationIDs != "" {

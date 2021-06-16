@@ -737,7 +737,7 @@ func (worker *workerT) constructParameterFilters(batchDest BatchDestinationT) []
 
 func (brt *HandleT) isToBeDrained(job *jobsdb.JobT) bool {
 	destID := gjson.GetBytes(job.Parameters, "destination_id").String()
-	if d, ok := brt.destinationsMap[destID]; ok && !d.Destination.Enabled { //shouldn't this be `!(ok && d.Destination.Enabled)`?
+	if d, ok := brt.destinationsMap[destID]; (ok && !d.Destination.Enabled) || !d.Destination.IsProcessorEnabled {
 		return true
 	}
 	return false
@@ -810,7 +810,7 @@ func (worker *workerT) workerProcess() {
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
 						ErrorCode:     "",
-						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or confifgured to be aborted via ENV" }`), // check
+						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled/disconnected or confifgured to be aborted via ENV" }`), // check
 					}
 					drainList = append(drainList, &status)
 				} else {
