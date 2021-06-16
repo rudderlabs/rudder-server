@@ -783,7 +783,9 @@ func (worker *workerT) workerProcess() {
 				brt.logger.Debugf("BRT: DB Read Complete. No BRT Jobs to process for parameter Filters: %v", parameterFilters)
 				setDestInProgress(batchDest.Destination.ID, false)
 				//NOTE: Calling Done on parentWG is important before listening on channel again.
-				batchDestData.parentWG.Done()
+				if batchDestData.parentWG != nil {
+					batchDestData.parentWG.Done()
+				}
 				continue
 			}
 
@@ -882,7 +884,9 @@ func (worker *workerT) workerProcess() {
 			wg.Wait()
 			setDestInProgress(batchDest.Destination.ID, false)
 			//NOTE: Calling Done on parentWG is important before listening on channel again.
-			batchDestData.parentWG.Done()
+			if batchDestData.parentWG != nil {
+				batchDestData.parentWG.Done()
+			}
 		}
 	}
 }
@@ -989,7 +993,26 @@ func (brt *HandleT) mainLoop() {
 		configSubscriberLock.RUnlock()
 
 		var jobs []*jobsdb.JobT
-		if !readPerDestination {
+		if readPerDestination {
+			for destID, batchDest := range destinationsMap {
+				if isDestInProgress(destID) {
+					brt.logger.Debugf("BRT: Skipping batch router upload loop since destination %s:%s is in progress", batchDest.Destination.DestinationDefinition.Name, destID)
+					continue
+				}
+				if uploadFrequencyExceeded(destID) {
+					brt.logger.Debugf("BRT: Skipping batch router upload loop since %s:%s upload freq not exceeded", batchDest.Destination.DestinationDefinition.Name, destID)
+					continue
+				}
+				setDestInProgress(destID, true)
+
+				brt.processQ <- &BatchDestinationDataT{batchDestination: *batchDest, jobs: jobs, parentWG: nil}
+			}
+		} else {
+			if uploadFrequencyExceeded(brt.destType) {
+				brt.logger.Debugf("BRT: %s: Skipping batch router read since upload freq not exceeded", brt.destType)
+				continue
+			}
+
 			brt.logger.Debugf("BRT: %s: Reading in mainLoop", brt.destType)
 			brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "mainLoop"})
 			brtQueryStat.Start()
@@ -1001,25 +1024,18 @@ func (brt *HandleT) mainLoop() {
 
 			jobs = append(retryList, unprocessedList...)
 			brt.logger.Debugf("BRT: %s: Length of jobs received: %d", brt.destType, len(jobs))
+
+			var wg sync.WaitGroup
+			for destID, batchDest := range destinationsMap {
+				setDestInProgress(destID, true)
+
+				wg.Add(1)
+				brt.processQ <- &BatchDestinationDataT{batchDestination: *batchDest, jobs: jobs, parentWG: &wg}
+			}
+
+			wg.Wait()
 		}
 
-		var wg sync.WaitGroup
-		for destID, batchDest := range destinationsMap {
-			if isDestInProgress(destID) {
-				brt.logger.Debugf("BRT: Skipping batch router upload loop since destination %s:%s is in progress", batchDest.Destination.DestinationDefinition.Name, destID)
-				continue
-			}
-			if uploadFrequencyExceeded(destID) {
-				brt.logger.Debugf("BRT: Skipping batch router upload loop since %s:%s upload freq not exceeded", batchDest.Destination.DestinationDefinition.Name, destID)
-				continue
-			}
-			setDestInProgress(destID, true)
-
-			wg.Add(1)
-			brt.processQ <- &BatchDestinationDataT{batchDestination: *batchDest, jobs: jobs, parentWG: &wg}
-		}
-
-		wg.Wait()
 	}
 }
 
