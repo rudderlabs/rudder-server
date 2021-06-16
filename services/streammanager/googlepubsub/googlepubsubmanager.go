@@ -14,12 +14,10 @@ import (
 )
 
 type Config struct {
-	Credentials         string              `json:"credentials"`
-	ProjectId           string              `json:"projectId"`
-	EventToTopicMap     []map[string]string `json:"eventToTopicMap"`
-	EventToAttributeMap []map[string]string `json:"eventToAttributeMap"`
+	Credentials     string              `json:"credentials"`
+	ProjectId       string              `json:"projectId"`
+	EventToTopicMap []map[string]string `json:"eventToTopicMap"`
 }
-
 type PubsubClient struct {
 	Pbs      *pubsub.Client
 	TopicMap map[string]*pubsub.Topic
