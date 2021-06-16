@@ -22,12 +22,13 @@ import (
 )
 
 const (
-	RS         = "RS"
-	BQ         = "BQ"
-	SNOWFLAKE  = "SNOWFLAKE"
-	POSTGRES   = "POSTGRES"
-	CLICKHOUSE = "CLICKHOUSE"
-	MSSQL      = "MSSQL"
+	RS            = "RS"
+	BQ            = "BQ"
+	SNOWFLAKE     = "SNOWFLAKE"
+	POSTGRES      = "POSTGRES"
+	CLICKHOUSE    = "CLICKHOUSE"
+	MSSQL         = "MSSQL"
+	AZURE_SYNAPSE = "AZURE_SYNAPSE"
 )
 
 const (
@@ -140,6 +141,7 @@ type UploaderI interface {
 	GetSingleLoadFileLocation(tableName string) (string, error)
 	ShouldOnDedupUseNewRecord() bool
 	UseRudderStorage() bool
+	GetLoadFileGenStartTIme() time.Time
 }
 
 type GetLoadFileLocationsOptionsT struct {
@@ -201,6 +203,20 @@ func GetLastFailedStatus(str sql.NullString) (status string) {
 			for s := range timingsMap[index].Map() {
 				if strings.Contains(s, "failed") {
 					return s
+				}
+			}
+		}
+	}
+	return // zero values
+}
+
+func GetLoadFileGenTime(str sql.NullString) (t time.Time) {
+	timingsMap := gjson.Parse(str.String).Array()
+	if len(timingsMap) > 0 {
+		for index := len(timingsMap) - 1; index >= 0; index-- {
+			for s, t := range timingsMap[index].Map() {
+				if strings.Contains(s, "generating_load_files") {
+					return t.Time()
 				}
 			}
 		}

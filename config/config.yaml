@@ -144,6 +144,8 @@ Warehouse:
     maxParallelLoads: 3
   mssql:
     maxParallelLoads: 3
+  azure_synapse:
+    maxParallelLoads: 3
   clickhouse:
     maxParallelLoads: 3
     queryDebugLogs: false

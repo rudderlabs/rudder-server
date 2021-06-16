@@ -60,7 +60,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
-	if enableProcessor {
+	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
 		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
 		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
@@ -98,6 +98,12 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 
 	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+
+	if embedded.App.Features().Replay != nil {
+		var replayDB jobsdb.HandleT
+		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+		embedded.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB)
+	}
 
 	if enableGateway {
 		var gateway gateway.HandleT
