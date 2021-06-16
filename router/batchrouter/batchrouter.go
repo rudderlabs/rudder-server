@@ -60,6 +60,7 @@ var (
 	pkgLogger                          logger.LoggerI
 	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	QueryFilters                       jobsdb.QueryFiltersT
+	readPerDestination                 bool
 	disableEgress                      bool
 )
 
@@ -86,7 +87,6 @@ type HandleT struct {
 	reporting                types.ReportingI
 	reportingEnabled         bool
 	workers                  []*workerT
-	readPerDestination       bool
 }
 
 type BatchDestinationT struct {
@@ -575,12 +575,15 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		}
 	}
 
-	parameterFilters := []jobsdb.ParameterFilterT{
-		{
-			Name:     "destination_id",
-			Value:    batchJobs.BatchDestination.Destination.ID,
-			Optional: false,
-		},
+	var parameterFilters []jobsdb.ParameterFilterT
+	if readPerDestination {
+		parameterFilters = []jobsdb.ParameterFilterT{
+			{
+				Name:     "destination_id",
+				Value:    batchJobs.BatchDestination.Destination.ID,
+				Optional: false,
+			},
+		}
 	}
 
 	//Store the aborted jobs to errorDB
@@ -747,7 +750,7 @@ func (worker *workerT) workerProcess() {
 			batchDest := batchDestData.batchDestination
 			parameterFilters := worker.constructParameterFilters(batchDest)
 			var combinedList []*jobsdb.JobT
-			if worker.brt.readPerDestination {
+			if readPerDestination {
 				toQuery := jobQueryBatchSize
 				brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
 				brtQueryStat.Start()
@@ -986,7 +989,7 @@ func (brt *HandleT) mainLoop() {
 		configSubscriberLock.RUnlock()
 
 		var jobs []*jobsdb.JobT
-		if !brt.readPerDestination {
+		if !readPerDestination {
 			brt.logger.Debugf("BRT: %s: Reading in mainLoop", brt.destType)
 			brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "mainLoop"})
 			brtQueryStat.Start()
@@ -1183,6 +1186,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	encounteredMergeRuleMap = map[string]map[string]bool{}
 	disableEgress = config.GetBool("disableEgress", false)
+	config.RegisterBoolConfigVariable(false, &readPerDestination, false, "BatchRouter.readPerDestination")
 }
 
 func init() {
@@ -1190,7 +1194,11 @@ func init() {
 	uploadedRawDataJobsCache = make(map[string]map[string]bool)
 	pkgLogger = logger.NewLogger().Child("batchrouter")
 
-	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true, ParameterFilters: []string{"destination_id"}}
+	if readPerDestination {
+		QueryFilters = jobsdb.QueryFiltersT{CustomVal: true, ParameterFilters: []string{"destination_id"}}
+	} else {
+		QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
+	}
 }
 
 //Setup initializes this module
@@ -1211,7 +1219,6 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destTyp
 	brt.errorDB = errorDB
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
-	config.RegisterBoolConfigVariable(false, &brt.readPerDestination, true, []string{"BatchRouter." + brt.destType + "." + "readPerDestination", "BatchRouter." + "readPerDestination"}...)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindowInMins"}...)
 	tr := &http.Transport{}
