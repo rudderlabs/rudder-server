@@ -22,12 +22,13 @@ import (
 )
 
 const (
-	RS         = "RS"
-	BQ         = "BQ"
-	SNOWFLAKE  = "SNOWFLAKE"
-	POSTGRES   = "POSTGRES"
-	CLICKHOUSE = "CLICKHOUSE"
-	MSSQL      = "MSSQL"
+	RS            = "RS"
+	BQ            = "BQ"
+	SNOWFLAKE     = "SNOWFLAKE"
+	POSTGRES      = "POSTGRES"
+	CLICKHOUSE    = "CLICKHOUSE"
+	MSSQL         = "MSSQL"
+	AZURE_SYNAPSE = "AZURE_SYNAPSE"
 )
 
 const (

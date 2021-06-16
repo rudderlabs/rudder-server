@@ -74,7 +74,7 @@ func loadConfig() {
 	enableReplay = config.GetBool("Replay.enabled", false)
 	enableRouter = config.GetBool("enableRouter", true)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
 }
 
 func rudderCoreBaseSetup() {
