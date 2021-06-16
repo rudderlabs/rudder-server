@@ -88,6 +88,10 @@ func (a *App) initEnterpriseFeatures() {
 	if reportingFeatureSetup != nil {
 		a.features.Reporting = reportingFeatureSetup(a)
 	}
+
+	if replayFeatureSetup != nil {
+		a.features.Replay = replayFeatureSetup(a)
+	}
 }
 
 // Options returns this application's options
