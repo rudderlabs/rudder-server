@@ -749,7 +749,7 @@ func (worker *workerT) workerProcess() {
 			var combinedList []*jobsdb.JobT
 			if worker.brt.readPerDestination {
 				toQuery := jobQueryBatchSize
-				brtQueryStat := stats.NewStat("batch_router.jobsdb_query_time", stats.TimerType)
+				brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
 				brtQueryStat.Start()
 				brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
@@ -988,10 +988,13 @@ func (brt *HandleT) mainLoop() {
 		var jobs []*jobsdb.JobT
 		if !brt.readPerDestination {
 			brt.logger.Debugf("BRT: %s: Reading in mainLoop", brt.destType)
+			brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "mainLoop"})
+			brtQueryStat.Start()
 			toQuery := jobQueryBatchSize
 			retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
 			toQuery -= len(retryList)
 			unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
+			brtQueryStat.End()
 
 			jobs = append(retryList, unprocessedList...)
 			brt.logger.Debugf("BRT: %s: Length of jobs received: %d", brt.destType, len(jobs))
@@ -1208,7 +1211,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destTyp
 	brt.errorDB = errorDB
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
-	config.RegisterBoolConfigVariable(false, &brt.readPerDestination, false, []string{"BatchRouter." + brt.destType + "." + "readPerDestination", "BatchRouter." + "readPerDestination"}...)
+	config.RegisterBoolConfigVariable(false, &brt.readPerDestination, true, []string{"BatchRouter." + brt.destType + "." + "readPerDestination", "BatchRouter." + "readPerDestination"}...)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindowInMins"}...)
 	tr := &http.Transport{}
