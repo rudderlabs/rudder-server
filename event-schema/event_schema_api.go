@@ -8,8 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"github.com/rudderlabs/rudder-server/gateway/response"
+
 	"github.com/gorilla/mux"
+	"github.com/rudderlabs/rudder-server/gateway/response"
 	uuid "github.com/satori/go.uuid"
 )
 
@@ -281,9 +282,9 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseW
 func (manager *EventSchemaManagerT) fetchEventModelsByWriteKey(writeKey string) []*EventModelT {
 	var eventModelsSelectSQL string
 	if writeKey == "" {
-		eventModelsSelectSQL = fmt.Sprintf(`SELECT * FROM %s`, EVENT_MODELS_TABLE)
+		eventModelsSelectSQL = fmt.Sprintf(`SELECT id, uuid, write_key, event_type, event_model_identifier, created_at, schema, total_count, last_seen FROM %s`, EVENT_MODELS_TABLE)
 	} else {
-		eventModelsSelectSQL = fmt.Sprintf(`SELECT * FROM %s WHERE write_key = '%s'`, EVENT_MODELS_TABLE, writeKey)
+		eventModelsSelectSQL = fmt.Sprintf(`SELECT id, uuid, write_key, event_type, event_model_identifier, created_at, schema, total_count, last_seen FROM %s WHERE write_key = '%s'`, EVENT_MODELS_TABLE, writeKey)
 	}
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
@@ -295,7 +296,7 @@ func (manager *EventSchemaManagerT) fetchEventModelsByWriteKey(writeKey string) 
 	for rows.Next() {
 		var eventModel EventModelT
 		err := rows.Scan(&eventModel.ID, &eventModel.UUID, &eventModel.WriteKey, &eventModel.EventType,
-			&eventModel.EventIdentifier, &eventModel.CreatedAt, &eventModel.Schema, &eventModel.Metadata, &eventModel.PrivateData, &eventModel.TotalCount, &eventModel.LastSeen)
+			&eventModel.EventIdentifier, &eventModel.CreatedAt, &eventModel.Schema, &eventModel.TotalCount, &eventModel.LastSeen)
 		assertError(err)
 
 		eventModels = append(eventModels, &eventModel)
@@ -305,7 +306,7 @@ func (manager *EventSchemaManagerT) fetchEventModelsByWriteKey(writeKey string) 
 }
 
 func (manager *EventSchemaManagerT) fetchSchemaVersionsByEventID(eventID string) []*SchemaVersionT {
-	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, first_seen, last_seen, total_count FROM %s WHERE event_model_id = '%s'`, SCHEMA_VERSIONS_TABLE, eventID)
+	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema, first_seen, last_seen, total_count FROM %s WHERE event_model_id = '%s'`, SCHEMA_VERSIONS_TABLE, eventID)
 
 	rows, err := manager.dbHandle.Query(schemaVersionsSelectSQL)
 	assertError(err)
@@ -315,7 +316,7 @@ func (manager *EventSchemaManagerT) fetchSchemaVersionsByEventID(eventID string)
 
 	for rows.Next() {
 		var schemaVersion SchemaVersionT
-		err := rows.Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash,
+		err := rows.Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID,
 			&schemaVersion.Schema, &schemaVersion.FirstSeen, &schemaVersion.LastSeen, &schemaVersion.TotalCount)
 		assertError(err)
 
@@ -326,7 +327,7 @@ func (manager *EventSchemaManagerT) fetchSchemaVersionsByEventID(eventID string)
 }
 
 func (manager *EventSchemaManagerT) fetchEventModelByID(id string) (*EventModelT, error) {
-	eventModelsSelectSQL := fmt.Sprintf(`SELECT * FROM %s WHERE uuid = '%s'`, EVENT_MODELS_TABLE, id)
+	eventModelsSelectSQL := fmt.Sprintf(`SELECT id, uuid, write_key, event_type, event_model_identifier, created_at, schema, total_count, last_seen FROM %s WHERE uuid = '%s'`, EVENT_MODELS_TABLE, id)
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
 	assertError(err)
@@ -337,7 +338,7 @@ func (manager *EventSchemaManagerT) fetchEventModelByID(id string) (*EventModelT
 	for rows.Next() {
 		var eventModel EventModelT
 		err := rows.Scan(&eventModel.ID, &eventModel.UUID, &eventModel.WriteKey, &eventModel.EventType,
-			&eventModel.EventIdentifier, &eventModel.CreatedAt, &eventModel.Schema, &eventModel.Metadata, &eventModel.PrivateData, &eventModel.TotalCount, &eventModel.LastSeen)
+			&eventModel.EventIdentifier, &eventModel.CreatedAt, &eventModel.Schema, &eventModel.TotalCount, &eventModel.LastSeen)
 		assertError(err)
 
 		eventModels = append(eventModels, &eventModel)
@@ -356,7 +357,7 @@ func (manager *EventSchemaManagerT) fetchEventModelByID(id string) (*EventModelT
 }
 
 func (manager *EventSchemaManagerT) fetchSchemaVersionByID(id string) (*SchemaVersionT, error) {
-	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, first_seen, last_seen, total_count FROM %s WHERE uuid = '%s'`, SCHEMA_VERSIONS_TABLE, id)
+	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema, first_seen, last_seen, total_count FROM %s WHERE uuid = '%s'`, SCHEMA_VERSIONS_TABLE, id)
 
 	rows, err := manager.dbHandle.Query(schemaVersionsSelectSQL)
 	assertError(err)
@@ -366,8 +367,7 @@ func (manager *EventSchemaManagerT) fetchSchemaVersionByID(id string) (*SchemaVe
 
 	for rows.Next() {
 		var schemaVersion SchemaVersionT
-		err := rows.Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash,
-			&schemaVersion.Schema, &schemaVersion.FirstSeen, &schemaVersion.LastSeen, &schemaVersion.TotalCount)
+		err := rows.Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.Schema, &schemaVersion.FirstSeen, &schemaVersion.LastSeen, &schemaVersion.TotalCount)
 		assertError(err)
 
 		schemaVersions = append(schemaVersions, &schemaVersion)
