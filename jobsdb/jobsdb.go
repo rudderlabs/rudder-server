@@ -1311,11 +1311,13 @@ func (jd *HandleT) prepareAndExecStmtInTxnAllowMissing(txn *sql.Tx, sqlStatement
 	stmt, err := txn.Prepare(sqlStatement)
 	jd.assertError(err)
 	_, err = stmt.Exec()
-	pqError := err.(*pq.Error)
-	if allowMissing && pqError.Code == pq.ErrorCode("42P01") {
-		jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
-	} else {
-		jd.assertError(err)
+	if err != nil {
+		pqError := err.(*pq.Error)
+		if allowMissing && pqError.Code == pq.ErrorCode("42P01") {
+			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
+		} else {
+			jd.assertError(err)
+		}
 	}
 }
 
