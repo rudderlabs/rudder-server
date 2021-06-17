@@ -3047,12 +3047,18 @@ func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
 		return []*JobT{}
 	}
 	if jd.enableReaderQueue {
+		readChannelWaitTime := stats.NewTaggedStat("unprocessed_queue_time", stats.TimerType, stats.Tags{
+			"table":     jd.tablePrefix,
+			"customval": params.CustomValFilters[0],
+		})
+		readChannelWaitTime.Start()
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
 			reqType:        NotProcessed.State,
 		}
 		jd.readChannel <- readJobRequest
+		readChannelWaitTime.End()
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
@@ -3317,12 +3323,18 @@ func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
 		return []*JobT{}
 	}
 	if jd.enableReaderQueue {
+		readChannelWaitTime := stats.NewTaggedStat("failed_queue_time", stats.TimerType, stats.Tags{
+			"table":     jd.tablePrefix,
+			"customval": params.CustomValFilters[0],
+		})
+		readChannelWaitTime.Start()
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
 			reqType:        Failed.State,
 		}
 		jd.readChannel <- readJobRequest
+		readChannelWaitTime.End()
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
@@ -3348,12 +3360,18 @@ func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
 		return []*JobT{}
 	}
 	if jd.enableReaderQueue {
+		readChannelWaitTime := stats.NewTaggedStat("waiting_queue_time", stats.TimerType, stats.Tags{
+			"table":     jd.tablePrefix,
+			"customval": params.CustomValFilters[0],
+		})
+		readChannelWaitTime.Start()
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
 			reqType:        Waiting.State,
 		}
 		jd.readChannel <- readJobRequest
+		readChannelWaitTime.End()
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
@@ -3379,12 +3397,18 @@ func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
 		return []*JobT{}
 	}
 	if jd.enableReaderQueue {
+		readChannelWaitTime := stats.NewTaggedStat("throttled_queue_time", stats.TimerType, stats.Tags{
+			"table":     jd.tablePrefix,
+			"customval": params.CustomValFilters[0],
+		})
+		readChannelWaitTime.Start()
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
 			reqType:        Throttled.State,
 		}
 		jd.readChannel <- readJobRequest
+		readChannelWaitTime.End()
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
@@ -3406,12 +3430,18 @@ func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
 		return []*JobT{}
 	}
 	if jd.enableReaderQueue {
+		readChannelWaitTime := stats.NewTaggedStat("executing_queue_time", stats.TimerType, stats.Tags{
+			"table":     jd.tablePrefix,
+			"customval": params.CustomValFilters[0],
+		})
+		readChannelWaitTime.Start()
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
 			reqType:        Executing.State,
 		}
 		jd.readChannel <- readJobRequest
+		readChannelWaitTime.End()
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
