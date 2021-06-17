@@ -1307,11 +1307,26 @@ func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
 	return maxDSIndex
 }
 
-func (jd *HandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) {
+func (jd *HandleT) prepareAndExecStmtInTxnAllowMissing(txn *sql.Tx, sqlStatement string, allowMissing bool) *sql.Tx {
 	stmt, err := txn.Prepare(sqlStatement)
 	jd.assertError(err)
 	_, err = stmt.Exec()
-	jd.assertError(err)
+	if err != nil {
+		pqError := err.(*pq.Error)
+		if allowMissing && pqError.Code == pq.ErrorCode("42P01") {
+			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
+			txn, err = jd.dbHandle.Begin()
+			jd.assertError(err)
+		} else {
+			jd.assertError(err)
+		}
+	}
+
+	return txn
+}
+
+func (jd *HandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) {
+	jd.prepareAndExecStmtInTxnAllowMissing(txn, sqlStatement, false)
 }
 
 //Drop a dataset
@@ -1326,10 +1341,10 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)
-	jd.prepareAndExecStmtInTxn(txn, sqlStatement)
+	txn = jd.prepareAndExecStmtInTxnAllowMissing(txn, sqlStatement, allowMissing)
 
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)
-	jd.prepareAndExecStmtInTxn(txn, sqlStatement)
+	txn = jd.prepareAndExecStmtInTxnAllowMissing(txn, sqlStatement, allowMissing)
 
 	if allowMissing {
 		sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ds.JobStatusTable)
