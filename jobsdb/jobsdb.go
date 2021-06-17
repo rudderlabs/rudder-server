@@ -1596,8 +1596,8 @@ func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]struct
 func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]struct{}) {
 	if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
 		for cv, cVal := range CVPMap {
-			parameterFilters := []ParameterFilterT{}
 			for pv := range cVal {
+				parameterFilters := []ParameterFilterT{}
 				tokens := strings.Split(pv, "::")
 				for _, token := range tokens {
 					p := strings.Split(token, "##")
@@ -1607,9 +1607,8 @@ func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]struct{}
 					}
 					parameterFilters = append(parameterFilters, param)
 				}
+				jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
 			}
-
-			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
 		}
 	} else if jd.queryFilterKeys.CustomVal {
 		for cv := range CVPMap {
