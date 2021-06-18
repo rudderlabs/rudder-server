@@ -1166,9 +1166,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			}
 		}
 		//REPORTING - ROUTER - END
-
 		statusList = append(statusList, resp.status)
-		resp.status.JobState = jobsdb.Aborted.State
 		if resp.status.JobState == jobsdb.Aborted.State {
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
 			if parameters.SourceTaskRunID != "" {
