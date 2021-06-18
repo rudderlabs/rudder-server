@@ -499,7 +499,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 				if _, ok := jobRunIDAbortedEventsMap[parameters.SourceTaskRunID]; !ok {
 					jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = []*router.FailedEventRowT{}
 				}
-				jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceJobRunID], &router.FailedEventRowT{DestinationID: parameters.DestinationID, MsgID: parameters.MessageID})
+				jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceJobRunID], &router.FailedEventRowT{DestinationID: parameters.DestinationID, RecordID: parameters.MessageID})
 			}
 			jobState = jobsdb.Aborted.State
 		} else {
@@ -513,7 +513,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 						if _, ok := jobRunIDAbortedEventsMap[parameters.SourceTaskRunID]; !ok {
 							jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = []*router.FailedEventRowT{}
 						}
-						jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceTaskRunID], &router.FailedEventRowT{DestinationID: parameters.DestinationID, MsgID: parameters.MessageID})
+						jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceTaskRunID], &router.FailedEventRowT{DestinationID: parameters.DestinationID, RecordID: parameters.MessageID})
 					}
 					jobState = jobsdb.Aborted.State
 				}
@@ -620,7 +620,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 
 	//Save msgids of aborted jobs
 	if len(jobRunIDAbortedEventsMap) > 0 {
-		router.GetFailedEventsManager().SaveFailedMsgIDs(jobRunIDAbortedEventsMap, txn)
+		router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
 	}
 	if brt.reporting != nil && brt.reportingEnabled {
 		brt.reporting.Report(reportMetrics, txn)

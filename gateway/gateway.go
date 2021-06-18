@@ -801,13 +801,13 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	if reqType == "fetch" {
-		failedEvents := router.GetFailedEventsManager().FetchFailedMsgIDs(reqPayload.TaskRunID)
+		failedEvents := router.GetFailedEventsManager().FetchFailedRecordIDs(reqPayload.TaskRunID)
 		failedMsgIDsByDestinationID := make(map[string][]string)
 		for _, failedEvent := range failedEvents {
 			if _, ok := failedMsgIDsByDestinationID[failedEvent.DestinationID]; !ok {
 				failedMsgIDsByDestinationID[failedEvent.DestinationID] = []string{}
 			}
-			failedMsgIDsByDestinationID[failedEvent.DestinationID] = append(failedMsgIDsByDestinationID[failedEvent.DestinationID], failedEvent.MsgID)
+			failedMsgIDsByDestinationID[failedEvent.DestinationID] = append(failedMsgIDsByDestinationID[failedEvent.DestinationID], failedEvent.RecordID)
 		}
 
 		resp, err := json.Marshal(failedMsgIDsByDestinationID)
@@ -818,7 +818,7 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 
 		w.Write(resp)
 	} else if reqType == "clear" {
-		router.GetFailedEventsManager().DropFailedMsgIDs(reqPayload.TaskRunID)
+		router.GetFailedEventsManager().DropFailedRecordIDs(reqPayload.TaskRunID)
 		w.Write([]byte("OK"))
 	}
 }

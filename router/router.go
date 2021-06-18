@@ -121,6 +121,7 @@ type JobParametersT struct {
 	SourceTaskRunID string `json:"source_task_run_id"`
 	SourceJobID     string `json:"source_job_id"`
 	SourceJobRunID  string `json:"source_job_run_id"`
+	RecordID        string `json:"record_id"`
 	MessageID       string `json:"message_id"`
 }
 
@@ -1167,14 +1168,14 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		//REPORTING - ROUTER - END
 
 		statusList = append(statusList, resp.status)
-
+		resp.status.JobState = jobsdb.Aborted.State
 		if resp.status.JobState == jobsdb.Aborted.State {
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
 			if parameters.SourceTaskRunID != "" {
 				if _, ok := jobRunIDAbortedEventsMap[parameters.SourceTaskRunID]; !ok {
 					jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = []*FailedEventRowT{}
 				}
-				jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceTaskRunID], &FailedEventRowT{DestinationID: parameters.DestinationID, MsgID: parameters.MessageID})
+				jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceTaskRunID], &FailedEventRowT{DestinationID: parameters.DestinationID, RecordID: parameters.RecordID})
 			}
 		}
 
@@ -1232,7 +1233,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 		//Save msgids of aborted jobs
 		if len(jobRunIDAbortedEventsMap) > 0 {
-			GetFailedEventsManager().SaveFailedMsgIDs(jobRunIDAbortedEventsMap, txn)
+			GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
 		}
 		if rt.reporting != nil && rt.reportingEnabled {
 			rt.reporting.Report(reportMetrics, txn)
