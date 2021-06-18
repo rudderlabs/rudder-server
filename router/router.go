@@ -86,6 +86,8 @@ type HandleT struct {
 	logger                                 logger.LoggerI
 	batchInputCountStat                    stats.RudderStats
 	batchOutputCountStat                   stats.RudderStats
+	routerTransformInputCountStat          stats.RudderStats
+	routerTransformOutputCountStat         stats.RudderStats
 	batchInputOutputDiffCountStat          stats.RudderStats
 	eventsAbortedStat                      stats.RudderStats
 	drainedJobsStat                        stats.RudderStats
@@ -169,6 +171,8 @@ var (
 	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
+	QueryFilters                                                  jobsdb.QueryFiltersT
+	disableEgress                                                 bool
 )
 
 type requestMetric struct {
@@ -207,6 +211,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &jobsBatchTimeout, true, time.Second, "Router.jobsBatchTimeoutInSec")
 	minSleep = config.GetDuration("Router.minSleepInS", time.Duration(0)) * time.Second
 	config.RegisterDurationConfigVariable(time.Duration(5), &maxStatusUpdateWait, true, time.Second, "Router.maxStatusUpdateWaitInS")
+	disableEgress = config.GetBool("disableEgress", false)
 
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.routerTimePeriodInS", 60) * time.Second
@@ -235,7 +240,9 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 }
 
 func (worker *workerT) routerTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
+	worker.rt.batchInputCountStat.Count(len(routerJobs))
 	destinationJobs := worker.rt.transformer.Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
+	worker.rt.batchOutputCountStat.Count(len(destinationJobs))
 	return destinationJobs
 }
 
@@ -345,10 +352,10 @@ func (worker *workerT) workerProcess() {
 
 			worker.recordCountsByDestAndUser(destination.ID, userID)
 			worker.encounteredRouterTransform = false
+
 			if worker.rt.enableBatching {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
-				worker.routerJobs = append(worker.routerJobs, routerJob)
-
+				worker.routerJobs = append(worker.routerJobs, routerJob)			
 				if len(worker.routerJobs) >= noOfJobsToBatchInAWorker {
 					worker.destinationJobs = worker.batch(worker.routerJobs)
 					worker.processDestinationJobs()
@@ -508,6 +515,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	apiCallsCount := make(map[string]*destJobCountsT)
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
+		respBodyArr := make([]string, 0)
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
 			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, destinationJob) {
 				diagnosisStartTime := time.Now()
@@ -542,17 +550,19 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					for _, val := range result {
 						err := integrations.ValidatePostInfo(val)
 						if err != nil {
-							respStatusCode, respBody = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
+							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
+							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
 							respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val)
 							if isSuccessStatus(respStatusCode) {
-								respBody = respBody + " " + respBodyTemp
+								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
-								respBody = respBodyTemp
+								respBodyArr = []string{respBodyTemp}
 								break
 							}
 						}
 					}
+					respBody = strings.Join(respBodyArr, " ")
 				}
 				ch <- struct{}{}
 
@@ -871,10 +881,17 @@ func (worker *workerT) sendRouterResponseCountStat(destinationJobMetadata *types
 }
 
 func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
-	if destinationJobMetadata.ReceivedAt != "" {
-		if status.JobState == jobsdb.Succeeded.State {
+	destinationTag := misc.GetTagName(destination.ID, destination.Name)
+	if status.JobState == jobsdb.Succeeded.State {
+		eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
+			"module":         "router",
+			"destType":       worker.rt.destName,
+			"destination":    destinationTag,
+			"attempt_number": strconv.Itoa(status.AttemptNum),
+		})
+		eventsDeliveredStat.Count(1)
+		if destinationJobMetadata.ReceivedAt != "" {
 			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
-			destinationTag := misc.GetTagName(destination.ID, destination.Name)
 			if err == nil {
 				eventsDeliveryTimeStat := stats.NewTaggedStat(
 					"event_delivery_time", stats.TimerType, map[string]string{
@@ -886,13 +903,6 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 			}
-			eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
-				"module":         "router",
-				"destType":       worker.rt.destName,
-				"destination":    destinationTag,
-				"attempt_number": strconv.Itoa(status.AttemptNum),
-			})
-			eventsDeliveredStat.Count(1)
 		}
 	}
 }
@@ -1581,6 +1591,7 @@ func (rt *HandleT) crashRecover() {
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
+	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
 }
 
 //Setup initializes this module
@@ -1625,7 +1636,6 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
 	}
-
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
@@ -1643,6 +1653,14 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rt.batchOutputCountStat = stats.NewTaggedStat("router_batch_num_output_jobs", stats.CountType, stats.Tags{
 		"destType": rt.destName,
 	})
+
+	rt.routerTransformInputCountStat = stats.NewTaggedStat("router_transform_num_input_jobs", stats.CountType, stats.Tags{
+		"destType": rt.destName,
+	})
+	rt.routerTransformOutputCountStat = stats.NewTaggedStat("router_transform_num_output_jobs", stats.CountType, stats.Tags{
+		"destType": rt.destName,
+	})
+
 	rt.batchInputOutputDiffCountStat = stats.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, stats.Tags{
 		"destType": rt.destName,
 	})

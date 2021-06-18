@@ -122,7 +122,7 @@ github.com/denisenkom/go-mssqldb
 github.com/denisenkom/go-mssqldb/internal/cp
 github.com/denisenkom/go-mssqldb/internal/decimal
 github.com/denisenkom/go-mssqldb/internal/querytext
-# github.com/dgraph-io/badger/v2 v2.0.3
+# github.com/dgraph-io/badger/v2 v2.2007.2
 github.com/dgraph-io/badger/v2
 github.com/dgraph-io/badger/v2/options
 github.com/dgraph-io/badger/v2/pb
@@ -130,7 +130,7 @@ github.com/dgraph-io/badger/v2/skl
 github.com/dgraph-io/badger/v2/table
 github.com/dgraph-io/badger/v2/trie
 github.com/dgraph-io/badger/v2/y
-# github.com/dgraph-io/ristretto v0.0.2-0.20200115201040-8f368f2f2ab3
+# github.com/dgraph-io/ristretto v0.0.3-0.20200630154024-f66de99634de
 github.com/dgraph-io/ristretto
 github.com/dgraph-io/ristretto/z
 # github.com/dgrijalva/jwt-go v3.2.0+incompatible
@@ -361,6 +361,10 @@ github.com/tidwall/match
 github.com/tidwall/pretty
 # github.com/tidwall/sjson v1.0.4
 github.com/tidwall/sjson
+# github.com/xdg/scram v1.0.3
+github.com/xdg/scram
+# github.com/xdg/stringprep v1.0.0
+github.com/xdg/stringprep
 # github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c
 github.com/xtgo/uuid
 # go.opencensus.io v0.22.5

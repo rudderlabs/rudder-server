@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
@@ -85,6 +87,27 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 	return
 }
 
+func deleteFilesInStorage(locations []string) error {
+	fManager, err := filemanager.New(&filemanager.SettingsT{
+		Provider: "S3",
+		Config:   misc.GetRudderObjectStorageConfig(""),
+	})
+	if err != nil {
+		err = errors.New(fmt.Sprintf(`Error in creating a file manager for Rudder Storage. Error: %v`, err))
+		return err
+	}
+
+	err = fManager.DeleteObjects(locations)
+	if err != nil {
+		pkgLogger.Errorf("Error in deleting objects in Rudder S3: %v", err)
+	}
+	return err
+}
+
+func usedRudderStorage(uploadMetdata []byte) bool {
+	return gjson.GetBytes(uploadMetdata, "use_rudder_storage").Bool()
+}
+
 func archiveUploads(dbHandle *sql.DB) {
 	sqlStatement := fmt.Sprintf(`SELECT id,source_id, destination_id, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, metadata FROM %s WHERE ((metadata->>'archivedStagingAndLoadFiles')::bool IS DISTINCT FROM TRUE) AND created_at < NOW() -INTERVAL '%d DAY' AND status = '%s'`, warehouseutils.WarehouseUploadsTable, uploadsArchivalTimeInDays, ExportedData)
 
@@ -115,10 +138,38 @@ func archiveUploads(dbHandle *sql.DB) {
 			continue
 		}
 
+		hasUsedRudderStorage := usedRudderStorage(uploadMetdata)
+
 		// archive staging files
+		stmt := fmt.Sprintf(`SELECT id, location FROM %s WHERE source_id='%s' AND destination_id='%s' AND id >= %d and id <= %d`, warehouseutils.WarehouseStagingFilesTable, sourceID, destID, startStagingFileId, endStagingFileId)
+
+		stagingFileRows, err := txn.Query(stmt)
+		if err != nil {
+			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+			txn.Rollback()
+			continue
+		}
+		defer stagingFileRows.Close()
+
+		var stagingFileIDs []int64
+		var stagingFileLocations []string
+		for stagingFileRows.Next() {
+			var stagingFileID int64
+			var stagingFileLocation string
+			err = stagingFileRows.Scan(&stagingFileID, &stagingFileLocation)
+			if err != nil {
+				pkgLogger.Errorf(`Error scanning staging file id in archiveUploadFiles. Error: %v`, err)
+				txn.Rollback()
+				return
+			}
+			stagingFileIDs = append(stagingFileIDs, stagingFileID)
+			stagingFileLocations = append(stagingFileLocations, stagingFileLocation)
+		}
+		stagingFileRows.Close()
+
 		var storedStagingFilesLocation string
 		if archiver.IsArchiverObjectStorageConfigured() {
-			filterSQL := fmt.Sprintf(`source_id='%[1]s' AND destination_id='%[2]s' AND id >= %[3]d and id <= %[4]d`, sourceID, destID, startStagingFileId, endStagingFileId)
+			filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
 			storedStagingFilesLocation, err = backupRecords(backupRecordsArgs{
 				tableName:      warehouseutils.WarehouseStagingFilesTable,
 				sourceID:       sourceID,
@@ -136,27 +187,22 @@ func archiveUploads(dbHandle *sql.DB) {
 			pkgLogger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archived for upload:%d`, uploadID)
 		}
 
-		// delete staging files
-		stmt := fmt.Sprintf(`DELETE FROM %s WHERE source_id='%s' AND destination_id='%s' AND id >= %d and id <= %d RETURNING id`, warehouseutils.WarehouseStagingFilesTable, sourceID, destID, startStagingFileId, endStagingFileId)
+		if hasUsedRudderStorage {
+			err = deleteFilesInStorage(stagingFileLocations)
+			if err != nil {
+				pkgLogger.Errorf(`Error deleting staging files from Rudder S3. Error: %v`, stmt, err)
+				txn.Rollback()
+				continue
+			}
+		}
 
-		stagingFileRows, err := txn.Query(stmt)
+		// delete staging files
+		stmt = fmt.Sprintf(`DELETE FROM %s WHERE id IN (%v)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(stagingFileIDs, ","))
+		_, err = txn.Query(stmt)
 		if err != nil {
 			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 			txn.Rollback()
 			continue
-		}
-		defer stagingFileRows.Close()
-
-		var stagingFileIDs []int64
-		for stagingFileRows.Next() {
-			var stagingFileID int64
-			err = stagingFileRows.Scan(&stagingFileID)
-			if err != nil {
-				pkgLogger.Errorf(`Error scanning staging file id in archiveUploadFiles. Error: %v`, err)
-				txn.Rollback()
-				return
-			}
-			stagingFileIDs = append(stagingFileIDs, stagingFileID)
 		}
 
 		// archive load files
@@ -182,13 +228,47 @@ func archiveUploads(dbHandle *sql.DB) {
 			}
 
 			// delete load files
-			stmt = fmt.Sprintf(`DELETE FROM %s WHERE staging_file_id = ANY($1)`, warehouseutils.WarehouseLoadFilesTable)
-			_, err = txn.Exec(stmt, pq.Array(stagingFileIDs))
+			stmt = fmt.Sprintf(`DELETE FROM %s WHERE staging_file_id = ANY($1) RETURNING location`, warehouseutils.WarehouseLoadFilesTable)
+			loadLocationRows, err := txn.Query(stmt, pq.Array(stagingFileIDs))
 			if err != nil {
 				pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 				txn.Rollback()
 				continue
 			}
+
+			defer loadLocationRows.Close()
+
+			if hasUsedRudderStorage {
+				var loadLocations []string
+				for loadLocationRows.Next() {
+					var loc string
+					err = loadLocationRows.Scan(&loc)
+					if err != nil {
+						pkgLogger.Errorf(`Error scanning location in archiveUploadFiles. Error: %v`, err)
+						txn.Rollback()
+						return
+					}
+					loadLocations = append(loadLocations, loc)
+				}
+				loadLocationRows.Close()
+				var paths []string
+				for _, loc := range loadLocations {
+					u, err := url.Parse(loc)
+					if err != nil {
+						pkgLogger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
+						txn.Rollback()
+						continue
+					}
+					paths = append(paths, u.Path[1:])
+				}
+				err = deleteFilesInStorage(paths)
+				if err != nil {
+					pkgLogger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
+					txn.Rollback()
+					continue
+				}
+			}
+			loadLocationRows.Close()
 		}
 
 		// update upload metadata

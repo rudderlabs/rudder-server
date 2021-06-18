@@ -37,7 +37,7 @@ Gateway:
     maxRetryTimeInS: 10
 EventSchemas:
   enableEventSchemasFeature: false
-  syncIntervalInS: 5
+  syncIntervalInS: 120
   noOfWorkers: 128
 Debugger:
   maxBatchSize: 32
@@ -143,6 +143,8 @@ Warehouse:
   postgres:
     maxParallelLoads: 3
   mssql:
+    maxParallelLoads: 3
+  azure_synapse:
     maxParallelLoads: 3
   clickhouse:
     maxParallelLoads: 3
