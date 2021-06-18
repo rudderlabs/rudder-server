@@ -56,8 +56,6 @@ func (fem *FailedEventsManagerT) SaveFailedMsgIDs(jobRunIDFailedEventsMap map[st
 		if err != nil {
 			panic(err)
 		}
-
-		defer stmt.Close()
 		for _, failedEvent := range failedEvents {
 			_, err = stmt.Exec(failedEvent.DestinationID, failedEvent.MsgID)
 			if err != nil {
@@ -68,6 +66,7 @@ func (fem *FailedEventsManagerT) SaveFailedMsgIDs(jobRunIDFailedEventsMap map[st
 		if err != nil {
 			panic(err)
 		}
+		stmt.Close()
 	}
 }
 
@@ -80,16 +79,16 @@ func (fem *FailedEventsManagerT) DropFailedMsgIDs(jobRunID string) {
 	}
 }
 
-func (fem *FailedEventsManagerT) FetchFailedMsgIDs(jobRunID string) []*FailedEventRowT {
+func (fem *FailedEventsManagerT) FetchFailedMsgIDs(taskRunID string) []*FailedEventRowT {
 	failedEvents := make([]*FailedEventRowT, 0)
 
 	var rows *sql.Rows
 	var err error
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.destination_id, %[1]s.message_id
-                                             FROM %[1]s `, jobRunID)
+                                             FROM %[1]s `, taskRunID)
 	rows, err = fem.dbHandle.Query(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("Failed to fetch from table %s with error: %v", jobRunID, err)
+		pkgLogger.Errorf("Failed to fetch from table %s with error: %v", taskRunID, err)
 		return failedEvents
 	}
 	defer rows.Close()

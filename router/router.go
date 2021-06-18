@@ -1170,11 +1170,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 		if resp.status.JobState == jobsdb.Aborted.State {
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
-			if parameters.SourceJobRunID != "" {
-				if _, ok := jobRunIDAbortedEventsMap[parameters.SourceJobRunID]; !ok {
-					jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = []*FailedEventRowT{}
+			if parameters.SourceTaskRunID != "" {
+				if _, ok := jobRunIDAbortedEventsMap[parameters.SourceTaskRunID]; !ok {
+					jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = []*FailedEventRowT{}
 				}
-				jobRunIDAbortedEventsMap[parameters.SourceJobRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceJobRunID], &FailedEventRowT{DestinationID: parameters.DestinationID, MsgID: parameters.MessageID})
+				jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceTaskRunID], &FailedEventRowT{DestinationID: parameters.DestinationID, MsgID: parameters.MessageID})
 			}
 		}
 
@@ -1240,7 +1240,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		rt.jobsDB.CommitTransaction(txn)
 		rt.jobsDB.ReleaseUpdateJobStatusLocks()
 	}
-
 	if rt.guaranteeUserEventOrder {
 		//#JobOrder (see other #JobOrder comment)
 		for _, resp := range *responseList {
