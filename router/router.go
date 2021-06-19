@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -99,10 +100,15 @@ type HandleT struct {
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
 	destinationResponseHandler             ResponseHandlerI
+	destinationResponseBasedStatsHandler   ResponseStatsHandlerI
 	saveDestinationResponse                bool
 	drainJobHandler                        drain.DrainI
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
+	destResponseStat400                    stats.RudderStats
+	destResponseStat601                    stats.RudderStats
+	destResponseStat602                    stats.RudderStats
+	destResponseStat603                    stats.RudderStats
 }
 
 type jobResponseT struct {
@@ -172,6 +178,8 @@ var (
 	QueryFilters                                                  jobsdb.QueryFiltersT
 	disableEgress                                                 bool
 )
+
+const STATS_STAGE = "router"
 
 type requestMetric struct {
 	RequestRetries       int
@@ -468,8 +476,10 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	handledJobMetadatas := make(map[int64]*types.JobMetadataT)
 
 	var destinationResponseHandler ResponseHandlerI
+	var destinationResponseBasedStatsHandler ResponseStatsHandlerI
 	worker.rt.configSubscriberLock.RLock()
 	destinationResponseHandler = worker.rt.destinationResponseHandler
+	destinationResponseBasedStatsHandler = worker.rt.destinationResponseBasedStatsHandler
 	saveDestinationResponse := worker.rt.saveDestinationResponse
 	worker.rt.configSubscriberLock.RUnlock()
 
@@ -567,6 +577,21 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				//Using reponse status code and body to get response code rudder router logic is based on.
 				if destinationResponseHandler != nil {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
+				}
+
+				//Get code for identifying stats to lodge based on response from destination
+				if !isSuccessStatus(respStatusCode) && destinationResponseBasedStatsHandler != nil {
+					statsCode := destinationResponseBasedStatsHandler.EvalStats(respBody)
+					switch statsCode {
+					case 400:
+						worker.rt.destResponseStat400.Increment()
+					case 601:
+						worker.rt.destResponseStat601.Increment()
+					case 602:
+						worker.rt.destResponseStat602.Increment()
+					case 603:
+						worker.rt.destResponseStat603.Increment()
+					}
 				}
 
 				prevRespStatusCode = respStatusCode
@@ -1621,8 +1646,12 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customDestinationManager.New(destName)
 	rt.failuresMetric = make(map[string][]failureMetric)
-
-	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
+	if responseRules, ok := destinationDefinition.Config["responseRules"]; ok && reflect.TypeOf(responseRules).Kind() == reflect.Map {
+		rt.destinationResponseHandler = New(responseRules.(map[string]interface{}))
+	}
+	if alertRules, ok := destinationDefinition.Config["alertRules"]; ok && reflect.TypeOf(alertRules).Kind() == reflect.Map {
+		rt.destinationResponseBasedStatsHandler = GetStatsHandler(alertRules.(map[string]interface{}))
+	}
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
 	}
@@ -1634,6 +1663,11 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	rt.drainJobHandler = drain.Setup(rt.jobsDB)
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
+	var transformedAt interface{}
+	var ok bool
+	if transformedAt, ok = destinationDefinition.Config["transformAt"]; !ok || reflect.TypeOf(transformedAt).Kind() != reflect.String {
+		transformedAt = "UNDEFINED"
+	}
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
@@ -1653,6 +1687,31 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 
 	rt.batchInputOutputDiffCountStat = stats.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, stats.Tags{
 		"destType": rt.destName,
+	})
+	// Stats based on dest response rules
+	rt.destResponseStat400 = stats.NewTaggedStat("destination_error_pool", stats.CountType, stats.Tags{
+		"code":          "400",
+		"destination":   rt.destName,
+		"transformedAt": transformedAt.(string),
+		"stage":         STATS_STAGE,
+	})
+	rt.destResponseStat601 = stats.NewTaggedStat("destination_error_pool", stats.CountType, stats.Tags{
+		"code":          "601",
+		"destination":   rt.destName,
+		"transformedAt": transformedAt.(string),
+		"stage":         STATS_STAGE,
+	})
+	rt.destResponseStat602 = stats.NewTaggedStat("destination_error_pool", stats.CountType, stats.Tags{
+		"code":          "602",
+		"destination":   rt.destName,
+		"transformedAt": transformedAt.(string),
+		"stage":         STATS_STAGE,
+	})
+	rt.destResponseStat603 = stats.NewTaggedStat("destination_error_pool", stats.CountType, stats.Tags{
+		"code":          "603",
+		"destination":   rt.destName,
+		"transformedAt": transformedAt.(string),
+		"stage":         STATS_STAGE,
 	})
 
 	rt.transformer = transformer.NewTransformer()
@@ -1704,7 +1763,12 @@ func (rt *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == rt.destName {
 						rt.destinationsMap[destination.ID] = destination
-						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
+						if responseRules, ok := destination.DestinationDefinition.Config["responseRules"]; ok && reflect.TypeOf(responseRules).Kind() == reflect.Map {
+							rt.destinationResponseHandler = New(responseRules.(map[string]interface{}))
+						}
+						if alertRules, ok := destination.DestinationDefinition.Config["alertRules"]; ok && reflect.TypeOf(alertRules).Kind() == reflect.Map {
+							rt.destinationResponseBasedStatsHandler = GetStatsHandler(alertRules.(map[string]interface{}))
+						}
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 							rt.saveDestinationResponse = value
 						}
