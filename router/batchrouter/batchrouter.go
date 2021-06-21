@@ -19,13 +19,13 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
 
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
-
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -62,6 +62,7 @@ var (
 	QueryFilters                       jobsdb.QueryFiltersT
 	readPerDestination                 bool
 	disableEgress                      bool
+	toAbortDestinationIDs              string
 )
 
 const DISABLED_EGRESS = "200: outgoing disabled"
@@ -70,8 +71,8 @@ type HandleT struct {
 	paused                   bool
 	pauseLock                sync.Mutex
 	destType                 string
-	destinationsMap          map[string]*BatchDestinationT // destinationID -> destination
-	connectionWHNamespaceMap map[string]string             // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
+	destinationsMap          map[string]*router_utils.BatchDestinationT // destinationID -> destination
+	connectionWHNamespaceMap map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
 	netHandle                *http.Client
 	processQ                 chan *BatchDestinationDataT
 	jobsDB                   *jobsdb.HandleT
@@ -87,15 +88,11 @@ type HandleT struct {
 	reporting                types.ReportingI
 	reportingEnabled         bool
 	workers                  []*workerT
-}
-
-type BatchDestinationT struct {
-	Destination backendconfig.DestinationT
-	Sources     []backendconfig.SourceT
+	drainedJobsStat          stats.RudderStats
 }
 
 type BatchDestinationDataT struct {
-	batchDestination BatchDestinationT
+	batchDestination router_utils.BatchDestinationT
 	jobs             []*jobsdb.JobT
 	parentWG         *sync.WaitGroup
 }
@@ -127,7 +124,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
-		brt.destinationsMap = map[string]*BatchDestinationT{}
+		brt.destinationsMap = map[string]*router_utils.BatchDestinationT{}
 		brt.connectionWHNamespaceMap = map[string]string{}
 		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
@@ -135,7 +132,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == brt.destType {
 						if _, ok := brt.destinationsMap[destination.ID]; !ok {
-							brt.destinationsMap[destination.ID] = &BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
+							brt.destinationsMap[destination.ID] = &router_utils.BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
 						}
 						brt.destinationsMap[destination.ID].Sources = append(brt.destinationsMap[destination.ID].Sources, source)
 
@@ -712,7 +709,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 	}
 }
 
-func (worker *workerT) getValueForParameter(batchDest BatchDestinationT, parameter string) string {
+func (worker *workerT) getValueForParameter(batchDest router_utils.BatchDestinationT, parameter string) string {
 	switch {
 	case parameter == "destination_id":
 		return batchDest.Destination.ID
@@ -721,7 +718,7 @@ func (worker *workerT) getValueForParameter(batchDest BatchDestinationT, paramet
 	}
 }
 
-func (worker *workerT) constructParameterFilters(batchDest BatchDestinationT) []jobsdb.ParameterFilterT {
+func (worker *workerT) constructParameterFilters(batchDest router_utils.BatchDestinationT) []jobsdb.ParameterFilterT {
 	parameterFilters := make([]jobsdb.ParameterFilterT, 0)
 	for _, key := range QueryFilters.ParameterFilters {
 		parameterFilter := jobsdb.ParameterFilterT{
@@ -790,27 +787,62 @@ func (worker *workerT) workerProcess() {
 			}
 
 			var statusList []*jobsdb.JobStatusT
+			var drainList []*jobsdb.JobStatusT
+			drainCountByDest := make(map[string]int)
 
 			jobsBySource := make(map[string][]*jobsdb.JobT)
 			for _, job := range combinedList {
-				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
-				if _, ok := jobsBySource[sourceID]; !ok {
-					jobsBySource[sourceID] = []*jobsdb.JobT{}
-				}
-				jobsBySource[sourceID] = append(jobsBySource[sourceID], job)
+				if router_utils.ToBeDrained(job, batchDest.Destination.ID, toAbortDestinationIDs, brt.destinationsMap) {
+					status := jobsdb.JobStatusT{
+						JobID:         job.JobID,
+						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+						JobState:      jobsdb.Aborted.State,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     "",
+						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or configured to be aborted via ENV" }`),
+					}
+					drainList = append(drainList, &status)
+					if _, ok := drainCountByDest[batchDest.Destination.ID]; !ok {
+						drainCountByDest[batchDest.Destination.ID] = 0
+					}
+					drainCountByDest[batchDest.Destination.ID] = drainCountByDest[batchDest.Destination.ID] + 1
+				} else {
+					sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
+					if _, ok := jobsBySource[sourceID]; !ok {
+						jobsBySource[sourceID] = []*jobsdb.JobT{}
+					}
+					jobsBySource[sourceID] = append(jobsBySource[sourceID], job)
 
-				status := jobsdb.JobStatusT{
-					JobID:         job.JobID,
-					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-					JobState:      jobsdb.Executing.State,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
-					ErrorCode:     "",
-					ErrorResponse: []byte(`{}`), // check
+					status := jobsdb.JobStatusT{
+						JobID:         job.JobID,
+						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+						JobState:      jobsdb.Executing.State,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     "",
+						ErrorResponse: []byte(`{}`), // check
+					}
+					statusList = append(statusList, &status)
 				}
-				statusList = append(statusList, &status)
 			}
 
+			//Mark the drainList jobs as Aborted
+			if len(drainList) > 0 {
+				err := brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
+				if err != nil {
+					brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
+					panic(err)
+				}
+				for destID, count := range drainCountByDest {
+					brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
+						"destType": brt.destType,
+						"destId":   destID,
+						"module":   "batchrouter",
+					})
+					brt.drainedJobsStat.Count(count)
+				}
+			}
 			//Mark the jobs as executing
 			err := brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 			if err != nil {
@@ -1202,7 +1234,8 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	encounteredMergeRuleMap = map[string]map[string]bool{}
 	disableEgress = config.GetBool("disableEgress", false)
-	config.RegisterBoolConfigVariable(false, &readPerDestination, false, "BatchRouter.readPerDestination")
+	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
+	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 }
 
 func init() {

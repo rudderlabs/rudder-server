@@ -1813,34 +1813,7 @@ func (proc *HandleT) mainLoop() {
 }
 
 func (proc *HandleT) crashRecover() {
-	for {
-		execList := proc.gatewayDB.GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: dbReadBatchSize})
-
-		if len(execList) == 0 {
-			break
-		}
-		proc.logger.Debug("Processor crash recovering", len(execList))
-
-		var statusList []*jobsdb.JobStatusT
-
-		for _, job := range execList {
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				JobState:      jobsdb.Failed.State,
-				ErrorCode:     "",
-				ErrorResponse: []byte(`{}`), // check
-			}
-			statusList = append(statusList, &status)
-		}
-		err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
-		if err != nil {
-			pkgLogger.Errorf("Error occurred while marking gateway jobs statuses as failed. Panicking. Err: %v", err)
-			panic(err)
-		}
-	}
+	proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: -1})
 }
 
 func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {
