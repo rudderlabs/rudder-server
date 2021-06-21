@@ -800,7 +800,7 @@ func (worker *workerT) workerProcess() {
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
 						ErrorCode:     "",
-						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or confifgured to be aborted via ENV" }`), // check
+						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or configured to be aborted via ENV" }`),
 					}
 					drainList = append(drainList, &status)
 					if _, ok := drainCountByDest[batchDest.Destination.ID]; !ok {
