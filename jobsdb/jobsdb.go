@@ -70,6 +70,13 @@ type GetQueryParamsT struct {
 	Before                        time.Time
 }
 
+//StatTagsT is a struct to hold tags for stats
+type StatTagsT struct {
+	CustomValFilters []string
+	ParameterFilters []ParameterFilterT
+	StateFilters     []string
+}
+
 /*
 JobsDB interface contains public methods to access JobsDB data
 */
@@ -176,13 +183,16 @@ Later we can move this to query
 IMP NOTE: AcquireUpdateJobStatusLocks Should be called before calling this function
 */
 func (jd *HandleT) UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
-
 	if len(statusList) == 0 {
 		return nil
 	}
 
-	params := GetQueryParamsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters, StateFilters: []string{statusList[0].JobState}}
-	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList, params)
+	tags := StatTagsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
+	queryStat := jd.getTimerStat("update_job_status_time", tags)
+	queryStat.Start()
+	defer queryStat.End()
+
+	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList, tags)
 	if err != nil {
 		jd.rollbackTx(err, txn)
 		return err
@@ -277,6 +287,7 @@ type HandleT struct {
 	BackupSettings                *BackupSettingsT
 	jobsFileUploader              filemanager.FileManager
 	statTableCount                stats.RudderStats
+	statDSCount                   stats.RudderStats
 	statNewDSPeriod               stats.RudderStats
 	isStatNewDSPeriodInitialized  bool
 	statDropDSPeriod              stats.RudderStats
@@ -577,8 +588,9 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	jd.logger.Infof("Connected to %s DB", tablePrefix)
 
 	jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
-	jd.statNewDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_new_ds_period", jd.tablePrefix), stats.TimerType)
-	jd.statDropDSPeriod = stats.NewStat(fmt.Sprintf("jobsdb.%s_drop_ds_period", jd.tablePrefix), stats.TimerType)
+	jd.statDSCount = stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statNewDSPeriod = stats.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statDropDSPeriod = stats.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 
 	enableWriterQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableWriterQueue", "JobsDB." + "enableWriterQueue"}
 	config.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, enableWriterQueueKeys...)
@@ -716,7 +728,7 @@ func (jd *HandleT) dbWriter() {
 			err := jd.updateJobStatus(updateJobStatusReq.jobStatusesList, updateJobStatusReq.customValFiltersList, updateJobStatusReq.parameterFiltersList)
 			updateJobStatusReq.errorResponse <- err
 		case deleteExecutingReq := <-jd.deleteExecutingChannel:
-			jd.DeleteJobStatus(deleteExecutingReq.deleteParams)
+			jd.deleteJobStatus(deleteExecutingReq.deleteParams)
 			deleteExecutingReq.errorResponse <- nil
 		}
 	}
@@ -810,6 +822,7 @@ func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
 	}
 
 	jd.statTableCount.Gauge(len(jd.datasetList))
+	jd.statDSCount.Gauge(len(jd.datasetList))
 	return jd.datasetList
 }
 
@@ -1527,7 +1540,7 @@ Next set of functions are for reading/writing jobs and job_status for
 a given dataset. The names should be self explainatory
 */
 func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error { //When fixing callers make sure error is handled with assertError
-	queryStat := jd.storeTimerStat("store_ds_time")
+	queryStat := jd.storeTimerStat("store_jobs")
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1551,7 +1564,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 }
 
 func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
-	queryStat := jd.storeTimerStat("store_ds_time")
+	queryStat := jd.storeTimerStat("store_jobs_retry_each")
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1824,7 +1837,8 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		return []*JobT{}
 	}
 
-	queryStat := jd.getTimerStat("processed_ds_time", params)
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	queryStat := jd.getTimerStat("processed_ds_time", tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1944,8 +1958,8 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		return []*JobT{}
 	}
 
-	params.StateFilters = []string{NotProcessed.State}
-	queryStat := jd.getTimerStat("unprocessed_ds_time", params)
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
+	queryStat := jd.getTimerStat("unprocessed_ds_time", tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -2035,8 +2049,8 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 		return err
 	}
 
-	params := GetQueryParamsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters, StateFilters: []string{statusList[0].JobState}}
-	stateFilters, err := jd.updateJobStatusDSInTxn(txn, ds, statusList, params)
+	tags := StatTagsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
+	stateFilters, err := jd.updateJobStatusDSInTxn(txn, ds, statusList, tags)
 	if err != nil {
 		txn.Rollback()
 		return err
@@ -2050,14 +2064,14 @@ func (jd *HandleT) updateJobStatusDS(ds dataSetT, statusList []*JobStatusT, cust
 	return nil
 }
 
-func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataSetT, statusList []*JobStatusT, params GetQueryParamsT) (updatedStates []string, err error) {
-	queryStat := jd.getTimerStat("update_job_status_ds_time", params)
-	queryStat.Start()
-	defer queryStat.End()
-
+func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataSetT, statusList []*JobStatusT, tags StatTagsT) (updatedStates []string, err error) {
 	if len(statusList) == 0 {
 		return
 	}
+
+	queryStat := jd.getTimerStat("update_job_status_ds_time", tags)
+	queryStat.Start()
+	defer queryStat.End()
 
 	stmt, err := txHandler.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
 		"retry_time", "error_code", "error_response"))
@@ -2816,17 +2830,18 @@ func (jd *HandleT) RecoverFromMigrationJournal() {
 }
 
 func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
-	stateTag := ""
-	if len(statusList) > 0 {
-		stateTag = statusList[0].JobState
+	if len(statusList) == 0 {
+		return nil
 	}
-	params := GetQueryParamsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters, StateFilters: []string{stateTag}}
-	totalWriteTime := jd.getTimerStat("update_job_status_total_time", params)
+
+	tags := StatTagsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
+	totalWriteTime := jd.getTimerStat("update_job_status_total_time", tags)
 	totalWriteTime.Start()
 	defer totalWriteTime.End()
+
 	if jd.enableWriterQueue {
-		queryStat := jd.getTimerStat("update_job_status_wait_time", params)
-		queryStat.Start()
+		waitTimeStat := jd.getTimerStat("update_job_status_wait_time", tags)
+		waitTimeStat.Start()
 		respCh := make(chan error)
 		writeJobRequest := writeJob{
 			jobStatusesList:      statusList,
@@ -2835,7 +2850,7 @@ func (jd *HandleT) UpdateJobStatus(statusList []*JobStatusT, customValFilters []
 			errorResponse:        respCh,
 		}
 		jd.updateJobStatusChannel <- writeJobRequest
-		queryStat.End()
+		waitTimeStat.End()
 		err := <-respCh
 		return err
 	} else {
@@ -2849,19 +2864,11 @@ customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
 func (jd *HandleT) updateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
-
-	if len(statusList) == 0 {
-		return nil
-	}
-
-	stateTag := ""
-	if len(statusList) > 0 {
-		stateTag = statusList[0].JobState
-	}
-	params := GetQueryParamsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters, StateFilters: []string{stateTag}}
-	queryStat := jd.getTimerStat("update_job_status_time", params)
+	tags := StatTagsT{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
+	queryStat := jd.getTimerStat("update_job_status_time", tags)
 	queryStat.Start()
 	defer queryStat.End()
+
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
@@ -2873,7 +2880,7 @@ func (jd *HandleT) updateJobStatus(statusList []*JobStatusT, customValFilters []
 	defer jd.dsMigrationLock.RUnlock()
 	defer jd.dsListLock.RUnlock()
 
-	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList, params)
+	updatedStatesByDS, err := jd.updateJobStatusInTxn(txn, statusList, tags)
 	if err != nil {
 		jd.rollbackTx(err, txn)
 		jd.logger.Infof("[[ %s ]]: Error occured while updating job statuses. Returning err, %v", jd.tablePrefix, err)
@@ -2894,8 +2901,7 @@ updateJobStatusInTxn updates the status of a batch of jobs
 customValFilters[] is passed so we can efficinetly mark empty cache
 Later we can move this to query
 */
-func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList []*JobStatusT, params GetQueryParamsT) (updatedStatesByDS map[dataSetT][]string, err error) {
-
+func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList []*JobStatusT, tags StatTagsT) (updatedStatesByDS map[dataSetT][]string, err error) {
 	if len(statusList) == 0 {
 		return
 	}
@@ -2925,7 +2931,7 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 						statusList[i-1].JobID, lastPos, i-1)
 				}
 				var updatedStates []string
-				updatedStates, err = jd.updateJobStatusDSInTxn(txHandler, ds.ds, statusList[lastPos:i], params)
+				updatedStates, err = jd.updateJobStatusDSInTxn(txHandler, ds.ds, statusList[lastPos:i], tags)
 				if err != nil {
 					return
 				}
@@ -2941,7 +2947,7 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 		if i == len(statusList) && lastPos < i {
 			jd.logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
 			var updatedStates []string
-			updatedStates, err = jd.updateJobStatusDSInTxn(txHandler, ds.ds, statusList[lastPos:i], params)
+			updatedStates, err = jd.updateJobStatusDSInTxn(txHandler, ds.ds, statusList[lastPos:i], tags)
 			if err != nil {
 				return
 			}
@@ -2962,7 +2968,7 @@ func (jd *HandleT) updateJobStatusInTxn(txHandler transactionHandler, statusList
 		//Update status in the last element
 		jd.logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
 		var updatedStates []string
-		updatedStates, err = jd.updateJobStatusDSInTxn(txHandler, dsList[len(dsList)-1], statusList[lastPos:], params)
+		updatedStates, err = jd.updateJobStatusDSInTxn(txHandler, dsList[len(dsList)-1], statusList[lastPos:], tags)
 		if err != nil {
 			return
 		}
@@ -2982,16 +2988,17 @@ func (jd *HandleT) Store(jobList []*JobT) error {
 	totalWriteTime := jd.storeTimerStat("store_total_time")
 	totalWriteTime.Start()
 	defer totalWriteTime.End()
+
 	if jd.enableWriterQueue {
-		queryStat := jd.storeTimerStat("store_wait_time")
-		queryStat.Start()
+		waitTimeStat := jd.storeTimerStat("store_wait_time")
+		waitTimeStat.Start()
 		respCh := make(chan error)
 		writeJobRequest := writeJob{
 			jobsList:      jobList,
 			errorResponse: respCh,
 		}
 		jd.storeChannel <- writeJobRequest
-		queryStat.End()
+		waitTimeStat.End()
 		err := <-respCh
 		return err
 	} else {
@@ -3013,19 +3020,20 @@ func (jd *HandleT) store(jobList []*JobT) error {
 }
 
 func (jd *HandleT) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
-	totalWriteTime := jd.storeTimerStat("store_total_time")
+	totalWriteTime := jd.storeTimerStat("store_retry_each_total_time")
 	totalWriteTime.Start()
 	defer totalWriteTime.End()
+
 	if jd.enableWriterQueue {
-		queryStat := jd.storeTimerStat("store_wait_time")
-		queryStat.Start()
+		waitTimeStat := jd.storeTimerStat("store_retry_each_wait_time")
+		waitTimeStat.Start()
 		respCh := make(chan map[uuid.UUID]string)
 		writeJobRequest := writeJob{
 			jobsList:         jobList,
 			errorMapResponse: respCh,
 		}
 		jd.storeWithRetryChannel <- writeJobRequest
-		queryStat.End()
+		waitTimeStat.End()
 		errMap := <-respCh
 		return errMap
 	} else {
@@ -3068,15 +3076,17 @@ those whose state hasn't been marked in the DB.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
-	totalReadTime := jd.getTimerStat("unprocessed_total_time", params)
-	totalReadTime.Start()
-	defer totalReadTime.End()
 	if params.Count == 0 {
 		return []*JobT{}
 	}
+
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
+	totalReadTime := jd.getTimerStat("unprocessed_total_time", tags)
+	totalReadTime.Start()
+	defer totalReadTime.End()
+
 	if jd.enableReaderQueue {
-		params.StateFilters = []string{NotProcessed.State}
-		readChannelWaitTime := jd.getTimerStat("unprocessed_wait_time", params)
+		readChannelWaitTime := jd.getTimerStat("unprocessed_wait_time", tags)
 		readChannelWaitTime.Start()
 		readJobRequest := readJob{
 			getQueryParams: params,
@@ -3103,8 +3113,8 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 
 	count := params.Count
 
-	params.StateFilters = []string{NotProcessed.State}
-	queryStat := jd.getTimerStat("unprocessed_jobs_time", params)
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
+	queryStat := jd.getTimerStat("unprocessed_jobs_time", tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -3138,15 +3148,11 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 }
 
 /*
-DeleteJobStatus deletes the latest status of a batch of jobs
+deleteJobStatus deletes the latest status of a batch of jobs
 This is only done during recovery, which happens during the server start.
 So, we don't have to worry about dsEmptyResultCache
 */
-func (jd *HandleT) DeleteJobStatus(params GetQueryParamsT) {
-	if params.Count == 0 {
-		return
-	}
-
+func (jd *HandleT) deleteJobStatus(params GetQueryParamsT) {
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
@@ -3162,12 +3168,14 @@ if count passed is less than 0, then delete happens on the entire dsList;
 deleteJobStatusInTxn deletes the latest status of a batch of jobs
 */
 func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, params GetQueryParamsT) error {
-	queryStat := jd.getTimerStat("delete_job_status_time", params)
-	queryStat.Start()
-	defer queryStat.End()
 	if params.Count == 0 {
 		return nil
 	}
+
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	queryStat := jd.getTimerStat("delete_job_status_time", tags)
+	queryStat.Start()
+	defer queryStat.End()
 
 	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
@@ -3211,7 +3219,8 @@ func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 
 	checkValidJobState(jd, stateFilters)
 
-	queryStat := jd.getTimerStat("delete_job_status_ds_time", params)
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	queryStat := jd.getTimerStat("delete_job_status_ds_time", tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -3285,7 +3294,8 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 
 	count := params.Count
 
-	queryStat := jd.getTimerStat("processed_jobs_time", params)
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	queryStat := jd.getTimerStat("processed_jobs_time", tags)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -3325,15 +3335,19 @@ GetToRetry returns events which need to be retried.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
-	params.StateFilters = []string{Failed.State}
-	totalReadTime := jd.getTimerStat("processed_total_time", params)
-	totalReadTime.Start()
-	defer totalReadTime.End()
 	if params.Count == 0 {
 		return []*JobT{}
 	}
+
+	params.StateFilters = []string{Failed.State}
+
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	totalReadTime := jd.getTimerStat("processed_total_time", tags)
+	totalReadTime.Start()
+	defer totalReadTime.End()
+
 	if jd.enableReaderQueue {
-		readChannelWaitTime := jd.getTimerStat("processed_wait_time", params)
+		readChannelWaitTime := jd.getTimerStat("processed_wait_time", tags)
 		readChannelWaitTime.Start()
 		readJobRequest := readJob{
 			getQueryParams: params,
@@ -3362,15 +3376,19 @@ GetWaiting returns events which are under processing
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
-	params.StateFilters = []string{Waiting.State}
-	totalReadTime := jd.getTimerStat("processed_total_time", params)
-	totalReadTime.Start()
-	defer totalReadTime.End()
 	if params.Count == 0 {
 		return []*JobT{}
 	}
+
+	params.StateFilters = []string{Waiting.State}
+
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	totalReadTime := jd.getTimerStat("processed_total_time", tags)
+	totalReadTime.Start()
+	defer totalReadTime.End()
+
 	if jd.enableReaderQueue {
-		readChannelWaitTime := jd.getTimerStat("processed_wait_time", params)
+		readChannelWaitTime := jd.getTimerStat("processed_wait_time", tags)
 		readChannelWaitTime.Start()
 		readJobRequest := readJob{
 			getQueryParams: params,
@@ -3399,15 +3417,19 @@ GetThrottled returns events which were throttled before
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
-	params.StateFilters = []string{Throttled.State}
-	totalReadTime := jd.getTimerStat("processed_total_time", params)
-	totalReadTime.Start()
-	defer totalReadTime.End()
 	if params.Count == 0 {
 		return []*JobT{}
 	}
+
+	params.StateFilters = []string{Throttled.State}
+
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	totalReadTime := jd.getTimerStat("processed_total_time", tags)
+	totalReadTime.Start()
+	defer totalReadTime.End()
+
 	if jd.enableReaderQueue {
-		readChannelWaitTime := jd.getTimerStat("processed_wait_time", params)
+		readChannelWaitTime := jd.getTimerStat("processed_wait_time", tags)
 		readChannelWaitTime.Start()
 		readJobRequest := readJob{
 			getQueryParams: params,
@@ -3432,15 +3454,19 @@ func (jd *HandleT) getThrottled(params GetQueryParamsT) []*JobT {
 }
 
 func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
-	params.StateFilters = []string{Executing.State}
-	totalReadTime := jd.getTimerStat("processed_total_time", params)
-	totalReadTime.Start()
-	defer totalReadTime.End()
 	if params.Count == 0 {
 		return []*JobT{}
 	}
+
+	params.StateFilters = []string{Executing.State}
+
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	totalReadTime := jd.getTimerStat("processed_total_time", tags)
+	totalReadTime.Start()
+	defer totalReadTime.End()
+
 	if jd.enableReaderQueue {
-		readChannelWaitTime := jd.getTimerStat("processed_wait_time", params)
+		readChannelWaitTime := jd.getTimerStat("processed_wait_time", tags)
 		readChannelWaitTime.Start()
 		readJobRequest := readJob{
 			getQueryParams: params,
@@ -3468,23 +3494,30 @@ DeleteExecuting deletes events whose latest job state is executing.
 This is only done during recovery, which happens during the server start.
 */
 func (jd *HandleT) DeleteExecuting(params GetQueryParamsT) {
+	if params.Count == 0 {
+		return
+	}
+
 	params.StateFilters = []string{Executing.State}
-	totalWriteTime := jd.getTimerStat("delete_job_status_total_time", params)
+
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	totalWriteTime := jd.getTimerStat("delete_job_status_total_time", tags)
 	totalWriteTime.Start()
 	defer totalWriteTime.End()
+
 	if jd.enableWriterQueue {
-		queryStat := jd.getTimerStat("delete_job_status_wait_time", params)
-		queryStat.Start()
+		waitTimeStat := jd.getTimerStat("delete_job_status_wait_time", tags)
+		waitTimeStat.Start()
 		respCh := make(chan error)
 		writeJobRequest := writeJob{
 			deleteParams:  params,
 			errorResponse: respCh,
 		}
 		jd.deleteExecutingChannel <- writeJobRequest
-		queryStat.End()
+		waitTimeStat.End()
 		<-writeJobRequest.errorResponse
 	} else {
-		jd.DeleteJobStatus(params)
+		jd.deleteJobStatus(params)
 	}
 }
 

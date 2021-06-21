@@ -242,25 +242,27 @@ func (handler *JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) 
 	return err
 }
 
-func (jd *HandleT) getTimerStat(stat string, params GetQueryParamsT) stats.RudderStats {
-	customValTag := ""
-	if len(params.CustomValFilters) > 0 {
-		customValTag = params.CustomValFilters[0]
-	}
-	stateTag := ""
-	if len(params.StateFilters) > 0 {
-		stateTag = params.StateFilters[0]
-	}
-	timingTags := stats.Tags{
+func (jd *HandleT) getTimerStat(stat string, tags StatTagsT) stats.RudderStats {
+	customValTag := strings.Join(tags.CustomValFilters, "_")
+	stateFiltersTag := strings.Join(tags.StateFilters, "_")
+
+	timingTags := map[string]string{
 		"tablePrefix": jd.tablePrefix,
-		"customVal":   customValTag,
-		"state":       stateTag,
 	}
-	for _, paramTag := range params.ParameterFilters {
+
+	if customValTag != "" {
+		timingTags["customVal"] = customValTag
+	}
+
+	if stateFiltersTag != "" {
+		timingTags["stateFilters"] = stateFiltersTag
+	}
+
+	for _, paramTag := range tags.ParameterFilters {
 		timingTags[paramTag.Name] = paramTag.Value
 	}
-	timingStat := stats.NewTaggedStat(stat, stats.TimerType, timingTags)
-	return timingStat
+
+	return stats.NewTaggedStat(stat, stats.TimerType, timingTags)
 }
 
 func (jd *HandleT) storeTimerStat(stat string) stats.RudderStats {

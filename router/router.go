@@ -83,7 +83,7 @@ type HandleT struct {
 	enableBatching                         bool
 	transformer                            transformer.Transformer
 	configSubscriberLock                   sync.RWMutex
-	destinationsMap                        map[string]backendconfig.DestinationT // destinationID -> destination
+	destinationsMap                        map[string]*router_utils.BatchDestinationT // destinationID -> destination
 	logger                                 logger.LoggerI
 	batchInputCountStat                    stats.RudderStats
 	batchOutputCountStat                   stats.RudderStats
@@ -346,7 +346,7 @@ func (worker *workerT) workerProcess() {
 				JobT:             job}
 
 			worker.rt.configSubscriberLock.RLock()
-			destination := worker.rt.destinationsMap[parameters.DestinationID]
+			destination := worker.rt.destinationsMap[parameters.DestinationID].Destination
 			worker.rt.configSubscriberLock.RUnlock()
 
 			worker.recordCountsByDestAndUser(destination.ID, userID)
@@ -1565,17 +1565,6 @@ func destinationID(job *jobsdb.JobT) string {
 	return gjson.GetBytes(job.Parameters, "destination_id").String()
 }
 
-// func (rt *HandleT) isToBeDrained(job *jobsdb.JobT, destID string) bool {
-// 	if d, ok := rt.destinationsMap[destID]; ok && !d.Enabled {
-// 		return true
-// 	}
-// 	if toAbortDestinationIDs != "" {
-// 		abortIDs := strings.Split(toAbortDestinationIDs, ",")
-// 		return misc.ContainsString(abortIDs, destID)
-// 	}
-// 	return false
-// }
-
 func (rt *HandleT) crashRecover() {
 	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})
 }
@@ -1699,13 +1688,17 @@ func (rt *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		rt.configSubscriberLock.Lock()
-		rt.destinationsMap = map[string]backendconfig.DestinationT{}
+		rt.destinationsMap = map[string]*router_utils.BatchDestinationT{}
 		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == rt.destName {
-						rt.destinationsMap[destination.ID] = destination
+						if _, ok := rt.destinationsMap[destination.ID]; !ok {
+							rt.destinationsMap[destination.ID] = &router_utils.BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
+						}
+						rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, source)
+
 						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 							rt.saveDestinationResponse = value

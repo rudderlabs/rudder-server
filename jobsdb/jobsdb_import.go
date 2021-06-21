@@ -102,7 +102,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	jd.logger.Debugf("[[ %s-JobsDB Import ]] %d job_statuses found in file:%s. Writing to db", jd.GetTablePrefix(), len(statusList), migrationCheckpoint.FileLocation)
-	_, err = jd.updateJobStatusDSInTxn(txn, jd.migrationState.dsForImport, statusList, GetQueryParamsT{StateFilters: []string{statusList[0].JobState}}) //Not collecting updatedStates here because the entire ds is un-marked for empty result after commit below
+	_, err = jd.updateJobStatusDSInTxn(txn, jd.migrationState.dsForImport, statusList, StatTagsT{}) //Not collecting updatedStates here because the entire ds is un-marked for empty result after commit below
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	migrationCheckpoint.Status = Imported

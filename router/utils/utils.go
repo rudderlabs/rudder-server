@@ -8,8 +8,13 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]backendconfig.DestinationT) bool {
-	if d, ok := destinationsMap[destID]; ok && !d.Enabled {
+type BatchDestinationT struct {
+	Destination backendconfig.DestinationT
+	Sources     []backendconfig.SourceT
+}
+
+func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) bool {
+	if d, ok := destinationsMap[destID]; ok && !d.Destination.Enabled {
 		return true
 	}
 	if toAbortDestinationIDs != "" {

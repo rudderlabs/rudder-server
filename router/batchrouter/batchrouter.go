@@ -62,6 +62,7 @@ var (
 	QueryFilters                       jobsdb.QueryFiltersT
 	readPerDestination                 bool
 	disableEgress                      bool
+	toAbortDestinationIDs              string
 )
 
 const DISABLED_EGRESS = "200: outgoing disabled"
@@ -70,8 +71,8 @@ type HandleT struct {
 	paused                   bool
 	pauseLock                sync.Mutex
 	destType                 string
-	destinationsMap          map[string]*BatchDestinationT // destinationID -> destination
-	connectionWHNamespaceMap map[string]string             // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
+	destinationsMap          map[string]*router_utils.BatchDestinationT // destinationID -> destination
+	connectionWHNamespaceMap map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
 	netHandle                *http.Client
 	processQ                 chan *BatchDestinationDataT
 	jobsDB                   *jobsdb.HandleT
@@ -90,13 +91,8 @@ type HandleT struct {
 	drainedJobsStat          stats.RudderStats
 }
 
-type BatchDestinationT struct {
-	Destination backendconfig.DestinationT
-	Sources     []backendconfig.SourceT
-}
-
 type BatchDestinationDataT struct {
-	batchDestination BatchDestinationT
+	batchDestination router_utils.BatchDestinationT
 	jobs             []*jobsdb.JobT
 	parentWG         *sync.WaitGroup
 }
@@ -128,7 +124,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
-		brt.destinationsMap = map[string]*BatchDestinationT{}
+		brt.destinationsMap = map[string]*router_utils.BatchDestinationT{}
 		brt.connectionWHNamespaceMap = map[string]string{}
 		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
@@ -136,7 +132,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == brt.destType {
 						if _, ok := brt.destinationsMap[destination.ID]; !ok {
-							brt.destinationsMap[destination.ID] = &BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
+							brt.destinationsMap[destination.ID] = &router_utils.BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
 						}
 						brt.destinationsMap[destination.ID].Sources = append(brt.destinationsMap[destination.ID].Sources, source)
 
@@ -713,7 +709,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 	}
 }
 
-func (worker *workerT) getValueForParameter(batchDest BatchDestinationT, parameter string) string {
+func (worker *workerT) getValueForParameter(batchDest router_utils.BatchDestinationT, parameter string) string {
 	switch {
 	case parameter == "destination_id":
 		return batchDest.Destination.ID
@@ -722,7 +718,7 @@ func (worker *workerT) getValueForParameter(batchDest BatchDestinationT, paramet
 	}
 }
 
-func (worker *workerT) constructParameterFilters(batchDest BatchDestinationT) []jobsdb.ParameterFilterT {
+func (worker *workerT) constructParameterFilters(batchDest router_utils.BatchDestinationT) []jobsdb.ParameterFilterT {
 	parameterFilters := make([]jobsdb.ParameterFilterT, 0)
 	for _, key := range QueryFilters.ParameterFilters {
 		parameterFilter := jobsdb.ParameterFilterT{
@@ -1238,7 +1234,8 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	encounteredMergeRuleMap = map[string]map[string]bool{}
 	disableEgress = config.GetBool("disableEgress", false)
-	config.RegisterBoolConfigVariable(false, &readPerDestination, false, "BatchRouter.readPerDestination")
+	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
+	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 }
 
 func init() {

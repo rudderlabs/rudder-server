@@ -83,7 +83,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 		}
 
 		var updatedStates []string
-		updatedStates, txErr = jd.updateJobStatusDSInTxn(txn, ds, statusList, GetQueryParamsT{StateFilters: []string{Migrating.State}})
+		updatedStates, txErr = jd.updateJobStatusDSInTxn(txn, ds, statusList, StatTagsT{StateFilters: []string{Migrating.State}})
 		if txErr != nil {
 			break
 		}
@@ -214,7 +214,7 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 	jd.assertError(err)
 
 	var updatedStatesMap map[dataSetT][]string
-	updatedStatesMap, err = jd.updateJobStatusInTxn(txn, statusList, GetQueryParamsT{StateFilters: []string{statusList[0].JobState}})
+	updatedStatesMap, err = jd.updateJobStatusInTxn(txn, statusList, StatTagsT{})
 	jd.assertErrorAndRollbackTx(err, txn)
 
 	migrationCheckpoint := NewMigrationCheckpoint(ExportOp, fromNodeID, toNodeID, jobsCount, uploadLocation, Exported, 0)
