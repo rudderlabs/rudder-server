@@ -19,13 +19,13 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
 
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
-
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -87,6 +87,7 @@ type HandleT struct {
 	reporting                types.ReportingI
 	reportingEnabled         bool
 	workers                  []*workerT
+	drainedJobsStat          stats.RudderStats
 }
 
 type BatchDestinationT struct {
@@ -735,14 +736,6 @@ func (worker *workerT) constructParameterFilters(batchDest BatchDestinationT) []
 	return parameterFilters
 }
 
-func (brt *HandleT) isToBeDrained(job *jobsdb.JobT) bool {
-	destID := gjson.GetBytes(job.Parameters, "destination_id").String()
-	if d, ok := brt.destinationsMap[destID]; ok && !d.Destination.Enabled {
-		return true
-	}
-	return false
-}
-
 func (worker *workerT) workerProcess() {
 	brt := worker.brt
 	for {
@@ -799,10 +792,11 @@ func (worker *workerT) workerProcess() {
 
 			var statusList []*jobsdb.JobStatusT
 			var drainList []*jobsdb.JobStatusT
+			drainCountByDest := make(map[string]int)
 
 			jobsBySource := make(map[string][]*jobsdb.JobT)
 			for _, job := range combinedList {
-				if brt.isToBeDrained(job) {
+				if router_utils.ToBeDrained(job, batchDest.Destination.ID, toAbortDestinationIDs, brt.destinationsMap) {
 					status := jobsdb.JobStatusT{
 						JobID:         job.JobID,
 						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -810,9 +804,13 @@ func (worker *workerT) workerProcess() {
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
 						ErrorCode:     "",
-						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled/disconnected or confifgured to be aborted via ENV" }`), // check
+						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or confifgured to be aborted via ENV" }`), // check
 					}
 					drainList = append(drainList, &status)
+					if _, ok := drainCountByDest[batchDest.Destination.ID]; !ok {
+						drainCountByDest[batchDest.Destination.ID] = 0
+					}
+					drainCountByDest[batchDest.Destination.ID] = drainCountByDest[batchDest.Destination.ID] + 1
 				} else {
 					sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
 					if _, ok := jobsBySource[sourceID]; !ok {
@@ -839,6 +837,14 @@ func (worker *workerT) workerProcess() {
 				if err != nil {
 					brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
 					panic(err)
+				}
+				for destID, count := range drainCountByDest {
+					brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
+						"destType": brt.destType,
+						"destId":   destID,
+						"module":   "batchrouter",
+					})
+					brt.drainedJobsStat.Count(count)
 				}
 			}
 			//Mark the jobs as executing

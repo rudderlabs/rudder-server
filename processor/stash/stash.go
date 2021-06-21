@@ -69,7 +69,7 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
 }
 
 func (st *HandleT) crashRecover() {
-	st.errorDB.DeleteExecuting(jobsdb.GetQueryParamsT{Count: errDBReadBatchSize})
+	st.errorDB.DeleteExecuting(jobsdb.GetQueryParamsT{Count: -1})
 }
 
 func (st *HandleT) Start() {

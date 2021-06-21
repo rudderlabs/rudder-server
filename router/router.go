@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -1485,7 +1486,7 @@ func (rt *HandleT) generatorLoop() {
 			//Identify jobs which can be processed
 			for _, job := range combinedList {
 				destID := destinationID(job)
-				if rt.isToBeDrained(job, destID) {
+				if router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap) {
 					status := jobsdb.JobStatusT{
 						JobID:         job.JobID,
 						AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -1493,7 +1494,7 @@ func (rt *HandleT) generatorLoop() {
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
 						ErrorCode:     "",
-						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled/disconnected or confifgured to be aborted via ENV" }`),
+						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or confifgured to be aborted via ENV" }`),
 					}
 					drainList = append(drainList, &status)
 					if _, ok := drainCountByDest[destID]; !ok {
@@ -1533,9 +1534,10 @@ func (rt *HandleT) generatorLoop() {
 					panic(err)
 				}
 				for destID, count := range drainCountByDest {
-					rt.drainedJobsStat = stats.NewTaggedStat(`router_drained_events`, stats.CountType, stats.Tags{
+					rt.drainedJobsStat = stats.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 						"destType": rt.destName,
 						"destId":   destID,
+						"module":   "router",
 					})
 					rt.drainedJobsStat.Count(count)
 				}
@@ -1563,16 +1565,16 @@ func destinationID(job *jobsdb.JobT) string {
 	return gjson.GetBytes(job.Parameters, "destination_id").String()
 }
 
-func (rt *HandleT) isToBeDrained(job *jobsdb.JobT, destID string) bool {
-	if d, ok := rt.destinationsMap[destID]; ok && !d.Enabled {
-		return true
-	}
-	if toAbortDestinationIDs != "" {
-		abortIDs := strings.Split(toAbortDestinationIDs, ",")
-		return misc.ContainsString(abortIDs, destID)
-	}
-	return false
-}
+// func (rt *HandleT) isToBeDrained(job *jobsdb.JobT, destID string) bool {
+// 	if d, ok := rt.destinationsMap[destID]; ok && !d.Enabled {
+// 		return true
+// 	}
+// 	if toAbortDestinationIDs != "" {
+// 		abortIDs := strings.Split(toAbortDestinationIDs, ",")
+// 		return misc.ContainsString(abortIDs, destID)
+// 	}
+// 	return false
+// }
 
 func (rt *HandleT) crashRecover() {
 	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})

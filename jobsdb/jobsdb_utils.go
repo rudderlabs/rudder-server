@@ -242,7 +242,7 @@ func (handler *JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) 
 	return err
 }
 
-func (jd *HandleT) getTimingStats(stat string, params GetQueryParamsT) stats.RudderStats {
+func (jd *HandleT) getTimerStat(stat string, params GetQueryParamsT) stats.RudderStats {
 	customValTag := ""
 	if len(params.CustomValFilters) > 0 {
 		customValTag = params.CustomValFilters[0]
@@ -263,7 +263,7 @@ func (jd *HandleT) getTimingStats(stat string, params GetQueryParamsT) stats.Rud
 	return timingStat
 }
 
-func (jd *HandleT) storeTimingStats(stat string) stats.RudderStats {
+func (jd *HandleT) storeTimerStat(stat string) stats.RudderStats {
 	timingTags := stats.Tags{
 		"tablePrefix": jd.tablePrefix,
 	}
