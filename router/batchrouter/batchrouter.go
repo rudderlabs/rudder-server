@@ -737,7 +737,7 @@ func (worker *workerT) constructParameterFilters(batchDest BatchDestinationT) []
 
 func (brt *HandleT) isToBeDrained(job *jobsdb.JobT) bool {
 	destID := gjson.GetBytes(job.Parameters, "destination_id").String()
-	if d, ok := brt.destinationsMap[destID]; (ok && !d.Destination.Enabled) || !d.Destination.IsProcessorEnabled {
+	if d, ok := brt.destinationsMap[destID]; ok && !d.Destination.Enabled {
 		return true
 	}
 	return false

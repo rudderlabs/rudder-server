@@ -1564,7 +1564,7 @@ func destinationID(job *jobsdb.JobT) string {
 }
 
 func (rt *HandleT) isToBeDrained(job *jobsdb.JobT, destID string) bool {
-	if d, ok := rt.destinationsMap[destID]; (ok && !d.Enabled) || !d.IsProcessorEnabled {
+	if d, ok := rt.destinationsMap[destID]; ok && !d.Enabled {
 		return true
 	}
 	if toAbortDestinationIDs != "" {

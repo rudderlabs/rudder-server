@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 /*
@@ -239,4 +240,33 @@ func (handler *JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) 
 	}
 	*reply = string(response)
 	return err
+}
+
+func (jd *HandleT) getTimingStats(stat string, params GetQueryParamsT) stats.RudderStats {
+	customValTag := ""
+	if len(params.CustomValFilters) > 0 {
+		customValTag = params.CustomValFilters[0]
+	}
+	stateTag := ""
+	if len(params.StateFilters) > 0 {
+		stateTag = params.StateFilters[0]
+	}
+	timingTags := stats.Tags{
+		"tablePrefix": jd.tablePrefix,
+		"customVal":   customValTag,
+		"state":       stateTag,
+	}
+	for _, paramTag := range params.ParameterFilters {
+		timingTags[paramTag.Name] = paramTag.Value
+	}
+	timingStat := stats.NewTaggedStat(stat, stats.TimerType, timingTags)
+	return timingStat
+}
+
+func (jd *HandleT) storeTimingStats(stat string) stats.RudderStats {
+	timingTags := stats.Tags{
+		"tablePrefix": jd.tablePrefix,
+	}
+	timingStat := stats.NewTaggedStat(stat, stats.TimerType, timingTags)
+	return timingStat
 }
