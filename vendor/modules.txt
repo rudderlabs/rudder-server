@@ -33,6 +33,8 @@ github.com/ClickHouse/clickhouse-go/lib/lz4
 github.com/ClickHouse/clickhouse-go/lib/protocol
 github.com/ClickHouse/clickhouse-go/lib/types
 github.com/ClickHouse/clickhouse-go/lib/writebuffer
+# github.com/DATA-DOG/go-sqlmock v1.5.0
+github.com/DATA-DOG/go-sqlmock
 # github.com/DataDog/zstd v1.4.1
 github.com/DataDog/zstd
 # github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d
