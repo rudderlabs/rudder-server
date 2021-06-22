@@ -19,13 +19,13 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
 
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
-
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -60,7 +60,9 @@ var (
 	pkgLogger                          logger.LoggerI
 	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	QueryFilters                       jobsdb.QueryFiltersT
+	readPerDestination                 bool
 	disableEgress                      bool
+	toAbortDestinationIDs              string
 )
 
 const DISABLED_EGRESS = "200: outgoing disabled"
@@ -69,10 +71,10 @@ type HandleT struct {
 	paused                   bool
 	pauseLock                sync.Mutex
 	destType                 string
-	destinationsMap          map[string]*BatchDestinationT // destinationID -> destination
-	connectionWHNamespaceMap map[string]string             // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
+	destinationsMap          map[string]*router_utils.BatchDestinationT // destinationID -> destination
+	connectionWHNamespaceMap map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
 	netHandle                *http.Client
-	processQ                 chan BatchDestinationT
+	processQ                 chan *BatchDestinationDataT
 	jobsDB                   *jobsdb.HandleT
 	errorDB                  jobsdb.JobsDB
 	isEnabled                bool
@@ -86,11 +88,13 @@ type HandleT struct {
 	reporting                types.ReportingI
 	reportingEnabled         bool
 	workers                  []*workerT
+	drainedJobsStat          stats.RudderStats
 }
 
-type BatchDestinationT struct {
-	Destination backendconfig.DestinationT
-	Sources     []backendconfig.SourceT
+type BatchDestinationDataT struct {
+	batchDestination router_utils.BatchDestinationT
+	jobs             []*jobsdb.JobT
+	parentWG         *sync.WaitGroup
 }
 
 type ObjectStorageT struct {
@@ -120,7 +124,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
-		brt.destinationsMap = map[string]*BatchDestinationT{}
+		brt.destinationsMap = map[string]*router_utils.BatchDestinationT{}
 		brt.connectionWHNamespaceMap = map[string]string{}
 		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
@@ -128,7 +132,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == brt.destType {
 						if _, ok := brt.destinationsMap[destination.ID]; !ok {
-							brt.destinationsMap[destination.ID] = &BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
+							brt.destinationsMap[destination.ID] = &router_utils.BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
 						}
 						brt.destinationsMap[destination.ID].Sources = append(brt.destinationsMap[destination.ID].Sources, source)
 
@@ -568,12 +572,15 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		}
 	}
 
-	parameterFilters := []jobsdb.ParameterFilterT{
-		{
-			Name:     "destination_id",
-			Value:    batchJobs.BatchDestination.Destination.ID,
-			Optional: false,
-		},
+	var parameterFilters []jobsdb.ParameterFilterT
+	if readPerDestination {
+		parameterFilters = []jobsdb.ParameterFilterT{
+			{
+				Name:     "destination_id",
+				Value:    batchJobs.BatchDestination.Destination.ID,
+				Optional: false,
+			},
+		}
 	}
 
 	//Store the aborted jobs to errorDB
@@ -702,7 +709,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 	}
 }
 
-func (worker *workerT) getValueForParameter(batchDest BatchDestinationT, parameter string) string {
+func (worker *workerT) getValueForParameter(batchDest router_utils.BatchDestinationT, parameter string) string {
 	switch {
 	case parameter == "destination_id":
 		return batchDest.Destination.ID
@@ -711,7 +718,7 @@ func (worker *workerT) getValueForParameter(batchDest BatchDestinationT, paramet
 	}
 }
 
-func (worker *workerT) constructParameterFilters(batchDest BatchDestinationT) []jobsdb.ParameterFilterT {
+func (worker *workerT) constructParameterFilters(batchDest router_utils.BatchDestinationT) []jobsdb.ParameterFilterT {
 	parameterFilters := make([]jobsdb.ParameterFilterT, 0)
 	for _, key := range QueryFilters.ParameterFilters {
 		parameterFilter := jobsdb.ParameterFilterT{
@@ -736,48 +743,106 @@ func (worker *workerT) workerProcess() {
 			<-worker.resumeChannel
 			pkgLogger.Infof("Batch Router worker %d is resumed. Dest type: %s", worker.workerID, worker.brt.destType)
 
-		case batchDest := <-brt.processQ:
-			toQuery := jobQueryBatchSize
+		case batchDestData := <-brt.processQ:
+			batchDest := batchDestData.batchDestination
 			parameterFilters := worker.constructParameterFilters(batchDest)
-			brtQueryStat := stats.NewStat("batch_router.jobsdb_query_time", stats.TimerType)
-			brtQueryStat.Start()
-			brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
+			var combinedList []*jobsdb.JobT
+			if readPerDestination {
+				toQuery := jobQueryBatchSize
+				brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
+				brtQueryStat.Start()
+				brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
-			retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
-			toQuery -= len(retryList)
-			unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
-			brtQueryStat.End()
+				retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+				toQuery -= len(retryList)
+				unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+				brtQueryStat.End()
 
-			combinedList := append(retryList, unprocessedList...)
+				combinedList = append(retryList, unprocessedList...)
+
+				brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryList), len(unprocessedList), len(combinedList))
+			} else {
+				for _, job := range batchDestData.jobs {
+					var parameters JobParametersT
+					err := json.Unmarshal(job.Parameters, &parameters)
+					if err != nil {
+						worker.brt.logger.Error("BRT: %s: Unmarshal of job parameters failed. ", worker.brt.destType, string(job.Parameters))
+					}
+
+					if parameters.DestinationID == batchDest.Destination.ID {
+						combinedList = append(combinedList, job)
+					}
+				}
+
+				brt.logger.Debugf("BRT: %s: length of jobs for destination id: %s is %d", worker.brt.destType, batchDest.Destination.ID, len(combinedList))
+			}
 			if len(combinedList) == 0 {
 				brt.logger.Debugf("BRT: DB Read Complete. No BRT Jobs to process for parameter Filters: %v", parameterFilters)
 				setDestInProgress(batchDest.Destination.ID, false)
+				//NOTE: Calling Done on parentWG is important before listening on channel again.
+				if batchDestData.parentWG != nil {
+					batchDestData.parentWG.Done()
+				}
 				continue
 			}
-			brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryList), len(unprocessedList), len(combinedList))
 
 			var statusList []*jobsdb.JobStatusT
+			var drainList []*jobsdb.JobStatusT
+			drainCountByDest := make(map[string]int)
 
 			jobsBySource := make(map[string][]*jobsdb.JobT)
 			for _, job := range combinedList {
-				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
-				if _, ok := jobsBySource[sourceID]; !ok {
-					jobsBySource[sourceID] = []*jobsdb.JobT{}
-				}
-				jobsBySource[sourceID] = append(jobsBySource[sourceID], job)
+				if router_utils.ToBeDrained(job, batchDest.Destination.ID, toAbortDestinationIDs, brt.destinationsMap) {
+					status := jobsdb.JobStatusT{
+						JobID:         job.JobID,
+						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+						JobState:      jobsdb.Aborted.State,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     "",
+						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or configured to be aborted via ENV" }`),
+					}
+					drainList = append(drainList, &status)
+					if _, ok := drainCountByDest[batchDest.Destination.ID]; !ok {
+						drainCountByDest[batchDest.Destination.ID] = 0
+					}
+					drainCountByDest[batchDest.Destination.ID] = drainCountByDest[batchDest.Destination.ID] + 1
+				} else {
+					sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
+					if _, ok := jobsBySource[sourceID]; !ok {
+						jobsBySource[sourceID] = []*jobsdb.JobT{}
+					}
+					jobsBySource[sourceID] = append(jobsBySource[sourceID], job)
 
-				status := jobsdb.JobStatusT{
-					JobID:         job.JobID,
-					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-					JobState:      jobsdb.Executing.State,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
-					ErrorCode:     "",
-					ErrorResponse: []byte(`{}`), // check
+					status := jobsdb.JobStatusT{
+						JobID:         job.JobID,
+						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+						JobState:      jobsdb.Executing.State,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     "",
+						ErrorResponse: []byte(`{}`), // check
+					}
+					statusList = append(statusList, &status)
 				}
-				statusList = append(statusList, &status)
 			}
 
+			//Mark the drainList jobs as Aborted
+			if len(drainList) > 0 {
+				err := brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
+				if err != nil {
+					brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
+					panic(err)
+				}
+				for destID, count := range drainCountByDest {
+					brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
+						"destType": brt.destType,
+						"destId":   destID,
+						"module":   "batchrouter",
+					})
+					brt.drainedJobsStat.Count(count)
+				}
+			}
 			//Mark the jobs as executing
 			err := brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 			if err != nil {
@@ -850,6 +915,10 @@ func (worker *workerT) workerProcess() {
 
 			wg.Wait()
 			setDestInProgress(batchDest.Destination.ID, false)
+			//NOTE: Calling Done on parentWG is important before listening on channel again.
+			if batchDestData.parentWG != nil {
+				batchDestData.parentWG.Done()
+			}
 		}
 	}
 }
@@ -954,19 +1023,51 @@ func (brt *HandleT) mainLoop() {
 		configSubscriberLock.RLock()
 		destinationsMap := brt.destinationsMap
 		configSubscriberLock.RUnlock()
-		for destID, batchDest := range destinationsMap {
-			if isDestInProgress(destID) {
-				brt.logger.Debugf("BRT: Skipping batch router upload loop since destination %s:%s is in progress", batchDest.Destination.DestinationDefinition.Name, destID)
-				continue
-			}
-			if uploadFrequencyExceeded(destID) {
-				brt.logger.Debugf("BRT: Skipping batch router upload loop since %s:%s upload freq not exceeded", batchDest.Destination.DestinationDefinition.Name, destID)
-				continue
-			}
-			setDestInProgress(destID, true)
 
-			brt.processQ <- *batchDest
+		var jobs []*jobsdb.JobT
+		if readPerDestination {
+			for destID, batchDest := range destinationsMap {
+				if isDestInProgress(destID) {
+					brt.logger.Debugf("BRT: Skipping batch router upload loop since destination %s:%s is in progress", batchDest.Destination.DestinationDefinition.Name, destID)
+					continue
+				}
+				if uploadFrequencyExceeded(destID) {
+					brt.logger.Debugf("BRT: Skipping batch router upload loop since %s:%s upload freq not exceeded", batchDest.Destination.DestinationDefinition.Name, destID)
+					continue
+				}
+				setDestInProgress(destID, true)
+
+				brt.processQ <- &BatchDestinationDataT{batchDestination: *batchDest, jobs: jobs, parentWG: nil}
+			}
+		} else {
+			if uploadFrequencyExceeded(brt.destType) {
+				brt.logger.Debugf("BRT: %s: Skipping batch router read since upload freq not exceeded", brt.destType)
+				continue
+			}
+
+			brt.logger.Debugf("BRT: %s: Reading in mainLoop", brt.destType)
+			brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "mainLoop"})
+			brtQueryStat.Start()
+			toQuery := jobQueryBatchSize
+			retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
+			toQuery -= len(retryList)
+			unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
+			brtQueryStat.End()
+
+			jobs = append(retryList, unprocessedList...)
+			brt.logger.Debugf("BRT: %s: Length of jobs received: %d", brt.destType, len(jobs))
+
+			var wg sync.WaitGroup
+			for destID, batchDest := range destinationsMap {
+				setDestInProgress(destID, true)
+
+				wg.Add(1)
+				brt.processQ <- &BatchDestinationDataT{batchDestination: *batchDest, jobs: jobs, parentWG: &wg}
+			}
+
+			wg.Wait()
 		}
+
 	}
 }
 
@@ -1061,34 +1162,8 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 
 func (brt *HandleT) crashRecover() {
 
-	for {
-		execList := brt.jobsDB.GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: jobQueryBatchSize})
+	brt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: -1})
 
-		if len(execList) == 0 {
-			break
-		}
-		brt.logger.Debug("BRT: Batch Router crash recovering", len(execList))
-
-		var statusList []*jobsdb.JobStatusT
-
-		for _, job := range execList {
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				JobState:      jobsdb.Failed.State,
-				ErrorCode:     "",
-				ErrorResponse: []byte(`{"Error": "Rudder server crashed while copying jobs to storage"}`), // check
-			}
-			statusList = append(statusList, &status)
-		}
-		err := brt.jobsDB.UpdateJobStatus(statusList, []string{}, nil)
-		if err != nil {
-			brt.logger.Errorf("Error occurred while marking %s jobs statuses as failed. Panicking. Err: %v", brt.destType, err)
-			panic(err)
-		}
-	}
 	if misc.Contains(objectStorageDestinations, brt.destType) {
 		brt.dedupRawDataDestJobsOnCrash()
 	}
@@ -1159,6 +1234,8 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	encounteredMergeRuleMap = map[string]map[string]bool{}
 	disableEgress = config.GetBool("disableEgress", false)
+	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
+	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 }
 
 func init() {
@@ -1166,7 +1243,11 @@ func init() {
 	uploadedRawDataJobsCache = make(map[string]map[string]bool)
 	pkgLogger = logger.NewLogger().Child("batchrouter")
 
-	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true, ParameterFilters: []string{"destination_id"}}
+	if readPerDestination {
+		QueryFilters = jobsdb.QueryFiltersT{CustomVal: true, ParameterFilters: []string{"destination_id"}}
+	} else {
+		QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
+	}
 }
 
 //Setup initializes this module
@@ -1193,7 +1274,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destTyp
 	client := &http.Client{Transport: tr}
 	brt.netHandle = client
 
-	brt.processQ = make(chan BatchDestinationT)
+	brt.processQ = make(chan *BatchDestinationDataT)
 	brt.crashRecover()
 
 	rruntime.Go(func() {

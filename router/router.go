@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -82,7 +83,7 @@ type HandleT struct {
 	enableBatching                         bool
 	transformer                            transformer.Transformer
 	configSubscriberLock                   sync.RWMutex
-	destinationsMap                        map[string]backendconfig.DestinationT // destinationID -> destination
+	destinationsMap                        map[string]*router_utils.BatchDestinationT // destinationID -> destination
 	logger                                 logger.LoggerI
 	batchInputCountStat                    stats.RudderStats
 	batchOutputCountStat                   stats.RudderStats
@@ -345,7 +346,7 @@ func (worker *workerT) workerProcess() {
 				JobT:             job}
 
 			worker.rt.configSubscriberLock.RLock()
-			destination := worker.rt.destinationsMap[parameters.DestinationID]
+			destination := worker.rt.destinationsMap[parameters.DestinationID].Destination
 			worker.rt.configSubscriberLock.RUnlock()
 
 			worker.recordCountsByDestAndUser(destination.ID, userID)
@@ -353,7 +354,7 @@ func (worker *workerT) workerProcess() {
 
 			if worker.rt.enableBatching {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
-				worker.routerJobs = append(worker.routerJobs, routerJob)			
+				worker.routerJobs = append(worker.routerJobs, routerJob)
 				if len(worker.routerJobs) >= noOfJobsToBatchInAWorker {
 					worker.destinationJobs = worker.batch(worker.routerJobs)
 					worker.processDestinationJobs()
@@ -1485,7 +1486,7 @@ func (rt *HandleT) generatorLoop() {
 			//Identify jobs which can be processed
 			for _, job := range combinedList {
 				destID := destinationID(job)
-				if rt.isToBeDrained(job, destID) {
+				if router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap) {
 					status := jobsdb.JobStatusT{
 						JobID:         job.JobID,
 						AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -1533,9 +1534,10 @@ func (rt *HandleT) generatorLoop() {
 					panic(err)
 				}
 				for destID, count := range drainCountByDest {
-					rt.drainedJobsStat = stats.NewTaggedStat(`router_drained_events`, stats.CountType, stats.Tags{
+					rt.drainedJobsStat = stats.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 						"destType": rt.destName,
 						"destId":   destID,
+						"module":   "router",
 					})
 					rt.drainedJobsStat.Count(count)
 				}
@@ -1561,17 +1563,6 @@ func (rt *HandleT) generatorLoop() {
 
 func destinationID(job *jobsdb.JobT) string {
 	return gjson.GetBytes(job.Parameters, "destination_id").String()
-}
-
-func (rt *HandleT) isToBeDrained(job *jobsdb.JobT, destID string) bool {
-	if d, ok := rt.destinationsMap[destID]; ok && !d.Enabled {
-		return true
-	}
-	if toAbortDestinationIDs != "" {
-		abortIDs := strings.Split(toAbortDestinationIDs, ",")
-		return misc.ContainsString(abortIDs, destID)
-	}
-	return false
 }
 
 func (rt *HandleT) crashRecover() {
@@ -1697,13 +1688,17 @@ func (rt *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		rt.configSubscriberLock.Lock()
-		rt.destinationsMap = map[string]backendconfig.DestinationT{}
+		rt.destinationsMap = map[string]*router_utils.BatchDestinationT{}
 		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == rt.destName {
-						rt.destinationsMap[destination.ID] = destination
+						if _, ok := rt.destinationsMap[destination.ID]; !ok {
+							rt.destinationsMap[destination.ID] = &router_utils.BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
+						}
+						rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, source)
+
 						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 							rt.saveDestinationResponse = value
