@@ -44,6 +44,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	uuid "github.com/satori/go.uuid"
 )
 
@@ -108,14 +109,23 @@ type EventSchemaManagerT struct {
 	disableInMemoryCache bool
 }
 
+type OffloadedModelT struct {
+	UUID            string
+	LastSeen        time.Time
+	WriteKey        string
+	EventType       string
+	EventIdentifier string
+}
+
 var (
-	flushInterval                   time.Duration
+	flushIntervalInS                int
 	adminUser                       string
 	adminPassword                   string
 	reservoirSampleSize             int
 	eventSchemaChannel              chan *GatewayEventBatchT
 	updatedEventModels              map[string]*EventModelT
 	updatedSchemaVersions           map[string]*SchemaVersionT
+	offloadedEventModels            map[string]map[string]*OffloadedModelT
 	toDeleteEventModelIDs           []string
 	toDeleteSchemaVersionIDs        []string
 	pkgLogger                       logger.LoggerI
@@ -123,6 +133,8 @@ var (
 	shouldCaptureNilAsUnknowns      bool
 	eventModelLimit                 int
 	schemaVersionPerEventModelLimit int
+	offloadLoopIntervalInS          int
+	offloadThresholdInS             int
 )
 
 const EVENT_MODELS_TABLE = "event_models"
@@ -145,14 +157,16 @@ type EventPayloadT struct {
 }
 
 func loadConfig() {
-	flushInterval = config.GetDuration("EventSchemas.syncIntervalInS", 120) * time.Second
 	adminUser = config.GetEnv("RUDDER_ADMIN_USER", "rudder")
 	adminPassword = config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
-	reservoirSampleSize = config.GetInt("EventSchemas.sampleEventsSize", 5)
 	noOfWorkers = config.GetInt("EventSchemas.noOfWorkers", 128)
-	shouldCaptureNilAsUnknowns = config.GetBool("EventSchemas.captureUnknowns", false)
-	eventModelLimit = config.GetInt("EventSchemas.eventModelLimit", 200)
-	schemaVersionPerEventModelLimit = config.GetInt("EventSchemas.schemaVersionPerEventModelLimit", 20)
+	config.RegisterIntConfigVariable(120, &flushIntervalInS, true, 1, "EventSchemas.syncIntervalInS")
+	config.RegisterIntConfigVariable(5, &reservoirSampleSize, true, 1, "EventSchemas.sampleEventsSize")
+	config.RegisterIntConfigVariable(200, &eventModelLimit, true, 1, "EventSchemas.eventModelLimit")
+	config.RegisterIntConfigVariable(20, &schemaVersionPerEventModelLimit, true, 1, "EventSchemas.schemaVersionPerEventModelLimit")
+	config.RegisterBoolConfigVariable(false, &shouldCaptureNilAsUnknowns, true, "EventSchemas.captureUnknowns")
+	config.RegisterIntConfigVariable(60, &offloadLoopIntervalInS, true, 1, "EventSchemas.offloadLoopIntervalInS")
+	config.RegisterIntConfigVariable(1800, &offloadThresholdInS, true, 1, "EventSchemas.offloadThresholdInS")
 
 	if adminPassword == "rudderstack" {
 		fmt.Println("[EventSchemas] You are using default password. Please change it by setting env variable RUDDER_ADMIN_PASSWORD")
@@ -274,28 +288,43 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	for _, v := range manager.eventModelMap[WriteKey(writeKey)] {
 		totalEventModels += len(v)
 	}
-	eventModel, isExistingEventModel := manager.eventModelMap[WriteKey(writeKey)][EventType(eventType)][EventIdentifier(eventIdentifier)]
-	if !isExistingEventModel {
-		eventModelID := uuid.NewV4().String()
-		eventModel = &EventModelT{
-			UUID:            eventModelID,
-			WriteKey:        writeKey,
-			EventType:       eventType,
-			EventIdentifier: eventIdentifier,
-			Schema:          []byte("{}"),
+	totalEventModels += len(offloadedEventModels[writeKey])
+	eventModel, ok := manager.eventModelMap[WriteKey(writeKey)][EventType(eventType)][EventIdentifier(eventIdentifier)]
+	if !ok {
+		var wasOffloaded bool
+		var offloadedModel *OffloadedModelT
+		if x, ok := offloadedEventModels[writeKey]; ok {
+			offloadedModel, wasOffloaded = x[eventTypeIdentifier(eventType, eventIdentifier)]
 		}
-		eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, 0, 0)
+		if wasOffloaded {
+			manager.reloadModel(offloadedModel)
+			eventModel, ok = manager.eventModelMap[WriteKey(writeKey)][EventType(eventType)][EventIdentifier(eventIdentifier)]
+			if !ok {
+				pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, offloadedModel.UUID, writeKey, eventType, eventIdentifier)
+				return
+			}
+		} else {
+			eventModelID := uuid.NewV4().String()
+			eventModel = &EventModelT{
+				UUID:            eventModelID,
+				WriteKey:        writeKey,
+				EventType:       eventType,
+				EventIdentifier: eventIdentifier,
+				Schema:          []byte("{}"),
+			}
+			eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, 0, 0)
 
-		manager.updateEventModelCache(eventModel, true)
+			manager.updateEventModelCache(eventModel, true)
 
-		if totalEventModels >= eventModelLimit {
-			oldestModel := manager.oldestSeenModel(writeKey)
-			toDeleteEventModelIDs = append(toDeleteEventModelIDs, oldestModel.UUID)
-			manager.deleteFromEventModelCache(oldestModel)
-			manager.deleteModelFromSchemaVersionCache(oldestModel)
+			if totalEventModels >= eventModelLimit {
+				oldestModel := manager.oldestSeenModel(writeKey)
+				toDeleteEventModelIDs = append(toDeleteEventModelIDs, oldestModel.UUID)
+				manager.deleteFromEventModelCache(oldestModel)
+				manager.deleteModelFromSchemaVersionCache(oldestModel)
+			}
 		}
 	}
-	eventModel.LastSeen = time.Now()
+	eventModel.LastSeen = timeutil.Now()
 
 	eventMap := map[string]interface{}(event)
 	flattenedEvent, err := flatten.Flatten((eventMap), "", flatten.DotStyle)
@@ -323,11 +352,11 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			manager.deleteFromSchemaVersionCache(oldestVersion)
 		}
 	}
-	schemaVersion.LastSeen = time.Now()
+	schemaVersion.LastSeen = timeutil.Now()
 	manager.updateSchemaVersionCache(schemaVersion, true)
 
-	eventModel.reservoirSample.add(event)
-	schemaVersion.reservoirSample.add(event)
+	eventModel.reservoirSample.add(event, true)
+	schemaVersion.reservoirSample.add(event, true)
 	updatedEventModels[eventModel.UUID] = eventModel
 }
 
@@ -405,8 +434,8 @@ func (manager *EventSchemaManagerT) NewSchemaVersion(versionID string, schema ma
 		SchemaHash:   schemaHash,
 		EventModelID: eventModelID,
 		Schema:       schemaJSON,
-		FirstSeen:    time.Now(),
-		LastSeen:     time.Now(),
+		FirstSeen:    timeutil.Now(),
+		LastSeen:     timeutil.Now(),
 	}
 	schemaVersion.reservoirSample = NewReservoirSampler(reservoirSampleSize, 0, 0)
 	return schemaVersion
@@ -452,7 +481,7 @@ func getPrivateDataJSON(schemaHash string) []byte {
 func (manager *EventSchemaManagerT) flushEventSchemas() {
 	// This will run forever. If you want to quit in between, change it to ticker and call stop()
 	// Otherwise the ticker won't be GC'ed
-	ticker := time.Tick(flushInterval)
+	ticker := time.Tick(time.Duration(flushIntervalInS) * time.Second)
 	for range ticker {
 
 		// If needed, copy the maps and release the lock immediately
@@ -553,6 +582,41 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 	}
 }
 
+func eventTypeIdentifier(eventType, eventIdentifier string) string {
+	return fmt.Sprintf(`%s::%s`, eventType, eventIdentifier)
+}
+
+func (manager *EventSchemaManagerT) offloadSchemas() {
+	for {
+		time.Sleep(time.Duration(offloadLoopIntervalInS) * time.Second)
+		manager.eventModelLock.Lock()
+		manager.schemaVersionLock.Lock()
+		for _, modelsByWriteKey := range manager.eventModelMap {
+			for _, modelsByEventType := range modelsByWriteKey {
+				for _, model := range modelsByEventType {
+					if timeutil.Now().Sub(model.LastSeen) > time.Duration(offloadThresholdInS)*time.Second {
+						if _, ok := offloadedEventModels[model.WriteKey]; !ok {
+							offloadedEventModels[model.WriteKey] = make(map[string]*OffloadedModelT)
+						}
+						offloadedEventModels[model.WriteKey][eventTypeIdentifier(model.EventType, model.EventIdentifier)] = &OffloadedModelT{UUID: model.UUID, LastSeen: model.LastSeen, WriteKey: model.WriteKey, EventType: model.EventType, EventIdentifier: model.EventIdentifier}
+						manager.deleteFromEventModelCache(model)
+						manager.deleteModelFromSchemaVersionCache(model)
+					}
+				}
+			}
+		}
+		manager.schemaVersionLock.Unlock()
+		manager.eventModelLock.Unlock()
+	}
+}
+
+func (manager *EventSchemaManagerT) reloadModel(offloadedModel *OffloadedModelT) {
+	pkgLogger.Infof("reloading event model from db: %s\n", offloadedModel.UUID)
+	manager.populateEventModels(offloadedModel.UUID)
+	manager.populateSchemaVersions(offloadedModel.UUID)
+	delete(offloadedEventModels[offloadedModel.WriteKey], eventTypeIdentifier(offloadedModel.EventType, offloadedModel.EventIdentifier))
+}
+
 // TODO: Move this into some DB manager
 func createDBConnection() *sql.DB {
 	psqlInfo := jobsdb.GetConnectionString()
@@ -584,9 +648,14 @@ func assertTxnError(err error, txn *sql.Tx) {
 	}
 }
 
-func (manager *EventSchemaManagerT) populateEventModels() {
+func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) {
 
-	eventModelsSelectSQL := fmt.Sprintf(`SELECT * FROM %s`, EVENT_MODELS_TABLE)
+	var uuidFilter string
+	if len(uuidFilters) > 0 {
+		uuidFilter = fmt.Sprintf(`WHERE uuid in ('%s')`, strings.Join(uuidFilters, "', '"))
+	}
+
+	eventModelsSelectSQL := fmt.Sprintf(`SELECT * FROM %s %s`, EVENT_MODELS_TABLE, uuidFilter)
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
 	assertError(err)
@@ -610,15 +679,19 @@ func (manager *EventSchemaManagerT) populateEventModels() {
 
 		eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, len(metadata.SampledEvents), metadata.TotalCount)
 		for sampledEvent := range metadata.SampledEvents {
-			eventModel.reservoirSample.add(sampledEvent)
+			eventModel.reservoirSample.add(sampledEvent, false)
 		}
 		manager.updateEventModelCache(&eventModel, false)
 	}
 }
 
-func (manager *EventSchemaManagerT) populateSchemaVersions() {
+func (manager *EventSchemaManagerT) populateSchemaVersions(modelIDFilters ...string) {
+	var modelIDFilter string
+	if len(modelIDFilters) > 0 {
+		modelIDFilter = fmt.Sprintf(`WHERE event_model_id in ('%s')`, strings.Join(modelIDFilters, "', '"))
+	}
 
-	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, metadata, private_data,first_seen, last_seen, total_count FROM %s`, SCHEMA_VERSIONS_TABLE)
+	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, metadata, private_data,first_seen, last_seen, total_count FROM %s %s`, SCHEMA_VERSIONS_TABLE, modelIDFilter)
 
 	rows, err := manager.dbHandle.Query(schemaVersionsSelectSQL)
 	assertError(err)
@@ -640,7 +713,7 @@ func (manager *EventSchemaManagerT) populateSchemaVersions() {
 
 		schemaVersion.reservoirSample = NewReservoirSampler(reservoirSampleSize, len(metadata.SampledEvents), metadata.TotalCount)
 		for sampledEvent := range metadata.SampledEvents {
-			schemaVersion.reservoirSample.add(sampledEvent)
+			schemaVersion.reservoirSample.add(sampledEvent, false)
 		}
 
 		manager.updateSchemaVersionCache(&schemaVersion, false)
@@ -651,6 +724,7 @@ func (manager *EventSchemaManagerT) populateSchemaVersions() {
 
 // This should be called during the Initialize() to populate existing event Schemas
 func (manager *EventSchemaManagerT) populateEventSchemas() {
+	pkgLogger.Infof(`Populating event models and their schema versions into in-memory`)
 	manager.populateEventModels()
 	manager.populateSchemaVersions()
 }
@@ -710,6 +784,8 @@ func (manager *EventSchemaManagerT) Setup() {
 	manager.eventModelMap = make(EventModelMapT)
 	manager.schemaVersionMap = make(SchemaVersionMapT)
 
+	offloadedEventModels = make(map[string]map[string]*OffloadedModelT)
+
 	if !manager.disableInMemoryCache {
 		manager.populateEventSchemas()
 	}
@@ -723,6 +799,10 @@ func (manager *EventSchemaManagerT) Setup() {
 
 	rruntime.Go(func() {
 		manager.flushEventSchemas()
+	})
+
+	rruntime.Go(func() {
+		manager.offloadSchemas()
 	})
 
 	pkgLogger.Info("[EventSchemas] Set up eventSchemas successful.")
