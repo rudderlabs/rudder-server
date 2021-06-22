@@ -117,6 +117,13 @@ type OffloadedModelT struct {
 	EventIdentifier string
 }
 
+type OffloadedSchemaVersionT struct {
+	UUID         string
+	EventModelID string
+	LastSeen     time.Time
+	SchemaHash   string
+}
+
 var (
 	flushIntervalInS                int
 	adminUser                       string
@@ -126,6 +133,7 @@ var (
 	updatedEventModels              map[string]*EventModelT
 	updatedSchemaVersions           map[string]*SchemaVersionT
 	offloadedEventModels            map[string]map[string]*OffloadedModelT
+	offloadedSchemaVersions         map[string]map[string]*OffloadedSchemaVersionT
 	toDeleteEventModelIDs           []string
 	toDeleteSchemaVersionIDs        []string
 	pkgLogger                       logger.LoggerI
@@ -293,8 +301,8 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	if !ok {
 		var wasOffloaded bool
 		var offloadedModel *OffloadedModelT
-		if x, ok := offloadedEventModels[writeKey]; ok {
-			offloadedModel, wasOffloaded = x[eventTypeIdentifier(eventType, eventIdentifier)]
+		if byEventTypeIdentifier, ok := offloadedEventModels[writeKey]; ok {
+			offloadedModel, wasOffloaded = byEventTypeIdentifier[eventTypeIdentifier(eventType, eventIdentifier)]
 		}
 		if wasOffloaded {
 			manager.reloadModel(offloadedModel)
@@ -340,15 +348,29 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	schemaVersion, schemaFoundInCache := manager.schemaVersionMap[eventModel.UUID][schemaHash]
 
 	if !schemaFoundInCache {
-		versionID := uuid.NewV4().String()
-		schemaVersion = manager.NewSchemaVersion(versionID, schema, schemaHash, eventModel.UUID)
-		eventModel.mergeSchema(schemaVersion)
+		var wasOffloaded bool
+		var offloadedVersion *OffloadedSchemaVersionT
+		if bySchemaHash, ok := offloadedSchemaVersions[eventModel.UUID]; ok {
+			offloadedVersion, wasOffloaded = bySchemaHash[schemaHash]
+		}
+		if wasOffloaded {
+			manager.reloadSchemaVersion(offloadedVersion)
+			schemaVersion, ok = manager.schemaVersionMap[eventModel.UUID][schemaHash]
+			if !ok {
+				pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, offloadedVersion.UUID, writeKey, eventType, eventIdentifier)
+				return
+			}
+		} else {
+			versionID := uuid.NewV4().String()
+			schemaVersion = manager.NewSchemaVersion(versionID, schema, schemaHash, eventModel.UUID)
+			eventModel.mergeSchema(schemaVersion)
 
-		if len(manager.schemaVersionMap[eventModel.UUID]) >= schemaVersionPerEventModelLimit {
-			stats.NewTaggedStat("dropped_schema_versions_count", stats.CountType, stats.Tags{"module": "event_schemas", "eventModelID": eventModel.UUID}).Increment()
-			oldestVersion := manager.oldestSeenVersion(eventModel.UUID)
-			toDeleteSchemaVersionIDs = append(toDeleteSchemaVersionIDs, oldestVersion.UUID)
-			manager.deleteFromSchemaVersionCache(oldestVersion)
+			if len(manager.schemaVersionMap[eventModel.UUID]) >= schemaVersionPerEventModelLimit {
+				stats.NewTaggedStat("dropped_schema_versions_count", stats.CountType, stats.Tags{"module": "event_schemas", "eventModelID": eventModel.UUID}).Increment()
+				oldestVersion := manager.oldestSeenVersion(eventModel.UUID)
+				toDeleteSchemaVersionIDs = append(toDeleteSchemaVersionIDs, oldestVersion.UUID)
+				manager.deleteFromSchemaVersionCache(oldestVersion)
+			}
 		}
 	}
 	schemaVersion.LastSeen = timeutil.Now()
@@ -376,6 +398,7 @@ func (manager *EventSchemaManagerT) oldestSeenModel(writeKey string) *EventModel
 			oldestSeenModel.WriteKey = offloadedModel.WriteKey
 			oldestSeenModel.EventType = offloadedModel.EventType
 			oldestSeenModel.EventIdentifier = offloadedModel.EventIdentifier
+			oldestSeenModel.LastSeen = offloadedModel.LastSeen
 			minLastSeen = offloadedModel.LastSeen
 		}
 	}
@@ -383,16 +406,21 @@ func (manager *EventSchemaManagerT) oldestSeenModel(writeKey string) *EventModel
 }
 
 func (manager *EventSchemaManagerT) oldestSeenVersion(modelID string) *SchemaVersionT {
-	var oldestSeenSchemaVersion *SchemaVersionT
-	var minLastSeeen time.Time
+	oldestSeenSchemaVersion := &SchemaVersionT{}
+	var minLastSeen time.Time
 	for _, schemaVersion := range manager.schemaVersionMap[modelID] {
-		if minLastSeeen.IsZero() {
+		if !schemaVersion.LastSeen.IsZero() && (schemaVersion.LastSeen.Sub(minLastSeen).Seconds() <= 0 || minLastSeen.IsZero()) {
 			oldestSeenSchemaVersion = schemaVersion
-			minLastSeeen = schemaVersion.LastSeen
+			minLastSeen = schemaVersion.LastSeen
 		}
-		if schemaVersion.LastSeen.Sub(minLastSeeen).Seconds() <= 0 {
-			oldestSeenSchemaVersion = schemaVersion
-			minLastSeeen = schemaVersion.LastSeen
+	}
+	for _, offloadedVersion := range offloadedSchemaVersions[modelID] {
+		if !offloadedVersion.LastSeen.IsZero() && (offloadedVersion.LastSeen.Sub(minLastSeen).Seconds() <= 0 || minLastSeen.IsZero()) {
+			oldestSeenSchemaVersion.UUID = offloadedVersion.UUID
+			oldestSeenSchemaVersion.EventModelID = offloadedVersion.EventModelID
+			oldestSeenSchemaVersion.SchemaHash = offloadedVersion.SchemaHash
+			oldestSeenSchemaVersion.LastSeen = offloadedVersion.LastSeen
+			minLastSeen = offloadedVersion.LastSeen
 		}
 	}
 	return oldestSeenSchemaVersion
@@ -590,7 +618,7 @@ func eventTypeIdentifier(eventType, eventIdentifier string) string {
 	return fmt.Sprintf(`%s::%s`, eventType, eventIdentifier)
 }
 
-func (manager *EventSchemaManagerT) offloadSchemas() {
+func (manager *EventSchemaManagerT) offloadEventSchemas() {
 	for {
 		time.Sleep(time.Duration(offloadLoopIntervalInS) * time.Second)
 		manager.eventModelLock.Lock()
@@ -599,6 +627,7 @@ func (manager *EventSchemaManagerT) offloadSchemas() {
 			for _, modelsByEventType := range modelsByWriteKey {
 				for _, model := range modelsByEventType {
 					if timeutil.Now().Sub(model.LastSeen) > time.Duration(offloadThresholdInS)*time.Second {
+						pkgLogger.Debugf("offloading model: %s", model.UUID)
 						if _, ok := offloadedEventModels[model.WriteKey]; !ok {
 							offloadedEventModels[model.WriteKey] = make(map[string]*OffloadedModelT)
 						}
@@ -606,6 +635,18 @@ func (manager *EventSchemaManagerT) offloadSchemas() {
 						manager.deleteFromEventModelCache(model)
 						manager.deleteModelFromSchemaVersionCache(model)
 					}
+				}
+			}
+		}
+		for _, modelsByWriteKey := range manager.schemaVersionMap {
+			for _, version := range modelsByWriteKey {
+				if timeutil.Now().Sub(version.LastSeen) > time.Duration(offloadThresholdInS)*time.Second {
+					pkgLogger.Debugf("offloading schema version: %s", version.UUID)
+					if _, ok := offloadedSchemaVersions[version.EventModelID]; !ok {
+						offloadedSchemaVersions[version.EventModelID] = make(map[string]*OffloadedSchemaVersionT)
+					}
+					offloadedSchemaVersions[version.EventModelID][version.SchemaHash] = &OffloadedSchemaVersionT{UUID: version.UUID, LastSeen: version.LastSeen, EventModelID: version.EventModelID, SchemaHash: version.SchemaHash}
+					manager.deleteFromSchemaVersionCache(&SchemaVersionT{EventModelID: version.EventModelID, SchemaHash: version.SchemaHash})
 				}
 			}
 		}
@@ -619,6 +660,12 @@ func (manager *EventSchemaManagerT) reloadModel(offloadedModel *OffloadedModelT)
 	manager.populateEventModels(offloadedModel.UUID)
 	manager.populateSchemaVersions(offloadedModel.UUID)
 	delete(offloadedEventModels[offloadedModel.WriteKey], eventTypeIdentifier(offloadedModel.EventType, offloadedModel.EventIdentifier))
+}
+
+func (manager *EventSchemaManagerT) reloadSchemaVersion(offloadedVersion *OffloadedSchemaVersionT) {
+	pkgLogger.Infof("reloading schema vesion from db: %s\n", offloadedVersion.UUID)
+	manager.populateSchemaVersions(offloadedVersion.EventModelID)
+	delete(offloadedSchemaVersions[offloadedVersion.EventModelID], offloadedVersion.SchemaHash)
 }
 
 // TODO: Move this into some DB manager
@@ -789,6 +836,7 @@ func (manager *EventSchemaManagerT) Setup() {
 	manager.schemaVersionMap = make(SchemaVersionMapT)
 
 	offloadedEventModels = make(map[string]map[string]*OffloadedModelT)
+	offloadedSchemaVersions = make(map[string]map[string]*OffloadedSchemaVersionT)
 
 	if !manager.disableInMemoryCache {
 		manager.populateEventSchemas()
@@ -806,7 +854,7 @@ func (manager *EventSchemaManagerT) Setup() {
 	})
 
 	rruntime.Go(func() {
-		manager.offloadSchemas()
+		manager.offloadEventSchemas()
 	})
 
 	pkgLogger.Info("[EventSchemas] Set up eventSchemas successful.")
