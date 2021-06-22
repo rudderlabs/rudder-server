@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -23,6 +24,20 @@ type NetHandleT struct {
 }
 
 //var pkgLogger logger.LoggerI
+
+//temp solution for handling complex query params
+func handleQueryParam(param interface{}) string {
+	if reflect.TypeOf(param).Kind() == reflect.String {
+		return param.(string)
+	}
+
+	if reflect.TypeOf(param).Kind() == reflect.Map {
+		temp, _ := json.Marshal(param)
+		jsonParam := string(temp)
+		return jsonParam
+	}
+	return fmt.Sprint(param)
+}
 
 //sendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
@@ -88,16 +103,16 @@ func (network *NetHandleT) sendPost(structData integrations.PostParametersT) (st
 		// response from transformers are "," seperated
 		queryParams := req.URL.Query()
 		for key, val := range requestQueryParams {
-			valString := fmt.Sprint(val)
+
 			// list := strings.Split(valString, ",")
 			// for _, listItem := range list {
 			// 	queryParams.Add(key, fmt.Sprint(listItem))
 			// }
-			queryParams.Add(key, fmt.Sprint(valString))
+			formattedVal := handleQueryParam(val)
+			queryParams.Add(key, formattedVal)
 		}
 
 		req.URL.RawQuery = queryParams.Encode()
-
 		headerKV := postInfo.Headers
 		for key, val := range headerKV {
 			req.Header.Add(key, val.(string))
