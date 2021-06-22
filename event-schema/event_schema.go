@@ -314,14 +314,13 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			}
 			eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, 0, 0)
 
-			manager.updateEventModelCache(eventModel, true)
-
 			if totalEventModels >= eventModelLimit {
 				oldestModel := manager.oldestSeenModel(writeKey)
 				toDeleteEventModelIDs = append(toDeleteEventModelIDs, oldestModel.UUID)
 				manager.deleteFromEventModelCache(oldestModel)
 				manager.deleteModelFromSchemaVersionCache(oldestModel)
 			}
+			manager.updateEventModelCache(eventModel, true)
 		}
 	}
 	eventModel.LastSeen = timeutil.Now()
@@ -361,18 +360,23 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 }
 
 func (manager *EventSchemaManagerT) oldestSeenModel(writeKey string) *EventModelT {
-	var oldestSeenModel *EventModelT
+	oldestSeenModel := &EventModelT{}
 	var minLastSeen time.Time
 	for _, eventIdentifierMap := range manager.eventModelMap[WriteKey(writeKey)] {
 		for _, model := range eventIdentifierMap {
-			if minLastSeen.IsZero() {
+			if !model.LastSeen.IsZero() && (model.LastSeen.Sub(minLastSeen).Seconds() <= 0 || minLastSeen.IsZero()) {
 				oldestSeenModel = model
 				minLastSeen = model.LastSeen
 			}
-			if model.LastSeen.Sub(minLastSeen).Seconds() <= 0 {
-				oldestSeenModel = model
-				minLastSeen = model.LastSeen
-			}
+		}
+	}
+	for _, offloadedModel := range offloadedEventModels[writeKey] {
+		if !offloadedModel.LastSeen.IsZero() && (offloadedModel.LastSeen.Sub(minLastSeen).Seconds() <= 0 || minLastSeen.IsZero()) {
+			oldestSeenModel.UUID = offloadedModel.UUID
+			oldestSeenModel.WriteKey = offloadedModel.WriteKey
+			oldestSeenModel.EventType = offloadedModel.EventType
+			oldestSeenModel.EventIdentifier = offloadedModel.EventIdentifier
+			minLastSeen = offloadedModel.LastSeen
 		}
 	}
 	return oldestSeenModel
