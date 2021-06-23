@@ -3,6 +3,7 @@ package processor
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -731,14 +732,16 @@ func (proc *HandleT) createSessions() {
 	}
 }
 
-func getSourceByWriteKey(writeKey string) backendconfig.SourceT {
+func getSourceByWriteKey(writeKey string) (backendconfig.SourceT,error) {
+	var err error
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	source, ok := writeKeySourceMap[writeKey]
 	if !ok {
-		panic(fmt.Errorf(`source not found for writeKey: %s`, writeKey))
+		err = errors.New("`source not found for writeKey")
+		fmt.Errorf(`source not found for writeKey: %s`, writeKey)
 	}
-	return source
+	return source,err
 }
 
 func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
@@ -1208,8 +1211,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 				workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 				workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
-				sourceForSingularEvent := getSourceByWriteKey(writeKey)
-
+				sourceForSingularEvent,sourceIdError := getSourceByWriteKey(writeKey)
+				if sourceIdError != nil {
+					continue
+				}
+				
 				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
 				if len(enabledDestTypes) == 0 {
 					proc.logger.Debug("No enabled destinations")
