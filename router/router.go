@@ -346,7 +346,11 @@ func (worker *workerT) workerProcess() {
 				JobT:             job}
 
 			worker.rt.configSubscriberLock.RLock()
-			destination := worker.rt.destinationsMap[parameters.DestinationID].Destination
+			batchDestination,ok := worker.rt.destinationsMap[parameters.DestinationID]
+			if !ok {
+				continue
+			}
+			destination := batchDestination.Destination
 			worker.rt.configSubscriberLock.RUnlock()
 
 			worker.recordCountsByDestAndUser(destination.ID, userID)
