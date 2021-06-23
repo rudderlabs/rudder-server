@@ -1213,7 +1213,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
 				sourceForSingularEvent,sourceIdError := getSourceByWriteKey(writeKey)
 				if sourceIdError != nil {
-					proc.logger.Error("Dropping Job since Source not found for writeKey : %s" , writeKey)
+					proc.logger.Error("Dropping Job since Source not found for writeKey : " , writeKey)
 					continue
 				}
 
