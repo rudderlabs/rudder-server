@@ -101,7 +101,7 @@ func Setup() {
 	var err error
 	conn = statsd.Address(statsdServerURL)
 	//TODO: Add tags by calling a function...
-	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), defaultTags())
+	client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 	if err != nil {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
