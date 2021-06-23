@@ -1213,9 +1213,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
 				sourceForSingularEvent,sourceIdError := getSourceByWriteKey(writeKey)
 				if sourceIdError != nil {
+					proc.logger.Error("Dropping Job since Source not found for writeKey : %s" , writeKey)
 					continue
 				}
-				
+
 				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
 				if len(enabledDestTypes) == 0 {
 					proc.logger.Debug("No enabled destinations")
