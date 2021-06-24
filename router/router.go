@@ -348,6 +348,16 @@ func (worker *workerT) workerProcess() {
 			worker.rt.configSubscriberLock.RLock()
 			batchDestination,ok := worker.rt.destinationsMap[parameters.DestinationID]
 			if !ok {
+				status := jobsdb.JobStatusT{
+					JobID:         job.JobID,
+					AttemptNum:    job.LastJobStatus.AttemptNum,
+					JobState:      jobsdb.Aborted.State,
+					ExecTime:      time.Now(),
+					RetryTime:     time.Now(),
+					ErrorCode:     "",
+					ErrorResponse: []byte(`{"reason": "Aborted because destination is not available in the config" }`),
+				}
+				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				continue
 			}
 			destination := batchDestination.Destination

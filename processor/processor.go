@@ -738,8 +738,8 @@ func getSourceByWriteKey(writeKey string) (backendconfig.SourceT,error) {
 	defer configSubscriberLock.RUnlock()
 	source, ok := writeKeySourceMap[writeKey]
 	if !ok {
-		err = errors.New("`source not found for writeKey")
-		fmt.Errorf(`source not found for writeKey: %s`, writeKey)
+		err = errors.New("source not found for writeKey")
+		pkgLogger.Errorf(`Processor : source not found for writeKey: %s`, writeKey)
 	}
 	return source,err
 }
