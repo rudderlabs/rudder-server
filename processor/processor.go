@@ -732,7 +732,7 @@ func (proc *HandleT) createSessions() {
 	}
 }
 
-func getSourceByWriteKey(writeKey string) (backendconfig.SourceT,error) {
+func getSourceByWriteKey(writeKey string) (backendconfig.SourceT, error) {
 	var err error
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
@@ -741,7 +741,7 @@ func getSourceByWriteKey(writeKey string) (backendconfig.SourceT,error) {
 		err = errors.New("source not found for writeKey")
 		pkgLogger.Errorf(`Processor : source not found for writeKey: %s`, writeKey)
 	}
-	return source,err
+	return source, err
 }
 
 func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
@@ -1211,9 +1211,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 				workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 				workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
-				sourceForSingularEvent,sourceIdError := getSourceByWriteKey(writeKey)
+				sourceForSingularEvent, sourceIdError := getSourceByWriteKey(writeKey)
 				if sourceIdError != nil {
-					proc.logger.Error("Dropping Job since Source not found for writeKey : " , writeKey)
+					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
 					continue
 				}
 
