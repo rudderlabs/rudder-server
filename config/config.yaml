@@ -71,7 +71,7 @@ JobsDB:
     enabled: true
     gw:
       enabled: true
-      pathPrefix: ''
+      pathPrefix: ""
     rt:
       enabled: true
       failedOnly: true
@@ -176,7 +176,7 @@ Processor:
   Stats:
     captureEventName: false
 Dedup:
-  enableDedup: true
+  enableDedup: false
   dedupWindowInS: 3600
 BackendConfig:
   configFromFile: false
