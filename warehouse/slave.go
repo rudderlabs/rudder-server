@@ -305,7 +305,9 @@ func (event *BatchRouterEventT) getColumnInfo(columnName string) (columnInfo Col
 //
 
 func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
-
+	fmt.Println("\n\n\n\n\n\n\n\n--------------------------")
+	fmt.Println(fmt.Sprintf("processing staging file : %+v", job))
+	fmt.Println("--------------------------")
 	jobRun := JobRunT{
 		job:          job,
 		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),

@@ -1171,6 +1171,7 @@ func (job *UploadJobT) setSchema(consolidatedSchema warehouseutils.SchemaT) erro
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("\n\n\n\n\n\n ******* Setting upload schema - ", consolidatedSchema)
 	job.upload.Schema = consolidatedSchema
 	// return job.setUploadColumns(
 	// 	UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
@@ -1519,6 +1520,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 
 		var messages []pgnotifier.MessageT
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
+
+			
 			payload := PayloadT{
 				UploadID:            job.upload.ID,
 				StagingFileID:       stagingFile.ID,
