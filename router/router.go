@@ -18,7 +18,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
-	"github.com/rudderlabs/rudder-server/router/drain"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -56,7 +55,7 @@ type HandleT struct {
 	statusLoopResumeChannel                chan bool
 	requestQ                               chan *jobsdb.JobT
 	responseQ                              chan jobResponseT
-	jobsDB                                 *jobsdb.HandleT
+	jobsDB                                 jobsdb.JobsDB
 	errorDB                                jobsdb.JobsDB
 	netHandle                              *NetHandleT
 	destName                               string
@@ -96,12 +95,12 @@ type HandleT struct {
 	allowAbortedUserJobsCountForProcessing int
 	throttledUserMap                       map[string]struct{} // used before calling findWorker. A temp storage to save <userid> whose job can be throttled.
 	isBackendConfigInitialized             bool
+	backendConfig                          backendconfig.BackendConfig
 	backendConfigInitialized               chan bool
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
 	destinationResponseHandler             ResponseHandlerI
 	saveDestinationResponse                bool
-	drainJobHandler                        drain.DrainI
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
 }
@@ -346,7 +345,7 @@ func (worker *workerT) workerProcess() {
 				JobT:             job}
 
 			worker.rt.configSubscriberLock.RLock()
-			batchDestination,ok := worker.rt.destinationsMap[parameters.DestinationID]
+			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
 			if !ok {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
@@ -1590,8 +1589,9 @@ func init() {
 }
 
 //Setup initializes this module
-func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
+func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
 
+	rt.backendConfig = backendConfig
 	rt.generatorPauseChannel = make(chan *PauseT)
 	rt.generatorResumeChannel = make(chan bool)
 	rt.statusLoopPauseChannel = make(chan *PauseT)
@@ -1637,7 +1637,6 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindowInMins"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
-	rt.drainJobHandler = drain.Setup(rt.jobsDB)
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
@@ -1698,7 +1697,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 
 func (rt *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
-	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
+	rt.backendConfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	for {
 		config := <-ch
 		rt.configSubscriberLock.Lock()
