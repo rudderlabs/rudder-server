@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
+	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
@@ -54,6 +55,7 @@ type context struct {
 	mockRouterJobsDB  *mocksJobsDB.MockJobsDB
 	mockProcErrorsDB  *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	mockNetHandle     *mocksRouter.MockNetHandleI
 }
 
 // Initiaze mocks and common expectations
@@ -63,6 +65,7 @@ func (c *context) Setup() {
 	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
+	c.mockNetHandle = mocksRouter.NewMockNetHandleI(c.mockCtrl)
 
 	// During Setup, router subscribes to backend config
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
@@ -103,6 +106,7 @@ var _ = Describe("Router", func() {
 			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{destinationDefinition.Name}, Count: -1}).Times(1)
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, destinationDefinition, nil)
+			router.netHandle = c.mockNetHandle
 		})
 	})
 })

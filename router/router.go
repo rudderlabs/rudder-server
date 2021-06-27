@@ -57,7 +57,7 @@ type HandleT struct {
 	responseQ                              chan jobResponseT
 	jobsDB                                 jobsdb.JobsDB
 	errorDB                                jobsdb.JobsDB
-	netHandle                              *NetHandleT
+	netHandle                              NetHandleI
 	destName                               string
 	workers                                []*workerT
 	perfStats                              *misc.PerfStats
@@ -565,7 +565,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
-							respStatusCode, respBodyTemp = worker.rt.netHandle.sendPost(val)
+							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
@@ -1619,9 +1619,10 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.failedEventsList = list.New()
 	rt.failedEventsChan = make(chan jobsdb.JobStatusT)
 	rt.isEnabled = true
-	rt.netHandle = &NetHandleT{}
-	rt.netHandle.logger = rt.logger.Child("network")
-	rt.netHandle.Setup(destName, rt.netClientTimeout)
+	netHandle := &NetHandleT{}
+	netHandle.logger = rt.logger.Child("network")
+	netHandle.Setup(destName, rt.netClientTimeout)
+	rt.netHandle = netHandle
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customDestinationManager.New(destName)
