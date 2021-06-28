@@ -5,11 +5,10 @@
 package mock_network
 
 import (
-	http "net/http"
-	reflect "reflect"
-
 	gomock "github.com/golang/mock/gomock"
 	integrations "github.com/rudderlabs/rudder-server/processor/integrations"
+	http "net/http"
+	reflect "reflect"
 )
 
 // MockHTTPClient is a mock of HTTPClient interface

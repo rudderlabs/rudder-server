@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -117,6 +118,8 @@ var _ = Describe("Router", func() {
 
 	Context("normal operation - ga", func() {
 		BeforeEach(func() {
+			maxStatusUpdateWait = 2 * time.Second
+
 			// crash recovery check
 			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, Count: -1}).Times(1)
 		})
@@ -192,7 +195,76 @@ var _ = Describe("Router", func() {
 			count := router.readAndProcess()
 			Expect(count).To(Equal(2))
 
-			time.Sleep(6 * time.Second)
+			time.Sleep(3 * time.Second)
+		})
+
+		It("should abort unprocessed jobs to ga destination because of bad payload", func() {
+			router := &HandleT{}
+
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
+			router.netHandle = mockNetHandle
+
+			gaPayload := `{}`
+			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
+
+			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+				{
+					UUID:         uuid.NewV4(),
+					UserID:       "u1",
+					JobID:        2010,
+					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CustomVal:    CustomVal["GA"],
+					EventPayload: []byte(gaPayload),
+					LastJobStatus: jobsdb.JobStatusT{
+						AttemptNum: 0,
+					},
+					Parameters: []byte(parameters),
+				},
+			}
+
+			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
+			callThrottled := c.mockRouterJobsDB.EXPECT().GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
+			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callThrottled)
+			c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, Count: c.dbReadBatchSize}).Return(unprocessedJobsList).Times(1).After(callWaiting)
+
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
+				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
+				})
+
+			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(1).Return(400, "")
+
+			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
+				Do(func(jobList []*jobsdb.JobT) {
+					job := jobList[0]
+					var parameters map[string]interface{}
+					err := json.Unmarshal(job.Parameters, &parameters)
+					if err != nil {
+						panic(err)
+					}
+
+					Expect(parameters["stage"]).To(Equal("router"))
+					Expect(job.JobID).To(Equal(unprocessedJobsList[0].JobID))
+					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
+					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
+				})
+
+			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
+			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
+			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
+				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Aborted.State, "400", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 1)
+				})
+			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
+			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
+
+			<-router.backendConfigInitialized
+			count := router.readAndProcess()
+			Expect(count).To(Equal(1))
+
+			time.Sleep(3 * time.Second)
 		})
 	})
 })
