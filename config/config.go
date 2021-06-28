@@ -557,7 +557,6 @@ func GetWorkspaceToken() string {
 	if token != "" && token != "<your_token_here>" {
 		return token
 	}
-
 	return GetEnv("CONFIG_BACKEND_TOKEN", "")
 }
 

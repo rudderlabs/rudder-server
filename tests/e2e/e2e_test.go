@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"strconv"
 	"time"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
@@ -48,22 +47,22 @@ var _ = Describe("E2E", func() {
 				//Source id for the above writekey is 1Yc6YceKLOcUYk8je9B0GQ65mmL
 				switch eventType {
 				case "BATCH":
-					helpers.SendBatchRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.BatchPayload, "batch.0.messageId", "batch.0.anonymousId"))
+					helpers.SendBatchRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.BatchPayload, "batch.0.messageId"))
 				case "IDENTIFY":
-					helpers.SendIdentifyRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.IdentifyPayload, "messageId", "anonymousId"))
+					helpers.SendIdentifyRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.IdentifyPayload, "messageId"))
 				case "GROUP":
-					helpers.SendGroupRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.GroupPayload, "messageId", "anonymousId"))
+					helpers.SendGroupRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.GroupPayload, "messageId" ))
 				case "TRACK":
-					helpers.SendTrackRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.TrackPayload, "messageId", "anonymousId"))
+					helpers.SendTrackRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.TrackPayload, "messageId"))
 				case "SCREEN":
-					helpers.SendScreenRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.ScreenPayload, "messageId", "anonymousId"))
+					helpers.SendScreenRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.ScreenPayload, "messageId"))
 				case "PAGE":
-					helpers.SendPageRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.PagePayload, "messageId", "anonymousId"))
+					helpers.SendPageRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.PagePayload, "messageId"))
 				case "ALIAS":
-					helpers.SendAliasRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.AliasPayload, "messageId", "anonymousId"))
+					helpers.SendAliasRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.AliasPayload, "messageId" ))
 
 				}
-
+				time.Sleep(10 * time.Second)
 				Eventually(func() int {
 					return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
@@ -84,10 +83,10 @@ var _ = Describe("E2E", func() {
 						writeKey:      true,
 						"requestIP":   len(requestIP) > 0,
 						"receivedAt":  len(receivedAt) > 0}
-				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(map[string]bool{"1Yc6YceKLOcUYk8je9B0GQ65mmL": true,
+				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(map[string]bool{"1tfJVBeOdz78EK9JAHrcmQD9Kwj": true,
 					"messageId":                   true,
 					"anonymousId":                 true,
-					"1Yc6YbOGg6U2E8rlj97ZdOawPyr": true,
+					"1tfJVG2Qg6th77G66NfX8btMtTN": true,
 					"requestIP":                   true,
 					"receivedAt":                  true}))
 			}
@@ -146,7 +145,7 @@ var _ = Describe("E2E", func() {
 					keys[i] = s
 					i++
 				}
-				return helpers.SameStringSlice([]string{"BuildDate", "BuiltBy", "Commit", "GitUrl", "Major", "Minor", "Patch", "Version"}, keys)
+				return helpers.SameStringSlice([]string{"BuildDate", "BuiltBy", "Commit", "GitUrl", "Major", "Minor", "Patch", "TransformerVersion", "Version"}, keys)
 			}, 2, dbPollFreqInS).Should(Equal(true))
 		})
 
@@ -157,7 +156,7 @@ var _ = Describe("E2E", func() {
 
 			//Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations.
 			helpers.SendEventRequest(helpers.EventOptsT{
-				WriteKey: "1Yc6YbOGg6U2E8rlj97ZdOawPyr",
+				WriteKey: "1tfJVG2Qg6th77G66NfX8btMtTN",
 			})
 
 			// wait for some seconds for events to be processed by gateway
@@ -170,15 +169,16 @@ var _ = Describe("E2E", func() {
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 1))
 		})
 
-		//Source with WriteKey: 1YcF00dWZXGjWpSIkfFnbGuI6OI has one GA and one AMPLITUDE as destinations.
+		// Source with WriteKey: 1YcF00dWZXGjWpSIkfFnbGuI6OI has one GA and one AMPLITUDE as destinations.
 		It("should create router job for both GA and AM for single event request", func() {
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			//initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 			helpers.SendEventRequest(helpers.EventOptsT{
-				WriteKey: "1YcF00dWZXGjWpSIkfFnbGuI6OI",
+				WriteKey: "1uL2Hd7h90uuNYwjGQx0G0nGCHe",
 			})
+
 			// wait for some seconds for events to be processed by gateway
-			time.Sleep(6 * time.Second)
+			time.Sleep(10 * time.Second)
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 2))
@@ -189,7 +189,7 @@ var _ = Describe("E2E", func() {
 					customVals = append(customVals, job.CustomVal)
 				}
 				return customVals
-			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(SatisfyAny(Or(BeEquivalentTo([]string{"GA", "AM"}), BeEquivalentTo([]string{"AM", "GA"}))))
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(SatisfyAny(Or(BeEquivalentTo([]string{"GA", "WEBHOOK"}), BeEquivalentTo([]string{"WEBHOOK", "GA"}))))
 		})
 
 		It("should not create job with invalid write key", func() {
@@ -211,7 +211,7 @@ var _ = Describe("E2E", func() {
 				})
 			}
 			// wait for some seconds for events to be processed by gateway
-			time.Sleep(6 * time.Second)
+			time.Sleep(25 * time.Second)
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + numOfTestEvents))
@@ -220,8 +220,8 @@ var _ = Describe("E2E", func() {
 				if index == 0 {
 					continue
 				}
-				result1, _ := strconv.Atoi(gjson.Get(string(jobs[index].EventPayload), "params.ev").String())
-				result2, _ := strconv.Atoi(gjson.Get(string(jobs[index-1].EventPayload), "params.ev").String())
+				result1, _ := strconv.Atoi(gjson.Get(string(jobs[index].EventPayload), "params.value").String())
+				result2, _ := strconv.Atoi(gjson.Get(string(jobs[index-1].EventPayload), "params.value").String())
 				Expect(result1).Should(BeNumerically("<", result2))
 			}
 		})
@@ -229,53 +229,57 @@ var _ = Describe("E2E", func() {
 		It("should dedup duplicate events", func() {
 			sampleID := uuid.NewV4().String()
 
-			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			helpers.SendEventRequest(helpers.EventOptsT{
 				MessageID: sampleID,
 			})
+			time.Sleep(10 * time.Second)
 			Eventually(func() int {
-				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
 
 			// send 2 events and verify event with prev messageID is dropped
-			currentGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			currentGatewayJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			helpers.SendEventRequest(helpers.EventOptsT{
 				MessageID: sampleID,
 			})
+			time.Sleep(10 * time.Second)
 			helpers.SendEventRequest(helpers.EventOptsT{
 				MessageID: uuid.NewV4().String(),
 			})
+			time.Sleep(10 * time.Second)
 			Consistently(func() int {
-				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
 		})
 
-		It("should dedup duplicate events only till specified TTL", func() {
-			sampleID := uuid.NewV4().String()
+		// It("should dedup duplicate events only till specified TTL", func() {
+		// 	sampleID := uuid.NewV4().String()
 
-			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
-			helpers.SendEventRequest(helpers.EventOptsT{
-				MessageID: sampleID,
-			})
-			helpers.SendEventRequest(helpers.EventOptsT{
-				MessageID: sampleID,
-			})
-			Eventually(func() int {
-				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
-			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
+		// 	initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+		// 	helpers.SendEventRequest(helpers.EventOptsT{
+		// 		MessageID: sampleID,
+		// 	})
+		// 	// time.Sleep(5 * time.Second)
+		// 	helpers.SendEventRequest(helpers.EventOptsT{
+		// 		MessageID: sampleID,
+		// 	})
+		// 	Eventually(func() int {
+		// 		return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+		// 	}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
 
-			// send 2 events and verify event with prev messageID is dropped
-			currentGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
-			// wait for 5 seconds for messageID to exceed its TTL
-			time.Sleep(5 * time.Second)
-			helpers.SendEventRequest(helpers.EventOptsT{
-				MessageID: sampleID,
-			})
-			Eventually(func() int {
-				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
-			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
+		// 	// send 2 events and verify event with prev messageID is dropped
+		// 	currentGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+		// 	// wait for 5 seconds for messageID to exceed its TTL
+		// 	time.Sleep(5 * time.Second)
+		// 	helpers.SendEventRequest(helpers.EventOptsT{
+		// 		MessageID: sampleID,
+		// 	})
+		// 	Eventually(func() int {
+		// 		return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+		// 	}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
 
-		})
+		// })
 
 	})
 

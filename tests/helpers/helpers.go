@@ -68,7 +68,7 @@ func SendEventRequest(options EventOptsT) int {
 
 	//Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations. Using this WriteKey as default.
 	if options.WriteKey == "" {
-		options.WriteKey = "1Yc6YbOGg6U2E8rlj97ZdOawPyr"
+		options.WriteKey = "1tfJVG2Qg6th77G66NfX8btMtTN"
 	}
 	if options.ID == "" {
 		options.ID = ksuid.New().String()
@@ -82,7 +82,6 @@ func SendEventRequest(options EventOptsT) int {
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.anonymousId", options.ID)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.messageId", options.MessageID)
 	jsonPayload, _ = sjson.Set(jsonPayload, "batch.0.properties.value", options.GaVal)
-
 	return SendBatchRequest(options.WriteKey, jsonPayload)
 }
 
@@ -97,6 +96,7 @@ func SendLoadRequests() {
 
 // SendBatchRequest sends request to /v1/batch
 func SendBatchRequest(userNameForBasicAuth, jsonPayload string) int {
+	fmt.Print(userNameForBasicAuth)
 	return SendRequest("/v1/batch", userNameForBasicAuth, jsonPayload)
 }
 

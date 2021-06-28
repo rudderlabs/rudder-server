@@ -23,6 +23,17 @@ phases:
       - (cd && go get github.com/golang/mock/mockgen)
   build:
     commands:
+      - git submodule init
+      - git submodule update --recursive
+
+      - sed -i -e 's/^CONFIG_BACKEND_URL=.*$/CONFIG_BACKEND_URL=https:\/\/api.rudderlabs.com/' build/docker.env
+      - go run tests/helpers/tomlmerge/toml_merge.go config/config.toml tests/e2e/config_overrides.toml > tests/e2e/config.toml
+      - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' build/docker.env
+      - cat build/docker.env
+      - cat tests/e2e/config.toml
+      - docker-compose -f build/docker-compose.codebuild.yml up -d
+      - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo -mod vendor tests/e2e"
+      - docker-compose down
       - export GO111MODULE=on
       - DATE=$(date "+%F,%T")
       - VERSION=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)

@@ -177,7 +177,7 @@ Processor:
     captureEventName: false
 Dedup:
   enableDedup: true
-  dedupWindowInS: 3600
+  dedupWindowInS: 3
 BackendConfig:
   configFromFile: false
   configJSONPath: /etc/rudderstack/workspaceConfig.json
