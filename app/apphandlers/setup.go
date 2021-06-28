@@ -171,6 +171,7 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, re
 						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
 						var router router.HandleT
 						router.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition, reporting)
+						router.Start()
 						dstToRouter[destination.DestinationDefinition.Name] = &router
 					}
 				}

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"runtime"
 
+	. "github.com/onsi/ginkgo"
+
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -43,6 +45,7 @@ func Go(function func()) {
 				panic(r)
 			}
 		}()
+		defer GinkgoRecover()
 		function()
 	}()
 }

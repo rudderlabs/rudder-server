@@ -41,7 +41,7 @@ var _ = Describe("Network", func() {
 
 	Context("Send requests", func() {
 
-		It("should successfully send the request", func() {
+		It("should successfully send the request to google analytics", func() {
 			network := &NetHandleT{}
 			network.logger = logger.NewLogger().Child("network")
 			network.httpClient = c.mockHTTPClient
