@@ -57,16 +57,20 @@ Questions? Join our [**Slack channel**](https://resources.rudderstack.com/join-r
 
 <br>
 
-![Acorns](https://user-images.githubusercontent.com/59817155/123588995-37a69700-d806-11eb-8f01-f7b361833927.png) ![Allbirds](https://user-images.githubusercontent.com/59817155/123588998-38d7c400-d806-11eb-9161-45a1ff37e66d.png) ![Anheuser](https://user-images.githubusercontent.com/59817155/123589001-39705a80-d806-11eb-972e-c2f1c62cbdf2.png) ![barstool](https://user-images.githubusercontent.com/59817155/123589005-3a08f100-d806-11eb-9d70-2992199add60.png)
+![Acorns](https://user-images.githubusercontent.com/59817155/123588995-37a69700-d806-11eb-8f01-f7b361833927.png) ![Allbirds](https://user-images.githubusercontent.com/59817155/123588998-38d7c400-d806-11eb-9161-45a1ff37e66d.png) ![Anheuser](https://user-images.githubusercontent.com/59817155/123589001-39705a80-d806-11eb-972e-c2f1c62cbdf2.png) 
 <br>
 <br>
 
 
-![CnB](https://user-images.githubusercontent.com/59817155/123589006-3aa18780-d806-11eb-8d65-eba940bf8b7f.png) ![Hinge](https://user-images.githubusercontent.com/59817155/123589007-3b3a1e00-d806-11eb-93a4-cbdcf4fe48ac.png) ![IFTTT](https://user-images.githubusercontent.com/59817155/123589009-3b3a1e00-d806-11eb-9317-c162aacfb0a5.png) ![Priceline](https://user-images.githubusercontent.com/59817155/123589010-3bd2b480-d806-11eb-9fc7-09194f28d252.png)
+![barstool](https://user-images.githubusercontent.com/59817155/123589005-3a08f100-d806-11eb-9d70-2992199add60.png) ![CnB](https://user-images.githubusercontent.com/59817155/123589006-3aa18780-d806-11eb-8d65-eba940bf8b7f.png) ![Hinge](https://user-images.githubusercontent.com/59817155/123589007-3b3a1e00-d806-11eb-93a4-cbdcf4fe48ac.png) 
 <br>
 <br>
 
-![Sky](https://user-images.githubusercontent.com/59817155/123589012-3c6b4b00-d806-11eb-9a63-4859ad15a5da.png) ![Wynn](https://user-images.githubusercontent.com/59817155/123589013-3c6b4b00-d806-11eb-9cf7-b0db9e22fc4b.png)
+![IFTTT](https://user-images.githubusercontent.com/59817155/123589009-3b3a1e00-d806-11eb-9317-c162aacfb0a5.png) ![Priceline](https://user-images.githubusercontent.com/59817155/123589010-3bd2b480-d806-11eb-9fc7-09194f28d252.png) ![Wynn](https://user-images.githubusercontent.com/59817155/123589013-3c6b4b00-d806-11eb-9cf7-b0db9e22fc4b.png)
+<br>
+<br>
+
+![Sky](https://user-images.githubusercontent.com/59817155/123589012-3c6b4b00-d806-11eb-9a63-4859ad15a5da.png) 
 
 
 ## Get started with RudderStack
