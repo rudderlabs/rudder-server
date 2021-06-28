@@ -1,6 +1,7 @@
 package router
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/golang/mock/gomock"
@@ -27,28 +28,25 @@ const (
 	SourceIDDisabled          = "disabled-source"
 	TestRemoteAddressWithPort = "test.com:80"
 	TestRemoteAddress         = "test.com"
-	GADestinationID           = "gad1"
+	GADestinationDefinitionID = "gaid1"
+	GADestinationID           = "did1"
 )
 
 var testTimeout = 10 * time.Second
+
+var gaDestinationDefinition = backendconfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GA", DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
 
 // This configuration is assumed by all router tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
 	Sources: []backendconfig.SourceT{
 		{
-			ID:       SourceIDDisabled,
-			WriteKey: WriteKeyDisabled,
-			Enabled:  false,
-		},
-		{
-			ID:       SourceIDEnabled,
-			WriteKey: WriteKeyEnabled,
-			Enabled:  true,
+			ID:           SourceIDEnabled,
+			WriteKey:     WriteKeyEnabled,
+			Enabled:      true,
+			Destinations: []backendconfig.DestinationT{backendconfig.DestinationT{ID: GADestinationID, Name: "ga dest", DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 		},
 	},
 }
-
-var gaDestinationDefinition = backendconfig.DestinationDefinitionT{ID: GADestinationID, Name: "GA", DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
 
 type context struct {
 	asyncHelper     testutils.AsyncTestHelper
@@ -131,7 +129,7 @@ var _ = Describe("Router", func() {
 			router.netHandle = mockNetHandle
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := `{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "1pFUq4xLe1XKJ62UHRwZbLBH9Dd", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`
+			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
@@ -143,7 +141,8 @@ var _ = Describe("Router", func() {
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
-						AttemptNum: 1,
+						AttemptNum:    1,
+						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
 					},
 					Parameters: []byte(parameters),
 				},
@@ -172,24 +171,28 @@ var _ = Describe("Router", func() {
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 				})
 
+			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(2).Return(200, "")
+
+			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
+			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
+			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
+				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
+					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 2)
+					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 1)
+				})
+			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
+			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
+
+			<-router.backendConfigInitialized
 			count := router.readAndProcess()
 			Expect(count).To(Equal(2))
 
-			testutils.RunTestWithTimeout(func() {
-				mockNetHandle.EXPECT().SendPost(gomock.Any).Times(1).Return(200, "")
-
-				c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
-					Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-						// jobs should be sorted by jobid, so order of statuses is different than order of jobs
-						assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "200", `{}`, 2)
-						assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "200", `{}`, 1)
-					})
-			}, testTimeout)
+			time.Sleep(6 * time.Second)
 		})
 	})
 })
@@ -198,8 +201,10 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState 
 	Expect(status.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
 	Expect(status.ErrorCode).To(Equal(errorCode))
-	Expect(status.ErrorResponse).To(MatchJSON(errorResponse))
-	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
+	if attemptNum > 1 {
+		Expect(status.ErrorResponse).To(MatchJSON(errorResponse))
+	}
+	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 10*time.Second))
+	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Second))
 	Expect(status.AttemptNum).To(Equal(attemptNum))
 }
