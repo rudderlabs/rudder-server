@@ -256,14 +256,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				wh.workerChannelMapLock.Unlock()
 
 				destinationsMapLock.Lock()
-				// TODO: ask if the `warehouse` var defined above can be used here
-				destinationsMap[destination.ID] = warehouseutils.WarehouseT{
-					Source:      source,
-					Destination: destination,
-					Namespace:   namespace,
-					Type:        wh.destType,
-					Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
-				}
+				destinationsMap[destination.ID] = warehouse
 				destinationsMapLock.Unlock()
 
 				// send last 10 warehouse upload's status to control plane
