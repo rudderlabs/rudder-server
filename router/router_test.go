@@ -73,7 +73,7 @@ func (c *context) Setup() {
 			// on Subscribe, emulate a backend configuration event
 			go func() { channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)} }()
 		}).
-		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")).
+		Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")).
 		Return().Times(1)
 
 	c.dbReadBatchSize = 10000
@@ -176,7 +176,7 @@ var _ = Describe("Router", func() {
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
-				})
+				}).Return(nil)
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(2).Return(200, "")
 
@@ -184,7 +184,6 @@ var _ = Describe("Router", func() {
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
 				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 1)
 				})

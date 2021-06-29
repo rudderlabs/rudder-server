@@ -162,7 +162,8 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, re
 					if !ok {
 						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
 						var brt batchrouter.HandleT
-						brt.Setup(batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
+						brt.Setup(backendconfig.DefaultBackendConfig, batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
+						brt.Start()
 						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 					}
 				} else {
