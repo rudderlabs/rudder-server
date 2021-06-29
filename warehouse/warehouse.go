@@ -1093,7 +1093,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	// unmarshall body
-	var pendingEventsReq warehouseutils.PendingEventsRequest
+	var pendingEventsReq warehouseutils.PendingEventsRequestT
 	err = json.Unmarshal(body, &pendingEventsReq)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
@@ -1111,10 +1111,12 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pendingEvents := false
+	var pendingStagingFileCount int64
+	var pendingUploadCount int64
 
 	// check whether there are any pending staging files or uploads for the given source id
 	// get pending staging files
-	pendingStagingFileCount, err := getPendingStagingFileCount(sourceID)
+	pendingStagingFileCount, err = getPendingStagingFileCount(sourceID)
 	if err != nil {
 		err := fmt.Errorf("Error getting pending staging file count : %v", err)
 		pkgLogger.Errorf("[WH]: %v", err)
@@ -1122,13 +1124,15 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// get pending uploads
-	pendingUploadCount, err := getPendingUploadCount(sourceID)
-	if err != nil {
-		err := fmt.Errorf("Error getting pending uploads : %v", err)
-		pkgLogger.Errorf("[WH]: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	// get pending uploads only if there are no pending staging files
+	if pendingStagingFileCount == 0 {
+		pendingUploadCount, err = getPendingUploadCount(sourceID)
+		if err != nil {
+			err := fmt.Errorf("Error getting pending uploads : %v", err)
+			pkgLogger.Errorf("[WH]: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 
 	// if there are any pending staging files or uploads, set pending events as true
@@ -1163,7 +1167,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// create and write response
-	res := warehouseutils.PendingEventsResponse{
+	res := warehouseutils.PendingEventsResponseT{
 		PendingEvents: pendingEvents,
 	}
 
@@ -1199,7 +1203,7 @@ func getPendingStagingFileCount(sourceID string) (fileCount int64, err error) {
 		return
 	}
 
-	return
+	return fileCount, nil
 }
 
 func getPendingUploadCount(sourceID string) (uploadCount int64, err error) {
@@ -1214,7 +1218,7 @@ func getPendingUploadCount(sourceID string) (uploadCount int64, err error) {
 		return
 	}
 
-	return
+	return uploadCount, nil
 }
 
 func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -1231,7 +1235,7 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	// unmarshall body
-	var triggerUploadReq warehouseutils.TriggerUploadRequest
+	var triggerUploadReq warehouseutils.TriggerUploadRequestT
 	err = json.Unmarshal(body, &triggerUploadReq)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
@@ -1341,8 +1345,8 @@ func startWebHandler() {
 	if isMaster() {
 		backendconfig.WaitForConfig()
 		http.HandleFunc("/v1/process", processHandler)
-		http.HandleFunc("/v1/pending-events", pendingEventsHandler)
-		http.HandleFunc("/v1/trigger-upload", triggerUploadHandler)
+		http.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
+		http.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
 		pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 	} else {
 		pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)

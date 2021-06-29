@@ -168,16 +168,16 @@ type QueryResult struct {
 	Values  [][]string
 }
 
-type PendingEventsRequest struct {
+type PendingEventsRequestT struct {
 	SourceID  string `json:"source_id"`
 	TaskRunID string `json:"task_run_id"`
 }
 
-type PendingEventsResponse struct {
+type PendingEventsResponseT struct {
 	PendingEvents bool `json:"pending_events"`
 }
 
-type TriggerUploadRequest struct {
+type TriggerUploadRequestT struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
 }
