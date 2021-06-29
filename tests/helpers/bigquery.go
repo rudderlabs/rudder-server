@@ -23,6 +23,7 @@ func queryBQ(anonymousId string, table string, dataset string, destConfig interf
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("BQ Query",fmt.Sprintf(`select label from %[1]s.%[2]s.%[3]s where anonymous_id = '%[4]s' order by received_at desc limit 1`,projectId, dataset, table, anonymousId ))
 	q := client.Query(fmt.Sprintf(`select label from %[1]s.%[2]s.%[3]s where anonymous_id = '%[4]s' order by received_at desc limit 1`,projectId, dataset, table, anonymousId ))
 	it, err := q.Read(ctx)
 	if err != nil {

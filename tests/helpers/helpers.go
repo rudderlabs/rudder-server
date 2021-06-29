@@ -96,7 +96,6 @@ func SendLoadRequests() {
 
 // SendBatchRequest sends request to /v1/batch
 func SendBatchRequest(userNameForBasicAuth, jsonPayload string) int {
-	fmt.Print(userNameForBasicAuth)
 	return SendRequest("/v1/batch", userNameForBasicAuth, jsonPayload)
 }
 
@@ -305,6 +304,7 @@ func GetJobStatus(dbHandle *sql.DB, prefix string, limit int, jobState string) [
 
 // GetLoadFileTableName queries table column form the warehouseLoadFilesTable provided
 func GetLoadFileTableName(dbHandle *sql.DB, warehouseLoadFilesTable string, sourceId string, destinationId string, destinationType string) []string {
+	fmt.Println(warehouseLoadFilesTable , sourceId , destinationId , destinationType )
 	rows, err := dbHandle.Query(fmt.Sprintf(`SELECT table_name FROM %s where source_id='%s' and destination_id='%s' and destination_type='%s'`, warehouseLoadFilesTable, sourceId, destinationId, destinationType))
 	if err != nil {
 		panic(err)
@@ -379,6 +379,8 @@ func GetDestinationIDsFromLoadFileTable(dbHandle *sql.DB, warehouseLoadFilesTabl
 }
 
 func IsThisInThatSliceString(smallSlice []string, bigSlice []string) bool {
+	fmt.Println("smallSlice",smallSlice)
+	fmt.Println("bigSlice",bigSlice)
 	if len(bigSlice) < len(smallSlice) {
 		return false
 	}

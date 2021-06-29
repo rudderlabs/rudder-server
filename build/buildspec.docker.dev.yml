@@ -5,7 +5,17 @@ env:
     ssh_key: "/codebuild/github/ssh-key"
     dockerhub_passwd: "/dev/codebuild/dockerhub-password"
     CODECOV_TOKEN: "/codebuild/codecov-token"
-
+services:
+  service:
+    image: nginx
+    deploy:
+        resources:
+            limits:
+              cpus: 0.50
+              memory: 512M
+            reservations:
+              cpus: 0.25
+              memory: 128M
 phases:
   install:
     runtime-versions:
