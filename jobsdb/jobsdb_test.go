@@ -2,10 +2,10 @@ package jobsdb
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
-	"github.com/lib/pq"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
@@ -193,8 +193,8 @@ type context struct {
 }
 
 func (c *context) Setup() {
-	c.db, c.mock, _ = sqlmock.New()
-	c.globalDB, c.globalMock, _ = sqlmock.New()
+	c.db, c.mock, _ = sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+	c.globalDB, c.globalMock, _ = sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
 }
 
 func (c *context) Finish() {
@@ -259,8 +259,11 @@ var _ = Describe("testing generic functions in jobsdb", func() {
 			jd.baseSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
 
 			c.mock.ExpectBegin()
-			c.mock.ExpectPrepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters",
-				"event_payload")).ExpectExec().WithArgs(sqlmock.AnyArg())
+			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`COPY "%s" ("uuid", "user_id", "custom_val", "parameters", "event_payload") FROM STDIN`, ds.JobTable))
+			for _, job := range properStoreJobs {
+				stmt.ExpectExec().WithArgs(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload)).WillReturnResult(sqlmock.NewResult(0, 1))
+			}
+			stmt.ExpectExec().WithArgs(sqlmock.AnyArg()).WillReturnError(nil)
 			c.mock.ExpectCommit()
 
 			err := jd.Store(properStoreJobs)
