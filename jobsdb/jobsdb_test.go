@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"regexp"
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
@@ -431,21 +430,21 @@ var _ = Describe("testing generic functions in jobsdb", func() {
 		It("should return failed jobs", func() {
 			var stateQuery, customValQuery, sourceQuery, limitQuery string
 			stateQuery = " AND ((job_state='failed'))"
-			customValQuery = " AND ((gw_jobs_1.custom_val='GW'))"
+			customValQuery = " AND ((tt_jobs_1.custom_val='GW'))"
 			limitQuery = " LIMIT 2 "
 
 			ds := dsListInMemory[0]
 			stmt := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at, job_latest_state.job_state, job_latest_state.attempt, job_latest_state.exec_time, job_latest_state.retry_time, job_latest_state.error_code, job_latest_state.error_response FROM %[1]s, (SELECT job_id, job_state, attempt, exec_time, retry_time, error_code, error_response FROM %[2]s WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s) AS job_latest_state WHERE %[1]s.job_id=job_latest_state.job_id %[4]s %[5]s AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[6]s`,
 				ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
 			fmt.Println("stmtmttttttttt ", stmt)
-			c.mock.ExpectPrepare(regexp.QuoteMeta(stmt)).
+			c.mock.ExpectPrepare(stmt).
 				ExpectQuery().WithArgs(time.Now()).WillReturnRows(mockFailedJobs(ds))
 
 			ds = dsListInMemory[1]
 			stmt = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at, job_latest_state.job_state, job_latest_state.attempt, job_latest_state.exec_time, job_latest_state.retry_time, job_latest_state.error_code, job_latest_state.error_response FROM %[1]s, (SELECT job_id, job_state, attempt, exec_time, retry_time, error_code, error_response FROM %[2]s WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s) AS job_latest_state WHERE %[1]s.job_id=job_latest_state.job_id %[4]s %[5]s AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[6]s`,
 				ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
 			fmt.Println("stmtmttttttttt ", stmt)
-			c.mock.ExpectPrepare(regexp.QuoteMeta(stmt)).
+			c.mock.ExpectPrepare(stmt).
 				ExpectQuery().WithArgs(time.Now()).WillReturnRows(mockFailedJobs(ds))
 
 			jobs := jd.GetToRetry(GetQueryParamsT{CustomValFilters: []string{"GW"}, Count: 2})
