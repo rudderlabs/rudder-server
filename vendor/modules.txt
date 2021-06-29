@@ -240,6 +240,8 @@ github.com/jcmturner/gofork/encoding/asn1
 github.com/jcmturner/gofork/x/crypto/pbkdf2
 # github.com/jeremywohl/flatten v1.0.1
 github.com/jeremywohl/flatten
+# github.com/jinzhu/copier v0.3.2
+github.com/jinzhu/copier
 # github.com/jmespath/go-jmespath v0.4.0
 github.com/jmespath/go-jmespath
 # github.com/joho/godotenv v1.3.0

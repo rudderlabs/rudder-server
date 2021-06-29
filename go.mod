@@ -38,6 +38,7 @@ require (
 	github.com/hashicorp/yamux v0.0.0-20200609203250-aecfd211c9ce
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334
 	github.com/jeremywohl/flatten v1.0.1
+	github.com/jinzhu/copier v0.3.2
 	github.com/joho/godotenv v1.3.0
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.3.0

@@ -77,6 +77,10 @@ type StatTagsT struct {
 	StateFilters     []string
 }
 
+var getTimeNowFunc = func() time.Time {
+	return time.Now()
+}
+
 /*
 JobsDB interface contains public methods to access JobsDB data
 */
@@ -1946,7 +1950,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
 		jd.assertError(err)
 		defer stmt.Close()
-		rows, err = stmt.Query(time.Now())
+		rows, err = stmt.Query(getTimeNowFunc())
 		jd.assertError(err)
 		defer rows.Close()
 	}
