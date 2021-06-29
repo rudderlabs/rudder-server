@@ -16,7 +16,7 @@ services:
     env_file:
       - docker.env
     ports:
-      - "6432:5432"
+      - "5432:5432"
 
   backend:
     depends_on:
