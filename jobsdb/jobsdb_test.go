@@ -2,7 +2,7 @@ package jobsdb
 
 import (
 	"database/sql"
-	"fmt"
+	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/lib/pq"
@@ -185,58 +185,86 @@ var sampleTestJob = JobT{
 	CustomVal:    "GW",
 }
 
-type context struct{}
+type context struct {
+	mock       sqlmock.Sqlmock
+	db         *sql.DB
+	globalMock sqlmock.Sqlmock
+	globalDB   *sql.DB
+}
+
+func (c *context) Setup() {
+	c.db, c.mock, _ = sqlmock.New()
+	c.globalDB, c.globalMock, _ = sqlmock.New()
+}
+
+func (c *context) Finish() {
+	c.db.Close()
+}
 
 var _ = Describe("testing generic functions in jobsdb", func() {
-	stats.Setup()
-	var jd *HandleT
-	var db *sql.DB
-	var mock sqlmock.Sqlmock
-	var err error
+
+	var c *context
+
 	BeforeEach(func() {
-		jd = &HandleT{}
-		jd.statTableCount = stats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
-		db, mock, err = sqlmock.New()
-		Expect(err).ShouldNot(HaveOccurred())
-		jd.dbHandle = db
-		jd.tablePrefix = "tt"
-		jd.logger = pkgLogger.Child("tt")
+		c = &context{}
+		c.Setup()
+
+		// setup static requirements of dependencies
+		stats.Setup()
+
+		globalDBHandle = c.globalDB
 	})
+
 	AfterEach(func() {
-		db.Close()
+		c.Finish()
 	})
+
 	Context("getDSList unit test", func() {
-		BeforeEach(func() {
-			jd.datasetList = dsListInMemory
-		})
-		AfterEach(func() {
-		})
 		It("doesn't make db calls if !refreshFromDB", func() {
-			mock.ExpectationsWereMet() //Not necessary. There's no work with db here.
+			jd := &HandleT{}
+			jd.dbHandle = c.db
+
+			jd.baseSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+
+			jd.datasetList = dsListInMemory
+
 			Expect(jd.getDSList(false)).To(Equal(dsListInMemory))
 		})
+
 		It("makes some db calls if refreshFromDB", func() {
-			//Setting Expectations for the DB
+			jd := &HandleT{}
+			jd.dbHandle = c.db
+
+			jd.baseSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+
 			//Prepare and execute. Note that tables in DB is different from that in memory.
-			mockgetAllTableNames(mock)
+			c.mock.ExpectPrepare(`SELECT tablename
+			FROM pg_catalog.pg_tables
+			WHERE schemaname != 'pg_catalog' AND
+			schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(mockRows)
+
 			Expect(jd.getDSList(true)).To(Equal(dsListInDB))
 		})
 	})
+
 	Context("storeJobsDS", func() {
-		var ds dataSetT
-		BeforeEach(func() {
-			ds = dataSetT{
-				JobTable:       "tt_jobs_1",
-				JobStatusTable: "tt_job_status_1",
-				Index:          "1",
-			}
-		})
-		It("should store to db with JobID and all", func() { //copyID = true
-			mock.ExpectBegin()
-			//storeJobsDSInTxn
-			mock.ExpectPrepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
-				"event_payload", "created_at", "expire_at")).ExpectExec().WithArgs(sqlmock.AnyArg())
-			mock.ExpectCommit()
+		It("should store proper payload to db through workers", func() { //copyID = true
+			jd := &HandleT{}
+			jd.dbHandle = c.db
+			jd.enableWriterQueue = true
+			jd.datasetList = dsListInMemory
+
+			ds := jd.datasetList[len(jd.datasetList)-1]
+
+			jd.baseSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+
+			c.mock.ExpectBegin()
+			c.mock.ExpectPrepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters",
+				"event_payload")).ExpectExec().WithArgs(sqlmock.AnyArg())
+			c.mock.ExpectCommit()
+
+			err := jd.Store(properStoreJobs)
+			Expect(err).ShouldNot(HaveOccurred())
 		})
 	})
 })
@@ -277,53 +305,26 @@ var mockRows = func() *sqlmock.Rows {
 	return sqlMockRows
 }()
 
-func mockgetAllTableNames(mock sqlmock.Sqlmock) {
-	mock.ExpectPrepare(`SELECT tablename
-			FROM pg_catalog.pg_tables
-			WHERE schemaname != 'pg_catalog' AND
-			schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(mockRows)
-}
-
-type storeTest struct {
-	testJob   JobT
-	testError error
-}
-
-var properStoreJobs = []storeTest{
+var properStoreJobs = []*JobT{
 	{
-		testJob: JobT{
-			Parameters:   []byte(`{"batch_id":1,"source_id":"1rNMpysD4lTuzglyfmPzsmihAbK","source_job_run_id":""}`),
-			EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"1rNMpxFxVdoaAdItcXTbVVWdonD","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"90ca6da0-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
-			UserID:       "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
-			UUID:         uuid.NewV4(),
-			CustomVal:    "GW",
-		},
-		testError: nil,
+		Parameters:   []byte(`{"batch_id":1,"source_id":"1rNMpysD4lTuzglyfmPzsmihAbK","source_job_run_id":""}`),
+		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"1rNMpxFxVdoaAdItcXTbVVWdonD","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"90ca6da0-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+		UserID:       "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+		UUID:         uuid.NewV4(),
+		CustomVal:    "GW",
 	},
 	{
-		testJob: JobT{
-			Parameters:   []byte(`{"batch_id":2,"source_id":"1rNMpysD4lTuzglyfmPzsmihAbK","source_job_run_id":"random_sourceJobRunID"}`),
-			EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"1rNMpxFxVdoaAdItcXTbVVWdonD","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"90ca6da0-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
-			UserID:       "dummy_90ca6da0-292e-4e79-9880-f8009e0ae4a3",
-			UUID:         uuid.NewV4(),
-			CustomVal:    "WEBHOOK",
-		},
-		testError: nil,
+		Parameters:   []byte(`{"batch_id":2,"source_id":"1rNMpysD4lTuzglyfmPzsmihAbK","source_job_run_id":"random_sourceJobRunID"}`),
+		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"1rNMpxFxVdoaAdItcXTbVVWdonD","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"90ca6da0-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+		UserID:       "dummy_90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+		UUID:         uuid.NewV4(),
+		CustomVal:    "WEBHOOK",
 	},
 	{
-		//this example was while trying for a job that would fail
-		testJob: JobT{
-			Parameters:   []byte(`{}`),
-			EventPayload: []byte(`{}`),
-			UserID:       "",
-			// UUID:         uuid.NewV4(),
-			UUID:      uuid.UUID{},
-			CustomVal: "WEBHOOK",
-		},
-		testError: nil,
+		Parameters:   []byte(`{}`),
+		EventPayload: []byte(`{}`),
+		UserID:       "",
+		UUID:         uuid.NewV4(),
+		CustomVal:    "WEBHOOK",
 	},
 }
-
-var properStoreJobsQueryList = []interface{}{}
-
-// var errorStoreJobs = []storeTest{}

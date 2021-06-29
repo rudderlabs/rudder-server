@@ -562,13 +562,26 @@ dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
 func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
-	jd.queryFilterKeys = queryFilterKeys
 	jd.initGlobalDBHandle()
+
+	var err error
+	psqlInfo := GetConnectionString()
+	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
+	jd.assertError(err)
+
+	err = jd.dbHandle.Ping()
+	jd.assertError(err)
+
+	jd.baseSetup(ownerType, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
+	jd.baseSetup2(ownerType, clearAll)
+}
+
+func (jd *HandleT) baseSetup(ownerType OwnerType, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+	jd.queryFilterKeys = queryFilterKeys
+
 	jd.ownerType = ownerType
 	jd.logger = pkgLogger.Child(tablePrefix)
-	var err error
 	jd.migrationState.migrationMode = migrationMode
-	psqlInfo := GetConnectionString()
 	jd.assert(tablePrefix != "", "tablePrefix received is empty")
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
@@ -578,12 +591,6 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	}
 
 	jd.BackupSettings = jd.getBackUpSettings()
-
-	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
-	jd.assertError(err)
-
-	err = jd.dbHandle.Ping()
-	jd.assertError(err)
 
 	jd.logger.Infof("Connected to %s DB", tablePrefix)
 
@@ -608,7 +615,9 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	config.RegisterIntConfigVariable(3, &jd.maxReaders, false, 1, maxReadersKeys...)
 	jd.initDBWriters()
 	jd.initDBReaders()
+}
 
+func (jd *HandleT) baseSetup2(ownerType OwnerType, clearAll bool) {
 	switch ownerType {
 	case Read:
 		jd.readerSetup()
