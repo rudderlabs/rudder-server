@@ -9,14 +9,6 @@ services:
       - "5432:5432"
 
   backend:
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: 4000M
-        reservations:
-          cpus: '4'
-          memory: 4000M
     depends_on:
       - db
       - d-transformer
