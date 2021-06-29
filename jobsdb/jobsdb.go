@@ -572,11 +572,11 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	err = jd.dbHandle.Ping()
 	jd.assertError(err)
 
-	jd.baseSetup(ownerType, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
-	jd.baseSetup2(ownerType, clearAll)
+	jd.workersAndAuxSetup(ownerType, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
+	jd.setUpForOwnerType(ownerType, clearAll)
 }
 
-func (jd *HandleT) baseSetup(ownerType OwnerType, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
 	jd.queryFilterKeys = queryFilterKeys
 
 	jd.ownerType = ownerType
@@ -617,7 +617,7 @@ func (jd *HandleT) baseSetup(ownerType OwnerType, tablePrefix string, retentionP
 	jd.initDBReaders()
 }
 
-func (jd *HandleT) baseSetup2(ownerType OwnerType, clearAll bool) {
+func (jd *HandleT) setUpForOwnerType(ownerType OwnerType, clearAll bool) {
 	switch ownerType {
 	case Read:
 		jd.readerSetup()
@@ -852,10 +852,17 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 	for idx, ds := range dsList {
 		jd.assert(ds.Index != "", "ds.Index is empty")
 		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)
-		row := jd.dbHandle.QueryRow(sqlStatement)
-		err := row.Scan(&minID, &maxID)
+		//Note: Using Query instead of QueryRow, because the sqlmock library doesn't have support for QueryRow
+		rows, err := jd.dbHandle.Query(sqlStatement)
 		jd.assertError(err)
+		for rows.Next() {
+			err := rows.Scan(&minID, &maxID)
+			jd.assertError(err)
+			break
+		}
 		jd.logger.Debug(sqlStatement, minID, maxID)
+
+		rows.Close()
 		//We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
 		// 2. Migration target ds
