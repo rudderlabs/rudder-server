@@ -72,19 +72,26 @@ Once you have successfully followed the steps above, follow our guide on [How to
 
 There you go! You can now start using RudderStack on your machine.
 
-## Submitting a Pull Request ##
+## The Best Way to Contribute to RudderStack ##
 
-Do you have an improvement?
+The best way to contribute to our open source software is to create an integration. An integration is a connection between RudderStack and a downstream destination where you would like your event data to flow to. There are a several reasons that you may want to build an integration
+- If you would like to send data to a certain destination but RudderStack doesn't offer it yet.
+- If you have developed a tool that you would like RudderStack to integrate with to expand your user-base.
+- If you want to add features to an already existing integration.
+- And many more! Feel free to chat with us on our [Slack](https://resources.rudderstack.com/join-rudderstack-slack) channel and share your ideas!
 
-1. Submit an [issue][issue] describing your proposed change.
-2. We will try to respond to your issue promptly.
-3. Fork this repo, develop and test your code changes. See the project's [README](README.md) for further information about working in this repository.
-4. Submit a pull request against this repo's `master` branch.
-    - Include instructions on how to test your changes.
-5. Your branch may be merged once all configured checks pass, including:
-    - A review from appropriate maintainers
+You can also contribute to any open source RudderStack project. View our GitHub Page to see all of the different projects.
 
-## Committing ##
+> **_NOTE:_**  The note content.For creating an integration, the primary GitHub Repository you will need to work with will be [`rudder-transformer`](https://github.com/rudderlabs/rudder-transformer)
+
+### Submitting a Pull Request ###
+
+- For creating a pull request for an integration contribution, follow [these instructions from the docs](https://docs.rudderstack.com/user-guides/how-to-guides/how-to-submit-an-integration-pull-request)
+- For any other pull requests, you can refer to [this specific section of the doc](https://docs.rudderstack.com/user-guides/how-to-guides/how-to-submit-an-integration-pull-request#creating-a-pull-request). 
+
+> **_NOTE:_**  The type of change you make will dictate what repositories you will need to make pull requests for. Please reach out to us on our [Slack](https://resources.rudderstack.com/join-rudderstack-slack) channel if you have any questions.
+
+### Committing ###
 
 We prefer squash or rebase commits so that all changes from a branch are
 committed to master as a single commit. All pull requests are squashed when
