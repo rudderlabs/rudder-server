@@ -1,16 +1,6 @@
 version: "3.7"
 
 services:
-  service:
-    image: nginx
-    deploy:
-        resources:
-            limits:
-              cpus: '0.50'
-              memory: 512M
-            reservations:
-              cpus: '0.50'
-              memory: 512M
   db:
     image: postgres:11-alpine
     env_file:
@@ -19,6 +9,14 @@ services:
       - "5432:5432"
 
   backend:
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4000M
+        reservations:
+          cpus: '4'
+          memory: 4000M
     depends_on:
       - db
       - d-transformer
@@ -36,7 +34,7 @@ services:
       - docker.env
     environment:
       - JOBS_DB_HOST=db
-      - WORKSPACE_TOKEN=1tcwkLZSvlGUiAEW0Y8Isb7xcA8
+      - WORKSPACE_TOKEN=$INTEGRATION_TESTS_WORKSPACE_TOKEN
 
   d-transformer:
     build:
