@@ -66,20 +66,14 @@ func createTableUploadsForBatch(uploadID int64, tableNames []string) (err error)
 
 func createTableUploads(uploadID int64, tableNames []string) (err error) {
 	// we add table uploads to db in batches to avoid hitting postgres row insert limits
-	numOfBatches := len(tableNames) / createTableUploadsBatchSize
-	for batch := 0; batch < numOfBatches; batch++ {
-		firstTableIdxInBatch := batch * createTableUploadsBatchSize
-		err = createTableUploadsForBatch(uploadID, tableNames[firstTableIdxInBatch:firstTableIdxInBatch+createTableUploadsBatchSize])
-		if err != nil {
-			return err
+	for i := 0; i < len(tableNames); i += createTableUploadsBatchSize {
+		j := i + createTableUploadsBatchSize
+		if j > len(tableNames) {
+			j = len(tableNames)
 		}
-	}
-
-	// create a final batch if len(tableNames) was not perfectly divisible by createTableUploadsBatchSize
-	if len(tableNames)%createTableUploadsBatchSize > 0 {
-		err = createTableUploadsForBatch(uploadID, tableNames[numOfBatches*createTableUploadsBatchSize:])
+		err = createTableUploadsForBatch(uploadID, tableNames[i:j])
 		if err != nil {
-			return err
+			return
 		}
 	}
 	return
