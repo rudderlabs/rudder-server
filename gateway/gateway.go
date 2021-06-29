@@ -75,6 +75,10 @@ var (
 	enableSuppressUserFeature                                                 bool
 	enableEventSchemasFeature                                                 bool
 	diagnosisTickerTime                                                       time.Duration
+	ReadTimeout       		  												  time.Duration
+	ReadHeaderTimeout 		  												  time.Duration
+	WriteTimeout      		  												  time.Duration
+	IdleTimeout       		  												  time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                                      bool
 	gwAllowPartialWriteWithErrors                                             bool
 	pkgLogger                                                                 logger.LoggerI
@@ -1130,10 +1134,10 @@ func (gateway *HandleT) StartWebHandler() {
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
 		Handler:           c.Handler(bugsnag.Handler(srvMux)),
-		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
-		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
-		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 10*time.Second),
-		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
+		ReadTimeout:       ReadTimeout,
+		ReadHeaderTimeout: ReadHeaderTimeout,
+		WriteTimeout:      WriteTimeout,
+		IdleTimeout:       IdleTimeout,
 		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
 	}
 	gateway.logger.Fatal(srv.ListenAndServe())

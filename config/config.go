@@ -169,7 +169,7 @@ func watchForConfigChange() {
 				for _, key := range configVal.keys {
 					if viper.IsSet(key) {
 						isSet = true
-						_value = GetDuration(key, configVal.defaultValue.(time.Duration))
+						_value= GetDuration(key, configVal.defaultValue.(time.Duration),configVal.multiplier.(time.Duration))
 						break
 					}
 				}
@@ -382,7 +382,7 @@ func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Durati
 	for _, key := range keys {
 		if IsSet(key) {
 			isSet = true
-			*ptr = GetDuration(key, defaultValue) * timeScale
+			*ptr= GetDuration(key, defaultValue  ,timeScale)
 			break
 		}
 	}
@@ -390,6 +390,7 @@ func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Durati
 		*ptr = defaultValue * timeScale
 	}
 }
+
 
 func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloadable bool, keys ...string) {
 	configVarLock.Lock()
@@ -457,19 +458,36 @@ func GetString(key string, defaultValue string) (value string) {
 	}
 	return viper.GetString(key)
 }
-
 // GetDuration is wrapper for viper's GetDuration
-func GetDuration(key string, defaultValue time.Duration) (value time.Duration) {
-
+func GetDuration(key string, defaultValue time.Duration , timeScale time.Duration) (value time.Duration) {
+	var envValue string
 	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
-		return cast.ToDuration(envVal)
+		envValue = cast.ToString(envVal)
+		parseDuration , err := time.ParseDuration(envValue)
+		if err == nil {
+			return parseDuration
+		}else{
+			return cast.ToDuration(envVal)*timeScale
+		}
 	}
 
 	if !viper.IsSet(key) {
 		return defaultValue
+	}else{
+		envValue =viper.GetString(key)
+		parseDuration , err := time.ParseDuration(envValue)
+		if err == nil {
+			return parseDuration
+		}else{
+			_,err=strconv.ParseFloat(envValue,64)
+			if err==nil{
+				return viper.GetDuration(key)*timeScale
+			}else{
+				return defaultValue*timeScale
+			}
+		}
 	}
-	return viper.GetDuration(key)
 }
 
 // IsSet checks if config is set for a key

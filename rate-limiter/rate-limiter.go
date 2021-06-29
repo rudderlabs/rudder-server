@@ -36,7 +36,7 @@ func loadConfig() {
 	// Event limit when rate limit is enabled. 1000 by default
 	eventLimit = config.GetInt("RateLimit.eventLimit", 1000)
 	// Rolling time window for event limit. 60 mins by default
-	rateLimitWindowInMins = config.GetDuration("RateLimit.rateLimitWindowInMins", time.Duration(60)) * time.Minute
+	config.RegisterDurationConfigVariable(time.Duration(60),&rateLimitWindowInMins,false ,time.Minute , "RateLimit.rateLimitWindow")
 	// Number of buckets in time window. 12 by default
 	noOfBucketsInWindow = config.GetInt("RateLimit.noOfBucketsInWindow", 12)
 }

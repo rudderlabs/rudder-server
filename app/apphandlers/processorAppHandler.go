@@ -33,14 +33,29 @@ type ProcessorApp struct {
 }
 
 var (
-	gatewayDB     jobsdb.HandleT
-	routerDB      jobsdb.HandleT
-	batchRouterDB jobsdb.HandleT
-	procErrorDB   jobsdb.HandleT
+	gatewayDB     			  jobsdb.HandleT
+	routerDB      			  jobsdb.HandleT
+	batchRouterDB 			  jobsdb.HandleT
+	procErrorDB   			  jobsdb.HandleT
+	ReadTimeout       		  time.Duration
+	ReadHeaderTimeout 		  time.Duration
+	WriteTimeout      		  time.Duration
+	IdleTimeout       		  time.Duration
 )
 
 func (processor *ProcessorApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.PROCESSOR)
+}
+
+func init() {
+	loadConfigHandler()
+}
+
+func loadConfigHandler() {
+	config.RegisterDurationConfigVariable(time.Duration(0),&ReadTimeout,false,time.Second,"ReadTimeOutInSec")
+	config.RegisterDurationConfigVariable(time.Duration(0),&ReadHeaderTimeout,false,time.Second,"ReadHeaderTimeoutInSec")
+	config.RegisterDurationConfigVariable(time.Duration(10),&WriteTimeout,false,time.Second,"WriteTimeoutInSec")
+	config.RegisterDurationConfigVariable(time.Duration(720),&IdleTimeout,false,time.Second,"IdleTimeoutInSec")
 }
 
 func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
@@ -124,10 +139,10 @@ func startHealthWebHandler() {
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
 		Handler:           bugsnag.Handler(srvMux),
-		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
-		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
-		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 10*time.Second),
-		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
+		ReadTimeout:       ReadTimeout,
+		ReadHeaderTimeout: ReadHeaderTimeout,
+		WriteTimeout:      WriteTimeout,
+		IdleTimeout:       IdleTimeout,
 		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
 	}
 	pkgLogger.Fatal(srv.ListenAndServe())

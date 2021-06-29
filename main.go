@@ -43,6 +43,10 @@ var (
 	enableSuppressUserFeature bool
 	pkgLogger                 logger.LoggerI
 	appHandler                apphandlers.AppHandler
+	ReadTimeout       		  time.Duration
+	ReadHeaderTimeout 		  time.Duration
+	WriteTimeout      		  time.Duration
+	IdleTimeout       		  time.Duration
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
@@ -51,11 +55,15 @@ var major, minor, commit, buildDate, builtBy, gitURL, patch string
 func loadConfig() {
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", true)
+	pkgLogger = logger.NewLogger().Child("main")
+	config.RegisterDurationConfigVariable(time.Duration(0),&ReadTimeout,false,time.Second,"ReadTimeOutInSec")
+	config.RegisterDurationConfigVariable(time.Duration(0),&ReadHeaderTimeout,false,time.Second,"ReadHeaderTimeoutInSec")
+	config.RegisterDurationConfigVariable(time.Duration(10),&WriteTimeout,false,time.Second,"WriteTimeoutInSec")
+	config.RegisterDurationConfigVariable(time.Duration(720),&IdleTimeout,false,time.Second,"IdleTimeoutInSec")
 }
 
 func init() {
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("main")
 }
 
 func versionInfo() map[string]interface{} {
@@ -198,10 +206,10 @@ func startStandbyWebHandler() {
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
 		Handler:           bugsnag.Handler(srvMux),
-		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
-		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
-		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 10*time.Second),
-		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
+		ReadTimeout:       ReadTimeout,
+		ReadHeaderTimeout: ReadHeaderTimeout,
+		WriteTimeout:      WriteTimeout,
+		IdleTimeout:       IdleTimeout,
 		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
 	}
 	pkgLogger.Fatal(srv.ListenAndServe())

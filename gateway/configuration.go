@@ -34,10 +34,15 @@ func loadConfig() {
 	// EventSchemas feature. false by default
 	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
 	// Time period for diagnosis ticker
-	diagnosisTickerTime = config.GetDuration("Diagnostics.gatewayTimePeriodInS", 60) * time.Second
+	config.RegisterDurationConfigVariable(time.Duration(60),&diagnosisTickerTime,false,time.Second,"Diagnostics.gatewayTimePeriodInS")
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
 	config.RegisterBoolConfigVariable(false, &allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
 	config.RegisterBoolConfigVariable(true, &gwAllowPartialWriteWithErrors, true, "Gateway.allowPartialWriteWithErrors")
+
+	config.RegisterDurationConfigVariable(time.Duration(0),&ReadTimeout,false,time.Second,"ReadTimeOutInSec")
+	config.RegisterDurationConfigVariable(time.Duration(0),&ReadHeaderTimeout,false,time.Second,"ReadHeaderTimeoutInSec")
+	config.RegisterDurationConfigVariable(time.Duration(10),&WriteTimeout,false,time.Second,"WriteTimeoutInSec")
+	config.RegisterDurationConfigVariable(time.Duration(720),&IdleTimeout,false,time.Second,"IdleTimeoutInSec")
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers

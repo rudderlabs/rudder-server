@@ -1230,7 +1230,8 @@ func loadConfig() {
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
-	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
+	config.RegisterDurationConfigVariable(time.Duration(600), &diagnosisTickerTime, false, time.Second, "Diagnostics.batchRouterTimePeriod")
+	config.RegisterDurationConfigVariable(600, &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriod","Diagnostics.batchRouterTimePeriodInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	encounteredMergeRuleMap = map[string]map[string]bool{}
 	disableEgress = config.GetBool("disableEgress", false)

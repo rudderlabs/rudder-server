@@ -76,6 +76,9 @@ var (
 	slaveUploadTimeout                  time.Duration
 	runningMode                         string
 	uploadStatusTrackFrequency          time.Duration
+	uploadAllocatorSleep  				time.Duration
+	waitForConfig 						time.Duration
+	waitForWorkerSleep 					time.Duration
 	uploadBufferTimeInMin               int
 )
 
@@ -153,8 +156,11 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(10), &slaveUploadTimeout, true, time.Minute, "Warehouse.slaveUploadTimeoutInMin")
 	config.RegisterIntConfigVariable(8, &numLoadFileUploadWorkers, true, 1, "Warehouse.numLoadFileUploadWorkers")
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
-	uploadStatusTrackFrequency = config.GetDuration("Warehouse.uploadStatusTrackFrequencyInMin", time.Duration(30)) * time.Minute
+	config.RegisterDurationConfigVariable(time.Duration(30), &uploadStatusTrackFrequency, false, time.Minute, "Warehouse.uploadStatusTrackFrequency")
 	uploadBufferTimeInMin = config.GetInt("Warehouse.uploadBufferTimeInMin", 180)
+	config.RegisterDurationConfigVariable(time.Duration(5),&uploadAllocatorSleep,false,time.Second,"Warehouse.uploadAllocatorSleep") 
+	config.RegisterDurationConfigVariable(time.Duration(5),&waitForConfig,false, time.Second,"Warehouse.waitForConfig") 
+	config.RegisterDurationConfigVariable(time.Duration(5),&waitForWorkerSleep,false, time.Second,"Warehouse.waitForWorkerSleep") 
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -752,13 +758,13 @@ func (wh *HandleT) getInProgressNamespaces() (identifiers []string) {
 func (wh *HandleT) runUploadJobAllocator() {
 	for {
 		if !wh.initialConfigFetched {
-			time.Sleep(config.GetDuration("Warehouse.waitForConfigInS", 5) * time.Second)
+			time.Sleep(waitForConfig)
 			continue
 		}
 
 		availableWorkers := noOfWorkers - getActiveWorkerCount()
 		if availableWorkers < 1 {
-			time.Sleep(config.GetDuration("Warehouse.waitForWorkerSleepInS", 5) * time.Second)
+			time.Sleep(waitForWorkerSleep)
 			continue
 		}
 
@@ -778,7 +784,7 @@ func (wh *HandleT) runUploadJobAllocator() {
 			wh.workerChannelMapLock.Unlock()
 		}
 
-		time.Sleep(config.GetDuration("Warehouse.uploadAllocatorSleepInS", 5) * time.Second)
+		time.Sleep(uploadAllocatorSleep)
 	}
 }
 

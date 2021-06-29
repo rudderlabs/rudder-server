@@ -390,7 +390,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(100, &transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 100)
-	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
+	config.RegisterDurationConfigVariable(time.Duration(120), &sessionInactivityThreshold, true, time.Second, "Processor.sessionInactivityThresholdInS")
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	// Enable dedup of incoming events by default
 	enableDedup = config.GetBool("Dedup.enableDedup", false)
@@ -407,7 +407,7 @@ func loadConfig() {
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	pollInterval = config.GetDuration("Processor.pollIntervalInS", time.Duration(5)) * time.Second
+	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, "Processor.pollInterval")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	GWCustomVal = config.GetString("Gateway.CustomVal", "GW")
 }

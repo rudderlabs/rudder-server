@@ -1,8 +1,6 @@
 package batchrouter
 
 import (
-	"time"
-
 	"github.com/rudderlabs/rudder-server/config"
 )
 
@@ -15,12 +13,3 @@ func getBatchRouterConfigInt(key string, destType string, defaultValue int) int 
 	}
 }
 
-func getBatchRouterConfigDuration(key string, destType string, defaultValue time.Duration) time.Duration {
-
-	destOverrideFound := config.IsSet("BatchRouter." + destType + "." + key)
-	if destOverrideFound {
-		return config.GetDuration("BatchRouter."+destType+"."+key, defaultValue)
-	} else {
-		return config.GetDuration("BatchRouter."+key, defaultValue)
-	}
-}
