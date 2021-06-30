@@ -66,8 +66,8 @@ var (
 	minRetryAttempts                    int
 	retryTimeWindow                     time.Duration
 	maxStagingFileReadBufferCapacityInK int
-	destinationsMap                     map[string]warehouseutils.WarehouseT // destID -> warehouse map
-	destinationsMapLock                 sync.RWMutex
+	connectionsMap                      map[string]map[string]warehouseutils.WarehouseT // destID -> sourceID -> warehouse map
+	connectionsMapLock                  sync.RWMutex
 	triggerUploadsMap                   map[string]bool // `whType:sourceID:destinationID` -> boolean value representing if an upload was triggered or not
 	triggerUploadsMapLock               sync.RWMutex
 	sourceIDsByWorkspace                map[string][]string // workspaceID -> []sourceIDs
@@ -148,7 +148,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
 	config.RegisterDurationConfigVariable(time.Duration(180), &retryTimeWindow, true, time.Minute, "Warehouse.retryTimeWindowInMins")
-	destinationsMap = map[string]warehouseutils.WarehouseT{}
+	connectionsMap = map[string]map[string]warehouseutils.WarehouseT{}
 	triggerUploadsMap = map[string]bool{}
 	sourceIDsByWorkspace = map[string][]string{}
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
@@ -255,9 +255,12 @@ func (wh *HandleT) backendConfigSubscriber() {
 				}
 				wh.workerChannelMapLock.Unlock()
 
-				destinationsMapLock.Lock()
-				destinationsMap[destination.ID] = warehouse
-				destinationsMapLock.Unlock()
+				connectionsMapLock.Lock()
+				if connectionsMap[destination.ID] == nil {
+					connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
+				}
+				connectionsMap[destination.ID][source.ID] = warehouse
+				connectionsMapLock.Unlock()
 
 				// send last 10 warehouse upload's status to control plane
 				if destination.Config != nil && destination.Enabled && destination.Config["eventDelivery"] == true {
@@ -423,8 +426,8 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
 	}
 	if isUploadTriggered {
-		// set priority to 200 if the upload was manually triggered
-		metadataMap["priority"] = 200
+		// set priority to 50 if the upload was manually triggered
+		metadataMap["priority"] = 50
 	}
 	metadata, err := json.Marshal(metadataMap)
 	if err != nil {
@@ -941,7 +944,18 @@ func minimalConfigSubscriber() {
 						destType: destination.DestinationDefinition.Name,
 					}
 					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
-					destinationsMap[destination.ID] = warehouseutils.WarehouseT{Destination: destination, Namespace: namespace, Type: wh.destType}
+					connectionsMapLock.Lock()
+					if connectionsMap[destination.ID] == nil {
+						connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
+					}
+					connectionsMap[destination.ID][source.ID] = warehouseutils.WarehouseT{
+						Destination: destination,
+						Namespace:   namespace,
+						Type:        wh.destType,
+						Source:      source,
+						Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
+					}
+					connectionsMapLock.Unlock()
 				}
 			}
 		}
@@ -1142,16 +1156,19 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// trigger upload if there are pending events
 	if pendingEvents {
+		pkgLogger.Infof("[WH]: Triggering upload for all wh destinations connected to source '%s'", sourceID)
 		wh := make([]warehouseutils.WarehouseT, 0)
 
 		// get all wh destinations for given source id
-		destinationsMapLock.Lock()
-		for _, dst := range destinationsMap {
-			if dst.Source.ID == sourceID {
-				wh = append(wh, dst)
+		connectionsMapLock.Lock()
+		for _, srcMap := range connectionsMap {
+			for srcID, w := range srcMap {
+				if srcID == sourceID {
+					wh = append(wh, w)
+				}
 			}
 		}
-		destinationsMapLock.Unlock()
+		connectionsMapLock.Unlock()
 
 		// return error if no such destinations found
 		if len(wh) == 0 {
@@ -1168,7 +1185,9 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// create and write response
 	res := warehouseutils.PendingEventsResponseT{
-		PendingEvents: pendingEvents,
+		PendingEvents:            pendingEvents,
+		PendingStagingFilesCount: pendingStagingFileCount,
+		PendingUploadCount:       pendingUploadCount,
 	}
 
 	resBody, err := json.Marshal(res)
@@ -1258,13 +1277,15 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	if sourceID != "" && destID == "" {
 		// get all wh destinations for given source id
-		destinationsMapLock.Lock()
-		for _, dst := range destinationsMap {
-			if dst.Source.ID == sourceID {
-				wh = append(wh, dst)
+		connectionsMapLock.Lock()
+		for _, srcMap := range connectionsMap {
+			for srcID, w := range srcMap {
+				if srcID == sourceID {
+					wh = append(wh, w)
+				}
 			}
 		}
-		destinationsMapLock.Unlock()
+		connectionsMapLock.Unlock()
 	}
 
 	//TODO : support cases where both source id and dest id is present and only dest id is present

@@ -39,9 +39,15 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 	}
 
 	var warehouse warehouseutils.WarehouseT
-	var ok bool
-	if warehouse, ok = destinationsMap[s.DestID]; !ok {
+	srcMap, ok := connectionsMap[s.DestID]
+	if !ok {
 		return errors.New("Please specify a valid and existing destination ID")
+	}
+
+	// use any source connected to the given destination
+	for _, v := range srcMap {
+		warehouse = v
+		break
 	}
 
 	whManager, err := manager.New(warehouse.Type)
