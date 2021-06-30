@@ -659,7 +659,7 @@ var _ = Describe("jobsdb", func() {
 			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"WEBHOOK"}, ParameterFilters: parameterFilters})
 		})
 
-		It("should rollback if delete executing fails", func() {
+		It("should rollback and panic if delete executing fails", func() {
 			c.mock.ExpectBegin()
 
 			ds := dsListInMemory[0]
@@ -672,15 +672,23 @@ var _ = Describe("jobsdb", func() {
 			}
 
 			stmt.ExpectExec().WithArgs(timeNow).WillReturnError(errors.New("delete failed. Rollback and then Panic"))
-			defer func() {
-				if r := recover(); r != nil {
-					c.Finish()
-				}
-			}()
+
 			c.mock.ExpectRollback()
+			Expect(jd.wrapper).To(Panic())
 		})
 	})
 })
+
+func (jd *HandleT) wrapper() {
+	defer func() {
+		r := recover()
+		fmt.Println(r)
+		Expect(r).NotTo(BeNil())
+		if r != nil {
+		}
+	}()
+	jd.DeleteExecuting(GetQueryParamsT{Count: 1, CustomValFilters: []string{"WEBHOOK"}})
+}
 
 func assertJobs(expected, actual []*JobT) {
 	Expect(len(actual)).To(Equal(len(expected)))
