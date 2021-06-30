@@ -125,7 +125,6 @@ func (x *XDGSCRAMClient) Done() bool {
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
-
 	var destConfig = Config{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
@@ -328,14 +327,27 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	message := prepareMessage(topic, userID, value, timestamp)
 
 	partition, offset, err := kafkaProducer.SendMessage(message)
+
+	var statusCode int
+	var returnMessage, errorMessage string
 	if err != nil {
+		// this will force retry in cases where producer had been created
+		// but kafka brokers went down later.
+		statusCode = 500
+		errString := err.Error()
+
+		if errString == errOutOfBrokers {
+			_, returnMessage, errorMessage = makeErrorResponse(err)
+			pkgLogger.Infof("[Kafka] Could not send message to broker. Retryable.")
+			return statusCode, returnMessage, errorMessage
+		}
 		return makeErrorResponse(err)
 	}
 
-	returnMessage := fmt.Sprintf("Message delivered at Offset: %v , Partition: %v for topic: %s", offset, partition, topic)
+	returnMessage = fmt.Sprintf("Message delivered at Offset: %v , Partition: %v for topic: %s", offset, partition, topic)
 	//pkgLogger.Info(returnMessage)
-	statusCode := 200
-	errorMessage := returnMessage
+	statusCode = 200
+	errorMessage = returnMessage
 	//producer.Close()
 
 	return statusCode, returnMessage, errorMessage
