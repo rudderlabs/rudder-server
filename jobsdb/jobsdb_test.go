@@ -598,6 +598,88 @@ var _ = Describe("jobsdb", func() {
 			assertJobs(getJobsWithLastState(""), jobs)
 		})
 	})
+
+	Context("DeleteExecuting", func() {
+		var jd *HandleT
+
+		BeforeEach(func() {
+			jd = &HandleT{}
+			jd.dbHandle = c.db
+			jd.datasetList = dsListInMemory
+			jd.datasetRangeList = dsRangeList
+			jd.enableWriterQueue = true
+			jd.workersAndAuxSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+		})
+
+		It("should delete executing with simple customVal", func() {
+			c.mock.ExpectBegin()
+
+			ds := dsListInMemory[0]
+			customValQuery := "tt_jobs_1.custom_val='WEBHOOK'"
+			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s WHERE ((%[3]s)) ) GROUP BY job_id)  AND ((job_state='executing')) AND retry_time < $1`, ds.JobStatusTable, ds.JobTable, customValQuery))
+
+			timeNow := time.Now()
+			getTimeNowFunc = func() time.Time {
+				return timeNow
+			}
+
+			stmt.ExpectExec().WithArgs(timeNow).WillReturnResult(sqlmock.NewResult(0, 1))
+			c.mock.ExpectCommit()
+
+			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"WEBHOOK"}, Count: 1})
+		})
+
+		It("should delete executing with simple customVal and a destID", func() {
+			c.mock.ExpectBegin()
+
+			ds := dsListInMemory[0]
+			destinationID := "dummy_dest_id"
+
+			customValQuery := "tt_jobs_1.customVal = 'WEBHOOK'"
+			sourceQuery := fmt.Sprintf(`AND (tt_jobs_1.parameters @> '{"destination_id":"%s"}' )`, destinationID)
+			prepareStatement := fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s WHERE (%[3]s %[4]s)) GROUP BY job_id)  AND (job_state='executing') AND retry_time < $1`, ds.JobStatusTable, ds.JobTable, customValQuery, sourceQuery)
+			stmt := c.mock.ExpectPrepare(prepareStatement)
+
+			timeNow := time.Now()
+			getTimeNowFunc = func() time.Time {
+				return timeNow
+			}
+
+			stmt.ExpectExec().WithArgs(timeNow).WillReturnResult(sqlmock.NewResult(0, 1))
+			c.mock.ExpectRollback()
+			c.mock.ExpectCommit()
+
+			parameterFilters := []ParameterFilterT{
+				{
+					Name:     "destination_id",
+					Value:    destinationID,
+					Optional: false,
+				},
+			}
+			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"WEBHOOK"}, ParameterFilters: parameterFilters})
+		})
+
+		It("should rollback if delete executing fails", func() {
+			c.mock.ExpectBegin()
+
+			ds := dsListInMemory[0]
+			customValQuery := "tt_jobs_1.custom_val='WEBHOOK'"
+			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s WHERE ((%[3]s)) ) GROUP BY job_id)  AND ((job_state='executing')) AND retry_time < $1`, ds.JobStatusTable, ds.JobTable, customValQuery))
+
+			timeNow := time.Now()
+			getTimeNowFunc = func() time.Time {
+				return timeNow
+			}
+
+			stmt.ExpectExec().WithArgs(timeNow).WillReturnError(errors.New("delete failed. Rollback and then Panic"))
+			defer func() {
+				if r := recover(); r != nil {
+					c.Finish()
+				}
+			}()
+			c.mock.ExpectRollback()
+		})
+	})
 })
 
 func assertJobs(expected, actual []*JobT) {

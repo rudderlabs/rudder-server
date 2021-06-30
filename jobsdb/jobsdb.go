@@ -3303,7 +3303,7 @@ func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 		return 0, err
 	}
 	defer stmt.Close()
-	res, err := stmt.Exec(time.Now())
+	res, err := stmt.Exec(getTimeNowFunc())
 	if err != nil {
 		return 0, err
 	}
