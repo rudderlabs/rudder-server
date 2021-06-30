@@ -103,6 +103,10 @@ type JobsDB interface {
 	Status() interface{}
 	GetIdentifier() string
 	DeleteExecuting(params GetQueryParamsT)
+
+	GetJournalEntries(opType string) (entries []JournalEntryT)
+	JournalDeleteEntry(opID int64)
+	JournalMarkStart(opType string, opPayload json.RawMessage) int64
 }
 
 /*
