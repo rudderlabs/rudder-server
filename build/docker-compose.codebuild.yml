@@ -18,7 +18,7 @@ services:
     volumes:
       - ..:/app
 
-    entrypoint: sh -c './build/wait-for db:5432 -- go run -mod=vendor main.go'
+    entrypoint: sh -c 'CGO_ENABLED=0 ./build/wait-for db:5432 -- go run -mod=vendor main.go'
 
     ports:
       - "8080:8080"
@@ -26,7 +26,7 @@ services:
       - docker.env
     environment:
       - JOBS_DB_HOST=db
-      - WORKSPACE_TOKEN="1tcwkLZSvlGUiAEW0Y8Isb7xcA8"
+      - WORKSPACE_TOKEN=1tcwkLZSvlGUiAEW0Y8Isb7xcA8
 
   d-transformer:
     build:

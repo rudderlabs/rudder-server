@@ -31,7 +31,7 @@ phases:
       - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/config.toml/' build/docker.env
       - cat build/docker.env
       - cat tests/e2e/config.toml
-      - docker-compose -f build/docker-compose.codebuild.yml --compatibility up -d
+      - docker-compose -f build/docker-compose.codebuild.yml up -d
       - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo -mod vendor tests/e2e"
       - docker-compose down
       - export GO111MODULE=on
