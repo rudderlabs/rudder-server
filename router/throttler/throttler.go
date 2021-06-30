@@ -55,7 +55,7 @@ func (throttler *HandleT) setLimits() {
 	throttler.destLimiter.eventLimit = config.GetInt(fmt.Sprintf(`Router.throttler.%s.limit`, destName), destSettingsMap[destName].limit)
 
 	// set timeWindow
-	config.RegisterDurationConfigVariable(time.Duration(destSettingsMap[destName].timeWindowInS),&throttler.destLimiter.timeWindow , false , time.Second , fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName))
+	config.RegisterDurationConfigVariable(time.Duration(destSettingsMap[destName].timeWindowInS),&throttler.destLimiter.timeWindow , false , time.Second , []string{fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName),fmt.Sprintf(`Router.throttler.%s.timeWindowInS`, destName)}...)
 
 	// enable dest throttler
 	if throttler.destLimiter.eventLimit != 0 && throttler.destLimiter.timeWindow != 0 {
@@ -67,7 +67,7 @@ func (throttler *HandleT) setLimits() {
 	throttler.userLimiter.eventLimit = config.GetInt(fmt.Sprintf(`Router.throttler.%s.userLevelLimit`, destName), destSettingsMap[destName].userLevelLimit)
 
 	// set timeWindow
-	config.RegisterDurationConfigVariable(time.Duration(destSettingsMap[destName].userLevelTimeWindowInS),&throttler.userLimiter.timeWindow , false , time.Second , fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindow`, destName))
+	config.RegisterDurationConfigVariable(time.Duration(destSettingsMap[destName].userLevelTimeWindowInS),&throttler.userLimiter.timeWindow , false , time.Second , []string{fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindow`, destName),fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindowInS`, destName)}...)
 
 	// enable dest throttler
 	if throttler.userLimiter.eventLimit != 0 && throttler.userLimiter.timeWindow != 0 {

@@ -139,7 +139,7 @@ type EventPayloadT struct {
 }
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(120),&flushInterval,false,time.Second,"EventSchemas.syncIntervalInS")
+	config.RegisterDurationConfigVariable(time.Duration(120),&flushInterval,false,time.Second,[]string{"EventSchemas.syncInterval","EventSchemas.syncIntervalInS"}...)
 	adminUser = config.GetEnv("RUDDER_ADMIN_USER", "rudder")
 	adminPassword = config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
 	reservoirSampleSize = config.GetInt("EventSchemas.sampleEventsSize", 5)

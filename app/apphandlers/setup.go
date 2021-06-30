@@ -68,7 +68,7 @@ func init() {
 
 func loadConfig() {
 	maxProcess = config.GetInt("maxProcess", 12)
-	config.RegisterDurationConfigVariable(time.Duration(0),&gwDBRetention,false,time.Hour,"gwDBRetention")
+	config.RegisterDurationConfigVariable(time.Duration(0),&gwDBRetention,false,time.Hour,[]string{"gwDBRetention","gwDBRetentionInHr"}...)
 	config.RegisterDurationConfigVariable(time.Duration(0),&routerDBRetention,false,time.Hour,"routerDBRetention")
 	enableProcessor = config.GetBool("enableProcessor", true)
 	enableReplay = config.GetBool("Replay.enabled", false)

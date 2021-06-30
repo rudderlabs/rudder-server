@@ -1221,7 +1221,7 @@ func (brt *HandleT) collectMetrics() {
 
 func loadConfig() {
 	config.RegisterIntConfigVariable(100000, &jobQueryBatchSize, true, 1, "BatchRouter.jobQueryBatchSize")
-	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, "BatchRouter.mainLoopSleepInS")
+	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, []string{"BatchRouter.mainLoopSleep","BatchRouter.mainLoopSleepInS"}...)
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
@@ -1230,9 +1230,9 @@ func loadConfig() {
 	warehouseMode = config.GetString("Warehouse.mode", "embedded")
 	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
-	config.RegisterDurationConfigVariable(time.Duration(600), &diagnosisTickerTime, false, time.Second, "Diagnostics.batchRouterTimePeriod")
+	config.RegisterDurationConfigVariable(time.Duration(600), &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriodInS","Diagnostics.batchRouterTimePeriod")
 	config.RegisterDurationConfigVariable(600, &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriod","Diagnostics.batchRouterTimePeriodInS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
+	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, []string{"BatchRouter.warehouseServiceMaxRetryTime","BatchRouter.warehouseServiceMaxRetryTimeinHr"}...)
 	encounteredMergeRuleMap = map[string]map[string]bool{}
 	disableEgress = config.GetBool("disableEgress", false)
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
@@ -1270,7 +1270,7 @@ func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destTyp
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
-	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindowInMins"}...)
+	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow","BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow","BatchRouter." + "retryTimeWindowInMins"}...)
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
 	brt.netHandle = client

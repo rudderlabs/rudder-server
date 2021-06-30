@@ -198,9 +198,9 @@ func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	workspaceToken = config.GetWorkspaceToken()
 
-	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, true, time.Second, "BackendConfig.pollIntervalInS")
+	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval","BackendConfig.pollIntervalInS"}...)
 
-	config.RegisterDurationConfigVariable(time.Duration(300), &regulationsPollInterval, true, time.Second, "BackendConfig.regulationsPollIntervalInS")
+	config.RegisterDurationConfigVariable(time.Duration(300), &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval","BackendConfig.regulationsPollIntervalInS"}...)
 
 	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
 	configFromFile = config.GetBool("BackendConfig.configFromFile", false)

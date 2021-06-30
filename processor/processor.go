@@ -384,13 +384,13 @@ var (
 )
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, "Processor.maxLoopSleepInMS")
-	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, "Processor.loopSleepInMS")
-	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Processor.fixedLoopSleepInMS")
+	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep","Processor.maxLoopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, []string{"Processor.loopSleep","Processor.loopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep","Processor.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(100, &transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 100)
-	config.RegisterDurationConfigVariable(time.Duration(120), &sessionInactivityThreshold, true, time.Second, "Processor.sessionInactivityThresholdInS")
+	config.RegisterDurationConfigVariable(time.Duration(120), &sessionInactivityThreshold, true, time.Second, []string{"Processor.sessionInactivityThreshold","Processor.sessionInactivityThresholdInS"}...)
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	// Enable dedup of incoming events by default
 	enableDedup = config.GetBool("Dedup.enableDedup", false)
@@ -407,7 +407,7 @@ func loadConfig() {
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, "Processor.pollInterval")
+	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, []string{"Processor.pollIntervalInS","Processor.pollInterval"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
 	GWCustomVal = config.GetString("Gateway.CustomVal", "GW")
 }

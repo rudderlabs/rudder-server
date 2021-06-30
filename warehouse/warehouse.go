@@ -132,7 +132,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
-	config.RegisterDurationConfigVariable(time.Duration(5), &mainLoopSleep, true, time.Second, "Warehouse.mainLoopSleepInS")
+	config.RegisterDurationConfigVariable(time.Duration(5), &mainLoopSleep, true, time.Second, []string{"Warehouse.mainLoopSleep","Warehouse.mainLoopSleepInS"}...)
 	crashRecoverWarehouses = []string{"RS", "POSTGRES", "MSSQL", "AZURE_SYNAPSE"}
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
@@ -148,19 +148,19 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
-	config.RegisterDurationConfigVariable(time.Duration(180), &retryTimeWindow, true, time.Minute, "Warehouse.retryTimeWindowInMins")
+	config.RegisterDurationConfigVariable(time.Duration(180), &retryTimeWindow, true, time.Minute, []string{"Warehouse.retryTimeWindow","Warehouse.retryTimeWindowInMins"}...)
 	destinationsMap = map[string]warehouseutils.WarehouseT{}
 	sourceIDsByWorkspace = map[string][]string{}
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, true, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
-	config.RegisterDurationConfigVariable(time.Duration(120), &longRunningUploadStatThresholdInMin, true, time.Minute, "Warehouse.longRunningUploadStatThresholdInMin")
-	config.RegisterDurationConfigVariable(time.Duration(10), &slaveUploadTimeout, true, time.Minute, "Warehouse.slaveUploadTimeoutInMin")
+	config.RegisterDurationConfigVariable(time.Duration(120), &longRunningUploadStatThresholdInMin, true, time.Minute, []string{"Warehouse.longRunningUploadStatThreshold","Warehouse.longRunningUploadStatThresholdInMin"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10), &slaveUploadTimeout, true, time.Minute, []string{"Warehouse.slaveUploadTimeout","Warehouse.slaveUploadTimeoutInMin"}...)
 	config.RegisterIntConfigVariable(8, &numLoadFileUploadWorkers, true, 1, "Warehouse.numLoadFileUploadWorkers")
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
-	config.RegisterDurationConfigVariable(time.Duration(30), &uploadStatusTrackFrequency, false, time.Minute, "Warehouse.uploadStatusTrackFrequency")
+	config.RegisterDurationConfigVariable(time.Duration(30), &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency","Warehouse.uploadStatusTrackFrequencyInMin"}...)
 	uploadBufferTimeInMin = config.GetInt("Warehouse.uploadBufferTimeInMin", 180)
-	config.RegisterDurationConfigVariable(time.Duration(5),&uploadAllocatorSleep,false,time.Second,"Warehouse.uploadAllocatorSleep") 
-	config.RegisterDurationConfigVariable(time.Duration(5),&waitForConfig,false, time.Second,"Warehouse.waitForConfig") 
-	config.RegisterDurationConfigVariable(time.Duration(5),&waitForWorkerSleep,false, time.Second,"Warehouse.waitForWorkerSleep") 
+	config.RegisterDurationConfigVariable(time.Duration(5),&uploadAllocatorSleep,false,time.Second,[]string{"Warehouse.uploadAllocatorSleep","Warehouse.uploadAllocatorSleepInS"}...) 
+	config.RegisterDurationConfigVariable(time.Duration(5),&waitForConfig,false, time.Second,[]string{"Warehouse.waitForConfig","Warehouse.waitForConfigInS"}...) 
+	config.RegisterDurationConfigVariable(time.Duration(5),&waitForWorkerSleep,false, time.Second,[]string{"Warehouse.waitForWorkerSleep","Warehouse.waitForWorkerSleepInS"}...) 
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap

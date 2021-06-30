@@ -17,8 +17,8 @@ func loadConfig() {
 	maxDBBatchSize = config.GetInt("Gateway.maxDBBatchSize", 128)
 	//Timeout after which batch is formed anyway with whatever requests
 	//are available
-	config.RegisterDurationConfigVariable(time.Duration(15), &userWebRequestBatchTimeout, true, time.Millisecond, "Gateway.userWebRequestBatchTimeoutInMS")
-	config.RegisterDurationConfigVariable(time.Duration(5), &dbBatchWriteTimeout, true, time.Millisecond, "Gateway.dbBatchWriteTimeoutInMS")
+	config.RegisterDurationConfigVariable(time.Duration(15), &userWebRequestBatchTimeout, true, time.Millisecond, []string{"Gateway.userWebRequestBatchTimeout","Gateway.userWebRequestBatchTimeoutInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(5), &dbBatchWriteTimeout, true, time.Millisecond, []string{"Gateway.dbBatchWriteTimeout","Gateway.dbBatchWriteTimeoutInMS"}...)
 	//Multiple workers are used to batch user web requests
 	maxUserWebRequestWorkerProcess = config.GetInt("Gateway.maxUserWebRequestWorkerProcess", 64)
 	//Multiple DB writers are used to write data to DB
@@ -34,15 +34,15 @@ func loadConfig() {
 	// EventSchemas feature. false by default
 	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
 	// Time period for diagnosis ticker
-	config.RegisterDurationConfigVariable(time.Duration(60),&diagnosisTickerTime,false,time.Second,"Diagnostics.gatewayTimePeriodInS")
+	config.RegisterDurationConfigVariable(time.Duration(60),&diagnosisTickerTime,false,time.Second,[]string{"Diagnostics.gatewayTimePeriod","Diagnostics.gatewayTimePeriodInS"}...)
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
 	config.RegisterBoolConfigVariable(false, &allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
 	config.RegisterBoolConfigVariable(true, &gwAllowPartialWriteWithErrors, true, "Gateway.allowPartialWriteWithErrors")
 
-	config.RegisterDurationConfigVariable(time.Duration(0),&ReadTimeout,false,time.Second,"ReadTimeOutInSec")
-	config.RegisterDurationConfigVariable(time.Duration(0),&ReadHeaderTimeout,false,time.Second,"ReadHeaderTimeoutInSec")
-	config.RegisterDurationConfigVariable(time.Duration(10),&WriteTimeout,false,time.Second,"WriteTimeoutInSec")
-	config.RegisterDurationConfigVariable(time.Duration(720),&IdleTimeout,false,time.Second,"IdleTimeoutInSec")
+	config.RegisterDurationConfigVariable(time.Duration(0),&ReadTimeout,false,time.Second,[]string{"ReadTimeOut","ReadTimeOutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0),&ReadHeaderTimeout,false,time.Second,[]string{"ReadHeaderTimeout","ReadHeaderTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10),&WriteTimeout,false,time.Second,[]string{"WriteTimeout","WriteTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(720),&IdleTimeout,false,time.Second,[]string{"IdleTimeout","IdleTimeoutInSec"}...)
 }
 
 // MaxReqSize is the maximum request body size, in bytes, accepted by gateway web handlers

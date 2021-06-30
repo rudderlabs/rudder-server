@@ -205,7 +205,7 @@ Diagnostics:
   enableDiagnostics: true
   gatewayTimePeriodInS: 60
   routerTimePeriodInS: 60
-  batchRouterTimePeriodInS: 600
+  batchRouterTimePeriod: 6l
   enableServerStartMetric: true
   enableConfigIdentifyMetric: true
   enableServerStartedMetric: true
