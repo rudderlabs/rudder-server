@@ -44,19 +44,20 @@ func querySnowflake(anonymousId string, table string, schema string, destConfig 
 	if err!=nil {
 		panic(err)
 	}
-	row:=db.QueryRow(fmt.Sprintf(`select label, category, property1, property2, property3, property4, property5 from %s where ANONYMOUS_ID='%s'`,strings.ToUpper(table), anonymousId))
-	var label, category, property1, property2, property3,property4,property5 string
-	err = row.Scan(&label,&category,&property1,&property2,&property3,&property4,&property5)
+	fmt.Println(fmt.Sprintf(`select label, category, property_1, property_2, property_3, property_4, property_5 from %s where ANONYMOUS_ID='%s'`,strings.ToUpper(table), anonymousId))
+	row:=db.QueryRow(fmt.Sprintf(`select label, category, property_1, property_2, property_3, property_4, property_5 from snowflaketest.%s where ANONYMOUS_ID='%s'`,strings.ToUpper(table), anonymousId))
+	var label, category, property_1, property_2, property_3,property_4,property_5 string
+	err = row.Scan(&label,&category,&property_1,&property_2,&property_3,&property_4,&property_5)
 	if err !=nil && err != sql.ErrNoRows{
 		panic(err)
 	}
 	return QueryTrackPayload{
 		Label: label,
 		Category:category,
-		Property1:property1,
-		Property2:property2,
-		Property3:property3,
-		Property4:property4,
-		Property5:property5,
+		Property1:property_1,
+		Property2:property_2,
+		Property3:property_3,
+		Property4:property_4,
+		Property5:property_5,
 	}
 }

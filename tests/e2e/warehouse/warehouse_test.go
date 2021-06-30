@@ -4,15 +4,15 @@ import (
 	"database/sql"
 	// "fmt"
 	// "reflect"
-	// "strings"
+	"strings"
 	// "time"
 	// "encoding/json"
 	. "github.com/onsi/ginkgo"
-	// . "github.com/onsi/gomega"
+	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	// "github.com/rudderlabs/rudder-server/tests/helpers"
+	"github.com/rudderlabs/rudder-server/tests/helpers"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	// uuid "github.com/satori/go.uuid"
 	// "github.com/tidwall/gjson"
@@ -213,201 +213,210 @@ var _ = Describe("Warehouse", func() {
 	// 	})
 	// })
 	// Describe("Compatible with segment warehouse schema, verifying different api calls like track, identity, etc", func() {
-	// 	BeforeEach(func() {
-	// 		helpers.DeleteRowsInTables(dbHandle, warehouseTables)
+		// BeforeEach(func() {
+		// 	helpers.DeleteRowsInTables(dbHandle, warehouseTables)
+		// })
+		// It("should be able to create tables with all api schema types ", func() {
+			// fmt.Println(helpers.SendTrackRequest(writeKey, helpers.AddKeyToJSON(helpers.RemoveKeyFromJSON(helpers.TrackPayload, "messageId"), "event", eventName)))
+			// fmt.Println(helpers.SendIdentifyRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.IdentifyPayload, "messageId", "anonymousId")))
+			// fmt.Println(helpers.SendPageRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.PagePayload, "messageId")))
+			// fmt.Println(helpers.SendAliasRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.AliasPayload, "messageId", "anonymousId")))
+			// fmt.Println(helpers.SendGroupRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.GroupPayload, "messageId")))
+			// fmt.Println(helpers.SendScreenRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.ScreenPayload, "messageId")))
+			// By("test to create a load file in database for BQ destination")
+			// Eventually(func() bool {
+			// 	destType := BQ
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	tables := []string{"identifies", "users", "pages", "tracks", "screens", "_groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
+			// 	loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	return helpers.IsThisInThatSliceString(tables, loadedTables)
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+			// By("test to upload to BQ with state exported_data in db")
+			// Eventually(func() string {
+			// 	destType := BQ
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	return state
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+			// By("test to upload to BQ with state exported_data in db and should have created tables in db which are updated")
+			// Eventually(func() bool {
+			// 	destType := BQ
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	uploadId, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	updatedTables := helpers.VerifyUpdatedTables(dbHandle, warehouseutils.WarehouseTableUploadsTable, uploadId, state)
+			// 	tables := []string{"identifies", "users", "pages", "tracks", "screens", "_groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
+			// 	return helpers.IsThisInThatSliceString(tables, updatedTables)
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+			// By("test to create a load file in database for RS destination")
+			// Eventually(func() bool {
+			// 	destType := RS
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	tables := []string{"identifies", "users", "pages", "tracks", "screens", "groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
+			// 	loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	return helpers.IsThisInThatSliceString(tables, loadedTables)
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+			// By("test to upload to RS with state exported_data in db")
+			// Eventually(func() string {
+			// 	destType := RS
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	return state
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+			// By("test to upload to RS with state exported_data in db and should have created tables in db which are updated")
+			// Eventually(func() bool {
+			// 	destType := RS
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	uploadId, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	updatedTables := helpers.VerifyUpdatedTables(dbHandle, warehouseutils.WarehouseTableUploadsTable, uploadId, state)
+			// 	tables := []string{"identifies", "users", "pages", "tracks", "screens", "groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
+			// 	return helpers.IsThisInThatSliceString(tables, updatedTables)
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+			// By("test to create a load file in database for SNOWFLAKE destination")
+			// Eventually(func() bool {
+			// 	destType := SNOWFLAKE
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	tables := []string{"IDENTIFIES", "USERS", "PAGES", "TRACKS", "SCREENS", "GROUPS", "ALIASES", strings.Replace(strings.ToUpper(eventName), " ", "_", -1)}
+			// 	loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	return helpers.IsThisInThatSliceString(tables, loadedTables)
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+			// By("test to upload to SNOWFLAKE with state exported_data in db")
+			// Eventually(func() string {
+			// 	destType := SNOWFLAKE
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	return state
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+			// By("test to upload to SNOWFLAKE with state exported_data in db and should have created tables in db which are updated")
+			// Eventually(func() bool {
+			// 	destType := SNOWFLAKE
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	uploadId, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	updatedTables := helpers.VerifyUpdatedTables(dbHandle, warehouseutils.WarehouseTableUploadsTable, uploadId, state)
+			// 	tables := []string{"IDENTIFIES", "USERS", "PAGES", "TRACKS", "SCREENS", "GROUPS", "ALIASES", strings.Replace(strings.ToUpper(eventName), " ", "_", -1)}
+			// 	return helpers.IsThisInThatSliceString(tables, updatedTables)
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+			// By("test to create a load file in database for POSTGRES destination")
+			// Eventually(func() bool {
+			// 	destType := POSTGRES
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	tables := []string{"identifies", "users", "pages", "tracks", "screens", "groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
+			// 	loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	return helpers.IsThisInThatSliceString(tables, loadedTables)
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
+			// By("test to upload to POSTGRES with state exported_data in db")
+			// Eventually(func() string {
+			// 	destType := POSTGRES
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	return state
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+			// By("test to upload to POSTGRES with state exported_data in db and should have created tables in db which are updated")
+			// Eventually(func() bool {
+			// 	destType := POSTGRES
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	uploadId, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	updatedTables := helpers.VerifyUpdatedTables(dbHandle, warehouseutils.WarehouseTableUploadsTable, uploadId, state)
+			// 	tables := []string{"identifies", "users", "pages", "tracks", "screens", "groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
+			// 	return helpers.IsThisInThatSliceString(tables, updatedTables)
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 	// 	})
-	// 	It("should be able to create tables with all api schema types ", func() {
-	// 		fmt.Println(helpers.SendTrackRequest(writeKey, helpers.AddKeyToJSON(helpers.RemoveKeyFromJSON(helpers.TrackPayload, "messageId"), "event", eventName)))
-	// 		fmt.Println(helpers.SendIdentifyRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.IdentifyPayload, "messageId", "anonymousId")))
-	// 		fmt.Println(helpers.SendPageRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.PagePayload, "messageId")))
-	// 		fmt.Println(helpers.SendAliasRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.AliasPayload, "messageId", "anonymousId")))
-	// 		fmt.Println(helpers.SendGroupRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.GroupPayload, "messageId")))
-	// 		fmt.Println(helpers.SendScreenRequest(writeKey, helpers.RemoveKeyFromJSON(helpers.ScreenPayload, "messageId")))
-	// 		By("test to create a load file in database for BQ destination")
-	// 		Eventually(func() bool {
-	// 			destType := BQ
-	// 			warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
-	// 			WarehouseConfig := warehouses[destType]
-	// 			tables := []string{"identifies", "users", "pages", "tracks", "screens", "_groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
-	// 			loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			return helpers.IsThisInThatSliceString(tables, loadedTables)
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-	// 		By("test to upload to BQ with state exported_data in db")
-	// 		Eventually(func() string {
-	// 			destType := BQ
-	// 			warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
-	// 			WarehouseConfig := warehouses[destType]
-	// 			_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			return state
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
-	// 		By("test to upload to BQ with state exported_data in db and should have created tables in db which are updated")
-	// 		Eventually(func() bool {
-	// 			destType := BQ
-	// 			warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
-	// 			WarehouseConfig := warehouses[destType]
-	// 			uploadId, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			updatedTables := helpers.VerifyUpdatedTables(dbHandle, warehouseutils.WarehouseTableUploadsTable, uploadId, state)
-	// 			tables := []string{"identifies", "users", "pages", "tracks", "screens", "_groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
-	// 			return helpers.IsThisInThatSliceString(tables, updatedTables)
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-	// 		By("test to create a load file in database for RS destination")
-	// 		Eventually(func() bool {
-	// 			destType := RS
-	// 			warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
-	// 			WarehouseConfig := warehouses[destType]
-	// 			tables := []string{"identifies", "users", "pages", "tracks", "screens", "groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
-	// 			loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			return helpers.IsThisInThatSliceString(tables, loadedTables)
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-	// 		By("test to upload to RS with state exported_data in db")
-	// 		Eventually(func() string {
-	// 			destType := RS
-	// 			warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
-	// 			WarehouseConfig := warehouses[destType]
-	// 			_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			return state
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
-	// 		By("test to upload to RS with state exported_data in db and should have created tables in db which are updated")
-	// 		Eventually(func() bool {
-	// 			destType := RS
-	// 			warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
-	// 			WarehouseConfig := warehouses[destType]
-	// 			uploadId, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			updatedTables := helpers.VerifyUpdatedTables(dbHandle, warehouseutils.WarehouseTableUploadsTable, uploadId, state)
-	// 			tables := []string{"identifies", "users", "pages", "tracks", "screens", "groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
-	// 			return helpers.IsThisInThatSliceString(tables, updatedTables)
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-	// 		By("test to create a load file in database for SNOWFLAKE destination")
-	// 		Eventually(func() bool {
-	// 			destType := SNOWFLAKE
-	// 			warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
-	// 			WarehouseConfig := warehouses[destType]
-	// 			tables := []string{"IDENTIFIES", "USERS", "PAGES", "TRACKS", "SCREENS", "GROUPS", "ALIASES", strings.Replace(strings.ToUpper(eventName), " ", "_", -1)}
-	// 			loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			return helpers.IsThisInThatSliceString(tables, loadedTables)
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-	// 		By("test to upload to SNOWFLAKE with state exported_data in db")
-	// 		Eventually(func() string {
-	// 			destType := SNOWFLAKE
-	// 			warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
-	// 			WarehouseConfig := warehouses[destType]
-	// 			_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			return state
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
-	// 		By("test to upload to SNOWFLAKE with state exported_data in db and should have created tables in db which are updated")
-	// 		Eventually(func() bool {
-	// 			destType := SNOWFLAKE
-	// 			warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
-	// 			WarehouseConfig := warehouses[destType]
-	// 			uploadId, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			updatedTables := helpers.VerifyUpdatedTables(dbHandle, warehouseutils.WarehouseTableUploadsTable, uploadId, state)
-	// 			tables := []string{"IDENTIFIES", "USERS", "PAGES", "TRACKS", "SCREENS", "GROUPS", "ALIASES", strings.Replace(strings.ToUpper(eventName), " ", "_", -1)}
-	// 			return helpers.IsThisInThatSliceString(tables, updatedTables)
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-	// 		By("test to create a load file in database for POSTGRES destination")
-	// 		Eventually(func() bool {
-	// 			destType := POSTGRES
-	// 			warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
-	// 			WarehouseConfig := warehouses[destType]
-	// 			tables := []string{"identifies", "users", "pages", "tracks", "screens", "groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
-	// 			loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			return helpers.IsThisInThatSliceString(tables, loadedTables)
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-	// 		By("test to upload to POSTGRES with state exported_data in db")
-	// 		Eventually(func() string {
-	// 			destType := POSTGRES
-	// 			warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
-	// 			WarehouseConfig := warehouses[destType]
-	// 			_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			return state
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
-	// 		By("test to upload to POSTGRES with state exported_data in db and should have created tables in db which are updated")
-	// 		Eventually(func() bool {
-	// 			destType := POSTGRES
-	// 			warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
-	// 			WarehouseConfig := warehouses[destType]
-	// 			uploadId, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			updatedTables := helpers.VerifyUpdatedTables(dbHandle, warehouseutils.WarehouseTableUploadsTable, uploadId, state)
-	// 			tables := []string{"identifies", "users", "pages", "tracks", "screens", "groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
-	// 			return helpers.IsThisInThatSliceString(tables, updatedTables)
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
-	// 	})
+	// })
 
-	// })
-	// Describe("testing with different string formats", func() {
-	// 	BeforeEach(func() {
-	// 		helpers.DeleteRowsInTables(dbHandle, warehouseTables)
-	// 	})
-	// 	It("should be able to create load file", func() {
-	// 		batchJson := helpers.AddKeyToJSON(helpers.WarehouseBatchPayload, "batch.0.event", eventName)
-	// 		anonymousId := uuid.NewV4().String()
-	// 		batchJson = helpers.AddKeyToJSON(batchJson, "batch.0.anonymousId", anonymousId)
-	// 		label := "Ken\"ny\"s iPh'o\"ne5\",6"
-	// 		batchJson = helpers.AddKeyToJSON(batchJson, "batch.0.properties.label", label)
-	// 		eventName := strings.Replace(strings.ToLower(eventName), " ", "_", -1)
-	// 		helpers.SendBatchRequest(writeKey, batchJson)
-	// 		By("test to upload to BQ with state exported_data in db")
-	// 		Eventually(func() string {
-	// 			destType := BQ
-	// 			WarehouseConfig := warehouses[destType]
-	// 			_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			return state
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
-	// 		By("test to query with anonymousId and compare properties and timestamps on table eventName on BQ")
-	// 		Eventually(func() string {
-	// 			destType := BQ
-	// 			WarehouseConfig := warehouses[destType]
-	// 			_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
-	// 			return payload.Label
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(label))
-	// 		By("test to upload to RS with state exported_data in db")
-	// 		Eventually(func() string {
-	// 			destType := RS
-	// 			WarehouseConfig := warehouses[destType]
-	// 			_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			return state
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
-	// 		By("test to query with anonymousId and compare properties and timestamps on table eventName on RS")
-	// 		Eventually(func() string {
-	// 			destType := RS
-	// 			WarehouseConfig := warehouses[destType]
-	// 			_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
-	// 			return payload.Label
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(label))
-	// 		By("test to upload to SNOWFLAKE with state exported_data in db")
-	// 		Eventually(func() string {
-	// 			destType := SNOWFLAKE
-	// 			WarehouseConfig := warehouses[destType]
-	// 			_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			return state
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
-	// 		By("test to query with anonymousId and compare properties and timestamps on table eventName on SNOWFLAKE")
-	// 		Eventually(func() string {
-	// 			destType := SNOWFLAKE
-	// 			WarehouseConfig := warehouses[destType]
-	// 			_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
-	// 			return payload.Label
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(label))
-	// 		By("test to upload to POSTGRES with state exported_data in db")
-	// 		Eventually(func() string {
-	// 			destType := POSTGRES
-	// 			WarehouseConfig := warehouses[destType]
-	// 			_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			return state
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
-	// 		By("test to query with anonymousId and compare properties and timestamps on table eventName on POSTGRES")
-	// 		Eventually(func() string {
-	// 			destType := POSTGRES
-	// 			WarehouseConfig := warehouses[destType]
-	// 			_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-	// 			payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
-	// 			return payload.Label
-	// 		}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(label))
-	// 	})
-	// })
+	Describe("testing with different string formats", func() {
+		// BeforeEach(func() {
+		// 	helpers.DeleteRowsInTables(dbHandle, warehouseTables)
+		// })
+		It("should be able to create load file", func() {
+			batchJson := helpers.AddKeyToJSON(helpers.WarehouseBatchPayload, "batch.0.event", eventName)
+			// anonymousId := uuid.NewV4().String()
+			anonymousId := "a66e5f48-7ac5-41a1-a5a0-60563035bc74"
+			batchJson = helpers.AddKeyToJSON(batchJson, "batch.0.anonymousId", anonymousId)
+			label := "Ken\"ny\"s iPh'o\"ne5\",6"
+			batchJson = helpers.AddKeyToJSON(batchJson, "batch.0.properties.label", label)
+			eventName := strings.Replace(strings.ToLower(eventName), " ", "_", -1)
+			// helpers.SendBatchRequest(writeKey, batchJson)
+			By("test to upload to BQ with state exported_data in db")
+			Eventually(func() string {
+				destType := BQ
+				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				WarehouseConfig := warehouses[destType]
+				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+				return state
+			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+			By("test to query with anonymousId and compare properties and timestamps on table eventName on BQ")
+			Eventually(func() string {
+				destType := BQ
+				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				WarehouseConfig := warehouses[destType]
+				_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+				payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
+				return payload.Label
+			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(label))
+			By("test to upload to RS with state exported_data in db")
+			Eventually(func() string {
+				destType := RS
+				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+				WarehouseConfig := warehouses[destType]
+				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+				return state
+			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+			By("test to query with anonymousId and compare properties and timestamps on table eventName on RS")
+			Eventually(func() string {
+				destType := RS
+				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+				WarehouseConfig := warehouses[destType]
+				_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+				payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
+				return payload.Label
+			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(label))
+			By("test to upload to SNOWFLAKE with state exported_data in db")
+			Eventually(func() string {
+				destType := SNOWFLAKE
+				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
+				WarehouseConfig := warehouses[destType]
+				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+				return state
+			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+			By("test to query with anonymousId and compare properties and timestamps on table eventName on SNOWFLAKE")
+			Eventually(func() string {
+				destType := SNOWFLAKE
+				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
+				WarehouseConfig := warehouses[destType]
+				_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+				payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
+				return payload.Label
+			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(label))
+			// By("test to upload to POSTGRES with state exported_data in db")
+			// Eventually(func() string {
+			// 	destType := POSTGRES
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	return state
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
+			// By("test to query with anonymousId and compare properties and timestamps on table eventName on POSTGRES")
+			// Eventually(func() string {
+			// 	destType := POSTGRES
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
+			// 	return payload.Label
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(label))
+		})
+	})
 	// Describe("sending different data types for a key consecutively", func() {
 	// 	BeforeEach(func() {
 	// 		helpers.DeleteRowsInTables(dbHandle, warehouseTables)
@@ -575,5 +584,3 @@ var _ = Describe("Warehouse", func() {
 		// })
 	// })
 })
-
-
