@@ -331,15 +331,19 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	var statusCode int
 	var returnMessage, errorMessage string
 	if err != nil {
-		// this will force retry in cases where producer had been created
-		// but kafka brokers went down later.
+		// this will force retry in cases where kafka brokers went down
+		// after producer client had been already created
+
+		retryableErrors := []string{errOutOfBrokers, errCircuitBreakerIsOpen}
 		statusCode = 500
 		errString := err.Error()
 
-		if errString == errOutOfBrokers {
-			_, returnMessage, errorMessage = makeErrorResponse(err)
-			pkgLogger.Infof("[Kafka] Could not send message to broker. Retryable.")
-			return statusCode, returnMessage, errorMessage
+		for _, e := range retryableErrors {
+			if errString == e {
+				_, returnMessage, errorMessage = makeErrorResponse(err)
+				pkgLogger.Infof("[Kafka] Could not send message to broker. Retryable.")
+				return statusCode, returnMessage, errorMessage
+			}
 		}
 		return makeErrorResponse(err)
 	}
