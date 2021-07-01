@@ -98,6 +98,7 @@ const (
 const (
 	DegradedMode                  = "degraded"
 	StagingFilesPGNotifierChannel = "process_staging_file"
+	triggerUploadQPName           = "triggerUpload"
 )
 
 type HandleT struct {
@@ -1154,8 +1155,21 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		pendingEvents = true
 	}
 
-	// trigger upload if there are pending events
-	if pendingEvents {
+	// read `triggerUpload` queryParam
+	var triggerPendingUpload bool
+	triggerUploadQP := r.URL.Query().Get(triggerUploadQPName)
+	if triggerUploadQP != "" {
+		triggerPendingUpload, err = strconv.ParseBool(triggerUploadQP)
+		if err != nil {
+			err := fmt.Errorf("Expected %s to be boolean, found %s", triggerUploadQPName, triggerUploadQP)
+			pkgLogger.Errorf("[WH]: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// trigger upload if there are pending events and triggerPendingUpload is true
+	if pendingEvents && triggerPendingUpload {
 		pkgLogger.Infof("[WH]: Triggering upload for all wh destinations connected to source '%s'", sourceID)
 		wh := make([]warehouseutils.WarehouseT, 0)
 

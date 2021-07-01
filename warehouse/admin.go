@@ -29,6 +29,7 @@ func (wh *WarehouseAdmin) TriggerUpload(off bool, reply *string) error {
 
 type QueryInput struct {
 	DestID       string
+	SourceID     string
 	SQLStatement string
 }
 
@@ -44,10 +45,19 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 		return errors.New("Please specify a valid and existing destination ID")
 	}
 
-	// use any source connected to the given destination
-	for _, v := range srcMap {
-		warehouse = v
-		break
+	// use the sourceID-destID connection if sourceID is not empty
+	if s.SourceID != "" {
+		w, ok := srcMap[s.SourceID]
+		if !ok {
+			return errors.New("Please specify a valid (sourceID, destination ID) pair")
+		}
+		warehouse = w
+	} else {
+		// use any source connected to the given destination otherwise
+		for _, v := range srcMap {
+			warehouse = v
+			break
+		}
 	}
 
 	whManager, err := manager.New(warehouse.Type)
