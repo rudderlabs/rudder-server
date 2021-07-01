@@ -7,7 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-var duration,,maxCrashes int
+var duration,maxCrashes int
 
 func (handler *NormalModeHandler) RecordAppStart(currTime int64) {
 	handler.recoveryData.StartTimes = append(handler.recoveryData.StartTimes, currTime)
