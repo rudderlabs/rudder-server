@@ -26,7 +26,6 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
-	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -64,7 +63,7 @@ type batchWebRequestT struct {
 
 var (
 	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess, adminWebPort int
-	maxUserWebRequestBatchSize, maxDBBatchSize                                int
+	maxUserWebRequestBatchSize, maxDBBatchSize , MaxHeaderBytes               int
 	userWebRequestBatchTimeout, dbBatchWriteTimeout                           time.Duration
 	enabledWriteKeysSourceMap                                                 map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                                 map[string]string
@@ -1138,7 +1137,7 @@ func (gateway *HandleT) StartWebHandler() {
 		ReadHeaderTimeout: ReadHeaderTimeout,
 		WriteTimeout:      WriteTimeout,
 		IdleTimeout:       IdleTimeout,
-		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
+		MaxHeaderBytes:    MaxHeaderBytes,
 	}
 	gateway.logger.Fatal(srv.ListenAndServe())
 }

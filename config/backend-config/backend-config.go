@@ -201,11 +201,10 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval","BackendConfig.pollIntervalInS"}...)
 
 	config.RegisterDurationConfigVariable(time.Duration(300), &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval","BackendConfig.regulationsPollIntervalInS"}...)
-
-	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
-	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
+	config.RegisterStringConfigVariable("/etc/rudderstack/workspaceConfig.json",&configJSONPath,false,"BackendConfig.configJSONPath")
+	config.RegisterBoolConfigVariable(false,&configFromFile,false,"BackendConfig.configFromFile")
 	config.RegisterIntConfigVariable(1000, &maxRegulationsPerRequest, true, 1, "BackendConfig.maxRegulationsPerRequest")
-	configEnvReplacementEnabled = config.GetBool("BackendConfig.envReplacementEnabled", true)
+	config.RegisterBoolConfigVariable(true,&configEnvReplacementEnabled,false,"BackendConfig.configEnvReplacementEnabled")
 }
 
 func init() {

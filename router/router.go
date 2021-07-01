@@ -205,19 +205,18 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(10000, &jobQueryBatchSize, true, 1, "Router.jobQueryBatchSize")
 	config.RegisterIntConfigVariable(1000, &updateStatusBatchSize, true, 1, "Router.updateStatusBatchSize")
 	config.RegisterDurationConfigVariable(time.Duration(1000), &readSleep, true, time.Millisecond, []string{"Router.readSleep","Router.readSleepInMS"}...)
-	noOfJobsPerChannel = config.GetInt("Router.noOfJobsPerChannel", 1000)
-	noOfJobsToBatchInAWorker = config.GetInt("Router.noOfJobsToBatchInAWorker", 20)
+	config.RegisterIntConfigVariable(1000,&noOfJobsPerChannel,false,1,"Router.noOfJobsPerChannel")
+	config.RegisterIntConfigVariable(20,&noOfJobsToBatchInAWorker,false,1,"Router.noOfJobsToBatchInAWorker")
 	config.RegisterDurationConfigVariable(time.Duration(5), &jobsBatchTimeout, true, time.Second, []string{"Router.jobsBatchTimeout","Router.jobsBatchTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(0), &minSleep, false, time.Second, []string{"Router.minSleep","Router.minSleepInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &maxStatusUpdateWait, true, time.Second, []string{"Router.maxStatusUpdateWait","Router.maxStatusUpdateWaitInS"}...)
-	disableEgress = config.GetBool("disableEgress", false)
-
+	config.RegisterBoolConfigVariable(false,&disableEgress,false,"disableEgress")
 	// Time period for diagnosis ticker
 	config.RegisterDurationConfigVariable(time.Duration(60), &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.routerTimePeriod","Diagnostics.routerTimePeriodInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(10), &minRetryBackoff, true, time.Second, []string{"Router.minRetryBackoff","Router.minRetryBackoffInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(300), &maxRetryBackoff, true, time.Second, []string{"Router.maxRetryBackoff","Router.maxRetryBackoffInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Router.fixedLoopSleep","Router.fixedLoopSleepInMS"}...)
-	failedEventsCacheSize = config.GetInt("Router.failedEventsCacheSize", 10)
+	config.RegisterIntConfigVariable(10,&failedEventsCacheSize,false,1,"Router.failedEventsCacheSize")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
 }
 
@@ -1597,7 +1596,7 @@ func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinat
 	rt.statusLoopPauseChannel = make(chan *PauseT)
 	rt.statusLoopResumeChannel = make(chan bool)
 	rt.reporting = reporting
-	rt.reportingEnabled = config.GetBool("Reporting.enabled", true)
+	config.RegisterBoolConfigVariable(true,&rt.reportingEnabled,false,"Reporting.enabled")
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)

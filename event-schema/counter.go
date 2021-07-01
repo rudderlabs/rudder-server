@@ -16,6 +16,7 @@ const (
 
 var defaultCounterType CounterTypeT
 var counterSupport, counterErrorTolerance, counterFailureProb, counterThreshold float64
+var counterTypeStr string
 
 type FrequencyCounter struct {
 	Name        string
@@ -40,19 +41,16 @@ func (fc *FrequencyCounter) setCounter(counterType CounterTypeT, counter countis
 }
 
 func init() {
-	counterTypeStr := config.GetString("EventSchemas.counterType", "LossyCount")
-
+	config.RegisterStringConfigVariable("LossyCount",&counterTypeStr,false,"EventSchemas.counterTypeStr")
 	// Output every elem has appeared at least (N * support) times
-	counterSupport = config.GetFloat64("EventSchemas.counterSupport", 0.01)
-
+	config.RegisterFloat64ConfigVariable(0.01,&counterSupport,false,"EventSchemas.counterSupport")
 	// We can start with support/10
-	counterErrorTolerance = config.GetFloat64("EventSchemas.counterErrorTolerance", 0.001)
-
+	config.RegisterFloat64ConfigVariable(0.001,&counterErrorTolerance,false,"EventSchemas.counterErrorTolerance")
 	//
-	counterFailureProb = config.GetFloat64("EventSchemas.counterFailureProb", 0.01)
+	config.RegisterFloat64ConfigVariable(0.01,&counterFailureProb,false,"EventSchemas.counterFailureProb")
 
 	// Check this?
-	counterThreshold = config.GetFloat64("EventSchemas.counterThreshold", 0.01)
+	config.RegisterFloat64ConfigVariable(0.01,&counterThreshold,false,"EventSchemas.counterThreshold")
 
 	if counterTypeStr == string(StickySampler) {
 		defaultCounterType = StickySampler

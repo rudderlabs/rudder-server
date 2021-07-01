@@ -265,7 +265,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	proc.reporting = reporting
-	proc.reportingEnabled = config.GetBool("Reporting.enabled", true)
+	config.RegisterBoolConfigVariable(false,&proc.reportingEnabled,false,"Reporting.enabled")
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -389,27 +389,27 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep","Processor.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(100, &transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
-	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 100)
+	config.RegisterIntConfigVariable(100,&configSessionThresholdEvents, false, 1, "Processor.configSessionThresholdEvents")
 	config.RegisterDurationConfigVariable(time.Duration(120), &sessionInactivityThreshold, true, time.Second, []string{"Processor.sessionInactivityThreshold","Processor.sessionInactivityThresholdInS"}...)
-	configProcessSessions = config.GetBool("Processor.processSessions", false)
+	config.RegisterBoolConfigVariable(false,&configProcessSessions,false,"Processor.processSessions")
 	// Enable dedup of incoming events by default
-	enableDedup = config.GetBool("Dedup.enableDedup", false)
+	config.RegisterBoolConfigVariable(false,&enableDedup,false,"Dedup.enableDedup")
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
-	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
-	enableEventSchemasAPIOnly = config.GetBool("EventSchemas.enableEventSchemasAPIOnly", false)
+	config.RegisterBoolConfigVariable(false,&enableEventSchemasFeature,false,"EventSchemas.enableEventSchemasFeature")
+	config.RegisterBoolConfigVariable(false,&enableEventSchemasAPIOnly,false,"EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 	config.RegisterIntConfigVariable(1, &avgEventsInRequest, true, 1, "Processor.avgEventsInRequest")
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
 	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
-	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
+	config.RegisterIntConfigVariable(5, &transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
 	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, []string{"Processor.pollIntervalInS","Processor.pollInterval"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
-	GWCustomVal = config.GetString("Gateway.CustomVal", "GW")
+	config.RegisterStringConfigVariable("GW",&GWCustomVal,false,"Gateway.CustomVal")
 }
 
 func (proc *HandleT) getTransformerFeatureJson() {

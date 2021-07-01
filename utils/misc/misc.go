@@ -38,7 +38,7 @@ import (
 )
 
 var AppStartTime int64
-
+var errorStorePath string
 const (
 	// RFC3339Milli with milli sec precision
 	RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
@@ -64,11 +64,11 @@ var pkgLogger logger.LoggerI
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
+	config.RegisterStringConfigVariable("/tmp/error_store.json" , &errorStorePath , false , "recovery.errorStorePath")
 }
 
 func getErrorStore() (ErrorStoreT, error) {
 	var errorStore ErrorStoreT
-	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
 	data, err := ioutil.ReadFile(errorStorePath)
 	if os.IsNotExist(err) {
 		defaultErrorStoreJSON := "{\"Errors\":[]}"
@@ -95,7 +95,6 @@ func saveErrorStore(errorStore ErrorStoreT) {
 		pkgLogger.Fatal("failed to marshal errorStore", errorStore)
 		return
 	}
-	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
 	err = ioutil.WriteFile(errorStorePath, errorStoreJSON, 0644)
 	if err != nil {
 		pkgLogger.Fatal("failed to write to errorStore")

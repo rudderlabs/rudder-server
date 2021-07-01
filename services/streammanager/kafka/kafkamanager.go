@@ -72,8 +72,8 @@ func init() {
 func loadConfig() {
 	clientCertFile = config.GetEnv("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
 	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
-	kafkaDialTimeoutInSec = config.GetInt64("Router.kafkaDialTimeoutInSec", 10)
-	kafkaWriteTimeoutInSec = config.GetInt64("Router.kafkaWriteTimeoutInSec", 2)
+	config.RegisterInt64ConfigVariable(10,&kafkaDialTimeoutInSec,false,1,"Router.kafkaDialTimeoutInSec")
+	config.RegisterInt64ConfigVariable(2,&kafkaWriteTimeoutInSec,false,1,"Router.kafkaWriteTimeoutInSec")
 }
 
 func loadCertificate() {

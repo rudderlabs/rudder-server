@@ -114,7 +114,8 @@ type AssertInterface interface {
 }
 
 var globalDBHandle *sql.DB
-
+var masterBackupEnabled,instanceBackupEnabled,instanceBackupFailedAndAborted bool 
+var pathPrefix string
 //initGlobalDBHandle inits a sql.DB handle to be used across jobsdb instances
 func (jd *HandleT) initGlobalDBHandle() {
 	if globalDBHandle != nil {
@@ -344,10 +345,10 @@ var dbErrorMap = map[string]string{
 // instanceBackupFailedAndAborted = true => the individual jobdb backsup failed and aborted jobs only
 // pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
 func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
-	masterBackupEnabled := config.GetBool("JobsDB.backup.enabled", true)
-	instanceBackupEnabled := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix), false)
-	instanceBackupFailedAndAborted := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix), false)
-	pathPrefix := config.GetString(fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix), jd.tablePrefix)
+	config.RegisterBoolConfigVariable(true,&masterBackupEnabled,false,"JobsDB.backup.enabled")
+	config.RegisterBoolConfigVariable(false,&instanceBackupEnabled,false,fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
+	config.RegisterBoolConfigVariable(false,&instanceBackupFailedAndAborted,false,fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
+	config.RegisterStringConfigVariable(jd.tablePrefix,&pathPrefix,false,fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
 
 	backupSettings := BackupSettingsT{BackupEnabled: masterBackupEnabled && instanceBackupEnabled,
 		FailedOnly: instanceBackupFailedAndAborted, PathPrefix: strings.TrimSpace(pathPrefix)}

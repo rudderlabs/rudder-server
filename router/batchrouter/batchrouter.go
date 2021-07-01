@@ -1227,14 +1227,14 @@ func loadConfig() {
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
 	inProgressMap = map[string]bool{}
 	lastExecMap = map[string]int64{}
-	warehouseMode = config.GetString("Warehouse.mode", "embedded")
+	config.RegisterStringConfigVariable("embedded",&warehouseMode,false,"Warehouse.mode")
 	warehouseURL = getWarehouseURL()
 	// Time period for diagnosis ticker
-	config.RegisterDurationConfigVariable(time.Duration(600), &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriodInS","Diagnostics.batchRouterTimePeriod")
+	config.RegisterDurationConfigVariable(time.Duration(600), &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriodInS","Diagnostics.batchRouterTimePeriod"}...)
 	config.RegisterDurationConfigVariable(600, &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriod","Diagnostics.batchRouterTimePeriodInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, []string{"BatchRouter.warehouseServiceMaxRetryTime","BatchRouter.warehouseServiceMaxRetryTimeinHr"}...)
 	encounteredMergeRuleMap = map[string]map[string]bool{}
-	disableEgress = config.GetBool("disableEgress", false)
+	config.RegisterBoolConfigVariable(false,&disableEgress,false,"disableEgress")
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 }
@@ -1254,7 +1254,7 @@ func init() {
 //Setup initializes this module
 func (brt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI) {
 	brt.reporting = reporting
-	brt.reportingEnabled = config.GetBool("Reporting.enabled", true)
+	config.RegisterBoolConfigVariable(true,&brt.reportingEnabled,false,"Reporting.enabled")
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 

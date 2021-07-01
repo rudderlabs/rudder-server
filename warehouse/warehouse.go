@@ -80,6 +80,7 @@ var (
 	waitForConfig 						time.Duration
 	waitForWorkerSleep 					time.Duration
 	uploadBufferTimeInMin               int
+	ShouldForceSetLowerVersion       	bool
 )
 
 var (
@@ -126,7 +127,7 @@ func init() {
 
 func loadConfig() {
 	//Port where WH is running
-	webPort = config.GetInt("Warehouse.webPort", 8082)
+	config.RegisterIntConfigVariable(8082,&webPort, true, 1, "Warehouse.webPort")
 	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
 	config.RegisterIntConfigVariable(8, &noOfWorkers, true, 1, "Warehouse.noOfWorkers")
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
@@ -137,7 +138,7 @@ func loadConfig() {
 	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
-	warehouseMode = config.GetString("Warehouse.mode", "embedded")
+	config.RegisterStringConfigVariable("embedded",&warehouseMode,false,"Warehouse.mode")
 	host = config.GetEnv("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	user = config.GetEnv("WAREHOUSE_JOBS_DB_USER", "ubuntu")
 	dbname = config.GetEnv("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
@@ -157,10 +158,11 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(8, &numLoadFileUploadWorkers, true, 1, "Warehouse.numLoadFileUploadWorkers")
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	config.RegisterDurationConfigVariable(time.Duration(30), &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency","Warehouse.uploadStatusTrackFrequencyInMin"}...)
-	uploadBufferTimeInMin = config.GetInt("Warehouse.uploadBufferTimeInMin", 180)
+	config.RegisterIntConfigVariable(180,&uploadBufferTimeInMin,false,1,"Warehouse.uploadBufferTimeInMin")
 	config.RegisterDurationConfigVariable(time.Duration(5),&uploadAllocatorSleep,false,time.Second,[]string{"Warehouse.uploadAllocatorSleep","Warehouse.uploadAllocatorSleepInS"}...) 
 	config.RegisterDurationConfigVariable(time.Duration(5),&waitForConfig,false, time.Second,[]string{"Warehouse.waitForConfig","Warehouse.waitForConfigInS"}...) 
 	config.RegisterDurationConfigVariable(time.Duration(5),&waitForWorkerSleep,false, time.Second,[]string{"Warehouse.waitForWorkerSleep","Warehouse.waitForWorkerSleepInS"}...) 
+	config.RegisterBoolConfigVariable(false,&ShouldForceSetLowerVersion,false,"SQLMigrator.forceSetLowerVersion")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -999,7 +1001,7 @@ func setupTables(dbHandle *sql.DB) {
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
 		MigrationsTable:            "wh_schema_migrations",
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", false),
+		ShouldForceSetLowerVersion: ShouldForceSetLowerVersion,
 	}
 
 	err := m.Migrate("warehouse")

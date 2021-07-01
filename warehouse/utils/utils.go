@@ -96,7 +96,7 @@ func init() {
 
 func loadConfig() {
 	IdentityEnabledWarehouses = []string{"SNOWFLAKE", "BQ"}
-	enableIDResolution = config.GetBool("Warehouse.enableIDResolution", false)
+	config.RegisterBoolConfigVariable(false, &enableIDResolution,false,"Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 }
 

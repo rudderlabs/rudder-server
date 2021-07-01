@@ -41,6 +41,8 @@ var (
 	ReadHeaderTimeout 		  time.Duration
 	WriteTimeout      		  time.Duration
 	IdleTimeout       		  time.Duration
+	webPort       		  	  int
+	MaxHeaderBytes            int	
 )
 
 func (processor *ProcessorApp) GetAppType() string {
@@ -56,6 +58,8 @@ func loadConfigHandler() {
 	config.RegisterDurationConfigVariable(time.Duration(0),&ReadHeaderTimeout,false,time.Second,[]string{"ReadHeaderTimeout","ReadHeaderTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(10),&WriteTimeout,false,time.Second,[]string{"WriteTimeout","WriteTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(720),&IdleTimeout,false,time.Second,[]string{"IdleTimeout","IdleTimeoutInSec"}...)
+	config.RegisterIntConfigVariable(8086,&webPort,false,1,"Processor.webPort")
+	config.RegisterIntConfigVariable(524288,&MaxHeaderBytes,false,1,"MaxHeaderBytes")
 }
 
 func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
@@ -131,7 +135,6 @@ func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
 
 func startHealthWebHandler() {
 	//Port where Processor health handler is running
-	webPort := config.GetInt("Processor.webPort", 8086)
 	pkgLogger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/health", healthHandler)
@@ -143,7 +146,7 @@ func startHealthWebHandler() {
 		ReadHeaderTimeout: ReadHeaderTimeout,
 		WriteTimeout:      WriteTimeout,
 		IdleTimeout:       IdleTimeout,
-		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
+		MaxHeaderBytes:    MaxHeaderBytes,
 	}
 	pkgLogger.Fatal(srv.ListenAndServe())
 }

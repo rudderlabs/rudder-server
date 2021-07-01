@@ -39,15 +39,15 @@ var statsSamplingRate float32
 var DefaultStats Stats
 
 func init() {
-	statsEnabled = config.GetBool("enableStats", true)
-	statsTagsFormat = config.GetString("statsTagsFormat", "influxdb")
+	config.RegisterBoolConfigVariable(true,&statsEnabled,false,"enableStats")
+	config.RegisterStringConfigVariable("influxdb",&statsTagsFormat,false,"statsTagsFormat")
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
 	instanceID = config.GetEnv("INSTANCE_ID", "")
-	enabled = config.GetBool("RuntimeStats.enabled", true)
-	statsCollectionInterval = config.GetInt64("RuntimeStats.statsCollectionInterval", 10)
-	enableCPUStats = config.GetBool("RuntimeStats.enableCPUStats", true)
-	enableMemStats = config.GetBool("RuntimeStats.enabledMemStats", true)
-	enableGCStats = config.GetBool("RuntimeStats.enableGCStats", true)
+	config.RegisterBoolConfigVariable(true,&enabled,false,"RuntimeStats.enabled")
+	config.RegisterInt64ConfigVariable(10,&statsCollectionInterval,false,1,"Router.statsCollectionInterval")
+	config.RegisterBoolConfigVariable(true,&enableCPUStats,false, "RuntimeStats.enableCPUStats")
+	config.RegisterBoolConfigVariable(true,&enableMemStats,false, "RuntimeStats.enabledMemStats")
+	config.RegisterBoolConfigVariable(true,&enableGCStats,false, "RuntimeStats.enableGCStats")
 	statsSamplingRate = float32(config.GetFloat64("statsSamplingRate", 1))
 
 	pkgLogger = logger.NewLogger().Child("stats")

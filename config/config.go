@@ -18,9 +18,10 @@ import (
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
 var (
-	whSchemaVersion     string
-	hotReloadableConfig map[string]*ConfigVar
-	configVarLock       sync.RWMutex
+	whSchemaVersion     	   string
+	hotReloadableConfig 	   map[string]*ConfigVar
+	nonHotReloadableConfig 	   map[string]*ConfigVar
+	configVarLock       	   sync.RWMutex
 )
 
 type ConfigVar struct {
@@ -58,6 +59,7 @@ func init() {
 		fmt.Println("INFO: No .env file found.")
 	}
 	hotReloadableConfig = make(map[string]*ConfigVar)
+	nonHotReloadableConfig = make(map[string]*ConfigVar)
 	configPath := GetEnv("CONFIG_PATH", "./config/config.yaml")
 	viper.SetConfigFile(configPath)
 	err := viper.ReadInConfig() // Find and read the config file
@@ -266,15 +268,17 @@ func RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool,
 	configVarLock.Lock()
 	defer configVarLock.Unlock()
 	var isSet bool
+	configVar := ConfigVar{
+		value:           ptr,
+		multiplier:      valueScale,
+		isHotReloadable: isHotReloadable,
+		defaultValue:    defaultValue,
+		keys:            keys,
+	}
 	if isHotReloadable {
-		configVar := ConfigVar{
-			value:           ptr,
-			multiplier:      valueScale,
-			isHotReloadable: isHotReloadable,
-			defaultValue:    defaultValue,
-			keys:            keys,
-		}
 		hotReloadableConfig[keys[0]] = &configVar
+	} else {
+		nonHotReloadableConfig[keys[0]] = &configVar
 	}
 	for _, key := range keys {
 		if IsSet(key) {
@@ -292,14 +296,16 @@ func RegisterBoolConfigVariable(defaultValue bool, ptr *bool, isHotReloadable bo
 	configVarLock.Lock()
 	defer configVarLock.Unlock()
 	var isSet bool
+	configVar := ConfigVar{
+		value:           ptr,
+		isHotReloadable: isHotReloadable,
+		defaultValue:    defaultValue,
+		keys:            keys,
+	}
 	if isHotReloadable {
-		configVar := ConfigVar{
-			value:           ptr,
-			isHotReloadable: isHotReloadable,
-			defaultValue:    defaultValue,
-			keys:            keys,
-		}
 		hotReloadableConfig[keys[0]] = &configVar
+	} else {
+		nonHotReloadableConfig[keys[0]] = &configVar
 	}
 	for _, key := range keys {
 		if IsSet(key) {
@@ -317,15 +323,17 @@ func RegisterFloat64ConfigVariable(defaultValue float64, ptr *float64, isHotRelo
 	configVarLock.Lock()
 	defer configVarLock.Unlock()
 	var isSet bool
+	configVar := ConfigVar{
+		value:           ptr,
+		multiplier:      1.0,
+		isHotReloadable: isHotReloadable,
+		defaultValue:    defaultValue,
+		keys:            keys,
+	}
 	if isHotReloadable {
-		configVar := ConfigVar{
-			value:           ptr,
-			multiplier:      1.0,
-			isHotReloadable: isHotReloadable,
-			defaultValue:    defaultValue,
-			keys:            keys,
-		}
 		hotReloadableConfig[keys[0]] = &configVar
+	} else {
+		nonHotReloadableConfig[keys[0]] = &configVar
 	}
 	for _, key := range keys {
 		if IsSet(key) {
@@ -343,15 +351,17 @@ func RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable
 	configVarLock.Lock()
 	defer configVarLock.Unlock()
 	var isSet bool
+	configVar := ConfigVar{
+		value:           ptr,
+		multiplier:      valueScale,
+		isHotReloadable: isHotReloadable,
+		defaultValue:    defaultValue,
+		keys:            keys,
+	}
 	if isHotReloadable {
-		configVar := ConfigVar{
-			value:           ptr,
-			multiplier:      valueScale,
-			isHotReloadable: isHotReloadable,
-			defaultValue:    defaultValue,
-			keys:            keys,
-		}
 		hotReloadableConfig[keys[0]] = &configVar
+	} else {
+		nonHotReloadableConfig[keys[0]] = &configVar
 	}
 	for _, key := range keys {
 		if IsSet(key) {
@@ -369,15 +379,17 @@ func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Durati
 	configVarLock.Lock()
 	defer configVarLock.Unlock()
 	var isSet bool
+	configVar := ConfigVar{
+		value:           ptr,
+		multiplier:      timeScale,
+		isHotReloadable: isHotReloadable,
+		defaultValue:    defaultValue,
+		keys:            keys,
+	}
 	if isHotReloadable {
-		configVar := ConfigVar{
-			value:           ptr,
-			multiplier:      timeScale,
-			isHotReloadable: isHotReloadable,
-			defaultValue:    defaultValue,
-			keys:            keys,
-		}
 		hotReloadableConfig[keys[0]] = &configVar
+	} else {
+		nonHotReloadableConfig[keys[0]] = &configVar
 	}
 	for _, key := range keys {
 		if IsSet(key) {
@@ -396,14 +408,16 @@ func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloada
 	configVarLock.Lock()
 	defer configVarLock.Unlock()
 	var isSet bool
+	configVar := ConfigVar{
+		value:           ptr,
+		isHotReloadable: isHotReloadable,
+		defaultValue:    defaultValue,
+		keys:            keys,
+	}
 	if isHotReloadable {
-		configVar := ConfigVar{
-			value:           ptr,
-			isHotReloadable: isHotReloadable,
-			defaultValue:    defaultValue,
-			keys:            keys,
-		}
 		hotReloadableConfig[keys[0]] = &configVar
+	} else {
+		nonHotReloadableConfig[keys[0]] = &configVar
 	}
 	for _, key := range keys {
 		if IsSet(key) {

@@ -88,11 +88,11 @@ func loadPGNotifierConfig() {
 	pgNotifierDBport, _ = strconv.Atoi(config.GetEnv("PGNOTIFIER_DB_PORT", "5432"))
 	pgNotifierDBpassword = config.GetEnv("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
 	pgNotifierDBsslmode = config.GetEnv("PGNOTIFIER_DB_SSL_MODE", "disable")
-	maxAttempt = config.GetInt("PgNotifier.maxAttempt", 3)
+	config.RegisterIntConfigVariable(3,&maxAttempt,false,1,"PgNotifier.maxAttempt")
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
 	retriggerInterval = time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
-	retriggerCount = config.GetInt("PgNotifier.retriggerCount", 500)
-	retriggerExecutingTimeLimitInS = config.GetInt("PgNotifier.retriggerExecutingTimeLimitInS", 120)
+	config.RegisterIntConfigVariable(500,&retriggerCount,false,1,"PgNotifier.retriggerCount")
+	config.RegisterIntConfigVariable(120,&retriggerExecutingTimeLimitInS,false,1,"PgNotifier.retriggerExecutingTimeLimitInS")
 }
 
 //New Given default connection info return pg notifiew object from it
