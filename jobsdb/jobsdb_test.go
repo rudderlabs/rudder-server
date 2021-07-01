@@ -9,6 +9,7 @@ import (
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/jinzhu/copier"
 	"github.com/lib/pq"
+	"github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
@@ -236,6 +237,11 @@ var _ = Describe("jobsdb", func() {
 			jd.datasetList = dsListInMemory
 
 			Expect(jd.getDSList(false)).To(Equal(dsListInMemory))
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 
 		It("makes some db calls if refreshFromDB", func() {
@@ -246,6 +252,11 @@ var _ = Describe("jobsdb", func() {
 			schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(mockRows)
 
 			Expect(jd.getDSList(true)).To(Equal(dsListInDB))
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 	})
 
@@ -276,6 +287,11 @@ var _ = Describe("jobsdb", func() {
 
 			err := jd.Store(properStoreJobs)
 			Expect(err).ShouldNot(HaveOccurred())
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 		It("should store jobs to db directly and not through workers", func() {
 			c.mock.ExpectBegin()
@@ -288,12 +304,22 @@ var _ = Describe("jobsdb", func() {
 
 			err := jd.Store(properStoreJobs)
 			Expect(err).ShouldNot(HaveOccurred())
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 		It("should return error if prepare fails", func() {
 			c.mock.ExpectBegin().WillReturnError(errors.New("failed to prepare"))
 
 			err := jd.Store(properStoreJobs)
 			Expect(err).To(Equal(errors.New("failed to prepare")))
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 	})
 
@@ -322,6 +348,11 @@ var _ = Describe("jobsdb", func() {
 
 			errorMessagesMap := jd.StoreWithRetryEach(properStoreJobs)
 			Expect(errorMessagesMap).To(BeEmpty())
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 		It("should store jobs to db even when bulk store(storeJobsDS) returns error", func() {
 			c.mock.ExpectBegin().WillReturnError(errors.New("failed to prepare"))
@@ -333,6 +364,11 @@ var _ = Describe("jobsdb", func() {
 			}
 			errorMessagesMap := jd.StoreWithRetryEach(properStoreJobs)
 			Expect(errorMessagesMap).To(BeEmpty())
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 		It("should store jobs partially because one job has invalid json payload", func() {
 			c.mock.ExpectBegin().WillReturnError(errors.New("failed to prepare"))
@@ -350,6 +386,11 @@ var _ = Describe("jobsdb", func() {
 
 			errorMessagesMap := jd.StoreWithRetryEach(partiallyProperStoreJobs)
 			Expect(errorMessagesMap).To(Equal(map[uuid.UUID]string{s: "Invalid JSON"}))
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 	})
 
@@ -388,6 +429,11 @@ var _ = Describe("jobsdb", func() {
 
 			err := jd.UpdateJobStatus(statusList, []string{"GW"}, nil)
 			Expect(err).ShouldNot(HaveOccurred())
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 
 		It("should fail to update job status", func() {
@@ -413,6 +459,11 @@ var _ = Describe("jobsdb", func() {
 
 			err := jd.UpdateJobStatus(statusList, []string{"GW"}, nil)
 			Expect(err).To(Equal(errors.New("exec failed")))
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 	})
 
@@ -457,6 +508,11 @@ var _ = Describe("jobsdb", func() {
 				jobs := jd.GetToRetry(GetQueryParamsT{CustomValFilters: []string{"GW"}, Count: 2})
 				Expect(len(jobs)).To(Equal(2))
 				assertJobs(getJobsWithLastState(state), jobs)
+
+				// we make sure that all expectations were met
+				if err := c.mock.ExpectationsWereMet(); err != nil {
+					ginkgo.Fail("there were unfulfilled expectations")
+				}
 			})
 		}
 
@@ -505,6 +561,11 @@ var _ = Describe("jobsdb", func() {
 				jobs := jd.GetToRetry(GetQueryParamsT{CustomValFilters: []string{"GW"}, ParameterFilters: parameterFilters, Count: 2})
 				Expect(len(jobs)).To(Equal(2))
 				assertJobs(getJobsWithLastState(state), jobs)
+
+				// we make sure that all expectations were met
+				if err := c.mock.ExpectationsWereMet(); err != nil {
+					ginkgo.Fail("there were unfulfilled expectations")
+				}
 			})
 		}
 
@@ -554,6 +615,11 @@ var _ = Describe("jobsdb", func() {
 			jobs := jd.GetUnprocessed(GetQueryParamsT{CustomValFilters: []string{"GW"}, Count: 2})
 			Expect(len(jobs)).To(Equal(2))
 			assertJobs(getJobsWithLastState(""), jobs)
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 
 		It("should return unprocessed jobs with parameters", func() {
@@ -596,6 +662,11 @@ var _ = Describe("jobsdb", func() {
 			jobs := jd.GetUnprocessed(GetQueryParamsT{CustomValFilters: []string{"GW"}, ParameterFilters: parameterFilters, Count: 2})
 			Expect(len(jobs)).To(Equal(2))
 			assertJobs(getJobsWithLastState(""), jobs)
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 	})
 
@@ -611,43 +682,35 @@ var _ = Describe("jobsdb", func() {
 			jd.workersAndAuxSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
 		})
 
-		It("should delete executing with simple customVal", func() {
+		It("should delete only one executing with simple customVal", func() {
+			timeNow := time.Now()
+			getTimeNowFunc = func() time.Time {
+				return timeNow
+			}
+
 			c.mock.ExpectBegin()
 
 			ds := dsListInMemory[0]
 			customValQuery := "tt_jobs_1.custom_val='WEBHOOK'"
 			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s WHERE ((%[3]s)) ) GROUP BY job_id)  AND ((job_state='executing')) AND retry_time < $1`, ds.JobStatusTable, ds.JobTable, customValQuery))
-
-			timeNow := time.Now()
-			getTimeNowFunc = func() time.Time {
-				return timeNow
-			}
-
 			stmt.ExpectExec().WithArgs(timeNow).WillReturnResult(sqlmock.NewResult(0, 1))
+
 			c.mock.ExpectCommit()
 
 			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"WEBHOOK"}, Count: 1})
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 
-		It("should delete executing with simple customVal and a destID", func() {
-			c.mock.ExpectBegin()
-
-			ds := dsListInMemory[0]
+		It("should delete only one executing with simple customVal and a destID", func() {
 			destinationID := "dummy_dest_id"
-
-			customValQuery := "tt_jobs_1.customVal = 'WEBHOOK'"
-			sourceQuery := fmt.Sprintf(`AND (tt_jobs_1.parameters @> '{"destination_id":"%s"}' )`, destinationID)
-			prepareStatement := fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s WHERE (%[3]s %[4]s)) GROUP BY job_id)  AND (job_state='executing') AND retry_time < $1`, ds.JobStatusTable, ds.JobTable, customValQuery, sourceQuery)
-			stmt := c.mock.ExpectPrepare(prepareStatement)
-
 			timeNow := time.Now()
 			getTimeNowFunc = func() time.Time {
 				return timeNow
 			}
-
-			stmt.ExpectExec().WithArgs(timeNow).WillReturnResult(sqlmock.NewResult(0, 1))
-			c.mock.ExpectRollback()
-			c.mock.ExpectCommit()
 
 			parameterFilters := []ParameterFilterT{
 				{
@@ -656,37 +719,130 @@ var _ = Describe("jobsdb", func() {
 					Optional: false,
 				},
 			}
-			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"WEBHOOK"}, ParameterFilters: parameterFilters})
+
+			c.mock.ExpectBegin()
+
+			ds := dsListInMemory[0]
+			customValQuery := "tt_jobs_1.custom_val='WEBHOOK'"
+			sourceQuery := fmt.Sprintf(`tt_jobs_1.parameters @> '{"destination_id":"%s"}' `, destinationID)
+			prepareStatement := fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s WHERE ((%[3]s)) AND (%[4]s)) GROUP BY job_id)  AND ((job_state='executing')) AND retry_time < $1`, ds.JobStatusTable, ds.JobTable, customValQuery, sourceQuery)
+			stmt := c.mock.ExpectPrepare(prepareStatement)
+			stmt.ExpectExec().WithArgs(timeNow).WillReturnResult(sqlmock.NewResult(0, 1))
+
+			c.mock.ExpectCommit()
+
+			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"WEBHOOK"}, ParameterFilters: parameterFilters, Count: 1})
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
 		})
 
-		It("should rollback and panic if delete executing fails", func() {
+		It("should delete executing with simple customVal", func() {
+			timeNow := time.Now()
+			getTimeNowFunc = func() time.Time {
+				return timeNow
+			}
+
+			c.mock.ExpectBegin()
+
+			ds := dsListInMemory[0]
+			customValQuery := "tt_jobs_1.custom_val='WEBHOOK'"
+			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s WHERE ((%[3]s)) ) GROUP BY job_id)  AND ((job_state='executing')) AND retry_time < $1`, ds.JobStatusTable, ds.JobTable, customValQuery))
+			stmt.ExpectExec().WithArgs(timeNow).WillReturnResult(sqlmock.NewResult(0, 1))
+
+			ds = dsListInMemory[1]
+			customValQuery = "tt_jobs_2.custom_val='WEBHOOK'"
+			stmt = c.mock.ExpectPrepare(fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s WHERE ((%[3]s)) ) GROUP BY job_id)  AND ((job_state='executing')) AND retry_time < $1`, ds.JobStatusTable, ds.JobTable, customValQuery))
+			stmt.ExpectExec().WithArgs(timeNow).WillReturnResult(sqlmock.NewResult(0, 1))
+
+			c.mock.ExpectCommit()
+
+			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"WEBHOOK"}, Count: -1})
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
+		})
+
+		It("should delete executing with simple customVal and a destID", func() {
+			destinationID := "dummy_dest_id"
+			timeNow := time.Now()
+			getTimeNowFunc = func() time.Time {
+				return timeNow
+			}
+
+			parameterFilters := []ParameterFilterT{
+				{
+					Name:     "destination_id",
+					Value:    destinationID,
+					Optional: false,
+				},
+			}
+
+			c.mock.ExpectBegin()
+
+			ds := dsListInMemory[0]
+			customValQuery := "tt_jobs_1.custom_val='WEBHOOK'"
+			sourceQuery := fmt.Sprintf(`tt_jobs_1.parameters @> '{"destination_id":"%s"}' `, destinationID)
+			prepareStatement := fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s WHERE ((%[3]s)) AND (%[4]s)) GROUP BY job_id)  AND ((job_state='executing')) AND retry_time < $1`, ds.JobStatusTable, ds.JobTable, customValQuery, sourceQuery)
+			stmt := c.mock.ExpectPrepare(prepareStatement)
+			stmt.ExpectExec().WithArgs(timeNow).WillReturnResult(sqlmock.NewResult(0, 1))
+
+			ds = dsListInMemory[1]
+			customValQuery = "tt_jobs_2.custom_val='WEBHOOK'"
+			sourceQuery = fmt.Sprintf(`tt_jobs_2.parameters @> '{"destination_id":"%s"}' `, destinationID)
+			prepareStatement = fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s WHERE ((%[3]s)) AND (%[4]s)) GROUP BY job_id)  AND ((job_state='executing')) AND retry_time < $1`, ds.JobStatusTable, ds.JobTable, customValQuery, sourceQuery)
+			stmt = c.mock.ExpectPrepare(prepareStatement)
+			stmt.ExpectExec().WithArgs(timeNow).WillReturnResult(sqlmock.NewResult(0, 1))
+
+			c.mock.ExpectCommit()
+
+			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"WEBHOOK"}, ParameterFilters: parameterFilters, Count: -1})
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail("there were unfulfilled expectations")
+			}
+		})
+
+		/*It("should rollback and panic if delete executing fails", func() {
+			timeNow := time.Now()
+			getTimeNowFunc = func() time.Time {
+				return timeNow
+			}
+
 			c.mock.ExpectBegin()
 
 			ds := dsListInMemory[0]
 			customValQuery := "tt_jobs_1.custom_val='WEBHOOK'"
 			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s WHERE ((%[3]s)) ) GROUP BY job_id)  AND ((job_state='executing')) AND retry_time < $1`, ds.JobStatusTable, ds.JobTable, customValQuery))
 
-			timeNow := time.Now()
-			getTimeNowFunc = func() time.Time {
-				return timeNow
-			}
-
 			stmt.ExpectExec().WithArgs(timeNow).WillReturnError(errors.New("delete failed. Rollback and then Panic"))
 
 			c.mock.ExpectRollback()
 			Expect(jd.wrapper).To(Panic())
-		})
+
+			// we make sure that all expectations were met
+			if err := c.mock.ExpectationsWereMet(); err != nil {
+				ginkgo.Fail(err.Error())
+			}
+		})*/
 	})
 })
 
 func (jd *HandleT) wrapper() {
 	defer func() {
 		r := recover()
-		fmt.Println(r)
-		Expect(r).NotTo(BeNil())
-		if r != nil {
+		if r == nil {
+			fmt.Println("function did not panic")
+		} else {
+			fmt.Println("function panicked")
 		}
 	}()
+
 	jd.DeleteExecuting(GetQueryParamsT{Count: 1, CustomValFilters: []string{"WEBHOOK"}})
 }
 
