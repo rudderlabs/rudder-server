@@ -1159,13 +1159,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	var triggerPendingUpload bool
 	triggerUploadQP := r.URL.Query().Get(triggerUploadQPName)
 	if triggerUploadQP != "" {
-		triggerPendingUpload, err = strconv.ParseBool(triggerUploadQP)
-		if err != nil {
-			err := fmt.Errorf("Expected %s to be boolean, found %s", triggerUploadQPName, triggerUploadQP)
-			pkgLogger.Errorf("[WH]: %v", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+		triggerPendingUpload, _ = strconv.ParseBool(triggerUploadQP)
 	}
 
 	// trigger upload if there are pending events and triggerPendingUpload is true
