@@ -333,8 +333,6 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if err != nil {
 		// this will force retry in cases where kafka brokers went down
 		// after producer client had been already created
-
-		retryableErrors := []string{errOutOfBrokers, errCircuitBreakerIsOpen}
 		statusCode = 500
 		errString := err.Error()
 

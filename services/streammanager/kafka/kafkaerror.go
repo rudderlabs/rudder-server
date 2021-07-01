@@ -6,6 +6,8 @@ var abortableErrors []string = []string{errOutOfBrokers, errNotConnected, errIns
 	errTopicAuthorizationFailed, errGroupAuthorizationFailed, errClusterAuthorizationFailed, errInvalidConfig, errInvalidRequest, errCircuitBreakerIsOpen,
 }
 
+var retryableErrors []string = []string{errOutOfBrokers, errCircuitBreakerIsOpen}
+
 const (
 	errOutOfBrokers                       string = "kafka: client has run out of available brokers to talk to (Is your cluster reachable?)"
 	errClosedClient                       string = "kafka: tried to use a client that was closed"
