@@ -807,29 +807,6 @@ var _ = Describe("jobsdb", func() {
 				ginkgo.Fail("there were unfulfilled expectations")
 			}
 		})
-
-		/*It("should rollback and panic if delete executing fails", func() {
-			timeNow := time.Now()
-			getTimeNowFunc = func() time.Time {
-				return timeNow
-			}
-
-			c.mock.ExpectBegin()
-
-			ds := dsListInMemory[0]
-			customValQuery := "tt_jobs_1.custom_val='WEBHOOK'"
-			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (SELECT MAX(id) from %[1]s where job_id IN (SELECT job_id from %[2]s WHERE ((%[3]s)) ) GROUP BY job_id)  AND ((job_state='executing')) AND retry_time < $1`, ds.JobStatusTable, ds.JobTable, customValQuery))
-
-			stmt.ExpectExec().WithArgs(timeNow).WillReturnError(errors.New("delete failed. Rollback and then Panic"))
-
-			c.mock.ExpectRollback()
-			Expect(jd.wrapper).To(Panic())
-
-			// we make sure that all expectations were met
-			if err := c.mock.ExpectationsWereMet(); err != nil {
-				ginkgo.Fail(err.Error())
-			}
-		})*/
 	})
 })
 
