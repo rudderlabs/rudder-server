@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../mocks/router/mock_network.go -package mock_network github.com/rudderlabs/rudder-server/router HTTPClient,NetHandleI
+
 package router
 
 import (
@@ -18,8 +20,18 @@ import (
 
 //NetHandleT is the wrapper holding private variables
 type NetHandleT struct {
-	httpClient *http.Client
+	httpClient HTTPClient
 	logger     logger.LoggerI
+}
+
+//Network interface
+type NetHandleI interface {
+	SendPost(structData integrations.PostParametersT) (statusCode int, respBody string)
+}
+
+// HTTPClient interface
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
 //var pkgLogger logger.LoggerI
@@ -42,9 +54,9 @@ func handleQueryParam(param interface{}) string {
 	}
 }
 
-//sendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
+//SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
-func (network *NetHandleT) sendPost(structData integrations.PostParametersT) (statusCode int, respBody string) {
+func (network *NetHandleT) SendPost(structData integrations.PostParametersT) (statusCode int, respBody string) {
 	if disableEgress {
 		return 200, `200: outgoing disabled`
 	}

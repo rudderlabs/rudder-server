@@ -3,6 +3,7 @@ package processor
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -392,7 +393,7 @@ func loadConfig() {
 	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
 	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	// Enable dedup of incoming events by default
-	enableDedup = config.GetBool("Dedup.enableDedup", true)
+	enableDedup = config.GetBool("Dedup.enableDedup", false)
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
@@ -731,14 +732,16 @@ func (proc *HandleT) createSessions() {
 	}
 }
 
-func getSourceByWriteKey(writeKey string) backendconfig.SourceT {
+func getSourceByWriteKey(writeKey string) (backendconfig.SourceT, error) {
+	var err error
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	source, ok := writeKeySourceMap[writeKey]
 	if !ok {
-		panic(fmt.Errorf(`source not found for writeKey: %s`, writeKey))
+		err = errors.New("source not found for writeKey")
+		pkgLogger.Errorf(`Processor : source not found for writeKey: %s`, writeKey)
 	}
-	return source
+	return source, err
 }
 
 func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
@@ -1208,7 +1211,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 				workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 				workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
-				sourceForSingularEvent := getSourceByWriteKey(writeKey)
+				sourceForSingularEvent, sourceIdError := getSourceByWriteKey(writeKey)
+				if sourceIdError != nil {
+					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
+					continue
+				}
 
 				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
 				if len(enabledDestTypes) == 0 {
@@ -1813,34 +1820,7 @@ func (proc *HandleT) mainLoop() {
 }
 
 func (proc *HandleT) crashRecover() {
-	for {
-		execList := proc.gatewayDB.GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: dbReadBatchSize})
-
-		if len(execList) == 0 {
-			break
-		}
-		proc.logger.Debug("Processor crash recovering", len(execList))
-
-		var statusList []*jobsdb.JobStatusT
-
-		for _, job := range execList {
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				JobState:      jobsdb.Failed.State,
-				ErrorCode:     "",
-				ErrorResponse: []byte(`{}`), // check
-			}
-			statusList = append(statusList, &status)
-		}
-		err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
-		if err != nil {
-			pkgLogger.Errorf("Error occurred while marking gateway jobs statuses as failed. Panicking. Err: %v", err)
-			panic(err)
-		}
-	}
+	proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: -1})
 }
 
 func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {
