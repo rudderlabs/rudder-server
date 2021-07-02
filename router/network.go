@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strings"
 	"time"
 
@@ -27,16 +26,20 @@ type NetHandleT struct {
 
 //temp solution for handling complex query params
 func handleQueryParam(param interface{}) string {
-	if reflect.TypeOf(param).Kind() == reflect.String {
-		return param.(string)
-	}
+	switch p := param.(type) {
+	case string:
+		return p
+	case map[string]interface{}:
+		temp, err := json.Marshal(p)
+		if err != nil {
+			return fmt.Sprint(p)
+		}
 
-	if reflect.TypeOf(param).Kind() == reflect.Map {
-		temp, _ := json.Marshal(param)
 		jsonParam := string(temp)
 		return jsonParam
+	default:
+		return fmt.Sprint(param)
 	}
-	return fmt.Sprint(param)
 }
 
 //sendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
