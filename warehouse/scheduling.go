@@ -150,6 +150,10 @@ func (wh *HandleT) canCreateUpload(warehouse warehouseutils.WarehouseT) bool {
 	if startUploadAlways {
 		return true
 	}
+	// return true if the upload was triggered
+	if isUploadTriggered(warehouse) {
+		return true
+	}
 	if warehouseSyncFreqIgnore {
 		return !uploadFrequencyExceeded(warehouse, "")
 	}
