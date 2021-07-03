@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,6 +51,7 @@ var (
 	certificate                   tls.Certificate
 	kafkaDialTimeoutInSec         int64
 	kafkaWriteTimeoutInSec        int64
+	kafkaBatchingEnabled          bool
 )
 
 var (
@@ -74,6 +76,7 @@ func loadConfig() {
 	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
 	kafkaDialTimeoutInSec = config.GetInt64("Router.kafkaDialTimeoutInSec", 10)
 	kafkaWriteTimeoutInSec = config.GetInt64("Router.kafkaWriteTimeoutInSec", 2)
+	kafkaBatchingEnabled, _ = strconv.ParseBool(config.GetEnv("RSERVER_ROUTER_KAFKA_ENABLE_BATCHING", "false"))
 }
 
 func loadCertificate() {
@@ -264,6 +267,25 @@ func prepareMessage(topic string, key string, message []byte, timestamp time.Tim
 	return msg
 }
 
+func prepareBatchedMessage(topic string, batch []map[string]interface{}, timestamp time.Time) []*sarama.ProducerMessage {
+	var batchedMessage []*sarama.ProducerMessage
+
+	for _, data := range batch {
+		message, err := json.Marshal(data["message"])
+
+		if err == nil {
+			msg := &sarama.ProducerMessage{
+				Topic:     topic,
+				Key:       sarama.StringEncoder(data["userId"].(string)),
+				Value:     sarama.StringEncoder(message),
+				Timestamp: timestamp,
+			}
+			batchedMessage = append(batchedMessage, msg)
+		}
+	}
+	return batchedMessage
+}
+
 // NewTLSConfig generates a TLS configuration used to authenticate on server with certificates.
 func NewTLSConfig(caCertFile string) *tls.Config {
 
@@ -315,10 +337,29 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	//pkgLogger.Infof("Created Producer %v\n", producer)
 
 	topic := config.Topic
+	timestamp := time.Now()
+
+	var batch []map[string]interface{}
+	if kafkaBatchingEnabled {
+		err := json.Unmarshal(jsonData, &batch)
+		if err != nil {
+			return makeErrorResponse(err)
+		}
+
+		batchedMessage := prepareBatchedMessage(topic, batch, timestamp)
+		err = kafkaProducer.SendMessages(batchedMessage)
+
+		if err != nil {
+			return makeErrorResponse(err)
+		}
+		returnMessage := fmt.Sprintf("Message delivered in batch")
+		statusCode := 200
+		errorMessage := returnMessage
+		return statusCode, returnMessage, errorMessage
+	}
 
 	parsedJSON := gjson.ParseBytes(jsonData)
 	data := parsedJSON.Get("message").Value().(interface{})
-	timestamp := time.Now()
 	value, err := json.Marshal(data)
 	if err != nil {
 		return makeErrorResponse(err)
