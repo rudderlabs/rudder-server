@@ -33,6 +33,10 @@ phases:
       - cat tests/e2e/config.toml
       - docker-compose -f build/docker-compose.codebuild.yml up -d
       - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 ginkgo -mod vendor tests/e2e"
+      - cp tests/e2e/warehouse/config_overrides.toml  tests/e2e/warehouse/config.toml
+      - sed -i -e 's/^CONFIG_PATH=.*$/CONFIG_PATH=\/app\/tests\/e2e\/warehouse\/config.toml/' build/docker.env
+      - docker-compose -f build/docker-compose.codebuild.yml up -d
+      - docker-compose -f build/docker-compose.codebuild.yml exec -T backend sh -c "CGO_ENABLED=0 WORKSPACE_TOKEN=1tcwkLZSvlGUiAEW0Y8Isb7xcA8 ginkgo tests/e2e/warehouse"
       - docker-compose down
       - export GO111MODULE=on
       - DATE=$(date "+%F,%T")

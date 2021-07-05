@@ -10,7 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/tests/helpers"
-	uuid "github.com/satori/go.uuid"
+	// uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -227,32 +227,32 @@ var _ = Describe("E2E", func() {
 			}
 		})
 
-		It("should dedup duplicate events", func() {
-			sampleID := uuid.NewV4().String()
+		// It("should dedup duplicate events", func() {
+		// 	sampleID := uuid.NewV4().String()
 
-			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			helpers.SendEventRequest(helpers.EventOptsT{
-				MessageID: sampleID,
-			})
-			time.Sleep(10 * time.Second)
-			Eventually(func() int {
-				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
+		// 	initGatewayJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
+		// 	helpers.SendEventRequest(helpers.EventOptsT{
+		// 		MessageID: sampleID,
+		// 	})
+		// 	time.Sleep(10 * time.Second)
+		// 	Eventually(func() int {
+		// 		return helpers.GetJobsCount(dbHandle, routerDBPrefix)
+		// 	}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
 
-			// send 2 events and verify event with prev messageID is dropped
-			currentGatewayJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			helpers.SendEventRequest(helpers.EventOptsT{
-				MessageID: sampleID,
-			})
-			time.Sleep(10 * time.Second)
-			helpers.SendEventRequest(helpers.EventOptsT{
-				MessageID: uuid.NewV4().String(),
-			})
-			time.Sleep(10 * time.Second)
-			Consistently(func() int {
-				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
-		})
+		// 	// send 2 events and verify event with prev messageID is dropped
+		// 	currentGatewayJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
+		// 	helpers.SendEventRequest(helpers.EventOptsT{
+		// 		MessageID: sampleID,
+		// 	})
+		// 	time.Sleep(10 * time.Second)
+		// 	helpers.SendEventRequest(helpers.EventOptsT{
+		// 		MessageID: uuid.NewV4().String(),
+		// 	})
+		// 	time.Sleep(10 * time.Second)
+		// 	Consistently(func() int {
+		// 		return helpers.GetJobsCount(dbHandle, routerDBPrefix)
+		// 	}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
+		// })
 
 		// It("should dedup duplicate events only till specified TTL", func() {
 		// 	sampleID := uuid.NewV4().String()

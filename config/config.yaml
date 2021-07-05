@@ -112,7 +112,7 @@ Router:
 BatchRouter:
   mainLoopSleepInS: 2
   jobQueryBatchSize: 100000
-  uploadFreqInS: 30
+  uploadFreqInS: 1
   warehouseServiceMaxRetryTimeinHr: 3
   noOfWorkers: 8
   maxFailedCountForJob: 128
@@ -120,16 +120,16 @@ BatchRouter:
 Warehouse:
   mode: embedded
   webPort: 8082
-  uploadFreqInS: 1800
+  uploadFreqInS: 1
   noOfWorkers: 8
   noOfSlaveWorkerRoutines: 4
-  mainLoopSleepInS: 5
+  mainLoopSleepInS: 1
   minRetryAttempts: 3
   retryTimeWindowInMins: 180
   minUploadBackoffInS: 60
   maxUploadBackoffInS: 1800
   warehouseSyncPreFetchCount: 10
-  warehouseSyncFreqIgnore: false
+  warehouseSyncFreqIgnore: true
   stagingFilesBatchSize: 960
   enableIDResolution: false
   populateHistoricIdentities: false
@@ -176,7 +176,7 @@ Processor:
   Stats:
     captureEventName: false
 Dedup:
-  enableDedup: true
+  enableDedup: false
   dedupWindowInS: 3
 BackendConfig:
   configFromFile: false

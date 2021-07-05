@@ -59,6 +59,7 @@ func init() {
 	}
 	hotReloadableConfig = make(map[string]*ConfigVar)
 	configPath := GetEnv("CONFIG_PATH", "./config/config.yaml")
+	fmt.Println("configPath",configPath)
 	viper.SetConfigFile(configPath)
 	err := viper.ReadInConfig() // Find and read the config file
 	UpdateConfig()
