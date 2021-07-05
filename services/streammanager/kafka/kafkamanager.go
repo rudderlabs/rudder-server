@@ -161,6 +161,11 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 		}
 	}
 
+	if kafkaBatchingEnabled {
+		config.Producer.Flush.Messages = 5
+		config.Producer.Flush.MaxMessages = 5
+	}
+
 	producer, err := sarama.NewSyncProducer(hosts, config)
 
 	return producer, err
@@ -267,23 +272,25 @@ func prepareMessage(topic string, key string, message []byte, timestamp time.Tim
 	return msg
 }
 
-func prepareBatchedMessage(topic string, batch []map[string]interface{}, timestamp time.Time) []*sarama.ProducerMessage {
+func prepareBatchedMessage(topic string, batch []map[string]interface{}, timestamp time.Time) (batchMessage []*sarama.ProducerMessage, err error) {
 	var batchedMessage []*sarama.ProducerMessage
 
 	for _, data := range batch {
 		message, err := json.Marshal(data["message"])
 
-		if err == nil {
-			msg := &sarama.ProducerMessage{
-				Topic:     topic,
-				Key:       sarama.StringEncoder(data["userId"].(string)),
-				Value:     sarama.StringEncoder(message),
-				Timestamp: timestamp,
-			}
-			batchedMessage = append(batchedMessage, msg)
+		if err != nil {
+			return nil, err
 		}
+
+		msg := &sarama.ProducerMessage{
+			Topic:     topic,
+			Key:       sarama.StringEncoder(data["userId"].(string)),
+			Value:     sarama.StringEncoder(message),
+			Timestamp: timestamp,
+		}
+		batchedMessage = append(batchedMessage, msg)
 	}
-	return batchedMessage
+	return batchedMessage, nil
 }
 
 // NewTLSConfig generates a TLS configuration used to authenticate on server with certificates.
@@ -339,20 +346,24 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	topic := config.Topic
 	timestamp := time.Now()
 
-	var batch []map[string]interface{}
 	if kafkaBatchingEnabled {
+		var batch []map[string]interface{}
 		err := json.Unmarshal(jsonData, &batch)
 		if err != nil {
-			return makeErrorResponse(err)
+			return 400, "Failure", "Error while unmarshalling json data :: " + err.Error()
 		}
 
-		batchedMessage := prepareBatchedMessage(topic, batch, timestamp)
-		err = kafkaProducer.SendMessages(batchedMessage)
-
+		batchedMessage, err := prepareBatchedMessage(topic, batch, timestamp)
 		if err != nil {
-			return makeErrorResponse(err)
+			return 400, "Failure", "Error while preparing batched message :: " + err.Error()
 		}
-		returnMessage := fmt.Sprintf("Message delivered in batch")
+
+		err = kafkaProducer.SendMessages(batchedMessage)
+		if err != nil {
+			return makeErrorResponse(err) // would retry the messages in batch in case brokers are down
+		}
+
+		returnMessage := "Message delivered in batch"
 		statusCode := 200
 		errorMessage := returnMessage
 		return statusCode, returnMessage, errorMessage

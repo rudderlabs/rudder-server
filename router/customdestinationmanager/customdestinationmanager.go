@@ -201,13 +201,26 @@ func (customManager *CustomManagerT) refreshClient(destID string) error {
 	return nil
 }
 
+func genComparisonConfig(configMap interface{}) map[string]interface{} {
+	var newMap = make(map[string]interface{})
+	for k, v := range configMap.(map[string]interface{}) {
+		if k != "eventDeliveryTS" && k != "eventDelivery" {
+			newMap[k] = v
+		}
+	}
+	return newMap
+}
+
 func (customManager *CustomManagerT) onConfigChange(destination backendconfig.DestinationT) error {
 	newDestConfig := destination.Config
 	customDestination, ok := customManager.destinationsMap[destination.ID]
 
 	if ok {
-		hasDestConfigChanged := !reflect.DeepEqual(customDestination.Config, newDestConfig)
-
+		// hasDestConfigChanged := !reflect.DeepEqual(customDestination.Config, newDestConfig)
+		hasDestConfigChanged := !reflect.DeepEqual(
+			genComparisonConfig(customDestination.Config),
+			genComparisonConfig(newDestConfig),
+		)
 		if !hasDestConfigChanged {
 			return nil
 		}
