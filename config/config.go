@@ -93,9 +93,9 @@ func watchForConfigChange() {
 	}
 }
 
-func checkAndUpdateConfig(config map[string]*ConfigVar) bool {
+func checkAndUpdateConfig(configMap map[string]*ConfigVar) bool {
 	isChanged := false
-	for key, configVal := range nonHotReloadableConfig {
+	for key, configVal := range configMap {
 		value := configVal.value
 		switch value := value.(type) {
 		case *int:
