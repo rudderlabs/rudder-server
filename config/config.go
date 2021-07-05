@@ -189,9 +189,8 @@ func checkAndUpdateConfig(config map[string]*ConfigVar) bool {
 				}
 			}
 			if !isSet {
-				_value = configVal.defaultValue.(time.Duration)
+				_value = configVal.defaultValue.(time.Duration) * configVal.multiplier.(time.Duration)
 			}
-			_value = _value * configVal.multiplier.(time.Duration)
 			if _value != *value {
 				isChanged = true
 				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)

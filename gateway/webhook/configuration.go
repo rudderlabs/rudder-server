@@ -22,5 +22,5 @@ func loadConfig() {
 	// Min time gap when retries to source transformer are done
 	config.RegisterDurationConfigVariable(time.Duration(100),&webhookRetryWaitMin,false,time.Second,[]string{"Gateway.webhook.minRetryTime","Gateway.webhook.minRetryTimeInMS"}...)
 	// Max retry attempts to source transformer
-	config.RegisterIntConfigVariable(5,&maxTransformerProcess, false, 1, "Gateway.webhook.maxRetry")
+	config.RegisterIntConfigVariable(5,&webhookRetryMax, false, 1, "Gateway.webhook.maxRetry")
 }
