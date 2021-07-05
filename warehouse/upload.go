@@ -1171,7 +1171,6 @@ func (job *UploadJobT) setSchema(consolidatedSchema warehouseutils.SchemaT) erro
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("\n\n\n\n\n\n ******* Setting upload schema - ", consolidatedSchema)
 	job.upload.Schema = consolidatedSchema
 	// return job.setUploadColumns(
 	// 	UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
@@ -1521,12 +1520,22 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		var messages []pgnotifier.MessageT
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
 
-			
+			// get updated(local+upload) schemas for all tables in upload schema
+			// TODO: Compute before and store in schemaHandle or somewhere else
+			updatedSchema := warehouseutils.SchemaT{}
+			for tName := range job.upload.Schema {
+				// TODO: decide whether to use local schema or warehouse schema
+				// TODO: add a function to merge schemas - the current merge schema function wont help here since it iterates over the given schemaList and merges schema just for the schemas in the list.It ignores columns in the current schema but not in the upload schema.
+				diff := getTableSchemaDiff(tName, job.schemaHandle.localSchema, job.upload.Schema)
+				updatedSchema[tName] = diff.UpdatedSchema
+			}
+
 			payload := PayloadT{
 				UploadID:            job.upload.ID,
 				StagingFileID:       stagingFile.ID,
 				StagingFileLocation: stagingFile.Location,
 				Schema:              job.upload.Schema,
+				UpdatedSchema:       updatedSchema,
 				SourceID:            job.warehouse.Source.ID,
 				SourceName:          job.warehouse.Source.Name,
 				DestinationID:       destID,

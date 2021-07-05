@@ -11,9 +11,18 @@ type EventLoader interface {
 	WriteToString() (string, error)
 }
 
-func GetNewEventLoader(destinationType string) EventLoader {
-	if destinationType == "BQ" {
-		return NewJSONLoader(destinationType)
-	}
-	return NewCSVLoader(destinationType)
+// type Writer interface {
+// 	Write(p []byte) (n int, err error)
+// 	WriteRow(p []interface{}) error
+// 	WriteString(p string) error
+// 	Close() error
+// 	GetLoadFile() *os.File
+// }
+
+func GetNewEventLoader(destinationType string, w LoadFileWriterI) EventLoader {
+	// if destinationType == "BQ" {
+	// 	return NewJSONLoader(destinationType)
+	// }
+	// return NewCSVLoader(destinationType)
+	return NewParquetLoader(destinationType, w)
 }

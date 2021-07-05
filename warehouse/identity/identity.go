@@ -156,7 +156,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 	}
 	columnNames := []string{"merge_property_type", "merge_property_value", "rudder_id", "updated_at"}
 	for _, row := range rows {
-		eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type)
+		eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type, gzWriter)
 		eventLoader.AddRow(columnNames, row)
 		data, _ := eventLoader.WriteToString()
 		gzWriter.WriteGZ(data)
@@ -319,7 +319,7 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 		columnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value"}
 		for rows.Next() {
 			var rowData []string
-			eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type)
+			eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type, gzWriter)
 			var prop1Val, prop2Val, prop1Type, prop2Type sql.NullString
 			err = rows.Scan(&prop1Type, &prop1Val, &prop2Type, &prop2Val)
 			if err != nil {

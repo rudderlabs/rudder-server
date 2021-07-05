@@ -40,12 +40,12 @@ func handleSchemaChange(existingDataType string, columnType string, columnVal in
 	return newColumnVal, true
 }
 
-func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, gzWriter misc.GZipWriter) error {
+func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, gzWriter warehouseutils.LoadFileWriterI) error {
 	job := jobRun.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
 	if hasID && hasReceivedAt {
-		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType)
+		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, gzWriter)
 		eventLoader.AddColumn("column_name", columnName)
 		eventLoader.AddColumn("column_value", fmt.Sprintf("%v", columnVal))
 		eventLoader.AddColumn("received_at", receivedAt)
