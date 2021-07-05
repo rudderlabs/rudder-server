@@ -84,156 +84,17 @@ func watchForConfigChange() {
 			fmt.Println(err)
 		}
 	}()
-	isChanged := false
 	configVarLock.RLock()
 	defer configVarLock.RUnlock()
-	for key, configVal := range hotReloadableConfig {
-		value := configVal.value
-		switch value := value.(type) {
-		case *int:
-			var _value int
-			var isSet bool
-			envVal := GetEnv(TransformKey(key), "")
-			if envVal != "" {
-				isSet = true
-				_value = cast.ToInt(envVal)
-			} else {
-				for _, key := range configVal.keys {
-					if viper.IsSet(key) {
-						isSet = true
-						_value = GetInt(key, configVal.defaultValue.(int))
-						break
-					}
-				}
-			}
-			if !isSet {
-				_value = configVal.defaultValue.(int)
-			}
-			_value = _value * configVal.multiplier.(int)
-			if _value != *value {
-				fmt.Printf("The value of %s changed from %d to %d\n", key, *value, _value)
-				*value = _value
-			}
-		case *int64:
-			var _value int64
-			var isSet bool
-			envVal := GetEnv(TransformKey(key), "")
-			if envVal != "" {
-				isSet = true
-				_value = cast.ToInt64(envVal)
-			} else {
-				for _, key := range configVal.keys {
-					if viper.IsSet(key) {
-						isSet = true
-						_value = GetInt64(key, configVal.defaultValue.(int64))
-						break
-					}
-				}
-			}
-			if !isSet {
-				_value = configVal.defaultValue.(int64)
-			}
-			_value = _value * configVal.multiplier.(int64)
-			if _value != *value {
-				fmt.Printf("The value of %s changed from %d to %d\n", key, *value, _value)
-				*value = _value
-			}
-		case *string:
-			var _value string
-			var isSet bool
-			envVal := GetEnv(TransformKey(key), "")
-			if envVal != "" {
-				isSet = true
-				_value = cast.ToString(envVal)
-			} else {
-				for _, key := range configVal.keys {
-					if viper.IsSet(key) {
-						isSet = true
-						_value = GetString(key, configVal.defaultValue.(string))
-						break
-					}
-				}
-			}
-			if !isSet {
-				_value = configVal.defaultValue.(string)
-			}
-			if _value != *value {
-				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
-				*value = _value
-			}
-		case *time.Duration:
-			var _value time.Duration
-			var isSet bool
-			envVal := GetEnv(TransformKey(key), "")
-			if envVal != "" {
-				isSet = true
-				_value = cast.ToDuration(envVal)
-			} else {
-				for _, key := range configVal.keys {
-					if viper.IsSet(key) {
-						isSet = true
-						_value= GetDuration(key, configVal.defaultValue.(time.Duration),configVal.multiplier.(time.Duration))
-						break
-					}
-				}
-			}
-			if !isSet {
-				_value = configVal.defaultValue.(time.Duration)
-			}
-			_value = _value * configVal.multiplier.(time.Duration)
-			if _value != *value {
-				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
-				*value = _value
-			}
-		case *bool:
-			var _value bool
-			var isSet bool
-			envVal := GetEnv(TransformKey(key), "")
-			if envVal != "" {
-				isSet = true
-				_value = cast.ToBool(envVal)
-			} else {
-				for _, key := range configVal.keys {
-					if viper.IsSet(key) {
-						isSet = true
-						_value = GetBool(key, configVal.defaultValue.(bool))
-						break
-					}
-				}
-			}
-			if !isSet {
-				_value = configVal.defaultValue.(bool)
-			}
-			if _value != *value {
-				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
-				*value = _value
-			}
-		case *float64:
-			var _value float64
-			var isSet bool
-			envVal := GetEnv(TransformKey(key), "")
-			if envVal != "" {
-				isSet = true
-				_value = cast.ToFloat64(envVal)
-			} else {
-				for _, key := range configVal.keys {
-					if viper.IsSet(key) {
-						isSet = true
-						_value = GetFloat64(key, configVal.defaultValue.(float64))
-						break
-					}
-				}
-			}
-			if !isSet {
-				_value = configVal.defaultValue.(float64)
-			}
-			_value = _value * configVal.multiplier.(float64)
-			if _value != *value {
-				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
-				*value = _value
-			}
-		}
+	_ = checkAndUpdateConfig(hotReloadableConfig)
+	isChanged := checkAndUpdateConfig(nonHotReloadableConfig)
+	if isChanged && GetEnvAsBool("canRestartOnConfigChange",false){
+		os.Exit(1)
 	}
+}
+
+func checkAndUpdateConfig(config map[string]*ConfigVar) bool {
+	isChanged := false
 	for key, configVal := range nonHotReloadableConfig {
 		value := configVal.value
 		switch value := value.(type) {
@@ -387,11 +248,8 @@ func watchForConfigChange() {
 			}
 		}
 	}
-	if isChanged && GetEnvAsBool("canRestartOnConfigChange",false){
-		os.Exit(1)
-	}
+	return isChanged
 }
-
 //GetBool is a wrapper for viper's GetBool
 func GetBool(key string, defaultValue bool) (value bool) {
 
