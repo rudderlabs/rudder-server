@@ -206,7 +206,10 @@ func (customManager *CustomManagerT) onConfigChange(destination backendconfig.De
 	customDestination, ok := customManager.destinationsMap[destination.ID]
 
 	if ok {
-		hasDestConfigChanged := !reflect.DeepEqual(customDestination.Config, newDestConfig)
+		hasDestConfigChanged := !reflect.DeepEqual(
+			genComparisonConfig(customDestination.Config),
+			genComparisonConfig(newDestConfig),
+		)
 
 		if !hasDestConfigChanged {
 			return nil
@@ -278,4 +281,14 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 		}
 		customManager.configSubscriberLock.Unlock()
 	}
+}
+
+func genComparisonConfig(configMap interface{}) map[string]interface{} {
+	var relevantConfigs = make(map[string]interface{})
+	for k, v := range configMap.(map[string]interface{}) {
+		if k != "eventDeliveryTS" && k != "eventDelivery" {
+			relevantConfigs[k] = v
+		}
+	}
+	return relevantConfigs
 }
