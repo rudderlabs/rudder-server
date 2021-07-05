@@ -153,7 +153,6 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
 	config.RegisterIntConfigVariable(3, &minRetryAttempts, true, 1, "Warehouse.minRetryAttempts")
 	config.RegisterDurationConfigVariable(time.Duration(180), &retryTimeWindow, true, time.Minute, []string{"Warehouse.retryTimeWindow","Warehouse.retryTimeWindowInMins"}...)
-	destinationsMap = map[string]warehouseutils.WarehouseT{}
 	connectionsMap = map[string]map[string]warehouseutils.WarehouseT{}
 	triggerUploadsMap = map[string]bool{}
 	sourceIDsByWorkspace = map[string][]string{}
