@@ -1,9 +1,12 @@
 package warehouseutils_test
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	"github.com/rudderlabs/rudder-server/warehouse"
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -186,4 +189,47 @@ var _ = Describe("Utils", func() {
 	// 		})
 	// 	})
 	// })
+
+	FIt("parquet", func() {
+
+		// file, err := os.OpenFile("/Users/dhawal/rudder-server/parquetTest/c1.parquet", os.O_WRONLY|os.O_APPEND|os.O_CREATE|os.O_TRUNC, 0660)
+		// if err != nil {
+		// 	return
+		// }
+		// w := bufio.NewWriter(file)
+		// fmt.Println(err)
+		// Expect(err).To(BeNil())
+
+		// pqloader := &ParquetLoader{
+		// 	FileWriter: w,
+		// }
+		// fmt.Println("lullll", pqloader)
+
+		// pqloader.AddColumn("Abc", "ABC")
+		// pqloader.AddColumn("Abcd", "ABCD")
+		// pqloader.AddColumn("Num", "dada")
+		// pqloader.AddColumn("Num1111", "111dada")
+		// pqloader.AddEmptyColumn("empty")
+
+		// err = pqloader.WriteEventToFile()
+		// fmt.Println(err)
+
+		// err = w.Flush()
+		// Expect(err).To(BeNil())
+		// err = file.Close()
+		// Expect(err).To(BeNil())
+		// fmt.Println(err)
+
+		j := warehouse.CreateDummyJobRun()
+
+		j.
+	})
 })
+
+type w struct {
+}
+
+func (w w) Write(p []byte) (int, error) {
+	fmt.Println(string(p))
+	return len(p), nil
+}

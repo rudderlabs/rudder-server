@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
+	"github.com/xitongsys/parquet-go/writer"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -166,6 +168,14 @@ type TableSchemaDiffT struct {
 type QueryResult struct {
 	Columns []string
 	Values  [][]string
+}
+
+type LoadFileWriterI interface {
+	WriteGZ(s string) error
+	Write(p []byte) (int, error)
+	WriteRow(r []interface{}) error
+	Close() error
+	GetLoadFile() *os.File
 }
 
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
@@ -600,4 +610,52 @@ func GetTempFileExtension(destType string) string {
 		return "json.gz"
 	}
 	return "csv.gz"
+}
+
+func GetParquetSchema(schema TableSchemaT) []string {
+	return nil
+}
+
+type ParquetWriter struct {
+	ParquetWriter *writer.CSVWriter
+	FileWriter    misc.GZipWriter
+	Schema        []string
+}
+
+func CreateParquetWriter(schema TableSchemaT, fileWriter misc.GZipWriter) (*ParquetWriter, error) {
+	pSchema := GetParquetSchema(schema)
+	w, err := writer.NewCSVWriterFromWriter(pSchema, fileWriter, 4)
+	if err != nil {
+		return nil, err
+	}
+	return &ParquetWriter{
+		ParquetWriter: w,
+		Schema:        pSchema,
+		FileWriter:    fileWriter,
+	}, nil
+}
+
+func (p *ParquetWriter) WriteRow(row []interface{}) error {
+	return p.ParquetWriter.Write(row)
+}
+
+func (p *ParquetWriter) Close() error {
+	err := p.ParquetWriter.WriteStop()
+	if err != nil {
+		return err
+	}
+	// close the gzWriter also
+	return p.FileWriter.Close()
+}
+
+func (p *ParquetWriter) WriteGZ(s string) error {
+	return errors.New("not implemented")
+}
+
+func (p *ParquetWriter) Write(b []byte) (int, error) {
+	return 0, errors.New("not implemented")
+}
+
+func (p *ParquetWriter) GetLoadFile() *os.File {
+	return p.FileWriter.GetLoadFile()
 }

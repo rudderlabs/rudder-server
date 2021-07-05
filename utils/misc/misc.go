@@ -8,6 +8,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -640,18 +641,36 @@ func CreateGZ(s string) (w GZipWriter, err error) {
 	return
 }
 
-func (w GZipWriter) WriteGZ(s string) {
+func (w GZipWriter) WriteGZ(s string) error {
 	count, err := w.BufWriter.WriteString(s)
 	if err != nil {
 		pkgLogger.Errorf(`[GZWriter]: Error writing string of length %d by GZipWriter.WriteGZ. Bytes written: %d. Error: %v`, len(s), count, err)
 	}
+	return err
 }
 
-func (w GZipWriter) Write(b []byte) {
-	count, err := w.BufWriter.Write(b)
+func (w GZipWriter) WriteString(s string) error {
+	return w.WriteGZ(s)
+}
+
+func (w GZipWriter) Write(b []byte) (count int, err error) {
+	count, err = w.BufWriter.Write(b)
 	if err != nil {
 		pkgLogger.Errorf(`[GZWriter]: Error writing bytes of length %d by GZipWriter.Write. Bytes written: %d. Error: %v`, len(b), count, err)
 	}
+	return
+}
+
+func (w GZipWriter) WriteRow(row []interface{}) error {
+	return errors.New("not implemented")
+}
+
+func (w GZipWriter) Close() error {
+	return w.CloseGZ()
+}
+
+func (w GZipWriter) GetLoadFile() *os.File {
+	return w.File
 }
 
 func (w GZipWriter) CloseGZ() error {
