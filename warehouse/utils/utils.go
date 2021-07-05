@@ -168,6 +168,22 @@ type QueryResult struct {
 	Values  [][]string
 }
 
+type PendingEventsRequestT struct {
+	SourceID  string `json:"source_id"`
+	TaskRunID string `json:"task_run_id"`
+}
+
+type PendingEventsResponseT struct {
+	PendingEvents            bool `json:"pending_events"`
+	PendingStagingFilesCount int64  `json:"pending_staging_files"`
+	PendingUploadCount       int64  `json:"pending_uploads"`
+}
+
+type TriggerUploadRequestT struct {
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
+}
+
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
 	timingsMap := gjson.Parse(str.String).Map()
 	for s, t := range timingsMap {
