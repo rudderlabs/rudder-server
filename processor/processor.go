@@ -1157,6 +1157,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.marshalSingularEvents.Start()
 	uniqueMessageIds := make(map[string]struct{})
+	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 	var sourceDupStats = make(map[string]int)
 
 	reportMetrics := make([]*types.PUReportedMetric, 0)
@@ -1259,6 +1260,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						}
 						groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey],
 							shallowEventCopy)
+						if _, ok := uniqueMessageIdsBySrcDestKey[srcAndDestKey]; !ok {
+							uniqueMessageIdsBySrcDestKey[srcAndDestKey] = make(map[string]struct{})
+						}
+						uniqueMessageIdsBySrcDestKey[srcAndDestKey][commonMetadataFromSingularEvent.MessageID] = struct{}{}
 					}
 				}
 
@@ -1405,7 +1410,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			userTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
 
-			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: &destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIds})
+			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: &destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
 
 			//REPORTING - START
 			if proc.reporting != nil && proc.reportingEnabled {
