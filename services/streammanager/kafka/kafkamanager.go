@@ -161,11 +161,6 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 		}
 	}
 
-	if kafkaBatchingEnabled {
-		config.Producer.Flush.Messages = 5
-		config.Producer.Flush.MaxMessages = 5
-	}
-
 	producer, err := sarama.NewSyncProducer(hosts, config)
 
 	return producer, err
