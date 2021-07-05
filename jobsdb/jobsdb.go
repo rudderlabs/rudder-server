@@ -77,6 +77,10 @@ type StatTagsT struct {
 	StateFilters     []string
 }
 
+var getTimeNowFunc = func() time.Time {
+	return time.Now()
+}
+
 /*
 JobsDB interface contains public methods to access JobsDB data
 */
@@ -566,13 +570,26 @@ dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
 func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
-	jd.queryFilterKeys = queryFilterKeys
 	jd.initGlobalDBHandle()
+
+	var err error
+	psqlInfo := GetConnectionString()
+	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
+	jd.assertError(err)
+
+	err = jd.dbHandle.Ping()
+	jd.assertError(err)
+
+	jd.workersAndAuxSetup(ownerType, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
+	jd.setUpForOwnerType(ownerType, clearAll)
+}
+
+func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+	jd.queryFilterKeys = queryFilterKeys
+
 	jd.ownerType = ownerType
 	jd.logger = pkgLogger.Child(tablePrefix)
-	var err error
 	jd.migrationState.migrationMode = migrationMode
-	psqlInfo := GetConnectionString()
 	jd.assert(tablePrefix != "", "tablePrefix received is empty")
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
@@ -582,12 +599,6 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	}
 
 	jd.BackupSettings = jd.getBackUpSettings()
-
-	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
-	jd.assertError(err)
-
-	err = jd.dbHandle.Ping()
-	jd.assertError(err)
 
 	jd.logger.Infof("Connected to %s DB", tablePrefix)
 
@@ -612,7 +623,9 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	config.RegisterIntConfigVariable(3, &jd.maxReaders, false, 1, maxReadersKeys...)
 	jd.initDBWriters()
 	jd.initDBReaders()
+}
 
+func (jd *HandleT) setUpForOwnerType(ownerType OwnerType, clearAll bool) {
 	switch ownerType {
 	case Read:
 		jd.readerSetup()
@@ -847,10 +860,17 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 	for idx, ds := range dsList {
 		jd.assert(ds.Index != "", "ds.Index is empty")
 		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)
-		row := jd.dbHandle.QueryRow(sqlStatement)
-		err := row.Scan(&minID, &maxID)
+		//Note: Using Query instead of QueryRow, because the sqlmock library doesn't have support for QueryRow
+		rows, err := jd.dbHandle.Query(sqlStatement)
 		jd.assertError(err)
+		for rows.Next() {
+			err := rows.Scan(&minID, &maxID)
+			jd.assertError(err)
+			break
+		}
 		jd.logger.Debug(sqlStatement, minID, maxID)
+
+		rows.Close()
 		//We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
 		// 2. Migration target ds
@@ -1934,7 +1954,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
 		jd.assertError(err)
 		defer stmt.Close()
-		rows, err = stmt.Query(time.Now())
+		rows, err = stmt.Query(getTimeNowFunc())
 		jd.assertError(err)
 		defer rows.Close()
 	}
@@ -3287,7 +3307,7 @@ func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 		return 0, err
 	}
 	defer stmt.Close()
-	res, err := stmt.Exec(time.Now())
+	res, err := stmt.Exec(getTimeNowFunc())
 	if err != nil {
 		return 0, err
 	}

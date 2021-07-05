@@ -11,6 +11,7 @@ require (
 	github.com/Azure/go-autorest/autorest/adal v0.8.1 // indirect
 	github.com/BurntSushi/toml v0.3.1
 	github.com/ClickHouse/clickhouse-go v1.4.1
+	github.com/DATA-DOG/go-sqlmock v1.5.0
 	github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d // indirect
 	github.com/EagleChen/restrictor v0.0.0-20180420073700-9b81bbf8df1d
 	github.com/Shopify/sarama v1.26.1
@@ -37,6 +38,7 @@ require (
 	github.com/hashicorp/yamux v0.0.0-20200609203250-aecfd211c9ce
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334
 	github.com/jeremywohl/flatten v1.0.1
+	github.com/jinzhu/copier v0.3.2
 	github.com/joho/godotenv v1.3.0
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.3.0
@@ -61,7 +63,7 @@ require (
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.6.2
-	github.com/stretchr/testify v1.6.1 // indirect
+	github.com/stretchr/testify v1.6.1
 	github.com/thoas/go-funk v0.5.0
 	github.com/tidwall/gjson v1.5.0
 	github.com/tidwall/pretty v1.0.1 // indirect
