@@ -421,6 +421,10 @@ func SetFeaturesRetryAttempts(overrideAttempts int) {
 	attempts = overrideAttempts
 }
 
+func SetIsUnlocked(bool bool) {
+	isUnLocked = bool
+}
+
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	proc.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
