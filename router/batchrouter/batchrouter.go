@@ -45,7 +45,6 @@ var (
 	objectStorageDestinations          []string
 	warehouseDestinations              []string
 	warehouseURL                       string
-	warehouseMode                      string
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTimeinHr   time.Duration
@@ -1189,20 +1188,6 @@ func IsWarehouseDestination(destType string) bool {
 	return misc.Contains(warehouseDestinations, destType)
 }
 
-func isWarehouseMasterEnabled() bool {
-	return warehouseMode == config.EmbeddedMode ||
-		warehouseMode == config.PooledWHSlaveMode
-}
-
-func getWarehouseURL() (url string) {
-	if isWarehouseMasterEnabled() {
-		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
-	} else {
-		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
-	}
-	return
-}
-
 func (brt *HandleT) collectMetrics() {
 	if diagnostics.EnableBatchRouterMetric {
 		for range brt.diagnosisTicker.C {
@@ -1237,8 +1222,7 @@ func loadConfig() {
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
-	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	warehouseURL = getWarehouseURL()
+	warehouseURL = misc.GetWarehouseURL()
 	// Time period for diagnosis ticker
 	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
 	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
