@@ -375,7 +375,7 @@ func (job *UploadJobT) run() (err error) {
 			var startLoadFileID, endLoadFileID int64
 			startLoadFileID, endLoadFileID, err = job.createLoadFiles(generateAll)
 			if err != nil {
-				job.setStagingFilesStatus(job.stagingFiles, warehouseutils.StagingFileFailedState, err)
+				job.setStagingFilesStatus(job.stagingFiles, warehouseutils.StagingFileFailedState)
 				break
 			}
 
@@ -1413,17 +1413,13 @@ func (job *UploadJobT) getAttemptNumber() int {
 	return int(attempts)
 }
 
-func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, status string, statusError error) (err error) {
+func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, status string) (err error) {
 	var ids []int64
 	for _, stagingFile := range stagingFiles {
 		ids = append(ids, stagingFile.ID)
 	}
-	// TODO: json.Marshal error instead of quoteliteral
-	if statusError == nil {
-		statusError = fmt.Errorf("{}")
-	}
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=ANY($4)`, warehouseutils.WarehouseStagingFilesTable)
-	_, err = dbHandle.Exec(sqlStatement, status, misc.QuoteLiteral(statusError.Error()), timeutil.Now(), pq.Array(ids))
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseutils.WarehouseStagingFilesTable)
+	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), pq.Array(ids))
 	if err != nil {
 		panic(err)
 	}
@@ -1508,7 +1504,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	}
 	job.deleteLoadFiles(toProcessStagingFiles)
 
-	job.setStagingFilesStatus(toProcessStagingFiles, warehouseutils.StagingFileExecutingState, nil)
+	job.setStagingFilesStatus(toProcessStagingFiles, warehouseutils.StagingFileExecutingState)
 
 	saveLoadFileErrs := []error{}
 	for i := 0; i < len(toProcessStagingFiles); i += publishBatchSize {
