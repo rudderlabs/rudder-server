@@ -24,12 +24,12 @@ services:
   # Uncomment the following lines to mount workspaceConfig file
   # volumes:
   #   - <absolute_path_to_workspace_config>:/etc/rudderstack/workspaceConfig.json
-  d-transformer:
-    build:
-      context: ./rudder-transformer/
-      dockerfile: Dockerfile
-    ports:
-      - "9090:9090"
+#  d-transformer:
+#    build:
+#      context: ./rudder-transformer/
+#      dockerfile: Dockerfile
+#    ports:
+#      - "9090:9090"
   # minio:
   #   image: minio/minio
   #   ports:

@@ -1083,6 +1083,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
+	var groupedEventsBySourceID = make(map[string][]transformer.TransformerEventT)
 	var eventsByMessageID = make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 
@@ -1155,8 +1156,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				//event
 				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
-				workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-				workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
 				sourceForSingularEvent := getSourceByWriteKey(writeKey)
 
 				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
@@ -1166,43 +1165,73 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				}
 
 				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(singularEvent, batchEvent, receivedAt, sourceForSingularEvent)
-				enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
-				for _, destType := range enabledDestTypes {
-					enabledDestinationsList := getEnabledDestinations(writeKey, destType)
-					enabledDestinationsMap[destType] = enabledDestinationsList
 
-					// Adding a singular event multiple times if there are multiple destinations of same type
-					for _, destination := range enabledDestinationsList {
-						shallowEventCopy := transformer.TransformerEventT{}
-						shallowEventCopy.Message = singularEvent
-						shallowEventCopy.Destination = reflect.ValueOf(destination).Interface().(backendconfig.DestinationT)
-						shallowEventCopy.Libraries = workspaceLibraries
-						//TODO: Test for multiple workspaces ex: hosted data plane
-						/* Stream destinations does not need config in transformer. As the Kafka destination config
-						holds the ca-certificate and it depends on user input, it may happen that they provide entire
-						certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
-						it may result into payload larger than accepted by transformer. So, discarding destination config from being
-						sent to transformer for such destination. */
-						if misc.ContainsString(customDestinations, destType) {
-							shallowEventCopy.Destination.Config = nil
-						}
+				_, ok = groupedEventsBySourceID[commonMetadataFromSingularEvent.SourceID]
+				if !ok {
+					groupedEventsBySourceID[commonMetadataFromSingularEvent.SourceID] = make([]transformer.TransformerEventT, 0)
+				}
+				shallowEventCopy := transformer.TransformerEventT{}
+				shallowEventCopy.Message = singularEvent
+				shallowEventCopy.Message["request_ip"] = requestIP
 
-						shallowEventCopy.Message["request_ip"] = requestIP
-
-						enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-						enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, destination)
-
-						metadata := shallowEventCopy.Metadata
-						srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
-						//We have at-least one event so marking it good
-						_, ok = groupedEvents[srcAndDestKey]
-						if !ok {
-							groupedEvents[srcAndDestKey] = make([]transformer.TransformerEventT, 0)
-						}
-						groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey],
-							shallowEventCopy)
+				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
+				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, backendconfig.DestinationT{})
+				configT, ok := proc.backendConfig.Get()
+				if(!ok) {
+					pkgLogger.Errorf("unable to get backend config")
+				}
+				for _, source := range configT.Sources {
+					if (source.ID == commonMetadataFromSingularEvent.SourceID && !source.DgSourceTrackingPlanConfig.Deleted) {
+						// TODO: TP preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig
+						shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlanId
+						//TODO : TrackingPlanVersion is not yet supported by configBE
+						//shallowEventCopy.Metadata.TrackingPlanVersion = source.DgSourceTrackingPlanConfig.TrackingPlanVersion
+						shallowEventCopy.Metadata.TrackingPlanVersion = 1
+						shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
+						break
 					}
 				}
+				groupedEventsBySourceID[commonMetadataFromSingularEvent.SourceID] = append(groupedEventsBySourceID[commonMetadataFromSingularEvent.SourceID],
+					shallowEventCopy)
+
+				//// The below part needs to be done after tp validation
+				//enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
+				//for _, destType := range enabledDestTypes {
+				//	enabledDestinationsList := getEnabledDestinations(writeKey, destType)
+				//	enabledDestinationsMap[destType] = enabledDestinationsList
+				//
+				//	// Adding a singular event multiple times if there are multiple destinations of same type
+				//	for _, destination := range enabledDestinationsList {
+				//		shallowEventCopy := transformer.TransformerEventT{}
+				//		shallowEventCopy.Message = singularEvent
+				//		shallowEventCopy.Destination = reflect.ValueOf(destination).Interface().(backendconfig.DestinationT)
+				//		shallowEventCopy.Libraries = workspaceLibraries
+				//		//TODO: Test for multiple workspaces ex: hosted data plane
+				//		/* Stream destinations does not need config in transformer. As the Kafka destination config
+				//		holds the ca-certificate and it depends on user input, it may happen that they provide entire
+				//		certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
+				//		it may result into payload larger than accepted by transformer. So, discarding destination config from being
+				//		sent to transformer for such destination. */
+				//		if misc.ContainsString(customDestinations, destType) {
+				//			shallowEventCopy.Destination.Config = nil
+				//		}
+				//
+				//		shallowEventCopy.Message["request_ip"] = requestIP
+				//
+				//		enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
+				//		enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, destination)
+				//
+				//		metadata := shallowEventCopy.Metadata
+				//		srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
+				//		//We have at-least one event so marking it good
+				//		_, ok = groupedEvents[srcAndDestKey]
+				//		if !ok {
+				//			groupedEvents[srcAndDestKey] = make([]transformer.TransformerEventT, 0)
+				//		}
+				//		groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey],
+				//			shallowEventCopy)
+				//	}
+				//}
 
 				//REPORTING - GATEWAY metrics - START
 				if proc.reporting != nil && proc.reportingEnabled {
@@ -1262,6 +1291,110 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.statNumEvents.Count(totalEvents)
 
 	proc.marshalSingularEvents.End()
+	//Placing the trackingPlan validation filters here.
+	//Else further down events are duplicated by destId, so multiple validation takes places for same event
+
+	//validating with the tp here for every sourceID
+	var validatedEventsBySourceID = make(map[string][]transformer.TransformerEventT)
+	for srcId, eventList := range groupedEventsBySourceID {
+		isTpExists := eventList[0].Metadata.TrackingPlanId != ""
+		if !isTpExists {
+			// pass on the jobs for transformation(User,Dest)
+			validatedEventsBySourceID[srcId] = make([]transformer.TransformerEventT, 0)
+			validatedEventsBySourceID[srcId] = append(validatedEventsBySourceID[srcId],eventList...)
+			continue
+		}
+		startedAt := time.Now()
+		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize, false)
+		endedAt := time.Now()
+		timeTaken := endedAt.Sub(startedAt).Seconds()
+		fmt.Println(response, timeTaken)
+
+		commonMetaData := transformer.MetadataT{
+			SourceID:        srcId,
+			SourceType:      eventList[0].Metadata.SourceType,
+			SourceCategory:  eventList[0].Metadata.SourceCategory,
+			//DestinationID:   destID,
+			//DestinationType: destination.DestinationDefinition.Name,
+		}
+		eventsToTransform, successMetrics, successCountMap, successCountMetadataMap := proc.getDestTransformerEvents(response, commonMetaData, backendconfig.DestinationT{})
+		//what should be transformationEnabled below? used in reporting service.
+		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.TrackingPlanValidationStage, false)
+		if len(failedJobs) > 0 {
+			proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(failedJobs))
+			err := proc.errorDB.Store(failedJobs)
+			if err != nil {
+				proc.logger.Errorf("Store into proc error table failed with error: %v", err)
+				proc.logger.Errorf("procErrorJobs: %v", failedJobs)
+				panic(err)
+			}
+		}
+		proc.logger.Info("Failed metrics : ",failedMetrics, failedCountMap)
+		proc.logger.Info("Success metrics : ",successMetrics, successCountMap, successCountMetadataMap)
+
+		if len(eventsToTransform) == 0 {
+			continue
+		} else {
+			validatedEventsBySourceID[srcId] = make([]transformer.TransformerEventT, 0)
+			validatedEventsBySourceID[srcId] = append(validatedEventsBySourceID[srcId],eventsToTransform...)
+		}
+	}
+	// tracking plan validation end
+
+	// The below part needs to be done after tp validation
+	for srcId, eventList := range validatedEventsBySourceID {
+		writeKey := ""
+		for wKey ,source := range writeKeySourceMap{
+			if source.ID == srcId {
+				writeKey = wKey
+				break
+			}
+		}
+		if writeKey == "" {
+			proc.logger.Error("src not found for writeKey")
+			//PANIC?
+		}
+
+		backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
+		workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+		workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
+		for _, event := range eventList{
+			singularEvent := event.Message
+			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
+			enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
+			for _, destType := range enabledDestTypes {
+				enabledDestinationsList := getEnabledDestinations(writeKey, destType)
+				enabledDestinationsMap[destType] = enabledDestinationsList
+				// Adding a singular event multiple times if there are multiple destinations of same type
+				for _, destination := range enabledDestinationsList {
+					shallowEventCopy := transformer.TransformerEventT{}
+					shallowEventCopy.Message = singularEvent
+					shallowEventCopy.Destination = reflect.ValueOf(destination).Interface().(backendconfig.DestinationT)
+					shallowEventCopy.Libraries = workspaceLibraries
+					//TODO: Test for multiple workspaces ex: hosted data plane
+					/* Stream destinations does not need config in transformer. As the Kafka destination config
+					holds the ca-certificate and it depends on user input, it may happen that they provide entire
+					certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
+					it may result into payload larger than accepted by transformer. So, discarding destination config from being
+					sent to transformer for such destination. */
+					if misc.ContainsString(customDestinations, destType) {
+						shallowEventCopy.Destination.Config = nil
+					}
+					enhanceWithMetadata(&event.Metadata, &shallowEventCopy, destination)
+
+					metadata := shallowEventCopy.Metadata
+					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
+					//We have at-least one event so marking it good
+					_, ok := groupedEvents[srcAndDestKey]
+					if !ok {
+						groupedEvents[srcAndDestKey] = make([]transformer.TransformerEventT, 0)
+					}
+					groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey],
+						shallowEventCopy)
+				}
+			}
+		}
+	}
 
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
@@ -1273,7 +1406,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 		destination := eventList[0].Destination
-		//TODO: should trackingplanID be set here? what if tp is changed after events are sent? replay case?
 		commonMetaData := transformer.MetadataT{
 			SourceID:        sourceID,
 			SourceType:      eventList[0].Metadata.SourceType,
@@ -1281,68 +1413,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			DestinationID:   destID,
 			DestinationType: destination.DestinationDefinition.Name,
 		}
-		configT, ok := proc.backendConfig.Get()
-		if(!ok) {
-			pkgLogger.Errorf("unable to get backend config")
-		}
-		sourceTpId := ""
-		for _, source := range configT.Sources {
-			if (source.ID == sourceID && !source.TrackingPlanConnection.Deleted) {
-				sourceTpId = source.TrackingPlanConnection.TrackingPlanId
-			}
-		}
-		var response transformer.ResponseT
-		//Doing it here before passed to user/dest transformation
-		if (sourceTpId != "") {
-			startedAt = time.Now()
-			response = proc.transformer.Transform(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize, false)
-			endedAt = time.Now()
-			timeTaken = endedAt.Sub(startedAt).Seconds()
-			fmt.Println(response)
-		}
-		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, false)
-		if _, ok := procErrorJobsByDestID[destID]; !ok {
-			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
-		}
-		procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
-
-		var procErrorJobs []*jobsdb.JobT
-		for _, jobs := range procErrorJobsByDestID {
-			procErrorJobs = append(procErrorJobs, jobs...)
-		}
-		if len(procErrorJobs) > 0 {
-			proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobs))
-			err := proc.errorDB.Store(procErrorJobs)
-			if err != nil {
-				proc.logger.Errorf("Store into proc error table failed with error: %v", err)
-				proc.logger.Errorf("procErrorJobs: %v", procErrorJobs)
-				panic(err)
-			}
-			recordEventDeliveryStatus(procErrorJobsByDestID)
-		}
-		txn := proc.gatewayDB.BeginGlobalTransaction()
-		proc.gatewayDB.AcquireUpdateJobStatusLocks()
-		err := proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{gateway.CustomVal}, nil)
-		if err != nil {
-			pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
-			panic(err)
-		}
-		proc.gatewayDB.CommitTransaction(txn)
-		proc.gatewayDB.ReleaseUpdateJobStatusLocks()
-		var jobIds []int64
-		for _, job := range failedJobs {
-			jobIds = append(jobIds, job.JobID)
-		}
-		var newEventList []transformer.TransformerEventT
-		for _, event := range eventList{
-			if !misc.Contains(jobIds, event.Metadata.JobID) {
-				newEventList = append(newEventList, event)
-			}
-		}
-
-		eventList = newEventList
-
-
 		destStat := proc.destStats[destID]
 		destStat.numEvents.Count(len(eventList))
 
@@ -1370,6 +1440,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//REPORTING - END
 
 		url := integrations.GetDestinationURL(destType)
+		var response transformer.ResponseT
 		var eventsToTransform []transformer.TransformerEventT
 		// Send to custom transformer only if the destination has a transformer enabled
 		if transformationEnabled {
@@ -1460,7 +1531,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
 		destStat.numOutputEvents.Count(len(destTransformEventList))
 
-		failedJobs, failedMetrics, failedCountMap = proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled)
+		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled)
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 		}

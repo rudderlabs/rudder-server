@@ -26,6 +26,7 @@ import (
 const (
 	UserTransformerStage = "user_transformer"
 	DestTransformerStage = "dest_transformer"
+	TrackingPlanValidationStage = "trackingPlan_validation"
 )
 const supportedTransformerAPIVersion = 1
 
@@ -33,6 +34,10 @@ type MetadataT struct {
 	SourceID        string `json:"sourceId"`
 	SourceType      string `json:"sourceType"`
 	SourceCategory  string `json:"sourceCategory"`
+	TrackingPlanId  string `json:"trackingPlanId"`
+	TrackingPlanVersion int `json:"trackingPlanVersion"`
+	//TODO: pass sourceConfig here? or fetch by srcID in transformer only?
+	SourceTpConfig  map[string]interface{} `json:"sourceTpConfig"`
 	DestinationID   string `json:"destinationId"`
 	JobRunID        string `json: "jobRunId"`
 	JobID           int64  `json:"jobId"`
@@ -87,6 +92,7 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(clientEvents []TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT
+	Validate(clientEvents []TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT
 }
 
 //NewTransformer creates a new transformer
@@ -399,4 +405,9 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 		Events:       outClientEvents,
 		FailedEvents: failedEvents,
 	}
+}
+
+func (trans *HandleT) Validate(clientEvents []TransformerEventT,
+	url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT {
+	return trans.Transform(clientEvents, url, batchSize, breakIntoBatchWhenUserChanges)
 }

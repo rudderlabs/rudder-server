@@ -103,15 +103,15 @@ type DestinationT struct {
 }
 
 type SourceT struct {
-	ID                     string
-	Name                   string
-	SourceDefinition       SourceDefinitionT
-	Config                 map[string]interface{}
-	Enabled                bool
-	WorkspaceID            string
-	Destinations           []DestinationT
-	WriteKey               string
-	TrackingPlanConnection SourceTrackingPlanT
+	ID                         string
+	Name                       string
+	SourceDefinition           SourceDefinitionT
+	Config                     map[string]interface{}
+	Enabled                    bool
+	WorkspaceID                string
+	Destinations               []DestinationT
+	WriteKey                   string
+	DgSourceTrackingPlanConfig DgSourceTrackingPlanConfigT
 }
 
 type WorkspaceRegulationT struct {
@@ -135,7 +135,6 @@ type ConfigT struct {
 	Sources            []SourceT             `json:"sources"`
 	Libraries          LibrariesT            `json:"libraries"`
 	ConnectionFlags    ConnectionFlags       `json:"flags"`
-	SourceTrackingPlan []SourceTrackingPlanT `json:"sourceTrackingPlans"`
 }
 
 type ConnectionFlags struct {
@@ -178,9 +177,12 @@ type LibraryT struct {
 
 type LibrariesT []LibraryT
 
-type SourceTrackingPlanT struct {
-	SourceId string //can be removed, if kept at source level
+type DgSourceTrackingPlanConfigT struct {
+	SourceId string
 	TrackingPlanId string
+	TrackingPlanVersion int
+	Version int
+	Config map[string]interface{}
 	Deleted bool
 }
 
@@ -246,7 +248,6 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	var modifiedConfig ConfigT
 	modifiedConfig.Libraries = config.Libraries
 	modifiedConfig.Sources = make([]SourceT, 0)
-	modifiedConfig.SourceTrackingPlan = config.SourceTrackingPlan
 	for _, source := range config.Sources {
 		destinations := make([]DestinationT, 0)
 		for _, destination := range source.Destinations {
