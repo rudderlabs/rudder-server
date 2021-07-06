@@ -340,9 +340,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep", "Processor.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(100, &transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
-	config.RegisterIntConfigVariable(100, &configSessionThresholdEvents, false, 1, "Processor.configSessionThresholdEvents")
-	config.RegisterDurationConfigVariable(time.Duration(120), &sessionInactivityThreshold, true, time.Second, []string{"Processor.sessionInactivityThreshold", "Processor.sessionInactivityThresholdInS"}...)
-	config.RegisterBoolConfigVariable(false, &configProcessSessions, false, "Processor.processSessions")
 	// Enable dedup of incoming events by default
 	config.RegisterBoolConfigVariable(false, &enableDedup, false, "Dedup.enableDedup")
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE"}

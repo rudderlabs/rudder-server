@@ -27,6 +27,7 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -64,7 +65,7 @@ type batchWebRequestT struct {
 
 var (
 	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess, adminWebPort int
-	maxUserWebRequestBatchSize, maxDBBatchSize , MaxHeaderBytes               int
+	maxUserWebRequestBatchSize, maxDBBatchSize, MaxHeaderBytes                int
 	userWebRequestBatchTimeout, dbBatchWriteTimeout                           time.Duration
 	enabledWriteKeysSourceMap                                                 map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                                 map[string]string
@@ -75,10 +76,10 @@ var (
 	enableSuppressUserFeature                                                 bool
 	enableEventSchemasFeature                                                 bool
 	diagnosisTickerTime                                                       time.Duration
-	ReadTimeout       		  												  time.Duration
-	ReadHeaderTimeout 		  												  time.Duration
-	WriteTimeout      		  												  time.Duration
-	IdleTimeout       		  												  time.Duration
+	ReadTimeout                                                               time.Duration
+	ReadHeaderTimeout                                                         time.Duration
+	WriteTimeout                                                              time.Duration
+	IdleTimeout                                                               time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                                      bool
 	gwAllowPartialWriteWithErrors                                             bool
 	pkgLogger                                                                 logger.LoggerI
@@ -1305,9 +1306,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.stats = stats.DefaultStats
 
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
-
 	config.RegisterDurationConfigVariable(time.Duration(30), &gateway.httpTimeout, false, time.Second, "Gateway.httpTimeout")
-
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr, Timeout: gateway.httpTimeout}
 	gateway.netHandle = client
