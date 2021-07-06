@@ -26,7 +26,7 @@ import (
 var (
 	maxProcess                                                 int
 	gwDBRetention, routerDBRetention                           time.Duration
-	enableProcessor, enableRouter                              bool
+	enableProcessor, enableRouter, enableReplay                bool
 	objectStorageDestinations                                  []string
 	warehouseDestinations                                      []string
 	moduleLoadLock                                             sync.Mutex
@@ -71,9 +71,10 @@ func loadConfig() {
 	gwDBRetention = config.GetDuration("gwDBRetentionInHr", 0) * time.Hour
 	routerDBRetention = config.GetDuration("routerDBRetention", 0)
 	enableProcessor = config.GetBool("enableProcessor", true)
+	enableReplay = config.GetBool("Replay.enabled", false)
 	enableRouter = config.GetBool("enableRouter", true)
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
 }
 
 func rudderCoreBaseSetup() {
@@ -114,9 +115,10 @@ func StartProcessor(clearDB *bool, enableProcessor bool, gatewayDB, routerDB, ba
 	}
 
 	if enableProcessor {
-		var processor = processor.NewProcessor()
-		processor.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting)
-		processor.Start()
+		var processorInstance = processor.NewProcessor()
+		processor.ProcessorManagerSetup(processorInstance)
+		processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting)
+		processorInstance.Start()
 
 		processorLoaded = true
 	}
@@ -132,6 +134,8 @@ func StartRouter(enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb
 	}
 
 	if enableRouter {
+		router.RoutersManagerSetup()
+		batchrouter.BatchRoutersManagerSetup()
 		go monitorDestRouters(routerDB, batchRouterDB, procErrorDB, reporting)
 		routerLoaded = true
 	}
@@ -158,7 +162,8 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, re
 					if !ok {
 						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
 						var brt batchrouter.HandleT
-						brt.Setup(batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
+						brt.Setup(backendconfig.DefaultBackendConfig, batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
+						brt.Start()
 						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 					}
 				} else {
@@ -166,11 +171,22 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, re
 					if !ok {
 						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
 						var router router.HandleT
-						router.Setup(routerDB, procErrorDB, destination.DestinationDefinition, reporting)
+						router.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition, reporting)
+						router.Start()
 						dstToRouter[destination.DestinationDefinition.Name] = &router
 					}
 				}
 			}
+		}
+
+		rm, err := router.GetRoutersManager()
+		if rm != nil && err == nil {
+			rm.SetRoutersReady()
+		}
+
+		brm, err := batchrouter.GetBatchRoutersManager()
+		if brm != nil && err == nil {
+			brm.SetBatchRoutersReady()
 		}
 	}
 }

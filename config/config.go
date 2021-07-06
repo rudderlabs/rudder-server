@@ -561,9 +561,21 @@ func GetWorkspaceToken() string {
 	return GetEnv("CONFIG_BACKEND_TOKEN", "")
 }
 
+func GetNamespaceIdentifier() string {
+	k8sNamespace := GetKubeNamespace()
+	if k8sNamespace != "" {
+		return k8sNamespace
+	}
+	return "none"
+}
+
 // returns value stored in KUBE_NAMESPACE env var
 func GetKubeNamespace() string {
 	return GetEnv("KUBE_NAMESPACE", "")
+}
+
+func GetInstanceID() string {
+	return GetEnv("INSTANCE_ID", "1")
 }
 
 func SetWHSchemaVersion(version string) {

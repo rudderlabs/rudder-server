@@ -3,8 +3,8 @@ package filemanager
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -92,11 +92,16 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 	https://rudder.sgp1.digitaloceanspaces.com/key - >> key
 */
 func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (string, error) {
-	reg, err := regexp.Compile(`^https.+digitaloceanspaces\.com\/`)
+	uri, err := url.Parse(location)
 	if err != nil {
 		return "", err
 	}
-	return reg.ReplaceAllString(location, ""), nil
+	host := uri.Host
+	path := uri.Path[1:]
+	if strings.Contains(host, manager.Config.Bucket) {
+		return path, nil
+	}
+	return strings.TrimPrefix(path, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 }
 
 type SpacesObject struct {
@@ -136,6 +141,10 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string) ([]*SpacesObj
 	}
 
 	return spacesObjects, nil
+}
+
+func (manager *DOSpacesManager) DeleteObjects(locations []string) (err error) {
+	return
 }
 
 type DOSpacesManager struct {

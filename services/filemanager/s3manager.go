@@ -2,17 +2,20 @@ package filemanager
 
 import (
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	awsS3Manager "github.com/aws/aws-sdk-go/service/s3/s3manager"
+	appConfig "github.com/rudderlabs/rudder-server/config"
 )
 
 // Upload passed in file to s3
@@ -21,20 +24,24 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 		return UploadOutput{}, errors.New("no storage bucket configured to uploader")
 	}
 	getRegionSession := session.Must(session.NewSession())
-	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
+	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
 	if err != nil {
 		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
 		/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
 	}
 	var uploadSession *session.Session
 	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
+		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
 		uploadSession = session.Must(session.NewSession(&aws.Config{
-			Region: aws.String(region),
+			Region:                        aws.String(region),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	} else {
+		pkgLogger.Debug("Credentials found in the destination's config. Using them.")
 		uploadSession = session.Must(session.NewSession(&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			Region:                        aws.String(region),
+			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	}
 	s3manager := awsS3Manager.NewUploader(uploadSession)
@@ -68,35 +75,95 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 }
 
 func (manager *S3Manager) Download(output *os.File, key string) error {
+	sess, err := manager.getSession()
+	if err != nil {
+		return fmt.Errorf(`Error starting S3 session: %v`, err)
+	}
+
+	downloader := s3manager.NewDownloader(sess)
+
+	_, err = downloader.Download(output,
+		&s3.GetObjectInput{
+			Bucket: aws.String(manager.Config.Bucket),
+			Key:    aws.String(key),
+		})
+	return err
+}
+
+func (manager *S3Manager) DeleteObjects(keys []string) (err error) {
+	sess, err := manager.getSession()
+	if err != nil {
+		return fmt.Errorf(`Error starting S3 session: %v`, err)
+	}
+
+	var objects []*s3.ObjectIdentifier
+	for _, key := range keys {
+		objects = append(objects, &s3.ObjectIdentifier{Key: aws.String(key)})
+	}
+
+	svc := s3.New(sess)
+
+	batchSize := 1000 // max accepted by DeleteObjects API
+	for i := 0; i < len(objects); i += batchSize {
+		j := i + batchSize
+		if j > len(objects) {
+			j = len(objects)
+		}
+		input := &s3.DeleteObjectsInput{
+			Bucket: aws.String(manager.Config.Bucket),
+			Delete: &s3.Delete{
+				Objects: objects[i:j],
+			},
+		}
+		_, err := svc.DeleteObjects(input)
+		if err != nil {
+			if aerr, ok := err.(awserr.Error); ok {
+				switch aerr.Code() {
+				default:
+					pkgLogger.Errorf(`Error while deleting S3 objects: %v, error code: %v`, aerr.Error(), aerr.Code())
+				}
+			} else {
+				// Print the error, cast err to awserr.Error to get the Code and
+				// Message from an error.
+				pkgLogger.Errorf(`Error while deleting S3 objects: %v`, aerr.Error())
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (manager *S3Manager) getSession() (*session.Session, error) {
+	if manager.session != nil {
+		return manager.session, nil
+	}
+
 	if manager.Config.Bucket == "" {
-		return errors.New("no storage bucket configured to downloader")
+		return nil, errors.New("no storage bucket configured to downloader")
 	}
 
 	getRegionSession := session.Must(session.NewSession())
-	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
+	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
 	if err != nil {
 		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
 		/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
 	}
 	var sess *session.Session
 	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
+		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
 		sess = session.Must(session.NewSession(&aws.Config{
-			Region: aws.String(region),
+			Region:                        aws.String(region),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	} else {
+		pkgLogger.Debug("Credentials found in the destination's config.")
 		sess = session.Must(session.NewSession(&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			Region:                        aws.String(region),
+			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	}
-	downloader := s3manager.NewDownloader(sess)
-	_, err = downloader.Download(output,
-		&s3.GetObjectInput{
-			Bucket: aws.String(manager.Config.Bucket),
-			Key:    aws.String(key),
-		})
-
-	return err
+	return sess, nil
 }
 
 func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string {
@@ -109,11 +176,16 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 	https://bucket-name.s3.amazonaws.com/key - >> key
 */
 func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, error) {
-	reg, err := regexp.Compile(`^https.+\.s3\..*amazonaws\.com\/`)
+	uri, err := url.Parse(location)
 	if err != nil {
 		return "", err
 	}
-	return reg.ReplaceAllString(location, ""), nil
+	host := uri.Host
+	path := uri.Path[1:]
+	if strings.Contains(host, manager.Config.Bucket) {
+		return path, nil
+	}
+	return strings.TrimPrefix(path, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 }
 
 type S3Object struct {
@@ -125,20 +197,24 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error
 	s3Objects := make([]*S3Object, 0)
 
 	getRegionSession := session.Must(session.NewSession())
-	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
+	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
 	if err != nil {
 		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
 		/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
 	}
 	var sess *session.Session
 	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
+		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
 		sess = session.Must(session.NewSession(&aws.Config{
-			Region: aws.String(region),
+			Region:                        aws.String(region),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	} else {
+		pkgLogger.Debug("Credentials found in the destination's config.")
 		sess = session.Must(session.NewSession(&aws.Config{
-			Region:      aws.String(region),
-			Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			Region:                        aws.String(region),
+			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+			CredentialsChainVerboseErrors: aws.Bool(true),
 		}))
 	}
 
@@ -163,7 +239,8 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error
 }
 
 type S3Manager struct {
-	Config *S3Config
+	Config  *S3Config
+	session *session.Session
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {
@@ -186,7 +263,9 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 			enableSSE = false
 		}
 	}
-	return &S3Config{Bucket: bucketName, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey, EnableSSE: enableSSE}
+	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
+
+	return &S3Config{Bucket: bucketName, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey, EnableSSE: enableSSE, RegionHint: regionHint}
 }
 
 type S3Config struct {
@@ -195,4 +274,5 @@ type S3Config struct {
 	AccessKeyID string
 	AccessKey   string
 	EnableSSE   bool
+	RegionHint  string
 }

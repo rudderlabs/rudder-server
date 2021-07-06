@@ -22,12 +22,13 @@ import (
 )
 
 const (
-	RS         = "RS"
-	BQ         = "BQ"
-	SNOWFLAKE  = "SNOWFLAKE"
-	POSTGRES   = "POSTGRES"
-	CLICKHOUSE = "CLICKHOUSE"
-	MSSQL	   = "MSSQL"
+	RS            = "RS"
+	BQ            = "BQ"
+	SNOWFLAKE     = "SNOWFLAKE"
+	POSTGRES      = "POSTGRES"
+	CLICKHOUSE    = "CLICKHOUSE"
+	MSSQL         = "MSSQL"
+	AZURE_SYNAPSE = "AZURE_SYNAPSE"
 )
 
 const (
@@ -72,6 +73,7 @@ var (
 	serverIP                  string
 	IdentityEnabledWarehouses []string
 	enableIDResolution        bool
+	AWSCredsExpiryInS         int64
 )
 
 var ObjectStorageMap = map[string]string{
@@ -95,6 +97,7 @@ func init() {
 func loadConfig() {
 	IdentityEnabledWarehouses = []string{"SNOWFLAKE", "BQ"}
 	enableIDResolution = config.GetBool("Warehouse.enableIDResolution", false)
+	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 }
 
 type WarehouseT struct {
@@ -120,6 +123,7 @@ type StagingFileT struct {
 	FirstEventAt     string
 	LastEventAt      string
 	TotalEvents      int
+	UseRudderStorage bool
 	// cloud sources specific info
 	SourceBatchID   string
 	SourceTaskID    string
@@ -136,6 +140,8 @@ type UploaderI interface {
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFileLocation(tableName string) (string, error)
 	ShouldOnDedupUseNewRecord() bool
+	UseRudderStorage() bool
+	GetLoadFileGenStartTIme() time.Time
 }
 
 type GetLoadFileLocationsOptionsT struct {
@@ -160,6 +166,22 @@ type TableSchemaDiffT struct {
 type QueryResult struct {
 	Columns []string
 	Values  [][]string
+}
+
+type PendingEventsRequestT struct {
+	SourceID  string `json:"source_id"`
+	TaskRunID string `json:"task_run_id"`
+}
+
+type PendingEventsResponseT struct {
+	PendingEvents            bool `json:"pending_events"`
+	PendingStagingFilesCount int64  `json:"pending_staging_files"`
+	PendingUploadCount       int64  `json:"pending_uploads"`
+}
+
+type TriggerUploadRequestT struct {
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
 }
 
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
@@ -197,6 +219,20 @@ func GetLastFailedStatus(str sql.NullString) (status string) {
 			for s := range timingsMap[index].Map() {
 				if strings.Contains(s, "failed") {
 					return s
+				}
+			}
+		}
+	}
+	return // zero values
+}
+
+func GetLoadFileGenTime(str sql.NullString) (t time.Time) {
+	timingsMap := gjson.Parse(str.String).Array()
+	if len(timingsMap) > 0 {
+		for index := len(timingsMap) - 1; index >= 0; index-- {
+			for s, t := range timingsMap[index].Map() {
+				if strings.Contains(s, "generating_load_files") {
+					return t.Time()
 				}
 			}
 		}
@@ -487,11 +523,14 @@ func SnowflakeCloudProvider(config interface{}) string {
 	return provider
 }
 
-func ObjectStorageType(destType string, config interface{}) string {
+func ObjectStorageType(destType string, config interface{}, useRudderStorage bool) string {
+	c := config.(map[string]interface{})
+	if useRudderStorage {
+		return "S3"
+	}
 	if destType == "RS" || destType == "BQ" {
 		return ObjectStorageMap[destType]
 	}
-	c := config.(map[string]interface{})
 	if destType == "SNOWFLAKE" {
 		provider, ok := c["cloudProvider"].(string)
 		if provider == "" || !ok {

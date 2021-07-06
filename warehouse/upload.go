@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -76,27 +77,30 @@ type uploadStateT struct {
 }
 
 type UploadT struct {
-	ID                 int64
-	Namespace          string
-	SourceID           string
-	SourceType         string
-	SourceCategory     string
-	DestinationID      string
-	DestinationType    string
-	StartStagingFileID int64
-	EndStagingFileID   int64
-	StartLoadFileID    int64
-	EndLoadFileID      int64
-	Status             string
-	Schema             warehouseutils.SchemaT
-	Error              json.RawMessage
-	Timings            []map[string]string
-	FirstAttemptAt     time.Time
-	LastAttemptAt      time.Time
-	Attempts           int64
-	Metadata           json.RawMessage
-	FirstEventAt       time.Time
-	LastEventAt        time.Time
+	ID                   int64
+	Namespace            string
+	SourceID             string
+	SourceType           string
+	SourceCategory       string
+	DestinationID        string
+	DestinationType      string
+	StartStagingFileID   int64
+	EndStagingFileID     int64
+	StartLoadFileID      int64
+	EndLoadFileID        int64
+	Status               string
+	Schema               warehouseutils.SchemaT
+	Error                json.RawMessage
+	Timings              []map[string]string
+	FirstAttemptAt       time.Time
+	LastAttemptAt        time.Time
+	Attempts             int64
+	Metadata             json.RawMessage
+	FirstEventAt         time.Time
+	LastEventAt          time.Time
+	UseRudderStorage     bool
+	LoadFileGenStartTime time.Time
+	TimingsObj           sql.NullString
 	// cloud sources specific info
 	SourceBatchID   string
 	SourceTaskID    string
@@ -115,6 +119,7 @@ type UploadJobT struct {
 	pgNotifier          *pgnotifier.PgNotifierT
 	schemaHandle        *SchemaHandleT
 	schemaLock          sync.Mutex
+	uploadLock          sync.Mutex
 	hasAllTablesSkipped bool
 	tableUploadStatuses []*TableUploadStatusT
 }
@@ -136,7 +141,7 @@ const (
 
 var (
 	alwaysMarkExported                               = []string{warehouseutils.DiscardsTable}
-	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{warehouseutils.SNOWFLAKE}
+	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{warehouseutils.SNOWFLAKE, warehouseutils.BQ}
 	warehousesToVerifyLoadFilesFolder                = []string{warehouseutils.SNOWFLAKE}
 )
 
@@ -295,7 +300,8 @@ func (job *UploadJobT) run() (err error) {
 	// job.setUploadColumns(
 	// 	UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
 	// )
-
+	job.uploadLock.Lock()
+	defer job.uploadLock.Unlock()
 	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}}})
 
 	if len(job.stagingFiles) == 0 {
@@ -365,7 +371,7 @@ func (job *UploadJobT) run() (err error) {
 		case GeneratedLoadFiles:
 			newStatus = nextUploadState.failed
 			// generate load files for all staging files(including succeeded) if hasSchemaChanged or if its snowflake(to have all load files in same folder in bucket) or set via toml/env
-			generateAll := hasSchemaChanged || misc.ContainsString(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", false)
+			generateAll := hasSchemaChanged || misc.ContainsString(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
 			var startLoadFileID, endLoadFileID int64
 			startLoadFileID, endLoadFileID, err = job.createLoadFiles(generateAll)
 			if err != nil {
@@ -853,6 +859,24 @@ func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error
 	return
 }
 
+func (job *UploadJobT) getTotalCount(tName string) (int64, error) {
+	var total int64
+	operation := func() error {
+		var countErr error
+		total, countErr = job.whManager.GetTotalCountInTable(tName)
+		return countErr
+	}
+	expBackoff := backoff.NewExponentialBackOff()
+	expBackoff.InitialInterval = 5 * time.Second
+	expBackoff.RandomizationFactor = 0
+	expBackoff.Reset()
+	backoffWithMaxRetry := backoff.WithMaxRetries(expBackoff, 5)
+	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		pkgLogger.Errorf(`Error getting total count in table:%s error: %v`, tName, err)
+	})
+	return total, err
+}
+
 func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	tableUpload := NewTableUpload(job.upload.ID, tName)
 	alteredSchema, err = job.updateSchema(tName)
@@ -868,7 +892,7 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	var totalBeforeLoad, totalAfterLoad int64
 	if generateTableLoadCountVerificationsMetrics {
 		var countErr error
-		totalBeforeLoad, countErr = job.whManager.GetTotalCountInTable(tName)
+		totalBeforeLoad, countErr = job.getTotalCount(tName)
 		if countErr != nil {
 			pkgLogger.Errorf(`Error getting total count in table:%s before load: %v`, tName, countErr)
 		}
@@ -882,7 +906,7 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 
 	if generateTableLoadCountVerificationsMetrics {
 		var countErr error
-		totalAfterLoad, countErr = job.whManager.GetTotalCountInTable(tName)
+		totalAfterLoad, countErr = job.getTotalCount(tName)
 		if countErr != nil {
 			pkgLogger.Errorf(`Error getting total count in table:%s after load: %v`, tName, countErr)
 		}
@@ -1194,9 +1218,44 @@ func (job *UploadJobT) setUploadColumns(opts UploadColumnsOpts) (err error) {
 	return err
 }
 
+func (job *UploadJobT) triggerUploadNow() (err error) {
+	job.uploadLock.Lock()
+	defer job.uploadLock.Unlock()
+	upload := job.upload
+	newjobState := Waiting
+	var metadata map[string]string
+	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
+	if unmarshallErr != nil {
+		metadata = make(map[string]string)
+	}
+	metadata["nextRetryTime"] = time.Now().Add(-time.Hour * 1).Format(time.RFC3339)
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+
+	uploadColumns := []UploadColumnT{
+		{Column: "status", Value: newjobState},
+		{Column: "metadata", Value: metadataJSON},
+		{Column: "updated_at", Value: timeutil.Now()},
+	}
+
+	txn, err := job.dbHandle.Begin()
+	if err != nil {
+		panic(err)
+	}
+	err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
+	if err != nil {
+		panic(err)
+	}
+	err = txn.Commit()
+
+	job.upload.Status = newjobState
+	return err
+}
+
 func (job *UploadJobT) setUploadError(statusError error, state string) (newstate string, err error) {
 	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
-
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 
 	upload := job.upload
@@ -1231,16 +1290,12 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 		}
 	}
 
-	var metadata map[string]string
+	var metadata map[string]interface{}
 	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
 	if unmarshallErr != nil {
-		metadata = make(map[string]string)
+		metadata = make(map[string]interface{})
 	}
-	lastAttempt := upload.LastAttemptAt
-	if lastAttempt.IsZero() {
-		lastAttempt = timeutil.Now()
-	}
-	metadata["nextRetryTime"] = lastAttempt.Add(durationBeforeNextAttempt(upload.Attempts)).Format(time.RFC3339)
+	metadata["nextRetryTime"] = timeutil.Now().Add(durationBeforeNextAttempt(upload.Attempts + 1)).Format(time.RFC3339)
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		metadataJSON = []byte("{}")
@@ -1436,6 +1491,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files with %v workers for %s:%s", publishBatchSize, noOfWorkers, destType, destID)
 	uniqueLoadGenID := uuid.NewV4().String()
+	job.upload.LoadFileGenStartTime = timeutil.Now()
 
 	var wg sync.WaitGroup
 
@@ -1475,6 +1531,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				DestinationType:     destType,
 				DestinationConfig:   job.warehouse.Destination.Config,
 				UniqueLoadGenID:     uniqueLoadGenID,
+				UseRudderStorage:    job.upload.UseRudderStorage,
+				RudderStoragePrefix: misc.GetRudderObjectStoragePrefix(),
 			}
 
 			payloadJSON, err := json.Marshal(payload)
@@ -1735,6 +1793,17 @@ func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
 		return true
 	}
 	return false
+}
+
+func (job *UploadJobT) UseRudderStorage() bool {
+	return job.upload.UseRudderStorage
+}
+
+func (job *UploadJobT) GetLoadFileGenStartTIme() time.Time {
+	if !job.upload.LoadFileGenStartTime.IsZero() {
+		return job.upload.LoadFileGenStartTime
+	}
+	return warehouseutils.GetLoadFileGenTime(job.upload.TimingsObj)
 }
 
 /*

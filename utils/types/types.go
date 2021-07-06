@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../mocks/utils/types/mock_types.go -package mock_types github.com/rudderlabs/rudder-server/utils/types SuppressUserI
+//go:generate mockgen -destination=../../mocks/utils/types/mock_types.go -package mock_types github.com/rudderlabs/rudder-server/utils/types SuppressUserI,ReportingI
 
 package types
 

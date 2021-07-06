@@ -1,6 +1,6 @@
-<p align="center"><a href="https://rudderstack.com"><img src="https://raw.githubusercontent.com/rudderlabs/rudder-server/master/resources/RudderStack.png" alt="RudderStack - The smart customer data pipeline" height="90"/></a></p>
+<p align="center"><a href="https://rudderstack.com"><img src="https://user-images.githubusercontent.com/59817155/121357083-1c571300-c94f-11eb-8cc7-ce6df13855c9.png" alt="RudderStack - The smart customer data pipeline" height="60"/></a></p>
 <h1 align="center"></h1>
-<p align="center"><b>The smart customer data pipeline</b></p>
+<p align="center"><b>Customer Data Platform for Developers</b></p>
 
 <p align="center">
 	<a href="https://rudderstack.com"><img src="https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiT01EQkVPc0NBbDJLV2txTURidkRTMTNmWFRZWUY2dEtia3FRVmFXdXhWeUwzaC9aV3dsWWNNT0NwaVZKd1hKTFVMazB2cDQ5UHlaZTgvbFRER3R5SXRvPSIsIml2UGFyYW1ldGVyU3BlYyI6IktJQVMveHIzQnExZVE5b0YiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=master" height="22"/></a>
@@ -20,15 +20,15 @@
 
 ## What is RudderStack?
 
-[RudderStack](https://rudderstack.com/) is a **customer data pipeline tool** for collecting, routing and processing data from your websites, apps, cloud tools, and data warehouse.
+As the leading **open-source Customer Data Platform** (CDP), [**RudderStack**](https://rudderstack.com/) provides data pipelines that make it easy to collect data from every application, website and SaaS platform, then activate it in your warehouse and business tools.
 
 With RudderStack, you can build customer data pipelines that connect your whole customer data stack and then make them smarter by triggering enrichment and activation in customer tools based on analysis in your data warehouse. Its easy-to-use SDKs and event source integrations, Cloud Extract integrations, transformations, and expansive library of destination and warehouse integrations makes building customer data pipelines for both event streaming and cloud-to-warehouse ELT simple.
 
 <p align="center">
-<a href="https://rudderstack.com"><img src="https://user-images.githubusercontent.com/59817155/113259942-51aa0980-92eb-11eb-91ef-213630e563e0.gif" alt="RudderStack"></a></p>
+<a href="https://rudderstack.com"><img src="https://user-images.githubusercontent.com/59817155/121468374-4ef91e00-c9d8-11eb-8611-28bea18f609d.gif" alt="RudderStack"></a></p>
 
 
-Questions? Please join our [**Slack channel**](https://resources.rudderstack.com/join-rudderstack-slack) for support on the product.
+Questions? Join our [**Slack channel**](https://resources.rudderstack.com/join-rudderstack-slack) for support on the product.
 
 | Try **RudderStack Cloud Free** - a free tier of [RudderStack Cloud](https://resources.rudderstack.com/rudderstack-cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to start building a smarter customer data pipeline today, with RudderStack Cloud. |
 |:------|
@@ -55,7 +55,22 @@ Questions? Please join our [**Slack channel**](https://resources.rudderstack.com
 
 ## Our customers
 
-[![1mg](https://user-images.githubusercontent.com/59817155/95971154-74745e80-0e2e-11eb-8468-9f9cf1bfcf46.png)](https://www.1mg.com/) [![Grofers](https://user-images.githubusercontent.com/59817155/95970797-fe6ff780-0e2d-11eb-9c08-d4550b2c68b5.png)](https://grofers.com/) [![IFTTT](https://user-images.githubusercontent.com/59817155/95970944-2cedd280-0e2e-11eb-83d3-500c46c3a290.png)](https://ifttt.com/) [![Mattermost](https://user-images.githubusercontent.com/59817155/95971043-4c84fb00-0e2e-11eb-8ef8-2e47970221c6.png)](https://mattermost.com/) [![Wynn Casino](https://user-images.githubusercontent.com/59817155/95969926-f9f70f00-0e2c-11eb-8985-27b62d34fc65.png)](https://www.wynnlasvegas.com/) [![Acorns](https://user-images.githubusercontent.com/59817155/95970244-58bc8880-0e2d-11eb-9c7b-2ca08e2b11d7.png)](https://www.acorns.com/) [![Hinge](https://user-images.githubusercontent.com/59817155/95970463-9de0ba80-0e2d-11eb-91b1-bbfe55b91228.png)](https://hinge.co/) [![Proposify](https://user-images.githubusercontent.com/59817155/95971522-f82e4b00-0e2e-11eb-8c58-95fcb8a0e76c.png)](https://www.proposify.com/) [![Barstool Sports](https://user-images.githubusercontent.com/59817155/95971526-f95f7800-0e2e-11eb-85d3-fa81dbf9aa6e.png)](https://www.barstoolsports.com/)
+<br>
+
+![Acorns](https://user-images.githubusercontent.com/59817155/123588995-37a69700-d806-11eb-8f01-f7b361833927.png) ![Allbirds](https://user-images.githubusercontent.com/59817155/123588998-38d7c400-d806-11eb-9161-45a1ff37e66d.png) ![Anheuser](https://user-images.githubusercontent.com/59817155/123589001-39705a80-d806-11eb-972e-c2f1c62cbdf2.png) 
+<br>
+<br>
+
+
+![barstool](https://user-images.githubusercontent.com/59817155/123589005-3a08f100-d806-11eb-9d70-2992199add60.png) ![CnB](https://user-images.githubusercontent.com/59817155/123589006-3aa18780-d806-11eb-8d65-eba940bf8b7f.png) ![Hinge](https://user-images.githubusercontent.com/59817155/123589007-3b3a1e00-d806-11eb-93a4-cbdcf4fe48ac.png) 
+<br>
+<br>
+
+![IFTTT](https://user-images.githubusercontent.com/59817155/123589009-3b3a1e00-d806-11eb-9317-c162aacfb0a5.png) ![Priceline](https://user-images.githubusercontent.com/59817155/123589010-3bd2b480-d806-11eb-9fc7-09194f28d252.png) ![Wynn](https://user-images.githubusercontent.com/59817155/123589013-3c6b4b00-d806-11eb-9cf7-b0db9e22fc4b.png)
+<br>
+<br>
+
+![Sky](https://user-images.githubusercontent.com/59817155/123589012-3c6b4b00-d806-11eb-9a63-4859ad15a5da.png) 
 
 
 ## Get started with RudderStack
@@ -75,7 +90,7 @@ You can also set up RudderStack on your platform of choice with these two easy s
 
 ### Step 2: Verify the installation
 
-Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack#how-to-send-test-events) to verify the setup.
+Once you have installed RudderStack, [send test events](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack#sending-test-events-to-verify-the-installation) to verify the setup.
 
 ## UI pages
 

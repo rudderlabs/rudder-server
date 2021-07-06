@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../../mocks/services/filemanager/mock_filemanager.go -package mock_filemanager github.com/rudderlabs/rudder-server/services/filemanager FileManagerFactory,FileManager
+
 package filemanager
 
 import (
@@ -8,9 +10,19 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
+var (
+	DefaultFileManagerFactory FileManagerFactory
+)
+
+type FileManagerFactoryT struct{}
+
 type UploadOutput struct {
 	Location   string
 	ObjectName string
+}
+
+type FileManagerFactory interface {
+	New(settings *SettingsT) (FileManager, error)
 }
 
 // FileManager inplements all upload methods
@@ -19,6 +31,7 @@ type FileManager interface {
 	Download(*os.File, string) error
 	GetObjectNameFromLocation(string) (string, error)
 	GetDownloadKeyFromFileLocation(location string) string
+	DeleteObjects(locations []string) error
 }
 
 // SettingsT sets configuration for FileManager
@@ -27,8 +40,17 @@ type SettingsT struct {
 	Config   map[string]interface{}
 }
 
-// New returns FileManager backed by configured provider
+func init() {
+	DefaultFileManagerFactory = &FileManagerFactoryT{}
+}
+
+// Deprecated: Use an instance of FileManagerFactory instead
 func New(settings *SettingsT) (FileManager, error) {
+	return DefaultFileManagerFactory.New(settings)
+}
+
+// New returns FileManager backed by configured provider
+func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error) {
 	switch settings.Provider {
 	case "S3":
 		return &S3Manager{

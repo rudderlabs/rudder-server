@@ -149,10 +149,7 @@ func GetDestinationURL(destType string) string {
 }
 
 //GetUserTransformURL returns the port of running user transform
-func GetUserTransformURL(processSessions bool) string {
-	if processSessions {
-		return destTransformURL + "/customTransform?processSessions=true"
-	}
+func GetUserTransformURL() string {
 	return destTransformURL + "/customTransform"
 }
 

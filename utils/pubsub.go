@@ -37,7 +37,10 @@ func (eb *EventBus) Publish(topic string, data interface{}) {
 		channels := append(DataChannelSlice{}, chans...)
 		go func(data DataEvent, dataChannelSlices DataChannelSlice) {
 			for _, ch := range dataChannelSlices {
-				ch <- data
+				//Publishing to channels in separate goroutines
+				go func(ch DataChannel, data DataEvent) {
+					ch <- data
+				}(ch, data)
 			}
 		}(DataEvent{Data: data, Topic: topic}, channels)
 	}
