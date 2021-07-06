@@ -195,11 +195,6 @@ var WarehouseBatchPayload = `
 
 var POSTGRESSchema= map[string]map[string]string {
     "ginkgo": {
-        "_from": "string",
-        "_join": "string",
-        "_order": "string",
-        "_select": "string",
-        "_where": "string",
         "anonymous_id": "string",
         "category": "string",
         "channel": "string",
