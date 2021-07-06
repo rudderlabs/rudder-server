@@ -162,10 +162,7 @@ Processor:
   avgEventsInRequest: 1
   transformBatchSize: 100
   userTransformBatchSize: 200
-  sessionThresholdEvents: 100
-  sessionInactivityThresholdInS: 120
   maxChanSize: 2048
-  processSessions: false
   numTransformWorker: 8
   maxRetry: 30
   retrySleepInMS: 100
