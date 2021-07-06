@@ -203,19 +203,19 @@ func isJobTerminated(status int) bool {
 func loadConfig() {
 	config.RegisterIntConfigVariable(10000, &jobQueryBatchSize, true, 1, "Router.jobQueryBatchSize")
 	config.RegisterIntConfigVariable(1000, &updateStatusBatchSize, true, 1, "Router.updateStatusBatchSize")
-	config.RegisterDurationConfigVariable(time.Duration(1000), &readSleep, true, time.Millisecond, []string{"Router.readSleep","Router.readSleepInMS"}...)
-	config.RegisterIntConfigVariable(1000,&noOfJobsPerChannel,false,1,"Router.noOfJobsPerChannel")
-	config.RegisterIntConfigVariable(20,&noOfJobsToBatchInAWorker,false,1,"Router.noOfJobsToBatchInAWorker")
-	config.RegisterDurationConfigVariable(time.Duration(5), &jobsBatchTimeout, true, time.Second, []string{"Router.jobsBatchTimeout","Router.jobsBatchTimeoutInSec"}...)
-	config.RegisterDurationConfigVariable(time.Duration(0), &minSleep, false, time.Second, []string{"Router.minSleep","Router.minSleepInS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(5), &maxStatusUpdateWait, true, time.Second, []string{"Router.maxStatusUpdateWait","Router.maxStatusUpdateWaitInS"}...)
-	config.RegisterBoolConfigVariable(false,&disableEgress,false,"disableEgress")
+	config.RegisterDurationConfigVariable(time.Duration(1000), &readSleep, true, time.Millisecond, []string{"Router.readSleep", "Router.readSleepInMS"}...)
+	config.RegisterIntConfigVariable(1000, &noOfJobsPerChannel, false, 1, "Router.noOfJobsPerChannel")
+	config.RegisterIntConfigVariable(20, &noOfJobsToBatchInAWorker, false, 1, "Router.noOfJobsToBatchInAWorker")
+	config.RegisterDurationConfigVariable(time.Duration(5), &jobsBatchTimeout, true, time.Second, []string{"Router.jobsBatchTimeout", "Router.jobsBatchTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0), &minSleep, false, time.Second, []string{"Router.minSleep", "Router.minSleepInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(5), &maxStatusUpdateWait, true, time.Second, []string{"Router.maxStatusUpdateWait", "Router.maxStatusUpdateWaitInS"}...)
+	config.RegisterBoolConfigVariable(false, &disableEgress, false, "disableEgress")
 	// Time period for diagnosis ticker
-	config.RegisterDurationConfigVariable(time.Duration(60), &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.routerTimePeriod","Diagnostics.routerTimePeriodInS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(10), &minRetryBackoff, true, time.Second, []string{"Router.minRetryBackoff","Router.minRetryBackoffInS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(300), &maxRetryBackoff, true, time.Second, []string{"Router.maxRetryBackoff","Router.maxRetryBackoffInS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Router.fixedLoopSleep","Router.fixedLoopSleepInMS"}...)
-	config.RegisterIntConfigVariable(10,&failedEventsCacheSize,false,1,"Router.failedEventsCacheSize")
+	config.RegisterDurationConfigVariable(time.Duration(60), &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10), &minRetryBackoff, true, time.Second, []string{"Router.minRetryBackoff", "Router.minRetryBackoffInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(300), &maxRetryBackoff, true, time.Second, []string{"Router.maxRetryBackoff", "Router.maxRetryBackoffInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Router.fixedLoopSleep", "Router.fixedLoopSleepInMS"}...)
+	config.RegisterIntConfigVariable(10, &failedEventsCacheSize, false, 1, "Router.failedEventsCacheSize")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
 }
 
@@ -1602,7 +1602,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.statusLoopPauseChannel = make(chan *PauseT)
 	rt.statusLoopResumeChannel = make(chan bool)
 	rt.reporting = reporting
-	config.RegisterBoolConfigVariable(true,&rt.reportingEnabled,false,"Reporting.enabled")
+	config.RegisterBoolConfigVariable(true, &rt.reportingEnabled, false, "Reporting.enabled")
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
@@ -1616,7 +1616,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
 	rt.destName = destName
-	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout","Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout","Router." + "httpTimeoutInS"}
+	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(30, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	rt.crashRecover()
 	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
@@ -1641,7 +1641,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
-	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow","Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow" ,"Router." + "retryTimeWindowInMins"}
+	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)

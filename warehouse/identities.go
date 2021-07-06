@@ -24,7 +24,7 @@ var (
 )
 
 func init() {
-	config.RegisterBoolConfigVariable(false,&shouldPopulateHistoricIdentities,false,"Warehouse.populateHistoricIdentities")
+	config.RegisterBoolConfigVariable(false, &shouldPopulateHistoricIdentities, false, "Warehouse.populateHistoricIdentities")
 	populatingHistoricIdentitiesProgressMap = map[string]bool{}
 	populatedHistoricIdentitiesMap = map[string]bool{}
 }

@@ -62,7 +62,7 @@ func loadConfig() {
 	KVStoreDestinations = []string{"REDIS"}
 	Destinations = append(ObjectStreamDestinations, KVStoreDestinations...)
 	customManagerMap = make(map[string]*CustomManagerT)
-	config.RegisterBoolConfigVariable(false,&disableEgress,false,"disableEgress")
+	config.RegisterBoolConfigVariable(false, &disableEgress, false, "disableEgress")
 }
 
 // newClient delegates the call to the appropriate manager

@@ -96,7 +96,7 @@ func init() {
 
 func loadConfig() {
 	IdentityEnabledWarehouses = []string{"SNOWFLAKE", "BQ"}
-	config.RegisterBoolConfigVariable(false, &enableIDResolution,false,"Warehouse.enableIDResolution")
+	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 }
 
@@ -174,9 +174,9 @@ type PendingEventsRequestT struct {
 }
 
 type PendingEventsResponseT struct {
-	PendingEvents            bool `json:"pending_events"`
-	PendingStagingFilesCount int64  `json:"pending_staging_files"`
-	PendingUploadCount       int64  `json:"pending_uploads"`
+	PendingEvents            bool  `json:"pending_events"`
+	PendingStagingFilesCount int64 `json:"pending_staging_files"`
+	PendingUploadCount       int64 `json:"pending_uploads"`
 }
 
 type TriggerUploadRequestT struct {

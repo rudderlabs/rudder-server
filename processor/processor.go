@@ -265,7 +265,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	proc.reporting = reporting
-	config.RegisterBoolConfigVariable(false,&proc.reportingEnabled,false,"Reporting.enabled")
+	config.RegisterBoolConfigVariable(false, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -384,21 +384,21 @@ var (
 )
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep","Processor.maxLoopSleepInMS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, []string{"Processor.loopSleep","Processor.loopSleepInMS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep","Processor.fixedLoopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep", "Processor.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(100, &transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
-	config.RegisterIntConfigVariable(100,&configSessionThresholdEvents, false, 1, "Processor.configSessionThresholdEvents")
-	config.RegisterDurationConfigVariable(time.Duration(120), &sessionInactivityThreshold, true, time.Second, []string{"Processor.sessionInactivityThreshold","Processor.sessionInactivityThresholdInS"}...)
-	config.RegisterBoolConfigVariable(false,&configProcessSessions,false,"Processor.processSessions")
+	config.RegisterIntConfigVariable(100, &configSessionThresholdEvents, false, 1, "Processor.configSessionThresholdEvents")
+	config.RegisterDurationConfigVariable(time.Duration(120), &sessionInactivityThreshold, true, time.Second, []string{"Processor.sessionInactivityThreshold", "Processor.sessionInactivityThresholdInS"}...)
+	config.RegisterBoolConfigVariable(false, &configProcessSessions, false, "Processor.processSessions")
 	// Enable dedup of incoming events by default
-	config.RegisterBoolConfigVariable(false,&enableDedup,false,"Dedup.enableDedup")
+	config.RegisterBoolConfigVariable(false, &enableDedup, false, "Dedup.enableDedup")
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
-	config.RegisterBoolConfigVariable(false,&enableEventSchemasFeature,false,"EventSchemas.enableEventSchemasFeature")
-	config.RegisterBoolConfigVariable(false,&enableEventSchemasAPIOnly,false,"EventSchemas.enableEventSchemasAPIOnly")
+	config.RegisterBoolConfigVariable(false, &enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
+	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, false, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 	config.RegisterIntConfigVariable(1, &avgEventsInRequest, true, 1, "Processor.avgEventsInRequest")
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
@@ -407,9 +407,9 @@ func loadConfig() {
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, []string{"Processor.pollIntervalInS","Processor.pollInterval"}...)
+	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, []string{"Processor.pollIntervalInS", "Processor.pollInterval"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
-	config.RegisterStringConfigVariable("GW",&GWCustomVal,false,"Gateway.CustomVal")
+	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
 }
 
 func (proc *HandleT) getTransformerFeatureJson() {

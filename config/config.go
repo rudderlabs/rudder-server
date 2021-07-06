@@ -18,10 +18,10 @@ import (
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
 var (
-	whSchemaVersion     	   string
-	hotReloadableConfig 	   map[string]*ConfigVar
-	nonHotReloadableConfig 	   map[string]*ConfigVar
-	configVarLock       	   sync.RWMutex
+	whSchemaVersion        string
+	hotReloadableConfig    map[string]*ConfigVar
+	nonHotReloadableConfig map[string]*ConfigVar
+	configVarLock          sync.RWMutex
 )
 
 type ConfigVar struct {
@@ -88,7 +88,7 @@ func watchForConfigChange() {
 	defer configVarLock.RUnlock()
 	_ = checkAndUpdateConfig(hotReloadableConfig)
 	isChanged := checkAndUpdateConfig(nonHotReloadableConfig)
-	if isChanged && GetEnvAsBool("canRestartOnConfigChange",false){
+	if isChanged && GetEnvAsBool("canRestartOnConfigChange", false) {
 		os.Exit(1)
 	}
 }
@@ -183,7 +183,7 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar) bool {
 				for _, key := range configVal.keys {
 					if viper.IsSet(key) {
 						isSet = true
-						_value= GetDuration(key, configVal.defaultValue.(time.Duration),configVal.multiplier.(time.Duration))
+						_value = GetDuration(key, configVal.defaultValue.(time.Duration), configVal.multiplier.(time.Duration))
 						break
 					}
 				}
@@ -249,6 +249,7 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar) bool {
 	}
 	return isChanged
 }
+
 //GetBool is a wrapper for viper's GetBool
 func GetBool(key string, defaultValue bool) (value bool) {
 
@@ -407,7 +408,7 @@ func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Durati
 	for _, key := range keys {
 		if IsSet(key) {
 			isSet = true
-			*ptr= GetDuration(key, defaultValue  ,timeScale)
+			*ptr = GetDuration(key, defaultValue, timeScale)
 			break
 		}
 	}
@@ -415,7 +416,6 @@ func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Durati
 		*ptr = defaultValue * timeScale
 	}
 }
-
 
 func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloadable bool, keys ...string) {
 	configVarLock.Lock()
@@ -485,33 +485,34 @@ func GetString(key string, defaultValue string) (value string) {
 	}
 	return viper.GetString(key)
 }
+
 // GetDuration is wrapper for viper's GetDuration
-func GetDuration(key string, defaultValue time.Duration , timeScale time.Duration) (value time.Duration) {
+func GetDuration(key string, defaultValue time.Duration, timeScale time.Duration) (value time.Duration) {
 	var envValue string
 	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
 		envValue = cast.ToString(envVal)
-		parseDuration , err := time.ParseDuration(envValue)
+		parseDuration, err := time.ParseDuration(envValue)
 		if err == nil {
 			return parseDuration
-		}else{
-			return cast.ToDuration(envVal)*timeScale
+		} else {
+			return cast.ToDuration(envVal) * timeScale
 		}
 	}
 
 	if !viper.IsSet(key) {
 		return defaultValue
-	}else{
-		envValue =viper.GetString(key)
-		parseDuration , err := time.ParseDuration(envValue)
+	} else {
+		envValue = viper.GetString(key)
+		parseDuration, err := time.ParseDuration(envValue)
 		if err == nil {
 			return parseDuration
-		}else{
-			_,err=strconv.ParseFloat(envValue,64)
-			if err==nil{
-				return viper.GetDuration(key)*timeScale
-			}else{
-				return defaultValue*timeScale
+		} else {
+			_, err = strconv.ParseFloat(envValue, 64)
+			if err == nil {
+				return viper.GetDuration(key) * timeScale
+			} else {
+				return defaultValue * timeScale
 			}
 		}
 	}

@@ -47,7 +47,7 @@ type RecoveryDataT struct {
 var pkgLogger logger.LoggerI
 
 func init() {
-	config.RegisterStringConfigVariable( "/tmp/recovery_data.json",&storagePath,false,"recovery.storagePath")
+	config.RegisterStringConfigVariable("/tmp/recovery_data.json", &storagePath, false, "recovery.storagePath")
 	pkgLogger = logger.NewLogger().Child("db").Child("recovery")
 }
 

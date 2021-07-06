@@ -34,11 +34,11 @@ func init() {
 
 func loadConfig() {
 	// Event limit when rate limit is enabled. 1000 by default
-	config.RegisterIntConfigVariable(1000,&eventLimit,false,1,"RateLimit.eventLimit")
+	config.RegisterIntConfigVariable(1000, &eventLimit, false, 1, "RateLimit.eventLimit")
 	// Rolling time window for event limit. 60 mins by default
-	config.RegisterDurationConfigVariable(time.Duration(60),&rateLimitWindowInMins,false ,time.Minute , []string{"RateLimit.rateLimitWindow","RateLimit.rateLimitWindowInMins"}...)
+	config.RegisterDurationConfigVariable(time.Duration(60), &rateLimitWindowInMins, false, time.Minute, []string{"RateLimit.rateLimitWindow", "RateLimit.rateLimitWindowInMins"}...)
 	// Number of buckets in time window. 12 by default
-	config.RegisterIntConfigVariable(12,&noOfBucketsInWindow,false,1,"RateLimit.noOfBucketsInWindow")
+	config.RegisterIntConfigVariable(12, &noOfBucketsInWindow, false, 1, "RateLimit.noOfBucketsInWindow")
 }
 
 //SetUp eventLimiter

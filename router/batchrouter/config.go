@@ -12,4 +12,3 @@ func getBatchRouterConfigInt(key string, destType string, defaultValue int) int 
 		return config.GetInt("BatchRouter."+key, defaultValue)
 	}
 }
-

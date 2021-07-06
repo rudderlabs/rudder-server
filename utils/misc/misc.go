@@ -39,6 +39,7 @@ import (
 
 var AppStartTime int64
 var errorStorePath string
+
 const (
 	// RFC3339Milli with milli sec precision
 	RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
@@ -64,7 +65,7 @@ var pkgLogger logger.LoggerI
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
-	config.RegisterStringConfigVariable("/tmp/error_store.json" , &errorStorePath , false , "recovery.errorStorePath")
+	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
 }
 
 func getErrorStore() (ErrorStoreT, error) {

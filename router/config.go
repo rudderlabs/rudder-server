@@ -55,4 +55,3 @@ func getRouterConfigString(key string, destType string, defaultValue string) str
 		return config.GetString("Router."+key, defaultValue)
 	}
 }
-

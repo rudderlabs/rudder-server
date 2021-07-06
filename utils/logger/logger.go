@@ -115,7 +115,7 @@ func loadConfig() {
 
 	// colon separated key value pairs
 	// Example: "router.GA=DEBUG:warehouse.REDSHIFT=DEBUG"
-	config.RegisterStringConfigVariable("",&levelConfigStr,false, "Logger.moduleLevels")
+	config.RegisterStringConfigVariable("", &levelConfigStr, false, "Logger.moduleLevels")
 	levelConfig = make(map[string]int)
 	levelConfigStr = strings.TrimSpace(levelConfigStr)
 	if levelConfigStr != "" {

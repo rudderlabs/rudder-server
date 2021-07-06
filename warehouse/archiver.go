@@ -35,7 +35,7 @@ func init() {
 func loadConfigArchiver() {
 	config.RegisterBoolConfigVariable(true, &archiveUploadRelatedRecords, true, "Warehouse.archiveUploadRelatedRecords")
 	config.RegisterIntConfigVariable(5, &uploadsArchivalTimeInDays, true, 1, "Warehouse.uploadsArchivalTimeInDays")
-	config.RegisterDurationConfigVariable(time.Duration(1440), &archiverTickerTime, true, time.Minute, []string{"Warehouse.archiverTickerTime","Warehouse.archiverTickerTimeInMin"}...) // default 1 day
+	config.RegisterDurationConfigVariable(time.Duration(1440), &archiverTickerTime, true, time.Minute, []string{"Warehouse.archiverTickerTime", "Warehouse.archiverTickerTimeInMin"}...) // default 1 day
 }
 
 type backupRecordsArgs struct {

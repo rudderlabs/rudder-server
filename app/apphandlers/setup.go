@@ -67,12 +67,12 @@ func init() {
 }
 
 func loadConfig() {
-	config.RegisterIntConfigVariable(12,&maxProcess,false,1,"maxProcess")
-	config.RegisterDurationConfigVariable(time.Duration(0),&gwDBRetention,false,time.Hour,[]string{"gwDBRetention","gwDBRetentionInHr"}...)
-	config.RegisterDurationConfigVariable(time.Duration(0),&routerDBRetention,false,time.Hour,"routerDBRetention")
-	config.RegisterBoolConfigVariable(true,&enableProcessor,false,"enableProcessor")
-	config.RegisterBoolConfigVariable(false,&enableReplay,false,"Replay.enabled")
-	config.RegisterBoolConfigVariable(false,&enableRouter,false,"enableRouter")
+	config.RegisterIntConfigVariable(12, &maxProcess, false, 1, "maxProcess")
+	config.RegisterDurationConfigVariable(time.Duration(0), &gwDBRetention, false, time.Hour, []string{"gwDBRetention", "gwDBRetentionInHr"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0), &routerDBRetention, false, time.Hour, "routerDBRetention")
+	config.RegisterBoolConfigVariable(true, &enableProcessor, false, "enableProcessor")
+	config.RegisterBoolConfigVariable(false, &enableReplay, false, "Replay.enabled")
+	config.RegisterBoolConfigVariable(false, &enableRouter, false, "enableRouter")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
 }

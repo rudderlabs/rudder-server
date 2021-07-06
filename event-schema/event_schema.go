@@ -139,14 +139,14 @@ type EventPayloadT struct {
 }
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(120),&flushInterval,false,time.Second,[]string{"EventSchemas.syncInterval","EventSchemas.syncIntervalInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(120), &flushInterval, false, time.Second, []string{"EventSchemas.syncInterval", "EventSchemas.syncIntervalInS"}...)
 	adminUser = config.GetEnv("RUDDER_ADMIN_USER", "rudder")
 	adminPassword = config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
-	config.RegisterIntConfigVariable(5,&reservoirSampleSize,false,1,"EventSchemas.reservoirSampleSize")
-	config.RegisterIntConfigVariable(128,&noOfWorkers,false,1,"EventSchemas.noOfWorkers")
-	config.RegisterBoolConfigVariable(false,&shouldCaptureNilAsUnknowns,false,"EventSchemas.shouldCaptureNilAsUnknowns")
-	config.RegisterIntConfigVariable(200,&eventModelLimit,false,1,"EventSchemas.eventModelLimit")
-	config.RegisterIntConfigVariable(20,&schemaVersionPerEventModelLimit,false,1,"EventSchemas.schemaVersionPerEventModelLimit")
+	config.RegisterIntConfigVariable(5, &reservoirSampleSize, false, 1, "EventSchemas.reservoirSampleSize")
+	config.RegisterIntConfigVariable(128, &noOfWorkers, false, 1, "EventSchemas.noOfWorkers")
+	config.RegisterBoolConfigVariable(false, &shouldCaptureNilAsUnknowns, false, "EventSchemas.shouldCaptureNilAsUnknowns")
+	config.RegisterIntConfigVariable(200, &eventModelLimit, false, 1, "EventSchemas.eventModelLimit")
+	config.RegisterIntConfigVariable(20, &schemaVersionPerEventModelLimit, false, 1, "EventSchemas.schemaVersionPerEventModelLimit")
 
 	if adminPassword == "rudderstack" {
 		fmt.Println("[EventSchemas] You are using default password. Please change it by setting env variable RUDDER_ADMIN_PASSWORD")

@@ -43,10 +43,10 @@ var (
 	enableSuppressUserFeature bool
 	pkgLogger                 logger.LoggerI
 	appHandler                apphandlers.AppHandler
-	ReadTimeout       		  time.Duration
-	ReadHeaderTimeout 		  time.Duration
-	WriteTimeout      		  time.Duration
-	IdleTimeout       		  time.Duration
+	ReadTimeout               time.Duration
+	ReadHeaderTimeout         time.Duration
+	WriteTimeout              time.Duration
+	IdleTimeout               time.Duration
 	MaxHeaderBytes            int
 )
 
@@ -54,14 +54,14 @@ var version = "Not an official release. Get the latest release from the github r
 var major, minor, commit, buildDate, builtBy, gitURL, patch string
 
 func loadConfig() {
-	config.RegisterStringConfigVariable("embedded",&warehouseMode,false,"Warehouse.mode")
-	config.RegisterBoolConfigVariable(true,&enableSuppressUserFeature,false,"Gateway.enableSuppressUserFeature")
+	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
+	config.RegisterBoolConfigVariable(true, &enableSuppressUserFeature, false, "Gateway.enableSuppressUserFeature")
 	pkgLogger = logger.NewLogger().Child("main")
-	config.RegisterDurationConfigVariable(time.Duration(0),&ReadTimeout,false,time.Second,[]string{"ReadTimeOut","ReadTimeOutInSec"}...)
-	config.RegisterDurationConfigVariable(time.Duration(0),&ReadHeaderTimeout,false,time.Second,[]string{"ReadHeaderTimeout","ReadHeaderTimeoutInSec"}...)
-	config.RegisterDurationConfigVariable(time.Duration(10),&WriteTimeout,false,time.Second,[]string{"WriteTimeout","WriteTimeoutInSec"}...)
-	config.RegisterDurationConfigVariable(time.Duration(720),&IdleTimeout,false,time.Second,[]string{"IdleTimeout","IdleTimeoutInSec"}...)
-	config.RegisterIntConfigVariable(524288,&MaxHeaderBytes,false,1,"MaxHeaderBytes")
+	config.RegisterDurationConfigVariable(time.Duration(0), &ReadTimeout, false, time.Second, []string{"ReadTimeOut", "ReadTimeOutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0), &ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10), &WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(720), &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
+	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 }
 
 func init() {

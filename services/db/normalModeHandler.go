@@ -7,7 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-var duration,maxCrashes int
+var duration, maxCrashes int
 
 func (handler *NormalModeHandler) RecordAppStart(currTime int64) {
 	handler.recoveryData.StartTimes = append(handler.recoveryData.StartTimes, currTime)
@@ -16,8 +16,8 @@ func (handler *NormalModeHandler) RecordAppStart(currTime int64) {
 }
 
 func (handler *NormalModeHandler) HasThresholdReached() bool {
-	config.RegisterIntConfigVariable(5,&maxCrashes, false,1,"recovery.normal.crashThreshold")
-	config.RegisterIntConfigVariable(300,&duration, false,1,"recovery.normal.durationInS")
+	config.RegisterIntConfigVariable(5, &maxCrashes, false, 1, "recovery.normal.crashThreshold")
+	config.RegisterIntConfigVariable(300, &duration, false, 1, "recovery.normal.durationInS")
 	return CheckOccurences(handler.recoveryData.StartTimes, maxCrashes, duration)
 }
 

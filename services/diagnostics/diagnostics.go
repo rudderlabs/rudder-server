@@ -72,17 +72,17 @@ func init() {
 }
 
 func loadConfig() {
-	config.RegisterBoolConfigVariable(true,&EnableDiagnostics,false,"Diagnostics.enableDiagnostics")
-	config.RegisterStringConfigVariable("https://rudderstack-dataplane.rudderstack.com",&endpoint,false,"Diagnostics.endpoint")
-	config.RegisterStringConfigVariable("1aWPBIROQvFYW9FHxgc03nUsLza",&writekey,false,"Diagnostics.writekey")
-	config.RegisterBoolConfigVariable(true,&EnableServerStartMetric,false,"Diagnostics.enableServerStartMetric")
-	config.RegisterBoolConfigVariable(true,&EnableConfigIdentifyMetric,false,"Diagnostics.enableConfigIdentifyMetric")
-	config.RegisterBoolConfigVariable(true,&EnableServerStartedMetric,false,"Diagnostics.enableServerStartedMetric")
-	config.RegisterBoolConfigVariable(true,&EnableConfigProcessedMetric,false,"Diagnostics.enableConfigProcessedMetric")
-	config.RegisterBoolConfigVariable(true,&EnableGatewayMetric,false,"Diagnostics.enableGatewayMetric")
-	config.RegisterBoolConfigVariable(true,&EnableRouterMetric,false,"Diagnostics.enableRouterMetric")
-	config.RegisterBoolConfigVariable(true,&EnableBatchRouterMetric,false,"Diagnostics.enableBatchRouterMetric")
-	config.RegisterBoolConfigVariable(true,&EnableDestinationFailuresMetric,false,"Diagnostics.enableDestinationFailuresMetric")
+	config.RegisterBoolConfigVariable(true, &EnableDiagnostics, false, "Diagnostics.enableDiagnostics")
+	config.RegisterStringConfigVariable("https://rudderstack-dataplane.rudderstack.com", &endpoint, false, "Diagnostics.endpoint")
+	config.RegisterStringConfigVariable("1aWPBIROQvFYW9FHxgc03nUsLza", &writekey, false, "Diagnostics.writekey")
+	config.RegisterBoolConfigVariable(true, &EnableServerStartMetric, false, "Diagnostics.enableServerStartMetric")
+	config.RegisterBoolConfigVariable(true, &EnableConfigIdentifyMetric, false, "Diagnostics.enableConfigIdentifyMetric")
+	config.RegisterBoolConfigVariable(true, &EnableServerStartedMetric, false, "Diagnostics.enableServerStartedMetric")
+	config.RegisterBoolConfigVariable(true, &EnableConfigProcessedMetric, false, "Diagnostics.enableConfigProcessedMetric")
+	config.RegisterBoolConfigVariable(true, &EnableGatewayMetric, false, "Diagnostics.enableGatewayMetric")
+	config.RegisterBoolConfigVariable(true, &EnableRouterMetric, false, "Diagnostics.enableRouterMetric")
+	config.RegisterBoolConfigVariable(true, &EnableBatchRouterMetric, false, "Diagnostics.enableBatchRouterMetric")
+	config.RegisterBoolConfigVariable(true, &EnableDestinationFailuresMetric, false, "Diagnostics.enableDestinationFailuresMetric")
 	Diagnostics = newDiagnostics()
 }
 

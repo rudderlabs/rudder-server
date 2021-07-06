@@ -41,16 +41,16 @@ func (fc *FrequencyCounter) setCounter(counterType CounterTypeT, counter countis
 }
 
 func init() {
-	config.RegisterStringConfigVariable("LossyCount",&counterTypeStr,false,"EventSchemas.counterTypeStr")
+	config.RegisterStringConfigVariable("LossyCount", &counterTypeStr, false, "EventSchemas.counterTypeStr")
 	// Output every elem has appeared at least (N * support) times
-	config.RegisterFloat64ConfigVariable(0.01,&counterSupport,false,"EventSchemas.counterSupport")
+	config.RegisterFloat64ConfigVariable(0.01, &counterSupport, false, "EventSchemas.counterSupport")
 	// We can start with support/10
-	config.RegisterFloat64ConfigVariable(0.001,&counterErrorTolerance,false,"EventSchemas.counterErrorTolerance")
+	config.RegisterFloat64ConfigVariable(0.001, &counterErrorTolerance, false, "EventSchemas.counterErrorTolerance")
 	//
-	config.RegisterFloat64ConfigVariable(0.01,&counterFailureProb,false,"EventSchemas.counterFailureProb")
+	config.RegisterFloat64ConfigVariable(0.01, &counterFailureProb, false, "EventSchemas.counterFailureProb")
 
 	// Check this?
-	config.RegisterFloat64ConfigVariable(0.01,&counterThreshold,false,"EventSchemas.counterThreshold")
+	config.RegisterFloat64ConfigVariable(0.01, &counterThreshold, false, "EventSchemas.counterThreshold")
 
 	if counterTypeStr == string(StickySampler) {
 		defaultCounterType = StickySampler
