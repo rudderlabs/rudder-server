@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
@@ -146,6 +147,8 @@ type HandleT struct {
 	rrh                                                        *RegularRequestHandler
 	irh                                                        *ImportRequestHandler
 	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyJobsDB
+	netHandle                                                  *http.Client
+	httpTimeout                                                time.Duration
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
@@ -778,16 +781,57 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	var gwPendingCount, rtPendingCount int64
+	var gwPendingCount, rtPendingCount, brtPendingCount, totalPendingTillNow int64
 	if !excludeGateway {
 		gwPendingCount = gateway.readonlyGatewayDB.GetPendingJobsCount([]string{CustomVal}, -1, gwParameterFilters)
+		totalPendingTillNow = gwPendingCount
 	}
-	rtPendingCount = gateway.readonlyRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
-	//brtPendingCount := gateway.readonlyBatchRouterDB.GetPendingJobsCount(nil, -1, nil)
 
-	totalPendingCount := gwPendingCount + rtPendingCount
+	if totalPendingTillNow <= 0 {
+		rtPendingCount = gateway.readonlyRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
+		totalPendingTillNow += rtPendingCount
+	}
 
-	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", totalPendingCount)))
+	if totalPendingTillNow <= 0 {
+		brtPendingCount = gateway.readonlyBatchRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
+		totalPendingTillNow += brtPendingCount
+	}
+
+	whPending := false
+	if totalPendingTillNow <= 0 {
+		whPending = gateway.getWarehousePending(payload)
+	}
+
+	pendingEventsResponse := totalPendingTillNow
+	if whPending {
+		pendingEventsResponse = 1
+	}
+
+	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", pendingEventsResponse)))
+}
+
+func (gateway *HandleT) getWarehousePending(payload []byte) bool {
+	uri := fmt.Sprintf(`%s/v1/warehouse/pending-events?triggerUpload=true`, misc.GetWarehouseURL())
+	resp, err := gateway.netHandle.Post(uri, "application/json; charset=utf-8",
+		bytes.NewBuffer(payload))
+	if err != nil {
+		return false
+	}
+
+	defer resp.Body.Close()
+
+	var whPendingResponse warehouseutils.PendingEventsResponseT
+	respData, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
+
+	err = json.Unmarshal(respData, &whPendingResponse)
+	if err != nil {
+		return false
+	}
+
+	return whPendingResponse.PendingEvents
 }
 
 //ProcessRequest throws a webRequest into the queue and waits for the response before returning
@@ -1261,6 +1305,12 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.stats = stats.DefaultStats
 
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
+
+	config.RegisterDurationConfigVariable(time.Duration(30), &gateway.httpTimeout, false, time.Second, "Gateway.httpTimeout")
+
+	tr := &http.Transport{}
+	client := &http.Client{Transport: tr, Timeout: gateway.httpTimeout}
+	gateway.netHandle = client
 
 	//For the lack of better stat type, using TimerType.
 	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.TimerType)
