@@ -69,34 +69,7 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
 }
 
 func (st *HandleT) crashRecover() {
-	for {
-		execList := st.errorDB.GetExecuting(jobsdb.GetQueryParamsT{Count: errDBReadBatchSize})
-
-		if len(execList) == 0 {
-			break
-		}
-		st.logger.Debug("Process Error Stash crash recovering", len(execList))
-
-		var statusList []*jobsdb.JobStatusT
-
-		for _, job := range execList {
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				JobState:      jobsdb.Failed.State,
-				ErrorCode:     "",
-				ErrorResponse: []byte(`{}`), // check
-			}
-			statusList = append(statusList, &status)
-		}
-		err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
-		if err != nil {
-			pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as failed. Panicking. Err: %v", err)
-			panic(err)
-		}
-	}
+	st.errorDB.DeleteExecuting(jobsdb.GetQueryParamsT{Count: -1})
 }
 
 func (st *HandleT) Start() {

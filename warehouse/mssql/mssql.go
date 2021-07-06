@@ -54,7 +54,7 @@ const PROVIDER = "MSSQL"
 var rudderDataTypesMapToMssql = map[string]string{
 	"int":      "bigint",
 	"float":    "decimal(28,10)",
-	"string":   "varchar(512)",
+	"string":   "nvarchar(512)",
 	"datetime": "datetimeoffset",
 	"boolean":  "bit",
 	"json":     "jsonb",
