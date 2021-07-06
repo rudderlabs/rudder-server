@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
@@ -699,12 +700,6 @@ type pendingEventsRequestPayload struct {
 	JobRunID      string `json:"job_run_id"`
 }
 
-type pendingWHResponse struct {
-	PendingEvents       bool `json:"pending_events"`
-	PendingStagingFiles int  `json:"pending_staging_files"`
-	PendingUploads      int  `json:"pending_uploads"`
-}
-
 func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
@@ -822,7 +817,7 @@ func (gateway *HandleT) getWarehousePending(payload []byte) bool {
 
 	defer resp.Body.Close()
 
-	var whPendingResponse pendingWHResponse
+	var whPendingResponse warehouseutils.PendingEventsResponseT
 	respData, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return false
