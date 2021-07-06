@@ -1507,6 +1507,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	job.setStagingFilesStatus(toProcessStagingFiles, warehouseutils.StagingFileExecutingState)
 
 	saveLoadFileErrs := []error{}
+	var sampleError error
 	for i := 0; i < len(toProcessStagingFiles); i += publishBatchSize {
 		j := i + publishBatchSize
 		if j > len(toProcessStagingFiles) {
@@ -1563,7 +1564,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
 				if resp.Status == "aborted" {
 					pkgLogger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
-					job.setStagingFileErr(resp.JobID, fmt.Errorf(resp.Error))
+					sampleError = fmt.Errorf(resp.Error)
+					job.setStagingFileErr(resp.JobID, sampleError)
 					continue
 				}
 				var output []loadFileUploadOutputT
@@ -1601,7 +1603,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	}
 
 	if startLoadFileID == 0 || endLoadFileID == 0 {
-		err = fmt.Errorf("No load files generated")
+		err = fmt.Errorf(`No load files generated. Sample error: %v`, sampleError)
 		return startLoadFileID, endLoadFileID, err
 	}
 
