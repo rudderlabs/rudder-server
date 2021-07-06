@@ -12,7 +12,7 @@ func loadConfig() {
 	//Port where AdminHandler is running
 	config.RegisterIntConfigVariable(8089, &adminWebPort, false, 1, "Gateway.adminWebPort")
 	//Number of incoming requests that are batched before handing off to write workers
-	config.RegisterIntConfigVariable(128, &maxUserWebRequestBatchSize, false, 1, "Gateway.maxUserWebRequestBatchSize")
+	config.RegisterIntConfigVariable(128, &maxUserWebRequestBatchSize, false, 1, "Gateway.maxUserRequestBatchSize")
 	//Number of userWorkerBatchRequest that are batched before initiating write
 	config.RegisterIntConfigVariable(128, &maxDBBatchSize, false, 1, "Gateway.maxDBBatchSize")
 	//Timeout after which batch is formed anyway with whatever requests
@@ -38,9 +38,9 @@ func loadConfig() {
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
 	config.RegisterBoolConfigVariable(false, &allowReqsWithoutUserIDAndAnonymousID, true, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
 	config.RegisterBoolConfigVariable(true, &gwAllowPartialWriteWithErrors, true, "Gateway.allowPartialWriteWithErrors")
-	config.RegisterDurationConfigVariable(time.Duration(0), &ReadTimeout, false, time.Second, []string{"ReadTimeOut", "ReadTimeOutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0), &ReadTimeout, false, time.Second, []string{"ReadTimeout", "ReadTimeOutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(0), &ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
-	config.RegisterDurationConfigVariable(time.Duration(10), &WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10), &WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(720), &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 }

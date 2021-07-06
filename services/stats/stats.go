@@ -44,7 +44,7 @@ func init() {
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
 	instanceID = config.GetEnv("INSTANCE_ID", "")
 	config.RegisterBoolConfigVariable(true, &enabled, false, "RuntimeStats.enabled")
-	config.RegisterInt64ConfigVariable(10, &statsCollectionInterval, false, 1, "Router.statsCollectionInterval")
+	config.RegisterInt64ConfigVariable(10, &statsCollectionInterval, false, 1, "RuntimeStats.statsCollectionInterval")
 	config.RegisterBoolConfigVariable(true, &enableCPUStats, false, "RuntimeStats.enableCPUStats")
 	config.RegisterBoolConfigVariable(true, &enableMemStats, false, "RuntimeStats.enabledMemStats")
 	config.RegisterBoolConfigVariable(true, &enableGCStats, false, "RuntimeStats.enableGCStats")

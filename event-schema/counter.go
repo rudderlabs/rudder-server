@@ -41,7 +41,7 @@ func (fc *FrequencyCounter) setCounter(counterType CounterTypeT, counter countis
 }
 
 func init() {
-	config.RegisterStringConfigVariable("LossyCount", &counterTypeStr, false, "EventSchemas.counterTypeStr")
+	config.RegisterStringConfigVariable("LossyCount", &counterTypeStr, false, "EventSchemas.counterType")
 	// Output every elem has appeared at least (N * support) times
 	config.RegisterFloat64ConfigVariable(0.01, &counterSupport, false, "EventSchemas.counterSupport")
 	// We can start with support/10
