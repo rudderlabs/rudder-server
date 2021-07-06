@@ -100,6 +100,7 @@ var defaultTransformerFeatures = `{
   }`
 
 var mainLoopTimeout = 200 * time.Millisecond
+var attempts = 10
 
 type DestStatT struct {
 	numEvents              stats.RudderStats
@@ -364,7 +365,6 @@ func loadConfig() {
 }
 
 func (proc *HandleT) getTransformerFeatureJson() {
-	const attempts = 10
 	for {
 		for i := 0; i < attempts; i++ {
 			url := transformerURL + "/features"
@@ -415,6 +415,10 @@ func SetDisableDedupFeature(b bool) bool {
 
 func SetMainLoopTimeout(timeout time.Duration) {
 	mainLoopTimeout = timeout
+}
+
+func SetFeaturesRetryAttempts(overrideAttempts int) {
+	attempts = overrideAttempts
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
