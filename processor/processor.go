@@ -341,8 +341,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 
 // Start starts this processor's main loops.
 func (proc *HandleT) Start() {
-
 	rruntime.Go(func() {
+		//waiting till the backend config is received
+		proc.backendConfig.WaitForConfig()
 		proc.mainLoop()
 	})
 	rruntime.Go(func() {
@@ -893,6 +894,7 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 	}
 }
 
+//Add Reporting Tests
 func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, commonMetaData transformer.MetadataT, destination backendconfig.DestinationT) ([]transformer.TransformerEventT, []*types.PUReportedMetric, map[string]int64, map[string]MetricMetadata) {
 	successMetrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
@@ -970,6 +972,7 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 	}
 }
 
+//Add Reporting Tests
 func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string, transformationEnabled bool) ([]*jobsdb.JobT, []*types.PUReportedMetric, map[string]int64) {
 	failedMetrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
@@ -1127,6 +1130,7 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
+//Add Reporting Tests
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 
 	proc.pStatsJobs.Start()
@@ -1785,8 +1789,6 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 }
 
 func (proc *HandleT) mainLoop() {
-	//waiting till the backend config is received
-	proc.backendConfig.WaitForConfig()
 	//waiting for reporting client setup
 	if proc.reporting != nil {
 		proc.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
@@ -1794,7 +1796,6 @@ func (proc *HandleT) mainLoop() {
 
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
-
 	timeout := time.After(200 * time.Millisecond)
 	for {
 		select {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/golang/mock/gomock"
@@ -44,9 +43,6 @@ type context struct {
 
 	mockEnabledADestStats *DestStatT
 	mockEnabledBDestStats *DestStatT
-	mockPauseChannel      chan *PauseT
-	mockResumeChannel     chan bool
-	mockPauseLock         sync.Mutex
 }
 
 func (c *context) Setup() {
@@ -56,8 +52,6 @@ func (c *context) Setup() {
 	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBatchRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockPauseChannel = make(chan *PauseT)
-	c.mockResumeChannel = make(chan bool)
 
 	c.configInitialised = false
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
@@ -894,7 +888,7 @@ var _ = Describe("Processor", func() {
 		})
 	})
 
-	Context("Pause and Resume Functions", func() {
+	Context("Pause and Resume Function Tests", func() {
 		var clearDB = false
 		It("Should Recieve Something on Pause when Processor Is Not Paused", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -969,6 +963,47 @@ var _ = Describe("Processor", func() {
 		})
 	})
 
+	Context("MainLoop Tests", func() {
+		var clearDB = false
+		It("Should be paused when recieved something on Pause Channel", func() {
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			var processor *HandleT = &HandleT{
+				transformer: mockTransformer,
+			}
+
+			// crash recover returns empty list
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
+
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			go pauseMainLoop(processor)
+			go processor.mainLoop()
+			go resumeMainLoop(processor)
+			time.Sleep(5 * time.Millisecond)
+			Expect(processor.paused).To(BeTrue())
+		})
+
+		It("Should be paused when recieved something on Pause Channel", func() {
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			var processor *HandleT = &HandleT{
+				transformer: mockTransformer,
+			}
+
+			// crash recover returns empty list
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
+
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
+			go processor.mainLoop()
+			time.Sleep(200 * time.Millisecond)
+			Expect(processor.paused).To(BeFalse())
+		})
+	})
+
 })
 
 type mockEventData struct {
@@ -994,6 +1029,14 @@ type transformExpectation struct {
 
 func setProcessorPausedVariable(processor *HandleT, setValue bool) {
 	processor.paused = setValue
+}
+
+func pauseMainLoop(processor *HandleT) {
+	processor.pauseChannel <- &PauseT{respChannel: make(chan bool)}
+}
+
+func resumeMainLoop(processor *HandleT) {
+	processor.resumeChannel <- true
 }
 
 func createMessagePayload(e mockEventData) string {
