@@ -976,7 +976,7 @@ var _ = Describe("Processor", func() {
 			go pauseMainLoop(processor)
 			go processor.mainLoop()
 			go resumeMainLoop(processor)
-			time.Sleep(5 * time.Millisecond)
+			time.Sleep(15 * time.Millisecond)
 			Expect(processor.paused).To(BeTrue())
 		})
 
