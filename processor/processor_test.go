@@ -998,7 +998,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
 			SetMainLoopTimeout(1 * time.Second)
 			go processor.mainLoop()
-			time.Sleep(1200 * time.Millisecond)
+			time.Sleep(1300 * time.Millisecond)
 			SetIsUnlocked(false)
 			Expect(processor.paused).To(BeFalse())
 		})
