@@ -968,11 +968,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
 				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, backendconfig.DestinationT{})
 				configT, ok := proc.backendConfig.Get()
-				if(!ok) {
+				if !ok {
 					pkgLogger.Errorf("unable to get backend config")
 				}
 				for _, source := range configT.Sources {
-					if (source.ID == commonMetadataFromSingularEvent.SourceID && !source.DgSourceTrackingPlanConfig.Deleted) {
+					if source.ID == commonMetadataFromSingularEvent.SourceID && !source.DgSourceTrackingPlanConfig.Deleted {
 						// TODO: TP preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig
 						shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlanId
 						//TODO : TrackingPlanVersion is not yet supported by configBE
@@ -984,50 +984,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				}
 				groupedEventsBySourceID[commonMetadataFromSingularEvent.SourceID] = append(groupedEventsBySourceID[commonMetadataFromSingularEvent.SourceID],
 					shallowEventCopy)
-
-				//// The below part needs to be done after tp validation
-				//enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
-				//for _, destType := range enabledDestTypes {
-				//	enabledDestinationsList := getEnabledDestinations(writeKey, destType)
-				//	enabledDestinationsMap[destType] = enabledDestinationsList
-				//
-				//	// Adding a singular event multiple times if there are multiple destinations of same type
-				//	for _, destination := range enabledDestinationsList {
-				//		shallowEventCopy := transformer.TransformerEventT{}
-				//		shallowEventCopy.Message = singularEvent
-				//		shallowEventCopy.Destination = reflect.ValueOf(destination).Interface().(backendconfig.DestinationT)
-				//		shallowEventCopy.Libraries = workspaceLibraries
-				//		//TODO: Test for multiple workspaces ex: hosted data plane
-				//		/* Stream destinations does not need config in transformer. As the Kafka destination config
-				//		holds the ca-certificate and it depends on user input, it may happen that they provide entire
-				//		certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
-				//		it may result into payload larger than accepted by transformer. So, discarding destination config from being
-				//		sent to transformer for such destination. */
-				//		if misc.ContainsString(customDestinations, destType) {
-				//			shallowEventCopy.Destination.Config = nil
-				//		}
-				//
-				//		shallowEventCopy.Message["request_ip"] = requestIP
-				//
-				//		enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-				//		enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, destination)
-				//
-				//		metadata := shallowEventCopy.Metadata
-				//		srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
-				//		//We have at-least one event so marking it good
-				//		_, ok = groupedEvents[srcAndDestKey]
-				//		if !ok {
-				//			groupedEvents[srcAndDestKey] = make([]transformer.TransformerEventT, 0)
-				//		}
-				//		groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey],
-				//			shallowEventCopy)
-				//		if _, ok := uniqueMessageIdsBySrcDestKey[srcAndDestKey]; !ok {
-				//			uniqueMessageIdsBySrcDestKey[srcAndDestKey] = make(map[string]struct{})
-				//		}
-				//		uniqueMessageIdsBySrcDestKey[srcAndDestKey][commonMetadataFromSingularEvent.MessageID] = struct{}{}
-				//
-				//	}
-				//}
 
 				//REPORTING - GATEWAY metrics - START
 				if proc.reporting != nil && proc.reportingEnabled {
@@ -1097,7 +1053,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		if !isTpExists {
 			// pass on the jobs for transformation(User,Dest)
 			validatedEventsBySourceID[srcId] = make([]transformer.TransformerEventT, 0)
-			validatedEventsBySourceID[srcId] = append(validatedEventsBySourceID[srcId],eventList...)
+			validatedEventsBySourceID[srcId] = append(validatedEventsBySourceID[srcId], eventList...)
 			continue
 		}
 		startedAt := time.Now()
@@ -1107,9 +1063,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		fmt.Println(response, timeTaken)
 
 		commonMetaData := transformer.MetadataT{
-			SourceID:        srcId,
-			SourceType:      eventList[0].Metadata.SourceType,
-			SourceCategory:  eventList[0].Metadata.SourceCategory,
+			SourceID:       srcId,
+			SourceType:     eventList[0].Metadata.SourceType,
+			SourceCategory: eventList[0].Metadata.SourceCategory,
 			//DestinationID:   destID,
 			//DestinationType: destination.DestinationDefinition.Name,
 		}
@@ -1125,14 +1081,14 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				panic(err)
 			}
 		}
-		proc.logger.Info("Failed metrics : ",failedMetrics, failedCountMap)
-		proc.logger.Info("Success metrics : ",successMetrics, successCountMap, successCountMetadataMap)
+		proc.logger.Info("Failed metrics : ", failedMetrics, failedCountMap)
+		proc.logger.Info("Success metrics : ", successMetrics, successCountMap, successCountMetadataMap)
 
 		if len(eventsToTransform) == 0 {
 			continue
 		} else {
 			validatedEventsBySourceID[srcId] = make([]transformer.TransformerEventT, 0)
-			validatedEventsBySourceID[srcId] = append(validatedEventsBySourceID[srcId],eventsToTransform...)
+			validatedEventsBySourceID[srcId] = append(validatedEventsBySourceID[srcId], eventsToTransform...)
 		}
 	}
 	// tracking plan validation end
@@ -1140,7 +1096,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	// The below part needs to be done after tp validation
 	for srcId, eventList := range validatedEventsBySourceID {
 		writeKey := ""
-		for wKey ,source := range writeKeySourceMap{
+		for wKey, source := range writeKeySourceMap {
 			if source.ID == srcId {
 				writeKey = wKey
 				break
@@ -1154,7 +1110,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 		workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 		workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
-		for _, event := range eventList{
+		for _, event := range eventList {
 			singularEvent := event.Message
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 			enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
@@ -1187,6 +1143,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					}
 					groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey],
 						shallowEventCopy)
+					if _, ok := uniqueMessageIdsBySrcDestKey[srcAndDestKey]; !ok {
+						uniqueMessageIdsBySrcDestKey[srcAndDestKey] = make(map[string]struct{})
+					}
+					uniqueMessageIdsBySrcDestKey[srcAndDestKey][event.Metadata.MessageID] = struct{}{}
 				}
 			}
 		}
