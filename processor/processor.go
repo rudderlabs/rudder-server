@@ -421,8 +421,8 @@ func SetFeaturesRetryAttempts(overrideAttempts int) {
 	attempts = overrideAttempts
 }
 
-func SetIsUnlocked(bool bool) {
-	isUnLocked = bool
+func SetIsUnlocked(unlockVar bool) {
+	isUnLocked = unlockVar
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
