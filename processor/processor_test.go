@@ -973,14 +973,15 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			SetMainLoopTimeout(1 * time.Second)
 			go pauseMainLoop(processor)
 			go processor.mainLoop()
 			go resumeMainLoop(processor)
-			time.Sleep(15 * time.Millisecond)
+			time.Sleep(1 * time.Second)
 			Expect(processor.paused).To(BeTrue())
 		})
 
-		It("Should be paused when recieved something on Pause Channel", func() {
+		It("Should be paused when recieved nothing on Pause Channel", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
@@ -994,8 +995,9 @@ var _ = Describe("Processor", func() {
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
+			SetMainLoopTimeout(1 * time.Second)
 			go processor.mainLoop()
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(1 * time.Second)
 			Expect(processor.paused).To(BeFalse())
 		})
 	})

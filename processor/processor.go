@@ -99,6 +99,8 @@ var defaultTransformerFeatures = `{
 	}
   }`
 
+var mainLoopTimeout = 200 * time.Millisecond
+
 type DestStatT struct {
 	numEvents              stats.RudderStats
 	numOutputSuccessEvents stats.RudderStats
@@ -409,6 +411,10 @@ func SetDisableDedupFeature(b bool) bool {
 	prev := enableDedup
 	enableDedup = b
 	return prev
+}
+
+func SetMainLoopTimeout(timeout time.Duration) {
+	mainLoopTimeout = timeout
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -1496,7 +1502,7 @@ func (proc *HandleT) mainLoop() {
 
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
-	timeout := time.After(200 * time.Millisecond)
+	timeout := time.After(mainLoopTimeout)
 	for {
 		select {
 		case pause := <-proc.pauseChannel:
@@ -1506,7 +1512,7 @@ func (proc *HandleT) mainLoop() {
 			<-proc.resumeChannel
 		case <-timeout:
 			proc.paused = false
-			timeout = time.After(200 * time.Millisecond)
+			timeout = time.After(mainLoopTimeout)
 			if isUnLocked {
 				if proc.handlePendingGatewayJobs() {
 					currLoopSleep = time.Duration(0)
