@@ -1059,11 +1059,7 @@ var _ = Describe("Static Function Tests", func() {
 
 	Context("getDiffMetrics Tests", func() {
 		It("Should match diffMetrics response for Empty Inputs", func() {
-			inCountMetadataMap := make(map[string]MetricMetadata, 0)
-			inCountMap := make(map[string]int64, 0)
-			successCountMap := make(map[string]int64, 0)
-			failedCountMap := make(map[string]int64, 0)
-			response := getDiffMetrics("some-string-1", "some-string-2", inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+			response := getDiffMetrics("some-string-1", "some-string-2", map[string]MetricMetadata{}, map[string]int64{}, map[string]int64{}, map[string]int64{})
 			Expect(len(response)).To(Equal(0))
 		})
 
