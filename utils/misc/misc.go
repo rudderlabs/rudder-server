@@ -972,3 +972,18 @@ func ConcatErrors(givenErrors []error) error {
 	}
 	return multierror.Join(errorsToJoin)
 }
+
+func isWarehouseMasterEnabled() bool {
+	warehouseMode := config.GetString("Warehouse.mode", "embedded")
+	return warehouseMode == config.EmbeddedMode ||
+		warehouseMode == config.PooledWHSlaveMode
+}
+
+func GetWarehouseURL() (url string) {
+	if isWarehouseMasterEnabled() {
+		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
+	} else {
+		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
+	}
+	return
+}

@@ -5,9 +5,6 @@ enableBackup = false
 enableDedup = true
 dedupWindowInS= 5
 
-[Processor]
-processSessions = false
-
 [Router]
 maxStatusUpdateWaitInS = 1
 useTestSink = true
