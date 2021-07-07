@@ -15,6 +15,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -24,7 +25,6 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
-
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
@@ -41,6 +41,7 @@ type context struct {
 	mockRouterJobsDB      *mocksJobsDB.MockJobsDB
 	mockBatchRouterJobsDB *mocksJobsDB.MockJobsDB
 	mockProcErrorsDB      *mocksJobsDB.MockJobsDB
+	MockReportingI        *mockReportingTypes.MockReportingI
 }
 
 func (c *context) Setup() {
@@ -64,7 +65,7 @@ func (c *context) Setup() {
 		Return().Times(1)
 
 	c.dbReadBatchSize = 10000
-
+	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)
 }
 
 func (c *context) Finish() {
@@ -274,7 +275,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
 
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
@@ -442,12 +443,12 @@ var _ = Describe("Processor", func() {
 				})
 			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
-
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledNoUT).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
+			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1)
 			processorSetupAndAssertJobHandling(processor, c)
 		})
 
@@ -630,6 +631,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledOnlyUT).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
+			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1)
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
@@ -755,7 +757,7 @@ var _ = Describe("Processor", func() {
 				})
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
-
+			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1)
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
@@ -877,6 +879,7 @@ var _ = Describe("Processor", func() {
 				})
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
+			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1)
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
@@ -916,7 +919,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
 
 			go processor.Pause()
 			setProcessorPausedVariable(processor, true)
@@ -934,7 +937,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
 
 			go processor.Resume()
 			setProcessorPausedVariable(processor, true)
@@ -952,7 +955,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
 
 			go processor.Resume()
 			setProcessorPausedVariable(processor, false)
@@ -973,7 +976,9 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any()).Times(1)
+
 			SetMainLoopTimeout(1 * time.Second)
 			go pauseMainLoop(processor)
 			go processor.mainLoop()
@@ -993,7 +998,9 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 			SetFeaturesRetryAttempts(0)
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any()).Times(1)
+
 			SetMainLoopTimeout(1 * time.Second)
 			go processor.mainLoop()
 			time.Sleep(3 * time.Second)
@@ -1343,7 +1350,7 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
 	var clearDB = false
 	SetDisableDedupFeature(false)
-	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
 
 	// make sure the mock backend config has sent the configuration
 	testutils.RunTestWithTimeout(func() {
