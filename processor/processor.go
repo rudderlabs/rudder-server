@@ -1193,7 +1193,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		// OR
 		//router and transformer supports router transform, then no destination transformation happens.
 		if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
-			response = convertToTransformerResponse(eventsToTransform)
+			response = ConvertToTransformerResponse(eventsToTransform)
 		} else {
 			destTransformationStat.transformTime.Start()
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize)
@@ -1401,7 +1401,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Print()
 }
 
-func convertToTransformerResponse(events []transformer.TransformerEventT) transformer.ResponseT {
+func ConvertToTransformerResponse(events []transformer.TransformerEventT) transformer.ResponseT {
 	var responses []transformer.TransformerResponseT
 	for _, event := range events {
 		resp := transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}

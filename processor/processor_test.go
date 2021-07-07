@@ -27,7 +27,7 @@ import (
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
-var testTimeout = 5 * time.Second
+var testTimeout = 10 * time.Second
 
 type context struct {
 	asyncHelper       testutils.AsyncTestHelper
@@ -1000,6 +1000,56 @@ var _ = Describe("Processor", func() {
 		})
 	})
 
+})
+
+var _ = Describe("Statis Function Tests", func() {
+
+	Context("TransformerFormatResponse Tests", func() {
+		It("Should match ConvertToTransformerResponse ", func() {
+			var events = []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-1",
+					},
+					Message: map[string]interface{}{
+						"some-key-1": "some-value-1",
+					},
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-2",
+					},
+					Message: map[string]interface{}{
+						"some-key-2": "some-value-2",
+					},
+				},
+			}
+			var expectedResponses = transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output: map[string]interface{}{
+							"some-key-1": "some-value-1",
+						},
+						StatusCode: 200,
+						Metadata: transformer.MetadataT{
+							MessageID: "message-1",
+						},
+					},
+					{
+						Output: map[string]interface{}{
+							"some-key-2": "some-value-2",
+						},
+						StatusCode: 200,
+						Metadata: transformer.MetadataT{
+							MessageID: "message-2",
+						},
+					},
+				},
+			}
+			response := ConvertToTransformerResponse(events)
+			Expect(response.Events[0].StatusCode).To(Equal(expectedResponses.Events[0].StatusCode))
+		})
+	})
 })
 
 type mockEventData struct {
