@@ -48,8 +48,8 @@ type ConfluentCloudConfig struct {
 var (
 	clientCertFile, clientKeyFile string
 	certificate                   tls.Certificate
-	kafkaDialTimeoutInSec         int64
-	kafkaWriteTimeoutInSec        int64
+	kafkaDialTimeout              time.Duration
+	kafkaWriteTimeout             time.Duration
 )
 
 var (
@@ -72,8 +72,8 @@ func init() {
 func loadConfig() {
 	clientCertFile = config.GetEnv("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
 	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
-	config.RegisterInt64ConfigVariable(10, &kafkaDialTimeoutInSec, false, 1, "Router.kafkaDialTimeoutInSec")
-	config.RegisterInt64ConfigVariable(2, &kafkaWriteTimeoutInSec, false, 1, "Router.kafkaWriteTimeoutInSec")
+	config.RegisterDurationConfigVariable(time.Duration(10), &kafkaDialTimeout, false, time.Second, []string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(2), &kafkaWriteTimeout, false, time.Second, []string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...)
 }
 
 func loadCertificate() {
@@ -88,9 +88,9 @@ func loadCertificate() {
 
 func getDefaultConfiguration() *sarama.Config {
 	config := sarama.NewConfig()
-	config.Net.DialTimeout = time.Duration(kafkaDialTimeoutInSec) * time.Second
-	config.Net.WriteTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
-	config.Net.ReadTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
+	config.Net.DialTimeout = kafkaDialTimeout
+	config.Net.WriteTimeout = kafkaWriteTimeout
+	config.Net.ReadTimeout = kafkaWriteTimeout
 	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true

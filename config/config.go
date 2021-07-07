@@ -501,7 +501,7 @@ func GetDuration(key string, defaultValue time.Duration, timeScale time.Duration
 	}
 
 	if !viper.IsSet(key) {
-		return defaultValue
+		return defaultValue * timeScale
 	} else {
 		envValue = viper.GetString(key)
 		parseDuration, err := time.ParseDuration(envValue)
