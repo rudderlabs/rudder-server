@@ -19,6 +19,7 @@ var (
 	maxBatchSize, maxRetry, maxESQueueSize int
 	batchTimeout, retrySleep               time.Duration
 	pkgLogger                              logger.LoggerI
+	Http                                   sysUtils.HttpI = sysUtils.NewHttp()
 )
 
 type Transformer interface {
@@ -85,7 +86,7 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 	var resp *http.Response
 	//Sending event schema to Config Backend
 	for {
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(rawJSON)))
+		req, err := Http.NewRequest("POST", url, bytes.NewBuffer([]byte(rawJSON)))
 		if err != nil {
 			misc.AssertErrorIfDev(err)
 			return
