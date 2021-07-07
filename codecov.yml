@@ -1,3 +1,5 @@
 coverage:
   status:
     patch: false
+  ignore:
+    - "warehouse"
