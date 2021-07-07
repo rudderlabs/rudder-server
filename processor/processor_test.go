@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types"
 
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
@@ -1002,7 +1003,7 @@ var _ = Describe("Processor", func() {
 
 })
 
-var _ = Describe("Statis Function Tests", func() {
+var _ = Describe("Static Function Tests", func() {
 
 	Context("TransformerFormatResponse Tests", func() {
 		It("Should match ConvertToTransformerResponse ", func() {
@@ -1048,6 +1049,146 @@ var _ = Describe("Statis Function Tests", func() {
 			}
 			response := ConvertToTransformerResponse(events)
 			Expect(response.Events[0].StatusCode).To(Equal(expectedResponses.Events[0].StatusCode))
+			Expect(response.Events[0].Metadata.MessageID).To(Equal(expectedResponses.Events[0].Metadata.MessageID))
+			Expect(response.Events[0].Output["some-key-1"]).To(Equal(expectedResponses.Events[0].Output["some-key-1"]))
+			Expect(response.Events[1].StatusCode).To(Equal(expectedResponses.Events[1].StatusCode))
+			Expect(response.Events[1].Metadata.MessageID).To(Equal(expectedResponses.Events[1].Metadata.MessageID))
+			Expect(response.Events[1].Output["some-key-2"]).To(Equal(expectedResponses.Events[1].Output["some-key-2"]))
+		})
+	})
+
+	Context("getDiffMetrics Tests", func() {
+		It("Should match diffMetrics response for Empty Inputs", func() {
+			inCountMetadataMap := make(map[string]MetricMetadata, 0)
+			inCountMap := make(map[string]int64, 0)
+			successCountMap := make(map[string]int64, 0)
+			failedCountMap := make(map[string]int64, 0)
+			response := getDiffMetrics("some-string-1", "some-string-2", inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+			Expect(len(response)).To(Equal(0))
+		})
+
+		It("Should match diffMetrics response for Valid Inputs", func() {
+			inCountMetadataMap := map[string]MetricMetadata{
+				"some-key-1": {
+					sourceID:        "some-source-id-1",
+					destinationID:   "some-destination-id-1",
+					sourceJobRunID:  "some-source-job-run-id-1",
+					sourceJobID:     "some-source-job-id-1",
+					sourceTaskID:    "some-source-task-id-1",
+					sourceTaskRunID: "some-source-task-run-id-1",
+					sourceBatchID:   "some-source-batch-id-1",
+				},
+				"some-key-2": {
+					sourceID:        "some-source-id-2",
+					destinationID:   "some-destination-id-2",
+					sourceJobRunID:  "some-source-job-run-id-2",
+					sourceJobID:     "some-source-job-id-2",
+					sourceTaskID:    "some-source-task-id-2",
+					sourceTaskRunID: "some-source-task-run-id-2",
+					sourceBatchID:   "some-source-batch-id-2",
+				},
+			}
+
+			inCountMap := map[string]int64{
+				"some-key-1": 3,
+				"some-key-2": 4,
+			}
+			successCountMap := map[string]int64{
+				"some-key-1": 5,
+				"some-key-2": 6,
+			}
+			failedCountMap := map[string]int64{
+				"some-key-1": 1,
+				"some-key-2": 2,
+			}
+
+			expectedResponse := []types.PUReportedMetric{
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "some-source-id-1",
+						DestinationID:   "some-destination-id-1",
+						SourceBatchID:   "some-source-batch-id-1",
+						SourceTaskID:    "some-source-task-id-1",
+						SourceTaskRunID: "some-source-task-run-id-1",
+						SourceJobID:     "some-source-job-id-1",
+						SourceJobRunID:  "some-source-job-run-id-1",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "some-string-1",
+						PU:         "some-string-2",
+						TerminalPU: false,
+						InitialPU:  false,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "diff",
+						Count:          3,
+						StatusCode:     0,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "some-source-id-2",
+						DestinationID:   "some-destination-id-2",
+						SourceBatchID:   "some-source-batch-id-2",
+						SourceTaskID:    "some-source-task-id-2",
+						SourceTaskRunID: "some-source-task-run-id-2",
+						SourceJobID:     "some-source-job-id-2",
+						SourceJobRunID:  "some-source-job-run-id-2",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "some-string-1",
+						PU:         "some-string-2",
+						TerminalPU: false,
+						InitialPU:  false,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "diff",
+						Count:          4,
+						StatusCode:     0,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+			}
+
+			response := getDiffMetrics("some-string-1", "some-string-2", inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+			Expect(len(response)).To(Equal(2))
+			Expect(response[0].ConnectionDetails.SourceID).To(Equal(expectedResponse[0].ConnectionDetails.SourceID))
+			Expect(response[0].ConnectionDetails.DestinationID).To(Equal(expectedResponse[0].ConnectionDetails.DestinationID))
+			Expect(response[0].ConnectionDetails.SourceBatchID).To(Equal(expectedResponse[0].ConnectionDetails.SourceBatchID))
+			Expect(response[0].ConnectionDetails.SourceTaskID).To(Equal(expectedResponse[0].ConnectionDetails.SourceTaskID))
+			Expect(response[0].ConnectionDetails.SourceTaskRunID).To(Equal(expectedResponse[0].ConnectionDetails.SourceTaskRunID))
+			Expect(response[0].ConnectionDetails.SourceJobID).To(Equal(expectedResponse[0].ConnectionDetails.SourceJobID))
+			Expect(response[0].ConnectionDetails.SourceJobRunID).To(Equal(expectedResponse[0].ConnectionDetails.SourceJobRunID))
+
+			Expect(response[1].ConnectionDetails.SourceID).To(Equal(expectedResponse[1].ConnectionDetails.SourceID))
+			Expect(response[1].ConnectionDetails.DestinationID).To(Equal(expectedResponse[1].ConnectionDetails.DestinationID))
+			Expect(response[1].ConnectionDetails.SourceBatchID).To(Equal(expectedResponse[1].ConnectionDetails.SourceBatchID))
+			Expect(response[1].ConnectionDetails.SourceTaskID).To(Equal(expectedResponse[1].ConnectionDetails.SourceTaskID))
+			Expect(response[1].ConnectionDetails.SourceTaskRunID).To(Equal(expectedResponse[1].ConnectionDetails.SourceTaskRunID))
+			Expect(response[1].ConnectionDetails.SourceJobID).To(Equal(expectedResponse[1].ConnectionDetails.SourceJobID))
+			Expect(response[1].ConnectionDetails.SourceJobRunID).To(Equal(expectedResponse[1].ConnectionDetails.SourceJobRunID))
+
+			Expect(response[0].PUDetails.InPU).To(Equal(expectedResponse[0].PUDetails.InPU))
+			Expect(response[0].PUDetails.PU).To(Equal(expectedResponse[0].PUDetails.PU))
+			Expect(response[0].PUDetails.TerminalPU).To(Equal(expectedResponse[0].PUDetails.TerminalPU))
+			Expect(response[0].PUDetails.InitialPU).To(Equal(expectedResponse[0].PUDetails.InitialPU))
+
+			Expect(response[1].PUDetails.InPU).To(Equal(expectedResponse[1].PUDetails.InPU))
+			Expect(response[1].PUDetails.PU).To(Equal(expectedResponse[1].PUDetails.PU))
+			Expect(response[1].PUDetails.TerminalPU).To(Equal(expectedResponse[1].PUDetails.TerminalPU))
+			Expect(response[1].PUDetails.InitialPU).To(Equal(expectedResponse[1].PUDetails.InitialPU))
+
+			Expect(response[0].StatusDetail.Status).To(Equal(expectedResponse[0].StatusDetail.Status))
+			Expect(response[0].StatusDetail.Count).To(Equal(expectedResponse[0].StatusDetail.Count))
+			Expect(response[0].StatusDetail.StatusCode).To(Equal(expectedResponse[0].StatusDetail.StatusCode))
+
+			Expect(response[1].StatusDetail.Status).To(Equal(expectedResponse[1].StatusDetail.Status))
+			Expect(response[1].StatusDetail.Count).To(Equal(expectedResponse[1].StatusDetail.Count))
+			Expect(response[1].StatusDetail.StatusCode).To(Equal(expectedResponse[1].StatusDetail.StatusCode))
+
 		})
 	})
 })
