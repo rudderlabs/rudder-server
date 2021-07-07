@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../../mocks/services/debugger/uploader.go -package mock_debugger github.com/rudderlabs/rudder-server/services/debugger Transformer
+
 package debugger
 
 import (
@@ -10,10 +12,10 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
 var (
-	configBackendURL                       string
 	maxBatchSize, maxRetry, maxESQueueSize int
 	batchTimeout, retrySleep               time.Duration
 	pkgLogger                              logger.LoggerI
@@ -29,6 +31,7 @@ type Uploader struct {
 	eventBatchChannel chan interface{}
 	eventBufferLock   sync.RWMutex
 	eventBuffer       []interface{}
+	Client            sysUtils.HTTPClientI
 }
 
 func init() {
@@ -48,8 +51,9 @@ func loadConfig() {
 func New(url string, transformer Transformer) *Uploader {
 	eventBatchChannel := make(chan interface{})
 	eventBuffer := make([]interface{}, 0)
+	client := &http.Client{}
 
-	return &Uploader{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer}
+	return &Uploader{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer, Client: client}
 }
 
 func (uploader *Uploader) Setup() {
@@ -75,7 +79,6 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 		return
 	}
 
-	client := &http.Client{}
 	url := uploader.url
 
 	retryCount := 0
@@ -90,7 +93,7 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
 		req.SetBasicAuth(config.GetWorkspaceToken(), "")
 
-		resp, err = client.Do(req)
+		resp, err = uploader.Client.Do(req)
 		if err != nil {
 			pkgLogger.Error("Config Backend connection error", err)
 			if retryCount > maxRetry {
