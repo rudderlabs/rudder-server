@@ -88,7 +88,7 @@ func watchForConfigChange() {
 	defer configVarLock.RUnlock()
 	_ = checkAndUpdateConfig(hotReloadableConfig)
 	isChanged := checkAndUpdateConfig(nonHotReloadableConfig)
-	if isChanged && GetEnvAsBool("canRestartOnConfigChange", false) {
+	if isChanged && GetEnvAsBool("RESTART_ON_CONFIG_CHANGE", false) {
 		os.Exit(1)
 	}
 }
