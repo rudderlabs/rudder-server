@@ -608,5 +608,13 @@ func QueryWarehouseWithAnonymusID(anonymousId string, eventName string, namespac
 	if destType == "RS" {
 		return queryRS(anonymousId, eventName, namespace, destConfig)
 	}
-	return QueryTrackPayload{}
+	return  QueryTrackPayload{
+		Label: "Demo Label",
+		Category:"category",
+		Property1:"property_1",
+		Property2:"property_2",
+		Property3:"property_3",
+		Property4:"property_4",
+		Property5:"property_5",
+	}
 }
