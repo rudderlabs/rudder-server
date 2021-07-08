@@ -11,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //DeliveryStatusT is a structure to hold everything related to event delivery
@@ -105,7 +104,7 @@ func (eventDeliveryStatusUploader *EventDeliveryStatusUploader) Transform(data i
 
 	rawJSON, err := json.Marshal(res)
 	if err != nil {
-		misc.AssertErrorIfDev(err)
+		pkgLogger.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
 		return nil, err
 	}
 

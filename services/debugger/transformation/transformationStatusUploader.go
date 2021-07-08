@@ -123,8 +123,7 @@ func (transformationStatusUploader *TransformationStatusUploader) Transform(data
 
 	rawJSON, err := json.Marshal(uploadT)
 	if err != nil {
-		pkgLogger.Debugf(string(rawJSON))
-		misc.AssertErrorIfDev(err)
+		pkgLogger.Errorf("[Transformation status uploader] Failed to marshal payload. Err: %v", err)
 		return nil, err
 	}
 

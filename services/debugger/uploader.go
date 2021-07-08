@@ -11,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
@@ -88,7 +87,7 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 	for {
 		req, err := Http.NewRequest("POST", url, bytes.NewBuffer([]byte(rawJSON)))
 		if err != nil {
-			misc.AssertErrorIfDev(err)
+			pkgLogger.Errorf("[Uploader] Failed to create new http request. Err: %v", err)
 			return
 		}
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
@@ -109,9 +108,8 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 		break
 	}
 
-	if !(resp.StatusCode == http.StatusOK ||
-		resp.StatusCode == http.StatusBadRequest) {
-		pkgLogger.Errorf("Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		pkgLogger.Errorf("[Uploader] Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
 	}
 }
 
@@ -122,7 +120,7 @@ func (uploader *Uploader) handleEvents() {
 			uploader.eventBufferLock.Lock()
 
 			//If eventBuffer size is more than maxESQueueSize, Delete oldest.
-			if len(uploader.eventBuffer) > maxESQueueSize {
+			if len(uploader.eventBuffer) >= maxESQueueSize {
 				uploader.eventBuffer[0] = nil
 				uploader.eventBuffer = uploader.eventBuffer[1:]
 			}
