@@ -27,6 +27,12 @@ const (
 	UserTransformerStage = "user_transformer"
 	DestTransformerStage = "dest_transformer"
 	TrackingPlanValidationStage = "trackingPlan_validation"
+
+	RequiredMissing= "Required-Missing"
+	DatatypeMismatch= "Datatype-Mismatch"
+	AdditionalProperties= "Additional-Properties"
+	UnknownViolation= "Unknown-Violation"
+	UnplannedEvent= "Unplanned-Event"
 )
 const supportedTransformerAPIVersion = 1
 
@@ -39,7 +45,6 @@ type MetadataT struct {
 	SourceCategory  string `json:"sourceCategory"`
 	TrackingPlanId  string `json:"trackingPlanId"`
 	TrackingPlanVersion int `json:"trackingPlanVersion"`
-	//TODO: pass sourceConfig here? or fetch by srcID in transformer only?
 	SourceTpConfig  map[string]interface{} `json:"sourceTpConfig"`
 	DestinationID   string `json:"destinationId"`
 	JobRunID        string `json: "jobRunId"`
@@ -123,11 +128,19 @@ func init() {
 
 type TransformerResponseT struct {
 	// Not marking this Singular Event, since this not a RudderEvent
-	Output     map[string]interface{} `json:"output"`
-	Metadata   MetadataT              `json:"metadata"`
-	StatusCode int                    `json:"statusCode"`
-	Error      string                 `json:"error"`
+	Output           map[string]interface{} `json:"output"`
+	Metadata         MetadataT              `json:"metadata"`
+	StatusCode       int                    `json:"statusCode"`
+	Error            string                 `json:"error"`
+	ValidationErrors []ValidationErrorT     `json:"validationErrors"`
 }
+
+type ValidationErrorT struct {
+	Type    string            `json:"type"`
+	Message string            `json:"message"`
+	Meta    map[string]string `json:"meta"`
+}
+
 
 func (trans *HandleT) transformWorker() {
 	tr := &http.Transport{}
