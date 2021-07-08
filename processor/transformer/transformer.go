@@ -26,6 +26,13 @@ import (
 const (
 	UserTransformerStage = "user_transformer"
 	DestTransformerStage = "dest_transformer"
+	TrackingPlanValidationStage = "trackingPlan_validation"
+
+	RequiredMissing= "Required-Missing"
+	DatatypeMismatch= "Datatype-Mismatch"
+	AdditionalProperties= "Additional-Properties"
+	UnknownViolation= "Unknown-Violation"
+	UnplannedEvent= "Unplanned-Event"
 )
 const supportedTransformerAPIVersion = 1
 
@@ -36,6 +43,9 @@ type MetadataT struct {
 	InstanceID      string `json:"instanceId"`
 	SourceType      string `json:"sourceType"`
 	SourceCategory  string `json:"sourceCategory"`
+	TrackingPlanId  string `json:"trackingPlanId"`
+	TrackingPlanVersion int `json:"trackingPlanVersion"`
+	SourceTpConfig  map[string]interface{} `json:"sourceTpConfig"`
 	DestinationID   string `json:"destinationId"`
 	JobRunID        string `json: "jobRunId"`
 	JobID           int64  `json:"jobId"`
@@ -90,6 +100,7 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
+	Validate(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 }
 
 //NewTransformer creates a new transformer
@@ -117,11 +128,19 @@ func init() {
 
 type TransformerResponseT struct {
 	// Not marking this Singular Event, since this not a RudderEvent
-	Output     map[string]interface{} `json:"output"`
-	Metadata   MetadataT              `json:"metadata"`
-	StatusCode int                    `json:"statusCode"`
-	Error      string                 `json:"error"`
+	Output           map[string]interface{} `json:"output"`
+	Metadata         MetadataT              `json:"metadata"`
+	StatusCode       int                    `json:"statusCode"`
+	Error            string                 `json:"error"`
+	ValidationErrors []ValidationErrorT     `json:"validationErrors"`
 }
+
+type ValidationErrorT struct {
+	Type    string            `json:"type"`
+	Message string            `json:"message"`
+	Meta    map[string]string `json:"meta"`
+}
+
 
 func (trans *HandleT) transformWorker() {
 	tr := &http.Transport{}
@@ -387,4 +406,9 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 		Events:       outClientEvents,
 		FailedEvents: failedEvents,
 	}
+}
+
+func (trans *HandleT) Validate(clientEvents []TransformerEventT,
+	url string, batchSize int) ResponseT {
+	return trans.Transform(clientEvents, url, batchSize)
 }
