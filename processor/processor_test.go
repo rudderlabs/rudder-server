@@ -392,6 +392,81 @@ var _ = Describe("Processor", func() {
 				},
 			}
 
+			assertReportMetrics := []*types.PUReportedMetric{
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "",
+						DestinationID:   "",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "",
+						PU:         "gateway",
+						TerminalPU: false,
+						InitialPU:  true,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "succeeded",
+						Count:          3,
+						StatusCode:     200,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "source-from-transformer",
+						DestinationID:   "destination-from-transformer",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "gateway",
+						PU:         "dest_transformer",
+						TerminalPU: false,
+						InitialPU:  false,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "succeeded",
+						Count:          2,
+						StatusCode:     0,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "",
+						DestinationID:   "enabled-destination-a",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "gateway",
+						PU:         "dest_transformer",
+						TerminalPU: false,
+						InitialPU:  false,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "diff",
+						Count:          -3,
+						StatusCode:     0,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+			}
+
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
@@ -448,7 +523,9 @@ var _ = Describe("Processor", func() {
 			}
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledNoUT).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
-			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1)
+			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1).Do(func(metrics []*types.PUReportedMetric, _ interface{}) {
+				assertReportMetric(assertReportMetrics, metrics)
+			})
 			processorSetupAndAssertJobHandling(processor, c)
 		})
 
@@ -560,6 +637,129 @@ var _ = Describe("Processor", func() {
 				},
 			}
 
+			assertReportMetrics := []*types.PUReportedMetric{
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "",
+						DestinationID:   "",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "",
+						PU:         "gateway",
+						TerminalPU: false,
+						InitialPU:  true,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "succeeded",
+						Count:          3,
+						StatusCode:     200,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "",
+						DestinationID:   "",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "gateway",
+						PU:         "user_transformer",
+						TerminalPU: false,
+						InitialPU:  false,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "succeeded",
+						Count:          3,
+						StatusCode:     0,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "",
+						DestinationID:   "enabled-destination-b",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "gateway",
+						PU:         "user_transformer",
+						TerminalPU: false,
+						InitialPU:  false,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "diff",
+						Count:          -3,
+						StatusCode:     0,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "source-from-transformer",
+						DestinationID:   "destination-from-transformer",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "user_transformer",
+						PU:         "dest_transformer",
+						TerminalPU: false,
+						InitialPU:  false,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "succeeded",
+						Count:          2,
+						StatusCode:     0,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "",
+						DestinationID:   "",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "user_transformer",
+						PU:         "dest_transformer",
+						TerminalPU: false,
+						InitialPU:  false,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "diff",
+						Count:          -3,
+						StatusCode:     0,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+			}
+
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
@@ -631,7 +831,9 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledOnlyUT).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
-			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1)
+			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1).Do(func(metrics []*types.PUReportedMetric, _ interface{}) {
+				assertReportMetric(assertReportMetrics, metrics)
+			})
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
@@ -694,7 +896,80 @@ var _ = Describe("Processor", func() {
 					Error:      "error-2",
 				},
 			}
-
+			assertReportMetrics := []*types.PUReportedMetric{
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "source-from-transformer",
+						DestinationID:   "",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "",
+						PU:         "gateway",
+						TerminalPU: false,
+						InitialPU:  true,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "succeeded",
+						Count:          2,
+						StatusCode:     200,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "",
+						DestinationID:   "",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "gateway",
+						PU:         "dest_transformer",
+						TerminalPU: false,
+						InitialPU:  false,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "aborted",
+						Count:          2,
+						StatusCode:     400,
+						SampleResponse: "error-1",
+						SampleEvent:    []byte(`{"integrations":{"All":false,"enabled-destination-a-definition-display-name":true},"messageId":"message-1","originalTimestamp":"2000-01-02T01:23:45.000Z","receivedAt":"2001-01-02T02:23:45.000Z","request_ip":"1.2.3.4","rudderId":"some-rudder-id","sentAt":"2000-01-02T01:23:00.000Z","some-property":"property-1","timestamp":"2001-01-02T02:24:30.000Z"}`),
+					},
+				},
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "source-from-transformer",
+						DestinationID:   "enabled-destination-a",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "gateway",
+						PU:         "dest_transformer",
+						TerminalPU: false,
+						InitialPU:  false,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "diff",
+						Count:          -2,
+						StatusCode:     0,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+			}
 			assertErrStoreJob := func(job *jobsdb.JobT, i int, destination string) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
 				Expect(job.JobID).To(Equal(int64(0)))
@@ -757,7 +1032,9 @@ var _ = Describe("Processor", func() {
 				})
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
-			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1)
+			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1).Do(func(metrics []*types.PUReportedMetric, _ interface{}) {
+				assertReportMetric(assertReportMetrics, metrics)
+			})
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
@@ -809,6 +1086,81 @@ var _ = Describe("Processor", func() {
 					},
 					StatusCode: 400,
 					Error:      "error-combined",
+				},
+			}
+
+			assertReportMetrics := []*types.PUReportedMetric{
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "source-from-transformer",
+						DestinationID:   "",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "",
+						PU:         "gateway",
+						TerminalPU: false,
+						InitialPU:  true,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "succeeded",
+						Count:          2,
+						StatusCode:     200,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
+				},
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "",
+						DestinationID:   "",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "gateway",
+						PU:         "user_transformer",
+						TerminalPU: false,
+						InitialPU:  false,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "aborted",
+						Count:          1,
+						StatusCode:     400,
+						SampleResponse: "error-combined",
+						SampleEvent:    []byte(`{"integrations":{"All":false,"enabled-destination-b-definition-display-name":true},"messageId":"message-1","originalTimestamp":"2000-01-02T01:23:45.000Z","receivedAt":"2001-01-02T02:23:45.000Z","request_ip":"1.2.3.4","rudderId":"some-rudder-id","sentAt":"2000-01-02T01:23:00.000Z","some-property":"property-1","timestamp":"2001-01-02T02:24:30.000Z"}`),
+					},
+				},
+				{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:        "source-from-transformer",
+						DestinationID:   "enabled-destination-b",
+						SourceBatchID:   "",
+						SourceTaskID:    "",
+						SourceTaskRunID: "",
+						SourceJobID:     "",
+						SourceJobRunID:  "",
+					},
+					PUDetails: types.PUDetails{
+						InPU:       "gateway",
+						PU:         "user_transformer",
+						TerminalPU: false,
+						InitialPU:  false,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:         "diff",
+						Count:          -2,
+						StatusCode:     0,
+						SampleResponse: "",
+						SampleEvent:    []byte(`{}`),
+					},
 				},
 			}
 
@@ -879,7 +1231,9 @@ var _ = Describe("Processor", func() {
 				})
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
-			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1)
+			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1).Do(func(metrics []*types.PUReportedMetric, _ interface{}) {
+				assertReportMetric(assertReportMetrics, metrics)
+			})
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
@@ -1105,7 +1459,7 @@ var _ = Describe("Static Function Tests", func() {
 				"some-key-2": 2,
 			}
 
-			expectedResponse := []types.PUReportedMetric{
+			expectedResponse := []*types.PUReportedMetric{
 				{
 					ConnectionDetails: types.ConnectionDetails{
 						SourceID:        "some-source-id-1",
@@ -1157,40 +1511,7 @@ var _ = Describe("Static Function Tests", func() {
 			}
 
 			response := getDiffMetrics("some-string-1", "some-string-2", inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
-			Expect(len(response)).To(Equal(2))
-			Expect(response[0].ConnectionDetails.SourceID).To(Equal(expectedResponse[0].ConnectionDetails.SourceID))
-			Expect(response[0].ConnectionDetails.DestinationID).To(Equal(expectedResponse[0].ConnectionDetails.DestinationID))
-			Expect(response[0].ConnectionDetails.SourceBatchID).To(Equal(expectedResponse[0].ConnectionDetails.SourceBatchID))
-			Expect(response[0].ConnectionDetails.SourceTaskID).To(Equal(expectedResponse[0].ConnectionDetails.SourceTaskID))
-			Expect(response[0].ConnectionDetails.SourceTaskRunID).To(Equal(expectedResponse[0].ConnectionDetails.SourceTaskRunID))
-			Expect(response[0].ConnectionDetails.SourceJobID).To(Equal(expectedResponse[0].ConnectionDetails.SourceJobID))
-			Expect(response[0].ConnectionDetails.SourceJobRunID).To(Equal(expectedResponse[0].ConnectionDetails.SourceJobRunID))
-
-			Expect(response[1].ConnectionDetails.SourceID).To(Equal(expectedResponse[1].ConnectionDetails.SourceID))
-			Expect(response[1].ConnectionDetails.DestinationID).To(Equal(expectedResponse[1].ConnectionDetails.DestinationID))
-			Expect(response[1].ConnectionDetails.SourceBatchID).To(Equal(expectedResponse[1].ConnectionDetails.SourceBatchID))
-			Expect(response[1].ConnectionDetails.SourceTaskID).To(Equal(expectedResponse[1].ConnectionDetails.SourceTaskID))
-			Expect(response[1].ConnectionDetails.SourceTaskRunID).To(Equal(expectedResponse[1].ConnectionDetails.SourceTaskRunID))
-			Expect(response[1].ConnectionDetails.SourceJobID).To(Equal(expectedResponse[1].ConnectionDetails.SourceJobID))
-			Expect(response[1].ConnectionDetails.SourceJobRunID).To(Equal(expectedResponse[1].ConnectionDetails.SourceJobRunID))
-
-			Expect(response[0].PUDetails.InPU).To(Equal(expectedResponse[0].PUDetails.InPU))
-			Expect(response[0].PUDetails.PU).To(Equal(expectedResponse[0].PUDetails.PU))
-			Expect(response[0].PUDetails.TerminalPU).To(Equal(expectedResponse[0].PUDetails.TerminalPU))
-			Expect(response[0].PUDetails.InitialPU).To(Equal(expectedResponse[0].PUDetails.InitialPU))
-
-			Expect(response[1].PUDetails.InPU).To(Equal(expectedResponse[1].PUDetails.InPU))
-			Expect(response[1].PUDetails.PU).To(Equal(expectedResponse[1].PUDetails.PU))
-			Expect(response[1].PUDetails.TerminalPU).To(Equal(expectedResponse[1].PUDetails.TerminalPU))
-			Expect(response[1].PUDetails.InitialPU).To(Equal(expectedResponse[1].PUDetails.InitialPU))
-
-			Expect(response[0].StatusDetail.Status).To(Equal(expectedResponse[0].StatusDetail.Status))
-			Expect(response[0].StatusDetail.Count).To(Equal(expectedResponse[0].StatusDetail.Count))
-			Expect(response[0].StatusDetail.StatusCode).To(Equal(expectedResponse[0].StatusDetail.StatusCode))
-
-			Expect(response[1].StatusDetail.Status).To(Equal(expectedResponse[1].StatusDetail.Status))
-			Expect(response[1].StatusDetail.Count).To(Equal(expectedResponse[1].StatusDetail.Count))
-			Expect(response[1].StatusDetail.StatusCode).To(Equal(expectedResponse[1].StatusDetail.StatusCode))
+			assertReportMetric(expectedResponse, response)
 
 		})
 	})
@@ -1251,6 +1572,29 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState 
 	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 	Expect(status.AttemptNum).To(Equal(attemptNum))
+}
+
+func assertReportMetric(expectedMetric []*types.PUReportedMetric, actualMetric []*types.PUReportedMetric) {
+	Expect(len(expectedMetric)).To(Equal(len(actualMetric)))
+	for index, value := range expectedMetric {
+		Expect(value.ConnectionDetails.SourceID).To(Equal(actualMetric[index].ConnectionDetails.SourceID))
+		Expect(value.ConnectionDetails.SourceBatchID).To(Equal(actualMetric[index].ConnectionDetails.SourceBatchID))
+		Expect(value.ConnectionDetails.DestinationID).To(Equal(actualMetric[index].ConnectionDetails.DestinationID))
+		Expect(value.ConnectionDetails.SourceJobID).To(Equal(actualMetric[index].ConnectionDetails.SourceJobID))
+		Expect(value.ConnectionDetails.SourceJobRunID).To(Equal(actualMetric[index].ConnectionDetails.SourceJobRunID))
+		Expect(value.ConnectionDetails.SourceTaskRunID).To(Equal(actualMetric[index].ConnectionDetails.SourceTaskRunID))
+		Expect(value.ConnectionDetails.SourceTaskID).To(Equal(actualMetric[index].ConnectionDetails.SourceTaskID))
+		Expect(value.PUDetails.InPU).To(Equal(actualMetric[index].PUDetails.InPU))
+		Expect(value.PUDetails.PU).To(Equal(actualMetric[index].PUDetails.PU))
+		Expect(value.PUDetails.TerminalPU).To(Equal(actualMetric[index].PUDetails.TerminalPU))
+		Expect(value.PUDetails.InitialPU).To(Equal(actualMetric[index].PUDetails.InitialPU))
+		Expect(value.StatusDetail.Status).To(Equal(actualMetric[index].StatusDetail.Status))
+		Expect(value.StatusDetail.StatusCode).To(Equal(actualMetric[index].StatusDetail.StatusCode))
+		Expect(value.StatusDetail.Count).To(Equal(actualMetric[index].StatusDetail.Count))
+		Expect(value.StatusDetail.SampleResponse).To(Equal(actualMetric[index].StatusDetail.SampleResponse))
+		Expect(value.StatusDetail.SampleEvent).To(Equal(actualMetric[index].StatusDetail.SampleEvent))
+
+	}
 }
 
 func assertDestinationTransform(messages map[string]mockEventData, destinationID string, expectations transformExpectation) func(clientEvents []transformer.TransformerEventT, url string, batchSize int) transformer.ResponseT {
