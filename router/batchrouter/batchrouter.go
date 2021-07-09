@@ -54,6 +54,7 @@ var (
 	readPerDestination                 bool
 	disableEgress                      bool
 	toAbortDestinationIDs              string
+	datePrefixOverride                 string
 )
 
 const DISABLED_EGRESS = "200: outgoing disabled"
@@ -334,11 +335,26 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 
 	brt.logger.Debugf("BRT: Starting upload to %s", provider)
 
+	datePrefixLayout := datePrefixOverride
+	if datePrefixLayout == "" {
+		if p, ok := batchJobs.BatchDestination.Destination.Config["datePrefixFormat"]; ok {
+			datePrefixLayout, _ = p.(string)
+		}
+	}
+
+	switch datePrefixLayout {
+	case "YYYY-MM-DD":
+		datePrefixLayout = time.Now().Format("2006-01-02")
+		break
+	default:
+		datePrefixLayout = time.Now().Format("01-02-2006")
+	}
+
 	var keyPrefixes []string
 	if isWarehouse {
-		keyPrefixes = []string{config.GetEnv("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+		keyPrefixes = []string{config.GetEnv("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs"), batchJobs.BatchDestination.Source.ID, datePrefixLayout}
 	} else {
-		keyPrefixes = []string{config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+		keyPrefixes = []string{config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, datePrefixLayout}
 	}
 
 	_, fileName := filepath.Split(gzipFilePath)
@@ -1229,6 +1245,7 @@ func loadConfig() {
 	disableEgress = config.GetBool("disableEgress", false)
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
+	config.RegisterStringConfigVariable("", &datePrefixOverride, true, "BatchRouter.datePrefixOverride")
 }
 
 func init() {
