@@ -62,7 +62,7 @@ type UploadT struct {
 	Payload []interface{} `json:"payload"`
 }
 
-var uploader *debugger.Uploader
+var uploader debugger.UploaderI
 
 var (
 	configBackendURL             string
@@ -98,7 +98,7 @@ func Setup() {
 	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", configBackendURL)
 	transformationStatusUploader := &TransformationStatusUploader{}
 	uploader = debugger.New(url, transformationStatusUploader)
-	uploader.Setup()
+	uploader.Start()
 
 	rruntime.Go(func() {
 		backendConfigSubscriber()

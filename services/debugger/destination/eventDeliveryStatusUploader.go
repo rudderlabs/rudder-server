@@ -27,7 +27,7 @@ type DeliveryStatusT struct {
 var uploadEnabledDestinationIDs map[string]bool
 var configSubscriberLock sync.RWMutex
 
-var uploader *debugger.Uploader
+var uploader debugger.UploaderI
 
 var (
 	configBackendURL                  string
@@ -80,7 +80,7 @@ func Setup() {
 	url := fmt.Sprintf("%s/dataplane/eventDeliveryStatus", configBackendURL)
 	eventDeliveryStatusUploader := &EventDeliveryStatusUploader{}
 	uploader = debugger.New(url, eventDeliveryStatusUploader)
-	uploader.Setup()
+	uploader.Start()
 
 	rruntime.Go(func() {
 		backendConfigSubscriber()

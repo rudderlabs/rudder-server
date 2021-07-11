@@ -34,7 +34,7 @@ type EventUploadBatchT struct {
 var uploadEnabledWriteKeys []string
 var configSubscriberLock sync.RWMutex
 
-var uploader *debugger.Uploader
+var uploader debugger.UploaderI
 
 var (
 	configBackendURL    string
@@ -61,7 +61,7 @@ func Setup() {
 	url := fmt.Sprintf("%s/dataplane/eventUploads", configBackendURL)
 	eventUploader := &EventUploader{}
 	uploader = debugger.New(url, eventUploader)
-	uploader.Setup()
+	uploader.Start()
 
 	rruntime.Go(func() {
 		backendConfigSubscriber()

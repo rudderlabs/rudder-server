@@ -56,8 +56,8 @@ var _ = Describe("Uploader", func() {
 			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Setup()
-			uploader.Client = mockHTTPClient
+			uploader.Start()
+			uploader.(*Uploader).Client = mockHTTPClient
 
 			uploader.RecordEvent(recordingEvent)
 			mockTransformer.EXPECT().Transform(gomock.Any()).
@@ -93,8 +93,8 @@ var _ = Describe("Uploader", func() {
 			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Setup()
-			uploader.Client = mockHTTPClient
+			uploader.Start()
+			uploader.(*Uploader).Client = mockHTTPClient
 
 			uploader.RecordEvent(recordingEvent)
 			mockTransformer.EXPECT().Transform(gomock.Any()).
@@ -130,8 +130,8 @@ var _ = Describe("Uploader", func() {
 			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Setup()
-			uploader.Client = mockHTTPClient
+			uploader.Start()
+			uploader.(*Uploader).Client = mockHTTPClient
 			uploader.RecordEvent(recordingEvent)
 			mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data interface{}) ([]byte, error) {
@@ -152,7 +152,7 @@ var _ = Describe("Uploader", func() {
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			mockHTTP := mocksSysUtils.NewMockHttpI(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Setup()
+			uploader.Start()
 			Http = mockHTTP
 			uploader.RecordEvent(recordingEvent)
 			mockTransformer.EXPECT().Transform(gomock.Any()).
@@ -175,9 +175,9 @@ var _ = Describe("Uploader", func() {
 		It("should not send the live events request if client do fails. Retry 3 times.", func() {
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Setup()
+			uploader.Start()
 			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
-			uploader.Client = mockHTTPClient
+			uploader.(*Uploader).Client = mockHTTPClient
 			Http = sysUtils.NewHttp()
 			uploader.RecordEvent(recordingEvent)
 			mockTransformer.EXPECT().Transform(gomock.Any()).
@@ -197,7 +197,7 @@ var _ = Describe("Uploader", func() {
 			//New reader with that JSON
 			r := ioutil.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
-			retrySleep = time.Second
+			uploader.(*Uploader).retrySleep = time.Second
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				//asserting http request
@@ -214,11 +214,11 @@ var _ = Describe("Uploader", func() {
 		It("should drop some events if number of events to record is more than queue size", func() {
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Setup()
+			uploader.Start()
 			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
-			uploader.Client = mockHTTPClient
+			uploader.(*Uploader).Client = mockHTTPClient
 			Http = sysUtils.NewHttp()
-			maxESQueueSize = 1
+			uploader.(*Uploader).maxESQueueSize = 1
 
 			mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data interface{}) ([]byte, error) {
@@ -256,12 +256,11 @@ var _ = Describe("Uploader", func() {
 		It("should send events in batches", func() {
 			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
 			uploader := New("http://test", mockTransformer)
-			uploader.Setup()
+			uploader.Start()
 			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
-			uploader.Client = mockHTTPClient
+			uploader.(*Uploader).Client = mockHTTPClient
 			Http = sysUtils.NewHttp()
-			maxESQueueSize = 1024
-			maxBatchSize = 1
+			uploader.(*Uploader).maxBatchSize = 1
 
 			i := 0
 			mockTransformer.EXPECT().Transform(gomock.Any()).
