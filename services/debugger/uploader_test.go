@@ -43,11 +43,13 @@ var _ = Describe("Uploader", func() {
 
 	Context("Send live requests", func() {
 		var (
-			recordingEvent string
+			recordingEvent  string
+			recordingEvent1 string
 		)
 
 		BeforeEach(func() {
 			recordingEvent = `{"t":"a"}`
+			recordingEvent1 = `{"t1":"a1"}`
 		})
 
 		It("should successfully send the live events request", func() {
@@ -81,6 +83,43 @@ var _ = Describe("Uploader", func() {
 				req.URL.Host = "test"
 			}).Return(&http.Response{
 				StatusCode: 200,
+				Body:       r,
+			}, nil).AnyTimes()
+
+			time.Sleep(5 * time.Second)
+		})
+
+		It("should log error message from config backend if post request returns non 200", func() {
+			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
+			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
+			uploader := New("http://test", mockTransformer)
+			uploader.Setup()
+			uploader.Client = mockHTTPClient
+
+			uploader.RecordEvent(recordingEvent)
+			mockTransformer.EXPECT().Transform(gomock.Any()).
+				DoAndReturn(func(data interface{}) ([]byte, error) {
+					eventBuffer := data.([]interface{})
+					for _, e := range eventBuffer {
+						Expect(e).To(Equal(recordingEvent))
+					}
+
+					rawJSON, err := json.Marshal(data)
+					Expect(err).To(BeNil())
+					return rawJSON, nil
+				}).AnyTimes()
+
+			//Response JSON
+			jsonResponse := `OK`
+			//New reader with that JSON
+			r := ioutil.NopCloser(bytes.NewReader([]byte(jsonResponse)))
+
+			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
+				//asserting http request
+				req.Method = "POST"
+				req.URL.Host = "test"
+			}).Return(&http.Response{
+				StatusCode: 400,
 				Body:       r,
 			}, nil).AnyTimes()
 
@@ -210,6 +249,57 @@ var _ = Describe("Uploader", func() {
 
 			uploader.RecordEvent(recordingEvent)
 			uploader.RecordEvent(recordingEvent)
+
+			time.Sleep(5 * time.Second)
+		})
+
+		It("should send events in batches", func() {
+			mockTransformer := mocksDebugger.NewMockTransformer(c.mockCtrl)
+			uploader := New("http://test", mockTransformer)
+			uploader.Setup()
+			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
+			uploader.Client = mockHTTPClient
+			Http = sysUtils.NewHttp()
+			maxESQueueSize = 1024
+			maxBatchSize = 1
+
+			i := 0
+			mockTransformer.EXPECT().Transform(gomock.Any()).
+				DoAndReturn(func(data interface{}) ([]byte, error) {
+					eventBuffer := data.([]interface{})
+					Expect(len(eventBuffer)).To(Equal(1))
+					for _, e := range eventBuffer {
+						var re string
+						if i == 0 {
+							re = recordingEvent
+						} else {
+							re = recordingEvent1
+						}
+						Expect(e).To(Equal(re))
+						i++
+					}
+
+					rawJSON, err := json.Marshal(data)
+					Expect(err).To(BeNil())
+					return rawJSON, nil
+				}).Times(2)
+
+			//Response JSON
+			jsonResponse := `OK`
+			//New reader with that JSON
+			r := ioutil.NopCloser(bytes.NewReader([]byte(jsonResponse)))
+
+			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
+				//asserting http request
+				req.Method = "POST"
+				req.URL.Host = "test"
+			}).Return(&http.Response{
+				StatusCode: 200,
+				Body:       r,
+			}, nil).AnyTimes()
+
+			uploader.RecordEvent(recordingEvent)
+			uploader.RecordEvent(recordingEvent1)
 
 			time.Sleep(5 * time.Second)
 		})
