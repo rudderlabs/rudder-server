@@ -11,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //DeliveryStatusT is a structure to hold everything related to event delivery
@@ -28,7 +27,7 @@ type DeliveryStatusT struct {
 var uploadEnabledDestinationIDs map[string]bool
 var configSubscriberLock sync.RWMutex
 
-var uploader *debugger.Uploader
+var uploader debugger.UploaderI
 
 var (
 	configBackendURL                  string
@@ -81,7 +80,7 @@ func Setup() {
 	url := fmt.Sprintf("%s/dataplane/eventDeliveryStatus", configBackendURL)
 	eventDeliveryStatusUploader := &EventDeliveryStatusUploader{}
 	uploader = debugger.New(url, eventDeliveryStatusUploader)
-	uploader.Setup()
+	uploader.Start()
 
 	rruntime.Go(func() {
 		backendConfigSubscriber()
@@ -105,7 +104,7 @@ func (eventDeliveryStatusUploader *EventDeliveryStatusUploader) Transform(data i
 
 	rawJSON, err := json.Marshal(res)
 	if err != nil {
-		misc.AssertErrorIfDev(err)
+		pkgLogger.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
 		return nil, err
 	}
 

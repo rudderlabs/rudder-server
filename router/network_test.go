@@ -7,20 +7,20 @@ import (
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
-	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
+	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type networkContext struct {
 	mockCtrl       *gomock.Controller
-	mockHTTPClient *mocksRouter.MockHTTPClient
+	mockHTTPClient *mocksSysUtils.MockHTTPClientI
 }
 
 // Initiaze mocks and common expectations
 func (c *networkContext) Setup() {
 	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockHTTPClient = mocksRouter.NewMockHTTPClient(c.mockCtrl)
+	c.mockHTTPClient = mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 }
 
 func (c *networkContext) Finish() {

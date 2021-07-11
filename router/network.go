@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../mocks/router/mock_network.go -package mock_network github.com/rudderlabs/rudder-server/router HTTPClient,NetHandleI
+//go:generate mockgen -destination=../mocks/router/mock_network.go -package mock_network github.com/rudderlabs/rudder-server/router NetHandleI
 
 package router
 
@@ -16,11 +16,12 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
 //NetHandleT is the wrapper holding private variables
 type NetHandleT struct {
-	httpClient HTTPClient
+	httpClient sysUtils.HTTPClientI
 	logger     logger.LoggerI
 }
 
@@ -28,13 +29,6 @@ type NetHandleT struct {
 type NetHandleI interface {
 	SendPost(structData integrations.PostParametersT) (statusCode int, respBody string)
 }
-
-// HTTPClient interface
-type HTTPClient interface {
-	Do(req *http.Request) (*http.Response, error)
-}
-
-//var pkgLogger logger.LoggerI
 
 //temp solution for handling complex query params
 func handleQueryParam(param interface{}) string {

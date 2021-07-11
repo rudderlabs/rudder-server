@@ -69,8 +69,7 @@ func UploadDestinationConnectionTesterResponse(testResponse string, destinationI
 func makePostRequest(url string, payload interface{}) error {
 	rawJSON, err := json.Marshal(payload)
 	if err != nil {
-		pkgLogger.Debugf(string(rawJSON))
-		misc.AssertErrorIfDev(err)
+		pkgLogger.Errorf("[Destination Connection Tester] Failed to marshal payload. Err: %v", err)
 		return err
 	}
 	client := &http.Client{}
@@ -80,7 +79,7 @@ func makePostRequest(url string, payload interface{}) error {
 	for {
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
 		if err != nil {
-			misc.AssertErrorIfDev(err)
+			pkgLogger.Errorf("[Destination Connection Tester] Failed to create new request. Err: %v", err)
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
