@@ -883,6 +883,18 @@ var tablesNamesInDB = []string{
 	"tt_jobs_2", "tt_job_status_2", "tt_jobs_3", "tt_job_status_3",
 }
 
+var gwTableNamesIndb = []string{
+	"gw_jobs_2", "gw_job_status_2", "gw_jobs_3", "gw_job_status_3",
+}
+
+var gwmockTables = func() *sqlmock.Rows {
+	sqlMockRows := sqlmock.NewRows([]string{"tablename"})
+	for _, row := range gwTableNamesIndb {
+		sqlMockRows.AddRow(row)
+	}
+	return sqlMockRows
+}
+
 var mockRows = func() *sqlmock.Rows {
 	sqlMockRows := sqlmock.NewRows([]string{"tablename"})
 	for _, row := range tablesNamesInDB {
