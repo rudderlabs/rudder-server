@@ -351,7 +351,6 @@ func (job *UploadJobT) run() (err error) {
 		targetStatus := nextUploadState.completed
 
 		switch targetStatus {
-
 		case GeneratedUploadSchema:
 			newStatus = nextUploadState.failed
 			err = job.generateUploadSchema(schemaHandle)
@@ -920,6 +919,12 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	numEvents, queryErr := tableUpload.getNumEvents()
 	if queryErr == nil {
 		job.recordTableLoad(tName, numEvents)
+	}
+
+	if len(job.schemaHandle.schemaInWarehouse[tName]) > columnCountUpper {
+		job.counterStat(`warehouse_column_count_upper_limit`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(1)
+	} else if len(job.schemaHandle.schemaInWarehouse[tName]) > columnCountLower {
+		job.counterStat(`warehouse_column_count_lower_limit`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(1)
 	}
 	return
 }
