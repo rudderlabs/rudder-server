@@ -117,9 +117,15 @@ func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
+	keys := []string{}
+	for _, col := range columns {
+		keys = append(keys, col)
+	}
+	sort.Strings(keys)
+
 	arr := []string{}
-	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, getRSDataType(dataType)))
+	for _, name := range keys {
+		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, getRSDataType(columns[name])))
 	}
 	return strings.Join(arr[:], ",")
 }

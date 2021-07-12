@@ -39,10 +39,18 @@ func CreateDummyJobRun() *JobRunT {
 		job: PayloadT{
 			UpdatedSchema: map[string]map[string]string{
 				"t1": {
-					"c1": "string",
+					"rsbool":     "boolean",
+					"rsbigint":   "bigint",
+					"rsfloat":    "float",
+					"rsstring":   "string",
+					"rstext":     "text",
+					"rsdatetime": "datetime",
 				},
 			},
+			DestinationType: "RS",
 		},
+		outputFileWritersMap: map[string]warehouseutils.LoadFileWriterI{},
+		tableEventCountMap:   map[string]int{},
 	}
 
 	return &j
@@ -149,7 +157,7 @@ func (job *PayloadT) getDiscardsTable() string {
 }
 
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
-	return "/Users/dhawal/parquetTest/t1.parquet"
+	return "/Users/dhawal/parquetTest/t1.parquet.gzip"
 	job := jobRun.job
 	randomness := uuid.NewV4().String()
 	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
@@ -157,6 +165,11 @@ func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 
 func (job *PayloadT) getColumnName(columnName string) string {
 	return warehouseutils.ToProviderCase(job.DestinationType, columnName)
+}
+
+func (job *PayloadT) getColumnType(tableName string, columnName string) string {
+	// TODO : should be safe to do so. confirm
+	return job.UpdatedSchema[tableName][columnName]
 }
 
 type loadFileUploadJob struct {
@@ -260,7 +273,7 @@ func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
 	return sortedTableColumnMap
 }
 
-func (jobRun *JobRunT) getWriter(tableName string) (warehouseutils.LoadFileWriterI, error) {
+func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWriterI, error) {
 	writer, ok := jobRun.outputFileWritersMap[tableName]
 	if !ok {
 		outputFilePath := jobRun.getLoadFilePath(tableName)
@@ -276,9 +289,9 @@ func (jobRun *JobRunT) getWriter(tableName string) (warehouseutils.LoadFileWrite
 		// TODO: read config from a proper place
 		// read both - whether to use parquet + no. of parallel writers for parquet
 		// TODO: see if using a simple writer with parquet writer is better(instead of gzWriter)
-		if config.GetEnvAsBool("RSERVER_WH_USE_PARQUET_LOAD_FILES", false) {
+		if config.GetEnvAsBool("RSERVER_WH_USE_PARQUET_LOAD_FILES", true) {
 			// TODO: check what happens if table does not exist - specially for discards case
-			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.UpdatedSchema[tableName], gzWriter)
+			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.UpdatedSchema[tableName], gzWriter, jobRun.job.DestinationType)
 			if err != nil {
 				return nil, err
 			}
@@ -403,7 +416,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 		columnData := batchRouterEvent.Data
 
 		// Create separate load file for each table
-		writer, err := jobRun.getWriter(tableName)
+		writer, err := jobRun.GetWriter(tableName)
 		if err != nil {
 			return nil, err
 		}
@@ -412,7 +425,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
 				timestampFormat := eventLoader.GetLoadTimeFomat(columnName)
-				eventLoader.AddColumn(job.getColumnName(columnName), jobRun.uuidTS.Format(timestampFormat))
+				eventLoader.AddColumn(job.getColumnName(columnName), job.getColumnType(tableName, columnName), jobRun.uuidTS.Format(timestampFormat))
 				continue
 			}
 			columnInfo, ok := batchRouterEvent.getColumnInfo(columnName)
@@ -438,7 +451,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 				if !ok {
 					eventLoader.AddEmptyColumn(columnName)
 
-					discardWriter, err := jobRun.getWriter(discardsTable)
+					discardWriter, err := jobRun.GetWriter(discardsTable)
 					if err != nil {
 						return nil, err
 					}
@@ -469,18 +482,23 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 				columnVal = string(marshalledVal)
 			}
 
-			eventLoader.AddColumn(columnName, columnVal)
+			eventLoader.AddColumn(columnName, columnType, columnVal)
 		}
 
 		// TODO: explore if it is better to write to file in a batch instead of one by one
 		// Completed parsing all columns, write single event to the file
-		eventData, err := eventLoader.WriteToString()
+		// eventData, err := eventLoader.WriteToString()
+		// if err != nil {
+		// 	pkgLogger.Errorf("[WH]: Failed to write event to string: %v", err)
+		// 	return loadFileUploadOutputs, err
+		// }
+		// // TODO: dont ignore error here
+		// writer.WriteGZ(eventData)
+		err = eventLoader.Write()
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to write event to string: %v", err)
+			pkgLogger.Errorf("[WH]: Failed to write event: %v", err)
 			return loadFileUploadOutputs, err
 		}
-		// TODO: dont ignore error here
-		writer.WriteGZ(eventData)
 		jobRun.tableEventCountMap[tableName]++
 	}
 	timer.End()

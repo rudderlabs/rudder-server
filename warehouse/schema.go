@@ -46,18 +46,19 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, c
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
 	if hasID && hasReceivedAt {
 		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, gzWriter)
-		eventLoader.AddColumn("column_name", columnName)
-		eventLoader.AddColumn("column_value", fmt.Sprintf("%v", columnVal))
-		eventLoader.AddColumn("received_at", receivedAt)
-		eventLoader.AddColumn("row_id", rowID)
-		eventLoader.AddColumn("table_name", tableName)
+		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
+		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
+		eventLoader.AddColumn("received_at", warehouseutils.DiscardsSchema["received_at"], receivedAt)
+		eventLoader.AddColumn("row_id", warehouseutils.DiscardsSchema["row_id"], rowID)
+		eventLoader.AddColumn("table_name", warehouseutils.DiscardsSchema["table_name"], tableName)
+		// TODO: understand this
 		if eventLoader.IsLoadTimeColumn("uuid_ts") {
 			timestampFormat := eventLoader.GetLoadTimeFomat("uuid_ts")
-			eventLoader.AddColumn("uuid_ts", jobRun.uuidTS.Format(timestampFormat))
+			eventLoader.AddColumn("uuid_ts", "", jobRun.uuidTS.Format(timestampFormat))
 		}
 		if eventLoader.IsLoadTimeColumn("loaded_at") {
 			timestampFormat := eventLoader.GetLoadTimeFomat("loaded_at")
-			eventLoader.AddColumn("loaded_at", jobRun.uuidTS.Format(timestampFormat))
+			eventLoader.AddColumn("loaded_at", "", jobRun.uuidTS.Format(timestampFormat))
 		}
 
 		eventData, err := eventLoader.WriteToString()
@@ -211,13 +212,17 @@ func (sHandle *SchemaHandleT) safeName(columnName string) string {
 
 func (sh *SchemaHandleT) getDiscardsSchema() map[string]string {
 	discards := map[string]string{
-		sh.safeName("table_name"):   "string",
-		sh.safeName("row_id"):       "string",
-		sh.safeName("column_name"):  "string",
-		sh.safeName("column_value"): "string",
-		sh.safeName("received_at"):  "datetime",
-		sh.safeName("uuid_ts"):      "datetime",
+		// sh.safeName("table_name"):   "string",
+		// sh.safeName("row_id"):       "string",
+		// sh.safeName("column_name"):  "string",
+		// sh.safeName("column_value"): "string",
+		// sh.safeName("received_at"):  "datetime",
+		// sh.safeName("uuid_ts"):      "datetime",
 	}
+	for colName, colType := range warehouseutils.DiscardsSchema {
+		discards[sh.safeName(colName)] = colType
+	}
+
 	// add loaded_at for bq to be segment compatible
 	if sh.warehouse.Type == "BQ" {
 		discards[sh.safeName("loaded_at")] = "datetime"

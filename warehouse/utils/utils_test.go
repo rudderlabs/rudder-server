@@ -2,12 +2,14 @@ package warehouseutils_test
 
 import (
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
 	"github.com/rudderlabs/rudder-server/warehouse"
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var _ = Describe("Utils", func() {
@@ -197,13 +199,13 @@ var _ = Describe("Utils", func() {
 		// 	return
 		// }
 		// w := bufio.NewWriter(file)
-		// fmt.Println(err)
+		// fmt.Println(fmt.Sprintf(err)
 		// Expect(err).To(BeNil())
 
 		// pqloader := &ParquetLoader{
 		// 	FileWriter: w,
 		// }
-		// fmt.Println("lullll", pqloader)
+		// fmt.Println(fmt.Sprintf("lullll", pqloader)
 
 		// pqloader.AddColumn("Abc", "ABC")
 		// pqloader.AddColumn("Abcd", "ABCD")
@@ -212,24 +214,93 @@ var _ = Describe("Utils", func() {
 		// pqloader.AddEmptyColumn("empty")
 
 		// err = pqloader.WriteEventToFile()
-		// fmt.Println(err)
+		// fmt.Println(fmt.Sprintf(err)
 
 		// err = w.Flush()
 		// Expect(err).To(BeNil())
 		// err = file.Close()
 		// Expect(err).To(BeNil())
-		// fmt.Println(err)
+		// fmt.Println(fmt.Sprintf(err)
 
 		j := warehouse.CreateDummyJobRun()
 
-		j.
+		w, err := j.GetWriter("t1")
+		Expect(err).To(BeNil())
+
+		i := 0
+		for i = 0; i < 10; i++ {
+			ploader := NewParquetLoader("RS", w)
+			ploader.AddColumn("rsbigint", "bigint", int64(i))
+			ploader.AddColumn("rsbool", "bool", i%2 == 0)
+			ploader.AddColumn("rsdatetime", "datetime", time.Now().Add(time.Duration(i)*time.Second).UnixNano()/int64(time.Microsecond))
+			ploader.AddColumn("rsdouble", "double", float64(0.1112+float64(i)))
+			ploader.AddColumn("rsstring", "string", fmt.Sprintf("somestr%d", i))
+			// ploader.AddColumn("rstext", fmt.Sprintf("sometxt%d", i))
+			ploader.AddColumn("rstext", "text", nil)
+
+			err = ploader.Write()
+			fmt.Println(err)
+			Expect(err).To(BeNil())
+		}
+		err = w.Close()
+		fmt.Println("close err", err)
+		Expect(err).To(BeNil())
+
+	})
+
+	It("get parquet type", func() {
+		var pVal interface{}
+		var err error
+
+		pVal, err = warehouseutils.GetParquetValue("true", "boolean")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, "true"))
+		pVal, err = warehouseutils.GetParquetValue("false", "boolean")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, "false"))
+		pVal, err = warehouseutils.GetParquetValue("True", "boolean")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, "True"))
+		pVal, err = warehouseutils.GetParquetValue("False", "boolean")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, "False"))
+		pVal, err = warehouseutils.GetParquetValue("1112", "int")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, "1112"))
+		pVal, err = warehouseutils.GetParquetValue(1112.1112, "int")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, 1112.1112))
+		pVal, err = warehouseutils.GetParquetValue("1112", "bigint")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, "1112"))
+		pVal, err = warehouseutils.GetParquetValue(1112.1112, "float")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, 1112.1112))
+		pVal, err = warehouseutils.GetParquetValue("abcddd", "string")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, "abcddd"))
+		pVal, err = warehouseutils.GetParquetValue(1234, "string")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, 1234))
+		pVal, err = warehouseutils.GetParquetValue("abcddd", "text")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, "abcddd"))
+		pVal, err = warehouseutils.GetParquetValue(1234, "text")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, 1234))
+		pVal, err = warehouseutils.GetParquetValue(time.Now().Format(time.RFC3339), "datetime")
+		Expect(err).To(BeNil())
+		fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, time.Now().UnixNano()/int64(time.Millisecond)))
+		// pVal, err = warehouseutils.GetParquetValue("2009-05-19 14:39:22", "datetime")
+		// Expect(err).To(BeNil())
+		// fmt.Println(fmt.Sprintf("parquet val : %[1]v type : %[1]T expected: %[2]v", pVal, 1111))
 	})
 })
 
-type w struct {
-}
+// type w struct {
+// }
 
-func (w w) Write(p []byte) (int, error) {
-	fmt.Println(string(p))
-	return len(p), nil
-}
+// func (w w) Write(p []byte) (int, error) {
+// 	fmt.Println(fmt.Sprintf(string(p))
+// 	return len(p), nil
+// }
