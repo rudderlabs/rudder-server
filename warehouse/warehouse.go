@@ -900,7 +900,7 @@ func (wh *HandleT) monitorUploadStatus() {
 
 var loadFileFormatMap = map[string]string{
 	"BQ":         "json",
-	"RS":         "csv",
+	"RS":         "parquet",
 	"SNOWFLAKE":  "csv",
 	"POSTGRES":   "csv",
 	"CLICKHOUSE": "csv",

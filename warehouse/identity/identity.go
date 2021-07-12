@@ -327,7 +327,8 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 			}
 			rowData = append(rowData, prop1Type.String, prop1Val.String, prop2Type.String, prop2Val.String)
 			for i, columnName := range columnNames {
-				eventLoader.AddColumn(columnName, rowData[i])
+				// TODO : what is the type here? understand
+				eventLoader.AddColumn(columnName, "", rowData[i])
 			}
 			rowString, _ := eventLoader.WriteToString()
 			gzWriter.WriteGZ(rowString)

@@ -3,24 +3,116 @@ package warehouseutils
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/xitongsys/parquet-go/parquet"
 )
 
-type ParquetColumn struct {
-	Name           string
-	ParquetType    string
-	ConvertedType  string
-	RepetitionType string
+var whDataTypeToParquetDataType = map[string]map[string]string{
+	"RS": {
+		"bigint":   PARQUET_INT_64,
+		"int":      PARQUET_INT_64,
+		"boolean":  PARQUET_BOOLEAN,
+		"float":    PARQUET_DOUBLE,
+		"string":   PARQUET_STRING,
+		"text":     PARQUET_STRING,
+		"datetime": PARQUET_TIMESTAMP_MICROS,
+	},
 }
 
-func (p ParquetColumn) String() string {
-	s := fmt.Sprintf("name=%[1]s, type=%[2]s, convertedtype=%[3]s", p.Name, p.ParquetType, p.ConvertedType)
-	if p.RepetitionType != "" {
-		s += fmt.Sprintf(", repetitiontype=%s", p.RepetitionType)
+func getInt64(val interface{}) (int64, error) {
+	switch val.(type) {
+	case int:
+		return int64(val.(int)), nil
+	case int32:
+		return int64(val.(int32)), nil
+	case int64:
+		return val.(int64), nil
+	case float32:
+		return int64(val.(float32)), nil
+	case float64:
+		return int64(val.(float64)), nil
+	case string:
+		return strconv.ParseInt(val.(string), 10, 64)
+	default:
+		return 0, fmt.Errorf("failed to convert %v to int64", val)
 	}
-	return s
+}
+
+func getBool(val interface{}) (bool, error) {
+	switch val.(type) {
+	case bool:
+		return val.(bool), nil
+	case string:
+		return strconv.ParseBool(val.(string))
+	default:
+		return false, fmt.Errorf("failed to convert %v to bool", val)
+	}
+}
+
+func getFloat64(val interface{}) (float64, error) {
+	switch val.(type) {
+	case float32:
+		return float64(val.(float32)), nil
+	case float64:
+		return val.(float64), nil
+	case string:
+		return strconv.ParseFloat(val.(string), 64)
+	default:
+		return 0, fmt.Errorf("failed to convert %v to float64", val)
+	}
+}
+
+func getUnixTimestamp(val interface{}) (int64, error) {
+	switch val.(type) {
+	case time.Time:
+		return val.(time.Time).UnixNano() / int64(time.Millisecond), nil
+	case string:
+		// TODO: see what timestamps can be parsed accd to supported types
+		parsedTS, err := time.Parse(time.RFC3339, val.(string))
+		if err != nil {
+			return 0, err
+		}
+		return parsedTS.UnixNano() / int64(time.Millisecond), nil
+	default:
+		return 0, fmt.Errorf("failed to convert %v to unix timestamp", val)
+	}
+
+}
+
+func getString(val interface{}) (string, error) {
+	switch val.(type) {
+	case string:
+		return val.(string), nil
+	default:
+		return fmt.Sprintf("%v", val), nil
+	}
+}
+
+func GetParquetValue(val interface{}, colType string) (retVal interface{}, err error) {
+	switch colType {
+	case "bigint", "int":
+		// string, int, float
+		retVal, err = getInt64(val)
+		return
+	case "boolean":
+		// string,bool
+		retVal, err = getBool(val)
+		return
+	case "float":
+		// string, float
+		retVal, err = getFloat64(val)
+		return
+	case "datetime":
+		// parse into timestamp -> convert to parquet
+		retVal, err = getUnixTimestamp(val)
+		return
+	case "string", "text":
+		retVal, err = getString(val)
+		return
+	}
+	return nil, fmt.Errorf("unsupported type for parquet: %s", colType)
 }
 
 // ParquetLoader is common for non-BQ warehouses.
@@ -48,23 +140,14 @@ func (loader *ParquetLoader) GetLoadTimeFomat(columnName string) string {
 	return misc.RFC3339Milli
 }
 
-func (loader *ParquetLoader) addColumnToSchema(name string, val interface{}) {
-	// TODO: figure out if we need to add other types of columns to parquet files
-	pCol := ParquetColumn{
-		Name:          name,
-		ParquetType:   parquet.Type_BYTE_ARRAY.String(),
-		ConvertedType: parquet.ConvertedType_UTF8.String(),
+func (loader *ParquetLoader) AddColumn(columnName string, colType string, val interface{}) {
+	var err error
+	if val != nil {
+		val, err = GetParquetValue(val, colType)
+		if err != nil {
+			// TODO : decide
+		}
 	}
-
-	if val == nil {
-		pCol.RepetitionType = parquet.FieldRepetitionType_OPTIONAL.String()
-	}
-
-	loader.Schema = append(loader.Schema, pCol.String())
-}
-
-func (loader *ParquetLoader) AddColumn(columnName string, val interface{}) {
-	loader.addColumnToSchema(columnName, val)
 	loader.Values = append(loader.Values, val)
 }
 
@@ -73,34 +156,14 @@ func (loader *ParquetLoader) AddRow(columnNames []string, row []string) {
 }
 
 func (loader *ParquetLoader) AddEmptyColumn(columnName string) {
-	loader.AddColumn(columnName, nil)
+	loader.AddColumn(columnName, "", nil)
 }
 
 func (loader *ParquetLoader) WriteToString() (string, error) {
 	return "", errors.New("not implemented")
 }
 
-// func (loader *ParquetLoader) WriteEventToFile() error {
-// 	pqWriter, err := writer.NewCSVWriterFromWriter(loader.Schema, loader.FileWriter, 1)
-// 	if err != nil {
-// 		fmt.Println("writer create error", err)
-// 		return err
-// 	}
-
-// 	err = pqWriter.Write(loader.Values)
-// 	if err != nil {
-// 		fmt.Println("write error: ", err)
-// 		return err
-// 	}
-
-// 	err = pqWriter.WriteStop()
-// 	if err != nil {
-// 		fmt.Println("write stop error: ", err)
-// 		return err
-// 	}
-// 	return nil
-// }
-
 func (loader *ParquetLoader) Write() error {
+	fmt.Println("Writing to file writer", loader.Values)
 	return loader.FileWriter.WriteRow(loader.Values)
 }
