@@ -119,6 +119,7 @@ type ParametersT struct {
 	SourceBatchID   string `json:"source_batch_id"`
 	SourceTaskID    string `json:"source_task_id"`
 	SourceTaskRunID string `json:"source_task_run_id"`
+	RecordID        string `json:"record_id"`
 	SourceJobID     string `json:"source_job_id"`
 	SourceJobRunID  string `json:"source_job_run_id"`
 }
@@ -566,6 +567,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceTaskRunID = gjson.GetBytes(eventBytes, "context.sources.task_run_id").String()
 	commonMetadata.SourceJobID = gjson.GetBytes(eventBytes, "context.sources.job_id").String()
 	commonMetadata.SourceJobRunID = gjson.GetBytes(eventBytes, "context.sources.job_run_id").String()
+	commonMetadata.RecordID = gjson.GetBytes(eventBytes, "recordId").String()
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
 
@@ -588,6 +590,7 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.SourceBatchID = commonMetadata.SourceBatchID
 	metadata.SourceTaskID = commonMetadata.SourceTaskID
 	metadata.SourceTaskRunID = commonMetadata.SourceTaskRunID
+	metadata.RecordID = commonMetadata.RecordID
 	metadata.SourceJobID = commonMetadata.SourceJobID
 	metadata.SourceJobRunID = commonMetadata.SourceJobRunID
 
@@ -1245,6 +1248,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			sourceBatchId := destEvent.Metadata.SourceBatchID
 			sourceTaskId := destEvent.Metadata.SourceTaskID
 			sourceTaskRunId := destEvent.Metadata.SourceTaskRunID
+			recordId := destEvent.Metadata.RecordID
 			sourceJobId := destEvent.Metadata.SourceJobID
 			sourceJobRunId := destEvent.Metadata.SourceJobRunID
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
@@ -1265,6 +1269,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				SourceTaskRunID: sourceTaskRunId,
 				SourceJobID:     sourceJobId,
 				SourceJobRunID:  sourceJobRunId,
+				RecordID:        recordId,
 			}
 			marshalledParams, err := json.Marshal(params)
 			if err != nil {

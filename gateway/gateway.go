@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
+	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
@@ -835,6 +836,75 @@ func (gateway *HandleT) getWarehousePending(payload []byte) bool {
 	return whPendingResponse.PendingEvents
 }
 
+type failedEventsRequestPayload struct {
+	TaskRunID string `json:"task_run_id"`
+}
+
+func (gateway *HandleT) fetchFailedEventsHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.failedEventsHandler(w, r, "fetch")
+}
+
+func (gateway *HandleT) clearFailedEventsHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.failedEventsHandler(w, r, "clear")
+}
+
+func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Request, reqType string) {
+	gateway.logger.LogRequest(r)
+	atomic.AddUint64(&gateway.recvCount, 1)
+	var errorMessage string
+	defer func() {
+		if errorMessage != "" {
+			gateway.logger.Debug(errorMessage)
+			http.Error(w, response.GetStatus(errorMessage), 400)
+		}
+	}()
+
+	payload, _, err := gateway.getPayloadAndWriteKey(w, r, reqType)
+	if err != nil {
+		errorMessage = err.Error()
+		return
+	}
+
+	if !gjson.ValidBytes(payload) {
+		errorMessage = response.GetStatus(response.InvalidJSON)
+		return
+	}
+
+	var reqPayload failedEventsRequestPayload
+	err = json.Unmarshal(payload, &reqPayload)
+	if err != nil {
+		errorMessage = err.Error()
+		return
+	}
+
+	if reqPayload.TaskRunID == "" {
+		errorMessage = "Empty task run id"
+		return
+	}
+
+	if reqType == "fetch" {
+		failedEvents := router.GetFailedEventsManager().FetchFailedRecordIDs(reqPayload.TaskRunID)
+		failedMsgIDsByDestinationID := make(map[string][]string)
+		for _, failedEvent := range failedEvents {
+			if _, ok := failedMsgIDsByDestinationID[failedEvent.DestinationID]; !ok {
+				failedMsgIDsByDestinationID[failedEvent.DestinationID] = []string{}
+			}
+			failedMsgIDsByDestinationID[failedEvent.DestinationID] = append(failedMsgIDsByDestinationID[failedEvent.DestinationID], failedEvent.RecordID)
+		}
+
+		resp, err := json.Marshal(failedMsgIDsByDestinationID)
+		if err != nil {
+			errorMessage = err.Error()
+			return
+		}
+
+		w.Write(resp)
+	} else if reqType == "clear" {
+		router.GetFailedEventsManager().DropFailedRecordIDs(reqPayload.TaskRunID)
+		w.Write([]byte("OK"))
+	}
+}
+
 //ProcessRequest throws a webRequest into the queue and waits for the response before returning
 func (rrh *RegularRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
 	done := make(chan string, 1)
@@ -1163,6 +1233,9 @@ func (gateway *HandleT) StartWebHandler() {
 
 	//todo: remove in next release
 	srvMux.HandleFunc("/v1/pending-events", gateway.stat(gateway.pendingEventsHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/clear", gateway.stat(gateway.ClearHandler))
+	srvMux.HandleFunc("/v1/failed-events", gateway.stat(gateway.fetchFailedEventsHandler))
+	srvMux.HandleFunc("/v1/clear-failed-events", gateway.stat(gateway.clearFailedEventsHandler))
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
