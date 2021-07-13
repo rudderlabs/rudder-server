@@ -65,7 +65,7 @@ type batchWebRequestT struct {
 
 var (
 	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess, adminWebPort int
-	maxUserWebRequestBatchSize, maxDBBatchSize                                int
+	maxUserWebRequestBatchSize, maxDBBatchSize, MaxHeaderBytes                int
 	userWebRequestBatchTimeout, dbBatchWriteTimeout                           time.Duration
 	enabledWriteKeysSourceMap                                                 map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                                 map[string]string
@@ -76,6 +76,10 @@ var (
 	enableSuppressUserFeature                                                 bool
 	enableEventSchemasFeature                                                 bool
 	diagnosisTickerTime                                                       time.Duration
+	ReadTimeout                                                               time.Duration
+	ReadHeaderTimeout                                                         time.Duration
+	WriteTimeout                                                              time.Duration
+	IdleTimeout                                                               time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                                      bool
 	gwAllowPartialWriteWithErrors                                             bool
 	pkgLogger                                                                 logger.LoggerI
@@ -1174,11 +1178,11 @@ func (gateway *HandleT) StartWebHandler() {
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
 		Handler:           c.Handler(bugsnag.Handler(srvMux)),
-		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
-		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
-		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 10*time.Second),
-		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
-		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
+		ReadTimeout:       ReadTimeout,
+		ReadHeaderTimeout: ReadHeaderTimeout,
+		WriteTimeout:      WriteTimeout,
+		IdleTimeout:       IdleTimeout,
+		MaxHeaderBytes:    MaxHeaderBytes,
 	}
 	gateway.logger.Fatal(srv.ListenAndServe())
 }
@@ -1302,9 +1306,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.stats = stats.DefaultStats
 
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
-
 	config.RegisterDurationConfigVariable(time.Duration(30), &gateway.httpTimeout, false, time.Second, "Gateway.httpTimeout")
-
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr, Timeout: gateway.httpTimeout}
 	gateway.netHandle = client
