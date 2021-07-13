@@ -1821,7 +1821,7 @@ func Setup(processor *HandleT, c *context, enableDedup bool) {
 	var clearDB = false
 	SetDisableDedupFeature(enableDedup)
 	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
-
+	processor.reportingEnabled = true
 	// make sure the mock backend config has sent the configuration
 	testutils.RunTestWithTimeout(func() {
 		for !c.configInitialised {
@@ -1834,5 +1834,4 @@ func Setup(processor *HandleT, c *context, enableDedup bool) {
 func handlePendingGatewayJobs(processor *HandleT) {
 	didWork := processor.handlePendingGatewayJobs()
 	Expect(didWork).To(Equal(true))
-
 }
