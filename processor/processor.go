@@ -717,7 +717,6 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 	}
 }
 
-//Add Reporting Tests
 func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string, transformationEnabled bool) ([]*jobsdb.JobT, []*types.PUReportedMetric, map[string]int64) {
 	failedMetrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
@@ -875,7 +874,6 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
-//Add Reporting Tests
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 
 	proc.pStatsJobs.Start()

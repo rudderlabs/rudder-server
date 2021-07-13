@@ -29,7 +29,7 @@ import (
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
-var testTimeout = 10 * time.Second
+var testTimeout = 5 * time.Second
 
 type context struct {
 	asyncHelper       testutils.AsyncTestHelper
@@ -46,7 +46,7 @@ type context struct {
 	MockDedup             *mockDedup.MockDedupI
 }
 
-func (c *context) Setup(clearDB bool) {
+func (c *context) Setup() {
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockGatewayJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
@@ -234,7 +234,7 @@ var _ = Describe("Processor", func() {
 
 	BeforeEach(func() {
 		c = &context{}
-		c.Setup(false)
+		c.Setup()
 
 		// setup static requirements of dependencies
 		stats.Setup()
