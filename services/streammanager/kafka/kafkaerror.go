@@ -1,13 +1,12 @@
 package kafka
 
-var abortableErrors []string = []string{errOutOfBrokers, errNotConnected, errInsufficientData, errInvalidMessage, errUnknownTopicOrPartition,
+var abortableErrors []string = []string{errNotConnected, errInsufficientData, errInvalidMessage, errUnknownTopicOrPartition,
 	errInvalidMessageSize, errNotLeaderForPartition, errRequestTimedOut, errBrokerNotAvailable, errMessageSizeTooLarge, errOffsetMetadataTooLarge,
 	errInvalidTopic, errNotEnoughReplicas, errNotEnoughReplicasAfterAppend, errInvalidSessionTimeout, errInvalidGroupID, errUnknownMemberID,
-	errTopicAuthorizationFailed, errGroupAuthorizationFailed, errClusterAuthorizationFailed, errInvalidConfig, errInvalidRequest, errCircuitBreakerIsOpen,
+	errTopicAuthorizationFailed, errGroupAuthorizationFailed, errClusterAuthorizationFailed, errInvalidConfig, errInvalidRequest,
 }
 
 const (
-	errOutOfBrokers                       string = "kafka: client has run out of available brokers to talk to (Is your cluster reachable?)"
 	errClosedClient                       string = "kafka: tried to use a client that was closed"
 	errIncompleteResponse                 string = "kafka: response did not contain all the expected topic/partition blocks"
 	errInvalidPartition                   string = "kafka: partitioner returned an invalid partition index"
@@ -72,5 +71,7 @@ const (
 	errNonEmptyGroup                      string = "kafka server: The group is not empty."
 	errGroupIDNotFound                    string = "kafka server: The group id does not exist."
 	errListenerNotFound                   string = "kafka server: There is no listener on the leader broker that matches the listener on which metadata request was processed."
-	errCircuitBreakerIsOpen               string = "circuit breaker is open"
 )
+
+// errOutOfBrokers                       string = "kafka: client has run out of available brokers to talk to (Is your cluster reachable?)"
+// errCircuitBreakerIsOpen               string = "circuit breaker is open"
