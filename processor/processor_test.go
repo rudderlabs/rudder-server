@@ -29,7 +29,7 @@ import (
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
-var testTimeout = 5 * time.Second
+var testTimeout = 10 * time.Second
 
 type context struct {
 	asyncHelper       testutils.AsyncTestHelper
@@ -233,6 +233,8 @@ var _ = Describe("Processor", func() {
 	var c *context
 
 	BeforeEach(func() {
+		transformerURL = "http://test"
+
 		c = &context{}
 		c.Setup()
 
@@ -408,81 +410,6 @@ var _ = Describe("Processor", func() {
 				},
 			}
 
-			assertReportMetrics := []*types.PUReportedMetric{
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "",
-						DestinationID:   "",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "",
-						PU:         "gateway",
-						TerminalPU: false,
-						InitialPU:  true,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "succeeded",
-						Count:          3,
-						StatusCode:     200,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-					},
-				},
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "source-from-transformer",
-						DestinationID:   "destination-from-transformer",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "gateway",
-						PU:         "dest_transformer",
-						TerminalPU: false,
-						InitialPU:  false,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "succeeded",
-						Count:          2,
-						StatusCode:     0,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-					},
-				},
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "",
-						DestinationID:   "enabled-destination-a",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "gateway",
-						PU:         "dest_transformer",
-						TerminalPU: false,
-						InitialPU:  false,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "diff",
-						Count:          -3,
-						StatusCode:     0,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-					},
-				},
-			}
-
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
@@ -539,10 +466,8 @@ var _ = Describe("Processor", func() {
 			}
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledNoUT).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
-			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1).Do(func(metrics []*types.PUReportedMetric, _ interface{}) {
-				assertReportMetric(assertReportMetrics, metrics)
-			})
-			processorSetupAndAssertJobHandling(processor, c, false)
+
+			processorSetupAndAssertJobHandling(processor, c, false, false)
 		})
 
 		It("should process ToRetry and Unprocessed jobs to destination with only user transformation", func() {
@@ -653,129 +578,6 @@ var _ = Describe("Processor", func() {
 				},
 			}
 
-			assertReportMetrics := []*types.PUReportedMetric{
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "",
-						DestinationID:   "",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "",
-						PU:         "gateway",
-						TerminalPU: false,
-						InitialPU:  true,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "succeeded",
-						Count:          3,
-						StatusCode:     200,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-					},
-				},
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "",
-						DestinationID:   "",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "gateway",
-						PU:         "user_transformer",
-						TerminalPU: false,
-						InitialPU:  false,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "succeeded",
-						Count:          3,
-						StatusCode:     0,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-					},
-				},
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "",
-						DestinationID:   "enabled-destination-b",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "gateway",
-						PU:         "user_transformer",
-						TerminalPU: false,
-						InitialPU:  false,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "diff",
-						Count:          -3,
-						StatusCode:     0,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-					},
-				},
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "source-from-transformer",
-						DestinationID:   "destination-from-transformer",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "user_transformer",
-						PU:         "dest_transformer",
-						TerminalPU: false,
-						InitialPU:  false,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "succeeded",
-						Count:          2,
-						StatusCode:     0,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-					},
-				},
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "",
-						DestinationID:   "",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "user_transformer",
-						PU:         "dest_transformer",
-						TerminalPU: false,
-						InitialPU:  false,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "diff",
-						Count:          -3,
-						StatusCode:     0,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-					},
-				},
-			}
-
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
@@ -847,14 +649,12 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledOnlyUT).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
-			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1).Do(func(metrics []*types.PUReportedMetric, _ interface{}) {
-				assertReportMetric(assertReportMetrics, metrics)
-			})
+
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false)
+			processorSetupAndAssertJobHandling(processor, c, false, false)
 		})
 
 		It("should process ToRetry and Unprocessed jobs to destination without user transformation with enabled Dedup", func() {
@@ -942,8 +742,7 @@ var _ = Describe("Processor", func() {
 			}
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
-			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1)
-			Setup(processor, c, true)
+			Setup(processor, c, true, false)
 			processor.dedupHandler = c.MockDedup
 			handlePendingGatewayJobs(processor)
 		})
@@ -1003,80 +802,7 @@ var _ = Describe("Processor", func() {
 					Error:      "error-2",
 				},
 			}
-			assertReportMetrics := []*types.PUReportedMetric{
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "source-from-transformer",
-						DestinationID:   "",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "",
-						PU:         "gateway",
-						TerminalPU: false,
-						InitialPU:  true,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "succeeded",
-						Count:          2,
-						StatusCode:     200,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-					},
-				},
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "",
-						DestinationID:   "",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "gateway",
-						PU:         "dest_transformer",
-						TerminalPU: false,
-						InitialPU:  false,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "aborted",
-						Count:          2,
-						StatusCode:     400,
-						SampleResponse: "error-1",
-						SampleEvent:    []byte(`{"integrations":{"All":false,"enabled-destination-a-definition-display-name":true},"messageId":"message-1","originalTimestamp":"2000-01-02T01:23:45.000Z","receivedAt":"2001-01-02T02:23:45.000Z","request_ip":"1.2.3.4","rudderId":"some-rudder-id","sentAt":"2000-01-02T01:23:00.000Z","some-property":"property-1","timestamp":"2001-01-02T02:24:30.000Z"}`),
-					},
-				},
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "source-from-transformer",
-						DestinationID:   "enabled-destination-a",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "gateway",
-						PU:         "dest_transformer",
-						TerminalPU: false,
-						InitialPU:  false,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "diff",
-						Count:          -2,
-						StatusCode:     0,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-					},
-				},
-			}
+
 			assertErrStoreJob := func(job *jobsdb.JobT, i int, destination string) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
 				Expect(job.JobID).To(Equal(int64(0)))
@@ -1139,14 +865,12 @@ var _ = Describe("Processor", func() {
 				})
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
-			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1).Do(func(metrics []*types.PUReportedMetric, _ interface{}) {
-				assertReportMetric(assertReportMetrics, metrics)
-			})
+
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false)
+			processorSetupAndAssertJobHandling(processor, c, false, false)
 		})
 
 		It("messages should be skipped on user transform failures, without failing the job", func() {
@@ -1193,81 +917,6 @@ var _ = Describe("Processor", func() {
 					},
 					StatusCode: 400,
 					Error:      "error-combined",
-				},
-			}
-
-			assertReportMetrics := []*types.PUReportedMetric{
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "source-from-transformer",
-						DestinationID:   "",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "",
-						PU:         "gateway",
-						TerminalPU: false,
-						InitialPU:  true,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "succeeded",
-						Count:          2,
-						StatusCode:     200,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-					},
-				},
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "",
-						DestinationID:   "",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "gateway",
-						PU:         "user_transformer",
-						TerminalPU: false,
-						InitialPU:  false,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "aborted",
-						Count:          1,
-						StatusCode:     400,
-						SampleResponse: "error-combined",
-						SampleEvent:    []byte(`{"integrations":{"All":false,"enabled-destination-b-definition-display-name":true},"messageId":"message-1","originalTimestamp":"2000-01-02T01:23:45.000Z","receivedAt":"2001-01-02T02:23:45.000Z","request_ip":"1.2.3.4","rudderId":"some-rudder-id","sentAt":"2000-01-02T01:23:00.000Z","some-property":"property-1","timestamp":"2001-01-02T02:24:30.000Z"}`),
-					},
-				},
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:        "source-from-transformer",
-						DestinationID:   "enabled-destination-b",
-						SourceBatchID:   "",
-						SourceTaskID:    "",
-						SourceTaskRunID: "",
-						SourceJobID:     "",
-						SourceJobRunID:  "",
-					},
-					PUDetails: types.PUDetails{
-						InPU:       "gateway",
-						PU:         "user_transformer",
-						TerminalPU: false,
-						InitialPU:  false,
-					},
-					StatusDetail: &types.StatusDetail{
-						Status:         "diff",
-						Count:          -2,
-						StatusCode:     0,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-					},
 				},
 			}
 
@@ -1338,14 +987,12 @@ var _ = Describe("Processor", func() {
 				})
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
-			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1).Do(func(metrics []*types.PUReportedMetric, _ interface{}) {
-				assertReportMetric(assertReportMetrics, metrics)
-			})
+
 			var processor *HandleT = &HandleT{
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false)
+			processorSetupAndAssertJobHandling(processor, c, false, false)
 		})
 	})
 
@@ -1364,8 +1011,8 @@ var _ = Describe("Processor", func() {
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
 
-			go processor.Pause()
 			setProcessorPausedVariable(processor, false)
+			go processor.Pause()
 			Eventually(processor.pauseChannel).Should(Receive())
 		})
 
@@ -1382,8 +1029,8 @@ var _ = Describe("Processor", func() {
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
 
-			go processor.Pause()
 			setProcessorPausedVariable(processor, true)
+			go processor.Pause()
 			Eventually(processor.pauseChannel).ShouldNot(Receive())
 		})
 
@@ -1400,8 +1047,8 @@ var _ = Describe("Processor", func() {
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
 
-			go processor.Resume()
 			setProcessorPausedVariable(processor, true)
+			go processor.Resume()
 			Eventually(processor.resumeChannel).Should(Receive())
 		})
 
@@ -1418,8 +1065,8 @@ var _ = Describe("Processor", func() {
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
 
-			go processor.Resume()
 			setProcessorPausedVariable(processor, false)
+			go processor.Resume()
 			Eventually(processor.resumeChannel).ShouldNot(Receive())
 		})
 	})
@@ -1443,12 +1090,11 @@ var _ = Describe("Processor", func() {
 			SetMainLoopTimeout(1 * time.Second)
 			go pauseMainLoop(processor)
 			go processor.mainLoop()
-			go resumeMainLoop(processor)
 			time.Sleep(1 * time.Second)
 			Expect(processor.paused).To(BeTrue())
 		})
 
-		It("Should sleep when Locked and recieved nothing on Pause Channel", func() {
+		It("Should not handle jobs when transformer features are not set", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
@@ -1465,7 +1111,7 @@ var _ = Describe("Processor", func() {
 			SetMainLoopTimeout(1 * time.Second)
 			go processor.mainLoop()
 			time.Sleep(3 * time.Second)
-			Expect(processor.paused).To(BeFalse())
+			Expect(isUnLocked).To(BeFalse())
 		})
 	})
 
@@ -1812,16 +1458,16 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 	}
 }
 
-func processorSetupAndAssertJobHandling(processor *HandleT, c *context, enableDedup bool) {
-	Setup(processor, c, enableDedup)
+func processorSetupAndAssertJobHandling(processor *HandleT, c *context, enableDedup, enableReporting bool) {
+	Setup(processor, c, enableDedup, enableReporting)
 	handlePendingGatewayJobs(processor)
 }
 
-func Setup(processor *HandleT, c *context, enableDedup bool) {
+func Setup(processor *HandleT, c *context, enableDedup, enableReporting bool) {
 	var clearDB = false
 	SetDisableDedupFeature(enableDedup)
 	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
-	processor.reportingEnabled = true
+	processor.reportingEnabled = enableReporting
 	// make sure the mock backend config has sent the configuration
 	testutils.RunTestWithTimeout(func() {
 		for !c.configInitialised {
