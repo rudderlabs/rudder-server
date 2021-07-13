@@ -423,10 +423,6 @@ var _ = Describe("readonly_jobsdb", func() {
 
 		It("tests special cases in getProcessedJobsDSCount", func() {
 			jd.tablePrefix = "gw"
-			// c.mock.ExpectPrepare(`SELECT tablename
-			// 	FROM pg_catalog.pg_tables
-			// 	WHERE schemaname != 'pg_catalog' AND
-			// 	schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(gwmockTables())
 
 			ds := gwDSListInDB[0]
 			c.mock.ExpectBegin()
@@ -450,10 +446,6 @@ var _ = Describe("readonly_jobsdb", func() {
 
 		It("returns 0 if queries are valid and no jobs are found", func() {
 			jd.tablePrefix = "gw"
-			// c.mock.ExpectPrepare(`SELECT tablename
-			// 	FROM pg_catalog.pg_tables
-			// 	WHERE schemaname != 'pg_catalog' AND
-			// 	schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(gwmockTables())
 
 			ds := gwDSListInDB[0]
 			c.mock.ExpectBegin()
@@ -477,10 +469,6 @@ var _ = Describe("readonly_jobsdb", func() {
 
 		It("returns 0 count if queries are invalid", func() {
 			jd.tablePrefix = "gw"
-			// c.mock.ExpectPrepare(`SELECT tablename
-			// 	FROM pg_catalog.pg_tables
-			// 	WHERE schemaname != 'pg_catalog' AND
-			// 	schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(gwmockTables())
 
 			ds := gwDSListInDB[0]
 			c.mock.ExpectBegin()
@@ -691,8 +679,6 @@ var _ = Describe("readonly_jobsdb", func() {
 			Expect(gjson.Get(jobStatus, "FailedStatusStats.0.JobID").Raw).To(Equal(job_id))
 			Expect(gjson.Get(jobStatus, "FailedStatusStats.0.JobState").Str).To(Equal(statusList[1].JobState))
 			Expect(gjson.Get(jobStatus, "FailedStatusStats.0.AttemptNum").Raw).To(Equal(fmt.Sprint(statusList[1].AttemptNum)))
-			// Expect(gjson.Get(jobStatus, "FailedStatusStats.0.ExecTime")).To(Equal(statusList[1].ExecTime.String()))
-			// Expect(gjson.Get(jobStatus, "FailedStatusStats.0.RetryTime").Str).To(Equal(fmt.Sprint(statusList[1].RetryTime)))
 			Expect(gjson.Get(jobStatus, "FailedStatusStats.0.ErrorCode").Str).To(Equal(statusList[1].ErrorCode))
 			if err := c.mock.ExpectationsWereMet(); err != nil {
 				ginkgo.Fail(err.Error())
@@ -737,8 +723,6 @@ var _ = Describe("readonly_jobsdb", func() {
 			Expect(gjson.Get(jobStatus, "FailedStatusStats.0.JobID").Raw).To(Equal(job_id))
 			Expect(gjson.Get(jobStatus, "FailedStatusStats.0.JobState").Str).To(Equal(statusList[1].JobState))
 			Expect(gjson.Get(jobStatus, "FailedStatusStats.0.AttemptNum").Raw).To(Equal(fmt.Sprint(statusList[1].AttemptNum)))
-			// Expect(gjson.Get(jobStatus, "FailedStatusStats.0.ExecTime")).To(Equal(statusList[1].ExecTime.String()))
-			// Expect(gjson.Get(jobStatus, "FailedStatusStats.0.RetryTime").Str).To(Equal(fmt.Sprint(statusList[1].RetryTime)))
 			Expect(gjson.Get(jobStatus, "FailedStatusStats.0.ErrorCode").Str).To(Equal(statusList[1].ErrorCode))
 			if err := c.mock.ExpectationsWereMet(); err != nil {
 				ginkgo.Fail(err.Error())
@@ -781,27 +765,6 @@ var _ = Describe("readonly_jobsdb", func() {
 			Expect(jobStatus).To(Equal(""))
 			Expect(err.Error()).To(ContainSubstring("Query Failed"))
 		})
-
-		// It("retuns empty string if scanning the rows fails", func() {
-		// 	job_id := "11"
-		// 	c.mock.ExpectPrepare(`SELECT tablename
-		// 		FROM pg_catalog.pg_tables
-		// 		WHERE schemaname != 'pg_catalog' AND
-		// 		schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(mockRows())
-
-		// 	ds := dsListInDB[0]
-		// 	c.mock.ExpectQuery(fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)).WillReturnRows(maxminJobID())
-
-		// 	ds = dsListInDB[1]
-		// 	c.mock.ExpectQuery(fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)).WillReturnRows(maxminJobID2())
-
-		// 	c.mock.ExpectQuery(fmt.Sprintf(`SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[1]s WHERE job_id = %[2]s;`, ds.JobStatusTable, job_id)).WillReturnRows(invalidJobStatusRow())
-		// 	jobStatus, err := jd.GetJobIDStatus(fmt.Sprint(job_id), "tt")
-		// 	jd.logger.Info(jobStatus)
-		// 	jd.logger.Info(err)
-		// 	Expect(gjson.Get(jobStatus, "FailedStatusStats").Raw).To(Equal(""))
-		// 	Expect(err.Error()).To(ContainSubstring("Query Failed"))
-		// })
 	})
 
 	Context("GetJobSummaryCount", func() {
@@ -816,13 +779,13 @@ var _ = Describe("readonly_jobsdb", func() {
 
 		It("gets job summary count", func() {
 			ds := dsListInDB[0]
-			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(*), 
-     					gw_jobs_%[1]s.parameters->'source_id' as source, 
-     					gw_jobs_%[1]s.custom_val ,gw_jobs_%[1]s.parameters->'destination_id' as destination, 
+			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(*),
+     					gw_jobs_%[1]s.parameters->'source_id' as source,
+     					gw_jobs_%[1]s.custom_val ,gw_jobs_%[1]s.parameters->'destination_id' as destination,
      					job_latest_state.job_state
-						FROM gw_jobs_%[1]s 
-     					LEFT JOIN 
-      					(SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM gw_job_status_%[1]s 
+						FROM gw_jobs_%[1]s
+     					LEFT JOIN
+      					(SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM gw_job_status_%[1]s
 						WHERE id IN (SELECT MAX(id) from gw_job_status_%[1]s GROUP BY job_id)) AS job_latest_state
      					ON gw_jobs_%[1]s.job_id=job_latest_state.job_id GROUP BY job_latest_state.job_state,gw_jobs_%[1]s.parameters->'source_id',gw_jobs_%[1]s.parameters->'destination_id', gw_jobs_%[1]s.custom_val;`, ds.Index)).WillReturnRows(summaryRows())
 			jobSummary, err := jd.GetJobSummaryCount("2:2", "gw")
@@ -862,7 +825,6 @@ var _ = Describe("readonly_jobsdb", func() {
 						WHERE id IN (SELECT MAX(id) from gw_job_status_%[1]s GROUP BY job_id)) AS job_latest_state
 						ON gw_jobs_%[1]s.job_id=job_latest_state.job_id GROUP BY job_latest_state.job_state,gw_jobs_%[1]s.parameters->'source_id',gw_jobs_%[1]s.parameters->'destination_id', gw_jobs_%[1]s.custom_val;`, ds.Index)).WillReturnRows(summaryRows())
 
-			// fmt.Println(jd.GetJobSummaryCount("2:2", "gw"))
 			jobSummary, err := jd.GetJobSummaryCount(":2", "gw")
 			Expect(err).To(BeNil())
 			Expect(jobSummary).To(ContainSubstring(`"Count": 590`))
@@ -935,13 +897,13 @@ var _ = Describe("readonly_jobsdb", func() {
 
 		It("retuns empty string if jobSummary query is invalid", func() {
 			ds := dsListInDB[0]
-			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(*), 
-     					gw_jobs_%[1]s.parameters->'source_id' as source, 
-     					gw_jobs_%[1]s.custom_val ,gw_jobs_%[1]s.parameters->'destination_id' as destination, 
+			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(*),
+     					gw_jobs_%[1]s.parameters->'source_id' as source,
+     					gw_jobs_%[1]s.custom_val ,gw_jobs_%[1]s.parameters->'destination_id' as destination,
      					job_latest_state.job_state
-						FROM gw_jobs_%[1]s 
-     					LEFT JOIN 
-      					(SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM gw_job_status_%[1]s 
+						FROM gw_jobs_%[1]s
+     					LEFT JOIN
+      					(SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM gw_job_status_%[1]s
 						WHERE id IN (SELECT MAX(id) from gw_job_status_%[1]s GROUP BY job_id)) AS job_latest_state
      					ON gw_jobs_%[1]s.job_id=job_latest_state.job_id GROUP BY job_latest_state.job_state,gw_jobs_%[1]s.parameters->'source_id',gw_jobs_%[1]s.parameters->'destination_id', gw_jobs_%[1]s.custom_val;`, ds.Index)).WillReturnError(errors.New("Invalid Query"))
 			jobSummary, err := jd.GetJobSummaryCount("2:2", "gw")
@@ -960,13 +922,13 @@ var _ = Describe("readonly_jobsdb", func() {
 			schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(gwmockTables())
 
 			ds := gwDSListInDB[0]
-			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(*), 
-     					gw_jobs_%[1]s.parameters->'source_id' as source, 
-     					gw_jobs_%[1]s.custom_val ,gw_jobs_%[1]s.parameters->'destination_id' as destination, 
+			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(*),
+     					gw_jobs_%[1]s.parameters->'source_id' as source,
+     					gw_jobs_%[1]s.custom_val ,gw_jobs_%[1]s.parameters->'destination_id' as destination,
      					job_latest_state.job_state
-						FROM gw_jobs_%[1]s 
-     					LEFT JOIN 
-      					(SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM gw_job_status_%[1]s 
+						FROM gw_jobs_%[1]s
+     					LEFT JOIN
+      					(SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM gw_job_status_%[1]s
 						WHERE id IN (SELECT MAX(id) from gw_job_status_%[1]s GROUP BY job_id)) AS job_latest_state
      					ON gw_jobs_%[1]s.job_id=job_latest_state.job_id GROUP BY job_latest_state.job_state,gw_jobs_%[1]s.parameters->'source_id',gw_jobs_%[1]s.parameters->'destination_id', gw_jobs_%[1]s.custom_val;`, ds.Index)).WillReturnRows(invalidSummaryRows())
 			jobSummary, err := jd.GetJobSummaryCount(":1", "gw")
@@ -1011,7 +973,7 @@ var _ = Describe("readonly_jobsdb", func() {
 		job_latest_state.error_code, job_latest_state.error_response
 	FROM
 		%[1]s
-	LEFT JOIN 
+	LEFT JOIN
 		(SELECT job_id, job_state, attempt, exec_time, retry_time,
 		error_code, error_response FROM %[2]s WHERE id IN
 			(SELECT MAX(id) from %[2]s GROUP BY job_id))
@@ -1067,7 +1029,7 @@ var _ = Describe("readonly_jobsdb", func() {
 		job_latest_state.error_code, job_latest_state.error_response
 	FROM
 		%[1]s
-	LEFT JOIN 
+	LEFT JOIN
 		(SELECT job_id, job_state, attempt, exec_time, retry_time,
 		error_code, error_response FROM %[2]s WHERE id IN
 			(SELECT MAX(id) from %[2]s GROUP BY job_id))
@@ -1125,7 +1087,7 @@ var _ = Describe("readonly_jobsdb", func() {
 		job_latest_state.error_code, job_latest_state.error_response
 	FROM
 		%[1]s
-	LEFT JOIN 
+	LEFT JOIN
 		(SELECT job_id, job_state, attempt, exec_time, retry_time,
 		error_code, error_response FROM %[2]s WHERE id IN
 			(SELECT MAX(id) from %[2]s GROUP BY job_id))
@@ -1172,7 +1134,7 @@ var _ = Describe("readonly_jobsdb", func() {
 		job_latest_state.error_code, job_latest_state.error_response
 	FROM
 		%[1]s
-	LEFT JOIN 
+	LEFT JOIN
 		(SELECT job_id, job_state, attempt, exec_time, retry_time,
 		error_code, error_response FROM %[2]s WHERE id IN
 			(SELECT MAX(id) from %[2]s GROUP BY job_id))
@@ -1385,33 +1347,6 @@ var _ = Describe("readonly_jobsdb", func() {
 				ginkgo.Fail(err.Error())
 			}
 		})
-
-		// It("returns empty string if row scan fails", func() {
-		// 	job_id1 := "11"
-		// 	job_id2 := "20"
-		// 	userID := "dummy_a-292e-4e79-9880-f8009e0ae4a3"
-
-		// 	c.mock.ExpectPrepare(`SELECT tablename
-		// 		FROM pg_catalog.pg_tables
-		// 		WHERE schemaname != 'pg_catalog' AND
-		// 		schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(mockRows())
-
-		// 	ds := dsListInDB[0]
-		// 	c.mock.ExpectQuery(fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)).WillReturnRows(maxminJobID())
-
-		// 	ds = dsListInDB[1]
-		// 	c.mock.ExpectQuery(fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)).WillReturnRows(maxminJobID2())
-		// 	c.mock.ExpectQuery(fmt.Sprintf(`SELECT job_id FROM %[1]s WHERE job_id >= %[2]s AND job_id <= %[3]s AND user_id = '%[4]s';`, ds.JobTable, job_id1, job_id2, userID)).WillReturnRows(sqlmock.NewRows([]string{"jobID"}).AddRow(nil))
-
-		// 	expectedUserJobs, err := jd.GetJobIDsForUser([]string{"gw", "Jobs between JobID's of a User", job_id1, job_id2, userID})
-
-		// 	Expect(err.Error()).To(ContainSubstring("unsupported"))
-		// 	Expect(expectedUserJobs).To(Equal(""))
-
-		// 	if err := c.mock.ExpectationsWereMet(); err != nil {
-		// 		ginkgo.Fail(err.Error())
-		// 	}
-		// })
 	})
 
 	Context("GetFailedStatusErrorCodeCountsByDestination", func() {
@@ -1862,19 +1797,6 @@ var jobStatusRow = func() *sqlmock.Rows {
 	)
 	return sqlMockRows
 }
-
-// var invalidJobStatusRow = func() *sqlmock.Rows {
-// 	sqlMockRows := sqlmock.NewRows([]string{
-// 		"job_id", "job_state", "attempt", "exec_time", "retry_time", "error_code", "error_response",
-// 	})
-
-// 	var i interface{}
-// 	sqlMockRows.AddRow(
-// 		[]byte(`somerandomstring`), statusList[1].JobState, i, []byte(`somerandomstring`),
-// 		statusList[1].RetryTime, uuid.NewV4(), "random_invalid_string",
-// 	)
-// 	return sqlMockRows
-// }
 
 var summaryRows = func() *sqlmock.Rows {
 	sqlmockRows := sqlmock.NewRows([]string{
