@@ -99,6 +99,9 @@ var defaultTransformerFeatures = `{
 	}
   }`
 
+var mainLoopTimeout = 200 * time.Millisecond
+var featuresRetryMaxAttempts = 10
+
 type DestStatT struct {
 	numEvents              stats.RudderStats
 	numOutputSuccessEvents stats.RudderStats
@@ -295,8 +298,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 
 // Start starts this processor's main loops.
 func (proc *HandleT) Start() {
-
 	rruntime.Go(func() {
+		//waiting till the backend config is received
+		proc.backendConfig.WaitForConfig()
 		proc.mainLoop()
 	})
 	rruntime.Go(func() {
@@ -361,9 +365,8 @@ func loadConfig() {
 }
 
 func (proc *HandleT) getTransformerFeatureJson() {
-	const attempts = 10
 	for {
-		for i := 0; i < attempts; i++ {
+		for i := 0; i < featuresRetryMaxAttempts; i++ {
 			url := transformerURL + "/features"
 			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
 			if err != nil {
@@ -408,6 +411,18 @@ func SetDisableDedupFeature(b bool) bool {
 	prev := enableDedup
 	enableDedup = b
 	return prev
+}
+
+func SetMainLoopTimeout(timeout time.Duration) {
+	mainLoopTimeout = timeout
+}
+
+func SetFeaturesRetryAttempts(overrideAttempts int) {
+	featuresRetryMaxAttempts = overrideAttempts
+}
+
+func SetIsUnlocked(unlockVar bool) {
+	isUnLocked = unlockVar
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -1175,7 +1190,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		// OR
 		//router and transformer supports router transform, then no destination transformation happens.
 		if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
-			response = convertToTransformerResponse(eventsToTransform)
+			response = ConvertToTransformerResponse(eventsToTransform)
 		} else {
 			destTransformationStat.transformTime.Start()
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize)
@@ -1383,7 +1398,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Print()
 }
 
-func convertToTransformerResponse(events []transformer.TransformerEventT) transformer.ResponseT {
+func ConvertToTransformerResponse(events []transformer.TransformerEventT) transformer.ResponseT {
 	var responses []transformer.TransformerResponseT
 	for _, event := range events {
 		resp := transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
@@ -1485,8 +1500,6 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 }
 
 func (proc *HandleT) mainLoop() {
-	//waiting till the backend config is received
-	proc.backendConfig.WaitForConfig()
 	//waiting for reporting client setup
 	if proc.reporting != nil {
 		proc.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
@@ -1494,8 +1507,7 @@ func (proc *HandleT) mainLoop() {
 
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
-
-	timeout := time.After(200 * time.Millisecond)
+	timeout := time.After(mainLoopTimeout)
 	for {
 		select {
 		case pause := <-proc.pauseChannel:
@@ -1505,7 +1517,7 @@ func (proc *HandleT) mainLoop() {
 			<-proc.resumeChannel
 		case <-timeout:
 			proc.paused = false
-			timeout = time.After(200 * time.Millisecond)
+			timeout = time.After(mainLoopTimeout)
 			if isUnLocked {
 				if proc.handlePendingGatewayJobs() {
 					currLoopSleep = time.Duration(0)

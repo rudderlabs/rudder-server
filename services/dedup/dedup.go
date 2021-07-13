@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../../mocks/services/dedup/mock_dedup.go -package mock_dedup github.com/rudderlabs/rudder-server/services/dedup DedupI
+
 package dedup
 
 import (
@@ -38,6 +40,7 @@ func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("dedup")
 }
+
 func (d *DedupHandleT) setup(clearDB *bool) {
 	d.stats = stats.DefaultStats
 	badgerLogger = &loggerT{}
