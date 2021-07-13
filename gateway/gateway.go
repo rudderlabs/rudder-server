@@ -830,7 +830,7 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	if reqPayload.TaskRunID == "" {
-		errorMessage = "Empty job run id"
+		errorMessage = "Empty task run id"
 		return
 	}
 
