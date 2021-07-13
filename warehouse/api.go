@@ -144,10 +144,9 @@ var statusMap = map[string]string{
 	"failed":  "%failed%",
 }
 
-func (uploadsReq *UploadsReqT) generateQuery(selectFields string) string {
+func (uploadsReq *UploadsReqT) generateQuery(authorizedSourceIDs []string, selectFields string) string {
 	query := fmt.Sprintf(`select %s, count(*) OVER() AS total_uploads from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
 	var whereClauses []string
-	authorizedSourceIDs := uploadsReq.authorizedSources()
 	if uploadsReq.SourceID == "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id IN (%v)`, misc.SingleQuoteLiteralJoin(authorizedSourceIDs)))
 	} else if misc.ContainsString(authorizedSourceIDs, uploadsReq.SourceID) {
@@ -187,7 +186,14 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 	if err != nil {
 		return
 	}
-	query := uploadsReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime'`)
+
+	authorizedSourceIDs := uploadsReq.authorizedSources()
+	if len(authorizedSourceIDs) == 0 {
+		uploadsRes.Uploads = uploads
+		return uploadsRes, nil
+	}
+
+	query := uploadsReq.generateQuery(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime'`)
 	uploadsReq.API.log.Info(query)
 	rows, err := uploadsReq.API.dbHandle.Query(query)
 	if err != nil {
@@ -307,7 +313,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	return &upload, nil
 }
 
-func (uploadReq UploadReqT) TriggerWHUpload() (error) {
+func (uploadReq UploadReqT) TriggerWHUpload() error {
 	err := uploadReq.validateReq()
 	if err != nil {
 		return err
