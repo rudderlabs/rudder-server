@@ -25,6 +25,7 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
+	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
@@ -42,9 +43,10 @@ type context struct {
 	mockBatchRouterJobsDB *mocksJobsDB.MockJobsDB
 	mockProcErrorsDB      *mocksJobsDB.MockJobsDB
 	MockReportingI        *mockReportingTypes.MockReportingI
+	MockDedup             *mockDedup.MockDedupI
 }
 
-func (c *context) Setup() {
+func (c *context) Setup(clearDB bool) {
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockGatewayJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
@@ -66,6 +68,7 @@ func (c *context) Setup() {
 
 	c.dbReadBatchSize = 10000
 	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)
+	c.MockDedup = mockDedup.NewMockDedupI(c.mockCtrl)
 }
 
 func (c *context) Finish() {
@@ -82,6 +85,7 @@ const (
 	SourceIDDisabled      = "disabled-source"
 	DestinationIDEnabledA = "enabled-destination-a" // test destination router
 	DestinationIDEnabledB = "enabled-destination-b" // test destination batch router
+	DestinationIDEnabledC = "enabled-destination-c"
 	DestinationIDDisabled = "disabled-destination"
 )
 
@@ -137,6 +141,18 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						{
 							VersionID: "transformation-version-id",
 						},
+					},
+				},
+				{
+					ID:                 DestinationIDEnabledC,
+					Name:               "C",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "enabled-destination-c-definition-id",
+						Name:        "WEBHOOK",
+						DisplayName: "enabled-destination-c-definition-display-name",
+						Config:      map[string]interface{}{"transformAtV1": "none"},
 					},
 				},
 				// This destination should receive no events
@@ -218,7 +234,7 @@ var _ = Describe("Processor", func() {
 
 	BeforeEach(func() {
 		c = &context{}
-		c.Setup()
+		c.Setup(false)
 
 		// setup static requirements of dependencies
 		stats.Setup()
@@ -526,7 +542,7 @@ var _ = Describe("Processor", func() {
 			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1).Do(func(metrics []*types.PUReportedMetric, _ interface{}) {
 				assertReportMetric(assertReportMetrics, metrics)
 			})
-			processorSetupAndAssertJobHandling(processor, c)
+			processorSetupAndAssertJobHandling(processor, c, false)
 		})
 
 		It("should process ToRetry and Unprocessed jobs to destination with only user transformation", func() {
@@ -838,7 +854,98 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c)
+			processorSetupAndAssertJobHandling(processor, c, false)
+		})
+
+		It("should process ToRetry and Unprocessed jobs to destination without user transformation with enabled Dedup", func() {
+			var messages map[string]mockEventData = map[string]mockEventData{
+				// this message should be delivered only to destination A
+				"message-some-id-1": {
+					id:                        "some-id",
+					jobid:                     2010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-03-02T01:23:15.000Z",
+					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-c-definition-display-name": true},
+				},
+				// this message should not be delivered to destination A
+				"message-some-id-2": {
+					id:                        "some-id",
+					jobid:                     1010,
+					originalTimestamp:         "2000-02-02T01:23:45",
+					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-c-definition-display-name": true},
+				},
+				"message-some-id-3": {
+					id:                        "some-id",
+					jobid:                     3010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-03-02T01:23:15.000Z",
+					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-c-definition-display-name": true},
+				},
+			}
+
+			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+				{
+					UUID:          uuid.NewV4(),
+					JobID:         1010,
+					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  createBatchPayloadWithSameMessageId(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-some-id-2"], messages["message-some-id-1"]}),
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    nil,
+				},
+			}
+
+			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+				{
+					UUID:         uuid.NewV4(),
+					JobID:        2010,
+					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CustomVal:    gatewayCustomVal[0],
+					EventPayload: createBatchPayloadWithSameMessageId(WriteKeyEnabled, "2002-01-02T02:23:45.000Z", []mockEventData{messages["message-some-id-3"]}),
+					LastJobStatus: jobsdb.JobStatusT{
+						AttemptNum: 1,
+					},
+					Parameters: nil,
+				},
+			}
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(gomock.Any()).Return(toRetryJobsList).Times(1)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any()).Return(unprocessedJobsList).Times(1).After(callRetry)
+			c.MockDedup.EXPECT().FindDuplicates(gomock.Any(), gomock.Any()).Return([]int{1}).After(callUnprocessed).Times(2)
+			c.MockDedup.EXPECT().MarkProcessed(gomock.Any()).Times(1)
+
+			// We expect one transform call to destination A, after callUnprocessed.
+			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
+			// One Store call is expected for all events
+			callStoreRouter := c.mockRouterJobsDB.EXPECT().Store(gomock.Len(2)).Times(1)
+
+			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
+			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
+			var processor *HandleT = &HandleT{
+				transformer: mockTransformer,
+			}
+			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
+			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
+			c.MockReportingI.EXPECT().Report(gomock.Any(), gomock.Any()).Times(1)
+			Setup(processor, c, true)
+			processor.dedupHandler = c.MockDedup
+			handlePendingGatewayJobs(processor)
 		})
 	})
 
@@ -1039,7 +1146,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c)
+			processorSetupAndAssertJobHandling(processor, c, false)
 		})
 
 		It("messages should be skipped on user transform failures, without failing the job", func() {
@@ -1238,7 +1345,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c)
+			processorSetupAndAssertJobHandling(processor, c, false)
 		})
 	})
 
@@ -1555,6 +1662,20 @@ func createMessagePayload(e mockEventData) string {
 	return fmt.Sprintf(`{"rudderId": "some-rudder-id", "messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s"}`, e.id, integrations, e.id, e.originalTimestamp, e.sentAt)
 }
 
+func createMessagePayloadWithSameMessageId(e mockEventData) string {
+	integrations, _ := json.Marshal(e.integrations)
+	return fmt.Sprintf(`{"rudderId": "some-rudder-id", "messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s"}`, "some-id", integrations, e.id, e.originalTimestamp, e.sentAt)
+}
+
+func createBatchPayloadWithSameMessageId(writeKey string, receivedAt string, events []mockEventData) []byte {
+	payloads := make([]string, 0)
+	for _, event := range events {
+		payloads = append(payloads, createMessagePayloadWithSameMessageId(event))
+	}
+	batch := strings.Join(payloads, ",")
+	return []byte(fmt.Sprintf(`{"writeKey": "%s", "batch": [%s], "requestIP": "1.2.3.4", "receivedAt": "%s"}`, writeKey, batch, receivedAt))
+}
+
 func createBatchPayload(writeKey string, receivedAt string, events []mockEventData) []byte {
 	payloads := make([]string, 0)
 	for _, event := range events {
@@ -1691,9 +1812,14 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 	}
 }
 
-func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
+func processorSetupAndAssertJobHandling(processor *HandleT, c *context, enableDedup bool) {
+	Setup(processor, c, enableDedup)
+	handlePendingGatewayJobs(processor)
+}
+
+func Setup(processor *HandleT, c *context, enableDedup bool) {
 	var clearDB = false
-	SetDisableDedupFeature(false)
+	SetDisableDedupFeature(enableDedup)
 	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
 
 	// make sure the mock backend config has sent the configuration
@@ -1703,7 +1829,10 @@ func processorSetupAndAssertJobHandling(processor *HandleT, c *context) {
 			time.Sleep(time.Nanosecond)
 		}
 	}, time.Second)
+}
 
+func handlePendingGatewayJobs(processor *HandleT) {
 	didWork := processor.handlePendingGatewayJobs()
 	Expect(didWork).To(Equal(true))
+
 }
