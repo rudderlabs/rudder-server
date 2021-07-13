@@ -268,7 +268,7 @@ func prepareMessage(topic string, key string, message []byte, timestamp time.Tim
 
 func prepareBatchedMessage(topic string, batch []map[string]interface{}, timestamp time.Time) (batchMessage []*sarama.ProducerMessage, err error) {
 	var batchedMessage []*sarama.ProducerMessage
-
+	count := 0
 	for _, data := range batch {
 		message, err := json.Marshal(data["message"])
 
@@ -283,7 +283,11 @@ func prepareBatchedMessage(topic string, batch []map[string]interface{}, timesta
 			Timestamp: timestamp,
 		}
 		batchedMessage = append(batchedMessage, msg)
+		count += 1
 	}
+
+	// temp log for checking batch count
+	pkgLogger.Infof("[KAFKA BATCH] Batch Size: %v", count)
 	return batchedMessage, nil
 }
 
