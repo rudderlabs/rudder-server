@@ -1,5 +1,3 @@
-//go:generate mockgen -destination=../../mocks/utils/types/mock_reporting_types.go -package mock_types github.com/rudderlabs/rudder-server/utils/types ReportingTypesI
-
 package types
 
 import (
@@ -88,13 +86,6 @@ type PUReportedMetric struct {
 	ConnectionDetails
 	PUDetails
 	StatusDetail *StatusDetail
-}
-
-type ReportingTypesI interface {
-	CreateConnectionDetail(sid, did, sbid, stid, strid, sjid, sjrid string)
-	CreateStatusDetail(status string, count int64, code int, resp string, event json.RawMessage)
-	CreatePUDetails(inPU, pu string, terminalPU, initialPU bool)
-	AssertSameKeys(m1 map[string]*ConnectionDetails, m2 map[string]*StatusDetail)
 }
 
 func CreateConnectionDetail(sid, did, sbid, stid, strid, sjid, sjrid string) *ConnectionDetails {

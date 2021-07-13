@@ -100,7 +100,7 @@ var defaultTransformerFeatures = `{
   }`
 
 var mainLoopTimeout = 200 * time.Millisecond
-var attempts = 10
+var featuresRetryMaxAttempts = 10
 
 type DestStatT struct {
 	numEvents              stats.RudderStats
@@ -366,7 +366,7 @@ func loadConfig() {
 
 func (proc *HandleT) getTransformerFeatureJson() {
 	for {
-		for i := 0; i < attempts; i++ {
+		for i := 0; i < featuresRetryMaxAttempts; i++ {
 			url := transformerURL + "/features"
 			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
 			if err != nil {
@@ -418,7 +418,7 @@ func SetMainLoopTimeout(timeout time.Duration) {
 }
 
 func SetFeaturesRetryAttempts(overrideAttempts int) {
-	attempts = overrideAttempts
+	featuresRetryMaxAttempts = overrideAttempts
 }
 
 func SetIsUnlocked(unlockVar bool) {
@@ -640,7 +640,6 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 	}
 }
 
-//Add Reporting Tests
 func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, commonMetaData transformer.MetadataT, destination backendconfig.DestinationT) ([]transformer.TransformerEventT, []*types.PUReportedMetric, map[string]int64, map[string]MetricMetadata) {
 	successMetrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
