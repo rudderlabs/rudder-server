@@ -362,13 +362,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(sourceEventStats, sourceTag, totalEventsInReq)
-			if len(body) > maxReqSize && req.reqType != "audiencelist" {
-				req.done <- response.GetStatus(response.RequestBodyTooLarge)
-				preDbStoreCount++
-				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
-				continue
-			}
 
 			// store sourceID before call made to check if source is enabled
 			// this prevents not setting sourceID in gw job if disabled before setting it
@@ -385,16 +378,20 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			result := gjson.GetBytes(body, "batch")
 			out := []map[string]interface{}{}
 
-			var notIdentifiable bool
+			var notIdentifiable, containsAudienceList bool
 			result.ForEach(func(_, vjson gjson.Result) bool {
 				anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
 				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
+				eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
 
 				if anonIDFromReq == "" {
 					if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
 						notIdentifiable = true
 						return false
 					}
+				}
+				if eventTypeFromReq == "audiencelist" {
+					containsAudienceList = true
 				}
 				// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
 				rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
@@ -413,6 +410,14 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			})
 
 			body, _ = sjson.SetBytes(body, "batch", out)
+
+			if len(body) > maxReqSize && !containsAudienceList {
+				req.done <- response.GetStatus(response.RequestBodyTooLarge)
+				preDbStoreCount++
+				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
+				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
+				continue
+			}
 
 			if notIdentifiable {
 				req.done <- response.GetStatus(response.NonIdentifiableRequest)
