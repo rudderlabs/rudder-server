@@ -493,11 +493,15 @@ var _ = Describe("Gateway", func() {
 				for i := range data {
 					data[i] = 'a'
 				}
-				body := fmt.Sprintf(`{"data":"%s"}`, string(data))
+				body := `{
+					"anonymousId": "anon_id",
+					"type": "track"
+				  }`
+				body, _ = sjson.Set(body, "properties", data)
 				if handlerType == "batch" || handlerType == "import" {
 					body = fmt.Sprintf(`{"batch":[%s]}`, body)
 				}
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(body)), 400, response.RequestBodyTooLarge+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body)), 400, response.RequestBodyTooLarge+"\n")
 			})
 
 			It("should reject requests with invalid write keys", func() {
