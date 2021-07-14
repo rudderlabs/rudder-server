@@ -84,7 +84,7 @@ Router:
   readSleep: 1000ms
   fixedLoopSleep: 0ms
   noOfJobsPerChannel: 1000
-  noOfJobsToBatchInAWorker: 20
+  noOfJobsToBatchInAWorker: 500
   jobsBatchTimeout: 5s
   maxSleep: 60s
   minSleep: 0s
