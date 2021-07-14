@@ -362,7 +362,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(sourceEventStats, sourceTag, totalEventsInReq)
-			if len(body) > maxReqSize {
+			if len(body) > maxReqSize && req.reqType != "audiencelist" {
 				req.done <- response.GetStatus(response.RequestBodyTooLarge)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -577,6 +577,9 @@ func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 
 func (gateway *HandleT) webImportHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webRequestHandler(gateway.irh, w, r, "import")
+}
+func (gateway *HandleT) webAudienceListHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "audiencelist")
 }
 
 func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
@@ -1145,6 +1148,7 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler)).Methods("POST")
 	srvMux.HandleFunc("/health", gateway.healthHandler).Methods("GET")
 	srvMux.HandleFunc("/v1/import", gateway.stat(gateway.webImportHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/audiencelist", gateway.stat(gateway.webAudienceListHandler)).Methods("POST")
 	srvMux.HandleFunc("/", gateway.healthHandler).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler)).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler)).Methods("GET")
