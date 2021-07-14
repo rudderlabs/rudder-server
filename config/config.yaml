@@ -109,8 +109,6 @@ Router:
     forceHTTP1: true
     httpTimeoutInS: 120
     httpMaxIdleConnsPerHost: 32
-  kafka:
-    enableBatching: true
 BatchRouter:
   mainLoopSleepInS: 2
   jobQueryBatchSize: 100000
