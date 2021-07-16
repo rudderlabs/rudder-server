@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -75,7 +76,7 @@ func loadConfig() {
 	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
 	kafkaDialTimeoutInSec = config.GetInt64("Router.kafkaDialTimeoutInSec", 10)
 	kafkaWriteTimeoutInSec = config.GetInt64("Router.kafkaWriteTimeoutInSec", 2)
-	kafkaBatchingEnabled = config.GetBool("Router.kafka.enableBatching", false)
+	kafkaBatchingEnabled, _ = strconv.ParseBool(config.GetEnv("RSERVER_ROUTER_KAFKA_ENABLE_BATCHING", "false"))
 }
 
 func loadCertificate() {
@@ -358,7 +359,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 
 		err = kafkaProducer.SendMessages(batchedMessage)
 		if err != nil {
-			return makeErrorResponse(err)
+			return makeErrorResponse(err) // would retry the messages in batch in case brokers are down
 		}
 
 		returnMessage := "Message delivered in batch"
