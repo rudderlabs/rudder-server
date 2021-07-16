@@ -627,7 +627,7 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 			for _, modelsByEventType := range modelsByWriteKey {
 				for _, model := range modelsByEventType {
 					if timeutil.Now().Sub(model.LastSeen) > time.Duration(offloadThresholdInS)*time.Second {
-						pkgLogger.Debugf("offloading model: %s", model.UUID)
+						pkgLogger.Infof("offloading model: %s-%s UUID:%s", model.EventType, model.EventIdentifier, model.UUID)
 						if _, ok := offloadedEventModels[model.WriteKey]; !ok {
 							offloadedEventModels[model.WriteKey] = make(map[string]*OffloadedModelT)
 						}
@@ -641,7 +641,7 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 		for _, modelsByWriteKey := range manager.schemaVersionMap {
 			for _, version := range modelsByWriteKey {
 				if timeutil.Now().Sub(version.LastSeen) > time.Duration(offloadThresholdInS)*time.Second {
-					pkgLogger.Debugf("offloading schema version: %s", version.UUID)
+					pkgLogger.Infof("offloading schema version: %s", version.UUID)
 					if _, ok := offloadedSchemaVersions[version.EventModelID]; !ok {
 						offloadedSchemaVersions[version.EventModelID] = make(map[string]*OffloadedSchemaVersionT)
 					}
@@ -658,13 +658,13 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 func (manager *EventSchemaManagerT) reloadModel(offloadedModel *OffloadedModelT) {
 	pkgLogger.Infof("reloading event model from db: %s\n", offloadedModel.UUID)
 	manager.populateEventModels(offloadedModel.UUID)
-	manager.populateSchemaVersions(offloadedModel.UUID)
+	manager.populateSchemaVersionsMeta(offloadedModel.UUID)
 	delete(offloadedEventModels[offloadedModel.WriteKey], eventTypeIdentifier(offloadedModel.EventType, offloadedModel.EventIdentifier))
 }
 
 func (manager *EventSchemaManagerT) reloadSchemaVersion(offloadedVersion *OffloadedSchemaVersionT) {
 	pkgLogger.Infof("reloading schema vesion from db: %s\n", offloadedVersion.UUID)
-	manager.populateSchemaVersions(offloadedVersion.EventModelID)
+	manager.populateSchemaVersion(offloadedVersion)
 	delete(offloadedSchemaVersions[offloadedVersion.EventModelID], offloadedVersion.SchemaHash)
 }
 
@@ -736,13 +736,34 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) {
 	}
 }
 
-func (manager *EventSchemaManagerT) populateSchemaVersions(modelIDFilters ...string) {
+func (manager *EventSchemaManagerT) populateEventModelsMeta() {
+	eventModelsSelectSQL := fmt.Sprintf(`SELECT uuid, event_type, event_model_identifier, write_key, last_seen FROM %s`, EVENT_MODELS_TABLE)
+
+	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
+	assertError(err)
+	defer rows.Close()
+
+	for rows.Next() {
+		var eventModel EventModelT
+		err := rows.Scan(&eventModel.UUID, &eventModel.EventType, &eventModel.EventIdentifier, &eventModel.WriteKey, &eventModel.LastSeen)
+
+		assertError(err)
+
+		if _, ok := offloadedEventModels[eventModel.WriteKey]; !ok {
+			offloadedEventModels[eventModel.WriteKey] = make(map[string]*OffloadedModelT)
+		}
+
+		offloadedEventModels[eventModel.WriteKey][eventTypeIdentifier(eventModel.EventType, eventModel.EventIdentifier)] = &OffloadedModelT{UUID: eventModel.UUID, LastSeen: eventModel.LastSeen, WriteKey: eventModel.WriteKey, EventType: eventModel.EventType, EventIdentifier: eventModel.EventIdentifier}
+	}
+}
+
+func (manager *EventSchemaManagerT) populateSchemaVersionsMeta(modelIDFilters ...string) {
 	var modelIDFilter string
 	if len(modelIDFilters) > 0 {
 		modelIDFilter = fmt.Sprintf(`WHERE event_model_id in ('%s')`, strings.Join(modelIDFilters, "', '"))
 	}
 
-	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, metadata, private_data,first_seen, last_seen, total_count FROM %s %s`, SCHEMA_VERSIONS_TABLE, modelIDFilter)
+	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT uuid, event_model_id, schema_hash, last_seen FROM %s %s`, SCHEMA_VERSIONS_TABLE, modelIDFilter)
 
 	rows, err := manager.dbHandle.Query(schemaVersionsSelectSQL)
 	assertError(err)
@@ -750,34 +771,45 @@ func (manager *EventSchemaManagerT) populateSchemaVersions(modelIDFilters ...str
 
 	for rows.Next() {
 		var schemaVersion SchemaVersionT
-		err := rows.Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash,
-			&schemaVersion.Schema, &schemaVersion.Metadata, &schemaVersion.PrivateData, &schemaVersion.FirstSeen, &schemaVersion.LastSeen, &schemaVersion.TotalCount)
+		err := rows.Scan(&schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash, &schemaVersion.LastSeen)
 		assertError(err)
-
-		var metadata MetaDataT
-		err = json.Unmarshal(schemaVersion.Metadata, &metadata)
-		assertError(err)
-
-		var privateData PrivateDataT
-		err = json.Unmarshal(schemaVersion.PrivateData, &privateData)
-		assertError(err)
-
-		schemaVersion.reservoirSample = NewReservoirSampler(reservoirSampleSize, len(metadata.SampledEvents), metadata.TotalCount)
-		for sampledEvent := range metadata.SampledEvents {
-			schemaVersion.reservoirSample.add(sampledEvent, false)
+		if _, ok := offloadedSchemaVersions[schemaVersion.EventModelID]; !ok {
+			offloadedSchemaVersions[schemaVersion.EventModelID] = make(map[string]*OffloadedSchemaVersionT)
 		}
-
-		manager.updateSchemaVersionCache(&schemaVersion, false)
-
-		populateFrequencyCounters(schemaVersion.SchemaHash, privateData.FrequencyCounters)
+		offloadedSchemaVersions[schemaVersion.EventModelID][schemaVersion.SchemaHash] = &OffloadedSchemaVersionT{UUID: schemaVersion.UUID, LastSeen: schemaVersion.LastSeen, EventModelID: schemaVersion.EventModelID, SchemaHash: schemaVersion.SchemaHash}
 	}
+}
+
+func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVersionT) {
+	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, metadata, private_data,first_seen, last_seen, total_count FROM %s WHERE uuid = '%s'`, SCHEMA_VERSIONS_TABLE, o.UUID)
+	var schemaVersion SchemaVersionT
+
+	err := manager.dbHandle.QueryRow(schemaVersionsSelectSQL).Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash, &schemaVersion.Schema, &schemaVersion.Metadata, &schemaVersion.PrivateData, &schemaVersion.FirstSeen, &schemaVersion.LastSeen, &schemaVersion.TotalCount)
+	assertError(err)
+
+	var metadata MetaDataT
+	err = json.Unmarshal(schemaVersion.Metadata, &metadata)
+	assertError(err)
+
+	var privateData PrivateDataT
+	err = json.Unmarshal(schemaVersion.PrivateData, &privateData)
+	assertError(err)
+
+	schemaVersion.reservoirSample = NewReservoirSampler(reservoirSampleSize, len(metadata.SampledEvents), metadata.TotalCount)
+	for sampledEvent := range metadata.SampledEvents {
+		schemaVersion.reservoirSample.add(sampledEvent, false)
+	}
+
+	manager.updateSchemaVersionCache(&schemaVersion, false)
+
+	populateFrequencyCounters(schemaVersion.SchemaHash, privateData.FrequencyCounters)
 }
 
 // This should be called during the Initialize() to populate existing event Schemas
 func (manager *EventSchemaManagerT) populateEventSchemas() {
 	pkgLogger.Infof(`Populating event models and their schema versions into in-memory`)
-	manager.populateEventModels()
-	manager.populateSchemaVersions()
+	manager.populateEventModelsMeta()
+	manager.populateSchemaVersionsMeta()
 }
 
 func getSchema(flattenedEvent map[string]interface{}) map[string]string {
