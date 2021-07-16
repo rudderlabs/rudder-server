@@ -46,15 +46,15 @@ func (mr *MockTransformerMockRecorder) Setup() *gomock.Call {
 }
 
 // Transform mocks base method
-func (m *MockTransformer) Transform(arg0 []transformer.TransformerEventT, arg1 string, arg2 int, arg3 bool) transformer.ResponseT {
+func (m *MockTransformer) Transform(arg0 []transformer.TransformerEventT, arg1 string, arg2 int) transformer.ResponseT {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Transform", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "Transform", arg0, arg1, arg2)
 	ret0, _ := ret[0].(transformer.ResponseT)
 	return ret0
 }
 
 // Transform indicates an expected call of Transform
-func (mr *MockTransformerMockRecorder) Transform(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+func (mr *MockTransformerMockRecorder) Transform(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0, arg1, arg2)
 }

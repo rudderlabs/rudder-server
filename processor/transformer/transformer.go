@@ -89,7 +89,7 @@ type HandleT struct {
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
-	Transform(clientEvents []TransformerEventT, url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT
+	Transform(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 }
 
 //NewTransformer creates a new transformer
@@ -104,10 +104,10 @@ var (
 )
 
 func loadConfig() {
-	maxChanSize = config.GetInt("Processor.maxChanSize", 2048)
-	numTransformWorker = config.GetInt("Processor.numTransformWorker", 8)
+	config.RegisterIntConfigVariable(2048, &maxChanSize, false, 1, "Processor.maxChanSize")
+	config.RegisterIntConfigVariable(8, &numTransformWorker, false, 1, "Processor.numTransformWorker")
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
-	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, "Processor.retrySleepInMS")
+	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
 }
 
 func init() {
@@ -278,7 +278,7 @@ func GetVersion() (transformerBuildVersion string) {
 //instance is shared between both user specific transformation
 //code and destination transformation code.
 func (trans *HandleT) Transform(clientEvents []TransformerEventT,
-	url string, batchSize int, breakIntoBatchWhenUserChanges bool) ResponseT {
+	url string, batchSize int) ResponseT {
 
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
@@ -303,24 +303,9 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 			clientBatch := make([]TransformerEventT, 0)
 			batchCount := 0
 			for {
-				if (batchCount >= batchSize || inputIdx >= len(clientEvents)) && inputIdx != 0 {
-					// If processSessions is false or if dest transformer is being called, break using just the batchSize.
-					// Otherwise break when userId changes. This makes sure all events of a session go together as a batch
-					if !breakIntoBatchWhenUserChanges || inputIdx >= len(clientEvents) {
-						break
-					}
-					prevUserID, ok := misc.GetRudderID(clientEvents[inputIdx-1].Message)
-					if !ok {
-						panic(fmt.Errorf("GetRudderID failed"))
-					}
-					currentUserID, ok := misc.GetRudderID(clientEvents[inputIdx].Message)
-					if !ok {
-						panic(fmt.Errorf("GetRudderID failed"))
-					}
-					if currentUserID != prevUserID {
-						trans.logger.Debug("Breaking batch at", inputIdx, prevUserID, currentUserID)
-						break
-					}
+				if batchCount >= batchSize && inputIdx != 0 {
+					// break using the batchSize.
+					break
 				}
 				if inputIdx >= len(clientEvents) {
 					break

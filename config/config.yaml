@@ -1,19 +1,19 @@
 maxProcess: 12
-gwDBRetentionInHr: 0
-routerDBRetention: 0
+gwDBRetention: 0h
+routerDBRetention: 0h
 enableProcessor: true
 enableRouter: true
 enableStats: true
 statsTagsFormat: influxdb
 Http:
-  ReadTimeOutInSec: 0
-  ReadHeaderTimeoutInSec: 0
-  WriteTimeOutInSec: 10
-  IdleTimeoutInSec: 720
+  ReadTimeout: 0s
+  ReadHeaderTimeout: 0s
+  WriteTimeout: 10s
+  IdleTimeout: 720s
   MaxHeaderBytes: 524288
 RateLimit:
   eventLimit: 1000
-  rateLimitWindowInMins: 60
+  rateLimitWindow: 60m
   noOfBucketsInWindow: 12
 Gateway:
   webPort: 8080
@@ -22,29 +22,29 @@ Gateway:
   CustomVal: GW
   maxUserRequestBatchSize: 128
   maxDBBatchSize: 128
-  userWebRequestBatchTimeoutInMS: 15
-  dbBatchWriteTimeoutInMS: 5
+  userWebRequestBatchTimeout: 15ms
+  dbBatchWriteTimeout: 5ms
   maxReqSizeInKB: 4000
   enableRateLimit: false
   enableSuppressUserFeature: true
   allowPartialWriteWithErrors: true
   allowReqsWithoutUserIDAndAnonymousID: false
   webhook:
-    batchTimeoutInMS: 20
+    batchTimeout: 20ms
     maxBatchSize: 32
     maxTransformerProcess: 64
     maxRetry: 5
-    maxRetryTimeInS: 10
+    maxRetryTime: 10s
 EventSchemas:
   enableEventSchemasFeature: false
-  syncIntervalInS: 120
+  syncInterval: 120s
   noOfWorkers: 128
 Debugger:
   maxBatchSize: 32
   maxESQueueSize: 1024
   maxRetry: 3
-  batchTimeoutInS: 2
-  retrySleepInMS: 100
+  batchTimeout: 2s
+  retrySleep: 100ms
 SourceDebugger:
   disableEventUploads: false
 DestinationDebugger:
@@ -60,13 +60,13 @@ JobsDB:
   maxMigrateOnce: 10
   maxMigrateDSProbe: 10
   maxTableSizeInMB: 300
-  migrateDSLoopSleepDurationInS: 30
-  addNewDSLoopSleepDurationInS: 5
-  refreshDSListLoopSleepDurationInS: 5
-  backupCheckSleepDurationIns: 5
+  migrateDSLoopSleepDuration: 30s
+  addNewDSLoopSleepDuration: 5s
+  refreshDSListLoopSleepDuration: 5s
+  backupCheckSleepDuration: 5s
   backupRowsBatchSize: 1000
   archivalTimeInDays: 10
-  archiverTickerTimeInMin: 1440
+  archiverTickerTime: 1440m
   backup:
     enabled: true
     gw:
@@ -81,53 +81,53 @@ JobsDB:
 Router:
   jobQueryBatchSize: 10000
   updateStatusBatchSize: 1000
-  readSleepInMS: 1000
-  fixedLoopSleepInMS: 0
+  readSleep: 1000ms
+  fixedLoopSleep: 0ms
   noOfJobsPerChannel: 1000
   noOfJobsToBatchInAWorker: 20
-  jobsBatchTimeoutInSec: 5
-  maxSleepInS: 60
-  minSleepInS: 0
-  maxStatusUpdateWaitInS: 5
+  jobsBatchTimeout: 5s
+  maxSleep: 60s
+  minSleep: 0s
+  maxStatusUpdateWait: 5s
   useTestSink: false
   guaranteeUserEventOrder: true
-  kafkaWriteTimeoutInSec: 2
-  kafkaDialTimeoutInSec: 10
-  minRetryBackoffInS: 10
-  maxRetryBackoffInS: 300
+  kafkaWriteTimeout: 2s
+  kafkaDialTimeout: 10s
+  minRetryBackoff: 10s
+  maxRetryBackoff: 300s
   noOfWorkers: 64
   allowAbortedUserJobsCountForProcessing: 1
   maxFailedCountForJob: 3
-  retryTimeWindowInMins: 180
+  retryTimeWindow: 180m
   MARKETO:
     noOfWorkers: 4
   throttler:
     MARKETO:
       limit: 45
-      timeWindowInS: 20
+      timeWindow: 20s
   BRAZE:
     forceHTTP1: true
-    httpTimeoutInS: 120
+    httpTimeout: 120s
     httpMaxIdleConnsPerHost: 32
 BatchRouter:
-  mainLoopSleepInS: 2
+  mainLoopSleep: 2s
   jobQueryBatchSize: 100000
-  uploadFreqInS: 30
-  warehouseServiceMaxRetryTimeinHr: 3
+  uploadFreq: 30s
+  warehouseServiceMaxRetryTime: 3h
   noOfWorkers: 8
   maxFailedCountForJob: 128
-  retryTimeWindowInMins: 180
+  retryTimeWindow: 180m
 Warehouse:
   mode: embedded
   webPort: 8082
-  uploadFreqInS: 1800
+  uploadFreq: 1800s
   noOfWorkers: 8
   noOfSlaveWorkerRoutines: 4
-  mainLoopSleepInS: 5
+  mainLoopSleep: 5s
   minRetryAttempts: 3
-  retryTimeWindowInMins: 180
-  minUploadBackoffInS: 60
-  maxUploadBackoffInS: 1800
+  retryTimeWindow: 180m
+  minUploadBackoff: 60s
+  maxUploadBackoff: 1800s
   warehouseSyncPreFetchCount: 10
   warehouseSyncFreqIgnore: false
   stagingFilesBatchSize: 960
@@ -155,21 +155,18 @@ Warehouse:
     enableArraySupport: false
 Processor:
   webPort: 8086
-  loopSleepInMS: 10
-  maxLoopSleepInMS: 5000
-  fixedLoopSleepInMS: 0
+  loopSleep: 10ms
+  maxLoopSleep: 5000ms
+  fixedLoopSleep: 0ms
   maxLoopProcessEvents: 10000
   avgEventsInRequest: 1
   transformBatchSize: 100
   userTransformBatchSize: 200
-  sessionThresholdEvents: 100
-  sessionInactivityThresholdInS: 120
   maxChanSize: 2048
-  processSessions: false
   numTransformWorker: 8
   maxRetry: 30
-  retrySleepInMS: 100
-  errReadLoopSleepInS: 30
+  retrySleep: 100ms
+  errReadLoopSleep: 30s
   errDBReadBatchSize: 1000
   noOfErrStashWorkers: 2
   maxFailedCountForErrJob: 3
@@ -177,12 +174,12 @@ Processor:
     captureEventName: false
 Dedup:
   enableDedup: false
-  dedupWindowInS: 3600
+  dedupWindow: 3600s
 BackendConfig:
   configFromFile: false
   configJSONPath: /etc/rudderstack/workspaceConfig.json
-  pollIntervalInS: 5
-  regulationsPollIntervalInS: 300
+  pollInterval: 5s
+  regulationsPollInterval: 300s
   maxRegulationsPerRequest: 1000
 recovery:
   enabled: true
@@ -190,7 +187,7 @@ recovery:
   storagePath: /tmp/recovery_data.json
   normal:
     crashThreshold: 5
-    durationInS: 300
+    duration: 300s
 Logger:
   enableConsole: true
   enableFile: false
@@ -203,9 +200,9 @@ Logger:
   enableStackTrace: false
 Diagnostics:
   enableDiagnostics: true
-  gatewayTimePeriodInS: 60
-  routerTimePeriodInS: 60
-  batchRouterTimePeriodInS: 600
+  gatewayTimePeriod: 60s
+  routerTimePeriod: 60s
+  batchRouterTimePeriod: 6l
   enableServerStartMetric: true
   enableConfigIdentifyMetric: true
   enableServerStartedMetric: true
@@ -221,7 +218,7 @@ RuntimeStats:
   enableMemStats: true
   enableGCStats: true
 PgNotifier:
-  retriggerIntervalInS: 2
+  retriggerInterval: 2s
   retriggerCount: 500
-  trackBatchIntervalInS: 2
+  trackBatchInterval: 2s
   maxAttempt: 3

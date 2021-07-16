@@ -3,8 +3,9 @@ package warehouseutils
 import (
 	"bufio"
 	"encoding/json"
-	"github.com/rudderlabs/rudder-server/config"
 	"io"
+
+	"github.com/rudderlabs/rudder-server/config"
 )
 
 type jsonReader struct {
@@ -14,7 +15,7 @@ type jsonReader struct {
 var maxStagingFileReadBufferCapacityInK int
 
 func init() {
-	maxStagingFileReadBufferCapacityInK = config.GetInt("Warehouse.maxStagingFileReadBufferCapacityInK", 10240)
+	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 }
 func (js *jsonReader) Read(columnNames []string) (record []string, err error) {
 	ok := js.scanner.Scan()
