@@ -62,7 +62,11 @@ func (manager *GCSManager) getClient() (*storage.Client, error) {
 	var err error
 	if manager.client == nil {
 		ctx := context.Background()
-		manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+		if manager.Config.Credentials == "" {
+			manager.client, err = storage.NewClient(ctx)
+		} else {
+			manager.client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+		}
 	}
 	return manager.client, err
 }

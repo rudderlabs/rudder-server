@@ -460,7 +460,7 @@
           "value": "credentials",
           "regex": ".*",
           "required": false,
-          "footerNote": "Create a service account in your GCP Project for RudderStack with roles of 'storage.objectCreator'",
+          "footerNote": "Create a service account in your GCP Project for RudderStack with roles of 'storage.objectCreator'. Leave this field empty to use Application Default Credentials.",
           "secret": true
         }
       ]
@@ -755,8 +755,8 @@
           "labelNote": "GCP Service Account credentials JSON for RudderStack to use in loading data into your BigQuery database",
           "value": "credentials",
           "regex": ".*",
-          "required": true,
-          "footerNote": "Create a service account in your GCP Project for RudderStack with roles of 'BigQuery User'",
+          "required": false,
+          "footerNote": "Create a service account in your GCP Project for RudderStack with roles of 'BigQuery User'. Leave this field empty to use Application Default Credentials.",
           "secret": true
         },
         {
@@ -1046,8 +1046,9 @@
           "labelNote": "GCP Service Account credentials JSON for RudderStack to use in loading data into your Google Cloud Storage",
           "value": "credentials",
           "regex": ".*",
-          "required": true,
-          "footerNote": "Create a service account in your GCP Project for RudderStack with roles of 'storage.objectCreator'"
+          "required": false,
+          "footerNote": "Create a service account in your GCP Project for RudderStack with roles of 'storage.objectCreator'. Leave this field empty to use Application Default Credentials.",
+          "secret": true
         },
         {
           "type": "singleSelect",
@@ -1296,8 +1297,9 @@
           "labelNote": "GCP Service Account credentials JSON for RudderStack to use in loading data into your Google Cloud Storage",
           "value": "credentials",
           "regex": ".*",
-          "required": true,
-          "footerNote": "Create a service account in your GCP Project for RudderStack with roles of 'storage.objectCreator'"
+          "required": false,
+          "footerNote": "Create a service account in your GCP Project for RudderStack with roles of 'storage.objectCreator'. Leave this field empty to use Application Default Credentials.",
+          "secret": true
         },
         {
           "type": "textInput",

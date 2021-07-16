@@ -42,8 +42,12 @@ func NewProducer(destinationConfig interface{}) (*PubsubClient, error) {
 		return nil, fmt.Errorf("[GooglePubSub] error  :: error in GooglePubSub while unmarshelling destination config:: %w", err)
 	}
 	var client *pubsub.Client
-	if config.Credentials != "" && config.ProjectId != "" {
-		client, err = pubsub.NewClient(ctx, config.ProjectId, option.WithCredentialsJSON([]byte(config.Credentials)))
+	if config.ProjectId != "" {
+		var options []option.ClientOption
+		if config.Credentials != "" {
+			options = append(options, option.WithCredentialsJSON([]byte(config.Credentials)))
+		}
+		client, err = pubsub.NewClient(ctx, config.ProjectId, options...)
 	}
 	if err != nil {
 		return nil, err
