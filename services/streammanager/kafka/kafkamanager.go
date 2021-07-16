@@ -7,7 +7,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -76,7 +75,7 @@ func loadConfig() {
 	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
 	kafkaDialTimeoutInSec = config.GetInt64("Router.kafkaDialTimeoutInSec", 10)
 	kafkaWriteTimeoutInSec = config.GetInt64("Router.kafkaWriteTimeoutInSec", 2)
-	kafkaBatchingEnabled, _ = strconv.ParseBool(config.GetEnv("RSERVER_ROUTER_KAFKA_ENABLE_BATCHING", "false"))
+	kafkaBatchingEnabled = config.GetBool("Router.kafka.enableBatching", false)
 }
 
 func loadCertificate() {
@@ -269,7 +268,6 @@ func prepareMessage(topic string, key string, message []byte, timestamp time.Tim
 
 func prepareBatchedMessage(topic string, batch []map[string]interface{}, timestamp time.Time) (batchMessage []*sarama.ProducerMessage, err error) {
 	var batchedMessage []*sarama.ProducerMessage
-	count := 0
 	for _, data := range batch {
 		message, err := json.Marshal(data["message"])
 
@@ -284,11 +282,7 @@ func prepareBatchedMessage(topic string, batch []map[string]interface{}, timesta
 			Timestamp: timestamp,
 		}
 		batchedMessage = append(batchedMessage, msg)
-		count += 1
 	}
-
-	// temp log for checking batch count
-	pkgLogger.Infof("[KAFKA BATCH] Batch Size: %v", count)
 	return batchedMessage, nil
 }
 
@@ -362,7 +356,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 			return makeErrorResponse(err) // would retry the messages in batch in case brokers are down
 		}
 
-		returnMessage := "Message delivered in batch"
+		returnMessage := "Kafka: Message delivered in batch"
 		statusCode := 200
 		errorMessage := returnMessage
 		return statusCode, returnMessage, errorMessage
