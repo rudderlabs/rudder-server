@@ -99,6 +99,9 @@ var defaultTransformerFeatures = `{
 	}
   }`
 
+var mainLoopTimeout = 200 * time.Millisecond
+var featuresRetryMaxAttempts = 10
+
 type DestStatT struct {
 	numEvents              stats.RudderStats
 	numOutputSuccessEvents stats.RudderStats
@@ -231,7 +234,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	proc.reporting = reporting
-	proc.reportingEnabled = config.GetBool("Reporting.enabled", true)
+	config.RegisterBoolConfigVariable(false, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -295,8 +298,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 
 // Start starts this processor's main loops.
 func (proc *HandleT) Start() {
-
 	rruntime.Go(func() {
+		//waiting till the backend config is received
+		proc.backendConfig.WaitForConfig()
 		proc.mainLoop()
 	})
 	rruntime.Go(func() {
@@ -335,35 +339,34 @@ var (
 )
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, "Processor.maxLoopSleepInMS")
-	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, "Processor.loopSleepInMS")
-	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Processor.fixedLoopSleepInMS")
+	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep", "Processor.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(100, &transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 	// Enable dedup of incoming events by default
-	enableDedup = config.GetBool("Dedup.enableDedup", false)
+	config.RegisterBoolConfigVariable(false, &enableDedup, false, "Dedup.enableDedup")
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
-	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
-	enableEventSchemasAPIOnly = config.GetBool("EventSchemas.enableEventSchemasAPIOnly", false)
+	config.RegisterBoolConfigVariable(false, &enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
+	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, false, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 	config.RegisterIntConfigVariable(1, &avgEventsInRequest, true, 1, "Processor.avgEventsInRequest")
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
 	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
-	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
+	config.RegisterIntConfigVariable(5, &transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	pollInterval = config.GetDuration("Processor.pollIntervalInS", time.Duration(5)) * time.Second
+	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, []string{"Processor.pollInterval", "Processor.pollIntervalInS"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
-	GWCustomVal = config.GetString("Gateway.CustomVal", "GW")
+	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
 }
 
 func (proc *HandleT) getTransformerFeatureJson() {
-	const attempts = 10
 	for {
-		for i := 0; i < attempts; i++ {
+		for i := 0; i < featuresRetryMaxAttempts; i++ {
 			url := transformerURL + "/features"
 			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
 			if err != nil {
@@ -408,6 +411,18 @@ func SetDisableDedupFeature(b bool) bool {
 	prev := enableDedup
 	enableDedup = b
 	return prev
+}
+
+func SetMainLoopTimeout(timeout time.Duration) {
+	mainLoopTimeout = timeout
+}
+
+func SetFeaturesRetryAttempts(overrideAttempts int) {
+	featuresRetryMaxAttempts = overrideAttempts
+}
+
+func SetIsUnlocked(unlockVar bool) {
+	isUnLocked = unlockVar
 }
 
 func (proc *HandleT) backendConfigSubscriber() {
@@ -1175,7 +1190,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		// OR
 		//router and transformer supports router transform, then no destination transformation happens.
 		if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
-			response = convertToTransformerResponse(eventsToTransform)
+			response = ConvertToTransformerResponse(eventsToTransform)
 		} else {
 			destTransformationStat.transformTime.Start()
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize)
@@ -1383,7 +1398,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Print()
 }
 
-func convertToTransformerResponse(events []transformer.TransformerEventT) transformer.ResponseT {
+func ConvertToTransformerResponse(events []transformer.TransformerEventT) transformer.ResponseT {
 	var responses []transformer.TransformerResponseT
 	for _, event := range events {
 		resp := transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
@@ -1485,8 +1500,6 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 }
 
 func (proc *HandleT) mainLoop() {
-	//waiting till the backend config is received
-	proc.backendConfig.WaitForConfig()
 	//waiting for reporting client setup
 	if proc.reporting != nil {
 		proc.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
@@ -1494,8 +1507,7 @@ func (proc *HandleT) mainLoop() {
 
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
-
-	timeout := time.After(200 * time.Millisecond)
+	timeout := time.After(mainLoopTimeout)
 	for {
 		select {
 		case pause := <-proc.pauseChannel:
@@ -1505,7 +1517,7 @@ func (proc *HandleT) mainLoop() {
 			<-proc.resumeChannel
 		case <-timeout:
 			proc.paused = false
-			timeout = time.After(200 * time.Millisecond)
+			timeout = time.After(mainLoopTimeout)
 			if isUnLocked {
 				if proc.handlePendingGatewayJobs() {
 					currLoopSleep = time.Duration(0)

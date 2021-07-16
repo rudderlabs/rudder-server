@@ -125,7 +125,7 @@ type OffloadedSchemaVersionT struct {
 }
 
 var (
-	flushIntervalInS                int
+	flushInterval                   time.Duration
 	adminUser                       string
 	adminPassword                   string
 	reservoirSampleSize             int
@@ -141,8 +141,8 @@ var (
 	shouldCaptureNilAsUnknowns      bool
 	eventModelLimit                 int
 	schemaVersionPerEventModelLimit int
-	offloadLoopIntervalInS          int
-	offloadThresholdInS             int
+	offloadLoopInterval             time.Duration
+	offloadThreshold                time.Duration
 )
 
 const EVENT_MODELS_TABLE = "event_models"
@@ -168,13 +168,14 @@ func loadConfig() {
 	adminUser = config.GetEnv("RUDDER_ADMIN_USER", "rudder")
 	adminPassword = config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
 	noOfWorkers = config.GetInt("EventSchemas.noOfWorkers", 128)
-	config.RegisterIntConfigVariable(240, &flushIntervalInS, true, 1, "EventSchemas.syncIntervalInS")
+	config.RegisterDurationConfigVariable(time.Duration(240), &flushInterval, false, time.Second, []string{"EventSchemas.syncInterval", "EventSchemas.syncIntervalInS"}...)
+
 	config.RegisterIntConfigVariable(5, &reservoirSampleSize, true, 1, "EventSchemas.sampleEventsSize")
 	config.RegisterIntConfigVariable(200, &eventModelLimit, true, 1, "EventSchemas.eventModelLimit")
 	config.RegisterIntConfigVariable(20, &schemaVersionPerEventModelLimit, true, 1, "EventSchemas.schemaVersionPerEventModelLimit")
 	config.RegisterBoolConfigVariable(false, &shouldCaptureNilAsUnknowns, true, "EventSchemas.captureUnknowns")
-	config.RegisterIntConfigVariable(60, &offloadLoopIntervalInS, true, 1, "EventSchemas.offloadLoopIntervalInS")
-	config.RegisterIntConfigVariable(1800, &offloadThresholdInS, true, 1, "EventSchemas.offloadThresholdInS")
+	config.RegisterDurationConfigVariable(time.Duration(60), &offloadLoopInterval, false, time.Second, []string{"EventSchemas.offloadLoopInterval"}...)
+	config.RegisterDurationConfigVariable(time.Duration(1800), &offloadThreshold, false, time.Second, []string{"EventSchemas.offloadThreshold"}...)
 
 	if adminPassword == "rudderstack" {
 		fmt.Println("[EventSchemas] You are using default password. Please change it by setting env variable RUDDER_ADMIN_PASSWORD")
@@ -513,7 +514,7 @@ func getPrivateDataJSON(schemaHash string) []byte {
 func (manager *EventSchemaManagerT) flushEventSchemas() {
 	// This will run forever. If you want to quit in between, change it to ticker and call stop()
 	// Otherwise the ticker won't be GC'ed
-	ticker := time.Tick(time.Duration(flushIntervalInS) * time.Second)
+	ticker := time.Tick(flushInterval)
 	for range ticker {
 
 		// If needed, copy the maps and release the lock immediately
@@ -620,13 +621,13 @@ func eventTypeIdentifier(eventType, eventIdentifier string) string {
 
 func (manager *EventSchemaManagerT) offloadEventSchemas() {
 	for {
-		time.Sleep(time.Duration(offloadLoopIntervalInS) * time.Second)
+		time.Sleep(offloadLoopInterval)
 		manager.eventModelLock.Lock()
 		manager.schemaVersionLock.Lock()
 		for _, modelsByWriteKey := range manager.eventModelMap {
 			for _, modelsByEventType := range modelsByWriteKey {
 				for _, model := range modelsByEventType {
-					if timeutil.Now().Sub(model.LastSeen) > time.Duration(offloadThresholdInS)*time.Second {
+					if timeutil.Now().Sub(model.LastSeen) > offloadLoopInterval {
 						pkgLogger.Infof("offloading model: %s-%s UUID:%s", model.EventType, model.EventIdentifier, model.UUID)
 						if _, ok := offloadedEventModels[model.WriteKey]; !ok {
 							offloadedEventModels[model.WriteKey] = make(map[string]*OffloadedModelT)
@@ -640,7 +641,7 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 		}
 		for _, modelsByWriteKey := range manager.schemaVersionMap {
 			for _, version := range modelsByWriteKey {
-				if timeutil.Now().Sub(version.LastSeen) > time.Duration(offloadThresholdInS)*time.Second {
+				if timeutil.Now().Sub(version.LastSeen) > offloadLoopInterval {
 					pkgLogger.Infof("offloading schema version: %s", version.UUID)
 					if _, ok := offloadedSchemaVersions[version.EventModelID]; !ok {
 						offloadedSchemaVersions[version.EventModelID] = make(map[string]*OffloadedSchemaVersionT)

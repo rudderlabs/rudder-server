@@ -33,10 +33,10 @@ type Limiter struct {
 }
 
 type Settings struct {
-	limit                  int
-	timeWindowInS          int
-	userLevelLimit         int
-	userLevelTimeWindowInS int
+	limit               int
+	timeWindow          int
+	userLevelLimit      int
+	userLevelTimeWindow int
 }
 
 //HandleT is a Handle for event limiter
@@ -52,10 +52,10 @@ func (throttler *HandleT) setLimits() {
 	destName := throttler.destinationName
 
 	// set eventLimit
-	throttler.destLimiter.eventLimit = config.GetInt(fmt.Sprintf(`Router.throttler.%s.limit`, destName), destSettingsMap[destName].limit)
+	config.RegisterIntConfigVariable(destSettingsMap[destName].limit, &throttler.destLimiter.eventLimit, false, 1, fmt.Sprintf(`Router.throttler.%s.limit`, destName))
 
 	// set timeWindow
-	throttler.destLimiter.timeWindow = config.GetDuration(fmt.Sprintf(`Router.throttler.%s.timeWindowInS`, destName), time.Duration(destSettingsMap[destName].timeWindowInS)) * time.Second
+	config.RegisterDurationConfigVariable(time.Duration(destSettingsMap[destName].timeWindow), &throttler.destLimiter.timeWindow, false, time.Second, []string{fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName), fmt.Sprintf(`Router.throttler.%s.timeWindowInS`, destName)}...)
 
 	// enable dest throttler
 	if throttler.destLimiter.eventLimit != 0 && throttler.destLimiter.timeWindow != 0 {
@@ -64,10 +64,10 @@ func (throttler *HandleT) setLimits() {
 	}
 
 	// set eventLimit
-	throttler.userLimiter.eventLimit = config.GetInt(fmt.Sprintf(`Router.throttler.%s.userLevelLimit`, destName), destSettingsMap[destName].userLevelLimit)
+	config.RegisterIntConfigVariable(destSettingsMap[destName].userLevelLimit, &throttler.userLimiter.eventLimit, false, 1, fmt.Sprintf(`Router.throttler.%s.userLevelLimit`, destName))
 
 	// set timeWindow
-	throttler.userLimiter.timeWindow = config.GetDuration(fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindowInS`, destName), time.Duration(destSettingsMap[destName].userLevelTimeWindowInS)) * time.Second
+	config.RegisterDurationConfigVariable(time.Duration(destSettingsMap[destName].userLevelTimeWindow), &throttler.userLimiter.timeWindow, false, time.Second, []string{fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindow`, destName), fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindowInS`, destName)}...)
 
 	// enable dest throttler
 	if throttler.userLimiter.eventLimit != 0 && throttler.userLimiter.timeWindow != 0 {
