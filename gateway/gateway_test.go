@@ -494,8 +494,7 @@ var _ = Describe("Gateway", func() {
 					data[i] = 'a'
 				}
 				body := `{
-					"anonymousId": "anon_id",
-					"type": "track"
+					"anonymousId": "anon_id"
 				  }`
 				body, _ = sjson.Set(body, "properties", data)
 				if handlerType == "batch" || handlerType == "import" {
