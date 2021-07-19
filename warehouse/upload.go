@@ -921,10 +921,9 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		job.recordTableLoad(tName, numEvents)
 	}
 
-	if len(job.schemaHandle.schemaInWarehouse[tName]) > columnCountUpper {
-		job.counterStat(`warehouse_column_count_upper_limit`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(1)
-	} else if len(job.schemaHandle.schemaInWarehouse[tName]) > columnCountLower {
-		job.counterStat(`warehouse_column_count_lower_limit`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(1)
+	columnCount := len(job.schemaHandle.schemaInWarehouse[tName])
+	if columnCount > columnCountThreshold {
+		job.counterStat(`warehouse_table_column_count`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(columnCount)
 	}
 	return
 }

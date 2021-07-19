@@ -79,8 +79,7 @@ var (
 	runningMode                         string
 	uploadStatusTrackFrequency          time.Duration
 	uploadBufferTimeInMin               int
-	columnCountLower                    int
-	columnCountUpper                    int
+	columnCountThreshold                int
 )
 
 var (
@@ -161,8 +160,7 @@ func loadConfig() {
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	uploadStatusTrackFrequency = config.GetDuration("Warehouse.uploadStatusTrackFrequencyInMin", time.Duration(30)) * time.Minute
 	uploadBufferTimeInMin = config.GetInt("Warehouse.uploadBufferTimeInMin", 180)
-	columnCountLower = config.GetInt("Warehouse.columnCountLower", 1000)
-	columnCountUpper = config.GetInt("Warehouse.columnCountUpper", 1200)
+	columnCountThreshold = config.GetInt("Warehouse.columnCountThreshold", 1000)
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
