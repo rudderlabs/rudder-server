@@ -923,7 +923,7 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 
 	columnCount := len(job.schemaHandle.schemaInWarehouse[tName])
 	if columnCount > columnCountThreshold {
-		job.counterStat(`warehouse_table_column_count`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(columnCount)
+		job.counterStat(`warehouse_load_table_column_count`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(columnCount)
 	}
 	return
 }
