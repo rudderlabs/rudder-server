@@ -39,7 +39,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(options *app.Options) {
 	sourcedebugger.Setup()
 
 	migrationMode := gatewayApp.App.Options().MigrationMode
-	gatewayDB.Setup(jobsdb.Write, options.ClearDB, "gw", gwDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
+	gatewayDB.Setup(jobsdb.Write, options.ClearDB, "gw", gwDBRetention, migrationMode, false)
 
 	operationmanager.Setup(&gatewayDB, nil, nil)
 

@@ -315,7 +315,6 @@ type HandleT struct {
 	enableReaderQueue             bool
 	maxReaders                    int
 	maxWriters                    int
-	queryFilterKeys               QueryFiltersT
 }
 
 type QueryFiltersT struct {
@@ -505,6 +504,7 @@ var (
 	backupRowsBatchSize                          int64
 	pkgLogger                                    logger.LoggerI
 	useNewCacheBurst                             bool
+	queryParams                                  []string
 )
 
 //Different scenarios for addNewDS
@@ -548,6 +548,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 	config.RegisterBoolConfigVariable(true, &useNewCacheBurst, true, "JobsDB.useNewCacheBurst")
+	queryParams = strings.Split(config.GetString("JobsDB.queryParameters", "destination_id"), ",")
 }
 
 func init() {
@@ -571,7 +572,7 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
 	jd.initGlobalDBHandle()
 
 	var err error
@@ -582,13 +583,11 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	err = jd.dbHandle.Ping()
 	jd.assertError(err)
 
-	jd.workersAndAuxSetup(ownerType, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
+	jd.workersAndAuxSetup(ownerType, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler)
 	jd.setUpForOwnerType(ownerType, clearAll)
 }
 
-func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
-	jd.queryFilterKeys = queryFilterKeys
-
+func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool) {
 	jd.ownerType = ownerType
 	jd.logger = pkgLogger.Child(tablePrefix)
 	jd.migrationState.migrationMode = migrationMode
@@ -1626,36 +1625,32 @@ func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []
 	return
 }
 
-// Creates a map of customVal:Params(Dest_type: []Dest_ids for brt and Dest_type: [] for rt)
+// Creates a map of customVal:[]Params
 //and then loop over them to selectively clear cache instead of clearing the cache for the entire dataset
 func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]struct{}, customVal string, params []byte) {
-	if jd.queryFilterKeys.CustomVal {
-		if _, ok := CVPMap[customVal]; !ok {
-			CVPMap[customVal] = make(map[string]struct{})
-		}
+	if _, ok := CVPMap[customVal]; !ok {
+		CVPMap[customVal] = make(map[string]struct{})
+	}
 
-		if len(jd.queryFilterKeys.ParameterFilters) > 0 {
-			var vals []string
-			for _, key := range jd.queryFilterKeys.ParameterFilters {
-				val := gjson.GetBytes(params, key).String()
-				vals = append(vals, fmt.Sprintf("%s##%s", key, val))
-			}
-			key := strings.Join(vals, "::")
-			if _, ok := CVPMap[customVal][key]; !ok {
-				CVPMap[customVal][key] = struct{}{}
-			}
-		}
+	var vals []string
+	for _, key := range queryParams {
+		val := gjson.GetBytes(params, key).String()
+		vals = append(vals, fmt.Sprintf("%s##%s", key, val))
+	}
+	key := strings.Join(vals, "::")
+	if _, ok := CVPMap[customVal][key]; !ok {
+		CVPMap[customVal][key] = struct{}{}
 	}
 }
 
 //mark cache empty after going over ds->customvals->params and for all stateFilters
 func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]struct{}) {
-	if jd.queryFilterKeys.CustomVal && len(jd.queryFilterKeys.ParameterFilters) > 0 {
-		for cv, cVal := range CVPMap {
-			for pv := range cVal {
-				parameterFilters := []ParameterFilterT{}
-				tokens := strings.Split(pv, "::")
-				for _, token := range tokens {
+	for cv, cVal := range CVPMap {
+		for pv := range cVal {
+			parameterFilters := []ParameterFilterT{}
+			tokens := strings.Split(pv, "::")
+			for _, token := range tokens {
+				if token != "" {
 					p := strings.Split(token, "##")
 					param := ParameterFilterT{
 						Name:  p[0],
@@ -1663,16 +1658,12 @@ func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]struct{}
 					}
 					parameterFilters = append(parameterFilters, param)
 				}
-				jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
 			}
+			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, parameterFilters, hasJobs, nil)
 		}
-	} else if jd.queryFilterKeys.CustomVal {
-		for cv := range CVPMap {
-			jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
-		}
-	} else {
-		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
+		jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
 	}
+	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
 }
 
 func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, copyID bool, jobList []*JobT) error {

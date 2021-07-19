@@ -103,6 +103,9 @@ type HandleT struct {
 	saveDestinationResponse                bool
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
+	ReadPerDestination                     bool
+	Destination                            backendconfig.DestinationT
+	params                                 []jobsdb.ParameterFilterT
 }
 
 type jobResponseT struct {
@@ -171,6 +174,7 @@ var (
 	toAbortDestinationIDs                                         string
 	QueryFilters                                                  jobsdb.QueryFiltersT
 	disableEgress                                                 bool
+	PerDestRouterDestinationsList                                 []string
 )
 
 type requestMetric struct {
@@ -1240,7 +1244,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		//Update the status
 		txn := rt.jobsDB.BeginGlobalTransaction()
 		rt.jobsDB.AcquireUpdateJobStatusLocks()
-		err := rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil)
+		err := rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, rt.params)
 		if err != nil {
 			rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
 			panic(err)
@@ -1446,6 +1450,23 @@ func (rt *HandleT) generatorLoop() {
 	}
 }
 
+func (rt *HandleT) getPendingJobs(toQuery int) []*jobsdb.JobT {
+	queryParams := jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery, ParameterFilters: rt.params}
+
+	retryList := rt.jobsDB.GetToRetry(queryParams)
+	toQuery -= len(retryList)
+	throttledList := rt.jobsDB.GetThrottled(queryParams)
+	toQuery -= len(throttledList)
+	waitList := rt.jobsDB.GetWaiting(queryParams) //Jobs send to waiting state
+	toQuery -= len(waitList)
+	unprocessedList := rt.jobsDB.GetUnprocessed(queryParams)
+	combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
+
+	rt.logger.Debugf("RT: %s-%s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", rt.destName, rt.Destination.ID, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
+
+	return combinedList
+}
+
 func (rt *HandleT) readAndProcess() int {
 	if rt.guaranteeUserEventOrder {
 		//#JobOrder (See comment marked #JobOrder
@@ -1464,23 +1485,13 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	toQuery := jobQueryBatchSize
-	retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
-	toQuery -= len(retryList)
-	throttledList := rt.jobsDB.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
-	toQuery -= len(throttledList)
-	waitList := rt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery}) //Jobs send to waiting state
-	toQuery -= len(waitList)
-	unprocessedList := rt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
-
-	combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
+	combinedList := rt.getPendingJobs(toQuery)
 
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
 		time.Sleep(readSleep)
 		return 0
 	}
-
-	rt.logger.Debugf("RT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", rt.destName, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
 
 	sort.Slice(combinedList, func(i, j int) bool {
 		return combinedList[i].JobID < combinedList[j].JobID
@@ -1543,14 +1554,14 @@ func (rt *HandleT) readAndProcess() int {
 	rt.throttledUserMap = nil
 
 	//Mark the jobs as executing
-	err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
+	err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, rt.params)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
 		panic(err)
 	}
 	//Mark the jobs as aborted
 	if len(drainList) > 0 {
-		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
+		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, rt.params)
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
 			panic(err)
@@ -1584,13 +1595,28 @@ func destinationID(job *jobsdb.JobT) string {
 }
 
 func (rt *HandleT) crashRecover() {
-	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})
+	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1, ParameterFilters: rt.params})
 }
 
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
 	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
+	PerDestRouterDestinationsList = strings.Split(config.GetString("router.routerPerDestination", ""), ",")
+}
+
+func (rt *HandleT) paramsSetup() {
+	if rt.ReadPerDestination {
+		rt.params = []jobsdb.ParameterFilterT{
+			{
+				Name:     "destination_id",
+				Value:    rt.Destination.ID,
+				Optional: false,
+			},
+		}
+	} else {
+		rt.params = nil
+	}
 }
 
 //Setup initializes this module
@@ -1616,6 +1642,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
 	rt.destName = destName
+	rt.paramsSetup()
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(30, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	rt.crashRecover()

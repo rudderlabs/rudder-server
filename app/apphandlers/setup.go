@@ -167,13 +167,21 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, re
 						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 					}
 				} else {
-					_, ok := dstToRouter[destination.DestinationDefinition.Name]
+					var routerKey string
+					var routerHandle router.HandleT
+					if misc.Contains(router.PerDestRouterDestinationsList, destination.DestinationDefinition.Name) {
+						routerKey = destination.DestinationDefinition.Name + "_" + destination.ID
+						routerHandle.ReadPerDestination = true
+						routerHandle.Destination = destination
+					} else {
+						routerKey = destination.DestinationDefinition.Name
+					}
+					_, ok := dstToRouter[routerKey]
 					if !ok {
-						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
-						var router router.HandleT
-						router.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition, reporting)
-						router.Start()
-						dstToRouter[destination.DestinationDefinition.Name] = &router
+						pkgLogger.Info("Starting a new Destination ", routerKey)
+						routerHandle.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition, reporting)
+						routerHandle.Start()
+						dstToRouter[routerKey] = &routerHandle
 					}
 				}
 			}

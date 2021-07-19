@@ -10,8 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
-	"github.com/rudderlabs/rudder-server/router"
-	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -59,12 +57,12 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	migrationMode := embedded.App.Options().MigrationMode
 
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
-	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
+	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, false)
 	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
-		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
-		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
-		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
+		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true)
+		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true)
+		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false)
 	}
 
 	enableGateway := true
@@ -101,7 +99,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 
 	if embedded.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
-		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true)
 		embedded.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB)
 	}
 
