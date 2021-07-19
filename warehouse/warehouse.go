@@ -924,12 +924,12 @@ func (wh *HandleT) monitorUploadStatus() {
 }
 
 var loadFileFormatMap = map[string]string{
-	"BQ":         "json",
+	"BQ":         "json.gz",
 	"RS":         "parquet",
-	"SNOWFLAKE":  "csv",
-	"POSTGRES":   "csv",
-	"CLICKHOUSE": "csv",
-	"MSSQL":      "csv",
+	"SNOWFLAKE":  "csv.gz",
+	"POSTGRES":   "csv.gz",
+	"CLICKHOUSE": "csv.gz",
+	"MSSQL":      "csv.gz",
 }
 
 func minimalConfigSubscriber() {

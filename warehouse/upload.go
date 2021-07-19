@@ -1623,12 +1623,12 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 
 	// verify if all load files are in same folder in object storage
 	if misc.ContainsString(warehousesToVerifyLoadFilesFolder, job.warehouse.Type) {
-		locations := job.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{
+		locations := job.GetLoadFiles(warehouseutils.GetLoadFilesOptionsT{
 			StartID: startLoadFileID,
 			EndID:   endLoadFileID,
 		})
 		for _, location := range locations {
-			if !strings.Contains(location, uniqueLoadGenID) {
+			if !strings.Contains(location.Location, uniqueLoadGenID) {
 				err = fmt.Errorf(`All loadfiles do not contain the same uniqueLoadGenID: %s`, uniqueLoadGenID)
 				return
 			}
@@ -1663,7 +1663,7 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn("wh_load_files", "staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at"))
+	stmt, err := txn.Prepare(pq.CopyIn("wh_load_files", "staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at", "metadata"))
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Error starting bulk copy using CopyIn: %v`, err)
 		return
@@ -1671,7 +1671,8 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 	defer stmt.Close()
 
 	for _, loadFile := range loadFiles {
-		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now())
+		metadata := json.RawMessage(fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength))
+		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for loadFules: %v Error: %v`, loadFile, err)
 			txn.Rollback()
@@ -1718,7 +1719,7 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	return
 }
 
-func (job *UploadJobT) GetLoadFileLocations(options warehouseutils.GetLoadFileLocationsOptionsT) (locations []string) {
+func (job *UploadJobT) GetLoadFiles(options warehouseutils.GetLoadFilesOptionsT) (loadFiles []warehouseutils.LoadFile) {
 	var tableFilterSQL string
 	if options.Table != "" {
 		tableFilterSQL = fmt.Sprintf(` AND table_name='%s'`, options.Table)
@@ -1739,12 +1740,12 @@ func (job *UploadJobT) GetLoadFileLocations(options warehouseutils.GetLoadFileLo
 	sqlStatement := fmt.Sprintf(`
 		WITH row_numbered_load_files as (
 			SELECT
-				location,
+				location, metadata,
 				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
 				FROM %[1]s
 				WHERE staging_file_id IN (%[2]v) %[3]s
 		)
-		SELECT location
+		SELECT location, metadata
 			FROM row_numbered_load_files
 			WHERE
 				row_number=1
@@ -1760,21 +1761,25 @@ func (job *UploadJobT) GetLoadFileLocations(options warehouseutils.GetLoadFileLo
 
 	for rows.Next() {
 		var location string
-		err := rows.Scan(&location)
+		var metadata json.RawMessage
+		err := rows.Scan(&location, &metadata)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
-		locations = append(locations, location)
+		loadFiles = append(loadFiles, warehouseutils.LoadFile{
+			Location: location,
+			Metadata: metadata,
+		})
 	}
 	return
 }
 
 func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location string, err error) {
-	locations := job.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName, Limit: 1})
+	locations := job.GetLoadFiles(warehouseutils.GetLoadFilesOptionsT{Table: tableName, Limit: 1})
 	if len(locations) == 0 {
 		return "", fmt.Errorf(`No load file found for table:%s`, tableName)
 	}
-	return locations[0], nil
+	return locations[0].Location, nil
 }
 
 func (job *UploadJobT) GetSchemaInWarehouse() (schema warehouseutils.SchemaT) {
@@ -1792,12 +1797,12 @@ func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.T
 	return job.schemaHandle.uploadSchema[tableName]
 }
 
-func (job *UploadJobT) GetSingleLoadFileLocation(tableName string) (string, error) {
+func (job *UploadJobT) GetSingleLoadFile(tableName string) (warehouseutils.LoadFile, error) {
 	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, tableName)
 	pkgLogger.Infof("SF: Fetching load file location for %s: %s", tableName, sqlStatement)
 	var location string
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&location)
-	return location, err
+	return warehouseutils.LoadFile{Location: location}, err
 }
 
 func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {

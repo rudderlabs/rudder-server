@@ -157,10 +157,9 @@ func (job *PayloadT) getDiscardsTable() string {
 }
 
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
-	return "/Users/dhawal/parquetTest/t1.parquet.gzip"
 	job := jobRun.job
 	randomness := uuid.NewV4().String()
-	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
+	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType])
 }
 
 func (job *PayloadT) getColumnName(columnName string) string {
@@ -181,6 +180,7 @@ type loadFileUploadOutputT struct {
 	TableName     string
 	Location      string
 	TotalRows     int
+	ContentLength int64
 	StagingFileID int64
 }
 
@@ -214,9 +214,15 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 						uploadErrorChan <- err
 						return
 					}
+					loadFileStats, err := os.Stat(uploadJob.outputFile.GetLoadFile().Name())
+					if err != nil {
+						uploadErrorChan <- err
+						return
+					}
 					loadFileOutputChan <- loadFileUploadOutputT{
 						TableName:     tableName,
 						Location:      uploadOutput.Location,
+						ContentLength: loadFileStats.Size(),
 						TotalRows:     jobRun.tableEventCountMap[tableName],
 						StagingFileID: jobRun.job.StagingFileID,
 					}
@@ -276,25 +282,17 @@ func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
 func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWriterI, error) {
 	writer, ok := jobRun.outputFileWritersMap[tableName]
 	if !ok {
-		outputFilePath := jobRun.getLoadFilePath(tableName)
 		var err error
-		gzWriter, err := misc.CreateGZ(outputFilePath)
-		if err != nil {
-			return misc.GZipWriter{}, err
-		}
-		writer = gzWriter
-
-		fmt.Println(jobRun.job.UpdatedSchema)
-
-		// TODO: read config from a proper place
-		// read both - whether to use parquet + no. of parallel writers for parquet
-		// TODO: see if using a simple writer with parquet writer is better(instead of gzWriter)
-		if config.GetEnvAsBool("RSERVER_WH_USE_PARQUET_LOAD_FILES", true) {
+		outputFilePath := jobRun.getLoadFilePath(tableName)
+		if jobRun.job.DestinationType == "RS" {
 			// TODO: check what happens if table does not exist - specially for discards case
-			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.UpdatedSchema[tableName], gzWriter, jobRun.job.DestinationType)
-			if err != nil {
-				return nil, err
-			}
+			// TODO: read both - no. of parallel writers for parquet
+			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.UpdatedSchema[tableName], outputFilePath, jobRun.job.DestinationType)
+		} else {
+			writer, err = misc.CreateGZ(outputFilePath)
+		}
+		if err != nil {
+			return nil, err
 		}
 		jobRun.outputFileWritersMap[tableName] = writer
 		jobRun.tableEventCountMap[tableName] = 0
@@ -507,7 +505,10 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
 	for _, loadFile := range jobRun.outputFileWritersMap {
-		loadFile.Close()
+		err = loadFile.Close()
+		if err != nil {
+			pkgLogger.Errorf("Error while closing load file %s : %v", loadFile.GetLoadFile().Name(), err)
+		}
 	}
 	loadFileUploadOutputs, err = jobRun.uploadLoadFilesToObjectStorage()
 	return loadFileUploadOutputs, err

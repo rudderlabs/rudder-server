@@ -177,7 +177,7 @@ func (as *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 }
 
 func (as *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations := as.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
+	objects := as.Uploader.GetLoadFiles(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(as.Warehouse.Destination.DestinationDefinition.Name, as.Warehouse.Destination.Config, as.Uploader.UseRudderStorage())
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: storageProvider,
@@ -192,37 +192,37 @@ func (as *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		return nil, err
 	}
 	var fileNames []string
-	for _, objectLocation := range objectLocations {
-		object, err := warehouseutils.GetObjectName(objectLocation, as.Warehouse.Destination.Config, as.ObjectStorage)
+	for _, object := range objects {
+		objectName, err := warehouseutils.GetObjectName(object.Location, as.Warehouse.Destination.Config, as.ObjectStorage)
 		if err != nil {
-			pkgLogger.Errorf("AZ: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
+			pkgLogger.Errorf("AZ: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
 			return nil, err
 		}
 		dirName := "/rudder-warehouse-load-uploads-tmp/"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
-			pkgLogger.Errorf("AZ: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("AZ: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
-		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, as.Warehouse.Destination.DestinationDefinition.Name, as.Warehouse.Destination.ID, time.Now().Unix()) + object
+		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, as.Warehouse.Destination.DestinationDefinition.Name, as.Warehouse.Destination.ID, time.Now().Unix()) + objectName
 		err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
 		if err != nil {
-			pkgLogger.Errorf("AZ: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("AZ: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, object.Location, err)
 			return nil, err
 		}
 		objectFile, err := os.Create(ObjectPath)
 		if err != nil {
-			pkgLogger.Errorf("AZ: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("AZ: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
-		err = downloader.Download(objectFile, object)
+		err = downloader.Download(objectFile, objectName)
 		if err != nil {
-			pkgLogger.Errorf("AZ: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("AZ: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
 		fileName := objectFile.Name()
 		if err = objectFile.Close(); err != nil {
-			pkgLogger.Errorf("AZ: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("AZ: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
 		fileNames = append(fileNames, fileName)
@@ -240,8 +240,8 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
 	extraColumns := []string{}
-	for _, column := range previousColumnKeys{
-		if !misc.ContainsString(sortedColumnKeys, column){
+	for _, column := range previousColumnKeys {
+		if !misc.ContainsString(sortedColumnKeys, column) {
 			extraColumns = append(extraColumns, column)
 		}
 	}
@@ -409,7 +409,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			// This is needed for the copyIn to proceed successfully for azure synapse else will face below err for missing old columns
 			// mssql: Column count in target table does not match column count specified in input.
 			// If BCP command, ensure format file column count matches destination table. If SSIS data import, check column mappings are consistent with target.
-			for range extraColumns{
+			for range extraColumns {
 				finalColumnValues = append(finalColumnValues, nil)
 			}
 			_, err = stmt.Exec(finalColumnValues...)

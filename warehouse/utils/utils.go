@@ -146,19 +146,24 @@ type UploaderI interface {
 	GetSchemaInWarehouse() SchemaT
 	GetTableSchemaInWarehouse(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
-	GetLoadFileLocations(options GetLoadFileLocationsOptionsT) []string
+	GetLoadFiles(options GetLoadFilesOptionsT) []LoadFile
 	GetSampleLoadFileLocation(tableName string) (string, error)
-	GetSingleLoadFileLocation(tableName string) (string, error)
+	GetSingleLoadFile(tableName string) (LoadFile, error)
 	ShouldOnDedupUseNewRecord() bool
 	UseRudderStorage() bool
 	GetLoadFileGenStartTIme() time.Time
 }
 
-type GetLoadFileLocationsOptionsT struct {
+type GetLoadFilesOptionsT struct {
 	Table   string
 	StartID int64
 	EndID   int64
 	Limit   int64
+}
+
+type LoadFile struct {
+	Location string
+	Metadata json.RawMessage
 }
 
 func IDResolutionEnabled() bool {
@@ -380,9 +385,9 @@ func GetGCSLocationFolder(location string, options GCSLocationOptionsT) string {
 	return s3Location[:lastPos]
 }
 
-func GetGCSLocations(locations []string, options GCSLocationOptionsT) (gcsLocations []string) {
-	for _, location := range locations {
-		gcsLocations = append(gcsLocations, GetGCSLocation(location, options))
+func GetGCSLocations(loadFiles []LoadFile, options GCSLocationOptionsT) (gcsLocations []string) {
+	for _, loadFile := range loadFiles {
+		gcsLocations = append(gcsLocations, GetGCSLocation(loadFile.Location, options))
 	}
 	return
 }
@@ -402,12 +407,11 @@ func GetAzureBlobLocationFolder(location string) string {
 	return s3Location[:lastPos]
 }
 
-func GetS3Locations(locations []string) (s3Locations []string) {
-	for _, location := range locations {
-		s3Location, _ := GetS3Location(location)
-		s3Locations = append(s3Locations, s3Location)
+func GetS3Locations(loadFiles []LoadFile) []LoadFile {
+	for _, loadfile := range loadFiles {
+		loadfile.Location, _ = GetS3Location(loadfile.Location)
 	}
-	return
+	return loadFiles
 }
 
 func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {

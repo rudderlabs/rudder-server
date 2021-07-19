@@ -3,12 +3,12 @@ package warehouseutils
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/xitongsys/parquet-go/types"
 )
 
+// TODO: will this be rsDataTypetoParquetType
 var whDataTypeToParquetDataType = map[string]map[string]string{
 	"RS": {
 		"bigint":   PARQUET_INT_64,
@@ -22,90 +22,65 @@ var whDataTypeToParquetDataType = map[string]map[string]string{
 }
 
 func getInt64(val interface{}) (int64, error) {
-	switch val.(type) {
-	case int:
-		return int64(val.(int)), nil
-	case int32:
-		return int64(val.(int32)), nil
-	case int64:
-		return val.(int64), nil
-	case float32:
-		return int64(val.(float32)), nil
-	case float64:
-		return int64(val.(float64)), nil
-	case string:
-		return strconv.ParseInt(val.(string), 10, 64)
-	default:
+	float64Val, ok := val.(float64)
+	if !ok {
 		return 0, fmt.Errorf("failed to convert %v to int64", val)
 	}
+	return int64(float64Val), nil
 }
 
+//	bool, for JSON booleans
 func getBool(val interface{}) (bool, error) {
-	switch val.(type) {
-	case bool:
-		return val.(bool), nil
-	case string:
-		return strconv.ParseBool(val.(string))
-	default:
+	boolVal, ok := val.(bool)
+	if !ok {
 		return false, fmt.Errorf("failed to convert %v to bool", val)
 	}
+	return boolVal, nil
 }
 
+//	float64, for JSON numbers
 func getFloat64(val interface{}) (float64, error) {
-	switch val.(type) {
-	case float32:
-		return float64(val.(float32)), nil
-	case float64:
-		return val.(float64), nil
-	case string:
-		return strconv.ParseFloat(val.(string), 64)
-	default:
+	float64Val, ok := val.(float64)
+	if !ok {
 		return 0, fmt.Errorf("failed to convert %v to float64", val)
 	}
+	return float64Val, nil
 }
 
 func getUnixTimestamp(val interface{}) (int64, error) {
-	switch val.(type) {
-	case time.Time:
-		return val.(time.Time).UnixNano() / int64(time.Millisecond), nil
-	case string:
-		// TODO: see what timestamps can be parsed accd to supported types
-		parsedTS, err := time.Parse(time.RFC3339, val.(string))
-		if err != nil {
-			return 0, err
-		}
-		return parsedTS.UnixNano() / int64(time.Millisecond), nil
-	default:
-		return 0, fmt.Errorf("failed to convert %v to unix timestamp", val)
+	tsString, ok := val.(string)
+	if !ok {
+		return 0, fmt.Errorf("%v is not a valid timestamp string", val)
 	}
-
+	// TODO: see what timestamps can be parsed accd to supported types
+	parsedTS, err := time.Parse(time.RFC3339, tsString)
+	if err != nil {
+		return 0, err
+	}
+	return types.TimeToTIMESTAMP_MICROS(parsedTS, false), nil
 }
 
+//	string, for JSON strings
 func getString(val interface{}) (string, error) {
-	switch val.(type) {
-	case string:
-		return val.(string), nil
-	default:
-		return fmt.Sprintf("%v", val), nil
+	stringVal, ok := val.(string)
+	if !ok {
+		return "", fmt.Errorf("failed to convert %v to string", val)
 	}
+	return stringVal, nil
 }
 
 func GetParquetValue(val interface{}, colType string) (retVal interface{}, err error) {
 	switch colType {
 	case "bigint", "int":
-		// string, int, float
 		retVal, err = getInt64(val)
 		return
 	case "boolean":
-		// string,bool
 		retVal, err = getBool(val)
 		return
 	case "float":
-		// string, float
 		retVal, err = getFloat64(val)
 		return
 	case "datetime":
-		// parse into timestamp -> convert to parquet
 		retVal, err = getUnixTimestamp(val)
 		return
 	case "string", "text":
@@ -115,8 +90,7 @@ func GetParquetValue(val interface{}, colType string) (retVal interface{}, err e
 	return nil, fmt.Errorf("unsupported type for parquet: %s", colType)
 }
 
-// ParquetLoader is common for non-BQ warehouses.
-// If you need any custom logic, either extend this or use destType and if/else/switch.
+// ParquetLoader is used for generating parquet load files.
 type ParquetLoader struct {
 	destType   string
 	Schema     []string
@@ -137,7 +111,7 @@ func (loader *ParquetLoader) IsLoadTimeColumn(columnName string) bool {
 }
 
 func (loader *ParquetLoader) GetLoadTimeFomat(columnName string) string {
-	return misc.RFC3339Milli
+	return time.RFC3339
 }
 
 func (loader *ParquetLoader) AddColumn(columnName string, colType string, val interface{}) {
@@ -146,12 +120,16 @@ func (loader *ParquetLoader) AddColumn(columnName string, colType string, val in
 		val, err = GetParquetValue(val, colType)
 		if err != nil {
 			// TODO : decide
+			// make val nil to avoid writing zero values to the parquet file
+			fmt.Println("add col err", columnName, "", err)
+			val = nil
 		}
 	}
 	loader.Values = append(loader.Values, val)
 }
 
 func (loader *ParquetLoader) AddRow(columnNames []string, row []string) {
+	// TODO : implement
 	// do nothing
 }
 

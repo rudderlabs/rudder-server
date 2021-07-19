@@ -619,6 +619,40 @@ func PrintMemUsage() {
 	pkgLogger.Debug("#########")
 }
 
+type BufferedWriter struct {
+	File   *os.File
+	Writer *bufio.Writer
+}
+
+func CreateBufferedWriter(s string) (w BufferedWriter, err error) {
+	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	if err != nil {
+		return
+	}
+	bufWriter := bufio.NewWriter(file)
+	w = BufferedWriter{
+		File:   file,
+		Writer: bufWriter,
+	}
+	return
+}
+
+func (b BufferedWriter) Write(p []byte) (int, error) {
+	return b.Writer.Write(p)
+}
+
+func (b BufferedWriter) GetLoadFile() *os.File {
+	return b.File
+}
+
+func (b BufferedWriter) Close() error {
+	err := b.Writer.Flush()
+	if err != nil {
+		return err
+	}
+	return b.File.Close()
+}
+
 type GZipWriter struct {
 	File      *os.File
 	GzWriter  *gzip.Writer
@@ -626,7 +660,6 @@ type GZipWriter struct {
 }
 
 func CreateGZ(s string) (w GZipWriter, err error) {
-
 	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
 	if err != nil {
 		return
