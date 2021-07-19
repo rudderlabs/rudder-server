@@ -142,6 +142,5 @@ func (loader *ParquetLoader) WriteToString() (string, error) {
 }
 
 func (loader *ParquetLoader) Write() error {
-	fmt.Println("Writing to file writer", loader.Values)
 	return loader.FileWriter.WriteRow(loader.Values)
 }

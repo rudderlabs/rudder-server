@@ -408,8 +408,8 @@ func GetAzureBlobLocationFolder(location string) string {
 }
 
 func GetS3Locations(loadFiles []LoadFile) []LoadFile {
-	for _, loadfile := range loadFiles {
-		loadfile.Location, _ = GetS3Location(loadfile.Location)
+	for idx, loadfile := range loadFiles {
+		loadFiles[idx].Location, _ = GetS3Location(loadfile.Location)
 	}
 	return loadFiles
 }
