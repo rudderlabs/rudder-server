@@ -1532,7 +1532,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				StagingFileID:       stagingFile.ID,
 				StagingFileLocation: stagingFile.Location,
 				UploadSchema:        job.upload.UploadSchema,
-				MergedSchema:        job.upload.MergedSchema,
 				SourceID:            job.warehouse.Source.ID,
 				SourceName:          job.warehouse.Source.Name,
 				DestinationID:       destID,
@@ -1542,6 +1541,12 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				UniqueLoadGenID:     uniqueLoadGenID,
 				UseRudderStorage:    job.upload.UseRudderStorage,
 				RudderStoragePrefix: misc.GetRudderObjectStoragePrefix(),
+			}
+
+			// set merged schema as upload schema if the wh type is redshift
+			if job.warehouse.Type == "RS" {
+				payload.UploadSchema = job.upload.MergedSchema
+				payload.GenParquetLoadFiles = true
 			}
 
 			payloadJSON, err := json.Marshal(payload)

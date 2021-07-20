@@ -53,7 +53,7 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, c
 		eventLoader.AddColumn("table_name", warehouseutils.DiscardsSchema["table_name"], tableName)
 		if eventLoader.IsLoadTimeColumn("uuid_ts") {
 			timestampFormat := eventLoader.GetLoadTimeFomat("uuid_ts")
-			eventLoader.AddColumn("uuid_ts", "", jobRun.uuidTS.Format(timestampFormat))
+			eventLoader.AddColumn("uuid_ts", warehouseutils.DiscardsSchema["uuid_ts"], jobRun.uuidTS.Format(timestampFormat))
 		}
 		if eventLoader.IsLoadTimeColumn("loaded_at") {
 			timestampFormat := eventLoader.GetLoadTimeFomat("loaded_at")

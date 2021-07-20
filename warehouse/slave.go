@@ -37,7 +37,7 @@ type JobRunT struct {
 func CreateDummyJobRun() *JobRunT {
 	j := JobRunT{
 		job: PayloadT{
-			MergedSchema: map[string]map[string]string{
+			UploadSchema: map[string]map[string]string{
 				"t1": {
 					"rsbool":     "boolean",
 					"rsbigint":   "bigint",
@@ -166,10 +166,6 @@ func (job *PayloadT) getColumnName(columnName string) string {
 	return warehouseutils.ToProviderCase(job.DestinationType, columnName)
 }
 
-func (job *PayloadT) getColumnType(tableName string, columnName string) string {
-	return job.MergedSchema[tableName][columnName]
-}
-
 type loadFileUploadJob struct {
 	tableName  string
 	outputFile warehouseutils.LoadFileWriterI
@@ -269,13 +265,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
 	sortedTableColumnMap := make(map[string][]string)
 
-	schema := job.UploadSchema
-	if job.DestinationType == "RS" {
-		// use the merged schema to generate parquet load files for redshift
-		schema = job.MergedSchema
-	}
-
-	for tableName, columnMap := range schema {
+	for tableName, columnMap := range job.UploadSchema {
 		sortedTableColumnMap[tableName] = []string{}
 		for k := range columnMap {
 			sortedTableColumnMap[tableName] = append(sortedTableColumnMap[tableName], k)
@@ -290,8 +280,8 @@ func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWrite
 	if !ok {
 		var err error
 		outputFilePath := jobRun.getLoadFilePath(tableName)
-		if jobRun.job.DestinationType == "RS" {
-			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.MergedSchema[tableName], outputFilePath, jobRun.job.DestinationType)
+		if jobRun.job.GenParquetLoadFiles {
+			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.UploadSchema[tableName], outputFilePath, jobRun.job.DestinationType)
 		} else {
 			writer, err = misc.CreateGZ(outputFilePath)
 		}
@@ -427,7 +417,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
 				timestampFormat := eventLoader.GetLoadTimeFomat(columnName)
-				eventLoader.AddColumn(job.getColumnName(columnName), job.getColumnType(tableName, columnName), jobRun.uuidTS.Format(timestampFormat))
+				eventLoader.AddColumn(job.getColumnName(columnName), job.UploadSchema[tableName][columnName], jobRun.uuidTS.Format(timestampFormat))
 				continue
 			}
 			columnInfo, ok := batchRouterEvent.getColumnInfo(columnName)
@@ -484,7 +474,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 				columnVal = string(marshalledVal)
 			}
 
-			eventLoader.AddColumn(columnName, columnType, columnVal)
+			eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], columnVal)
 		}
 
 		// TODO: explore if it is better to write to file in a batch instead of one by one

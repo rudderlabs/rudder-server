@@ -15,7 +15,6 @@ type PayloadT struct {
 	StagingFileID       int64
 	StagingFileLocation string
 	UploadSchema        map[string]map[string]string
-	MergedSchema        map[string]map[string]string
 	SourceID            string
 	SourceName          string
 	DestinationID       string
@@ -26,6 +25,7 @@ type PayloadT struct {
 	UseRudderStorage    bool
 	RudderStoragePrefix string
 	Output              []loadFileUploadOutputT
+	GenParquetLoadFiles bool
 }
 
 type ProcessStagingFilesJobT struct {
