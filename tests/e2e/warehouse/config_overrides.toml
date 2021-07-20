@@ -1,9 +1,6 @@
 [JobsDB]
 enableBackup = false
 
-[Processor]
-processSessions = false
-
 [Router]
 maxStatusUpdateWaitInS = 1
 useTestSink = true

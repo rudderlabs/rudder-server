@@ -12,11 +12,10 @@ mocks: ## Generate all mocks
 	$(GO) generate ./...
 
 test: enterprise-prepare-build mocks ## Run all unit tests
-# removed -p(parallel) inorder to pass builds
 ifdef package
-	$(GINKGO) -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests $(package)
+	$(GINKGO) -mod vendor -p --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests $(package)
 else
-	$(GINKGO) -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests ./...
+	$(GINKGO) -mod vendor -p --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests ./...
 endif
 
 build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts
@@ -32,7 +31,7 @@ ifeq ($(RACE_ENABLED), TRUE)
 	$(eval BUILD_OPTIONS = $(BUILD_OPTIONS) -race -o rudder-server-with-race)
 endif
 	$(GO) build $(BUILD_OPTIONS) -mod vendor -a -installsuffix cgo -ldflags="$(LDFLAGS)"
-	$(GO) build -o build/wait-for-go/wait-for-go build/wait-for-go/wait-for.go 
+	$(GO) build -o build/wait-for-go/wait-for-go build/wait-for-go/wait-for.go
 
 run: prepare-build ## Run rudder-server using go run
 	$(GO) run -mod=vendor main.go

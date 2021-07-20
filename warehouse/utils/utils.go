@@ -96,7 +96,7 @@ func init() {
 
 func loadConfig() {
 	IdentityEnabledWarehouses = []string{"SNOWFLAKE", "BQ"}
-	enableIDResolution = config.GetBool("Warehouse.enableIDResolution", false)
+	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 }
 
@@ -166,6 +166,22 @@ type TableSchemaDiffT struct {
 type QueryResult struct {
 	Columns []string
 	Values  [][]string
+}
+
+type PendingEventsRequestT struct {
+	SourceID  string `json:"source_id"`
+	TaskRunID string `json:"task_run_id"`
+}
+
+type PendingEventsResponseT struct {
+	PendingEvents            bool  `json:"pending_events"`
+	PendingStagingFilesCount int64 `json:"pending_staging_files"`
+	PendingUploadCount       int64 `json:"pending_uploads"`
+}
+
+type TriggerUploadRequestT struct {
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
 }
 
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {

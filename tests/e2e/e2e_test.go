@@ -23,7 +23,7 @@ var gatewayDBCheckBufferInS int = 15
 var jobSuccessStatus string = "succeeded"
 
 var _ = BeforeSuite(func() {
-	time.Sleep(300 * time.Second)
+	// time.Sleep(300 * time.Second)
 	var err error
 	psqlInfo := jobsdb.GetConnectionString()
 	dbHandle, err = sql.Open("postgres", psqlInfo)
