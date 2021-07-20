@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../../mocks/services/dedup/mock_dedup.go -package mock_dedup github.com/rudderlabs/rudder-server/services/dedup DedupI
+
 package dedup
 
 import (
@@ -31,13 +33,14 @@ var (
 
 func loadConfig() {
 	// Dedup time window in hours
-	config.RegisterDurationConfigVariable(time.Duration(3600), &dedupWindow, true, time.Second, "Dedup.dedupWindowInS")
+	config.RegisterDurationConfigVariable(time.Duration(3600), &dedupWindow, true, time.Second, []string{"Dedup.dedupWindow", "Dedup.dedupWindowInS"}...)
 }
 
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("dedup")
 }
+
 func (d *DedupHandleT) setup(clearDB *bool) {
 	d.stats = stats.DefaultStats
 	badgerLogger = &loggerT{}

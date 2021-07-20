@@ -47,7 +47,7 @@ var (
 	warehouseURL                       string
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
-	warehouseServiceMaxRetryTimeinHr   time.Duration
+	warehouseServiceMaxRetryTime       time.Duration
 	pkgLogger                          logger.LoggerI
 	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	QueryFilters                       jobsdb.QueryFiltersT
@@ -516,7 +516,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
 			if jobState == jobsdb.Failed.State && isWarehouse && postToWarehouseErr {
 				warehouseServiceFailedTimeLock.RLock()
-				if time.Since(warehouseServiceFailedTime) > warehouseServiceMaxRetryTimeinHr {
+				if time.Since(warehouseServiceFailedTime) > warehouseServiceMaxRetryTime {
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					abortedEvents = append(abortedEvents, job)
 					jobState = jobsdb.Aborted.State
@@ -1218,15 +1218,15 @@ func (brt *HandleT) collectMetrics() {
 
 func loadConfig() {
 	config.RegisterIntConfigVariable(100000, &jobQueryBatchSize, true, 1, "BatchRouter.jobQueryBatchSize")
-	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, "BatchRouter.mainLoopSleepInS")
+	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, []string{"BatchRouter.mainLoopSleep", "BatchRouter.mainLoopSleepInS"}...)
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
 	warehouseURL = misc.GetWarehouseURL()
 	// Time period for diagnosis ticker
-	diagnosisTickerTime = config.GetDuration("Diagnostics.batchRouterTimePeriodInS", 600) * time.Second
-	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTimeinHr, true, time.Hour, "BatchRouter.warehouseServiceMaxRetryTimeinHr")
-	disableEgress = config.GetBool("disableEgress", false)
+	config.RegisterDurationConfigVariable(time.Duration(600), &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(3), &warehouseServiceMaxRetryTime, true, time.Hour, []string{"BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr"}...)
+	config.RegisterBoolConfigVariable(false, &disableEgress, false, "disableEgress")
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 }
@@ -1254,7 +1254,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
 	brt.backendConfig = backendConfig
 	brt.reporting = reporting
-	brt.reportingEnabled = config.GetBool("Reporting.enabled", true)
+	config.RegisterBoolConfigVariable(true, &brt.reportingEnabled, false, "Reporting.enabled")
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
@@ -1275,7 +1275,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.isEnabled = true
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
-	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindowInMins"}...)
+	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
 	brt.netHandle = client

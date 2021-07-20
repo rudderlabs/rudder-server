@@ -47,7 +47,7 @@ func init() {
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	maxRetry = config.GetInt("DestinationConnectionTester.maxRetry", 3)
-	retrySleep = config.GetDuration("DestinationConnectionTester.retrySleepInMS", time.Duration(100)) * time.Millisecond
+	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, false, time.Millisecond, []string{"DestinationConnectionTester.retrySleep", "DestinationConnectionTester.retrySleepInMS"}...)
 	instanceID = config.GetEnv("INSTANCE_ID", "1")
 	rudderConnectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload")
 
