@@ -408,15 +408,15 @@ var _ = Describe("Warehouse", func() {
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(exportedDataState))
-			By("test to query with anonymousId and compare properties and timestamps on table eventName on POSTGRES")
-			Eventually(func() string {
-				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
-				WarehouseConfig := warehouses[destType]
-				_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
-				payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
-				return payload.Label
-			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(label))
+			// By("test to query with anonymousId and compare properties and timestamps on table eventName on POSTGRES")
+			// Eventually(func() string {
+			// 	destType := POSTGRES
+			// 	warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+			// 	WarehouseConfig := warehouses[destType]
+			// 	_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
+			// 	payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
+			// 	return payload.Label
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(label))
 		})
 	})
 	
