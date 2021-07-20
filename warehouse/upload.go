@@ -89,7 +89,8 @@ type UploadT struct {
 	StartLoadFileID      int64
 	EndLoadFileID        int64
 	Status               string
-	Schema               warehouseutils.SchemaT
+	UploadSchema         warehouseutils.SchemaT
+	MergedSchema         warehouseutils.SchemaT
 	Error                json.RawMessage
 	Timings              []map[string]string
 	FirstAttemptAt       time.Time
@@ -195,12 +196,17 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 
 func (job *UploadJobT) generateUploadSchema(schemaHandle *SchemaHandleT) error {
 	schemaHandle.uploadSchema = schemaHandle.consolidateStagingFilesSchemaUsingWarehouseSchema()
+	// set upload schema
 	err := job.setSchema(schemaHandle.uploadSchema)
+	if job.warehouse.Type == "RS" {
+		// set merged schema if the destination is redshift
+		job.upload.MergedSchema = mergeUploadAndLocalSchemas(schemaHandle.uploadSchema, schemaHandle.localSchema)
+	}
 	return err
 }
 
 func (job *UploadJobT) initTableUploads() error {
-	schemaForUpload := job.upload.Schema
+	schemaForUpload := job.upload.UploadSchema
 	destType := job.warehouse.Type
 	tables := make([]string, 0, len(schemaForUpload))
 	for t := range schemaForUpload {
@@ -319,7 +325,7 @@ func (job *UploadJobT) run() (err error) {
 		pkgLogger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
 	}
 	schemaHandle := job.schemaHandle
-	schemaHandle.uploadSchema = job.upload.Schema
+	schemaHandle.uploadSchema = job.upload.UploadSchema
 
 	whManager := job.whManager
 	err = whManager.Setup(job.warehouse, job)
@@ -391,7 +397,7 @@ func (job *UploadJobT) run() (err error) {
 
 		case UpdatedTableUploadsCounts:
 			newStatus = nextUploadState.failed
-			for tableName := range job.upload.Schema {
+			for tableName := range job.upload.UploadSchema {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)
 				err = tableUpload.updateTableEventsCount(job)
 				if err != nil {
@@ -542,7 +548,7 @@ func (job *UploadJobT) run() (err error) {
 }
 
 func (job *UploadJobT) exportUserTables() (err error) {
-	uploadSchema := job.upload.Schema
+	uploadSchema := job.upload.UploadSchema
 	if _, ok := uploadSchema[job.identifiesTableName()]; ok {
 
 		loadTimeStat := job.timerStat("user_tables_load_time")
@@ -565,7 +571,7 @@ func (job *UploadJobT) exportUserTables() (err error) {
 
 func (job *UploadJobT) exportIdentities() (err error) {
 	// Load Identitties if enabled
-	uploadSchema := job.upload.Schema
+	uploadSchema := job.upload.UploadSchema
 	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
 		if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {
 			loadTimeStat := job.timerStat("identity_tables_load_time")
@@ -775,7 +781,7 @@ func (tse *TableSkipError) Error() string {
 }
 
 func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
-	uploadSchema := job.upload.Schema
+	uploadSchema := job.upload.UploadSchema
 	var parallelLoads int
 	var ok bool
 	if parallelLoads, ok = maxParallelLoads[job.warehouse.Type]; !ok {
@@ -846,7 +852,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 }
 
 func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error) {
-	tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
+	tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema)
 	if tableSchemaDiff.Exists {
 		err = job.updateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
@@ -969,7 +975,7 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 		return job.processLoadTableResponse(map[string]error{job.identifiesTableName(): err})
 	}
 	var alteredUserSchema bool
-	if _, ok := job.upload.Schema[job.usersTableName()]; ok {
+	if _, ok := job.upload.UploadSchema[job.usersTableName()]; ok {
 		userTableUpload := NewTableUpload(job.upload.ID, job.usersTableName())
 		userTableUpload.setStatus(TableUploadExecuting)
 		alteredUserSchema, err = job.updateSchema(job.usersTableName())
@@ -1016,7 +1022,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 		errorMap[tableName] = nil
 		tableUpload := NewTableUpload(job.upload.ID, tableName)
 
-		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
+		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema)
 		if tableSchemaDiff.Exists {
 			err := job.updateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
@@ -1171,7 +1177,7 @@ func (job *UploadJobT) setSchema(consolidatedSchema warehouseutils.SchemaT) erro
 	if err != nil {
 		panic(err)
 	}
-	job.upload.Schema = consolidatedSchema
+	job.upload.UploadSchema = consolidatedSchema
 	// return job.setUploadColumns(
 	// 	UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
 	// )
@@ -1519,23 +1525,14 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 
 		var messages []pgnotifier.MessageT
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
-
 			// get updated(local+upload) schemas for all tables in upload schema
-			// TODO: Compute before and store in schemaHandle or somewhere else
-			updatedSchema := warehouseutils.SchemaT{}
-			for tName := range job.upload.Schema {
-				// TODO: decide whether to use local schema or warehouse schema
-				// TODO: add a function to merge schemas - the current merge schema function wont help here since it iterates over the given schemaList and merges schema just for the schemas in the list.It ignores columns in the current schema but not in the upload schema.
-				diff := getTableSchemaDiff(tName, job.schemaHandle.localSchema, job.upload.Schema)
-				updatedSchema[tName] = diff.UpdatedSchema
-			}
 
 			payload := PayloadT{
 				UploadID:            job.upload.ID,
 				StagingFileID:       stagingFile.ID,
 				StagingFileLocation: stagingFile.Location,
-				Schema:              job.upload.Schema,
-				UpdatedSchema:       updatedSchema,
+				UploadSchema:        job.upload.UploadSchema,
+				MergedSchema:        job.upload.MergedSchema,
 				SourceID:            job.warehouse.Source.ID,
 				SourceName:          job.warehouse.Source.Name,
 				DestinationID:       destID,

@@ -9,7 +9,7 @@ import (
 )
 
 // TODO: will this be rsDataTypetoParquetType
-var whDataTypeToParquetDataType = map[string]map[string]string{
+var rudderDataTypeToParquetDataType = map[string]map[string]string{
 	"RS": {
 		"bigint":   PARQUET_INT_64,
 		"int":      PARQUET_INT_64,
@@ -52,7 +52,6 @@ func getUnixTimestamp(val interface{}) (int64, error) {
 	if !ok {
 		return 0, fmt.Errorf("%v is not a valid timestamp string", val)
 	}
-	// TODO: see what timestamps can be parsed accd to supported types
 	parsedTS, err := time.Parse(time.RFC3339, tsString)
 	if err != nil {
 		return 0, err

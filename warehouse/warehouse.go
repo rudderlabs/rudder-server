@@ -704,7 +704,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
-		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
+		upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
 		upload.UseRudderStorage = useRudderStorage.Bool
 		// cloud sources info
 		upload.SourceBatchID = gjson.GetBytes(upload.Metadata, "source_batch_id").String()

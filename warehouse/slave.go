@@ -37,7 +37,7 @@ type JobRunT struct {
 func CreateDummyJobRun() *JobRunT {
 	j := JobRunT{
 		job: PayloadT{
-			UpdatedSchema: map[string]map[string]string{
+			MergedSchema: map[string]map[string]string{
 				"t1": {
 					"rsbool":     "boolean",
 					"rsbigint":   "bigint",
@@ -167,8 +167,7 @@ func (job *PayloadT) getColumnName(columnName string) string {
 }
 
 func (job *PayloadT) getColumnType(tableName string, columnName string) string {
-	// TODO : should be safe to do so. confirm
-	return job.UpdatedSchema[tableName][columnName]
+	return job.MergedSchema[tableName][columnName]
 }
 
 type loadFileUploadJob struct {
@@ -269,7 +268,14 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 // Sort columns per table to maintain same order in load file (needed in case of csv load file)
 func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
 	sortedTableColumnMap := make(map[string][]string)
-	for tableName, columnMap := range job.UpdatedSchema {
+
+	schema := job.UploadSchema
+	if job.DestinationType == "RS" {
+		// use the merged schema to generate parquet load files for redshift
+		schema = job.MergedSchema
+	}
+
+	for tableName, columnMap := range schema {
 		sortedTableColumnMap[tableName] = []string{}
 		for k := range columnMap {
 			sortedTableColumnMap[tableName] = append(sortedTableColumnMap[tableName], k)
@@ -285,9 +291,7 @@ func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWrite
 		var err error
 		outputFilePath := jobRun.getLoadFilePath(tableName)
 		if jobRun.job.DestinationType == "RS" {
-			// TODO: check what happens if table does not exist - specially for discards case
-			// TODO: read both - no. of parallel writers for parquet
-			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.UpdatedSchema[tableName], outputFilePath, jobRun.job.DestinationType)
+			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.MergedSchema[tableName], outputFilePath, jobRun.job.DestinationType)
 		} else {
 			writer, err = misc.CreateGZ(outputFilePath)
 		}
@@ -443,7 +447,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 				columnVal = int(floatVal)
 			}
 
-			dataTypeInSchema, ok := job.Schema[tableName][columnName]
+			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			if ok && columnType != dataTypeInSchema {
 				newColumnVal, ok := handleSchemaChange(dataTypeInSchema, columnType, columnVal)
 				if !ok {

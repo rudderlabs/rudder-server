@@ -9,15 +9,13 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-// TODO : rename schema to uploadSchema and UpdatedScheam to MergedSchema or something similar
-
 type PayloadT struct {
 	BatchID             string
 	UploadID            int64
 	StagingFileID       int64
 	StagingFileLocation string
-	Schema              map[string]map[string]string
-	UpdatedSchema       map[string]map[string]string
+	UploadSchema        map[string]map[string]string
+	MergedSchema        map[string]map[string]string
 	SourceID            string
 	SourceName          string
 	DestinationID       string

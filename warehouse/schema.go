@@ -40,18 +40,17 @@ func handleSchemaChange(existingDataType string, columnType string, columnVal in
 	return newColumnVal, true
 }
 
-func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, gzWriter warehouseutils.LoadFileWriterI) error {
+func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, discardWriter warehouseutils.LoadFileWriterI) error {
 	job := jobRun.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
 	if hasID && hasReceivedAt {
-		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, gzWriter)
+		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, discardWriter)
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
 		eventLoader.AddColumn("received_at", warehouseutils.DiscardsSchema["received_at"], receivedAt)
 		eventLoader.AddColumn("row_id", warehouseutils.DiscardsSchema["row_id"], rowID)
 		eventLoader.AddColumn("table_name", warehouseutils.DiscardsSchema["table_name"], tableName)
-		// TODO: understand this
 		if eventLoader.IsLoadTimeColumn("uuid_ts") {
 			timestampFormat := eventLoader.GetLoadTimeFomat("uuid_ts")
 			eventLoader.AddColumn("uuid_ts", "", jobRun.uuidTS.Format(timestampFormat))
@@ -61,11 +60,12 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, c
 			eventLoader.AddColumn("loaded_at", "", jobRun.uuidTS.Format(timestampFormat))
 		}
 
-		eventData, err := eventLoader.WriteToString()
+		err := eventLoader.Write()
 		if err != nil {
+			pkgLogger.Errorf("[WH]: Failed to write event to discards table: %v", err)
 			return err
 		}
-		gzWriter.WriteGZ(eventData)
+
 	}
 	return nil
 }
@@ -354,4 +354,43 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 		}
 	}
 	return diff
+}
+
+// returns the merged schema(uploadSchema+localSchema) for all tables in uploadSchema
+func mergeUploadAndLocalSchemas(uploadSchema, localSchema warehouseutils.SchemaT) warehouseutils.SchemaT {
+	mergedSchema := warehouseutils.SchemaT{}
+	// iterate over all tables in uploadSchema
+	for uploadTableName, uploadTableSchema := range uploadSchema {
+		if _, ok := mergedSchema[uploadTableName]; !ok {
+			// init map if it does not exist
+			mergedSchema[uploadTableName] = map[string]string{}
+		}
+
+		// uploadSchema becomes the merged schema if the table does not exist in local Schema
+		localTableSchema, ok := localSchema[uploadTableName]
+		if !ok {
+			mergedSchema[uploadTableName] = uploadTableSchema
+			continue
+		}
+
+		// iterate over all columns in localSchema and add them to merged schema
+		for localColName, localColType := range localTableSchema {
+			mergedSchema[uploadTableName][localColName] = localColType
+		}
+
+		// iterate over all columns in uploadSchema and add them to merged schema if required
+		for uploadColName, uploadColType := range uploadTableSchema {
+			localColType, ok := localTableSchema[uploadColName]
+			// add uploadCol to mergedSchema if the col does not exist in localSchema
+			if !ok {
+				mergedSchema[uploadTableName][uploadColName] = uploadColType
+				continue
+			}
+			// change type of uploadCol to text if it was string in localSchema
+			if uploadColType == "text" && localColType == "string" {
+				mergedSchema[uploadTableName][uploadColName] = uploadColType
+			}
+		}
+	}
+	return mergedSchema
 }
