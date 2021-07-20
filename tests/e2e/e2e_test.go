@@ -17,7 +17,7 @@ import (
 
 var dbHandle *sql.DB
 var gatewayDBPrefix string
-var routerDBPrefix string
+ var routerDBPrefix string
 var dbPollFreqInS int = 1
 var gatewayDBCheckBufferInS int = 15
 var jobSuccessStatus string = "succeeded"
@@ -171,7 +171,7 @@ var _ = Describe("E2E", func() {
 		})
 
 		// Source with WriteKey: 1YcF00dWZXGjWpSIkfFnbGuI6OI has one GA and one AMPLITUDE as destinations.
-		It("should create router job for both GA and AM for single event request", func() {
+		It("should create router job for both GA and WEBHOOK for single event request", func() {
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			//initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 			helpers.SendEventRequest(helpers.EventOptsT{
