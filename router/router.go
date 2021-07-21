@@ -1602,7 +1602,7 @@ func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
 	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
-	PerDestRouterDestinationsList = strings.Split(config.GetString("router.routerPerDestination", ""), ",")
+	PerDestRouterDestinationsList = []string{"WEBHOOK"}
 }
 
 func (rt *HandleT) paramsSetup() {
