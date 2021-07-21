@@ -1663,7 +1663,6 @@ func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]struct{}
 		}
 		jd.markClearEmptyResult(ds, []string{NotProcessed.State}, []string{cv}, nil, hasJobs, nil)
 	}
-	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
 }
 
 func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, copyID bool, jobList []*JobT) error {
@@ -2310,7 +2309,6 @@ func (jd *HandleT) migrateDSLoop() {
 func (jd *HandleT) backupDSLoop() {
 	for {
 		time.Sleep(backupCheckSleepDuration)
-		jd.logger.Info("BackupDS check:Start")
 		backupDSRange := jd.getBackupDSRange()
 		// check if non empty dataset is present to backup
 		// else continue
