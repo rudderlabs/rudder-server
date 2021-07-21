@@ -280,7 +280,7 @@ func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWrite
 	if !ok {
 		var err error
 		outputFilePath := jobRun.getLoadFilePath(tableName)
-		if jobRun.job.GenParquetLoadFiles {
+		if jobRun.job.LoadFileType == LOAD_FILE_TYPE_PARQUET {
 			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.UploadSchema[tableName], outputFilePath, jobRun.job.DestinationType)
 		} else {
 			writer, err = misc.CreateGZ(outputFilePath)

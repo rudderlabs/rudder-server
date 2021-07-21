@@ -9,6 +9,12 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+const (
+	LOAD_FILE_TYPE_CSV     = "csv"
+	LOAD_FILE_TYPE_JSON    = "json"
+	LOAD_FILE_TYPE_PARQUET = "parquet"
+)
+
 type PayloadT struct {
 	BatchID             string
 	UploadID            int64
@@ -25,7 +31,7 @@ type PayloadT struct {
 	UseRudderStorage    bool
 	RudderStoragePrefix string
 	Output              []loadFileUploadOutputT
-	GenParquetLoadFiles bool
+	LoadFileType        string
 }
 
 type ProcessStagingFilesJobT struct {

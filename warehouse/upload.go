@@ -1541,12 +1541,12 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				UniqueLoadGenID:     uniqueLoadGenID,
 				UseRudderStorage:    job.upload.UseRudderStorage,
 				RudderStoragePrefix: misc.GetRudderObjectStoragePrefix(),
+				LoadFileType:        getLoadFileType(job.warehouse.Type),
 			}
 
 			// set merged schema as upload schema if the wh type is redshift
 			if job.warehouse.Type == "RS" {
 				payload.UploadSchema = job.upload.MergedSchema
-				payload.GenParquetLoadFiles = true
 			}
 
 			payloadJSON, err := json.Marshal(payload)
@@ -1921,4 +1921,15 @@ func initializeStateMachine() {
 	createRemoteSchemaState.nextState = exportDataState
 	exportDataState.nextState = nil
 	abortState.nextState = nil
+}
+
+func getLoadFileType(wh string) string {
+	switch wh {
+	case "BQ":
+		return LOAD_FILE_TYPE_JSON
+	case "RS":
+		return LOAD_FILE_TYPE_PARQUET
+	default:
+		return LOAD_FILE_TYPE_CSV
+	}
 }
