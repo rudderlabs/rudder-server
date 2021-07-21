@@ -82,6 +82,7 @@ func (om *OperationManagerT) InsertOperation(payload []byte) (int64, error) {
 	if err != nil {
 		return -1, err
 	}
+	defer stmt.Close()
 
 	row := stmt.QueryRow("CLEAR", payload, false, "queued")
 	var opID int64
