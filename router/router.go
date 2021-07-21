@@ -1454,11 +1454,11 @@ func (rt *HandleT) getPendingJobs(toQuery int) []*jobsdb.JobT {
 	queryParams := jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery, ParameterFilters: rt.params}
 
 	retryList := rt.jobsDB.GetToRetry(queryParams)
-	toQuery -= len(retryList)
+	queryParams.Count -= len(retryList)
 	throttledList := rt.jobsDB.GetThrottled(queryParams)
-	toQuery -= len(throttledList)
+	queryParams.Count -= len(throttledList)
 	waitList := rt.jobsDB.GetWaiting(queryParams) //Jobs send to waiting state
-	toQuery -= len(waitList)
+	queryParams.Count -= len(waitList)
 	unprocessedList := rt.jobsDB.GetUnprocessed(queryParams)
 	combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
 
