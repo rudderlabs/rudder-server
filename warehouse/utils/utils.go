@@ -97,6 +97,12 @@ var DiscardsSchema = map[string]string{
 	"uuid_ts":      "datetime",
 }
 
+const (
+	LOAD_FILE_TYPE_CSV     = "csv"
+	LOAD_FILE_TYPE_JSON    = "json"
+	LOAD_FILE_TYPE_PARQUET = "parquet"
+)
+
 var pkgLogger logger.LoggerI
 
 func init() {
@@ -152,6 +158,7 @@ type UploaderI interface {
 	ShouldOnDedupUseNewRecord() bool
 	UseRudderStorage() bool
 	GetLoadFileGenStartTIme() time.Time
+	GetLoadFileType() string
 }
 
 type GetLoadFilesOptionsT struct {
@@ -638,4 +645,15 @@ func GetTempFileExtension(destType string) string {
 		return "json.gz"
 	}
 	return "csv.gz"
+}
+
+func GetLoadFileType(wh string) string {
+	switch wh {
+	case "BQ":
+		return LOAD_FILE_TYPE_JSON
+	case "RS":
+		return LOAD_FILE_TYPE_PARQUET
+	default:
+		return LOAD_FILE_TYPE_CSV
+	}
 }

@@ -108,6 +108,7 @@ type UploadT struct {
 	SourceTaskRunID string
 	SourceJobID     string
 	SourceJobRunID  string
+	LoadFileType    string
 }
 
 type UploadJobT struct {
@@ -1532,6 +1533,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				StagingFileID:       stagingFile.ID,
 				StagingFileLocation: stagingFile.Location,
 				UploadSchema:        job.upload.UploadSchema,
+				LoadFileType:        job.upload.LoadFileType,
 				SourceID:            job.warehouse.Source.ID,
 				SourceName:          job.warehouse.Source.Name,
 				DestinationID:       destID,
@@ -1541,7 +1543,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				UniqueLoadGenID:     uniqueLoadGenID,
 				UseRudderStorage:    job.upload.UseRudderStorage,
 				RudderStoragePrefix: misc.GetRudderObjectStoragePrefix(),
-				LoadFileType:        getLoadFileType(job.warehouse.Type),
 			}
 
 			// set merged schema as upload schema if the wh type is redshift
@@ -1825,6 +1826,10 @@ func (job *UploadJobT) GetLoadFileGenStartTIme() time.Time {
 	return warehouseutils.GetLoadFileGenTime(job.upload.TimingsObj)
 }
 
+func (job *UploadJobT) GetLoadFileType() string {
+	return job.upload.LoadFileType
+}
+
 /*
  * State Machine for upload job lifecycle
  */
@@ -1921,15 +1926,4 @@ func initializeStateMachine() {
 	createRemoteSchemaState.nextState = exportDataState
 	exportDataState.nextState = nil
 	abortState.nextState = nil
-}
-
-func getLoadFileType(wh string) string {
-	switch wh {
-	case "BQ":
-		return LOAD_FILE_TYPE_JSON
-	case "RS":
-		return LOAD_FILE_TYPE_PARQUET
-	default:
-		return LOAD_FILE_TYPE_CSV
-	}
 }

@@ -433,6 +433,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
 		"source_job_id":      jsonUploadsList[0].SourceJobID,
 		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
+		"load_file_type":     warehouseutils.GetLoadFileType(wh.destType),
 	}
 	if isUploadTriggered {
 		// set priority to 50 if the upload was manually triggered
@@ -712,6 +713,8 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		upload.SourceTaskRunID = gjson.GetBytes(upload.Metadata, "source_task_run_id").String()
 		upload.SourceJobID = gjson.GetBytes(upload.Metadata, "source_job_id").String()
 		upload.SourceJobRunID = gjson.GetBytes(upload.Metadata, "source_job_run_id").String()
+		// load file type
+		upload.LoadFileType = gjson.GetBytes(upload.Metadata, "load_file_type").String()
 
 		_, upload.FirstAttemptAt = warehouseutils.TimingFromJSONString(firstTiming)
 		var lastStatus string
