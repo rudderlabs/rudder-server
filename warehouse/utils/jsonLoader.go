@@ -11,10 +11,11 @@ const LOADED_AT_COLUMN = "loaded_at"
 type JsonLoader struct {
 	destType   string
 	columnData map[string]interface{}
+	fileWriter     LoadFileWriterI
 }
 
-func NewJSONLoader(destType string) *JsonLoader {
-	loader := &JsonLoader{destType: destType}
+func NewJSONLoader(destType string, writer LoadFileWriterI) *JsonLoader {
+	loader := &JsonLoader{destType: destType, fileWriter: writer}
 	loader.columnData = make(map[string]interface{})
 	return loader
 }
@@ -56,4 +57,13 @@ func (loader *JsonLoader) WriteToString() (string, error) {
 		return "", err
 	}
 	return string(jsonData) + "\n", nil
+}
+
+func (loader *JsonLoader) Write() error {
+	eventData, err := loader.WriteToString()
+	if err != nil {
+		return err
+	}
+
+	return loader.fileWriter.WriteGZ(eventData)
 }

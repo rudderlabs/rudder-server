@@ -11,14 +11,15 @@ import (
 // CsvLoader is common for non-BQ warehouses.
 // If you need any custom logic, either extend this or use destType and if/else/switch.
 type CsvLoader struct {
-	destType  string
-	csvRow    []string
-	buff      bytes.Buffer
-	csvWriter *csv.Writer
+	destType   string
+	csvRow     []string
+	buff       bytes.Buffer
+	csvWriter  *csv.Writer
+	fileWriter LoadFileWriterI
 }
 
-func NewCSVLoader(destType string) *CsvLoader {
-	loader := &CsvLoader{destType: destType}
+func NewCSVLoader(destType string, writer LoadFileWriterI) *CsvLoader {
+	loader := &CsvLoader{destType: destType, fileWriter: writer}
 	loader.csvRow = []string{}
 	loader.buff = bytes.Buffer{}
 	loader.csvWriter = csv.NewWriter(&loader.buff)
@@ -45,6 +46,7 @@ func (loader *CsvLoader) AddRow(columnNames []string, row []string) {
 func (loader *CsvLoader) AddEmptyColumn(columnName string) {
 	loader.AddColumn(columnName, "", "")
 }
+
 func (loader *CsvLoader) WriteToString() (string, error) {
 	err := loader.csvWriter.Write(loader.csvRow)
 	if err != nil {
@@ -53,4 +55,13 @@ func (loader *CsvLoader) WriteToString() (string, error) {
 	}
 	loader.csvWriter.Flush()
 	return loader.buff.String(), nil
+}
+
+func (loader *CsvLoader) Write() error {
+	eventData, err := loader.WriteToString()
+	if err != nil {
+		return err
+	}
+
+	return loader.fileWriter.WriteGZ(eventData)
 }

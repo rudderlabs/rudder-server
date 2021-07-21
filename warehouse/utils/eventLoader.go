@@ -12,18 +12,14 @@ type EventLoader interface {
 	Write() error
 }
 
-// type Writer interface {
-// 	Write(p []byte) (n int, err error)
-// 	WriteRow(p []interface{}) error
-// 	WriteString(p string) error
-// 	Close() error
-// 	GetLoadFile() *os.File
-// }
-
+// TODO : use the load file type from payloadT here - identity resolution does not have access to payloadT
 func GetNewEventLoader(destinationType string, w LoadFileWriterI) EventLoader {
-	// if destinationType == "BQ" {
-	// 	return NewJSONLoader(destinationType)
-	// }
-	// return NewCSVLoader(destinationType)
-	return NewParquetLoader(destinationType, w)
+	switch destinationType {
+	case "BQ":
+		return NewJSONLoader(destinationType, w)
+	case "RS":
+		return NewParquetLoader(destinationType, w)
+	default:
+		return NewCSVLoader(destinationType, w)
+	}
 }
