@@ -413,7 +413,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 			return nil, err
 		}
 
-		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, writer)
+		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
 				timestampFormat := eventLoader.GetLoadTimeFomat(columnName)

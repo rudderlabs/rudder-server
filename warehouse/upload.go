@@ -1545,8 +1545,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				RudderStoragePrefix: misc.GetRudderObjectStoragePrefix(),
 			}
 
-			// set merged schema as upload schema if the wh type is redshift
-			if job.warehouse.Type == "RS" {
+			// set merged schema as upload schema if the load file type is parquet
+			if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 				payload.UploadSchema = job.upload.MergedSchema
 			}
 

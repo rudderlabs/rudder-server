@@ -13,11 +13,11 @@ type EventLoader interface {
 }
 
 // TODO : use the load file type from payloadT here - identity resolution does not have access to payloadT
-func GetNewEventLoader(destinationType string, w LoadFileWriterI) EventLoader {
-	switch destinationType {
-	case "BQ":
+func GetNewEventLoader(destinationType, loadFileType string, w LoadFileWriterI) EventLoader {
+	switch loadFileType {
+	case LOAD_FILE_TYPE_JSON:
 		return NewJSONLoader(destinationType, w)
-	case "RS":
+	case LOAD_FILE_TYPE_PARQUET:
 		return NewParquetLoader(destinationType, w)
 	default:
 		return NewCSVLoader(destinationType, w)
