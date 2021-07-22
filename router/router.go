@@ -1602,7 +1602,13 @@ func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
 	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
-	PerDestRouterDestinationsList = []string{"WEBHOOK"}
+
+	var isMultiWorkspace = config.GetEnvAsBool("HOSTED_SERVICE", false)
+	if !isMultiWorkspace {
+		PerDestRouterDestinationsList = []string{"WEBHOOK"}
+	} else {
+		PerDestRouterDestinationsList = []string{}
+	}
 }
 
 func (rt *HandleT) paramsSetup() {
