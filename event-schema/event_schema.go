@@ -391,7 +391,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 }
 
 func (manager *EventSchemaManagerT) oldestSeenModel(writeKey string) *EventModelT {
-	oldestSeenModel := &EventModelT{}
+	var oldestSeenModel *EventModelT
 	var minLastSeen time.Time
 	for _, eventIdentifierMap := range manager.eventModelMap[WriteKey(writeKey)] {
 		for _, model := range eventIdentifierMap {
@@ -403,19 +403,21 @@ func (manager *EventSchemaManagerT) oldestSeenModel(writeKey string) *EventModel
 	}
 	for _, offloadedModel := range offloadedEventModels[writeKey] {
 		if !offloadedModel.LastSeen.IsZero() && (offloadedModel.LastSeen.Sub(minLastSeen).Seconds() <= 0 || minLastSeen.IsZero()) {
-			oldestSeenModel.UUID = offloadedModel.UUID
-			oldestSeenModel.WriteKey = offloadedModel.WriteKey
-			oldestSeenModel.EventType = offloadedModel.EventType
-			oldestSeenModel.EventIdentifier = offloadedModel.EventIdentifier
-			oldestSeenModel.LastSeen = offloadedModel.LastSeen
+			model := EventModelT{}
+			model.UUID = offloadedModel.UUID
+			model.WriteKey = offloadedModel.WriteKey
+			model.EventType = offloadedModel.EventType
+			model.EventIdentifier = offloadedModel.EventIdentifier
+			model.LastSeen = offloadedModel.LastSeen
 			minLastSeen = offloadedModel.LastSeen
+			oldestSeenModel = &model
 		}
 	}
 	return oldestSeenModel
 }
 
 func (manager *EventSchemaManagerT) oldestSeenVersion(modelID string) *SchemaVersionT {
-	oldestSeenSchemaVersion := &SchemaVersionT{}
+	var oldestSeenSchemaVersion *SchemaVersionT
 	var minLastSeen time.Time
 	for _, schemaVersion := range manager.schemaVersionMap[modelID] {
 		if !schemaVersion.LastSeen.IsZero() && (schemaVersion.LastSeen.Sub(minLastSeen).Seconds() <= 0 || minLastSeen.IsZero()) {
@@ -425,11 +427,13 @@ func (manager *EventSchemaManagerT) oldestSeenVersion(modelID string) *SchemaVer
 	}
 	for _, offloadedVersion := range offloadedSchemaVersions[modelID] {
 		if !offloadedVersion.LastSeen.IsZero() && (offloadedVersion.LastSeen.Sub(minLastSeen).Seconds() <= 0 || minLastSeen.IsZero()) {
-			oldestSeenSchemaVersion.UUID = offloadedVersion.UUID
-			oldestSeenSchemaVersion.EventModelID = offloadedVersion.EventModelID
-			oldestSeenSchemaVersion.SchemaHash = offloadedVersion.SchemaHash
-			oldestSeenSchemaVersion.LastSeen = offloadedVersion.LastSeen
+			version := SchemaVersionT{}
+			version.UUID = offloadedVersion.UUID
+			version.EventModelID = offloadedVersion.EventModelID
+			version.SchemaHash = offloadedVersion.SchemaHash
+			version.LastSeen = offloadedVersion.LastSeen
 			minLastSeen = offloadedVersion.LastSeen
+			oldestSeenSchemaVersion = &version
 		}
 	}
 	return oldestSeenSchemaVersion
