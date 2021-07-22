@@ -3,6 +3,7 @@ package webhook
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"sync/atomic"
@@ -107,6 +108,44 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.LogRequest(r)
 	webhook.gwHandle.IncrementRecvCount(1)
 	atomic.AddUint64(&webhook.recvCount, 1)
+	if r.Method == "GET" {
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Could not parse form", 400)
+		return
+	}
+
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, "Could not parse multipartForm", 400)
+		return
+	}
+
+	var postFrom = r.PostForm
+	var multipartForm = r.MultipartForm
+	var jsonByte []byte
+	var err error
+
+	if len(postFrom) != 0 {
+		jsonByte, err = json.Marshal(postFrom)
+		if err != nil {
+			http.Error(w, "Could not marshal form data", 400)
+			return
+		}
+	}
+	if r.MultipartForm != nil {
+		jsonByte, err = json.Marshal(multipartForm)
+		fmt.Println(err)
+	}
+	if len(postFrom) != 0 || multipartForm != nil {
+		r, err = http.NewRequest("POST", r.URL.String(), bytes.NewBuffer(jsonByte))
+		if err != nil {
+			http.Error(w, "Could not marshal form data", 400)
+			return
+		}
+		r.Header.Set("Content-Type", "[application/json]")
+	}
 
 	writeKey, ok := parseWriteKey(r)
 	if !ok {
