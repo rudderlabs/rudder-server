@@ -12,7 +12,6 @@ type EventLoader interface {
 	Write() error
 }
 
-// TODO : use the load file type from payloadT here - identity resolution does not have access to payloadT
 func GetNewEventLoader(destinationType, loadFileType string, w LoadFileWriterI) EventLoader {
 	switch loadFileType {
 	case LOAD_FILE_TYPE_JSON:

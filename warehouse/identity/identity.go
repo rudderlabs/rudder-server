@@ -157,7 +157,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 	columnNames := []string{"merge_property_type", "merge_property_value", "rudder_id", "updated_at"}
 	for _, row := range rows {
 		eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type, idr.Uploader.GetLoadFileType(), gzWriter)
-		// TODO : figure out if we need to support add row for parquet
+		// TODO : support add row for parquet loader
 		eventLoader.AddRow(columnNames, row)
 		data, _ := eventLoader.WriteToString()
 		gzWriter.WriteGZ(data)
@@ -328,7 +328,7 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 			}
 			rowData = append(rowData, prop1Type.String, prop1Val.String, prop2Type.String, prop2Val.String)
 			for i, columnName := range columnNames {
-				// TODO : what is the type here? understand
+				// TODO : use proper column type here
 				eventLoader.AddColumn(columnName, "", rowData[i])
 			}
 			rowString, _ := eventLoader.WriteToString()

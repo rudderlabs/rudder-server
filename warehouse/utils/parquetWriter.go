@@ -19,27 +19,16 @@ const (
 	PARQUET_TIMESTAMP_MICROS = "type=INT64, convertedtype=TIMESTAMP_MICROS, repetitiontype=OPTIONAL"
 )
 
-// TODO: move to warehouse utils
-func getSortedTableColumns(schema TableSchemaT) []string {
-	sortedColumns := []string{}
-	for col := range schema {
-		sortedColumns = append(sortedColumns, col)
-	}
-	sort.Strings(sortedColumns)
-	return sortedColumns
-}
-
-func getParquetSchema(schema TableSchemaT, destType string) ([]string, error) {
-	whTypeMap, ok := rudderDataTypeToParquetDataType[destType]
-	if !ok {
-		return nil, errors.New("unsupported warehouse for parquet load files")
-	}
-	pSchema := []string{}
-	for _, col := range getSortedTableColumns(schema) {
-		pType := fmt.Sprintf("name=%s, %s", ToProviderCase(destType, col), whTypeMap[schema[col]])
-		pSchema = append(pSchema, pType)
-	}
-	return pSchema, nil
+var rudderDataTypeToParquetDataType = map[string]map[string]string{
+	"RS": {
+		"bigint":   PARQUET_INT_64,
+		"int":      PARQUET_INT_64,
+		"boolean":  PARQUET_BOOLEAN,
+		"float":    PARQUET_DOUBLE,
+		"string":   PARQUET_STRING,
+		"text":     PARQUET_STRING,
+		"datetime": PARQUET_TIMESTAMP_MICROS,
+	},
 }
 
 type ParquetWriter struct {
@@ -48,7 +37,6 @@ type ParquetWriter struct {
 	Schema        []string
 }
 
-// TODOD: should we move parquet writer to misc ?
 func CreateParquetWriter(schema TableSchemaT, outputFilePath string, destType string) (*ParquetWriter, error) {
 	bufWriter, err := misc.CreateBufferedWriter(outputFilePath)
 	if err != nil {
@@ -94,4 +82,26 @@ func (p *ParquetWriter) Write(b []byte) (int, error) {
 
 func (p *ParquetWriter) GetLoadFile() *os.File {
 	return p.FileWriter.GetLoadFile()
+}
+
+func getSortedTableColumns(schema TableSchemaT) []string {
+	sortedColumns := []string{}
+	for col := range schema {
+		sortedColumns = append(sortedColumns, col)
+	}
+	sort.Strings(sortedColumns)
+	return sortedColumns
+}
+
+func getParquetSchema(schema TableSchemaT, destType string) ([]string, error) {
+	whTypeMap, ok := rudderDataTypeToParquetDataType[destType]
+	if !ok {
+		return nil, errors.New("unsupported warehouse for parquet load files")
+	}
+	pSchema := []string{}
+	for _, col := range getSortedTableColumns(schema) {
+		pType := fmt.Sprintf("name=%s, %s", ToProviderCase(destType, col), whTypeMap[schema[col]])
+		pSchema = append(pSchema, pType)
+	}
+	return pSchema, nil
 }

@@ -57,7 +57,7 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, c
 		}
 		if eventLoader.IsLoadTimeColumn("loaded_at") {
 			timestampFormat := eventLoader.GetLoadTimeFomat("loaded_at")
-			eventLoader.AddColumn("loaded_at", "", jobRun.uuidTS.Format(timestampFormat))
+			eventLoader.AddColumn("loaded_at", "datetime", jobRun.uuidTS.Format(timestampFormat))
 		}
 
 		err := eventLoader.Write()
@@ -211,14 +211,7 @@ func (sHandle *SchemaHandleT) safeName(columnName string) string {
 }
 
 func (sh *SchemaHandleT) getDiscardsSchema() map[string]string {
-	discards := map[string]string{
-		// sh.safeName("table_name"):   "string",
-		// sh.safeName("row_id"):       "string",
-		// sh.safeName("column_name"):  "string",
-		// sh.safeName("column_value"): "string",
-		// sh.safeName("received_at"):  "datetime",
-		// sh.safeName("uuid_ts"):      "datetime",
-	}
+	discards := map[string]string{}
 	for colName, colType := range warehouseutils.DiscardsSchema {
 		discards[sh.safeName(colName)] = colType
 	}

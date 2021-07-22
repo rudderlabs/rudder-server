@@ -339,6 +339,7 @@ func (event *BatchRouterEventT) getColumnInfo(columnName string) (columnInfo Col
 //
 
 func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
+
 	jobRun := JobRunT{
 		job:          job,
 		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
@@ -480,15 +481,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 			eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], columnVal)
 		}
 
-		// TODO: explore if it is better to write to file in a batch instead of one by one
 		// Completed parsing all columns, write single event to the file
-		// eventData, err := eventLoader.WriteToString()
-		// if err != nil {
-		// 	pkgLogger.Errorf("[WH]: Failed to write event to string: %v", err)
-		// 	return loadFileUploadOutputs, err
-		// }
-		// // TODO: dont ignore error here
-		// writer.WriteGZ(eventData)
 		err = eventLoader.Write()
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to write event: %v", err)

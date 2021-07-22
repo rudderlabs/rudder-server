@@ -200,6 +200,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	var manifest S3ManifestT
 	for idx, loadFile := range loadFiles {
 		manifestEntry := S3ManifestEntryT{Url: loadFile.Location, Mandatory: true}
+		// add contentLength to manifest entry if it exists
 		contentLength := gjson.Get(string(loadFiles[idx].Metadata), "content_length")
 		if contentLength.Exists() {
 			manifestEntry.Metadata.ContentLength = contentLength.Int()
@@ -257,7 +258,7 @@ func (rs *HandleT) dropStagingTables(stagingTableNames []string) {
 }
 
 func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
-	manifestLocation, err := rs.generateManifest(tableName, tableSchemaAfterUpload)
+	manifestLocation, err := rs.generateManifest(tableName, tableSchemaInUpload)
 	if err != nil {
 		return
 	}
@@ -314,8 +315,6 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
 			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token, region)
 	}
-	// TODO: remove this print
-	fmt.Println("\n\n\n SQL copy parquet: ", sqlStatement)
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",

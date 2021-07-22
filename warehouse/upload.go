@@ -199,8 +199,8 @@ func (job *UploadJobT) generateUploadSchema(schemaHandle *SchemaHandleT) error {
 	schemaHandle.uploadSchema = schemaHandle.consolidateStagingFilesSchemaUsingWarehouseSchema()
 	// set upload schema
 	err := job.setSchema(schemaHandle.uploadSchema)
-	if job.warehouse.Type == "RS" {
-		// set merged schema if the destination is redshift
+	if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+		// set merged schema if the loadFileType is parquet
 		job.upload.MergedSchema = mergeUploadAndLocalSchemas(schemaHandle.uploadSchema, schemaHandle.localSchema)
 	}
 	return err
@@ -1526,8 +1526,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 
 		var messages []pgnotifier.MessageT
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
-			// get updated(local+upload) schemas for all tables in upload schema
-
 			payload := PayloadT{
 				UploadID:            job.upload.ID,
 				StagingFileID:       stagingFile.ID,

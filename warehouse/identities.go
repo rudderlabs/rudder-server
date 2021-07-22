@@ -237,7 +237,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		DestinationID:   warehouse.Destination.ID,
 		DestinationType: wh.poulateHistoricIdentitiesDestType(),
 		Status:          Waiting,
-		UploadSchema:          schema,
+		UploadSchema:    schema,
 	}
 
 	return upload

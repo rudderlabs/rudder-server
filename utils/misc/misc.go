@@ -682,10 +682,6 @@ func (w GZipWriter) WriteGZ(s string) error {
 	return err
 }
 
-func (w GZipWriter) WriteString(s string) error {
-	return w.WriteGZ(s)
-}
-
 func (w GZipWriter) Write(b []byte) (count int, err error) {
 	count, err = w.BufWriter.Write(b)
 	if err != nil {
