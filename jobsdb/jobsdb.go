@@ -1402,7 +1402,7 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	jd.assertError(err)
 
 	//Bursting Cache for this dataset
-	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, dropDSFromCache, nil)
+	jd.invalidateCache(ds)
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
@@ -1410,6 +1410,19 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	}
 	jd.statDropDSPeriod.Start()
 	jd.isStatDropDSPeriodInitialized = true
+}
+
+func (jd *HandleT) invalidateCache(ds dataSetT) {
+	if strings.HasPrefix(ds.JobTable, "pre_drop_") {
+		parentDS := dataSetT{
+			JobTable:       strings.Replace(ds.JobTable, "pre_drop_", "", -1),
+			JobStatusTable: strings.Replace(ds.JobStatusTable, "pre_drop_", "", -1),
+			Index:          ds.Index,
+		}
+		jd.markClearEmptyResult(parentDS, []string{}, []string{}, nil, dropDSFromCache, nil)
+	} else {
+		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, dropDSFromCache, nil)
+	}
 }
 
 //Rename a dataset
