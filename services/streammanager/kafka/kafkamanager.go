@@ -68,6 +68,7 @@ func init() {
 	loadConfig()
 	loadCertificate()
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("kafka")
+	// sarama.Logger = log.New(os.Stdout, "[Sarama] ", log.LstdFlags)
 }
 
 func loadConfig() {
@@ -94,9 +95,11 @@ func getDefaultConfiguration() *sarama.Config {
 	config.Net.WriteTimeout = kafkaWriteTimeout
 	config.Net.ReadTimeout = kafkaWriteTimeout
 	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
-	config.Producer.RequiredAcks = sarama.WaitForAll
+	// config.Producer.RequiredAcks = sarama.WaitForAll
+	config.Producer.RequiredAcks = sarama.WaitForLocal
 	config.Producer.Return.Successes = true
 	config.Version = sarama.V1_0_0_0
+	config.Metadata.Retry.Max = 1
 	return config
 }
 
