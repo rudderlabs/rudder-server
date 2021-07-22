@@ -1499,6 +1499,7 @@ func (rt *HandleT) readAndProcess() int {
 
 	var statusList []*jobsdb.JobStatusT
 	var drainList []*jobsdb.JobStatusT
+	var drainJobList []*jobsdb.JobT
 	drainCountByDest := make(map[string]int)
 
 	var toProcess []workerJobT
@@ -1519,6 +1520,7 @@ func (rt *HandleT) readAndProcess() int {
 				ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or confifgured to be aborted via ENV" }`),
 			}
 			drainList = append(drainList, &status)
+			drainJobList = append(drainJobList, job)
 			if _, ok := drainCountByDest[destID]; !ok {
 				drainCountByDest[destID] = 0
 			}
@@ -1550,6 +1552,11 @@ func (rt *HandleT) readAndProcess() int {
 	}
 	//Mark the jobs as aborted
 	if len(drainList) > 0 {
+		err = rt.errorDB.Store(drainJobList)
+		if err != nil {
+			pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
+			panic(err)
+		}
 		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
