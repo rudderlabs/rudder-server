@@ -40,8 +40,6 @@ func init() {
 	config.RegisterDurationConfigVariable(time.Duration(48), &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
 	config.RegisterDurationConfigVariable(time.Duration(24), &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
 	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
-
-	// TODO: is this a good idea to put this in init. or some module should explicitly call. lets call from processor init
 }
 
 func GetFailedEventsManager() FailedEventsManagerI {

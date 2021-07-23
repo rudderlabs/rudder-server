@@ -508,12 +508,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 		if jobState == jobsdb.Failed.State && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 			abortedEvents = append(abortedEvents, job)
-			if parameters.SourceTaskRunID != "" {
-				if _, ok := jobRunIDAbortedEventsMap[parameters.SourceTaskRunID]; !ok {
-					jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = []*router.FailedEventRowT{}
-				}
-				jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceJobRunID], &router.FailedEventRowT{DestinationID: parameters.DestinationID, RecordID: parameters.MessageID})
-			}
+			router.SaveSourceFailedEvents(job.Parameters, jobRunIDAbortedEventsMap)
 			jobState = jobsdb.Aborted.State
 		} else {
 			// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
@@ -522,12 +517,7 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 				if time.Since(warehouseServiceFailedTime) > warehouseServiceMaxRetryTimeinHr {
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					abortedEvents = append(abortedEvents, job)
-					if parameters.SourceTaskRunID != "" {
-						if _, ok := jobRunIDAbortedEventsMap[parameters.SourceTaskRunID]; !ok {
-							jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = []*router.FailedEventRowT{}
-						}
-						jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceTaskRunID], &router.FailedEventRowT{DestinationID: parameters.DestinationID, RecordID: parameters.MessageID})
-					}
+					router.SaveSourceFailedEvents(job.Parameters, jobRunIDAbortedEventsMap)
 					jobState = jobsdb.Aborted.State
 				}
 				warehouseServiceFailedTimeLock.RUnlock()

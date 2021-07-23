@@ -355,7 +355,7 @@ func (worker *workerT) workerProcess() {
 
 			if worker.rt.enableBatching {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
-				worker.routerJobs = append(worker.routerJobs, routerJob)			
+				worker.routerJobs = append(worker.routerJobs, routerJob)
 				if len(worker.routerJobs) >= noOfJobsToBatchInAWorker {
 					worker.destinationJobs = worker.batch(worker.routerJobs)
 					worker.processDestinationJobs()
@@ -1179,12 +1179,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		statusList = append(statusList, resp.status)
 		if resp.status.JobState == jobsdb.Aborted.State {
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
-			if parameters.SourceTaskRunID != "" {
-				if _, ok := jobRunIDAbortedEventsMap[parameters.SourceTaskRunID]; !ok {
-					jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = []*FailedEventRowT{}
-				}
-				jobRunIDAbortedEventsMap[parameters.SourceTaskRunID] = append(jobRunIDAbortedEventsMap[parameters.SourceTaskRunID], &FailedEventRowT{DestinationID: parameters.DestinationID, RecordID: parameters.RecordID})
-			}
+			SaveSourceFailedEvents(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
 		}
 
 		//tracking router errors
@@ -1823,4 +1818,17 @@ func (rt *HandleT) Resume() {
 	rt.generatorResumeChannel <- true
 
 	rt.paused = false
+}
+
+func SaveSourceFailedEvents(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
+	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").Str
+	destinationID := gjson.GetBytes(parameters, "destination_id").Str
+	recordID := gjson.GetBytes(parameters, "record_id").Str
+	if taskRunID == "" {
+		return
+	}
+	if _, ok := jobRunIDAbortedEventsMap[taskRunID]; !ok {
+		jobRunIDAbortedEventsMap[taskRunID] = []*FailedEventRowT{}
+	}
+	jobRunIDAbortedEventsMap[taskRunID] = append(jobRunIDAbortedEventsMap[taskRunID], &FailedEventRowT{DestinationID: destinationID, RecordID: recordID})
 }
