@@ -221,7 +221,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	// create temporary table
 	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.ReplaceAll(uuid.NewV4().String(), "-", "")), 63)
-	sqlStatement = fmt.Sprintf(`CREATE TABLE %[2]s (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
+	sqlStatement = fmt.Sprintf(`CREATE TABLE "%[1]s".%[2]s (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
 	pkgLogger.Debugf("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
@@ -386,7 +386,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE TABLE %[5]s as (
+	sqlStatement = fmt.Sprintf(`CREATE TABLE "%[1]s".%[5]s as (
 												(
 													SELECT id, %[4]s FROM "%[1]s"."%[2]s" WHERE id in (SELECT user_id FROM "%[1]s"."%[3]s" WHERE user_id IS NOT NULL)
 												) UNION
@@ -402,7 +402,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE TABLE %[1]s AS (SELECT DISTINCT * FROM
+	sqlStatement = fmt.Sprintf(`CREATE TABLE %[4]s.%[1]s AS (SELECT DISTINCT * FROM
 										(
 											SELECT
 											x.id, %[2]s
@@ -412,6 +412,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		stagingTableName,
 		strings.Join(firstValProps, ","),
 		unionStagingTableName,
+		pg.Namespace,
 	)
 
 	pkgLogger.Debugf("PG: Creating staging table for users: %s\n", sqlStatement)
@@ -492,14 +493,14 @@ func (pg *HandleT) dropStagingTable(stagingTableName string) {
 }
 
 func (pg *HandleT) createTable(name string, columns map[string]string) (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%s" ( %v )`, name, columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, columnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
 }
 
 func (pg *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s`, tableName, columnName, rudderDataTypesMapToPostgres[columnType])
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %s.%s ADD COLUMN IF NOT EXISTS %s %s`, pg.Namespace, tableName, columnName, rudderDataTypesMapToPostgres[columnType])
 	pkgLogger.Infof("PG: Adding column in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return

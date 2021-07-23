@@ -43,14 +43,24 @@ var (
 	enableSuppressUserFeature bool
 	pkgLogger                 logger.LoggerI
 	appHandler                apphandlers.AppHandler
+	ReadTimeout               time.Duration
+	ReadHeaderTimeout         time.Duration
+	WriteTimeout              time.Duration
+	IdleTimeout               time.Duration
+	MaxHeaderBytes            int
 )
 
 var version = "Not an official release. Get the latest release from the github repo."
 var major, minor, commit, buildDate, builtBy, gitURL, patch string
 
 func loadConfig() {
-	warehouseMode = config.GetString("Warehouse.mode", "embedded")
-	enableSuppressUserFeature = config.GetBool("Gateway.enableSuppressUserFeature", true)
+	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
+	config.RegisterBoolConfigVariable(true, &enableSuppressUserFeature, false, "Gateway.enableSuppressUserFeature")
+	config.RegisterDurationConfigVariable(time.Duration(0), &ReadTimeout, false, time.Second, []string{"ReadTimeOut", "ReadTimeOutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0), &ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10), &WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(720), &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
+	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 }
 
 func init() {
@@ -198,11 +208,11 @@ func startStandbyWebHandler() {
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
 		Handler:           bugsnag.Handler(srvMux),
-		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
-		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
-		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 10*time.Second),
-		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
-		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
+		ReadTimeout:       ReadTimeout,
+		ReadHeaderTimeout: ReadHeaderTimeout,
+		WriteTimeout:      WriteTimeout,
+		IdleTimeout:       IdleTimeout,
+		MaxHeaderBytes:    MaxHeaderBytes,
 	}
 	pkgLogger.Fatal(srv.ListenAndServe())
 }

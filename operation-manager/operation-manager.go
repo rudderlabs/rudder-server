@@ -43,7 +43,7 @@ type OperationHandlerI interface {
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("operationmanager")
-	enableOperationsManager = config.GetBool("Operations.enabled", true)
+	config.RegisterBoolConfigVariable(true, &enableOperationsManager, false, "Operations.enabled")
 }
 
 func Setup(gatewayDB, routerDB, batchRouterDB jobsdb.JobsDB) {
