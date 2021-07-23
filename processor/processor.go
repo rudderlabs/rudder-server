@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/router"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -337,6 +338,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 			proc.createSessions()
 		})
 	}
+	rruntime.Go(func() {
+		router.CleanFailedRecordsTableProcess()
+	})
 }
 
 // Start starts this processor's main loops.

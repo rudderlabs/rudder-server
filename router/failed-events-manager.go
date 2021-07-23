@@ -37,11 +37,11 @@ type FailedEventsManagerT struct {
 }
 
 func init() {
-	config.RegisterDurationConfigVariable(48, &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
-	config.RegisterDurationConfigVariable(24, &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
+	config.RegisterDurationConfigVariable(time.Duration(48), &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
+	config.RegisterDurationConfigVariable(time.Duration(24), &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
 	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
 
-	go CleanFailedRecordsTableProcess() // TODO: is this a good idea to put this in init. or some module should explicitly call
+	// TODO: is this a good idea to put this in init. or some module should explicitly call. lets call from processor init
 }
 
 func GetFailedEventsManager() FailedEventsManagerI {
@@ -156,15 +156,16 @@ func CleanFailedRecordsTableProcess() {
 		for rows.Next() {
 			var table string
 			err = rows.Scan(&table)
-			if err != nil && err != sql.ErrNoRows {
-				panic(err)
+			if err != nil {
+				pkgLogger.Errorf("Failed to scan failed keys table %s with error: %v", table, err)
+				return
 			}
 			latestCreatedAtQuery := fmt.Sprintf(`SELECT created_at from %s order by created_at desc limit 1`, table)
 			row := dbHandle.QueryRow(latestCreatedAtQuery)
 			var latestCreatedAt time.Time
 			err = row.Scan(&latestCreatedAtQuery)
 			if err != nil && err != sql.ErrNoRows {
-				panic(err)
+				pkgLogger.Errorf("Failed to fetch records from failed keys table %s with error: %v", table, err)
 			}
 			currentTime := time.Now()
 			diff := currentTime.Sub(latestCreatedAt)
@@ -177,6 +178,6 @@ func CleanFailedRecordsTableProcess() {
 			}
 		}
 		dbHandle.Close()
-		time.Sleep(24 * time.Hour)
+		time.Sleep(failedKeysCleanUpSleep)
 	}
 }
