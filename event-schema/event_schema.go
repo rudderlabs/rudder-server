@@ -650,8 +650,6 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 						manager.deleteFromEventModelCache(model)
 						// manager.deleteModelFromSchemaVersionCache(model)
 						offloadedEventModels[model.WriteKey][eventTypeIdentifier(model.EventType, model.EventIdentifier)] = &OffloadedModelT{UUID: model.UUID, LastSeen: model.LastSeen, WriteKey: model.WriteKey, EventType: model.EventType, EventIdentifier: model.EventIdentifier}
-						manager.deleteFromEventModelCache(model)
-						manager.deleteModelFromSchemaVersionCache(model)
 					}
 				}
 			}
@@ -665,7 +663,6 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 					}
 					manager.deleteFromSchemaVersionCache(&SchemaVersionT{EventModelID: version.EventModelID, SchemaHash: version.SchemaHash})
 					offloadedSchemaVersions[version.EventModelID][version.SchemaHash] = &OffloadedSchemaVersionT{UUID: version.UUID, LastSeen: version.LastSeen, EventModelID: version.EventModelID, SchemaHash: version.SchemaHash}
-					manager.deleteFromSchemaVersionCache(&SchemaVersionT{EventModelID: version.EventModelID, SchemaHash: version.SchemaHash})
 				}
 			}
 		}
