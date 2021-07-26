@@ -53,9 +53,7 @@ var (
 	mainLoopSleep                       time.Duration
 	stagingFilesBatchSize               int
 	crashRecoverWarehouses              []string
-	inProgressMap                       map[string]bool
 	inRecoveryMap                       map[string]bool
-	inProgressMapLock                   sync.RWMutex
 	lastProcessedMarkerMap              map[string]int64
 	lastProcessedMarkerMapLock          sync.RWMutex
 	warehouseMode                       string
@@ -117,6 +115,9 @@ type HandleT struct {
 	workerChannelMap     map[string]chan *UploadJobT
 	workerChannelMapLock sync.RWMutex
 	initialConfigFetched bool
+	inProgressMap        map[string]int64
+	inProgressMapLock    sync.RWMutex
+	areBeingEnqueuedLock sync.RWMutex
 }
 
 type ErrorResponseT struct {
@@ -138,7 +139,6 @@ func loadConfig() {
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
 	config.RegisterDurationConfigVariable(time.Duration(5), &mainLoopSleep, true, time.Second, []string{"Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS"}...)
 	crashRecoverWarehouses = []string{"RS", "POSTGRES", "MSSQL", "AZURE_SYNAPSE"}
-	inProgressMap = map[string]bool{}
 	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
 	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
@@ -199,13 +199,12 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 	rruntime.Go(func() {
 		for {
 			uploadJob := <-workerChan
-			setDestInProgress(uploadJob.warehouse, true)
 			wh.incrementActiveWorkers()
 			err := wh.handleUploadJob(uploadJob)
 			if err != nil {
 				pkgLogger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
 			}
-			setDestInProgress(uploadJob.warehouse, false)
+			wh.removeDestInProgress(uploadJob.warehouse)
 			wh.decrementActiveWorkers()
 		}
 	})
@@ -451,15 +450,18 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	}
 }
 
-func setDestInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
+func (wh *HandleT) setDestInProgress(warehouse warehouseutils.WarehouseT, jobID int64) {
 	identifier := workerIdentifier(warehouse)
-	inProgressMapLock.Lock()
-	defer inProgressMapLock.Unlock()
-	if starting {
-		inProgressMap[identifier] = true
-	} else {
-		delete(inProgressMap, identifier)
-	}
+	wh.inProgressMapLock.Lock()
+	defer wh.inProgressMapLock.Unlock()
+	wh.inProgressMap[identifier] = jobID
+}
+
+func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.WarehouseT) {
+	identifier := workerIdentifier(warehouse)
+	wh.inProgressMapLock.Lock()
+	defer wh.inProgressMapLock.Unlock()
+	delete(wh.inProgressMap, identifier)
 }
 
 func getUploadFreqInS(syncFrequency string) int64 {
@@ -492,19 +494,6 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.War
 	// Process staging files in batches of stagingFilesBatchSize
 	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
 	// Then we create 10 new entries in wh_uploads table each with 100 staging files
-	// for {
-	// 	lastIndex := count + stagingFilesBatchSize
-	// 	if lastIndex >= len(stagingFilesList) {
-	// 		lastIndex = len(stagingFilesList)
-	// 	}
-
-	// 	wh.initUpload(warehouse, stagingFilesList[count:lastIndex])
-	// 	count += stagingFilesBatchSize
-	// 	if count >= len(stagingFilesList) {
-	// 		break
-	// 	}
-	// }
-
 	var stagingFilesInUpload []*StagingFileT
 	var counter int
 	uploadTriggered := isUploadTriggered(warehouse)
@@ -531,6 +520,23 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.War
 	}
 }
 
+func (wh *HandleT) getLatestUploadStatus(warehouse warehouseutils.WarehouseT) (uploadID int64, status string) {
+	sqlStatement := fmt.Sprintf(`SELECT id, status FROM %[1]s WHERE %[1]s.destination_type='%[2]s' AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s' ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseUploadsTable, wh.destType, warehouse.Source.ID, warehouse.Destination.ID)
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&uploadID, &status)
+	if err != nil && err != sql.ErrNoRows {
+		pkgLogger.Errorf(`Error getting latest upload status for warehouse: %v`, err)
+	}
+	return
+}
+
+func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
+	sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE id = %d AND status = '%s'`, warehouseutils.WarehouseUploadsTable, jobID, Waiting)
+	_, err := wh.dbHandle.Exec(sqlStatement)
+	if err != nil {
+		pkgLogger.Errorf(`Error deleting upload job: %d in waiting state: %v`, jobID, err)
+	}
+}
+
 func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	whManager, err := manager.New(wh.destType)
 	if err != nil {
@@ -553,6 +559,19 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 		pkgLogger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded", warehouse.Identifier)
 		return nil
 	}
+
+	wh.areBeingEnqueuedLock.Lock()
+	uploadID, uploadStatus := wh.getLatestUploadStatus(warehouse)
+	if uploadStatus == Waiting {
+		identifier := workerIdentifier(warehouse)
+		if uID, ok := wh.inProgressMap[identifier]; ok && (uID == uploadID) {
+			// do nothing
+		} else {
+			// delete it
+			wh.deleteWaitingUploadJob(uploadID)
+		}
+	}
+	wh.areBeingEnqueuedLock.Unlock()
 
 	stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
 	if err != nil {
@@ -769,9 +788,9 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 }
 
 func (wh *HandleT) getInProgressNamespaces() (identifiers []string) {
-	inProgressMapLock.Lock()
-	defer inProgressMapLock.Unlock()
-	return misc.StringKeys(inProgressMap)
+	wh.inProgressMapLock.Lock()
+	defer wh.inProgressMapLock.Unlock()
+	return misc.StringKeys(wh.inProgressMap)
 }
 
 func (wh *HandleT) runUploadJobAllocator() {
@@ -787,6 +806,8 @@ func (wh *HandleT) runUploadJobAllocator() {
 			continue
 		}
 
+		wh.areBeingEnqueuedLock.Lock()
+
 		inProgressNamespaces := wh.getInProgressNamespaces()
 		pkgLogger.Debugf(`Current inProgress namespace identifiers for %s: %v`, wh.destType, inProgressNamespaces)
 
@@ -795,6 +816,11 @@ func (wh *HandleT) runUploadJobAllocator() {
 			pkgLogger.Errorf(`Error executing getUploadsToProcess: %v`, err)
 			panic(err)
 		}
+
+		for _, uploadJob := range uploadJobsToProcess {
+			wh.setDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
+		}
+		wh.areBeingEnqueuedLock.Unlock()
 
 		for _, uploadJob := range uploadJobsToProcess {
 			workerName := workerIdentifier(uploadJob.warehouse)
@@ -905,6 +931,7 @@ func (wh *HandleT) Setup(whType string) {
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
+	wh.inProgressMap = make(map[string]int64)
 	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
 	})
