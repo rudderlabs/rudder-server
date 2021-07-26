@@ -51,6 +51,10 @@ var (
 	kafkaDialTimeout              time.Duration
 	kafkaWriteTimeout             time.Duration
 	kafkaBatchingEnabled          bool
+	kafkaMetadataRetryBackoff     time.Duration
+	kafkaMetadataRefreshFrequency time.Duration
+	kafkaProducerRetryBackoff     time.Duration
+	kafkaProducerTimeout          time.Duration
 )
 
 var (
@@ -78,6 +82,10 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(10), &kafkaDialTimeout, false, time.Second, []string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(2), &kafkaWriteTimeout, false, time.Second, []string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...)
 	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, []string{"Router.kafka.enableBatching"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10), &kafkaMetadataRetryBackoff, false, time.Second, []string{"Router.kafkaMetadataRetryBackoff"}...)
+	config.RegisterDurationConfigVariable(time.Duration(15), &kafkaMetadataRefreshFrequency, false, time.Minute, []string{"Router.kafkaMetadataRefreshFrequency"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10), &kafkaProducerRetryBackoff, false, time.Second, []string{"Router.kafkaProducerRetryBackoff"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10), &kafkaProducerTimeout, false, time.Second, []string{"Router.kafkaProducerTimeout"}...)
 }
 
 func loadCertificate() {
@@ -102,6 +110,10 @@ func getDefaultConfiguration() *sarama.Config {
 	config.Version = sarama.V1_0_0_0
 	config.Metadata.Retry.Max = 1
 	config.Producer.Retry.Max = 2
+	config.Metadata.Retry.Backoff = kafkaMetadataRetryBackoff
+	config.Metadata.RefreshFrequency = kafkaMetadataRefreshFrequency
+	config.Producer.Retry.Backoff = kafkaProducerRetryBackoff
+	config.Producer.Timeout = kafkaProducerTimeout
 	return config
 }
 
