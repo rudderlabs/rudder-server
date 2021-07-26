@@ -98,6 +98,7 @@ var (
 	levelConfig       map[string]int
 	loggerLevelsCache map[string]int
 	levelConfigLock   sync.RWMutex
+	levelConfigStr    string
 )
 
 func loadConfig() {
@@ -114,7 +115,7 @@ func loadConfig() {
 
 	// colon separated key value pairs
 	// Example: "router.GA=DEBUG:warehouse.REDSHIFT=DEBUG"
-	levelConfigStr := config.GetString("Logger.moduleLevels", "")
+	config.RegisterStringConfigVariable("", &levelConfigStr, false, "Logger.moduleLevels")
 	levelConfig = make(map[string]int)
 	levelConfigStr = strings.TrimSpace(levelConfigStr)
 	if levelConfigStr != "" {

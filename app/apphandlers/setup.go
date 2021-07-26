@@ -67,12 +67,12 @@ func init() {
 }
 
 func loadConfig() {
-	maxProcess = config.GetInt("maxProcess", 12)
-	gwDBRetention = config.GetDuration("gwDBRetentionInHr", 0) * time.Hour
-	routerDBRetention = config.GetDuration("routerDBRetention", 0)
-	enableProcessor = config.GetBool("enableProcessor", true)
-	enableReplay = config.GetBool("Replay.enabled", false)
-	enableRouter = config.GetBool("enableRouter", true)
+	config.RegisterIntConfigVariable(12, &maxProcess, false, 1, "maxProcess")
+	config.RegisterDurationConfigVariable(time.Duration(0), &gwDBRetention, false, time.Hour, []string{"gwDBRetention", "gwDBRetentionInHr"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0), &routerDBRetention, false, time.Hour, "routerDBRetention")
+	config.RegisterBoolConfigVariable(true, &enableProcessor, false, "enableProcessor")
+	config.RegisterBoolConfigVariable(false, &enableReplay, false, "Replay.enabled")
+	config.RegisterBoolConfigVariable(true, &enableRouter, false, "enableRouter")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
 }
