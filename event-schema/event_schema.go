@@ -368,16 +368,6 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 				return
 			}
 		} else {
-			fmt.Println("!!!!!!!!!!!!!")
-			fmt.Println("creating for schemaHash: ", schemaHash)
-			for _, x := range manager.schemaVersionMap[eventModel.UUID] {
-				fmt.Println("###")
-				fmt.Println("ModelID: ", x.EventModelID)
-				fmt.Println("UUID: ", x.UUID)
-				fmt.Println("schema hash: ", x.SchemaHash)
-				fmt.Println("###")
-			}
-			fmt.Println("!!!!!!!!!!!!!")
 			versionID := uuid.NewV4().String()
 			schemaVersion = manager.NewSchemaVersion(versionID, schema, schemaHash, eventModel.UUID)
 			eventModel.mergeSchema(schemaVersion)
@@ -388,27 +378,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 				stats.NewTaggedStat("dropped_schema_versions_count", stats.CountType, stats.Tags{"module": "event_schemas", "eventModelID": eventModel.UUID}).Increment()
 				oldestVersion := manager.oldestSeenVersion(eventModel.UUID)
 				toDeleteSchemaVersionIDs = append(toDeleteSchemaVersionIDs, oldestVersion.UUID)
-				fmt.Println(")))))))")
-				fmt.Println("before dropping version for model: ", eventModel.UUID)
-				fmt.Println("before dropped version for model: ", oldestVersion.EventModelID)
-				fmt.Println("before dropping version: ", oldestVersion.UUID)
-				fmt.Println("before dropping version with schema hash: ", oldestVersion.SchemaHash)
-				fmt.Printf("%+v\n", updatedSchemaVersions[oldestVersion.UUID])
-				fmt.Printf("%+v\n", manager.schemaVersionMap[eventModel.UUID][oldestVersion.SchemaHash])
-				fmt.Println("---")
-				fmt.Printf("%+v\n", manager.schemaVersionMap[eventModel.UUID])
-				fmt.Println(")))))))")
 				manager.deleteFromSchemaVersionCache(oldestVersion)
-				fmt.Println("(((((((((")
-				fmt.Println("dropping version for model: ", eventModel.UUID)
-				fmt.Println("dropped version for model: ", oldestVersion.EventModelID)
-				fmt.Println("dropping version: ", oldestVersion.UUID)
-				fmt.Println("dropping version with schema hash: ", oldestVersion.SchemaHash)
-				fmt.Printf("%+v\n", updatedSchemaVersions[oldestVersion.UUID])
-				fmt.Printf("%+v\n", manager.schemaVersionMap[eventModel.UUID][oldestVersion.SchemaHash])
-				fmt.Println("---")
-				fmt.Printf("%+v\n", manager.schemaVersionMap[eventModel.UUID])
-				fmt.Println("(((((((((")
 			}
 		}
 	}
@@ -563,9 +533,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 		manager.schemaVersionLock.Lock()
 
 		schemaVersionsInCache := make([]*SchemaVersionT, 0)
-		uVersions := []string{}
-		for uv, sv := range updatedSchemaVersions {
-			uVersions = append(uVersions, uv)
+		for _, sv := range updatedSchemaVersions {
 			schemaVersionsInCache = append(schemaVersionsInCache, sv)
 		}
 
@@ -618,9 +586,6 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 		//Handle Schema Versions
 		if len(schemaVersionsInCache) > 0 {
 			versionIDs := make([]string, 0, len(schemaVersionsInCache))
-			// for _, sv := range schemaVersionsInCache {
-			// 	versionIDs = append(versionIDs, sv.UUID)
-			// }
 			for uid := range updatedSchemaVersions {
 				versionIDs = append(versionIDs, uid)
 			}
@@ -641,57 +606,9 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 				sv.TotalCount = sv.reservoirSample.totalCount
 
 				_, err = stmt.Exec(sv.UUID, sv.EventModelID, sv.SchemaHash, string(sv.Schema), string(metadataJSON), string(privateDataJSON), sv.FirstSeen, sv.LastSeen, sv.TotalCount)
-				if err != nil {
-					fmt.Println("***")
-					for _, x := range schemaVersionsInCache {
-						fmt.Println("@@@")
-						fmt.Println("ModelID: ", x.EventModelID)
-						fmt.Println("UUID: ", x.UUID)
-						fmt.Println("schema hash: ", x.SchemaHash)
-						fmt.Println("@@@")
-					}
-					fmt.Println("***")
-					fmt.Println("^^^")
-					fmt.Println("versionIDs: ", versionIDs)
-					fmt.Println("uVersions: ", uVersions)
-					fmt.Println("toDeleteSchemaVersionIDs: ", toDeleteSchemaVersionIDs)
-					fmt.Println("^^^")
-					fmt.Println("$$$")
-					for _, em := range updatedEventModels {
-						fmt.Println("ModelID: ", em.UUID)
-						fmt.Println("", em.EventType)
-						fmt.Println("", em.EventIdentifier)
-					}
-					fmt.Println("$$$")
-					assertTxnError(err, txn)
-				}
 				assertTxnError(err, txn)
 			}
 			_, err = stmt.Exec()
-			if err != nil {
-				fmt.Println("***")
-				for _, x := range schemaVersionsInCache {
-					fmt.Println("@@@")
-					fmt.Println("ModelID: ", x.EventModelID)
-					fmt.Println("UUID: ", x.UUID)
-					fmt.Println("schema hash: ", x.SchemaHash)
-					fmt.Println("@@@")
-				}
-				fmt.Println("***")
-				fmt.Println("^^^")
-				fmt.Println("versionIDs: ", versionIDs)
-				fmt.Println("uVersions: ", uVersions)
-				fmt.Println("toDeleteSchemaVersionIDs: ", toDeleteSchemaVersionIDs)
-				fmt.Println("^^^")
-				fmt.Println("$$$")
-				for _, em := range updatedEventModels {
-					fmt.Println("ModelID: ", em.UUID)
-					fmt.Println("", em.EventType)
-					fmt.Println("", em.EventIdentifier)
-				}
-				fmt.Println("$$$")
-				assertTxnError(err, txn)
-			}
 			assertTxnError(err, txn)
 			stats.NewTaggedStat("update_schema_version_count", stats.GaugeType, stats.Tags{"module": "event_schemas"}).Gauge(len(versionIDs))
 			pkgLogger.Debugf("[EventSchemas][Flush] %d new schema versions", len(schemaVersionsInCache))
@@ -753,7 +670,7 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 func (manager *EventSchemaManagerT) reloadModel(offloadedModel *OffloadedModelT) {
 	pkgLogger.Infof("reloading event model from db: %s\n", offloadedModel.UUID)
 	manager.populateEventModels(offloadedModel.UUID)
-	manager.populateSchemaVersionsMeta(offloadedModel.UUID)
+	manager.populateSchemaVersionsMinimal(offloadedModel.UUID)
 	delete(offloadedEventModels[offloadedModel.WriteKey], eventTypeIdentifier(offloadedModel.EventType, offloadedModel.EventIdentifier))
 }
 
@@ -831,7 +748,7 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) {
 	}
 }
 
-func (manager *EventSchemaManagerT) populateEventModelsMeta() {
+func (manager *EventSchemaManagerT) populateEventModelsMinimal() {
 	eventModelsSelectSQL := fmt.Sprintf(`SELECT uuid, event_type, event_model_identifier, write_key, last_seen FROM %s`, EVENT_MODELS_TABLE)
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
@@ -852,7 +769,7 @@ func (manager *EventSchemaManagerT) populateEventModelsMeta() {
 	}
 }
 
-func (manager *EventSchemaManagerT) populateSchemaVersionsMeta(modelIDFilters ...string) {
+func (manager *EventSchemaManagerT) populateSchemaVersionsMinimal(modelIDFilters ...string) {
 	var modelIDFilter string
 	if len(modelIDFilters) > 0 {
 		modelIDFilter = fmt.Sprintf(`WHERE event_model_id in ('%s')`, strings.Join(modelIDFilters, "', '"))
@@ -903,8 +820,8 @@ func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVers
 // This should be called during the Initialize() to populate existing event Schemas
 func (manager *EventSchemaManagerT) populateEventSchemas() {
 	pkgLogger.Infof(`Populating event models and their schema versions into in-memory`)
-	manager.populateEventModelsMeta()
-	manager.populateSchemaVersionsMeta()
+	manager.populateEventModelsMinimal()
+	manager.populateSchemaVersionsMinimal()
 }
 
 func getSchema(flattenedEvent map[string]interface{}) map[string]string {
