@@ -26,8 +26,8 @@ func init() {
 }
 
 func loadConfigScheduling() {
-	config.RegisterDurationConfigVariable(time.Duration(60), &minUploadBackoff, true, time.Second, "Warehouse.minUploadBackoffInS")
-	config.RegisterDurationConfigVariable(time.Duration(1800), &maxUploadBackoff, true, time.Second, "Warehouse.maxUploadBackoffInS")
+	config.RegisterDurationConfigVariable(time.Duration(60), &minUploadBackoff, true, time.Second, []string{"Warehouse.minUploadBackoff", "Warehouse.minUploadBackoffInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(1800), &maxUploadBackoff, true, time.Second, []string{"Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS"}...)
 }
 
 // ScheduledTimes returns all possible start times (minutes from start of day) as per schedule
@@ -148,6 +148,10 @@ func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTim
 func (wh *HandleT) canCreateUpload(warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {
+		return true
+	}
+	// return true if the upload was triggered
+	if isUploadTriggered(warehouse) {
 		return true
 	}
 	if warehouseSyncFreqIgnore {

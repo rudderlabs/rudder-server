@@ -3,6 +3,7 @@ package processor
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/router"
 	"io/ioutil"
@@ -53,8 +54,6 @@ type HandleT struct {
 	pauseChannel                   chan *PauseT
 	resumeChannel                  chan bool
 	backendConfig                  backendconfig.BackendConfig
-	processSessions                bool
-	sessionThresholdEvents         int
 	stats                          stats.Stats
 	gatewayDB                      jobsdb.JobsDB
 	routerDB                       jobsdb.JobsDB
@@ -69,10 +68,6 @@ type HandleT struct {
 	statRouterDBW                  stats.RudderStats
 	statBatchRouterDBW             stats.RudderStats
 	statProcErrDBW                 stats.RudderStats
-	statActiveUsers                stats.RudderStats
-	userJobListMap                 map[string][]*jobsdb.JobT
-	userEventsMap                  map[string][]types.SingularEventT
-	userPQItemMap                  map[string]*pqItemT
 	transformEventsByTimeMutex     sync.RWMutex
 	destTransformEventsByTimeTaken transformRequestPQ
 	userTransformEventsByTimeTaken transformRequestPQ
@@ -90,9 +85,6 @@ type HandleT struct {
 	statNumEvents                  stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
 	statBatchDestNumOutputEvents   stats.RudderStats
-	userToSessionIDMap             map[string]string
-	userJobPQ                      pqT
-	userPQLock                     sync.Mutex
 	logger                         logger.LoggerI
 	eventSchemaHandler             types.EventSchemasI
 	dedupHandler                   dedup.DedupI
@@ -107,6 +99,9 @@ var defaultTransformerFeatures = `{
 	  "HS": true
 	}
   }`
+
+var mainLoopTimeout = 200 * time.Millisecond
+var featuresRetryMaxAttempts = 10
 
 type DestStatT struct {
 	numEvents              stats.RudderStats
@@ -162,7 +157,7 @@ func (proc *HandleT) buildStatTags(sourceID, workspaceID string, destination bac
 	}
 }
 
-func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, destination backendconfig.DestinationT, processSessions bool) *DestStatT {
+func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, destination backendconfig.DestinationT) *DestStatT {
 	tags := proc.buildStatTags(sourceID, workspaceID, destination, USER_TRANSFORMATION)
 
 	tags["transformation_id"] = destination.Transformations[0].ID
@@ -171,12 +166,7 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 	numEvents := proc.stats.NewTaggedStat("proc_num_ut_input_events", stats.CountType, tags)
 	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_num_ut_output_success_events", stats.CountType, tags)
 	numOutputFailedEvents := proc.stats.NewTaggedStat("proc_num_ut_output_failed_events", stats.CountType, tags)
-	var transformTime stats.RudderStats
-	if processSessions {
-		transformTime = proc.stats.NewTaggedStat("proc_session_transform", stats.TimerType, tags)
-	} else {
-		transformTime = proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
-	}
+	transformTime := proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
 
 	return &DestStatT{
 		numEvents:              numEvents,
@@ -209,24 +199,6 @@ func (proc *HandleT) Print() {
 	if !proc.logger.IsDebugLevel() {
 		return
 	}
-	proc.logger.Debug("PriorityQueue")
-	proc.userJobPQ.Print()
-	proc.logger.Debug("JobList")
-	for k, v := range proc.userJobListMap {
-		proc.logger.Debug(k, ":", len(v))
-	}
-	proc.logger.Debug("EventLength")
-	for k, v := range proc.userEventsMap {
-		proc.logger.Debug(k, ":", len(v))
-	}
-	proc.logger.Debug("PQItem")
-	for k, v := range proc.userPQItemMap {
-		proc.logger.Debug(k, ":", *v)
-	}
-	proc.logger.Debug("Session")
-	for k, v := range proc.userToSessionIDMap {
-		proc.logger.Debug(k, " : ", v)
-	}
 }
 
 func init() {
@@ -237,9 +209,7 @@ func init() {
 // NewProcessor creates a new Processor intanstace
 func NewProcessor() *HandleT {
 	return &HandleT{
-		transformer:            transformer.NewTransformer(),
-		processSessions:        configProcessSessions,
-		sessionThresholdEvents: configSessionThresholdEvents,
+		transformer: transformer.NewTransformer(),
 	}
 }
 
@@ -266,7 +236,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	proc.reporting = reporting
-	proc.reportingEnabled = config.GetBool("Reporting.enabled", true)
+	config.RegisterBoolConfigVariable(false, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -278,13 +248,8 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pStatsJobs = &misc.PerfStats{}
 	proc.pStatsDBR = &misc.PerfStats{}
 	proc.pStatsDBW = &misc.PerfStats{}
-	proc.userJobListMap = make(map[string][]*jobsdb.JobT)
-	proc.userEventsMap = make(map[string][]types.SingularEventT)
-	proc.userPQItemMap = make(map[string]*pqItemT)
-	proc.userToSessionIDMap = make(map[string]string)
 	proc.userTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
 	proc.destTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
-	proc.userJobPQ = make(pqT, 0)
 	proc.pStatsJobs.Setup("ProcessorJobs")
 	proc.pStatsDBR.Setup("ProcessorDBRead")
 	proc.pStatsDBW.Setup("ProcessorDBWrite")
@@ -293,7 +258,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statGatewayDBW = proc.stats.NewStat("processor.gateway_db_write", stats.CountType)
 	proc.statRouterDBW = proc.stats.NewStat("processor.router_db_write", stats.CountType)
 	proc.statBatchRouterDBW = proc.stats.NewStat("processor.batch_router_db_write", stats.CountType)
-	proc.statActiveUsers = proc.stats.NewStat("processor.active_users", stats.GaugeType)
 	proc.statDBR = proc.stats.NewStat("processor.gateway_db_read_time", stats.TimerType)
 	proc.statDBW = proc.stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
 	proc.statProcErrDBW = proc.stats.NewStat("processor.proc_err_db_write", stats.CountType)
@@ -332,21 +296,13 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.transformer.Setup()
 
 	proc.crashRecover()
-	if proc.processSessions {
-		proc.logger.Info("Starting session processor")
-		rruntime.Go(func() {
-			proc.createSessions()
-		})
-	}
-	rruntime.Go(func() {
-		router.CleanFailedRecordsTableProcess()
-	})
 }
 
 // Start starts this processor's main loops.
 func (proc *HandleT) Start() {
-
 	rruntime.Go(func() {
+		//waiting till the backend config is received
+		proc.backendConfig.WaitForConfig()
 		proc.mainLoop()
 	})
 	rruntime.Go(func() {
@@ -365,9 +321,6 @@ var (
 	dbReadBatchSize                     int
 	transformBatchSize                  int
 	userTransformBatchSize              int
-	sessionInactivityThreshold          time.Duration
-	configSessionThresholdEvents        int
-	configProcessSessions               bool
 	writeKeyDestinationMap              map[string][]backendconfig.DestinationT
 	writeKeySourceMap                   map[string]backendconfig.SourceT
 	destinationIDtoTypeMap              map[string]string
@@ -388,38 +341,34 @@ var (
 )
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, "Processor.maxLoopSleepInMS")
-	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, "Processor.loopSleepInMS")
-	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, "Processor.fixedLoopSleepInMS")
+	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep", "Processor.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(100, &transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
-	configSessionThresholdEvents = config.GetInt("Processor.sessionThresholdEvents", 100)
-	sessionInactivityThreshold = config.GetDuration("Processor.sessionInactivityThresholdInS", time.Duration(120)) * time.Second
-	configProcessSessions = config.GetBool("Processor.processSessions", false)
 	// Enable dedup of incoming events by default
-	enableDedup = config.GetBool("Dedup.enableDedup", true)
+	config.RegisterBoolConfigVariable(false, &enableDedup, false, "Dedup.enableDedup")
 	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
-	enableEventSchemasFeature = config.GetBool("EventSchemas.enableEventSchemasFeature", false)
-	enableEventSchemasAPIOnly = config.GetBool("EventSchemas.enableEventSchemasAPIOnly", false)
+	config.RegisterBoolConfigVariable(false, &enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
+	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, false, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 	config.RegisterIntConfigVariable(1, &avgEventsInRequest, true, 1, "Processor.avgEventsInRequest")
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
 	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
-	transformTimesPQLength = config.GetInt("Processor.transformTimesPQLength", 5)
+	config.RegisterIntConfigVariable(5, &transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	pollInterval = config.GetDuration("Processor.pollIntervalInS", time.Duration(5)) * time.Second
+	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, []string{"Processor.pollInterval", "Processor.pollIntervalInS"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
-	GWCustomVal = config.GetString("Gateway.CustomVal", "GW")
+	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
 }
 
 func (proc *HandleT) getTransformerFeatureJson() {
-	const attempts = 10
 	for {
-		for i := 0; i < attempts; i++ {
+		for i := 0; i < featuresRetryMaxAttempts; i++ {
 			url := transformerURL + "/features"
 			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
 			if err != nil {
@@ -466,6 +415,18 @@ func SetDisableDedupFeature(b bool) bool {
 	return prev
 }
 
+func SetMainLoopTimeout(timeout time.Duration) {
+	mainLoopTimeout = timeout
+}
+
+func SetFeaturesRetryAttempts(overrideAttempts int) {
+	featuresRetryMaxAttempts = overrideAttempts
+}
+
+func SetIsUnlocked(unlockVar bool) {
+	isUnLocked = unlockVar
+}
+
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := make(chan utils.DataEvent)
 	proc.backendConfig.Subscribe(ch, backendconfig.TopicProcessConfig)
@@ -489,157 +450,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 		}
 		configSubscriberLock.Unlock()
 	}
-}
-
-func (proc *HandleT) addJobsToSessions(jobList []*jobsdb.JobT) {
-
-	proc.logger.Debug("[Processor: addJobsToSessions] adding jobs to session")
-	proc.userPQLock.Lock()
-
-	//List of users whose jobs need to be processed
-	processUserIDs := make(map[string]bool)
-
-	for _, job := range jobList {
-		//Append to job to list. If over threshold, just process them
-		eventList, ok := misc.ParseRudderEventBatch(job.EventPayload)
-		if !ok {
-			//bad event
-			proc.logger.Debug("[Processor: addJobsToSessions] bad event")
-			continue
-		}
-		userID, ok := misc.GetRudderID(eventList[0])
-		if !ok {
-			proc.logger.Error("[Processor: addJobsToSessions] Failed to get userID for job")
-			continue
-		}
-
-		//Prefixing write key to userID. This is done to create session per user per source
-		userID = gjson.GetBytes(job.EventPayload, "writeKey").Str + ":" + userID
-
-		_, ok = proc.userJobListMap[userID]
-		if !ok {
-			proc.userJobListMap[userID] = make([]*jobsdb.JobT, 0)
-			proc.userEventsMap[userID] = make([]types.SingularEventT, 0)
-		}
-		// Adding a new session id for the user, if not present
-		proc.logger.Debug("[Processor: addJobsToSessions] Adding a new session id for the user")
-		_, ok = proc.userToSessionIDMap[userID]
-		if !ok {
-			proc.userToSessionIDMap[userID] = fmt.Sprintf("%s:%s", userID, strconv.FormatInt(time.Now().UnixNano()/1000000, 10))
-		}
-		//Add the job to the userID specific lists
-		proc.userJobListMap[userID] = append(proc.userJobListMap[userID], job)
-		proc.userEventsMap[userID] = append(proc.userEventsMap[userID], eventList...)
-		//If we have enough events from that user, we process jobs
-		if len(proc.userEventsMap[userID]) > proc.sessionThresholdEvents {
-			processUserIDs[userID] = true
-		}
-
-		//Setting/updating pqItem lastTS with event received timestamp
-		receivedAtResult := gjson.Get(string(job.EventPayload), "receivedAt")
-		timestamp := time.Now()
-		if receivedAtResult.Type != gjson.Null {
-			timestamp = receivedAtResult.Time()
-		}
-		pqItem, ok := proc.userPQItemMap[userID]
-		if !ok {
-			pqItem := &pqItemT{
-				userID: userID,
-				lastTS: timestamp,
-				index:  -1,
-			}
-			proc.userPQItemMap[userID] = pqItem
-			proc.userJobPQ.Add(pqItem)
-		} else {
-			if pqItem.index == -1 {
-				panic(fmt.Errorf("pqItem.index is -1"))
-			}
-			proc.userJobPQ.Update(pqItem, timestamp)
-		}
-
-	}
-
-	if len(processUserIDs) > 0 {
-		userJobsToProcess := make(map[string][]*jobsdb.JobT)
-		userEventsToProcess := make(map[string][]types.SingularEventT)
-		userToSessionMap := make(map[string]string)
-
-		proc.logger.Debug("Post Add Processing")
-		proc.Print()
-
-		//We clear the data structure for these users
-		for userID := range processUserIDs {
-			userJobsToProcess[userID] = proc.userJobListMap[userID]
-			userEventsToProcess[userID] = proc.userEventsMap[userID]
-			userToSessionMap[userID] = proc.userToSessionIDMap[userID]
-			delete(proc.userJobListMap, userID)
-			delete(proc.userEventsMap, userID)
-			delete(proc.userToSessionIDMap, userID)
-		}
-		proc.logger.Debug("Processing")
-		proc.Print()
-		//We release the lock before actually processing
-		proc.userPQLock.Unlock()
-		proc.processUserJobs(userJobsToProcess, userEventsToProcess, userToSessionMap)
-		return
-	}
-	proc.userPQLock.Unlock()
-}
-
-func (proc *HandleT) processUserJobs(userJobs map[string][]*jobsdb.JobT, userEvents map[string][]types.SingularEventT, userToSessionMap map[string]string) {
-	proc.logger.Debug("[Processor: processUserJobs] in processUserJobs")
-
-	totalJobs := 0
-	allJobIDs := make(map[int64]bool)
-	for userID := range userJobs {
-		for _, job := range userJobs[userID] {
-			totalJobs++
-			allJobIDs[job.JobID] = true
-		}
-	}
-
-	//Create a list of list of user events which is passed to transformer
-	userEventsList := make([][]types.SingularEventT, 0)
-	userIDList := make([]string, 0) //Order of users which are added to list
-	userEventsMap := make(map[string][]types.SingularEventT)
-	for userID := range userEvents {
-		// add the session_id field to each event before sending it downstream
-		userEventsMap[userID] = make([]types.SingularEventT, 0)
-		for _, event := range userEvents[userID] {
-			event["session_id"] = userToSessionMap[userID]
-			userEventsMap[userID] = append(userEventsMap[userID], event)
-		}
-
-		userEventsList = append(userEventsList, userEventsMap[userID])
-		userIDList = append(userIDList, userID)
-	}
-
-	if len(userEventsList) != len(userEventsMap) {
-		panic(fmt.Errorf("len(userEventsList):%d != len(userEventsMap):%d", len(userEventsList), len(userEventsMap)))
-	}
-
-	//Create jobs that can be processed further
-	toProcessJobs, toProcessEvents := createUserTransformedJobsFromEvents(userEventsList, userIDList, userJobs)
-	//Some sanity check to make sure we have all the jobs
-	if len(toProcessJobs) != totalJobs {
-		panic(fmt.Errorf("len(toProcessJobs):%d != totalJobs:%d", len(toProcessJobs), totalJobs))
-	}
-	if len(toProcessEvents) != totalJobs {
-		panic(fmt.Errorf("len(toProcessEvents):%d != totalJobs:%d", len(toProcessEvents), totalJobs))
-	}
-	for _, job := range toProcessJobs {
-		_, ok := allJobIDs[job.JobID]
-		if !ok {
-			panic(fmt.Errorf("key %d not found in map allJobIDs", job.JobID))
-		}
-		delete(allJobIDs, job.JobID)
-	}
-	if len(allJobIDs) != 0 {
-		panic(fmt.Errorf("len(allJobIDs):%d != 0", len(allJobIDs)))
-	}
-
-	//Process
-	proc.processJobsForDest(toProcessJobs, toProcessEvents)
 }
 
 //We create sessions (of individul events) from set of input jobs  from a user
@@ -671,79 +481,16 @@ func createUserTransformedJobsFromEvents(transformUserEventList [][]types.Singul
 	return transJobList, transEventList
 }
 
-func (proc *HandleT) createSessions() {
-	proc.logger.Debug("[Processor: createSessions] starting sessions")
-	for {
-		proc.userPQLock.Lock()
-		//Now jobs
-		if proc.userJobPQ.Len() == 0 {
-			proc.userPQLock.Unlock()
-			time.Sleep(loopSleep)
-			continue
-		}
-
-		proc.statActiveUsers.Gauge(len(proc.userJobListMap))
-		//Enough time hasn't transpired since last
-		oldestItem := proc.userJobPQ.Top()
-		if time.Since(oldestItem.lastTS) < time.Duration(sessionInactivityThreshold) {
-			proc.userPQLock.Unlock()
-			sleepTime := time.Duration(sessionInactivityThreshold) - time.Since(oldestItem.lastTS)
-			proc.logger.Debug("Sleeping", sleepTime)
-			time.Sleep(sleepTime)
-			continue
-		}
-
-		userJobsToProcess := make(map[string][]*jobsdb.JobT)
-		userEventsToProcess := make(map[string][]types.SingularEventT)
-		userToSessionMap := make(map[string]string)
-		//Find all jobs that need to be processed
-		for {
-			if proc.userJobPQ.Len() == 0 {
-				break
-			}
-			oldestItem := proc.userJobPQ.Top()
-			if time.Since(oldestItem.lastTS) > time.Duration(sessionInactivityThreshold) {
-				userID := oldestItem.userID
-				pqItem, ok := proc.userPQItemMap[userID]
-				if !(ok && pqItem == oldestItem) {
-					panic(fmt.Errorf("userID is not found in userPQItemMap or pqItem is not oldestItem"))
-				}
-				userJobsToProcess[userID] = proc.userJobListMap[userID]
-				userEventsToProcess[userID] = proc.userEventsMap[userID]
-				// it is guaranteed that user will have a session even if one job is present
-				// Refer addJobsToSession
-				userToSessionMap[userID] = proc.userToSessionIDMap[userID]
-				//Clear from the map
-				delete(proc.userJobListMap, userID)
-				delete(proc.userEventsMap, userID)
-				proc.userJobPQ.Remove(proc.userPQItemMap[userID])
-				delete(proc.userPQItemMap, userID)
-				// A session ends when a user is inactive for a period of sessionInactivityThreshold
-				// or session limit on number of jobs has been achievd
-				// Refer addJobsToSession
-				delete(proc.userToSessionIDMap, userID)
-				continue
-			}
-			break
-		}
-		proc.Print()
-		proc.userPQLock.Unlock()
-		if len(userJobsToProcess) > 0 {
-			proc.logger.Debug("Processing Session Check")
-			proc.Print()
-			proc.processUserJobs(userJobsToProcess, userEventsToProcess, userToSessionMap)
-		}
-	}
-}
-
-func getSourceByWriteKey(writeKey string) backendconfig.SourceT {
+func getSourceByWriteKey(writeKey string) (backendconfig.SourceT, error) {
+	var err error
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	source, ok := writeKeySourceMap[writeKey]
 	if !ok {
-		panic(fmt.Errorf(`source not found for writeKey: %s`, writeKey))
+		err = errors.New("source not found for writeKey")
+		pkgLogger.Errorf(`Processor : source not found for writeKey: %s`, writeKey)
 	}
-	return source
+	return source, err
 }
 
 func getEnabledDestinations(writeKey string, destinationName string) []backendconfig.DestinationT {
@@ -1161,6 +908,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.marshalSingularEvents.Start()
 	uniqueMessageIds := make(map[string]struct{})
+	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 	var sourceDupStats = make(map[string]int)
 
 	reportMetrics := make([]*types.PUReportedMetric, 0)
@@ -1215,7 +963,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 				workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 				workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
-				sourceForSingularEvent := getSourceByWriteKey(writeKey)
+				sourceForSingularEvent, sourceIdError := getSourceByWriteKey(writeKey)
+				if sourceIdError != nil {
+					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
+					continue
+				}
 
 				// proc.logger.Debug("=== enabledDestTypes ===", enabledDestTypes)
 				if len(enabledDestTypes) == 0 {
@@ -1259,6 +1011,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						}
 						groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey],
 							shallowEventCopy)
+						if _, ok := uniqueMessageIdsBySrcDestKey[srcAndDestKey]; !ok {
+							uniqueMessageIdsBySrcDestKey[srcAndDestKey] = make(map[string]struct{})
+						}
+						uniqueMessageIdsBySrcDestKey[srcAndDestKey][commonMetadataFromSingularEvent.MessageID] = struct{}{}
 					}
 				}
 
@@ -1371,26 +1127,17 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		var eventsToTransform []transformer.TransformerEventT
 		// Send to custom transformer only if the destination has a transformer enabled
 		if transformationEnabled {
-			userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination, proc.processSessions)
+			userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination)
 			userTransformationStat.numEvents.Count(len(eventList))
 			proc.logger.Debug("Custom Transform input size", len(eventList))
-			if proc.processSessions {
-				// If processSessions is true, Transform should break into a new batch only when user changes.
-				// This way all the events of a user session are never broken into separate batches
-				// Note: Assumption is events from a user's session are together in destEventList, which is guaranteed by the way destEventList is created
-				userTransformationStat.transformTime.Start()
-				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, true)
-				userTransformationStat.transformTime.End()
-			} else {
-				// We need not worry about breaking up a single user sessions in this case
-				userTransformationStat.transformTime.Start()
-				startedAt = time.Now()
-				response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(proc.processSessions), userTransformBatchSize, false)
-				endedAt = time.Now()
-				timeTaken = endedAt.Sub(startedAt).Seconds()
-				userTransformationStat.transformTime.End()
-				proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: timeTaken, Index: -1}, &proc.userTransformEventsByTimeTaken)
-			}
+
+			userTransformationStat.transformTime.Start()
+			startedAt = time.Now()
+			response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(), userTransformBatchSize)
+			endedAt = time.Now()
+			timeTaken = endedAt.Sub(startedAt).Seconds()
+			userTransformationStat.transformTime.End()
+			proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: timeTaken, Index: -1}, &proc.userTransformEventsByTimeTaken)
 
 			var successMetrics []*types.PUReportedMetric
 			var successCountMap map[string]int64
@@ -1405,7 +1152,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			userTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
 
-			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: &destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIds})
+			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: &destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
 
 			//REPORTING - START
 			if proc.reporting != nil && proc.reportingEnabled {
@@ -1447,10 +1194,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		// OR
 		//router and transformer supports router transform, then no destination transformation happens.
 		if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
-			response = convertToTransformerResponse(eventsToTransform)
+			response = ConvertToTransformerResponse(eventsToTransform)
 		} else {
 			destTransformationStat.transformTime.Start()
-			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize, false)
+			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize)
 			destTransformationStat.transformTime.End()
 			transformAt = "processor"
 		}
@@ -1657,7 +1404,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Print()
 }
 
-func convertToTransformerResponse(events []transformer.TransformerEventT) transformer.ResponseT {
+func ConvertToTransformerResponse(events []transformer.TransformerEventT) transformer.ResponseT {
 	var responses []transformer.TransformerResponseT
 	for _, event := range events {
 		resp := transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
@@ -1751,39 +1498,14 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 	proc.statListSort.End()
 
-	if proc.processSessions {
-		//Mark all as executing so next query doesn't pick it up
-		var statusList []*jobsdb.JobStatusT
-		for _, batchEvent := range combinedList {
-			newStatus := jobsdb.JobStatusT{
-				JobID:         batchEvent.JobID,
-				JobState:      jobsdb.Executing.State,
-				AttemptNum:    1,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				ErrorCode:     "200",
-				ErrorResponse: []byte(`{"success":"OK"}`),
-			}
-			statusList = append(statusList, &newStatus)
-		}
-		err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
-		if err != nil {
-			pkgLogger.Errorf("Error occurred while marking gateway jobs statuses as executing. Panicking. Err: %v", err)
-			panic(err)
-		}
+	proc.processJobsForDest(combinedList, nil)
 
-		proc.addJobsToSessions(combinedList)
-	} else {
-		proc.processJobsForDest(combinedList, nil)
-	}
 	proc.statLoopTime.End()
 
 	return true
 }
 
 func (proc *HandleT) mainLoop() {
-	//waiting till the backend config is received
-	proc.backendConfig.WaitForConfig()
 	//waiting for reporting client setup
 	if proc.reporting != nil {
 		proc.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
@@ -1791,8 +1513,7 @@ func (proc *HandleT) mainLoop() {
 
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
-
-	timeout := time.After(200 * time.Millisecond)
+	timeout := time.After(mainLoopTimeout)
 	for {
 		select {
 		case pause := <-proc.pauseChannel:
@@ -1802,7 +1523,7 @@ func (proc *HandleT) mainLoop() {
 			<-proc.resumeChannel
 		case <-timeout:
 			proc.paused = false
-			timeout = time.After(200 * time.Millisecond)
+			timeout = time.After(mainLoopTimeout)
 			if isUnLocked {
 				if proc.handlePendingGatewayJobs() {
 					currLoopSleep = time.Duration(0)
@@ -1822,34 +1543,7 @@ func (proc *HandleT) mainLoop() {
 }
 
 func (proc *HandleT) crashRecover() {
-	for {
-		execList := proc.gatewayDB.GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: dbReadBatchSize})
-
-		if len(execList) == 0 {
-			break
-		}
-		proc.logger.Debug("Processor crash recovering", len(execList))
-
-		var statusList []*jobsdb.JobStatusT
-
-		for _, job := range execList {
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				JobState:      jobsdb.Failed.State,
-				ErrorCode:     "",
-				ErrorResponse: []byte(`{}`), // check
-			}
-			statusList = append(statusList, &status)
-		}
-		err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
-		if err != nil {
-			pkgLogger.Errorf("Error occurred while marking gateway jobs statuses as failed. Panicking. Err: %v", err)
-			panic(err)
-		}
-	}
+	proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: -1})
 }
 
 func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {

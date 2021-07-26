@@ -684,7 +684,7 @@ func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		_, err = strconv.Atoi(args[3])
+		jobId2, err := strconv.Atoi(args[3])
 		if err != nil {
 			return "", err
 		}
@@ -702,7 +702,7 @@ func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
 		if !min.Valid || !max.Valid {
 			continue
 		}
-		if jobId1 < int(min.Int32) || jobId1 > int(max.Int32) {
+		if jobId2 < int(min.Int32) || jobId1 > int(max.Int32) {
 			continue
 		}
 		sqlStatement = fmt.Sprintf(`SELECT job_id FROM %[1]s WHERE job_id >= %[2]s AND job_id <= %[3]s AND user_id = '%[4]s';`, dsPair.JobTable, args[2], args[3], userID)

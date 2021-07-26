@@ -23,6 +23,7 @@ import (
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
@@ -65,7 +66,7 @@ type batchWebRequestT struct {
 
 var (
 	webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess, adminWebPort int
-	maxUserWebRequestBatchSize, maxDBBatchSize                                int
+	maxUserWebRequestBatchSize, maxDBBatchSize, MaxHeaderBytes                int
 	userWebRequestBatchTimeout, dbBatchWriteTimeout                           time.Duration
 	enabledWriteKeysSourceMap                                                 map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                                 map[string]string
@@ -76,6 +77,10 @@ var (
 	enableSuppressUserFeature                                                 bool
 	enableEventSchemasFeature                                                 bool
 	diagnosisTickerTime                                                       time.Duration
+	ReadTimeout                                                               time.Duration
+	ReadHeaderTimeout                                                         time.Duration
+	WriteTimeout                                                              time.Duration
+	IdleTimeout                                                               time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                                      bool
 	gwAllowPartialWriteWithErrors                                             bool
 	pkgLogger                                                                 logger.LoggerI
@@ -144,6 +149,8 @@ type HandleT struct {
 	rrh                                                        *RegularRequestHandler
 	irh                                                        *ImportRequestHandler
 	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyJobsDB
+	netHandle                                                  *http.Client
+	httpTimeout                                                time.Duration
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
@@ -776,16 +783,57 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	var gwPendingCount, rtPendingCount int64
+	var gwPendingCount, rtPendingCount, brtPendingCount, totalPendingTillNow int64
 	if !excludeGateway {
 		gwPendingCount = gateway.readonlyGatewayDB.GetPendingJobsCount([]string{CustomVal}, -1, gwParameterFilters)
+		totalPendingTillNow = gwPendingCount
 	}
-	rtPendingCount = gateway.readonlyRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
-	//brtPendingCount := gateway.readonlyBatchRouterDB.GetPendingJobsCount(nil, -1, nil)
 
-	totalPendingCount := gwPendingCount + rtPendingCount
+	if totalPendingTillNow <= 0 {
+		rtPendingCount = gateway.readonlyRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
+		totalPendingTillNow += rtPendingCount
+	}
 
-	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", totalPendingCount)))
+	if totalPendingTillNow <= 0 {
+		brtPendingCount = gateway.readonlyBatchRouterDB.GetPendingJobsCount(nil, -1, rtParameterFilters)
+		totalPendingTillNow += brtPendingCount
+	}
+
+	whPending := false
+	if totalPendingTillNow <= 0 {
+		whPending = gateway.getWarehousePending(payload)
+	}
+
+	pendingEventsResponse := totalPendingTillNow
+	if whPending {
+		pendingEventsResponse = 1
+	}
+
+	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", pendingEventsResponse)))
+}
+
+func (gateway *HandleT) getWarehousePending(payload []byte) bool {
+	uri := fmt.Sprintf(`%s/v1/warehouse/pending-events?triggerUpload=true`, misc.GetWarehouseURL())
+	resp, err := gateway.netHandle.Post(uri, "application/json; charset=utf-8",
+		bytes.NewBuffer(payload))
+	if err != nil {
+		return false
+	}
+
+	defer resp.Body.Close()
+
+	var whPendingResponse warehouseutils.PendingEventsResponseT
+	respData, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
+
+	err = json.Unmarshal(respData, &whPendingResponse)
+	if err != nil {
+		return false
+	}
+
+	return whPendingResponse.PendingEvents
 }
 
 type failedEventsRequestPayload struct {
@@ -1202,11 +1250,11 @@ func (gateway *HandleT) StartWebHandler() {
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(webPort),
 		Handler:           c.Handler(bugsnag.Handler(srvMux)),
-		ReadTimeout:       config.GetDuration("ReadTimeOutInSec", 0*time.Second),
-		ReadHeaderTimeout: config.GetDuration("ReadHeaderTimeoutInSec", 0*time.Second),
-		WriteTimeout:      config.GetDuration("WriteTimeOutInSec", 10*time.Second),
-		IdleTimeout:       config.GetDuration("IdleTimeoutInSec", 720*time.Second),
-		MaxHeaderBytes:    config.GetInt("MaxHeaderBytes", 524288),
+		ReadTimeout:       ReadTimeout,
+		ReadHeaderTimeout: ReadHeaderTimeout,
+		WriteTimeout:      WriteTimeout,
+		IdleTimeout:       IdleTimeout,
+		MaxHeaderBytes:    MaxHeaderBytes,
 	}
 	gateway.logger.Fatal(srv.ListenAndServe())
 }
@@ -1330,6 +1378,10 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.stats = stats.DefaultStats
 
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
+	config.RegisterDurationConfigVariable(time.Duration(30), &gateway.httpTimeout, false, time.Second, "Gateway.httpTimeout")
+	tr := &http.Transport{}
+	client := &http.Client{Transport: tr, Timeout: gateway.httpTimeout}
+	gateway.netHandle = client
 
 	//For the lack of better stat type, using TimerType.
 	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.TimerType)
