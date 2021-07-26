@@ -101,6 +101,7 @@ func getDefaultConfiguration() *sarama.Config {
 	config.Producer.Return.Successes = true
 	config.Version = sarama.V1_0_0_0
 	config.Metadata.Retry.Max = 1
+	config.Producer.Retry.Max = 2
 	return config
 }
 
