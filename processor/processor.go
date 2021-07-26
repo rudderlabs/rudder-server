@@ -293,6 +293,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 		proc.getTransformerFeatureJson()
 	})
 
+	rruntime.Go(func() {
+		router.CleanFailedRecordsTableProcess()
+	})
 	proc.transformer.Setup()
 
 	proc.crashRecover()

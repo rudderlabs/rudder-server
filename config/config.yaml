@@ -99,6 +99,7 @@ Router:
   allowAbortedUserJobsCountForProcessing: 1
   maxFailedCountForJob: 3
   retryTimeWindow: 180m
+  failedKeysEnabled: true
   MARKETO:
     noOfWorkers: 4
   throttler:

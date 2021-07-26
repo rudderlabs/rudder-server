@@ -64,9 +64,8 @@ func (fem *FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap ma
 		table := fmt.Sprintf(`%s_%s`, failedKeysTablePrefix, taskRunID)
 		sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		destination_id TEXT NOT NULL,
-		record_id TEXT NOT NULL
+		record_id TEXT NOT NULL,
 		created_at TIMESTAMP NOT NULL);`, table)
-
 		_, err := txn.Exec(sqlStatement)
 		if err != nil {
 			panic(err)
@@ -135,7 +134,7 @@ func (fem *FailedEventsManagerT) FetchFailedRecordIDs(taskRunID string) []*Faile
 }
 
 func CleanFailedRecordsTableProcess() {
-	if !failedKeysEnabled { // TODO: is this required or let the cron run?
+	if !failedKeysEnabled {
 		return
 	}
 	for {
@@ -146,7 +145,7 @@ func CleanFailedRecordsTableProcess() {
 		failedKeysLike := failedKeysTablePrefix + "%"
 		failedKeysTableQuery := fmt.Sprintf(`SELECT table_name
 													FROM information_schema.tables
-													WHERE table_schema='public' AND table_type='BASE TABLE AND table_name ilike '%s'`, failedKeysLike)
+													WHERE table_schema='public' AND table_type='BASE TABLE' AND table_name ilike '%s'`, failedKeysLike)
 		rows, err := dbHandle.Query(failedKeysTableQuery)
 		if err != nil {
 			panic(err)
@@ -161,9 +160,10 @@ func CleanFailedRecordsTableProcess() {
 			latestCreatedAtQuery := fmt.Sprintf(`SELECT created_at from %s order by created_at desc limit 1`, table)
 			row := dbHandle.QueryRow(latestCreatedAtQuery)
 			var latestCreatedAt time.Time
-			err = row.Scan(&latestCreatedAtQuery)
+			err = row.Scan(&latestCreatedAt)
 			if err != nil && err != sql.ErrNoRows {
 				pkgLogger.Errorf("Failed to fetch records from failed keys table %s with error: %v", table, err)
+				continue
 			}
 			currentTime := time.Now()
 			diff := currentTime.Sub(latestCreatedAt)
