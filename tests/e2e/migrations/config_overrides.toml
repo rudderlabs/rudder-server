@@ -6,9 +6,6 @@ refreshDSListLoopSleepDurationInS = 2
 backupCheckSleepDurationIns = 5
 enableBackup = false
 
-[Processor]
-processSessions = false
-
 [Router]
 maxStatusUpdateWaitInS = 1
 useTestSink = true

@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -24,25 +26,35 @@ import (
 )
 
 var (
-	stagingTablePrefix string
-	pkgLogger          logger.LoggerI
+	stagingTablePrefix   string
+	pkgLogger            logger.LoggerI
+	diacriticLengthLimit = diacriticLimit()
 )
 
 const (
-	host     = "host"
-	dbName   = "database"
-	user     = "user"
-	password = "password"
-	port     = "port"
-	sslMode  = "sslMode"
+	host                   = "host"
+	dbName                 = "database"
+	user                   = "user"
+	password               = "password"
+	port                   = "port"
+	sslMode                = "sslMode"
+	mssqlStringLengthLimit = 512
 )
+
+func diacriticLimit() int {
+	if mssqlStringLengthLimit%2 != 0 {
+		return mssqlStringLengthLimit - 1
+	} else {
+		return mssqlStringLengthLimit
+	}
+}
 
 const PROVIDER = "MSSQL"
 
 var rudderDataTypesMapToMssql = map[string]string{
 	"int":      "bigint",
 	"float":    "decimal(28,10)",
-	"string":   "varchar(max)",
+	"string":   "nvarchar(512)",
 	"datetime": "datetimeoffset",
 	"boolean":  "bit",
 	"json":     "jsonb",
@@ -52,14 +64,21 @@ var mssqlDataTypesMapToRudder = map[string]string{
 	"integer":                  "int",
 	"smallint":                 "int",
 	"bigint":                   "int",
+	"tinyint":                  "int",
 	"double precision":         "float",
 	"numeric":                  "float",
 	"decimal":                  "float",
 	"real":                     "float",
+	"float":                    "float",
 	"text":                     "string",
 	"varchar":                  "string",
+	"nvarchar":                 "string",
+	"ntext":                    "string",
+	"nchar":                    "string",
 	"char":                     "string",
 	"datetimeoffset":           "datetime",
+	"date":                     "datetime",
+	"datetime2":                "datetime",
 	"timestamp with time zone": "datetime",
 	"timestamp":                "datetime",
 	"jsonb":                    "json",
@@ -159,6 +178,19 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 
 func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	objectLocations := ms.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
+	storageProvider := warehouseutils.ObjectStorageType(ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
+	downloader, err := filemanager.New(&filemanager.SettingsT{
+		Provider: storageProvider,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         storageProvider,
+			Config:           ms.Warehouse.Destination.Config,
+			UseRudderStorage: ms.Uploader.UseRudderStorage(),
+		}),
+	})
+	if err != nil {
+		pkgLogger.Errorf("MS: Error in setting up a downloader for destionationID : %s Error : %v", ms.Warehouse.Destination.ID, err)
+		return nil, err
+	}
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		object, err := warehouseutils.GetObjectName(objectLocation, ms.Warehouse.Destination.Config, ms.ObjectStorage)
@@ -181,19 +213,6 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		objectFile, err := os.Create(ObjectPath)
 		if err != nil {
 			pkgLogger.Errorf("MS: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
-			return nil, err
-		}
-		storageProvider := warehouseutils.ObjectStorageType(ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
-		downloader, err := filemanager.New(&filemanager.SettingsT{
-			Provider: storageProvider,
-			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-				Provider:         storageProvider,
-				Config:           ms.Warehouse.Destination.Config,
-				UseRudderStorage: ms.Uploader.UseRudderStorage(),
-			}),
-		})
-		if err != nil {
-			pkgLogger.Errorf("MS: Error in setting up a downloader for destionationID : %s Error : %v", ms.Warehouse.Destination.ID, err)
 			return nil, err
 		}
 		err = downloader.Download(objectFile, object)
@@ -242,6 +261,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("MS: Error creating temporary table for table:%s: %v\n", tableName, err)
+		txn.Rollback()
 		return
 	}
 	if !skipTempTableDelete {
@@ -251,6 +271,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	stmt, err := txn.Prepare(mssql.CopyIn(ms.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false}, sortedColumnKeys...))
 	if err != nil {
 		pkgLogger.Errorf("MS: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
+		txn.Rollback()
 		return
 	}
 	for _, objectFileName := range fileNames {
@@ -258,6 +279,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			pkgLogger.Errorf("MS: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
+			txn.Rollback()
 			return
 		}
 
@@ -266,6 +288,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		if err != nil {
 			pkgLogger.Errorf("MS: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
 			gzipFile.Close()
+			txn.Rollback()
 			return
 
 		}
@@ -299,43 +322,87 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					recordInterface = append(recordInterface, value)
 				}
 			}
-			var recordInterface1 []interface{}
+			var finalColumnValues []interface{}
 			for index, value := range recordInterface {
 				valueType := tableSchemaInUpload[sortedColumnKeys[index]]
+				if value == nil {
+					pkgLogger.Debugf("MS : Found nil value for type : %s, column : %s", valueType, sortedColumnKeys[index])
+					finalColumnValues = append(finalColumnValues, nil)
+					continue
+				}
+				strValue := value.(string)
 				switch valueType {
 				case "int":
 					{
 						var convertedValue int
-						if convertedValue, err = strconv.Atoi(value.(string)); err != nil {
-							pkgLogger.Errorf("MS : Mismatch in table datatypes found for int")
+						if convertedValue, err = strconv.Atoi(strValue); err != nil {
+							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+							finalColumnValues = append(finalColumnValues, nil)
+						} else {
+							finalColumnValues = append(finalColumnValues, convertedValue)
 						}
-						recordInterface1 = append(recordInterface1, convertedValue)
+
+					}
+				case "float":
+					{
+						var convertedValue float64
+						if convertedValue, err = strconv.ParseFloat(strValue, 64); err != nil {
+							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+							finalColumnValues = append(finalColumnValues, nil)
+						} else {
+							finalColumnValues = append(finalColumnValues, convertedValue)
+						}
 					}
 				case "datetime":
 					{
 						var convertedValue time.Time
 						//TODO : handling milli?
-						convertedValue, err = time.Parse(time.RFC3339, value.(string))
-						if err != nil {
-							pkgLogger.Errorf("MS : Mismatch in table datatypes found for datetime")
+						if convertedValue, err = time.Parse(time.RFC3339, strValue); err != nil {
+							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+							finalColumnValues = append(finalColumnValues, nil)
+						} else {
+							finalColumnValues = append(finalColumnValues, convertedValue)
 						}
 						//TODO : handling all cases?
-						recordInterface1 = append(recordInterface1, convertedValue)
 					}
 				case "boolean":
 					{
 						var convertedValue bool
-						if convertedValue, err = strconv.ParseBool(value.(string)); err != nil {
-							pkgLogger.Errorf("MS : Mismatch in table datatypes found for boolean")
+						if convertedValue, err = strconv.ParseBool(strValue); err != nil {
+							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
+							finalColumnValues = append(finalColumnValues, nil)
+						} else {
+							finalColumnValues = append(finalColumnValues, convertedValue)
 						}
-						recordInterface1 = append(recordInterface1, convertedValue)
+					}
+				case "string":
+					{
+						//This is needed to enable diacritic support Ex: Ü,ç Ç,©,∆,ß,á,ù,ñ,ê
+						//A substitute to this PR; https://github.com/denisenkom/go-mssqldb/pull/576/files
+						//An alternate to this approach is to use nvarchar(instead of varchar)
+						if len(strValue) > mssqlStringLengthLimit {
+							strValue = strValue[:mssqlStringLengthLimit]
+						}
+						byteArr := []byte("")
+						if hasDiacritics(strValue) {
+							pkgLogger.Debug("diacritics " + strValue)
+							byteArr = str2ucs2(strValue)
+							// This is needed as with above operation every character occupies 2 bytes
+							if len(byteArr) > diacriticLengthLimit {
+								byteArr = byteArr[:diacriticLengthLimit]
+							}
+							finalColumnValues = append(finalColumnValues, byteArr)
+						} else {
+							pkgLogger.Debug("non-diacritic : " + strValue)
+							finalColumnValues = append(finalColumnValues, strValue)
+						}
 					}
 				default:
-					recordInterface1 = append(recordInterface1, value)
+					finalColumnValues = append(finalColumnValues, value)
 				}
 			}
 
-			_, err = stmt.Exec(recordInterface1...)
+			_, err = stmt.Exec(finalColumnValues...)
 			if err != nil {
 				pkgLogger.Errorf("MS: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
 				txn.Rollback()
@@ -387,11 +454,32 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	if err = txn.Commit(); err != nil {
 		pkgLogger.Errorf("MS: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
+		txn.Rollback()
 		return
 	}
 
 	pkgLogger.Infof("MS: Complete load for table:%s", tableName)
 	return
+}
+
+//Taken from https://github.com/denisenkom/go-mssqldb/blob/master/tds.go
+func str2ucs2(s string) []byte {
+	res := utf16.Encode([]rune(s))
+	ucs2 := make([]byte, 2*len(res))
+	for i := 0; i < len(res); i++ {
+		ucs2[2*i] = byte(res[i])
+		ucs2[2*i+1] = byte(res[i] >> 8)
+	}
+	return ucs2
+}
+
+func hasDiacritics(str string) bool {
+	for _, x := range str {
+		if utf8.RuneLen(rune(x)) > 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
@@ -469,6 +557,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 	pkgLogger.Debugf("MS: Creating staging table for users: %s\n", sqlStatement)
 	_, err = ms.Db.Exec(sqlStatement)
 	if err != nil {
+		pkgLogger.Errorf("MS: Error Creating staging table for users: %s\n", sqlStatement)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}

@@ -32,9 +32,16 @@ import (
 	"github.com/pkg/errors"
 )
 
-// ErrEOF indicates an end of file when trying to read from a memory mapped file
-// and encountering the end of slice.
-var ErrEOF = errors.New("End of mapped region")
+var (
+	// ErrEOF indicates an end of file when trying to read from a memory mapped file
+	// and encountering the end of slice.
+	ErrEOF = errors.New("End of mapped region")
+
+	// ErrZstdCgo indicates that badger was built without cgo but ZSTD
+	// compression algorithm is being used for compression. ZSTD cannot work
+	// without CGO.
+	ErrZstdCgo = errors.New("zstd compression requires building badger with cgo enabled")
+)
 
 const (
 	// Sync indicates that O_DSYNC should be set on the underlying file,
@@ -184,8 +191,9 @@ func FixedDuration(d time.Duration) string {
 // to tell the goroutine to shut down, and a WaitGroup with which to wait for it to finish shutting
 // down.
 type Closer struct {
-	closed  chan struct{}
-	waiting sync.WaitGroup
+	closed    chan struct{}
+	waiting   sync.WaitGroup
+	closeOnce sync.Once
 }
 
 // NewCloser constructs a new Closer, with an initial count on the WaitGroup.
@@ -202,7 +210,10 @@ func (lc *Closer) AddRunning(delta int) {
 
 // Signal signals the HasBeenClosed signal.
 func (lc *Closer) Signal() {
-	close(lc.closed)
+	// Todo(ibrahim): Change Signal to return error on next badger breaking change.
+	lc.closeOnce.Do(func() {
+		close(lc.closed)
+	})
 }
 
 // HasBeenClosed gets signaled when Signal() is called.

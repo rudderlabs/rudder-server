@@ -6,6 +6,7 @@ package mocks_jobsdb
 
 import (
 	sql "database/sql"
+	json "encoding/json"
 	gomock "github.com/golang/mock/gomock"
 	jobsdb "github.com/rudderlabs/rudder-server/jobsdb"
 	uuid "github.com/satori/go.uuid"
@@ -99,6 +100,18 @@ func (mr *MockJobsDBMockRecorder) CommitTransaction(arg0 interface{}) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CommitTransaction", reflect.TypeOf((*MockJobsDB)(nil).CommitTransaction), arg0)
 }
 
+// DeleteExecuting mocks base method
+func (m *MockJobsDB) DeleteExecuting(arg0 jobsdb.GetQueryParamsT) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "DeleteExecuting", arg0)
+}
+
+// DeleteExecuting indicates an expected call of DeleteExecuting
+func (mr *MockJobsDBMockRecorder) DeleteExecuting(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExecuting", reflect.TypeOf((*MockJobsDB)(nil).DeleteExecuting), arg0)
+}
+
 // GetExecuting mocks base method
 func (m *MockJobsDB) GetExecuting(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
 	m.ctrl.T.Helper()
@@ -111,6 +124,62 @@ func (m *MockJobsDB) GetExecuting(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
 func (mr *MockJobsDBMockRecorder) GetExecuting(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetExecuting", reflect.TypeOf((*MockJobsDB)(nil).GetExecuting), arg0)
+}
+
+// GetIdentifier mocks base method
+func (m *MockJobsDB) GetIdentifier() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetIdentifier")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetIdentifier indicates an expected call of GetIdentifier
+func (mr *MockJobsDBMockRecorder) GetIdentifier() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIdentifier", reflect.TypeOf((*MockJobsDB)(nil).GetIdentifier))
+}
+
+// GetJournalEntries mocks base method
+func (m *MockJobsDB) GetJournalEntries(arg0 string) []jobsdb.JournalEntryT {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetJournalEntries", arg0)
+	ret0, _ := ret[0].([]jobsdb.JournalEntryT)
+	return ret0
+}
+
+// GetJournalEntries indicates an expected call of GetJournalEntries
+func (mr *MockJobsDBMockRecorder) GetJournalEntries(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetJournalEntries", reflect.TypeOf((*MockJobsDB)(nil).GetJournalEntries), arg0)
+}
+
+// GetProcessed mocks base method
+func (m *MockJobsDB) GetProcessed(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProcessed", arg0)
+	ret0, _ := ret[0].([]*jobsdb.JobT)
+	return ret0
+}
+
+// GetProcessed indicates an expected call of GetProcessed
+func (mr *MockJobsDBMockRecorder) GetProcessed(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProcessed", reflect.TypeOf((*MockJobsDB)(nil).GetProcessed), arg0)
+}
+
+// GetThrottled mocks base method
+func (m *MockJobsDB) GetThrottled(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetThrottled", arg0)
+	ret0, _ := ret[0].([]*jobsdb.JobT)
+	return ret0
+}
+
+// GetThrottled indicates an expected call of GetThrottled
+func (mr *MockJobsDBMockRecorder) GetThrottled(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetThrottled", reflect.TypeOf((*MockJobsDB)(nil).GetThrottled), arg0)
 }
 
 // GetToRetry mocks base method
@@ -139,6 +208,46 @@ func (m *MockJobsDB) GetUnprocessed(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT 
 func (mr *MockJobsDBMockRecorder) GetUnprocessed(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUnprocessed", reflect.TypeOf((*MockJobsDB)(nil).GetUnprocessed), arg0)
+}
+
+// GetWaiting mocks base method
+func (m *MockJobsDB) GetWaiting(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetWaiting", arg0)
+	ret0, _ := ret[0].([]*jobsdb.JobT)
+	return ret0
+}
+
+// GetWaiting indicates an expected call of GetWaiting
+func (mr *MockJobsDBMockRecorder) GetWaiting(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWaiting", reflect.TypeOf((*MockJobsDB)(nil).GetWaiting), arg0)
+}
+
+// JournalDeleteEntry mocks base method
+func (m *MockJobsDB) JournalDeleteEntry(arg0 int64) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "JournalDeleteEntry", arg0)
+}
+
+// JournalDeleteEntry indicates an expected call of JournalDeleteEntry
+func (mr *MockJobsDBMockRecorder) JournalDeleteEntry(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "JournalDeleteEntry", reflect.TypeOf((*MockJobsDB)(nil).JournalDeleteEntry), arg0)
+}
+
+// JournalMarkStart mocks base method
+func (m *MockJobsDB) JournalMarkStart(arg0 string, arg1 json.RawMessage) int64 {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "JournalMarkStart", arg0, arg1)
+	ret0, _ := ret[0].(int64)
+	return ret0
+}
+
+// JournalMarkStart indicates an expected call of JournalMarkStart
+func (mr *MockJobsDBMockRecorder) JournalMarkStart(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "JournalMarkStart", reflect.TypeOf((*MockJobsDB)(nil).JournalMarkStart), arg0, arg1)
 }
 
 // ReleaseStoreLock mocks base method
@@ -191,20 +300,6 @@ func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) error {
 func (mr *MockJobsDBMockRecorder) Store(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Store", reflect.TypeOf((*MockJobsDB)(nil).Store), arg0)
-}
-
-// StoreInTxn mocks base method
-func (m *MockJobsDB) StoreInTxn(arg0 *sql.Tx, arg1 []*jobsdb.JobT) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StoreInTxn", arg0, arg1)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// StoreInTxn indicates an expected call of StoreInTxn
-func (mr *MockJobsDBMockRecorder) StoreInTxn(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreInTxn", reflect.TypeOf((*MockJobsDB)(nil).StoreInTxn), arg0, arg1)
 }
 
 // StoreWithRetryEach mocks base method

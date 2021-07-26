@@ -8,7 +8,11 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
+	"github.com/rudderlabs/rudder-server/router"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -55,12 +59,12 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	migrationMode := embedded.App.Options().MigrationMode
 
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
-	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, false)
-	if enableProcessor {
+	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
+	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
-		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true)
-		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true)
-		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false)
+		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
+		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
+		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
 	}
 
 	enableGateway := true
@@ -87,8 +91,19 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 		}
 	}
 
+	operationmanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
+	rruntime.Go(func() {
+		operationmanager.OperationManager.StartProcessLoop()
+	})
+
 	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+
+	if embedded.App.Features().Replay != nil {
+		var replayDB jobsdb.HandleT
+		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+		embedded.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB)
+	}
 
 	if enableGateway {
 		var gateway gateway.HandleT
@@ -97,6 +112,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 		rateLimiter.SetUp()
 		gateway.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
 		gateway.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
+		go gateway.StartAdminHandler()
 		gateway.StartWebHandler()
 	}
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI

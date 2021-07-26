@@ -1,6 +1,8 @@
 package kafka
 
 import (
+	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -12,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
+	"github.com/xdg/scram"
 )
 
 // Config is the config that is required to send data to Kafka
@@ -21,6 +24,10 @@ type Config struct {
 	Port          string
 	SslEnabled    bool
 	CACertificate string
+	UseSASL       bool
+	SaslType      string
+	Username      string
+	Password      string
 }
 
 //AzureEventHubConfig is the config that is required to send data to Azure Event Hub
@@ -41,8 +48,13 @@ type ConfluentCloudConfig struct {
 var (
 	clientCertFile, clientKeyFile string
 	certificate                   tls.Certificate
-	kafkaDialTimeoutInSec         int64
-	kafkaWriteTimeoutInSec        int64
+	kafkaDialTimeout              time.Duration
+	kafkaWriteTimeout             time.Duration
+)
+
+var (
+	SHA256 scram.HashGeneratorFcn = sha256.New
+	SHA512 scram.HashGeneratorFcn = sha512.New
 )
 
 var pkgLogger logger.LoggerI
@@ -60,8 +72,8 @@ func init() {
 func loadConfig() {
 	clientCertFile = config.GetEnv("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
 	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
-	kafkaDialTimeoutInSec = config.GetInt64("Router.kafkaDialTimeoutInSec", 10)
-	kafkaWriteTimeoutInSec = config.GetInt64("Router.kafkaWriteTimeoutInSec", 2)
+	config.RegisterDurationConfigVariable(time.Duration(10), &kafkaDialTimeout, false, time.Second, []string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(2), &kafkaWriteTimeout, false, time.Second, []string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...)
 }
 
 func loadCertificate() {
@@ -76,14 +88,39 @@ func loadCertificate() {
 
 func getDefaultConfiguration() *sarama.Config {
 	config := sarama.NewConfig()
-	config.Net.DialTimeout = time.Duration(kafkaDialTimeoutInSec) * time.Second
-	config.Net.WriteTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
-	config.Net.ReadTimeout = time.Duration(kafkaWriteTimeoutInSec) * time.Second
+	config.Net.DialTimeout = kafkaDialTimeout
+	config.Net.WriteTimeout = kafkaWriteTimeout
+	config.Net.ReadTimeout = kafkaWriteTimeout
 	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true
 	config.Version = sarama.V1_0_0_0
 	return config
+}
+
+// Boilerplate needed for SCRAM Authentication in Kafka
+type XDGSCRAMClient struct {
+	*scram.Client
+	*scram.ClientConversation
+	scram.HashGeneratorFcn
+}
+
+func (x *XDGSCRAMClient) Begin(userName, password, authzID string) (err error) {
+	x.Client, err = x.HashGeneratorFcn.NewClient(userName, password, authzID)
+	if err != nil {
+		return err
+	}
+	x.ClientConversation = x.Client.NewConversation()
+	return nil
+}
+
+func (x *XDGSCRAMClient) Step(challenge string) (response string, err error) {
+	response, err = x.ClientConversation.Step(challenge)
+	return
+}
+
+func (x *XDGSCRAMClient) Done() bool {
+	return x.ClientConversation.Done()
 }
 
 // NewProducer creates a producer based on destination config
@@ -92,11 +129,11 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 	var destConfig = Config{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
-		return nil, fmt.Errorf("[Confluent Cloud] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
+		return nil, fmt.Errorf("[Kafka] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
 	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
-		return nil, fmt.Errorf("Error while unmarshalling dest config :: %w", err)
+		return nil, fmt.Errorf("[Kafka] Error while unmarshalling dest config :: %w", err)
 	}
 	hostName := destConfig.HostName + ":" + destConfig.Port
 	isSslEnabled := destConfig.SslEnabled
@@ -112,11 +149,39 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 			config.Net.TLS.Config = tlsConfig
 			config.Net.TLS.Enable = true
 		}
+		if destConfig.UseSASL {
+			// SASL is enabled only with SSL
+			err = SetSASLConfig(config, destConfig)
+			if err != nil {
+				return nil, fmt.Errorf("[Kafka] Error while setting SASL config :: %w", err)
+			}
+		}
 	}
 
 	producer, err := sarama.NewSyncProducer(hosts, config)
 
 	return producer, err
+}
+
+// Sets SASL authentication config for Kafka
+func SetSASLConfig(config *sarama.Config, destConfig Config) (err error) {
+	config.Net.SASL.Enable = true
+	config.Net.SASL.User = destConfig.Username
+	config.Net.SASL.Password = destConfig.Password
+	config.Net.SASL.Handshake = true
+	switch destConfig.SaslType {
+	case "plain":
+		config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+	case "sha512":
+		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &XDGSCRAMClient{HashGeneratorFcn: SHA512} }
+		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+	case "sha256":
+		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient { return &XDGSCRAMClient{HashGeneratorFcn: SHA256} }
+		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
+	default:
+		return fmt.Errorf("[Kafka] invalid SASL type %s", destConfig.SaslType)
+	}
+	return nil
 }
 
 // NewProducerForAzureEventHub creates a producer for Azure event hub based on destination config

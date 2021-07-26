@@ -257,6 +257,19 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnName string
 // DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	objectLocations := ch.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
+	storageProvider := warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
+	downloader, err := filemanager.New(&filemanager.SettingsT{
+		Provider: storageProvider,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         storageProvider,
+			Config:           ch.Warehouse.Destination.Config,
+			UseRudderStorage: ch.Uploader.UseRudderStorage(),
+		}),
+	})
+	if err != nil {
+		pkgLogger.Errorf("CH: Error in setting up a downloader for destionationID : %s Error : %v", ch.Warehouse.Destination.ID, err)
+		return nil, err
+	}
 	var fileNames []string
 	for _, objectLocation := range objectLocations {
 		object, err := warehouseutils.GetObjectName(objectLocation, ch.Warehouse.Destination.Config, ch.ObjectStorage)
@@ -279,19 +292,6 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		objectFile, err := os.Create(ObjectPath)
 		if err != nil {
 			pkgLogger.Errorf("CH: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
-			return nil, err
-		}
-		storageProvider := warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
-		downloader, err := filemanager.New(&filemanager.SettingsT{
-			Provider: storageProvider,
-			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-				Provider:         storageProvider,
-				Config:           ch.Warehouse.Destination.Config,
-				UseRudderStorage: ch.Uploader.UseRudderStorage(),
-			}),
-		})
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in setting up a downloader for destionationID : %s Error : %v", ch.Warehouse.Destination.ID, err)
 			return nil, err
 		}
 		err = downloader.Download(objectFile, object)

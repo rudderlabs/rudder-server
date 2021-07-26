@@ -39,15 +39,15 @@ var statsSamplingRate float32
 var DefaultStats Stats
 
 func init() {
-	statsEnabled = config.GetBool("enableStats", true)
-	statsTagsFormat = config.GetString("statsTagsFormat", "influxdb")
+	config.RegisterBoolConfigVariable(true, &statsEnabled, false, "enableStats")
+	config.RegisterStringConfigVariable("influxdb", &statsTagsFormat, false, "statsTagsFormat")
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
 	instanceID = config.GetEnv("INSTANCE_ID", "")
-	enabled = config.GetBool("RuntimeStats.enabled", true)
-	statsCollectionInterval = config.GetInt64("RuntimeStats.statsCollectionInterval", 10)
-	enableCPUStats = config.GetBool("RuntimeStats.enableCPUStats", true)
-	enableMemStats = config.GetBool("RuntimeStats.enabledMemStats", true)
-	enableGCStats = config.GetBool("RuntimeStats.enableGCStats", true)
+	config.RegisterBoolConfigVariable(true, &enabled, false, "RuntimeStats.enabled")
+	config.RegisterInt64ConfigVariable(10, &statsCollectionInterval, false, 1, "RuntimeStats.statsCollectionInterval")
+	config.RegisterBoolConfigVariable(true, &enableCPUStats, false, "RuntimeStats.enableCPUStats")
+	config.RegisterBoolConfigVariable(true, &enableMemStats, false, "RuntimeStats.enabledMemStats")
+	config.RegisterBoolConfigVariable(true, &enableGCStats, false, "RuntimeStats.enableGCStats")
 	statsSamplingRate = float32(config.GetFloat64("statsSamplingRate", 1))
 
 	pkgLogger = logger.NewLogger().Child("stats")
@@ -92,10 +92,16 @@ type RudderStatsT struct {
 
 //Setup creates a new statsd client
 func Setup() {
+	DefaultStats = &HandleT{}
+
+	if !statsEnabled {
+		return
+	}
+
 	var err error
 	conn = statsd.Address(statsdServerURL)
 	//TODO: Add tags by calling a function...
-	client, err = statsd.New(conn, statsd.TagsFormat(statsd.InfluxDB), defaultTags())
+	client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 	if err != nil {
 		// If nothing is listening on the target port, an error is returned and
 		// the returned client does nothing but is still usable. So we can
@@ -107,8 +113,6 @@ func Setup() {
 			collectRuntimeStats(client)
 		})
 	}
-
-	DefaultStats = &HandleT{}
 }
 
 // NewStat creates a new RudderStats with provided Name and Type
@@ -135,6 +139,16 @@ func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags) 
 }
 
 func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
+	//If stats is not enabled, returning a dummy struct
+	if !statsEnabled {
+		return &RudderStatsT{
+			Name:        Name,
+			StatType:    StatType,
+			Client:      nil,
+			dontProcess: true,
+		}
+	}
+
 	tagStr := StatType
 	for tagName, tagVal := range tags {
 		tagName = strings.ReplaceAll(tagName, ":", "-")
@@ -264,6 +278,10 @@ func collectRuntimeStats(client *statsd.Client) {
 
 // StopRuntimeStats stops collection of runtime stats.
 func StopRuntimeStats() {
+	if !statsEnabled {
+		return
+	}
+
 	close(rc.Done)
 }
 

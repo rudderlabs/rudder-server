@@ -26,7 +26,7 @@ func NewReservoirSampler(reservoirSize int, currSize int, totalCount int64) (rs 
 	return reservoirSampler
 }
 
-func (rs *ReservoirSample) add(item interface{}) {
+func (rs *ReservoirSample) add(item interface{}, incTotal bool) {
 	if item == nil {
 		pkgLogger.Info("Debug : Trying to add an empty event in reservoir sample")
 		return
@@ -34,7 +34,9 @@ func (rs *ReservoirSample) add(item interface{}) {
 	rs.lock.Lock()
 	defer rs.lock.Unlock()
 
-	rs.totalCount++
+	if incTotal {
+		rs.totalCount++
+	}
 
 	if rs.currSize < rs.reservoirSize {
 		rs.sampleEvents[rs.currSize] = item

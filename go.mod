@@ -11,6 +11,7 @@ require (
 	github.com/Azure/go-autorest/autorest/adal v0.8.1 // indirect
 	github.com/BurntSushi/toml v0.3.1
 	github.com/ClickHouse/clickhouse-go v1.4.1
+	github.com/DATA-DOG/go-sqlmock v1.5.0
 	github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d // indirect
 	github.com/EagleChen/restrictor v0.0.0-20180420073700-9b81bbf8df1d
 	github.com/Shopify/sarama v1.26.1
@@ -22,12 +23,12 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.0.2
 	github.com/denisenkom/go-mssqldb v0.9.0
-	github.com/dgraph-io/badger/v2 v2.0.3
+	github.com/dgraph-io/badger/v2 v2.2007.2
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/fsnotify/fsnotify v1.4.7
 	github.com/garyburd/redigo v1.6.0 // indirect
 	github.com/go-redis/redis v6.15.7+incompatible
-	github.com/gofrs/uuid v3.2.0+incompatible // indirect
+	github.com/gofrs/uuid v3.2.0+incompatible
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-migrate/migrate/v4 v4.11.0
 	github.com/golang/mock v1.5.0
@@ -37,6 +38,7 @@ require (
 	github.com/hashicorp/yamux v0.0.0-20200609203250-aecfd211c9ce
 	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334
 	github.com/jeremywohl/flatten v1.0.1
+	github.com/jinzhu/copier v0.3.2
 	github.com/joho/godotenv v1.3.0
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.3.0
@@ -61,11 +63,12 @@ require (
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.6.2
-	github.com/stretchr/testify v1.6.1 // indirect
+	github.com/stretchr/testify v1.6.1
 	github.com/thoas/go-funk v0.5.0
 	github.com/tidwall/gjson v1.5.0
 	github.com/tidwall/pretty v1.0.1 // indirect
 	github.com/tidwall/sjson v1.0.4
+	github.com/xdg/scram v1.0.3
 	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
 	go.uber.org/multierr v1.5.0 // indirect
 	go.uber.org/zap v1.14.0

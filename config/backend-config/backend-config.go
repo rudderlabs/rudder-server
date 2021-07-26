@@ -198,14 +198,13 @@ func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	workspaceToken = config.GetWorkspaceToken()
 
-	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, true, time.Second, "BackendConfig.pollIntervalInS")
+	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
 
-	config.RegisterDurationConfigVariable(time.Duration(300), &regulationsPollInterval, true, time.Second, "BackendConfig.regulationsPollIntervalInS")
-
-	configJSONPath = config.GetString("BackendConfig.configJSONPath", "/etc/rudderstack/workspaceConfig.json")
-	configFromFile = config.GetBool("BackendConfig.configFromFile", false)
+	config.RegisterDurationConfigVariable(time.Duration(300), &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
+	config.RegisterStringConfigVariable("/etc/rudderstack/workspaceConfig.json", &configJSONPath, false, "BackendConfig.configJSONPath")
+	config.RegisterBoolConfigVariable(false, &configFromFile, false, "BackendConfig.configFromFile")
 	config.RegisterIntConfigVariable(1000, &maxRegulationsPerRequest, true, 1, "BackendConfig.maxRegulationsPerRequest")
-	configEnvReplacementEnabled = config.GetBool("BackendConfig.envReplacementEnabled", true)
+	config.RegisterBoolConfigVariable(true, &configEnvReplacementEnabled, false, "BackendConfig.envReplacementEnabled")
 }
 
 func init() {
@@ -305,8 +304,8 @@ func configUpdate(statConfigBackendError stats.RudderStats) {
 		defer initializedLock.Unlock()
 		initialized = true
 		LastSync = time.Now().Format(time.RFC3339)
-		Eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 		Eb.Publish(string(TopicBackendConfig), sourceJSON)
+		Eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 	}
 }
 

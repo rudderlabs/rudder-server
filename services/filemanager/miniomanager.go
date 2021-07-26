@@ -116,6 +116,10 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	}
 }
 
+func (manager *MinioManager) DeleteObjects(locations []string) (err error) {
+	return
+}
+
 type MinioManager struct {
 	Config *MinioConfig
 }

@@ -2,14 +2,15 @@ package manager
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -55,6 +56,9 @@ func New(destType string) (ManagerI, error) {
 	case "MSSQL":
 		var ms mssql.HandleT
 		return &ms, nil
+	case "AZURE_SYNAPSE":
+		var as azuresynapse.HandleT
+		return &as, nil
 	}
 
 	return nil, fmt.Errorf("Provider of type %s is not configured for WarehouseManager", destType)

@@ -10,7 +10,10 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const tableUploadsUniqueConstraintName = "unique_table_upload_wh_upload"
+const (
+	tableUploadsUniqueConstraintName = "unique_table_upload_wh_upload"
+	createTableUploadsBatchSize      = 500
+)
 
 type TableUploadT struct {
 	uploadID  int64
@@ -38,7 +41,7 @@ func areTableUploadsCreated(uploadID int64) bool {
 	return count > 0
 }
 
-func createTableUploads(uploadID int64, tableNames []string) (err error) {
+func createTableUploadsForBatch(uploadID int64, tableNames []string) (err error) {
 	columnsInInsert := []string{"wh_upload_id", "table_name", "status", "error", "created_at", "updated_at"}
 	currentTime := timeutil.Now()
 	valueReferences := make([]string, 0, len(tableNames))
@@ -59,6 +62,21 @@ func createTableUploads(uploadID int64, tableNames []string) (err error) {
 		pkgLogger.Errorf(`Failed created entries in wh_table_uploads for upload:%d : %v`, uploadID, err)
 	}
 	return err
+}
+
+func createTableUploads(uploadID int64, tableNames []string) (err error) {
+	// we add table uploads to db in batches to avoid hitting postgres row insert limits
+	for i := 0; i < len(tableNames); i += createTableUploadsBatchSize {
+		j := i + createTableUploadsBatchSize
+		if j > len(tableNames) {
+			j = len(tableNames)
+		}
+		err = createTableUploadsForBatch(uploadID, tableNames[i:j])
+		if err != nil {
+			return
+		}
+	}
+	return
 }
 
 func (tableUpload *TableUploadT) setStatus(status string) (err error) {
