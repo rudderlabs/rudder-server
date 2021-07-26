@@ -226,6 +226,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("PG: Error creating temporary table for table:%s: %v\n", tableName, err)
+		txn.Rollback()
 		return
 	}
 	if !skipTempTableDelete {
@@ -235,6 +236,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	stmt, err := txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		pkgLogger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
+		txn.Rollback()
 		return
 	}
 	for _, objectFileName := range fileNames {
@@ -242,6 +244,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			pkgLogger.Errorf("PG: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
+			txn.Rollback()
 			return
 		}
 
@@ -250,8 +253,8 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		if err != nil {
 			pkgLogger.Errorf("PG: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
 			gzipFile.Close()
+			txn.Rollback()
 			return
-
 		}
 		csvReader := csv.NewReader(gzipReader)
 		var csvRowsProcessedCount int
@@ -334,6 +337,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	if err = txn.Commit(); err != nil {
 		pkgLogger.Errorf("PG: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
+		txn.Rollback()
 		return
 	}
 
