@@ -90,6 +90,12 @@ func (network *NetHandleT) SendPost(structData integrations.PostParametersT) (st
 					panic(err)
 				}
 				payload = strings.NewReader(string(jsonValue))
+			case "XML":
+				strValue, ok := bodyValue["payload"].(string)
+				if !ok {
+					return 400, "400 Unable to construct xml payload. Unexpected transformer response"
+				}
+				payload = strings.NewReader(strValue)
 			case "FORM":
 				formValues := url.Values{}
 				for key, val := range bodyValue {
