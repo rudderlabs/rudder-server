@@ -74,9 +74,10 @@ func init() {
 func loadConfig() {
 	clientCertFile = config.GetEnv("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
 	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
-	kafkaBatchingEnabled = config.GetBool("Router.kafka.enableBatching", false)
+	// kafkaBatchingEnabled = config.GetBool("Router.kafka.enableBatching", false)
 	config.RegisterDurationConfigVariable(time.Duration(10), &kafkaDialTimeout, false, time.Second, []string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(2), &kafkaWriteTimeout, false, time.Second, []string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...)
+	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, []string{"Router.kafka.enableBatching"}...)
 }
 
 func loadCertificate() {
