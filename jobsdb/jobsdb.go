@@ -1415,8 +1415,8 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 func (jd *HandleT) invalidateCache(ds dataSetT) {
 	if strings.HasPrefix(ds.JobTable, "pre_drop_") {
 		parentDS := dataSetT{
-			JobTable:       strings.Replace(ds.JobTable, "pre_drop_", "", -1),
-			JobStatusTable: strings.Replace(ds.JobStatusTable, "pre_drop_", "", -1),
+			JobTable:       strings.ReplaceAll(ds.JobTable, "pre_drop_", ""),
+			JobStatusTable: strings.ReplaceAll(ds.JobStatusTable, "pre_drop_", ""),
 			Index:          ds.Index,
 		}
 		jd.markClearEmptyResult(parentDS, []string{}, []string{}, nil, dropDSFromCache, nil)
