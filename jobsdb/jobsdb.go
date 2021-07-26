@@ -1413,6 +1413,7 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 }
 
 func (jd *HandleT) invalidateCache(ds dataSetT) {
+	//Trimming pre_drop from the table name
 	if strings.HasPrefix(ds.JobTable, "pre_drop_") {
 		parentDS := dataSetT{
 			JobTable:       strings.ReplaceAll(ds.JobTable, "pre_drop_", ""),
