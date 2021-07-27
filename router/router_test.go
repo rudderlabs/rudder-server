@@ -279,6 +279,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
 			router.enableBatching = true
+			router.noOfWorkers = 1
 			noOfJobsToBatchInAWorker = 3
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -304,7 +305,7 @@ var _ = Describe("Router", func() {
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
 					UUID:         uuid.NewV4(),
-					UserID:       "u1",
+					UserID:       "u2",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
 					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -317,7 +318,7 @@ var _ = Describe("Router", func() {
 				},
 				{
 					UUID:         uuid.NewV4(),
-					UserID:       "u1",
+					UserID:       "u3",
 					JobID:        2011,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
 					ExpireAt:     time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
@@ -342,47 +343,37 @@ var _ = Describe("Router", func() {
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil)
 
-			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callUnprocessed).Times(1).Return(
-				[]types.DestinationJobT{
-					{
-						Message: []byte(`{"message": "some transformed message"}`),
-						JobMetadataArray: []types.JobMetadataT{
+			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callUnprocessed).Times(1).
+				DoAndReturn(
+					func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
+						assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
+						assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
+						assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
+						return []types.DestinationJobT{
 							{
-								UserID: "u1",
-								JobID:  2009,
+								Message: []byte(`{"message": "some transformed message"}`),
+								JobMetadataArray: []types.JobMetadataT{
+									{
+										UserID: "u1",
+										JobID:  2009,
+									},
+									{
+										UserID: "u2",
+										JobID:  2010,
+									},
+									{
+										UserID: "u3",
+										JobID:  2011,
+									},
+								},
+								Batched:    true,
+								Error:      `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`,
+								StatusCode: 200,
 							},
-						},
-						Batched:    true,
-						Error:      `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`,
-						StatusCode: 200,
-					},
-					{
-						Message: []byte(`{"message": "some transformed message"}`),
-						JobMetadataArray: []types.JobMetadataT{
-							{
-								UserID: "u1",
-								JobID:  2010,
-							},
-						},
-						Batched:    true,
-						Error:      ``,
-						StatusCode: 200,
-					},
-					{
-						Message: []byte(`{"message": "some transformed message"}`),
-						JobMetadataArray: []types.JobMetadataT{
-							{
-								UserID: "u1",
-								JobID:  2011,
-							},
-						},
-						Batched:    true,
-						Error:      ``,
-						StatusCode: 200,
-					},
-				})
+						}
+					})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(3).Return(200, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(1).Return(200, "")
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
@@ -480,50 +471,48 @@ var _ = Describe("Router", func() {
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil)
 
-			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callUnprocessed).Times(1).Return(
-				[]types.DestinationJobT{
-					{
-						Message: []byte(`{"message": "some transformed message"}`),
-						JobMetadataArray: []types.JobMetadataT{
-							{
-								UserID:           "u1",
-								JobID:            2009,
-								JobT:             toRetryJobsList[0],
-								FirstAttemptedAt: "2021-06-28T15:57:30.742+05:30",
-								AttemptNum:       1,
+			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callUnprocessed).Times(1).DoAndReturn(
+				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
+					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
+					assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
+
+					return []types.DestinationJobT{
+						{
+							Message: []byte(`{"message": "some transformed message"}`),
+							JobMetadataArray: []types.JobMetadataT{
+								{
+									UserID:           "u1",
+									JobID:            2009,
+									JobT:             toRetryJobsList[0],
+									FirstAttemptedAt: "2021-06-28T15:57:30.742+05:30",
+									AttemptNum:       1,
+								},
+								{
+									UserID:           "u1",
+									JobID:            2010,
+									JobT:             unprocessedJobsList[0],
+									FirstAttemptedAt: "2021-06-28T15:57:30.742+05:30",
+								},
 							},
+							Batched:    true,
+							Error:      `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`,
+							StatusCode: 500,
 						},
-						Batched:    true,
-						Error:      `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`,
-						StatusCode: 500,
-					},
-					{
-						Message: []byte(`{"message": "some transformed message"}`),
-						JobMetadataArray: []types.JobMetadataT{
-							{
-								UserID:           "u1",
-								JobID:            2010,
-								JobT:             unprocessedJobsList[0],
-								FirstAttemptedAt: "2021-06-28T15:57:30.742+05:30",
+						{
+							Message: []byte(`{"message": "some transformed message"}`),
+							JobMetadataArray: []types.JobMetadataT{
+								{
+									UserID: "u1",
+									JobID:  2011,
+									JobT:   unprocessedJobsList[1],
+								},
 							},
+							Batched:    true,
+							Error:      ``,
+							StatusCode: 200,
 						},
-						Batched:    true,
-						Error:      `"some 500 error message"`,
-						StatusCode: 500,
-					},
-					{
-						Message: []byte(`{"message": "some transformed message"}`),
-						JobMetadataArray: []types.JobMetadataT{
-							{
-								UserID: "u1",
-								JobID:  2011,
-								JobT:   unprocessedJobsList[1],
-							},
-						},
-						Batched:    true,
-						Error:      ``,
-						StatusCode: 200,
-					},
+					}
 				})
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(1).Return(200, "")
@@ -607,33 +596,31 @@ var _ = Describe("Router", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil)
 
-			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callUnprocessed).Times(1).Return(
-				[]types.DestinationJobT{
-					{
-						Message: []byte(`{"message": "some transformed message"}`),
-						JobMetadataArray: []types.JobMetadataT{
-							{
-								UserID: "u1",
-								JobID:  2009,
+			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callUnprocessed).Times(1).DoAndReturn(
+				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
+					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
+					assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
+
+					return []types.DestinationJobT{
+						{
+							Message: []byte(`{"message": "some transformed message"}`),
+							JobMetadataArray: []types.JobMetadataT{
+								{
+									UserID: "u1",
+									JobID:  2009,
+								},
+								{
+									UserID: "u1",
+									JobID:  2010,
+								},
 							},
+							Batched: true,
+							Error:   `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`,
 						},
-						Batched: true,
-						Error:   `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`,
-					},
-					{
-						Message: []byte(`{"message": "some transformed message"}`),
-						JobMetadataArray: []types.JobMetadataT{
-							{
-								UserID: "u1",
-								JobID:  2010,
-							},
-						},
-						Batched: true,
-						Error:   `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`,
-					},
+					}
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(2).Return(200, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(1).Return(200, "")
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
@@ -655,6 +642,11 @@ var _ = Describe("Router", func() {
 
 	})
 })
+
+func assertRouterJobs(routerJob types.RouterJobT, job *jobsdb.JobT) {
+	Expect(routerJob.JobMetadata.JobID).To(Equal(job.JobID))
+	Expect(routerJob.JobMetadata.UserID).To(Equal(job.UserID))
+}
 
 func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string, errorCode string, errorResponse string, attemptNum int) {
 	Expect(status.JobID).To(Equal(job.JobID))
