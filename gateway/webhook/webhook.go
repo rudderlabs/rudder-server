@@ -132,15 +132,18 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	contentType := r.Header.Get("Content-Type")
-	if contentType == "application/x-www-form-urlencoded" {
+	if strings.ToLower(contentType) == "application/x-www-form-urlencoded" {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "Could not parse form", 400)
+			webhook.failRequest(w, r, "Could not parse form", 400, "couldNotParseForm")
+			atomic.AddUint64(&webhook.ackCount, 1)
 			return
 		}
 		postFrom = r.PostForm
-	} else if strings.Contains(contentType, "multipart/form-data") {
+	} else if strings.Contains(strings.ToLower(contentType), "multipart/form-data") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			http.Error(w, "Could not parse multipartForm", 400)
+			webhook.failRequest(w, r, "Could not parse multipartForm", 400, "couldNotParseMultiform")
+			atomic.AddUint64(&webhook.ackCount, 1)
 			return
 		}
 		multipartForm = r.MultipartForm
@@ -153,23 +156,22 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		jsonByte, err = json.Marshal(multipartForm)
 		if err != nil {
 			http.Error(w, "Could not marshal form data", 400)
+			webhook.failRequest(w, r, "Could not marshal form data", 400, "couldNotMarshal")
+			atomic.AddUint64(&webhook.ackCount, 1)
 			return
 		}
 	} else if len(postFrom) != 0 {
 		jsonByte, err = json.Marshal(postFrom)
 		if err != nil {
-			http.Error(w, "Could not marshal form data", 400)
+			webhook.failRequest(w, r, "Could not marshal form data", 400, "couldNotMarshal")
+			atomic.AddUint64(&webhook.ackCount, 1)
 			return
 		}
 	}
 
 	if len(postFrom) != 0 || multipartForm != nil {
-		r, err = http.NewRequest("POST", r.URL.String(), bytes.NewBuffer(jsonByte))
-		if err != nil {
-			http.Error(w, "Could not marshal form data", 400)
-			return
-		}
-		r.Header.Set("Content-Type", "[application/json]")
+		r.Body = ioutil.NopCloser(strings.NewReader(string(jsonByte)))
+		r.Header.Set("Content-Type", "application/json]")
 	}
 
 	done := make(chan webhookErrorRespT)
