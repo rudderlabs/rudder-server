@@ -94,7 +94,6 @@ func watchForConfigChange() {
 }
 
 func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged bool) {
-	hasConfigChanged = false
 	for key, configVal := range configMap {
 		value := configVal.value
 		switch value := value.(type) {
