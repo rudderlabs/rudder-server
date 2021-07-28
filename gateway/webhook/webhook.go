@@ -3,9 +3,11 @@ package webhook
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
+	"mime/multipart"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -108,44 +110,6 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.LogRequest(r)
 	webhook.gwHandle.IncrementRecvCount(1)
 	atomic.AddUint64(&webhook.recvCount, 1)
-	if r.Method == "GET" {
-		return
-	}
-
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Could not parse form", 400)
-		return
-	}
-
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, "Could not parse multipartForm", 400)
-		return
-	}
-
-	var postFrom = r.PostForm
-	var multipartForm = r.MultipartForm
-	var jsonByte []byte
-	var err error
-
-	if len(postFrom) != 0 {
-		jsonByte, err = json.Marshal(postFrom)
-		if err != nil {
-			http.Error(w, "Could not marshal form data", 400)
-			return
-		}
-	}
-	if r.MultipartForm != nil {
-		jsonByte, err = json.Marshal(multipartForm)
-		fmt.Println(err)
-	}
-	if len(postFrom) != 0 || multipartForm != nil {
-		r, err = http.NewRequest("POST", r.URL.String(), bytes.NewBuffer(jsonByte))
-		if err != nil {
-			http.Error(w, "Could not marshal form data", 400)
-			return
-		}
-		r.Header.Set("Content-Type", "[application/json]")
-	}
 
 	writeKey, ok := parseWriteKey(r)
 	if !ok {
@@ -159,6 +123,53 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		webhook.failRequest(w, r, response.GetStatus(response.InvalidWriteKey), response.GetStatusCode(response.InvalidWriteKey), writeKey)
 		atomic.AddUint64(&webhook.ackCount, 1)
 		return
+	}
+
+	var postFrom url.Values
+	var multipartForm *multipart.Form
+
+	if r.Method == "GET" {
+		return
+	}
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "application/x-www-form-urlencoded" {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Could not parse form", 400)
+			return
+		}
+		postFrom = r.PostForm
+	} else if strings.Contains(contentType, "multipart/form-data") {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			http.Error(w, "Could not parse multipartForm", 400)
+			return
+		}
+		multipartForm = r.MultipartForm
+	}
+
+	var jsonByte []byte
+	var err error
+
+	if r.MultipartForm != nil {
+		jsonByte, err = json.Marshal(multipartForm)
+		if err != nil {
+			http.Error(w, "Could not marshal form data", 400)
+			return
+		}
+	} else if len(postFrom) != 0 {
+		jsonByte, err = json.Marshal(postFrom)
+		if err != nil {
+			http.Error(w, "Could not marshal form data", 400)
+			return
+		}
+	}
+
+	if len(postFrom) != 0 || multipartForm != nil {
+		r, err = http.NewRequest("POST", r.URL.String(), bytes.NewBuffer(jsonByte))
+		if err != nil {
+			http.Error(w, "Could not marshal form data", 400)
+			return
+		}
+		r.Header.Set("Content-Type", "[application/json]")
 	}
 
 	done := make(chan webhookErrorRespT)
