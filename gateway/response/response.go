@@ -42,11 +42,11 @@ const (
 	SourceTransformerInvalidOutputJSON = "Invalid output json in source transformer response"
 	//NonIdentifiableRequest - Request neither has anonymousId nor userId
 	NonIdentifiableRequest = "Request neither has anonymousId nor userId"
-	//ErrorInMarshal = "Error while marshalling"
+	//ErrorInMarshal - Error while marshalling
 	ErrorInMarshal = "Error while marshalling"
-	//ErrorInParseForm = "Error during parsing form"
+	//ErrorInParseForm - Error during parsing form
 	ErrorInParseForm = "Error during parsing form"
-	//ErrorInParseMultiform = "Error during parsing multiform"
+	//ErrorInParseMultiform - Error during parsing multiform
 	ErrorInParseMultiform = "Error during parsing multiform"
 )
 
