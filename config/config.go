@@ -86,14 +86,14 @@ func watchForConfigChange() {
 	}()
 	configVarLock.RLock()
 	defer configVarLock.RUnlock()
-	_ = checkAndUpdateConfig(hotReloadableConfig)
-	isChanged := checkAndUpdateConfig(nonHotReloadableConfig)
+	_ = checkAndUpdateConfig(hotReloadableConfig, true)
+	isChanged := checkAndUpdateConfig(nonHotReloadableConfig, false)
 	if isChanged && GetEnvAsBool("RESTART_ON_CONFIG_CHANGE", false) {
 		os.Exit(1)
 	}
 }
 
-func checkAndUpdateConfig(configMap map[string]*ConfigVar) bool {
+func checkAndUpdateConfig(configMap map[string]*ConfigVar, canUpdateVar bool) bool {
 	isChanged := false
 	for key, configVal := range configMap {
 		value := configVal.value
@@ -120,8 +120,10 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar) bool {
 			_value = _value * configVal.multiplier.(int)
 			if _value != *value {
 				isChanged = true
-				fmt.Printf("The value of %s changed from %d to %d\n", key, *value, _value)
-				*value = _value
+				if canUpdateVar {
+					fmt.Printf("The value of %s changed from %d to %d\n", key, *value, _value)
+					*value = _value
+				}
 			}
 		case *int64:
 			var _value int64
@@ -145,8 +147,10 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar) bool {
 			_value = _value * configVal.multiplier.(int64)
 			if _value != *value {
 				isChanged = true
-				fmt.Printf("The value of %s changed from %d to %d\n", key, *value, _value)
-				*value = _value
+				if canUpdateVar {
+					fmt.Printf("The value of %s changed from %d to %d\n", key, *value, _value)
+					*value = _value
+				}
 			}
 		case *string:
 			var _value string
@@ -169,8 +173,10 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar) bool {
 			}
 			if _value != *value {
 				isChanged = true
-				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
-				*value = _value
+				if canUpdateVar {
+					fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
+					*value = _value
+				}
 			}
 		case *time.Duration:
 			var _value time.Duration
@@ -193,8 +199,10 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar) bool {
 			}
 			if _value != *value {
 				isChanged = true
-				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
-				*value = _value
+				if canUpdateVar {
+					fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
+					*value = _value
+				}
 			}
 		case *bool:
 			var _value bool
@@ -217,8 +225,10 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar) bool {
 			}
 			if _value != *value {
 				isChanged = true
-				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
-				*value = _value
+				if canUpdateVar {
+					fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
+					*value = _value
+				}
 			}
 		case *float64:
 			var _value float64
@@ -242,8 +252,10 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar) bool {
 			_value = _value * configVal.multiplier.(float64)
 			if _value != *value {
 				isChanged = true
-				fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
-				*value = _value
+				if canUpdateVar {
+					fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
+					*value = _value
+				}
 			}
 		}
 	}
