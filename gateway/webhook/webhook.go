@@ -167,7 +167,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if len(postFrom) != 0 || multipartForm != nil {
+	if len(jsonByte) != 0 {
 		r.Body = ioutil.NopCloser(bytes.NewReader(jsonByte))
 		r.Header.Set("Content-Type", "application/json]")
 	}
