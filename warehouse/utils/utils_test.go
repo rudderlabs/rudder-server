@@ -57,10 +57,10 @@ var _ = Describe("Utils", func() {
 					}
 
 					locations := GetS3Locations(inputs)
-					Expect(locations[0]).To(Equal("s3://test-bucket/test-object.csv"))
-					Expect(locations[1]).To(Equal("s3://test-bucket/test-object.csv"))
-					Expect(locations[2]).To(Equal("s3://my.test-bucket/test-object.csv"))
-					Expect(locations[3]).To(Equal("s3://my.test-bucket/test-object.csv"))
+					Expect(locations[0].Location).To(Equal("s3://test-bucket/test-object.csv"))
+					Expect(locations[1].Location).To(Equal("s3://test-bucket/test-object.csv"))
+					Expect(locations[2].Location).To(Equal("s3://my.test-bucket/test-object.csv"))
+					Expect(locations[3].Location).To(Equal("s3://my.test-bucket/test-object.csv"))
 				})
 			})
 		})
