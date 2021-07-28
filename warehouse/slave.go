@@ -34,28 +34,6 @@ type JobRunT struct {
 	whIdentifier         string
 }
 
-func CreateDummyJobRun() *JobRunT {
-	j := JobRunT{
-		job: PayloadT{
-			UploadSchema: map[string]map[string]string{
-				"t1": {
-					"rsbool":     "boolean",
-					"rsbigint":   "bigint",
-					"rsfloat":    "float",
-					"rsstring":   "string",
-					"rstext":     "text",
-					"rsdatetime": "datetime",
-				},
-			},
-			DestinationType: "RS",
-		},
-		outputFileWritersMap: map[string]warehouseutils.LoadFileWriterI{},
-		tableEventCountMap:   map[string]int{},
-	}
-
-	return &j
-}
-
 func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
 
 	job := jobRun.job
