@@ -86,14 +86,14 @@ func watchForConfigChange() {
 	}()
 	configVarLock.RLock()
 	defer configVarLock.RUnlock()
-	_ = checkAndUpdateConfig(hotReloadableConfig)
-	isChanged := checkAndUpdateConfig(nonHotReloadableConfig)
+	_ = checkAndHotReloadConfig(hotReloadableConfig)
+	isChanged := checkAndHotReloadConfig(nonHotReloadableConfig)
 	if isChanged && GetEnvAsBool("RESTART_ON_CONFIG_CHANGE", false) {
 		os.Exit(1)
 	}
 }
 
-func checkAndUpdateConfig(configMap map[string]*ConfigVar) (hasConfigChanged bool) {
+func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged bool) {
 	hasConfigChanged = false
 	for key, configVal := range configMap {
 		value := configVal.value
