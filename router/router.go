@@ -582,7 +582,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
 				}
 
-				prevRespStatusCode = respStatusCode
 				attemptedToSendTheJob = true
 
 				worker.deliveryTimeStat.End()
@@ -608,6 +607,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			respStatusCode = destinationJob.StatusCode
 			respBody = destinationJob.Error
 		}
+
+		prevRespStatusCode = respStatusCode
 
 		if !isJobTerminated(respStatusCode) {
 			for _, metadata := range destinationJob.JobMetadataArray {
