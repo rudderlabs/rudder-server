@@ -86,15 +86,15 @@ func watchForConfigChange() {
 	}()
 	configVarLock.RLock()
 	defer configVarLock.RUnlock()
-	_ = checkAndUpdateConfig(hotReloadableConfig, true)
-	isChanged := checkAndUpdateConfig(nonHotReloadableConfig, false)
+	_ = checkAndUpdateConfig(hotReloadableConfig)
+	isChanged := checkAndUpdateConfig(nonHotReloadableConfig)
 	if isChanged && GetEnvAsBool("RESTART_ON_CONFIG_CHANGE", false) {
 		os.Exit(1)
 	}
 }
 
-func checkAndUpdateConfig(configMap map[string]*ConfigVar, canUpdateVar bool) bool {
-	isChanged := false
+func checkAndUpdateConfig(configMap map[string]*ConfigVar) (hasConfigChanged bool) {
+	hasConfigChanged = false
 	for key, configVal := range configMap {
 		value := configVal.value
 		switch value := value.(type) {
@@ -119,8 +119,8 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar, canUpdateVar bool) bo
 			}
 			_value = _value * configVal.multiplier.(int)
 			if _value != *value {
-				isChanged = true
-				if canUpdateVar {
+				hasConfigChanged = true
+				if configVal.isHotReloadable {
 					fmt.Printf("The value of %s changed from %d to %d\n", key, *value, _value)
 					*value = _value
 				}
@@ -146,8 +146,8 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar, canUpdateVar bool) bo
 			}
 			_value = _value * configVal.multiplier.(int64)
 			if _value != *value {
-				isChanged = true
-				if canUpdateVar {
+				hasConfigChanged = true
+				if configVal.isHotReloadable {
 					fmt.Printf("The value of %s changed from %d to %d\n", key, *value, _value)
 					*value = _value
 				}
@@ -172,8 +172,8 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar, canUpdateVar bool) bo
 				_value = configVal.defaultValue.(string)
 			}
 			if _value != *value {
-				isChanged = true
-				if canUpdateVar {
+				hasConfigChanged = true
+				if configVal.isHotReloadable {
 					fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
 					*value = _value
 				}
@@ -198,8 +198,8 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar, canUpdateVar bool) bo
 				_value = configVal.defaultValue.(time.Duration) * configVal.multiplier.(time.Duration)
 			}
 			if _value != *value {
-				isChanged = true
-				if canUpdateVar {
+				hasConfigChanged = true
+				if configVal.isHotReloadable {
 					fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
 					*value = _value
 				}
@@ -224,8 +224,8 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar, canUpdateVar bool) bo
 				_value = configVal.defaultValue.(bool)
 			}
 			if _value != *value {
-				isChanged = true
-				if canUpdateVar {
+				hasConfigChanged = true
+				if configVal.isHotReloadable {
 					fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
 					*value = _value
 				}
@@ -251,15 +251,15 @@ func checkAndUpdateConfig(configMap map[string]*ConfigVar, canUpdateVar bool) bo
 			}
 			_value = _value * configVal.multiplier.(float64)
 			if _value != *value {
-				isChanged = true
-				if canUpdateVar {
+				hasConfigChanged = true
+				if configVal.isHotReloadable {
 					fmt.Printf("The value of %s changed from %v to %v\n", key, *value, _value)
 					*value = _value
 				}
 			}
 		}
 	}
-	return isChanged
+	return hasConfigChanged
 }
 
 //GetBool is a wrapper for viper's GetBool
