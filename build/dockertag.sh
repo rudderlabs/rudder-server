@@ -12,7 +12,7 @@ function docker_tag_exists() {
     curl --silent -f --head -lL https://hub.docker.com/v2/repositories/$1/tags/$2/ > /dev/null
 }
 
-if [ buildname == "enterprise" ]; then
+if [ $buildname == "enterprise" ]; then
     dockertag=$semver"-internal"
     while docker_tag_exists rudderstack/rudder-server $dockertag;
     do
