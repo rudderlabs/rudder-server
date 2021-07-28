@@ -193,7 +193,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		return uploadsRes, nil
 	}
 
-	query := uploadsReq.generateQuery(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime'`)
+	query := uploadsReq.generateQuery(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	uploadsReq.API.log.Info(query)
 	rows, err := uploadsReq.API.dbHandle.Query(query)
 	if err != nil {
@@ -207,7 +207,8 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		var timingsObject sql.NullString
 		var totalUploads int32
 		var firstEventAt, lastEventAt, lastExecAt, updatedAt sql.NullTime
-		err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &totalUploads)
+		var isUploadArchived bool
+		err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived, &totalUploads)
 		if err != nil {
 			uploadsReq.API.log.Errorf(err.Error())
 			return &proto.WHUploadsResponse{}, err
@@ -215,6 +216,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		uploadsRes.Pagination.Total = totalUploads
 		upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 		upload.LastEventAt = timestamppb.New(lastEventAt.Time)
+		upload.IsArchivedUpload = isUploadArchived
 		gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
 			upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 			return true
@@ -253,15 +255,16 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	if err != nil {
 		return &proto.WHUploadResponse{}, err
 	}
-	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, created_at, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime'`)
+	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, created_at, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	uploadReq.API.log.Debug(query)
 	var upload proto.WHUploadResponse
 	var nextRetryTimeStr sql.NullString
 	var firstEventAt, lastEventAt, createdAt, lastExecAt, updatedAt sql.NullTime
 	var timingsObject sql.NullString
 	var uploadError string
+	var isUploadArchived bool
 	row := uploadReq.API.dbHandle.QueryRow(query)
-	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &createdAt, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr)
+	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &createdAt, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived)
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadResponse{}, err
@@ -274,6 +277,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 	upload.LastEventAt = timestamppb.New(lastEventAt.Time)
 	upload.LastExecAt = timestamppb.New(lastExecAt.Time)
+	upload.IsArchivedUpload = isUploadArchived
 	gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
 		upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 		return true
