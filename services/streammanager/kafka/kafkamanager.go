@@ -50,6 +50,7 @@ var (
 	certificate                   tls.Certificate
 	kafkaDialTimeout              time.Duration
 	kafkaWriteTimeout             time.Duration
+	kafkaBatchingEnabled          bool
 )
 
 var (
@@ -67,13 +68,16 @@ func init() {
 	loadConfig()
 	loadCertificate()
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("kafka")
+	// sarama.Logger = log.New(os.Stdout, "[Sarama] ", log.LstdFlags)
 }
 
 func loadConfig() {
 	clientCertFile = config.GetEnv("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
 	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
+	// kafkaBatchingEnabled = config.GetBool("Router.kafka.enableBatching", false)
 	config.RegisterDurationConfigVariable(time.Duration(10), &kafkaDialTimeout, false, time.Second, []string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(2), &kafkaWriteTimeout, false, time.Second, []string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...)
+	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.kafka.enableBatching")
 }
 
 func loadCertificate() {
@@ -93,8 +97,10 @@ func getDefaultConfiguration() *sarama.Config {
 	config.Net.ReadTimeout = kafkaWriteTimeout
 	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
 	config.Producer.RequiredAcks = sarama.WaitForAll
+	// config.Producer.RequiredAcks = sarama.WaitForLocal
 	config.Producer.Return.Successes = true
 	config.Version = sarama.V1_0_0_0
+	// config.Metadata.Retry.Max = 1
 	return config
 }
 
@@ -264,6 +270,26 @@ func prepareMessage(topic string, key string, message []byte, timestamp time.Tim
 	return msg
 }
 
+func prepareBatchedMessage(topic string, batch []map[string]interface{}, timestamp time.Time) (batchMessage []*sarama.ProducerMessage, err error) {
+	var batchedMessage []*sarama.ProducerMessage
+	for _, data := range batch {
+		message, err := json.Marshal(data["message"])
+
+		if err != nil {
+			return nil, err
+		}
+
+		msg := &sarama.ProducerMessage{
+			Topic:     topic,
+			Key:       sarama.StringEncoder(data["userId"].(string)),
+			Value:     sarama.StringEncoder(message),
+			Timestamp: timestamp,
+		}
+		batchedMessage = append(batchedMessage, msg)
+	}
+	return batchedMessage, nil
+}
+
 // NewTLSConfig generates a TLS configuration used to authenticate on server with certificates.
 func NewTLSConfig(caCertFile string) *tls.Config {
 
@@ -315,10 +341,33 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	//pkgLogger.Infof("Created Producer %v\n", producer)
 
 	topic := config.Topic
+	timestamp := time.Now()
+
+	if kafkaBatchingEnabled {
+		var batch []map[string]interface{}
+		err := json.Unmarshal(jsonData, &batch)
+		if err != nil {
+			return 400, "Failure", "Error while unmarshalling json data :: " + err.Error()
+		}
+
+		batchedMessage, err := prepareBatchedMessage(topic, batch, timestamp)
+		if err != nil {
+			return 400, "Failure", "Error while preparing batched message :: " + err.Error()
+		}
+
+		err = kafkaProducer.SendMessages(batchedMessage)
+		if err != nil {
+			return makeErrorResponse(err) // would retry the messages in batch in case brokers are down
+		}
+
+		returnMessage := "Kafka: Message delivered in batch"
+		statusCode := 200
+		errorMessage := returnMessage
+		return statusCode, returnMessage, errorMessage
+	}
 
 	parsedJSON := gjson.ParseBytes(jsonData)
 	data := parsedJSON.Get("message").Value().(interface{})
-	timestamp := time.Now()
 	value, err := json.Marshal(data)
 	if err != nil {
 		return makeErrorResponse(err)
