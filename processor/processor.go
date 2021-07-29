@@ -121,6 +121,8 @@ type ParametersT struct {
 	SourceTaskRunID string `json:"source_task_run_id"`
 	SourceJobID     string `json:"source_job_id"`
 	SourceJobRunID  string `json:"source_job_run_id"`
+	EventName       string `json:"event_name"`
+	EventType       string `json:"event_type"`
 }
 
 type MetricMetadata struct {
@@ -551,7 +553,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	eventBytes, err := json.Marshal(singularEvent)
 	if err != nil {
 		//Marshalling should never fail. But still panicking.
-		panic(fmt.Errorf("[Processor] couldn't marshal singularEvent. singularEvent: %v\n", singularEvent))
+		panic(fmt.Errorf("[Processor] couldn't marshal singularEvent. singularEvent: %v", singularEvent))
 	}
 	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	commonMetadata.WorkspaceID = source.WorkspaceID
@@ -559,7 +561,10 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.InstanceID = config.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
-	commonMetadata.MessageID = singularEvent["messageId"].(string)
+	messageID, ok := singularEvent["messageId"].(string)
+	if ok {
+		commonMetadata.MessageID = messageID
+	}
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
 	commonMetadata.SourceBatchID = gjson.GetBytes(eventBytes, "context.sources.batch_id").String()
 	commonMetadata.SourceTaskID = gjson.GetBytes(eventBytes, "context.sources.task_id").String()
@@ -568,6 +573,14 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceJobRunID = gjson.GetBytes(eventBytes, "context.sources.job_run_id").String()
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
+	eventName, ok := singularEvent["event"].(string)
+	if ok {
+		commonMetadata.EventName = eventName
+	}
+	eventType, ok := singularEvent["type"].(string)
+	if ok {
+		commonMetadata.EventType = eventType
+	}
 
 	return &commonMetadata
 }
@@ -590,6 +603,8 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.SourceTaskRunID = commonMetadata.SourceTaskRunID
 	metadata.SourceJobID = commonMetadata.SourceJobID
 	metadata.SourceJobRunID = commonMetadata.SourceJobRunID
+	metadata.EventName = commonMetadata.EventName
+	metadata.EventType = commonMetadata.EventType
 
 	metadata.DestinationID = destination.ID
 	metadata.DestinationType = destination.DestinationDefinition.Name
@@ -663,6 +678,8 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
 		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
+		eventMetadata.EventName = userTransformedEvent.Metadata.EventName
+		eventMetadata.EventType = userTransformedEvent.Metadata.EventType
 		updatedEvent := transformer.TransformerEventT{
 			Message:     userTransformedEvent.Output,
 			Metadata:    eventMetadata,
@@ -1247,6 +1264,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			sourceTaskRunId := destEvent.Metadata.SourceTaskRunID
 			sourceJobId := destEvent.Metadata.SourceJobID
 			sourceJobRunId := destEvent.Metadata.SourceJobRunID
+			eventName := destEvent.Metadata.EventName
+			eventType := destEvent.Metadata.EventType
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
 			if rudderID == "" {
@@ -1265,6 +1284,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				SourceTaskRunID: sourceTaskRunId,
 				SourceJobID:     sourceJobId,
 				SourceJobRunID:  sourceJobRunId,
+				EventName:       eventName,
+				EventType:       eventType,
 			}
 			marshalledParams, err := json.Marshal(params)
 			if err != nil {

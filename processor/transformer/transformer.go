@@ -51,6 +51,8 @@ type MetadataT struct {
 	RudderID   string   `json:"rudderId"`
 	SessionID  string   `json:"sessionId,omitempty"`
 	ReceivedAt string   `json:"receivedAt"`
+	EventName  string   `json:"eventName"`
+	EventType  string   `json:"eventType"`
 }
 
 type TransformerEventT struct {
