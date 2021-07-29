@@ -77,7 +77,7 @@ func loadConfig() {
 	// kafkaBatchingEnabled = config.GetBool("Router.kafka.enableBatching", false)
 	config.RegisterDurationConfigVariable(time.Duration(10), &kafkaDialTimeout, false, time.Second, []string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(2), &kafkaWriteTimeout, false, time.Second, []string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...)
-	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, []string{"Router.kafka.enableBatching"}...)
+	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.kafka.enableBatching")
 }
 
 func loadCertificate() {
