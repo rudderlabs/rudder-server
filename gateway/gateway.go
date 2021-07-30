@@ -409,8 +409,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				return true // keep iterating
 			})
 
-			body, _ = sjson.SetBytes(body, "batch", out)
-
 			if len(body) > maxReqSize && !containsAudienceList {
 				req.done <- response.GetStatus(response.RequestBodyTooLarge)
 				preDbStoreCount++
@@ -418,6 +416,8 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
 				continue
 			}
+
+			body, _ = sjson.SetBytes(body, "batch", out)
 
 			if notIdentifiable {
 				req.done <- response.GetStatus(response.NonIdentifiableRequest)
@@ -583,6 +583,7 @@ func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 func (gateway *HandleT) webImportHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webRequestHandler(gateway.irh, w, r, "import")
 }
+
 func (gateway *HandleT) webAudienceListHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webHandler(w, r, "audiencelist")
 }
