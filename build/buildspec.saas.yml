@@ -23,12 +23,11 @@ phases:
       - DATE=$(date "+%F,%T")
       - echo Build started on `date`
       - echo Building the Docker image...
-      - BUILDNAME="enterprise"
       - TAG=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
       - echo tag.. $TAG
       - chmod +rx ./dockertag.sh
-      - SEMVER=$(echo | git -c 'versionsort.suffix=-' ls-remote --exit-code --refs --sort='version:refname' --tags 'git@github.com:rudderlabs/rudder-server.git' '*.*.*' | tail -n -1 | cut  -d '/' -f 3)
-      - UPDATEDTAG=`./dockertag.sh $TAG $dockerhub_passwd $SEMVER $BUILDNAME`
+      - SEMVER=$(head -1 .version)
+      - UPDATEDTAG=`./dockertag.sh $dockerhub_passwd $SEMVER`
       - echo sem version.. $SEMVER
       - VERSION=$UPDATEDTAG
       - echo version.. $VERSION
