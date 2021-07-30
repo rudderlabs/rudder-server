@@ -103,6 +103,7 @@ type HandleT struct {
 	drainJobHandler                        drain.DrainI
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
+	savePayloadOnError                     bool
 }
 
 type jobResponseT struct {
@@ -353,7 +354,7 @@ func (worker *workerT) workerProcess() {
 
 			if worker.rt.enableBatching {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
-				worker.routerJobs = append(worker.routerJobs, routerJob)			
+				worker.routerJobs = append(worker.routerJobs, routerJob)
 				if len(worker.routerJobs) >= noOfJobsToBatchInAWorker {
 					worker.destinationJobs = worker.batch(worker.routerJobs)
 					worker.processDestinationJobs()
@@ -788,7 +789,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		//1. if job failed and
 		//2. if router job undergoes batching or dest transform.
 		if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
-			status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+			if worker.rt.savePayloadOnError {
+				status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+			}
 		}
 		// the job failed
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
@@ -1586,6 +1589,8 @@ func init() {
 
 //Setup initializes this module
 func (rt *HandleT) Setup(jobsDB *jobsdb.HandleT, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
+
+	config.RegisterBoolConfigVariable(true, &rt.savePayloadOnError, true, "Router.savePayloadOnError")
 
 	rt.generatorPauseChannel = make(chan *PauseT)
 	rt.generatorResumeChannel = make(chan bool)
