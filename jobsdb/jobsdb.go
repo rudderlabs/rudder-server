@@ -103,6 +103,7 @@ type JobsDB interface {
 	GetProcessed(params GetQueryParamsT) []*JobT
 	GetUnprocessed(params GetQueryParamsT) []*JobT
 	GetExecuting(params GetQueryParamsT) []*JobT
+	GetPendingList(params GetQueryParamsT) []*JobT
 
 	Status() interface{}
 	GetIdentifier() string
@@ -435,6 +436,7 @@ var (
 	WaitingRetry = jobStateT{isValid: true, isTerminal: false, State: "waiting_retry"}
 	Migrating    = jobStateT{isValid: true, isTerminal: false, State: "migrating"}
 	Throttled    = jobStateT{isValid: true, isTerminal: false, State: "throttled"}
+	Pending      = jobStateT{isValid: true, isTerminal: false, State: "pending"}
 
 	//Valid, Terminal
 	Succeeded   = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
@@ -777,6 +779,8 @@ func (jd *HandleT) dbReader() {
 			readReq.jobsListChan <- jd.getUnprocessed(readReq.getQueryParams)
 		} else if readReq.reqType == Executing.State {
 			readReq.jobsListChan <- jd.getExecuting(readReq.getQueryParams)
+		} else if readReq.reqType == Pending.State {
+			readReq.jobsListChan <- jd.getPendingList(readReq.getQueryParams)
 		} else {
 			panic(fmt.Errorf("[[ %s ]] unknown read request type: %s", jd.tablePrefix, readReq.reqType))
 		}
@@ -3185,6 +3189,48 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 
 	//Release lock
 	return outJobs
+}
+
+/*
+GetUnprocessed returns the unprocessed events. Unprocessed events are
+those whose state hasn't been marked in the DB.
+If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
+*/
+func (jd *HandleT) GetPendingList(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+
+	params.StateFilters = []string{Pending.State}
+
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	totalReadTime := jd.getTimerStat("processed_total_time", tags)
+	totalReadTime.Start()
+	defer totalReadTime.End()
+
+	if jd.enableReaderQueue {
+		readChannelWaitTime := jd.getTimerStat("processed_wait_time", tags)
+		readChannelWaitTime.Start()
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+			reqType:        Pending.State,
+		}
+		jd.readChannel <- readJobRequest
+		readChannelWaitTime.End()
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getPendingList(params)
+	}
+}
+
+/*
+getPendingList returns events which need are pending.
+This is a wrapper over GetProcessed call above
+*/
+func (jd *HandleT) getPendingList(params GetQueryParamsT) []*JobT {
+	return jd.GetProcessed(params)
 }
 
 /*

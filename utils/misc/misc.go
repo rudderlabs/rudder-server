@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/md5"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -622,6 +623,37 @@ type GZipWriter struct {
 	File      *os.File
 	GzWriter  *gzip.Writer
 	BufWriter *bufio.Writer
+}
+
+type CSVWriter struct {
+	File      *os.File
+	CSVWriter *csv.Writer
+}
+
+func CreateCSV(filename string) (w CSVWriter, err error) {
+	file, err := os.Create(filename)
+	if err != nil {
+		return
+	}
+	csvWriter := csv.NewWriter(file)
+	w = CSVWriter{
+		File:      file,
+		CSVWriter: csvWriter,
+	}
+	return
+}
+
+func GetCSV(filename string) (w CSVWriter, err error) {
+	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	if err != nil {
+		return
+	}
+	csvWriter := csv.NewWriter(file)
+	w = CSVWriter{
+		File:      file,
+		CSVWriter: csvWriter,
+	}
+	return
 }
 
 func CreateGZ(s string) (w GZipWriter, err error) {
