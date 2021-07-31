@@ -72,6 +72,3 @@ const (
 	errGroupIDNotFound                    string = "kafka server: The group id does not exist."
 	errListenerNotFound                   string = "kafka server: There is no listener on the leader broker that matches the listener on which metadata request was processed."
 )
-
-// errOutOfBrokers                       string = "kafka: client has run out of available brokers to talk to (Is your cluster reachable?)"
-// errCircuitBreakerIsOpen               string = "circuit breaker is open"

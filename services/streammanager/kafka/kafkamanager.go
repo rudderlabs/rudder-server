@@ -68,16 +68,14 @@ func init() {
 	loadConfig()
 	loadCertificate()
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("kafka")
-	// sarama.Logger = log.New(os.Stdout, "[Sarama] ", log.LstdFlags)
 }
 
 func loadConfig() {
 	clientCertFile = config.GetEnv("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
 	clientKeyFile = config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
-	// kafkaBatchingEnabled = config.GetBool("Router.kafka.enableBatching", false)
 	config.RegisterDurationConfigVariable(time.Duration(10), &kafkaDialTimeout, false, time.Second, []string{"Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(2), &kafkaWriteTimeout, false, time.Second, []string{"Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"}...)
-	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.kafka.enableBatching")
+	config.RegisterBoolConfigVariable(false, &kafkaBatchingEnabled, false, "Router.KAFKA.enableBatching")
 }
 
 func loadCertificate() {
@@ -97,10 +95,8 @@ func getDefaultConfiguration() *sarama.Config {
 	config.Net.ReadTimeout = kafkaWriteTimeout
 	config.Producer.Partitioner = sarama.NewReferenceHashPartitioner
 	config.Producer.RequiredAcks = sarama.WaitForAll
-	// config.Producer.RequiredAcks = sarama.WaitForLocal
 	config.Producer.Return.Successes = true
 	config.Version = sarama.V1_0_0_0
-	// config.Metadata.Retry.Max = 1
 	return config
 }
 
@@ -274,7 +270,6 @@ func prepareBatchedMessage(topic string, batch []map[string]interface{}, timesta
 	var batchedMessage []*sarama.ProducerMessage
 	for _, data := range batch {
 		message, err := json.Marshal(data["message"])
-
 		if err != nil {
 			return nil, err
 		}
@@ -338,34 +333,43 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if err != nil {
 		return makeErrorResponse(err) //returning 500 for retrying, in case of bad config
 	}
-	//pkgLogger.Infof("Created Producer %v\n", producer)
 
 	topic := config.Topic
-	timestamp := time.Now()
 
 	if kafkaBatchingEnabled {
-		var batch []map[string]interface{}
-		err := json.Unmarshal(jsonData, &batch)
-		if err != nil {
-			return 400, "Failure", "Error while unmarshalling json data :: " + err.Error()
-		}
-
-		batchedMessage, err := prepareBatchedMessage(topic, batch, timestamp)
-		if err != nil {
-			return 400, "Failure", "Error while preparing batched message :: " + err.Error()
-		}
-
-		err = kafkaProducer.SendMessages(batchedMessage)
-		if err != nil {
-			return makeErrorResponse(err) // would retry the messages in batch in case brokers are down
-		}
-
-		returnMessage := "Kafka: Message delivered in batch"
-		statusCode := 200
-		errorMessage := returnMessage
-		return statusCode, returnMessage, errorMessage
+		return sendBatchedMessage(jsonData, kafkaProducer, topic)
 	}
 
+	return sendMessage(jsonData, kafkaProducer, topic)
+}
+
+func sendBatchedMessage(jsonData json.RawMessage, kafkaProducer sarama.SyncProducer, topic string) (int, string, string) {
+	timestamp := time.Now()
+	var batch []map[string]interface{}
+	err := json.Unmarshal(jsonData, &batch)
+	if err != nil {
+		return 400, "Failure", "Error while unmarshalling json data :: " + err.Error()
+	}
+
+	batchedMessage, err := prepareBatchedMessage(topic, batch, timestamp)
+	if err != nil {
+		return 400, "Failure", "Error while preparing batched message :: " + err.Error()
+	}
+
+	err = kafkaProducer.SendMessages(batchedMessage)
+	if err != nil {
+		return makeErrorResponse(err) // would retry the messages in batch in case brokers are down
+	}
+
+	returnMessage := "Kafka: Message delivered in batch"
+	statusCode := 200
+	errorMessage := returnMessage
+
+	return statusCode, returnMessage, errorMessage
+}
+
+func sendMessage(jsonData json.RawMessage, kafkaProducer sarama.SyncProducer, topic string) (int, string, string) {
+	timestamp := time.Now()
 	parsedJSON := gjson.ParseBytes(jsonData)
 	data := parsedJSON.Get("message").Value().(interface{})
 	value, err := json.Marshal(data)
@@ -382,10 +386,8 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	}
 
 	returnMessage := fmt.Sprintf("Message delivered at Offset: %v , Partition: %v for topic: %s", offset, partition, topic)
-	//pkgLogger.Info(returnMessage)
 	statusCode := 200
 	errorMessage := returnMessage
-	//producer.Close()
 
 	return statusCode, returnMessage, errorMessage
 }
