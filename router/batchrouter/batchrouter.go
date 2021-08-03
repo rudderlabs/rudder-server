@@ -698,10 +698,6 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output S
 		ErrorCode:     "",
 		ErrorResponse: errorResp,
 	}
-	brt.logger.Info("*********************")
-	brt.logger.Infof("%+v", deliveryStatus)
-	brt.logger.Info(string(errorResp))
-	brt.logger.Info("*********************")
 	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
 }
 
