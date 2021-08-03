@@ -230,6 +230,7 @@ type JobStatusT struct {
 	RetryTime     time.Time       `json:"RetryTime"`
 	ErrorCode     string          `json:"ErrorCode"`
 	ErrorResponse json.RawMessage `json:"ErrorResponse"`
+	Parameters    json.RawMessage `json:"Parameters"`
 }
 
 /*

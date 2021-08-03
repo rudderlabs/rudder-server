@@ -228,39 +228,40 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[stri
 	}
 }
 
-func UploadCSVFile(url string, method string) {
+func UploadCSVFile(url string, method string, filePath string) {
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
-	_ = writer.WriteField("format", "csv")
-	_ = writer.WriteField("file", "@lead_data.csv")
-	_ = writer.WriteField("access_token", "d1d4698b-4c11-4da9-9744-b09d4b53cb16:ab")
-	err := writer.Close()
+	err := writer.WriteField("format", "csv")
 	if err != nil {
-		fmt.Println(err)
-		return
+		panic(err)
+	}
+	err = writer.WriteField("file", fmt.Sprintf("@%s", filePath))
+	if err != nil {
+		panic(err)
+	}
+	err = writer.Close()
+	if err != nil {
+		panic(err)
 	}
 
 	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
 
 	if err != nil {
-		fmt.Println(err)
-		return
+		panic(err)
 	}
-	req.Header.Add("Authorization", "Bearer d1d4698b-4c11-4da9-9744-b09d4b53cb16:ab")
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	res, err := client.Do(req)
 	if err != nil {
-		fmt.Println(err)
-		return
+		panic(err)
 	}
+
 	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		fmt.Println(err)
-		return
+		panic(err)
 	}
 	fmt.Println(string(body))
 }
@@ -431,7 +432,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 }
 
-func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isAsync bool) {
+func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, config map[string]interface{}, makeJournalEntry bool, isAsync bool) {
 	if disableEgress {
 		return
 	}
@@ -1043,7 +1044,7 @@ func (worker *workerT) workerProcess() {
 					case misc.ContainsString(asyncDestinations, brt.destType):
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 						destUploadStat.Start()
-						brt.sendJobsToStorage(brt.destType, batchJobs, true, true)
+						brt.sendJobsToStorage(brt.destType, batchJobs, batchJobs.BatchDestination.Destination.Config, true, true)
 
 						destUploadStat.End()
 
