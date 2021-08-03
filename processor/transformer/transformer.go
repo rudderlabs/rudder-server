@@ -208,7 +208,8 @@ func (trans *HandleT) transformWorker() {
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			for _, transformEvent := range job.data {
+			for i, _ := range job.data {
+				transformEvent := &job.data[i]
 				resp := TransformerResponseT{StatusCode: resp.StatusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 				transformerResponses = append(transformerResponses, resp)
 			}
