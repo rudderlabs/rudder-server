@@ -37,7 +37,7 @@ Gateway:
     maxRetryTime: 10s
 EventSchemas:
   enableEventSchemasFeature: false
-  syncInterval: 120s
+  syncInterval: 240s
   noOfWorkers: 128
 Debugger:
   maxBatchSize: 32
