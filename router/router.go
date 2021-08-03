@@ -103,6 +103,7 @@ type HandleT struct {
 	saveDestinationResponse                bool
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
+	savePayloadOnError                     bool
 }
 
 type jobResponseT struct {
@@ -802,7 +803,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		//1. if job failed and
 		//2. if router job undergoes batching or dest transform.
 		if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
-			status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+			if worker.rt.savePayloadOnError {
+				status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+			}
 		}
 		// the job failed
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
@@ -1650,9 +1653,11 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
+	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
+	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
