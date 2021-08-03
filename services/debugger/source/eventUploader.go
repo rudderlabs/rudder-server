@@ -89,7 +89,8 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 
 func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) {
 	eventBuffer := data.([]interface{})
-	res := make(map[string][]EventUploadT)
+	res := make(map[string]interface{})
+	res["version"] = "v1"
 	for _, e := range eventBuffer {
 		event := e.(*GatewayEventBatchT)
 		batchedEvent := EventUploadBatchT{}
@@ -107,16 +108,22 @@ func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) 
 
 		var arr []EventUploadT
 		if value, ok := res[batchedEvent.WriteKey]; ok {
-			arr = value
+			arr = value.([]EventUploadT)
 		} else {
 			arr = make([]EventUploadT, 0)
 		}
 
 		for _, ev := range batchedEvent.Batch {
 			// add the receivedAt time to each event
-			ev["receivedAt"] = receivedAtStr
-
-			arr = append(arr, ev)
+			event := map[string]interface{}{
+				"payload":       ev,
+				"receivedAt":    receivedAtStr,
+				"eventName":     ev["event"],
+				"eventType":     ev["type"],
+				"errorResponse": nil,
+				"errorCode":     200,
+			}
+			arr = append(arr, event)
 		}
 
 		res[batchedEvent.WriteKey] = arr

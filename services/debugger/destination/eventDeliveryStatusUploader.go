@@ -22,6 +22,9 @@ type DeliveryStatusT struct {
 	JobState      string          `json:"jobState"`
 	ErrorCode     string          `json:"errorCode"`
 	ErrorResponse json.RawMessage `json:"errorResponse"`
+	SentAt        string          `json:"sentAt"`
+	EventName     string          `json:"eventName"`
+	EventType     string          `json:"eventType"`
 }
 
 var uploadEnabledDestinationIDs map[string]bool

@@ -660,7 +660,7 @@ func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) 
 	}
 }
 
-func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err error, isWarehouse bool) {
+func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output StorageUploadOutput, isWarehouse bool) {
 	if !destinationdebugger.HasUploadEnabled(batchDestination.Destination.ID) {
 		return
 	}
@@ -669,6 +669,7 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 		errorResp []byte
 	)
 
+	err := output.Error
 	if err != nil {
 		jobState = jobsdb.Failed.State
 		if isWarehouse {
@@ -686,6 +687,9 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 	//Payload and AttemptNum don't make sense in recording batch router delivery status,
 	//So they are set to default values.
 	deliveryStatus := destinationdebugger.DeliveryStatusT{
+		EventName:     fmt.Sprint(output.TotalEvents) + " events",
+		EventType:     "",
+		SentAt:        time.Now().String(),
 		DestinationID: batchDestination.Destination.ID,
 		SourceID:      batchDestination.Source.ID,
 		Payload:       []byte(`{}`),
@@ -694,6 +698,10 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 		ErrorCode:     "",
 		ErrorResponse: errorResp,
 	}
+	brt.logger.Info("*********************")
+	brt.logger.Infof("%+v", deliveryStatus)
+	brt.logger.Info(string(errorResp))
+	brt.logger.Info("*********************")
 	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
 }
 
@@ -886,7 +894,7 @@ func (worker *workerT) workerProcess() {
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 						destUploadStat.Start()
 						output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
-						brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, false)
+						brt.recordDeliveryStatus(*batchJobs.BatchDestination, output, false)
 						brt.setJobStatus(batchJobs, false, output.Error, false)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						if output.JournalOpID > 0 {
@@ -912,7 +920,7 @@ func (worker *workerT) workerProcess() {
 							warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
 							warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
 						}
-						brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, true)
+						brt.recordDeliveryStatus(*batchJobs.BatchDestination, output, true)
 						brt.setJobStatus(batchJobs, true, output.Error, postToWarehouseErr)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						destUploadStat.End()

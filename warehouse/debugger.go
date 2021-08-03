@@ -90,6 +90,9 @@ func (wh *HandleT) recordDeliveryStatus(destID string, uploadID int64) {
 		JobState:      status,
 		ErrorCode:     errorCode,
 		ErrorResponse: errorRespB,
+		SentAt:        time.Now().String(),
+		EventName:     "",
+		EventType:     "",
 	}
 	destinationdebugger.RecordEventDeliveryStatus(destinationID, &deliveryStatus)
 }

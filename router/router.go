@@ -930,6 +930,9 @@ func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMe
 			JobState:      status.JobState,
 			ErrorCode:     status.ErrorCode,
 			ErrorResponse: status.ErrorResponse,
+			SentAt:        status.ExecTime.String(),
+			EventName:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_name").String(),
+			EventType:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_type").String(),
 		}
 		destinationdebugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
 	}
