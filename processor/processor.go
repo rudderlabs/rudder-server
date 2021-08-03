@@ -1128,7 +1128,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			//Grouping events by sourceid + destinationid + source batch id to find the count
 			inCountMap = make(map[string]int64)
 			inCountMetadataMap = make(map[string]MetricMetadata)
-			for i, _ := range eventList {
+			for i := range eventList {
 				event := &eventList[i]
 				key := fmt.Sprintf("%s:%s:%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID)
 				if _, ok := inCountMap[key]; !ok {
@@ -1428,7 +1428,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 func ConvertToTransformerResponse(events []transformer.TransformerEventT) transformer.ResponseT {
 	var responses []transformer.TransformerResponseT
-	for i, _ := range events {
+	for i := range events {
 		event := &events[i]
 		resp := transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
 		responses = append(responses, resp)
