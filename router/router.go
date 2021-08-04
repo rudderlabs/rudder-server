@@ -1513,7 +1513,10 @@ func (rt *HandleT) readAndProcess() int {
 	//Identify jobs which can be processed
 	for _, job := range combinedList {
 		destID := destinationID(job)
-		if router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap) {
+		rt.configSubscriberLock.RLock()
+		drain := router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap)
+		rt.configSubscriberLock.RUnlock()
+		if drain {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
