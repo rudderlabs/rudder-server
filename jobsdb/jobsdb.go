@@ -229,6 +229,7 @@ type JobStatusT struct {
 	RetryTime     time.Time       `json:"RetryTime"`
 	ErrorCode     string          `json:"ErrorCode"`
 	ErrorResponse json.RawMessage `json:"ErrorResponse"`
+	Parameters    json.RawMessage `json:"Parameters"`
 }
 
 /*
@@ -1290,7 +1291,8 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
                                      exec_time TIMESTAMP,
                                      retry_time TIMESTAMP,
                                      error_code VARCHAR(32),
-                                     error_response JSONB);`, newDS.JobStatusTable, newDS.JobTable)
+                                     error_response JSONB,
+									 parameters JSONB);`, newDS.JobStatusTable, newDS.JobTable)
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 

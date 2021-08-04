@@ -1,2 +1,4 @@
 -- Drop status table
-ALTER TABLE {{$.Prefix}}_job_status_{{.}} DROP COLUMN parameters;
+{{range .Datasets}}
+    ALTER TABLE {{$.Prefix}}_job_status_{{.}} DROP COLUMN parameters;
+{{end}}
