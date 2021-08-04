@@ -974,3 +974,16 @@ func GetWarehouseURL() (url string) {
 	}
 	return
 }
+
+func GetStringifiedData(eventDetail interface{}) string {
+	switch detail := eventDetail.(type) {
+	case string:
+		return detail
+	default:
+		detailBytes, err := json.Marshal(detail)
+		if err != nil {
+			return fmt.Sprint(detail)
+		}
+		return string(detailBytes)
+	}
+}

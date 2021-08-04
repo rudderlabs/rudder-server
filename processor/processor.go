@@ -561,10 +561,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.InstanceID = config.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
-	messageID, ok := singularEvent["messageId"].(string)
-	if ok {
-		commonMetadata.MessageID = messageID
-	}
+	commonMetadata.MessageID = misc.GetStringifiedData(singularEvent["messageId"])
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
 	commonMetadata.SourceBatchID = gjson.GetBytes(eventBytes, "context.sources.batch_id").String()
 	commonMetadata.SourceTaskID = gjson.GetBytes(eventBytes, "context.sources.task_id").String()
@@ -573,14 +570,8 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceJobRunID = gjson.GetBytes(eventBytes, "context.sources.job_run_id").String()
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
-	eventName, ok := singularEvent["event"].(string)
-	if ok {
-		commonMetadata.EventName = eventName
-	}
-	eventType, ok := singularEvent["type"].(string)
-	if ok {
-		commonMetadata.EventType = eventType
-	}
+	commonMetadata.EventName = misc.GetStringifiedData(singularEvent["event"])
+	commonMetadata.EventType = misc.GetStringifiedData(singularEvent["type"])
 
 	return &commonMetadata
 }

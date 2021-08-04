@@ -118,8 +118,8 @@ func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) 
 			event := map[string]interface{}{
 				"payload":       ev,
 				"receivedAt":    receivedAtStr,
-				"eventName":     ensureString(ev["event"]),
-				"eventType":     ensureString(ev["type"]),
+				"eventName":     misc.GetStringifiedData(ev["event"]),
+				"eventType":     misc.GetStringifiedData(ev["type"]),
 				"errorResponse": nil,
 				"errorCode":     200,
 			}
@@ -157,20 +157,5 @@ func backendConfigSubscriber() {
 	for {
 		config := <-configChannel
 		updateConfig(config.Data.(backendconfig.ConfigT))
-	}
-}
-
-func ensureString(eventDetail interface{}) string {
-	switch detail := eventDetail.(type) {
-	case string:
-		return detail
-	case map[string]interface{}:
-		detailBytes, err := json.Marshal(detail)
-		if err != nil {
-			return fmt.Sprint(detail)
-		}
-		return string(detailBytes)
-	default:
-		return fmt.Sprint(eventDetail)
 	}
 }
