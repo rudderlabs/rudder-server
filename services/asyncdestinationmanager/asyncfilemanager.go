@@ -1,4 +1,4 @@
-package asyncfilemanager
+package asyncdestinationmanager
 
 import (
 	"errors"
