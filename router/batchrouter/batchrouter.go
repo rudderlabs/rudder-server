@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	asyncfilemanager "github.com/rudderlabs/rudder-server/services/asyncdestinationmanager"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
@@ -114,6 +115,7 @@ type AsyncDestinationStruct struct {
 	isOpen        bool
 	size          int
 	createdAt     time.Time
+	fileManager   asyncfilemanager.AsyncFileManager
 }
 type ObjectStorageT struct {
 	Config          map[string]interface{}
@@ -486,6 +488,14 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 	timeElapsed := time.Since(brt.asyncDestinationStruct.createdAt)
 	csvWriter.File.Close()
 	if canUpload || timeElapsed > fileRetryTimeWindow {
+		uploader, err := brt.fileManagerFactory.New(&filemanager.SettingsT{
+			Provider: provider,
+			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+				Provider: provider,
+				Config:   batchJobs.BatchDestination.Destination.Config,
+			}),
+		})
+		uploader.Upload()
 		//Make an API call with all pending Job ID's and the File , Store the Pending State after we get a Successful Respose
 		<-brt.asyncDestinationStruct.responseQ
 		//Update the Failed Job ID's with Failed Status here
