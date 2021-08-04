@@ -48,6 +48,8 @@ var (
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTime       time.Duration
+	asyncDestinations                  []string
+	maxFileUploadSize                  int
 	pkgLogger                          logger.LoggerI
 	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	QueryFilters                       jobsdb.QueryFiltersT
@@ -92,12 +94,22 @@ type HandleT struct {
 	encounteredMergeRuleMapLock sync.RWMutex
 	isBackendConfigInitialized  bool
 	backendConfigInitialized    chan bool
+	asyncDestinationStruct      AsyncDestinationStruct
 }
 
 type BatchDestinationDataT struct {
 	batchDestination router_utils.BatchDestinationT
 	jobs             []*jobsdb.JobT
 	parentWG         *sync.WaitGroup
+}
+
+type AsyncDestinationStruct struct {
+	pendingJobIDs []int64
+	failedJobIDs  []int64
+	responseQ     chan bool
+	isOpen        bool
+	size          int
+	createdAt     time.Time
 }
 
 type ObjectStorageT struct {
@@ -757,18 +769,20 @@ func (worker *workerT) workerProcess() {
 			var combinedList []*jobsdb.JobT
 			if readPerDestination {
 				toQuery := jobQueryBatchSize
-				brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
-				brtQueryStat.Start()
-				brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
+				if !brt.holdFetchingJobs(toQuery) {
+					brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
+					brtQueryStat.Start()
+					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
-				retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
-				toQuery -= len(retryList)
-				unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
-				brtQueryStat.End()
+					retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					toQuery -= len(retryList)
+					unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					brtQueryStat.End()
 
-				combinedList = append(retryList, unprocessedList...)
+					combinedList = append(retryList, unprocessedList...)
 
-				brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryList), len(unprocessedList), len(combinedList))
+					brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryList), len(unprocessedList), len(combinedList))
+				}
 			} else {
 				for _, job := range batchDestData.jobs {
 					var parameters JobParametersT
@@ -916,6 +930,11 @@ func (worker *workerT) workerProcess() {
 						brt.setJobStatus(batchJobs, true, output.Error, postToWarehouseErr)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						destUploadStat.End()
+					case misc.ContainsString(asyncDestinations, brt.destType):
+						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+						destUploadStat.Start()
+						brt.sendJobsToStorage(brt.destType, batchJobs, batchJobs.BatchDestination.Destination.Config, true, true)
+						destUploadStat.End()
 					}
 					wg.Done()
 				})
@@ -1055,23 +1074,25 @@ func (brt *HandleT) readAndProcess() {
 		brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "mainLoop"})
 		brtQueryStat.Start()
 		toQuery := jobQueryBatchSize
-		retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
-		toQuery -= len(retryList)
-		unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
-		brtQueryStat.End()
+		if !brt.holdFetchingJobs(toQuery) {
+			retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
+			toQuery -= len(retryList)
+			unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
+			brtQueryStat.End()
 
-		jobs = append(retryList, unprocessedList...)
-		brt.logger.Debugf("BRT: %s: Length of jobs received: %d", brt.destType, len(jobs))
+			jobs = append(retryList, unprocessedList...)
+			brt.logger.Debugf("BRT: %s: Length of jobs received: %d", brt.destType, len(jobs))
 
-		var wg sync.WaitGroup
-		for destID, batchDest := range destinationsMap {
-			brt.setDestInProgress(destID, true)
+			var wg sync.WaitGroup
+			for destID, batchDest := range destinationsMap {
+				brt.setDestInProgress(destID, true)
 
-			wg.Add(1)
-			brt.processQ <- &BatchDestinationDataT{batchDestination: *batchDest, jobs: jobs, parentWG: &wg}
+				wg.Add(1)
+				brt.processQ <- &BatchDestinationDataT{batchDestination: *batchDest, jobs: jobs, parentWG: &wg}
+			}
+
+			wg.Wait()
 		}
-
-		wg.Wait()
 	}
 }
 
@@ -1171,6 +1192,19 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 	}
 }
 
+func (brt *HandleT) holdFetchingJobs(toQuery int) bool {
+	var pendingList []*jobsdb.JobT
+	if IsAsyncDestination(brt.destType) {
+		pendingList = brt.jobsDB.GetPendingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
+		return len(pendingList) != 0
+	}
+	return false
+}
+
+func IsAsyncDestination(destType string) bool {
+	return misc.Contains(asyncDestinations, destType)
+}
+
 func (brt *HandleT) crashRecover() {
 
 	brt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: -1})
@@ -1222,6 +1256,7 @@ func loadConfig() {
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
+	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
 	warehouseURL = misc.GetWarehouseURL()
 	// Time period for diagnosis ticker
 	config.RegisterDurationConfigVariable(time.Duration(600), &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS"}...)
@@ -1229,6 +1264,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &disableEgress, false, "disableEgress")
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
+	config.RegisterIntConfigVariable(4000, &maxFileUploadSize, true, 1024, "BatchRouter.maxFileUploadSize")
 }
 
 func init() {
@@ -1273,6 +1309,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.jobsDB = jobsDB
 	brt.errorDB = errorDB
 	brt.isEnabled = true
+	brt.asyncDestinationStruct = AsyncDestinationStruct{isOpen: false, size: 0, pendingJobIDs: []int64{}, failedJobIDs: []int64{}}
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
