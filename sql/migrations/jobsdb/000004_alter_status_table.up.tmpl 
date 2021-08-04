@@ -1,0 +1,2 @@
+-- Add parameter column to status table
+ALTER TABLE {{$.Prefix}}_job_status_{{.}} ADD COLUMN IF NOT EXISTS parameters JSONB NOT NULL;
