@@ -207,7 +207,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		var timingsObject sql.NullString
 		var totalUploads int32
 		var firstEventAt, lastEventAt, lastExecAt, updatedAt sql.NullTime
-		var isUploadArchived bool
+		var isUploadArchived sql.NullBool
 		err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived, &totalUploads)
 		if err != nil {
 			uploadsReq.API.log.Errorf(err.Error())
@@ -216,7 +216,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		uploadsRes.Pagination.Total = totalUploads
 		upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 		upload.LastEventAt = timestamppb.New(lastEventAt.Time)
-		upload.IsArchivedUpload = isUploadArchived
+		upload.IsArchivedUpload = isUploadArchived.Bool // will be false if archivedStagingAndLoadFiles is not set
 		gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
 			upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 			return true
@@ -262,7 +262,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	var firstEventAt, lastEventAt, createdAt, lastExecAt, updatedAt sql.NullTime
 	var timingsObject sql.NullString
 	var uploadError string
-	var isUploadArchived bool
+	var isUploadArchived sql.NullBool
 	row := uploadReq.API.dbHandle.QueryRow(query)
 	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &createdAt, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived)
 	if err != nil {
@@ -277,7 +277,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 	upload.LastEventAt = timestamppb.New(lastEventAt.Time)
 	upload.LastExecAt = timestamppb.New(lastExecAt.Time)
-	upload.IsArchivedUpload = isUploadArchived
+	upload.IsArchivedUpload = isUploadArchived.Bool
 	gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
 		upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 		return true
