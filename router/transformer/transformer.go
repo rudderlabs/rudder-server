@@ -1,5 +1,7 @@
 package transformer
 
+//go:generate mockgen -destination=../../mocks/router/transformer/mock_transformer.go -package=mocks_transformer github.com/rudderlabs/rudder-server/router/transformer Transformer
+
 import (
 	"bytes"
 	"encoding/json"
@@ -48,7 +50,7 @@ var (
 
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
-	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, "Processor.retrySleepInMS")
+	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
 
 }
 

@@ -38,6 +38,7 @@ import (
 )
 
 var AppStartTime int64
+var errorStorePath string
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -64,11 +65,11 @@ var pkgLogger logger.LoggerI
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
+	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
 }
 
 func getErrorStore() (ErrorStoreT, error) {
 	var errorStore ErrorStoreT
-	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
 	data, err := ioutil.ReadFile(errorStorePath)
 	if os.IsNotExist(err) {
 		defaultErrorStoreJSON := "{\"Errors\":[]}"
@@ -95,7 +96,6 @@ func saveErrorStore(errorStore ErrorStoreT) {
 		pkgLogger.Fatal("failed to marshal errorStore", errorStore)
 		return
 	}
-	errorStorePath := config.GetString("recovery.errorStorePath", "/tmp/error_store.json")
 	err = ioutil.WriteFile(errorStorePath, errorStoreJSON, 0644)
 	if err != nil {
 		pkgLogger.Fatal("failed to write to errorStore")
@@ -144,19 +144,6 @@ func RecordAppError(err error) {
 			Code:              101,
 		})
 	saveErrorStore(errorStore)
-}
-
-func AssertErrorIfDev(err error) {
-
-	goEnv := os.Getenv("GO_ENV")
-	if goEnv == "production" {
-		pkgLogger.Error(err.Error())
-		return
-	}
-
-	if err != nil {
-		panic(err)
-	}
 }
 
 func GetHash(s string) int {
@@ -971,4 +958,19 @@ func ConcatErrors(givenErrors []error) error {
 		errorsToJoin = append(errorsToJoin, err)
 	}
 	return multierror.Join(errorsToJoin)
+}
+
+func isWarehouseMasterEnabled() bool {
+	warehouseMode := config.GetString("Warehouse.mode", "embedded")
+	return warehouseMode == config.EmbeddedMode ||
+		warehouseMode == config.PooledWHSlaveMode
+}
+
+func GetWarehouseURL() (url string) {
+	if isWarehouseMasterEnabled() {
+		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
+	} else {
+		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
+	}
+	return
 }

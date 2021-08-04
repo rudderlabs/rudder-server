@@ -43,7 +43,7 @@ type OperationHandlerI interface {
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("operationmanager")
-	enableOperationsManager = config.GetBool("Operations.enabled", true)
+	config.RegisterBoolConfigVariable(true, &enableOperationsManager, false, "Operations.enabled")
 }
 
 func Setup(gatewayDB, routerDB, batchRouterDB jobsdb.JobsDB) {
@@ -82,6 +82,7 @@ func (om *OperationManagerT) InsertOperation(payload []byte) (int64, error) {
 	if err != nil {
 		return -1, err
 	}
+	defer stmt.Close()
 
 	row := stmt.QueryRow("CLEAR", payload, false, "queued")
 	var opID int64
@@ -147,54 +148,54 @@ func (om *OperationManagerT) StartProcessLoop() {
 	}
 
 	for {
-		status := "succeeded"
-		var op OperationtT
-		sqlStatement := `SELECT id, operation, payload, done
+		om.processOperation()
+		time.Sleep(5 * time.Second)
+	}
+}
+
+func (om *OperationManagerT) processOperation() {
+	status := "succeeded"
+	var op OperationtT
+	sqlStatement := `SELECT id, operation, payload, done
                                 	FROM operations
                                 	WHERE
 									done=False
 									ORDER BY id asc limit 1`
 
-		stmt, err := om.dbHandle.Prepare(sqlStatement)
-		if err != nil {
-			pkgLogger.Errorf("Failed to prepare sql: %s", sqlStatement)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-
-		row := om.dbHandle.QueryRow(sqlStatement)
-		err = row.Scan(&op.ID, &op.Operation, &op.Payload, &op.done)
-		if err == sql.ErrNoRows {
-			pkgLogger.Debugf("No rows found. Sql: %s,", sqlStatement)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		if err != nil {
-			pkgLogger.Errorf("Failed to scan row. Sql: %s, Err: %w", sqlStatement, err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		stmt.Close()
-
-		om.MarkOperationStart(op.ID)
-
-		pkgLogger.Debugf("%#v", op)
-		opHandler := om.getHandler(op.Operation)
-		if opHandler == nil {
-			pkgLogger.Errorf("No handler found for operation: %s", op.Operation)
-			status = "dropped"
-		} else {
-			err := opHandler.Exec(op.Payload)
-			if err != nil {
-				pkgLogger.Errorf("Operation(%s) execution failed with error: %w", op.Operation, err)
-				status = "failed"
-			}
-		}
-
-		om.MarkOperationDone(op.ID, status)
-
-		time.Sleep(5 * time.Second)
+	stmt, err := om.dbHandle.Prepare(sqlStatement)
+	if err != nil {
+		pkgLogger.Errorf("Failed to prepare sql: %s", sqlStatement)
+		return
 	}
+	defer stmt.Close()
+
+	row := om.dbHandle.QueryRow(sqlStatement)
+	err = row.Scan(&op.ID, &op.Operation, &op.Payload, &op.done)
+	if err == sql.ErrNoRows {
+		pkgLogger.Debugf("No rows found. Sql: %s,", sqlStatement)
+		return
+	}
+	if err != nil {
+		pkgLogger.Errorf("Failed to scan row. Sql: %s, Err: %w", sqlStatement, err)
+		return
+	}
+
+	om.MarkOperationStart(op.ID)
+
+	pkgLogger.Debugf("%#v", op)
+	opHandler := om.getHandler(op.Operation)
+	if opHandler == nil {
+		pkgLogger.Errorf("No handler found for operation: %s", op.Operation)
+		status = "dropped"
+	} else {
+		err := opHandler.Exec(op.Payload)
+		if err != nil {
+			pkgLogger.Errorf("Operation(%s) execution failed with error: %w", op.Operation, err)
+			status = "failed"
+		}
+	}
+
+	om.MarkOperationDone(op.ID, status)
 }
 
 func (om *OperationManagerT) getHandler(operation string) OperationHandlerI {

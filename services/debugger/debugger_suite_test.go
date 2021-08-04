@@ -1,4 +1,4 @@
-package sessions_test
+package debugger_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestSessions(t *testing.T) {
+func TestDebugger(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Sessions Suite")
+	RunSpecs(t, "Debugger Suite")
 }

@@ -67,12 +67,12 @@ func init() {
 }
 
 func loadConfig() {
-	maxProcess = config.GetInt("maxProcess", 12)
-	gwDBRetention = config.GetDuration("gwDBRetentionInHr", 0) * time.Hour
-	routerDBRetention = config.GetDuration("routerDBRetention", 0)
-	enableProcessor = config.GetBool("enableProcessor", true)
-	enableReplay = config.GetBool("Replay.enabled", false)
-	enableRouter = config.GetBool("enableRouter", true)
+	config.RegisterIntConfigVariable(12, &maxProcess, false, 1, "maxProcess")
+	config.RegisterDurationConfigVariable(time.Duration(0), &gwDBRetention, false, time.Hour, []string{"gwDBRetention", "gwDBRetentionInHr"}...)
+	config.RegisterDurationConfigVariable(time.Duration(0), &routerDBRetention, false, time.Hour, "routerDBRetention")
+	config.RegisterBoolConfigVariable(true, &enableProcessor, false, "enableProcessor")
+	config.RegisterBoolConfigVariable(false, &enableReplay, false, "Replay.enabled")
+	config.RegisterBoolConfigVariable(true, &enableRouter, false, "enableRouter")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
 }
@@ -162,7 +162,8 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, re
 					if !ok {
 						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
 						var brt batchrouter.HandleT
-						brt.Setup(batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
+						brt.Setup(backendconfig.DefaultBackendConfig, batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
+						brt.Start()
 						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 					}
 				} else {
@@ -170,7 +171,8 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, re
 					if !ok {
 						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
 						var router router.HandleT
-						router.Setup(routerDB, procErrorDB, destination.DestinationDefinition, reporting)
+						router.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition, reporting)
+						router.Start()
 						dstToRouter[destination.DestinationDefinition.Name] = &router
 					}
 				}

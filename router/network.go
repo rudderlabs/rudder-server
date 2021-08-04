@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../mocks/router/mock_network.go -package mock_network github.com/rudderlabs/rudder-server/router NetHandleI
+
 package router
 
 import (
@@ -14,19 +16,41 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
 //NetHandleT is the wrapper holding private variables
 type NetHandleT struct {
-	httpClient *http.Client
+	httpClient sysUtils.HTTPClientI
 	logger     logger.LoggerI
 }
 
-//var pkgLogger logger.LoggerI
+//Network interface
+type NetHandleI interface {
+	SendPost(structData integrations.PostParametersT) (statusCode int, respBody string)
+}
 
-//sendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
+//temp solution for handling complex query params
+func handleQueryParam(param interface{}) string {
+	switch p := param.(type) {
+	case string:
+		return p
+	case map[string]interface{}:
+		temp, err := json.Marshal(p)
+		if err != nil {
+			return fmt.Sprint(p)
+		}
+
+		jsonParam := string(temp)
+		return jsonParam
+	default:
+		return fmt.Sprint(param)
+	}
+}
+
+//SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
-func (network *NetHandleT) sendPost(structData integrations.PostParametersT) (statusCode int, respBody string) {
+func (network *NetHandleT) SendPost(structData integrations.PostParametersT) (statusCode int, respBody string) {
 	if disableEgress {
 		return 200, `200: outgoing disabled`
 	}
@@ -66,6 +90,12 @@ func (network *NetHandleT) sendPost(structData integrations.PostParametersT) (st
 					panic(err)
 				}
 				payload = strings.NewReader(string(jsonValue))
+			case "XML":
+				strValue, ok := bodyValue["payload"].(string)
+				if !ok {
+					return 400, "400 Unable to construct xml payload. Unexpected transformer response"
+				}
+				payload = strings.NewReader(strValue)
 			case "FORM":
 				formValues := url.Values{}
 				for key, val := range bodyValue {
@@ -88,16 +118,16 @@ func (network *NetHandleT) sendPost(structData integrations.PostParametersT) (st
 		// response from transformers are "," seperated
 		queryParams := req.URL.Query()
 		for key, val := range requestQueryParams {
-			valString := fmt.Sprint(val)
+
 			// list := strings.Split(valString, ",")
 			// for _, listItem := range list {
 			// 	queryParams.Add(key, fmt.Sprint(listItem))
 			// }
-			queryParams.Add(key, fmt.Sprint(valString))
+			formattedVal := handleQueryParam(val)
+			queryParams.Add(key, formattedVal)
 		}
 
 		req.URL.RawQuery = queryParams.Encode()
-
 		headerKV := postInfo.Headers
 		for key, val := range headerKV {
 			req.Header.Add(key, val.(string))

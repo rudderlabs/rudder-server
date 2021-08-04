@@ -24,7 +24,7 @@ var (
 )
 
 func init() {
-	shouldPopulateHistoricIdentities = config.GetBool("Warehouse.populateHistoricIdentities", false)
+	config.RegisterBoolConfigVariable(false, &shouldPopulateHistoricIdentities, false, "Warehouse.populateHistoricIdentities")
 	populatingHistoricIdentitiesProgressMap = map[string]bool{}
 	populatedHistoricIdentitiesMap = map[string]bool{}
 }
@@ -254,11 +254,11 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		return
 	}
 
-	setDestInProgress(warehouse, true)
+	wh.setDestInProgress(warehouse, 0)
 	setDestHistoricIdentitiesPopulateInProgress(warehouse, true)
 	rruntime.Go(func() {
 		var err error
-		defer setDestInProgress(warehouse, false)
+		defer wh.removeDestInProgress(warehouse)
 		defer setDestHistoricIdentitiesPopulateInProgress(warehouse, false)
 		defer setDestHistoricIndetitiesPopulated(warehouse)
 		defer wh.setFailedStat(warehouse, err)
