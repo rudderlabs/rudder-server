@@ -14,7 +14,8 @@ services:
     build:
       context: ./
       dockerfile: build/Dockerfile-dev
-    entrypoint: sh -c './build/wait-for db:5432 -- go run -mod=vendor main.go'
+      # target: dev
+    entrypoint: ./wait-for db:5432 -- ./rudder-server
     ports:
       - "8080:8080"
     env_file:

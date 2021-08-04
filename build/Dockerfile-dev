@@ -1,9 +1,42 @@
-FROM golang:1.13-alpine
+FROM golang:1.13-alpine AS build
+
 ENV GO111MODULE=on
-RUN apk add git
-RUN go get github.com/onsi/ginkgo/ginkgo
-RUN mkdir /app
-ADD . /app
+RUN apk add --update go git build-base
+
 WORKDIR /app
-ENTRYPOINT ["go", "run", "-mod", "vendor", "main.go"]
-#ENTRYPOINT ["go", "run", "main.go"]
+RUN go build -o ./ginkgo github.com/onsi/ginkgo/ginkgo
+
+COPY . .
+
+RUN make prepare-build
+
+RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -tags=dev -mod vendor -o ./rudder-server
+#RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -race -tags=dev -mod vendor -o ./rudder-server
+
+RUN go build -o build/wait-for-go/wait-for-go -o ./wait-for
+
+FROM golang:1.13-alpine AS dev
+
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+WORKDIR /app
+
+COPY --from=build /app/rudder-server ./rudder-server
+COPY --from=build /app/ginkgo ./ginkgo
+COPY --from=build /app/wait-for ./wait-for
+
+# 405 -> apline guest user
+USER 405
+CMD ./rudder-server
+
+FROM golang:1.13-alpine AS prod
+
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+WORKDIR /app
+
+COPY --from=build /app/rudder-server ./rudder-server
+COPY --from=build /app/wait-for ./wait-for
+
+USER 405
+CMD ./rudder-server
