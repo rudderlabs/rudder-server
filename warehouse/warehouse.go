@@ -1519,7 +1519,7 @@ func Start(app app.Interface) {
 	}
 
 	if isStandAlone() && isMaster() {
-		destinationdebugger.Setup()
+		destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 	}
 
 	if isSlave() {

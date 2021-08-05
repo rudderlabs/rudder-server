@@ -63,7 +63,7 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 	// Check if destinationID part of enabled destinations
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	if _, ok := uploadEnabledDestinationIDs[destinationID]; !ok {
+	if !HasUploadEnabled(destinationID) {
 		return false
 	}
 
@@ -79,14 +79,14 @@ func HasUploadEnabled(destID string) bool {
 }
 
 //Setup initializes this module
-func Setup() {
+func Setup(backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/eventDeliveryStatus", configBackendURL)
 	eventDeliveryStatusUploader := &EventDeliveryStatusUploader{}
 	uploader = debugger.New(url, eventDeliveryStatusUploader)
 	uploader.Start()
 
 	rruntime.Go(func() {
-		backendConfigSubscriber()
+		backendConfigSubscriber(backendConfig)
 	})
 }
 
@@ -129,9 +129,9 @@ func updateConfig(sources backendconfig.ConfigT) {
 	configSubscriberLock.Unlock()
 }
 
-func backendConfigSubscriber() {
+func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	configChannel := make(chan utils.DataEvent)
-	backendconfig.Subscribe(configChannel, "backendConfig")
+	backendConfig.Subscribe(configChannel, "backendConfig")
 	for {
 		config := <-configChannel
 		updateConfig(config.Data.(backendconfig.ConfigT))
