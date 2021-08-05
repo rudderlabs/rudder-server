@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -94,7 +95,7 @@ type HandleT struct {
 	encounteredMergeRuleMapLock sync.RWMutex
 	isBackendConfigInitialized  bool
 	backendConfigInitialized    chan bool
-	asyncDestinationStruct      AsyncDestinationStruct
+	asyncDestinationStruct      map[string]*AsyncDestinationStruct
 }
 
 type BatchDestinationDataT struct {
@@ -110,7 +111,7 @@ type AsyncDestinationStruct struct {
 	isOpen        bool
 	size          int
 	createdAt     time.Time
-	jobs          json.RawMessage
+	fileName      string
 }
 
 type ObjectStorageT struct {
@@ -396,47 +397,64 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 	if disableEgress {
 		return
 	}
+	destinationID := batchJobs.BatchDestination.Destination.ID
 	brt.logger.Debugf("BRT: Starting logging to %s", provider)
-	if !brt.asyncDestinationStruct.isOpen {
-		brt.asyncDestinationStruct.isOpen = true
-		brt.asyncDestinationStruct.jobs = []byte("{}")
-		brt.asyncDestinationStruct.createdAt = time.Now()
+	_, ok := brt.asyncDestinationStruct[destinationID]
+	if !ok || !brt.asyncDestinationStruct[destinationID].isOpen {
+		localTmpDirName := "/rudder-raw-data-destination-logs/"
+		uuid := uuid.NewV4()
+		brt.logger.Debugf("BRT: Starting logging to %s", provider)
 
+		tmpDirPath, err := misc.CreateTMPDIR()
+		if err != nil {
+			panic(err)
+		}
+		path := fmt.Sprintf("%v%v", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", batchJobs.BatchDestination.Source.ID, uuid.String()))
+		jsonPath := fmt.Sprintf(`%v.json`, path)
+		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
+		if err != nil {
+			panic(err)
+		}
+		brt.asyncDestinationStruct[destinationID].isOpen = true
+		brt.asyncDestinationStruct[destinationID].fileName = jsonPath
+		brt.asyncDestinationStruct[destinationID].createdAt = time.Now()
 	}
+	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	canUpload := false
 	var url string
+	var jobString string
 	for _, job := range batchJobs.Jobs {
-		if brt.asyncDestinationStruct.size+len(job.EventPayload) < maxFileUploadSize {
-			brt.asyncDestinationStruct.size = brt.asyncDestinationStruct.size + len(job.EventPayload)
-			brt.asyncDestinationStruct.jobs, err = sjson.SetBytes(string(brt.asyncDestinationStruct.jobs), strconv.FormatInt(job.JobID, 10), gjson.Get(string(job.EventPayload), "body.CSVRow").String())
+		if brt.asyncDestinationStruct[destinationID].size+len(job.EventPayload) < maxFileUploadSize {
+			brt.asyncDestinationStruct[destinationID].size = brt.asyncDestinationStruct[destinationID].size + len(job.EventPayload)
+			jobString = jobString + gjson.Get(string(job.EventPayload), "body.CSVRow").String() + "|"
 			if err != nil {
 				panic(err)
 			}
-			brt.asyncDestinationStruct.jobs = json.RawMessage(value)
-			brt.asyncDestinationStruct.pendingJobIDs = append(brt.asyncDestinationStruct.pendingJobIDs, job.JobID)
+			brt.asyncDestinationStruct[destinationID].pendingJobIDs = append(brt.asyncDestinationStruct[destinationID].pendingJobIDs, job.JobID)
 		} else {
 			canUpload = true
 			url = gjson.Get(string(job.EventPayload), "endpoint").String()
-			uploadConfig, err = json.Marshal(config)
-			brt.asyncDestinationStruct.jobs, err = sjson.SetBytes(string(brt.asyncDestinationStruct.jobs), "config", uploadConfig).String())
-			brt.asyncDestinationStruct.failedJobIDs = append(brt.asyncDestinationStruct.failedJobIDs, job.JobID)
+			brt.asyncDestinationStruct[destinationID].failedJobIDs = append(brt.asyncDestinationStruct[destinationID].failedJobIDs, job.JobID)
 		}
-
 	}
-	timeElapsed := time.Since(brt.asyncDestinationStruct.createdAt)
+	uploadConfig, err := json.Marshal(config)
+	_, err = file.WriteString(jobString)
+	timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].createdAt)
 	if canUpload || timeElapsed > brt.retryTimeWindow {
-		resp, err = brt.netHandle.Post(url, "application/json; charset=utf-8",
-			bytes.NewBuffer(brt.asyncDestinationStruct.jobs)) //Make an API call with all pending Job ID's and the File , Store the Pending State after we get a Successful Respose
-		<-brt.asyncDestinationStruct.responseQ
+		data, err := ioutil.ReadFile(brt.asyncDestinationStruct[destinationID].fileName)
+		payload := []byte{}
+		payload, err = sjson.SetBytes(payload, "data", data)
+		payload, err = sjson.SetBytes(payload, "config", uploadConfig)
+		resp, err := brt.netHandle.Post(url, "application/json; charset=utf-8",
+			bytes.NewBuffer(payload)) //Make an API call with all pending Job ID's and the File , Store the Pending State after we get a Successful Respose
 		//Update the Failed Job ID's with Failed Status here
 		if err != nil {
 			panic("Should not occur as File should be closed here")
 		}
-		brt.asyncDestinationStruct.pendingJobIDs = []int64{}
-		brt.asyncDestinationStruct.failedJobIDs = []int64{}
-		brt.asyncDestinationStruct.jobs = []byte{}
-		brt.asyncDestinationStruct.size = 0
-		brt.asyncDestinationStruct.isOpen = false
+		brt.asyncDestinationStruct[destinationID].pendingJobIDs = []int64{}
+		brt.asyncDestinationStruct[destinationID].failedJobIDs = []int64{}
+		brt.asyncDestinationStruct[destinationID].size = 0
+		brt.asyncDestinationStruct[destinationID].isOpen = false
 	}
 }
 
