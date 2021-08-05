@@ -57,14 +57,14 @@ type EventUploader struct {
 }
 
 //Setup initializes this module
-func Setup() {
+func Setup(backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/eventUploads", configBackendURL)
 	eventUploader := &EventUploader{}
 	uploader = debugger.New(url, eventUploader)
 	uploader.Start()
 
 	rruntime.Go(func() {
-		backendConfigSubscriber()
+		backendConfigSubscriber(backendConfig)
 	})
 }
 
@@ -153,9 +153,9 @@ func updateConfig(sources backendconfig.ConfigT) {
 	configSubscriberLock.Unlock()
 }
 
-func backendConfigSubscriber() {
+func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	configChannel := make(chan utils.DataEvent)
-	backendconfig.Subscribe(configChannel, backendconfig.TopicProcessConfig)
+	backendConfig.Subscribe(configChannel, backendconfig.TopicProcessConfig)
 	for {
 		config := <-configChannel
 		updateConfig(config.Data.(backendconfig.ConfigT))

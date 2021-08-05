@@ -54,7 +54,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 
 	transformationdebugger.Setup()
 	destinationdebugger.Setup()
-	sourcedebugger.Setup()
+	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
 	migrationMode := embedded.App.Options().MigrationMode
 
