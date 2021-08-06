@@ -120,7 +120,7 @@ func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) 
 				"receivedAt":    receivedAtStr,
 				"eventName":     misc.GetStringifiedData(ev["event"]),
 				"eventType":     misc.GetStringifiedData(ev["type"]),
-				"errorResponse": nil,
+				"errorResponse": make(map[string]interface{}),
 				"errorCode":     200,
 			}
 			arr = append(arr, event)

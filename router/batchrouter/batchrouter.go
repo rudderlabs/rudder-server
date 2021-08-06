@@ -689,7 +689,7 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output S
 	deliveryStatus := destinationdebugger.DeliveryStatusT{
 		EventName:     fmt.Sprint(output.TotalEvents) + " events",
 		EventType:     "",
-		SentAt:        time.Now().String(),
+		SentAt:        time.Now().Format(misc.RFC3339Milli),
 		DestinationID: batchDestination.Destination.ID,
 		SourceID:      batchDestination.Source.ID,
 		Payload:       []byte(`{}`),

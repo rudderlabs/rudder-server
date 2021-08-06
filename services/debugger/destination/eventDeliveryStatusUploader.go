@@ -90,12 +90,13 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 
 func (eventDeliveryStatusUploader *EventDeliveryStatusUploader) Transform(data interface{}) ([]byte, error) {
 	deliveryStatusesBuffer := data.([]interface{})
-	res := make(map[string][]*DeliveryStatusT)
+	res := make(map[string]interface{})
+	res["version"] = "v1"
 	for _, j := range deliveryStatusesBuffer {
 		job := j.(*DeliveryStatusT)
 		var arr []*DeliveryStatusT
 		if value, ok := res[job.DestinationID]; ok {
-			arr = value
+			arr = value.([]*DeliveryStatusT)
 		} else {
 			arr = make([]*DeliveryStatusT, 0)
 		}

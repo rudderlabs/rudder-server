@@ -7,6 +7,7 @@ import (
 	"time"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -90,7 +91,7 @@ func (wh *HandleT) recordDeliveryStatus(destID string, uploadID int64) {
 		JobState:      status,
 		ErrorCode:     errorCode,
 		ErrorResponse: errorRespB,
-		SentAt:        time.Now().String(),
+		SentAt:        time.Now().Format(misc.RFC3339Milli),
 		EventName:     "",
 		EventType:     "",
 	}
