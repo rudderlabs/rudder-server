@@ -214,6 +214,7 @@ type AsyncUploadOutput struct {
 	pendingCount      int
 	failedCount       int
 	abortCount        int
+	destinationID     string
 }
 
 type ErrorResponseT struct {
@@ -485,8 +486,15 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		if err != nil {
 			panic("sjson Set Failed" + err.Error())
 		}
+		payload, err = sjson.SetBytes(payload, "destType", brt.destType)
+		if err != nil {
+			panic("sjson Set Failed" + err.Error())
+		}
 		response, err := brt.netHandle.Post(url, "application/json; charset=utf-8",
 			bytes.NewBuffer(payload))
+		if err != nil {
+			panic("HTTP Request Failed" + err.Error())
+		}
 		defer response.Body.Close()
 		misc.RemoveFilePaths(brt.asyncDestinationStruct[destinationID].fileName)
 		brt.asyncDestinationStruct[destinationID].pendingJobIDs = []int64{}
@@ -505,21 +513,24 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 				pendingParameters: bodyBytes,
 				pendingCount:      len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
 				failedCount:       len(brt.asyncDestinationStruct[destinationID].failedJobIDs),
+				destinationID:     destinationID,
 			}
 		} else if isJobTerminated(response.StatusCode) {
 			return AsyncUploadOutput{
-				abortJobIDs:  brt.asyncDestinationStruct[destinationID].pendingJobIDs,
-				failedJobIDs: brt.asyncDestinationStruct[destinationID].failedJobIDs,
-				failedReason: "Jobs flowed over the prescribed limit",
-				abortReason:  string(bodyBytes),
-				abortCount:   len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
-				failedCount:  len(brt.asyncDestinationStruct[destinationID].failedJobIDs),
+				abortJobIDs:   brt.asyncDestinationStruct[destinationID].pendingJobIDs,
+				failedJobIDs:  brt.asyncDestinationStruct[destinationID].failedJobIDs,
+				failedReason:  "Jobs flowed over the prescribed limit",
+				abortReason:   string(bodyBytes),
+				abortCount:    len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
+				failedCount:   len(brt.asyncDestinationStruct[destinationID].failedJobIDs),
+				destinationID: destinationID,
 			}
 		} else {
 			return AsyncUploadOutput{
-				failedJobIDs: append(brt.asyncDestinationStruct[destinationID].failedJobIDs, brt.asyncDestinationStruct[destinationID].pendingJobIDs...),
-				failedReason: string(bodyBytes),
-				failedCount:  len(brt.asyncDestinationStruct[destinationID].failedJobIDs) + len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
+				failedJobIDs:  append(brt.asyncDestinationStruct[destinationID].failedJobIDs, brt.asyncDestinationStruct[destinationID].pendingJobIDs...),
+				failedReason:  string(bodyBytes),
+				failedCount:   len(brt.asyncDestinationStruct[destinationID].failedJobIDs) + len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
+				destinationID: destinationID,
 			}
 		}
 	}
@@ -784,6 +795,75 @@ func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err err
 	brt.jobsDB.ReleaseUpdateJobStatusLocks()
 
 	sendDestStatusStats(batchJobs.BatchDestination, jobStateCounts, brt.destType, isWarehouse)
+}
+
+func (brt *HandleT) setMultipleJobStatus(asyncOutput AsyncUploadOutput) {
+	var (
+		errorResp []byte
+	)
+	var statusList []*jobsdb.JobStatusT
+	if len(asyncOutput.pendingJobIDs) > 0 {
+		for _, jobId := range asyncOutput.pendingJobIDs {
+			status := jobsdb.JobStatusT{
+				JobID:         jobId,
+				JobState:      "pending",
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "",
+				Parameters:    asyncOutput.pendingParameters,
+				ErrorResponse: errorResp,
+			}
+			statusList = append(statusList, &status)
+		}
+	}
+	if len(asyncOutput.failedJobIDs) > 0 {
+		for _, jobId := range asyncOutput.failedJobIDs {
+			status := jobsdb.JobStatusT{
+				JobID:         jobId,
+				JobState:      "faied",
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "",
+				ErrorResponse: []byte(asyncOutput.failedReason),
+			}
+			statusList = append(statusList, &status)
+		}
+	}
+	if len(asyncOutput.abortJobIDs) > 0 {
+		for _, jobId := range asyncOutput.abortJobIDs {
+			status := jobsdb.JobStatusT{
+				JobID:         jobId,
+				JobState:      "aborted",
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "",
+				ErrorResponse: []byte(asyncOutput.abortReason),
+			}
+			statusList = append(statusList, &status)
+		}
+	}
+
+	var parameterFilters []jobsdb.ParameterFilterT
+	if readPerDestination {
+		parameterFilters = []jobsdb.ParameterFilterT{
+			{
+				Name:     "destination_id",
+				Value:    asyncOutput.destinationID,
+				Optional: false,
+			},
+		}
+	}
+	//Mark the status of the jobs
+	txn := brt.jobsDB.BeginGlobalTransaction()
+	brt.jobsDB.AcquireUpdateJobStatusLocks()
+	err := brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
+	if err != nil {
+		brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+		panic(err)
+	}
+
+	brt.jobsDB.CommitTransaction(txn)
+	brt.jobsDB.ReleaseUpdateJobStatusLocks()
 }
 
 func getBRTErrorCode(state string) int {
@@ -1068,7 +1148,8 @@ func (worker *workerT) workerProcess() {
 					case misc.ContainsString(asyncDestinations, brt.destType):
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 						destUploadStat.Start()
-						brt.sendJobsToStorage(brt.destType, batchJobs, batchJobs.BatchDestination.Destination.Config, true, true)
+						output := brt.sendJobsToStorage(brt.destType, batchJobs, batchJobs.BatchDestination.Destination.Config, true, true)
+						brt.setMultipleJobStatus(output)
 						destUploadStat.End()
 					}
 					wg.Done()
