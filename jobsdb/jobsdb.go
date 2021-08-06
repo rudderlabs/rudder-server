@@ -1351,8 +1351,13 @@ func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
 func (jd *HandleT) prepareAndExecStmtInTxnAllowMissing(txn *sql.Tx, sqlStatement string, allowMissing bool) *sql.Tx {
 	stmt, err := txn.Prepare(sqlStatement)
 	jd.assertError(err)
+	defer stmt.Close()
+
 	_, err = stmt.Exec()
 	if err != nil {
+		//rolling back old failed transaction
+		txn.Rollback()
+
 		pqError := err.(*pq.Error)
 		if allowMissing && pqError.Code == pq.ErrorCode("42P01") {
 			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
