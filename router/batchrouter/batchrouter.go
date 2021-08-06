@@ -203,8 +203,33 @@ type StorageUploadOutput struct {
 	UseRudderStorage bool
 }
 
+type AsyncUploadOutput struct {
+	Key               string
+	pendingJobIDs     []int64
+	pendingParameters json.RawMessage
+	failedJobIDs      []int64
+	failedReason      string
+	abortJobIDs       []int64
+	abortReason       string
+	pendingCount      int
+	failedCount       int
+	abortCount        int
+}
+
 type ErrorResponseT struct {
 	Error string
+}
+
+func isSuccessStatus(status int) bool {
+	return status >= 200 && status < 300
+}
+
+func isJobTerminated(status int) bool {
+	if status == 429 {
+		return false
+	}
+
+	return status >= 200 && status < 500
 }
 
 func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[string]map[string]int, destType string, isWarehouse bool) {
@@ -393,9 +418,9 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 }
 
-func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, config map[string]interface{}, makeJournalEntry bool, isAsync bool) {
+func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, config map[string]interface{}, makeJournalEntry bool, isAsync bool) AsyncUploadOutput {
 	if disableEgress {
-		return
+		return AsyncUploadOutput{}
 	}
 	destinationID := batchJobs.BatchDestination.Destination.ID
 	brt.logger.Debugf("BRT: Starting logging to %s", provider)
@@ -438,24 +463,67 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		}
 	}
 	uploadConfig, err := json.Marshal(config)
+	if err != nil {
+		panic("json Marshal Failed" + err.Error())
+	}
 	_, err = file.WriteString(jobString)
+	if err != nil {
+		panic("file write failed" + err.Error())
+	}
 	timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].createdAt)
 	if canUpload || timeElapsed > brt.retryTimeWindow {
 		data, err := ioutil.ReadFile(brt.asyncDestinationStruct[destinationID].fileName)
+		if err != nil {
+			panic("Read File Failed" + err.Error())
+		}
 		payload := []byte{}
 		payload, err = sjson.SetBytes(payload, "data", data)
-		payload, err = sjson.SetBytes(payload, "config", uploadConfig)
-		resp, err := brt.netHandle.Post(url, "application/json; charset=utf-8",
-			bytes.NewBuffer(payload)) //Make an API call with all pending Job ID's and the File , Store the Pending State after we get a Successful Respose
-		//Update the Failed Job ID's with Failed Status here
 		if err != nil {
-			panic("Should not occur as File should be closed here")
+			panic("sjson Set Failed" + err.Error())
 		}
+		payload, err = sjson.SetBytes(payload, "config", uploadConfig)
+		if err != nil {
+			panic("sjson Set Failed" + err.Error())
+		}
+		response, err := brt.netHandle.Post(url, "application/json; charset=utf-8",
+			bytes.NewBuffer(payload))
+		defer response.Body.Close()
+		misc.RemoveFilePaths(brt.asyncDestinationStruct[destinationID].fileName)
 		brt.asyncDestinationStruct[destinationID].pendingJobIDs = []int64{}
 		brt.asyncDestinationStruct[destinationID].failedJobIDs = []int64{}
 		brt.asyncDestinationStruct[destinationID].size = 0
 		brt.asyncDestinationStruct[destinationID].isOpen = false
+		bodyBytes, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			panic("Read Body Failed" + err.Error())
+		}
+		if isSuccessStatus(response.StatusCode) {
+			return AsyncUploadOutput{
+				pendingJobIDs:     brt.asyncDestinationStruct[destinationID].pendingJobIDs,
+				failedJobIDs:      brt.asyncDestinationStruct[destinationID].failedJobIDs,
+				failedReason:      "Jobs flowed over the prescribed limit",
+				pendingParameters: bodyBytes,
+				pendingCount:      len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
+				failedCount:       len(brt.asyncDestinationStruct[destinationID].failedJobIDs),
+			}
+		} else if isJobTerminated(response.StatusCode) {
+			return AsyncUploadOutput{
+				abortJobIDs:  brt.asyncDestinationStruct[destinationID].pendingJobIDs,
+				failedJobIDs: brt.asyncDestinationStruct[destinationID].failedJobIDs,
+				failedReason: "Jobs flowed over the prescribed limit",
+				abortReason:  string(bodyBytes),
+				abortCount:   len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
+				failedCount:  len(brt.asyncDestinationStruct[destinationID].failedJobIDs),
+			}
+		} else {
+			return AsyncUploadOutput{
+				failedJobIDs: append(brt.asyncDestinationStruct[destinationID].failedJobIDs, brt.asyncDestinationStruct[destinationID].pendingJobIDs...),
+				failedReason: string(bodyBytes),
+				failedCount:  len(brt.asyncDestinationStruct[destinationID].failedJobIDs) + len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
+			}
+		}
 	}
+	return AsyncUploadOutput{}
 }
 
 func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOutput) (err error) {
@@ -1376,7 +1444,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.jobsDB = jobsDB
 	brt.errorDB = errorDB
 	brt.isEnabled = true
-	brt.asyncDestinationStruct = AsyncDestinationStruct{isOpen: false, size: 0, pendingJobIDs: []int64{}, failedJobIDs: []int64{}}
+	brt.asyncDestinationStruct = make(map[string]*AsyncDestinationStruct)
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
