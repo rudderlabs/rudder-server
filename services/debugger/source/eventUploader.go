@@ -115,13 +115,11 @@ func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) 
 
 		for _, ev := range batchedEvent.Batch {
 			// add the receivedAt time to each event
-			ev["event"] = misc.GetStringifiedData(ev["event"])
-			ev["type"] = misc.GetStringifiedData(ev["type"])
 			event := map[string]interface{}{
 				"payload":       ev,
 				"receivedAt":    receivedAtStr,
-				"eventName":     ev["event"],
-				"eventType":     ev["type"],
+				"eventName":     misc.GetStringifiedData(ev["event"]),
+				"eventType":     misc.GetStringifiedData(ev["type"]),
 				"errorResponse": nil,
 				"errorCode":     200,
 			}

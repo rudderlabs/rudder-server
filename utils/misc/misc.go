@@ -975,15 +975,15 @@ func GetWarehouseURL() (url string) {
 	return
 }
 
-func GetStringifiedData(eventDetail interface{}) string {
-	switch detail := eventDetail.(type) {
+func GetStringifiedData(data interface{}) string {
+	switch d := data.(type) {
 	case string:
-		return detail
+		return d
 	default:
-		detailBytes, err := json.Marshal(detail)
+		dataBytes, err := json.Marshal(d)
 		if err != nil {
-			return fmt.Sprint(detail)
+			return fmt.Sprint(d)
 		}
-		return string(detailBytes)
+		return string(dataBytes)
 	}
 }

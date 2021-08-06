@@ -142,6 +142,19 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
+var faultyData = DeliveryStatusT{
+	DestinationID: DestinationIDEnabledA,
+	SourceID:      SourceIDEnabled,
+	Payload:       []byte(`{"t":"a"`),
+	AttemptNum:    1,
+	JobState:      `failed`,
+	ErrorCode:     `404`,
+	ErrorResponse: []byte(`{"name": "error"}`),
+	SentAt:        "",
+	EventName:     `some_event_name`,
+	EventType:     `some_event_type`,
+}
+
 type eventDeliveryStatusUploaderContext struct {
 	asyncHelper       testutils.AsyncTestHelper
 	mockCtrl          *gomock.Controller
@@ -198,29 +211,37 @@ var _ = Describe("eventDesliveryStatusUploader", func() {
 
 	Context("RecordEventDeliveryStatus", func() {
 		It("returns false if disableEventDeliveryStatusUploads is false", func() {
-			time.Sleep(3 * time.Second)
+			time.Sleep(1 * time.Second)
 			disableEventDeliveryStatusUploads = true
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
 			disableEventDeliveryStatusUploads = false
 		})
 
 		It("returns false if destination_id is not in uploadEnabledDestinationIDs", func() {
-			time.Sleep(3 * time.Second)
+			time.Sleep(1 * time.Second)
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledB, &deliveryStatus)).To(BeFalse())
 		})
 
 		It("records events", func() {
-			time.Sleep(3 * time.Second)
+			time.Sleep(1 * time.Second)
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeTrue())
 		})
 
 		It("transforms payload properly", func() {
-			time.Sleep(3 * time.Second)
+			time.Sleep(1 * time.Second)
 			edsUploader := EventDeliveryStatusUploader{}
 			rawJSON, err := edsUploader.Transform([]interface{}{&deliveryStatus})
 			Expect(err).To(BeNil())
 			Expect(gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventName`).String()).To(Equal("some_event_name"))
 			Expect(gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventType`).String()).To(Equal("some_event_type"))
+		})
+
+		It("sends empty json if transformation fails", func() {
+			time.Sleep(1 * time.Second)
+			edsUploader := EventDeliveryStatusUploader{}
+			rawJSON, err := edsUploader.Transform([]interface{}{&faultyData})
+			Expect(err.Error()).To(ContainSubstring("error calling MarshalJSON"))
+			Expect(rawJSON).To(BeNil())
 		})
 	})
 })

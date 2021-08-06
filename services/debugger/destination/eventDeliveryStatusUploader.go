@@ -61,8 +61,6 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 	}
 
 	// Check if destinationID part of enabled destinations
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
 	if !HasUploadEnabled(destinationID) {
 		return false
 	}
