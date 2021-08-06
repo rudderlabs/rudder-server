@@ -253,6 +253,67 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[stri
 	}
 }
 
+func (brt *HandleT) pollAsyncStatus() {
+	for {
+		for key, _ := range brt.asyncDestinationStruct {
+			if IsAsyncDestination(brt.destType) {
+				parameterFilters := make([]jobsdb.ParameterFilterT, 0)
+				for _, param := range QueryFilters.ParameterFilters {
+					parameterFilter := jobsdb.ParameterFilterT{
+						Name:     param,
+						Value:    key,
+						Optional: false,
+					}
+					parameterFilters = append(parameterFilters, parameterFilter)
+				}
+				pendingList := brt.jobsDB.GetPendingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: 1, ParameterFilters: parameterFilters})
+				if len(pendingList) != 0 {
+					pendingJob := pendingList[0]
+					parameters := pendingJob.LastJobStatus.Parameters
+					pollUrl := gjson.GetBytes(parameters, "pollUrl").String()
+					importId := gjson.GetBytes(parameters, "importId").String()
+					uploadConfig, err := json.Marshal(brt.destinationsMap[key].Destination.Config)
+					payload := []byte{}
+					payload, err = sjson.SetBytes(payload, "importId", importId)
+					if err != nil {
+						panic("sjson Set Failed" + err.Error())
+					}
+					payload, err = sjson.SetBytes(payload, "config", uploadConfig)
+					if err != nil {
+						panic("sjson Set Failed" + err.Error())
+					}
+					payload, err = sjson.SetBytes(payload, "destType", brt.destType)
+					if err != nil {
+						panic("sjson Set Failed" + err.Error())
+					}
+					response, err := brt.netHandle.Post(pollUrl, "application/json; charset=utf-8",
+						bytes.NewBuffer(payload))
+					if err != nil {
+						panic("HTTP Request Failed" + err.Error())
+					}
+					if response.StatusCode == 200 {
+						bodyBytes, err := ioutil.ReadAll(response.Body)
+						uploadStatus := gjson.GetBytes(bodyBytes, "success").String()
+						statusCode := gjson.GetBytes(bodyBytes, "statusCode").String()
+						if uploadStatus == "true" {
+
+						} else if statusCode != "" {
+
+						} else {
+							response.Body.Close()
+							continue
+						}
+					} else {
+						continue
+					}
+
+				}
+			}
+		}
+		time.Sleep(10 * time.Second)
+	}
+}
+
 func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
 	if disableEgress {
 		return StorageUploadOutput{Error: errors.New(DISABLED_EGRESS)}
@@ -984,7 +1045,7 @@ func (worker *workerT) workerProcess() {
 			var combinedList []*jobsdb.JobT
 			if readPerDestination {
 				toQuery := jobQueryBatchSize
-				if !brt.holdFetchingJobs(toQuery) {
+				if !brt.holdFetchingJobs(parameterFilters) {
 					brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
@@ -1290,7 +1351,7 @@ func (brt *HandleT) readAndProcess() {
 		brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "mainLoop"})
 		brtQueryStat.Start()
 		toQuery := jobQueryBatchSize
-		if !brt.holdFetchingJobs(toQuery) {
+		if !brt.holdFetchingJobs([]jobsdb.ParameterFilterT{}) {
 			retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
 			toQuery -= len(retryList)
 			unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
@@ -1408,10 +1469,10 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 	}
 }
 
-func (brt *HandleT) holdFetchingJobs(toQuery int) bool {
+func (brt *HandleT) holdFetchingJobs(parameterFilters []jobsdb.ParameterFilterT) bool {
 	var pendingList []*jobsdb.JobT
 	if IsAsyncDestination(brt.destType) {
-		pendingList = brt.jobsDB.GetPendingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
+		pendingList = brt.jobsDB.GetPendingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: 1, ParameterFilters: parameterFilters})
 		return len(pendingList) != 0
 	}
 	return false
@@ -1542,6 +1603,11 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	rruntime.Go(func() {
 		brt.initWorkers()
 	})
+
+	rruntime.Go(func() {
+		brt.pollAsyncStatus()
+	})
+
 	rruntime.Go(func() {
 		brt.backendConfigSubscriber()
 	})
