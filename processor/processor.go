@@ -631,8 +631,8 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 			procErr, _ := params["error"].(string)
 			procErr = strconv.Quote(procErr)
 			statusCode, _ := params["status_code"].(string)
-			eventName := gjson.GetBytes(job.EventPayload, "event").String()
-			eventType := gjson.GetBytes(job.EventPayload, "type").String()
+			eventName := misc.GetStringifiedData(gjson.GetBytes(job.EventPayload, "0.event").String())
+			eventType := misc.GetStringifiedData(gjson.GetBytes(job.EventPayload, "0.type").String())
 			sentAt := time.Now().Format(misc.RFC3339Milli)
 
 			deliveryStatus := destinationdebugger.DeliveryStatusT{
