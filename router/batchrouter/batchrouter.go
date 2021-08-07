@@ -418,6 +418,14 @@ func (brt *HandleT) pollAsyncStatus() {
 									statusList = append(statusList, &status)
 								}
 							}
+							txn := brt.jobsDB.BeginGlobalTransaction()
+							brt.jobsDB.AcquireUpdateJobStatusLocks()
+							err = brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
+							if err != nil {
+								brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+								panic(err)
+							}
+							response.Body.Close()
 						} else {
 							response.Body.Close()
 							continue
