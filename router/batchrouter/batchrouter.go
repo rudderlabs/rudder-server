@@ -112,6 +112,7 @@ type AsyncDestinationStruct struct {
 	size          int
 	createdAt     time.Time
 	fileName      string
+	count         int
 }
 
 type ObjectStorageT struct {
@@ -203,6 +204,15 @@ type StorageUploadOutput struct {
 	UseRudderStorage bool
 }
 
+type AsyncStatusResponse struct {
+	success        bool
+	statusCode     int
+	hasFailed      bool
+	hasWarning     bool
+	failedJobsURL  string
+	warningJobsURL string
+}
+
 type AsyncUploadOutput struct {
 	Key               string
 	pendingJobIDs     []int64
@@ -266,9 +276,9 @@ func (brt *HandleT) pollAsyncStatus() {
 					}
 					parameterFilters = append(parameterFilters, parameterFilter)
 				}
-				pendingList := brt.jobsDB.GetPendingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: 1, ParameterFilters: parameterFilters})
-				if len(pendingList) != 0 {
-					pendingJob := pendingList[0]
+				pendingJob := brt.jobsDB.GetPendingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: 1, ParameterFilters: parameterFilters})
+				if len(pendingJob) != 0 {
+					pendingJob := pendingJob[0]
 					parameters := pendingJob.LastJobStatus.Parameters
 					pollUrl := gjson.GetBytes(parameters, "pollUrl").String()
 					importId := gjson.GetBytes(parameters, "importId").String()
@@ -292,13 +302,122 @@ func (brt *HandleT) pollAsyncStatus() {
 						panic("HTTP Request Failed" + err.Error())
 					}
 					if response.StatusCode == 200 {
+						var asyncResponse AsyncStatusResponse
 						bodyBytes, err := ioutil.ReadAll(response.Body)
-						uploadStatus := gjson.GetBytes(bodyBytes, "success").String()
-						statusCode := gjson.GetBytes(bodyBytes, "statusCode").String()
-						if uploadStatus == "true" {
-
-						} else if statusCode != "" {
-
+						if err != nil {
+							panic("Read Body Failed" + err.Error())
+						}
+						err = json.Unmarshal(bodyBytes, &asyncResponse)
+						if err != nil {
+							panic("JSON Unmarshal Failed" + err.Error())
+						}
+						uploadStatus := asyncResponse.success
+						statusCode := asyncResponse.statusCode
+						if uploadStatus {
+							var statusList []*jobsdb.JobStatusT
+							pendingList := brt.jobsDB.GetPendingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: 100000, ParameterFilters: parameterFilters})
+							if !asyncResponse.hasFailed {
+								for _, job := range pendingList {
+									status := jobsdb.JobStatusT{
+										JobID:         job.JobID,
+										JobState:      "succeeded",
+										ExecTime:      time.Now(),
+										RetryTime:     time.Now(),
+										ErrorCode:     "",
+										ErrorResponse: []byte{},
+									}
+									statusList = append(statusList, &status)
+								}
+							} else {
+								failedJobUrl := asyncResponse.failedJobsURL
+								failedJobsPayload := []byte{}
+								failedJobsPayload, err = sjson.SetBytes(failedJobsPayload, "config", uploadConfig)
+								if err != nil {
+									panic("sjson Set Failed" + err.Error())
+								}
+								for _, job := range pendingList {
+									failedJobsPayload, err = sjson.SetBytes(failedJobsPayload, strconv.Itoa(int(job.JobID)), gjson.Get(string(job.EventPayload), "body.CSVRow").String())
+									if err != nil {
+										panic("sjson Set Failed" + err.Error())
+									}
+								}
+								response, err := brt.netHandle.Post(failedJobUrl, "application/json; charset=utf-8",
+									bytes.NewBuffer(payload))
+								if err != nil {
+									panic("HTTP Request Failed" + err.Error())
+								}
+								failedBodyBytes, err := ioutil.ReadAll(response.Body)
+								if err != nil {
+									panic("Read Body Failed" + err.Error())
+								}
+								var failedJobsResponse map[string]interface{}
+								err = json.Unmarshal(failedBodyBytes, &failedJobsResponse)
+								if err != nil {
+									panic("JSON Unmarshal Failed" + err.Error())
+								}
+								failedKeys := failedJobsResponse["failedKeys"].([]int)
+								warningKeys := failedJobsResponse["warningKeys"].([]int)
+								succeededKeys := failedJobsResponse["succeededKeys"].([]int)
+								var status jobsdb.JobStatusT
+								for _, job := range pendingList {
+									if misc.Contains(append(succeededKeys, warningKeys...), job.JobID) {
+										status = jobsdb.JobStatusT{
+											JobID:         job.JobID,
+											JobState:      "succeeded",
+											ExecTime:      time.Now(),
+											RetryTime:     time.Now(),
+											ErrorCode:     "200",
+											ErrorResponse: []byte{},
+										}
+									} else if misc.Contains(failedKeys, job.JobID) {
+										status = jobsdb.JobStatusT{
+											JobID:         job.JobID,
+											JobState:      "failed",
+											ExecTime:      time.Now(),
+											RetryTime:     time.Now(),
+											ErrorCode:     "",
+											ErrorResponse: []byte(gjson.GetBytes(failedBodyBytes, fmt.Sprintf("failedReasons.%v", job.JobID)).String()),
+										}
+									}
+									statusList = append(statusList, &status)
+								}
+							}
+							txn := brt.jobsDB.BeginGlobalTransaction()
+							brt.jobsDB.AcquireUpdateJobStatusLocks()
+							err = brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
+							if err != nil {
+								brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+								panic(err)
+							}
+							response.Body.Close()
+						} else if statusCode != 0 {
+							var statusList []*jobsdb.JobStatusT
+							pendingList := brt.jobsDB.GetPendingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: 100000, ParameterFilters: parameterFilters})
+							if isJobTerminated(statusCode) {
+								for _, job := range pendingList {
+									status := jobsdb.JobStatusT{
+										JobID:         job.JobID,
+										JobState:      "aborted",
+										ExecTime:      time.Now(),
+										RetryTime:     time.Now(),
+										ErrorCode:     "",
+										ErrorResponse: []byte{},
+									}
+									statusList = append(statusList, &status)
+								}
+							} else {
+								for _, job := range pendingList {
+									status := jobsdb.JobStatusT{
+										JobID:         job.JobID,
+										JobState:      "failed",
+										ExecTime:      time.Now(),
+										RetryTime:     time.Now(),
+										ErrorCode:     "",
+										ErrorResponse: []byte{},
+									}
+									statusList = append(statusList, &status)
+								}
+							}
 						} else {
 							response.Body.Close()
 							continue
@@ -511,13 +630,14 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 	var url string
 	var jobString string
 	for _, job := range batchJobs.Jobs {
-		if brt.asyncDestinationStruct[destinationID].size+len(job.EventPayload) < maxFileUploadSize {
+		if brt.asyncDestinationStruct[destinationID].size+len(job.EventPayload) < maxFileUploadSize || brt.asyncDestinationStruct[destinationID].count > 100000 {
 			brt.asyncDestinationStruct[destinationID].size = brt.asyncDestinationStruct[destinationID].size + len(job.EventPayload)
 			jobString = jobString + gjson.Get(string(job.EventPayload), "body.CSVRow").String() + "|"
 			if err != nil {
 				panic(err)
 			}
 			brt.asyncDestinationStruct[destinationID].pendingJobIDs = append(brt.asyncDestinationStruct[destinationID].pendingJobIDs, job.JobID)
+			brt.asyncDestinationStruct[destinationID].count = brt.asyncDestinationStruct[destinationID].count + 1
 		} else {
 			canUpload = true
 			url = gjson.Get(string(job.EventPayload), "endpoint").String()
@@ -562,6 +682,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		brt.asyncDestinationStruct[destinationID].failedJobIDs = []int64{}
 		brt.asyncDestinationStruct[destinationID].size = 0
 		brt.asyncDestinationStruct[destinationID].isOpen = false
+		brt.asyncDestinationStruct[destinationID].count = 0
 		bodyBytes, err := ioutil.ReadAll(response.Body)
 		if err != nil {
 			panic("Read Body Failed" + err.Error())
@@ -881,7 +1002,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput AsyncUploadOutput) {
 		for _, jobId := range asyncOutput.failedJobIDs {
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
-				JobState:      "faied",
+				JobState:      "failed",
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
