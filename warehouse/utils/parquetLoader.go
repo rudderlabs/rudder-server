@@ -63,11 +63,11 @@ func (loader *ParquetLoader) Write() error {
 }
 
 func getInt64(val interface{}) (int64, error) {
-	float64Val, ok := val.(float64)
+	intVal, ok := val.(int)
 	if !ok {
 		return 0, fmt.Errorf("failed to convert %v to int64", val)
 	}
-	return int64(float64Val), nil
+	return int64(intVal), nil
 }
 
 func getBool(val interface{}) (bool, error) {
