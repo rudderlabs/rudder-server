@@ -205,26 +205,26 @@ type StorageUploadOutput struct {
 }
 
 type AsyncStatusResponse struct {
-	success        bool
-	statusCode     int
-	hasFailed      bool
-	hasWarning     bool
-	failedJobsURL  string
-	warningJobsURL string
+	Success        bool
+	StatusCode     int
+	HasFailed      bool
+	HasWarning     bool
+	FailedJobsURL  string
+	WarningJobsURL string
 }
 
 type AsyncUploadOutput struct {
 	Key               string
-	pendingJobIDs     []int64
-	pendingParameters json.RawMessage
-	failedJobIDs      []int64
-	failedReason      string
-	abortJobIDs       []int64
-	abortReason       string
-	pendingCount      int
-	failedCount       int
-	abortCount        int
-	destinationID     string
+	PendingJobIDs     []int64
+	PendingParameters json.RawMessage
+	FailedJobIDs      []int64
+	FailedReason      string
+	AbortJobIDs       []int64
+	AbortReason       string
+	PendingCount      int
+	FailedCount       int
+	AbortCount        int
+	DestinationID     string
 }
 
 type ErrorResponseT struct {
@@ -283,6 +283,9 @@ func (brt *HandleT) pollAsyncStatus() {
 					pollUrl := gjson.GetBytes(parameters, "pollUrl").String()
 					importId := gjson.GetBytes(parameters, "importId").String()
 					uploadConfig, err := json.Marshal(brt.destinationsMap[key].Destination.Config)
+					if err != nil {
+						panic("json Marshal Failed" + err.Error())
+					}
 					payload := []byte{}
 					payload, err = sjson.SetBytes(payload, "importId", importId)
 					if err != nil {
@@ -311,12 +314,12 @@ func (brt *HandleT) pollAsyncStatus() {
 						if err != nil {
 							panic("JSON Unmarshal Failed" + err.Error())
 						}
-						uploadStatus := asyncResponse.success
-						statusCode := asyncResponse.statusCode
+						uploadStatus := asyncResponse.Success
+						statusCode := asyncResponse.StatusCode
 						if uploadStatus {
 							var statusList []*jobsdb.JobStatusT
 							pendingList := brt.jobsDB.GetPendingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: 100000, ParameterFilters: parameterFilters})
-							if !asyncResponse.hasFailed {
+							if !asyncResponse.HasFailed {
 								for _, job := range pendingList {
 									status := jobsdb.JobStatusT{
 										JobID:         job.JobID,
@@ -329,7 +332,7 @@ func (brt *HandleT) pollAsyncStatus() {
 									statusList = append(statusList, &status)
 								}
 							} else {
-								failedJobUrl := asyncResponse.failedJobsURL
+								failedJobUrl := asyncResponse.FailedJobsURL
 								failedJobsPayload := []byte{}
 								failedJobsPayload, err = sjson.SetBytes(failedJobsPayload, "config", uploadConfig)
 								if err != nil {
@@ -697,30 +700,30 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		}
 		if isSuccessStatus(response.StatusCode) {
 			return AsyncUploadOutput{
-				pendingJobIDs:     brt.asyncDestinationStruct[destinationID].pendingJobIDs,
-				failedJobIDs:      brt.asyncDestinationStruct[destinationID].failedJobIDs,
-				failedReason:      "Jobs flowed over the prescribed limit",
-				pendingParameters: bodyBytes,
-				pendingCount:      len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
-				failedCount:       len(brt.asyncDestinationStruct[destinationID].failedJobIDs),
-				destinationID:     destinationID,
+				PendingJobIDs:     brt.asyncDestinationStruct[destinationID].pendingJobIDs,
+				FailedJobIDs:      brt.asyncDestinationStruct[destinationID].failedJobIDs,
+				FailedReason:      "Jobs flowed over the prescribed limit",
+				PendingParameters: bodyBytes,
+				PendingCount:      len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
+				FailedCount:       len(brt.asyncDestinationStruct[destinationID].failedJobIDs),
+				DestinationID:     destinationID,
 			}
 		} else if isJobTerminated(response.StatusCode) {
 			return AsyncUploadOutput{
-				abortJobIDs:   brt.asyncDestinationStruct[destinationID].pendingJobIDs,
-				failedJobIDs:  brt.asyncDestinationStruct[destinationID].failedJobIDs,
-				failedReason:  "Jobs flowed over the prescribed limit",
-				abortReason:   string(bodyBytes),
-				abortCount:    len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
-				failedCount:   len(brt.asyncDestinationStruct[destinationID].failedJobIDs),
-				destinationID: destinationID,
+				AbortJobIDs:   brt.asyncDestinationStruct[destinationID].pendingJobIDs,
+				FailedJobIDs:  brt.asyncDestinationStruct[destinationID].failedJobIDs,
+				FailedReason:  "Jobs flowed over the prescribed limit",
+				AbortReason:   string(bodyBytes),
+				AbortCount:    len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
+				FailedCount:   len(brt.asyncDestinationStruct[destinationID].failedJobIDs),
+				DestinationID: destinationID,
 			}
 		} else {
 			return AsyncUploadOutput{
-				failedJobIDs:  append(brt.asyncDestinationStruct[destinationID].failedJobIDs, brt.asyncDestinationStruct[destinationID].pendingJobIDs...),
-				failedReason:  string(bodyBytes),
-				failedCount:   len(brt.asyncDestinationStruct[destinationID].failedJobIDs) + len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
-				destinationID: destinationID,
+				FailedJobIDs:  append(brt.asyncDestinationStruct[destinationID].failedJobIDs, brt.asyncDestinationStruct[destinationID].pendingJobIDs...),
+				FailedReason:  string(bodyBytes),
+				FailedCount:   len(brt.asyncDestinationStruct[destinationID].failedJobIDs) + len(brt.asyncDestinationStruct[destinationID].pendingJobIDs),
+				DestinationID: destinationID,
 			}
 		}
 	}
@@ -992,42 +995,42 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput AsyncUploadOutput) {
 		errorResp []byte
 	)
 	var statusList []*jobsdb.JobStatusT
-	if len(asyncOutput.pendingJobIDs) > 0 {
-		for _, jobId := range asyncOutput.pendingJobIDs {
+	if len(asyncOutput.PendingJobIDs) > 0 {
+		for _, jobId := range asyncOutput.PendingJobIDs {
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
 				JobState:      "pending",
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
-				Parameters:    asyncOutput.pendingParameters,
+				Parameters:    asyncOutput.PendingParameters,
 				ErrorResponse: errorResp,
 			}
 			statusList = append(statusList, &status)
 		}
 	}
-	if len(asyncOutput.failedJobIDs) > 0 {
-		for _, jobId := range asyncOutput.failedJobIDs {
+	if len(asyncOutput.FailedJobIDs) > 0 {
+		for _, jobId := range asyncOutput.FailedJobIDs {
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
 				JobState:      "failed",
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
-				ErrorResponse: []byte(asyncOutput.failedReason),
+				ErrorResponse: []byte(asyncOutput.FailedReason),
 			}
 			statusList = append(statusList, &status)
 		}
 	}
-	if len(asyncOutput.abortJobIDs) > 0 {
-		for _, jobId := range asyncOutput.abortJobIDs {
+	if len(asyncOutput.AbortJobIDs) > 0 {
+		for _, jobId := range asyncOutput.AbortJobIDs {
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
 				JobState:      "aborted",
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
-				ErrorResponse: []byte(asyncOutput.abortReason),
+				ErrorResponse: []byte(asyncOutput.AbortReason),
 			}
 			statusList = append(statusList, &status)
 		}
@@ -1038,7 +1041,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput AsyncUploadOutput) {
 		parameterFilters = []jobsdb.ParameterFilterT{
 			{
 				Name:     "destination_id",
-				Value:    asyncOutput.destinationID,
+				Value:    asyncOutput.DestinationID,
 				Optional: false,
 			},
 		}
