@@ -665,6 +665,7 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output S
 		return
 	}
 	var (
+		errorCode string
 		jobState  string
 		errorResp []byte
 	)
@@ -672,12 +673,14 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output S
 	err := output.Error
 	if err != nil {
 		jobState = jobsdb.Failed.State
+		errorCode = "500"
 		if isWarehouse {
 			jobState = warehouse.GeneratingStagingFileFailedState
 		}
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 	} else {
 		jobState = jobsdb.Succeeded.State
+		errorCode = "200"
 		if isWarehouse {
 			jobState = warehouse.GeneratedStagingFileState
 		}
@@ -695,7 +698,7 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output S
 		Payload:       []byte(`{}`),
 		AttemptNum:    1,
 		JobState:      jobState,
-		ErrorCode:     "",
+		ErrorCode:     errorCode,
 		ErrorResponse: errorResp,
 	}
 	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
