@@ -775,6 +775,14 @@ func HasAWSKeysInConfig(config interface{}) bool {
 	return true
 }
 
+func HasAWSRegionInConfig(config interface{}) bool {
+	configMap := config.(map[string]interface{})
+	if configMap["region"] == nil || configMap["region"].(string) == "" {
+		return false
+	}
+	return true
+}
+
 func GetRudderObjectStorageAccessKeys() (accessKeyID, accessKey string) {
 	return config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", ""), config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
 }

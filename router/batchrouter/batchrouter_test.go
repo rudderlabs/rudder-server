@@ -1,6 +1,7 @@
 package batchrouter
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -213,6 +214,35 @@ var _ = Describe("BatchRouter", func() {
 
 			<-batchrouter.backendConfigInitialized
 			batchrouter.readAndProcess()
+		})
+
+		FIt("should split batchJobs based on timeWindow for s3 datalake destination", func() {
+
+			batchJobs := BatchJobsT{
+				Jobs: []*jobsdb.JobT{
+					{
+						EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:20:50.52Z"}`),
+					},
+					{
+						EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:20:59.52Z"}`),
+					},
+					{
+						EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:30:50.52Z"}`),
+					},
+					{
+						EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:30:59.52Z"}`),
+					},
+					{
+						EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T08:00:01.52Z"}`),
+					},
+				},
+			}
+
+			brt := &HandleT{destType: "S3_DATALAKE"}
+			splitBatchJobs := brt.SplitBatchJobsOnTimeWindow(batchJobs)
+			for timeWindow, batchJob := range splitBatchJobs {
+				fmt.Println(timeWindow, len(batchJob.Jobs))
+			}
 		})
 
 	})

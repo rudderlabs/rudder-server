@@ -413,6 +413,7 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 	if err != nil {
 		brt.logger.Error("Unmarshal of job parameters failed in postToWarehouse function. ", string(batchJobs.Jobs[0].Parameters))
 	}
+	// td: add time window here
 	payload := warehouseutils.StagingFileT{
 		Schema: schemaMap,
 		BatchDestination: warehouseutils.DestinationT{
@@ -429,6 +430,10 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 		SourceTaskRunID:  sampleParameters.SourceTaskRunID,
 		SourceJobID:      sampleParameters.SourceJobID,
 		SourceJobRunID:   sampleParameters.SourceJobRunID,
+	}
+
+	if brt.destType == "S3_DATALAKE" {
+		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
 	jsonPayload, err := json.Marshal(&payload)
@@ -897,24 +902,32 @@ func (worker *workerT) workerProcess() {
 						}
 
 						destUploadStat.End()
+						// td: add case foor s3 anmd batch here based on time window - batch opn receivedAt
 					case misc.ContainsString(warehouseDestinations, brt.destType):
 						useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 						objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 						destUploadStat.Start()
-						output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
-						postToWarehouseErr := false
-						if output.Error == nil && output.Key != "" {
-							output.Error = brt.postToWarehouse(batchJobs, output)
-							if output.Error != nil {
-								postToWarehouseErr = true
+						splitBatchJobs := brt.SplitBatchJobsOnTimeWindow(batchJobs)
+						// td: add new case for s3
+						// td: move s3 specific stuff to s3 case
+						for _, batchJobPtr := range splitBatchJobs {
+							batchJob := *batchJobPtr
+							output := brt.copyJobsToStorage(objectStorageType, batchJob, true, true)
+							postToWarehouseErr := false
+							if output.Error == nil && output.Key != "" {
+								output.Error = brt.postToWarehouse(batchJob, output)
+								if output.Error != nil {
+									postToWarehouseErr = true
+								}
+								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJob.BatchDestination.Destination.ID).Count(1)
+								warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJob.BatchDestination.Destination.ID).Count(len(batchJob.Jobs))
 							}
-							warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
-							warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
+							// td: should record all these statuses like before or is this fine?
+							brt.recordDeliveryStatus(*batchJob.BatchDestination, output.Error, true)
+							brt.setJobStatus(batchJob, true, output.Error, postToWarehouseErr)
+							misc.RemoveFilePaths(output.LocalFilePaths...)
 						}
-						brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, true)
-						brt.setJobStatus(batchJobs, true, output.Error, postToWarehouseErr)
-						misc.RemoveFilePaths(output.LocalFilePaths...)
 						destUploadStat.End()
 					}
 					wg.Done()
@@ -968,6 +981,7 @@ type DestinationT struct {
 type BatchJobsT struct {
 	Jobs             []*jobsdb.JobT
 	BatchDestination *DestinationT
+	TimeWindow       time.Time
 }
 
 func connectionIdentifier(batchDestination DestinationT) string {
@@ -1188,6 +1202,36 @@ func IsWarehouseDestination(destType string) bool {
 	return misc.Contains(warehouseDestinations, destType)
 }
 
+func (brt *HandleT) SplitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
+	var splitBatches = map[time.Time]*BatchJobsT{}
+	if brt.destType != "S3_DATALAKE" {
+		// return only one batchJob if the destination type is not s3 datalake
+		splitBatches[time.Time{}] = &batchJobs
+		return splitBatches
+	}
+
+	// split batchJobs based on timeWindow
+	for _, job := range batchJobs.Jobs {
+		// ignore error as receivedAt will always be in the expected format
+		fmt.Println(string(job.EventPayload))
+		receivedAt, err := time.Parse(time.RFC3339, gjson.Get(string(job.EventPayload), "metadata.receivedAt").String())
+		err = err
+		timeWindow := warehouseutils.GetTimeWindow(receivedAt)
+
+		// create batchJob for timeWindow if it does not exist
+		if _, ok := splitBatches[timeWindow]; !ok {
+			splitBatches[timeWindow] = &BatchJobsT{
+				Jobs:             make([]*jobsdb.JobT, 0),
+				BatchDestination: batchJobs.BatchDestination,
+				TimeWindow:       timeWindow,
+			}
+		}
+
+		splitBatches[timeWindow].Jobs = append(splitBatches[timeWindow].Jobs, job)
+	}
+	return splitBatches
+}
+
 func (brt *HandleT) collectMetrics() {
 	if diagnostics.EnableBatchRouterMetric {
 		for range brt.diagnosisTicker.C {
@@ -1221,7 +1265,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, []string{"BatchRouter.mainLoopSleep", "BatchRouter.mainLoopSleepInS"}...)
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE"}
 	warehouseURL = misc.GetWarehouseURL()
 	// Time period for diagnosis ticker
 	config.RegisterDurationConfigVariable(time.Duration(600), &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS"}...)

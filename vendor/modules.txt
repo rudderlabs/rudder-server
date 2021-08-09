@@ -92,6 +92,7 @@ github.com/aws/aws-sdk-go/private/protocol/restxml
 github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil
 github.com/aws/aws-sdk-go/service/eventbridge
 github.com/aws/aws-sdk-go/service/firehose
+github.com/aws/aws-sdk-go/service/glue
 github.com/aws/aws-sdk-go/service/kinesis
 github.com/aws/aws-sdk-go/service/personalizeevents
 github.com/aws/aws-sdk-go/service/s3

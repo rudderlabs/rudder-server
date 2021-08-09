@@ -77,8 +77,9 @@ var (
 )
 
 var ObjectStorageMap = map[string]string{
-	"RS": "S3",
-	"BQ": "GCS",
+	"RS":          "S3",
+	"S3_DATALAKE": "S3",
+	"BQ":          "GCS",
 }
 
 var SnowflakeStorageMap = map[string]string{
@@ -130,6 +131,7 @@ type StagingFileT struct {
 	SourceTaskRunID string
 	SourceJobID     string
 	SourceJobRunID  string
+	TimeWindow      time.Time
 }
 
 type UploaderI interface {
@@ -528,7 +530,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	if useRudderStorage {
 		return "S3"
 	}
-	if destType == "RS" || destType == "BQ" {
+	if destType == "RS" || destType == "BQ" || destType == "S3_DATALAKE" {
 		return ObjectStorageMap[destType]
 	}
 	if destType == "SNOWFLAKE" {
@@ -616,4 +618,18 @@ func GetTempFileExtension(destType string) string {
 		return "json.gz"
 	}
 	return "csv.gz"
+}
+
+func GetTimeWindow(ts time.Time) time.Time {
+	// td: check if time is already in utc
+	ts = ts.UTC()
+
+	// get lastHalfHourWindow
+	lastHalfHourWindow := 0
+	if ts.Minute() >= 30 {
+		lastHalfHourWindow = 30
+	}
+
+	// create and return time struct for window
+	return time.Date(ts.Year(), ts.Month(), ts.Day(), ts.Hour(), lastHalfHourWindow, 0, 0, time.UTC)
 }
