@@ -66,4 +66,5 @@ message WHUploadResponse {
   google.protobuf.Timestamp next_retry_time = 13;
   int32 duration = 14;
   repeated WHTable tables = 15;
+  bool isArchivedUpload = 16;
 }
