@@ -618,6 +618,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 	brt.logger.Debugf("BRT: Starting logging to %s", provider)
 	_, ok := brt.asyncDestinationStruct[destinationID]
 	if !ok || !brt.asyncDestinationStruct[destinationID].isOpen {
+		brt.asyncDestinationStruct[destinationID] = &AsyncDestinationStruct{}
 		localTmpDirName := "/rudder-raw-data-destination-logs/"
 		uuid := uuid.NewV4()
 		brt.logger.Debugf("BRT: Starting logging to %s", provider)

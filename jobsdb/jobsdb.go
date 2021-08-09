@@ -459,6 +459,7 @@ var jobStates []jobStateT = []jobStateT{
 	Aborted,
 	Migrated,
 	WontMigrate,
+	Pending,
 }
 
 //OwnerType for this jobsdb instance

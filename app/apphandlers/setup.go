@@ -73,7 +73,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &enableProcessor, false, "enableProcessor")
 	config.RegisterBoolConfigVariable(false, &enableReplay, false, "Replay.enabled")
 	config.RegisterBoolConfigVariable(true, &enableRouter, false, "enableRouter")
-	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
+	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES", "MARKETO_BULK_UPLOAD"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
 }
 
