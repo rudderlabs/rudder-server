@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/glue"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -20,10 +21,19 @@ const (
 	GlueDatabase        = "database"
 )
 
+var (
+	pkgLogger logger.LoggerI
+)
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("s3-datalake")
+}
+
 type HandleT struct {
 	glueClient *glue.Glue
 	Warehouse  warehouseutils.WarehouseT
 	Uploader   warehouseutils.UploaderI
+	Database   string
 }
 
 func (wh *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) error {
@@ -36,10 +46,13 @@ func (wh *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	}
 	wh.glueClient = cl
 
+	wh.Database = warehouseutils.GetConfigValue(GlueDatabase, wh.Warehouse)
+
 	return nil
 }
+
 func (wh *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
-	return fmt.Errorf("s3_datalake err :not implemented")
+	return nil
 }
 
 func (wh *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error) {
@@ -91,43 +104,129 @@ func (wh *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseut
 }
 
 func (wh *HandleT) CreateSchema() (err error) {
-	return fmt.Errorf("s3_datalake err :not implemented")
+	_, err = wh.glueClient.CreateDatabase(&glue.CreateDatabaseInput{
+		DatabaseInput: &glue.DatabaseInput{
+			Name: &wh.Database,
+		},
+	})
+	return
 }
+
 func (wh *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	return fmt.Errorf("s3_datalake err :not implemented")
+	// td: assign table owner as rudderstack?
+	// create table request
+	input := glue.CreateTableInput{
+		DatabaseName: aws.String(wh.Database),
+		TableInput: &glue.TableInput{
+			Name: aws.String(tableName),
+		},
+	}
+
+	// add columns to request
+	storageDescriptor := glue.StorageDescriptor{
+		Columns: []*glue.Column{},
+	}
+	for colName, colType := range columnMap {
+		storageDescriptor.Columns = append(storageDescriptor.Columns, &glue.Column{
+			Name: aws.String(colName),
+			Type: aws.String(colType),
+		})
+	}
+	input.TableInput.StorageDescriptor = &storageDescriptor
+
+	_, err = wh.glueClient.CreateTable(&input)
+	if err != nil {
+		_, ok := err.(*glue.AlreadyExistsException)
+		if ok {
+			err = nil
+		}
+	}
+	return
 }
+
 func (wh *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
-	return fmt.Errorf("s3_datalake err :not implemented")
+	updateTableInput := glue.UpdateTableInput{
+		DatabaseName: aws.String(wh.Database),
+		TableInput: &glue.TableInput{
+			Name: aws.String(tableName),
+		},
+	}
+
+	// fetch schema from glue
+	schema, err := wh.FetchSchema(wh.Warehouse)
+	if err != nil {
+		return err
+	}
+
+	// get table schema
+	tableSchema, ok := schema[tableName]
+	if !ok {
+		return fmt.Errorf("table %s not found in schema", tableName)
+	}
+
+	// add new column to tableSchema
+	tableSchema[columnName] = columnType
+
+	// add all columns in tableSchema to table update request
+	storageDescriptor := glue.StorageDescriptor{
+		Columns: []*glue.Column{},
+	}
+	for colName, colType := range tableSchema {
+		storageDescriptor.Columns = append(storageDescriptor.Columns, &glue.Column{
+			Name: aws.String(colName),
+			Type: aws.String(colType),
+		})
+	}
+	updateTableInput.TableInput.StorageDescriptor = &storageDescriptor
+
+	// update table
+	_, err = wh.glueClient.UpdateTable(&updateTableInput)
+	return
 }
+
 func (wh *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
-	return fmt.Errorf("s3_datalake err :not implemented")
+	return wh.AlterColumn(tableName, columnName, columnType)
 }
+
 func (wh *HandleT) LoadTable(tableName string) error {
-	return fmt.Errorf("s3_datalake err :not implemented")
-}
-func (wh *HandleT) LoadUserTables() map[string]error {
+	pkgLogger.Infof("Skipping load for table %s : %s is a s3 datalake destination", tableName, wh.Warehouse.Destination.ID)
 	return nil
 }
+
+func (wh *HandleT) LoadUserTables() map[string]error {
+	pkgLogger.Infof("Skipping load for user tables : %s is a s3 datalake destination", wh.Warehouse.Destination.ID)
+	return nil
+}
+
 func (wh *HandleT) LoadIdentityMergeRulesTable() error {
-	return fmt.Errorf("s3_datalake err :not implemented")
+	pkgLogger.Infof("Skipping load for identity merge rules : %s is a s3 datalake destination", wh.Warehouse.Destination.ID)
+	return nil
 }
+
 func (wh *HandleT) LoadIdentityMappingsTable() error {
-	return fmt.Errorf("s3_datalake err :not implemented")
+	pkgLogger.Infof("Skipping load for identity mappings : %s is a s3 datalake destination", wh.Warehouse.Destination.ID)
+	return nil
 }
+
 func (wh *HandleT) Cleanup() {
 }
+
 func (wh *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error) {
-	return false, fmt.Errorf("s3_datalake err :not implemented")
+	return false, nil
 }
+
 func (wh *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) error {
 	return fmt.Errorf("s3_datalake err :not implemented")
 }
+
 func (wh *HandleT) DownloadIdentityRules(*misc.GZipWriter) error {
 	return fmt.Errorf("s3_datalake err :not implemented")
 }
+
 func (wh *HandleT) GetTotalCountInTable(tableName string) (int64, error) {
-	return 0, fmt.Errorf("s3_datalake err :not implemented")
+	return 0, nil
 }
+
 func (wh *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	return client.Client{}, fmt.Errorf("s3_datalake err :not implemented")
 }

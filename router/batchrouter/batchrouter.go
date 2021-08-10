@@ -413,7 +413,6 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 	if err != nil {
 		brt.logger.Error("Unmarshal of job parameters failed in postToWarehouse function. ", string(batchJobs.Jobs[0].Parameters))
 	}
-	// td: add time window here
 	payload := warehouseutils.StagingFileT{
 		Schema: schemaMap,
 		BatchDestination: warehouseutils.DestinationT{

@@ -925,12 +925,13 @@ func (wh *HandleT) monitorUploadStatus() {
 }
 
 var loadFileFormatMap = map[string]string{
-	"BQ":         "json",
-	"RS":         "csv",
-	"SNOWFLAKE":  "csv",
-	"POSTGRES":   "csv",
-	"CLICKHOUSE": "csv",
-	"MSSQL":      "csv",
+	"BQ":          "json",
+	"S3_DATALAKE": "json",
+	"RS":          "csv",
+	"SNOWFLAKE":   "csv",
+	"POSTGRES":    "csv",
+	"CLICKHOUSE":  "csv",
+	"MSSQL":       "csv",
 }
 
 func minimalConfigSubscriber() {
@@ -1064,7 +1065,6 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var stagingFile warehouseutils.StagingFileT
-	fmt.Println(string(body))
 	json.Unmarshal(body, &stagingFile)
 
 	var firstEventAt, lastEventAt interface{}

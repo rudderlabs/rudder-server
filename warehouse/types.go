@@ -9,15 +9,16 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type StagingFileEntryT struct {
-	ID       int64
-	Location string
-}
+// type StagingFileEntryT struct {
+// 	ID       int64
+// 	Location string
+// }
 
 type PayloadT struct {
 	BatchID             string
 	UploadID            int64
-	StagingFiles        []StagingFileEntryT
+	StagingFileID       int64
+	StagingFileLocation string
 	Schema              map[string]map[string]string
 	SourceID            string
 	SourceName          string

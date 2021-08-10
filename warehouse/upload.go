@@ -321,6 +321,7 @@ func (job *UploadJobT) run() (err error) {
 	schemaHandle := job.schemaHandle
 	schemaHandle.uploadSchema = job.upload.Schema
 
+	// td: move this before sync remote schema?
 	whManager := job.whManager
 	err = whManager.Setup(job.warehouse, job)
 	if err != nil {
@@ -1517,16 +1518,51 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			j = len(toProcessStagingFiles)
 		}
 
+		// TODO: batch staging files
 		// td: batch staging files baased on time window for s3 dest
 		// td: should we remove publishBatchSize or make it 120 -> process staging files for 60 mins
 		// td: define some batch size for breaking staging files belonging to one window - right now max is 60 stagingFiles per time window
-		batchedStagingFiles := job.BatchStagingFilesOnTimeWindow(toProcessStagingFiles[i:j])
+		// batchedStagingFiles := job.BatchStagingFilesOnTimeWindow(toProcessStagingFiles[i:j])
+		// // td : add prefix to payload for s3 dest
+		// var messages []pgnotifier.MessageT
+		// for timeWindow, stagingFiles := range batchedStagingFiles {
+		// 	payload := PayloadT{
+		// 		UploadID:            job.upload.ID,
+		// 		StagingFiles:        stagingFiles,
+		// 		Schema:              job.upload.Schema,
+		// 		SourceID:            job.warehouse.Source.ID,
+		// 		SourceName:          job.warehouse.Source.Name,
+		// 		DestinationID:       destID,
+		// 		DestinationName:     job.warehouse.Destination.Name,
+		// 		DestinationType:     destType,
+		// 		DestinationConfig:   job.warehouse.Destination.Config,
+		// 		UniqueLoadGenID:     uniqueLoadGenID,
+		// 		UseRudderStorage:    job.upload.UseRudderStorage,
+		// 		RudderStoragePrefix: misc.GetRudderObjectStoragePrefix(),
+		// 	}
+
+		// 	if job.warehouse.Type == "S3_DATALAKE" {
+		// 		// td: use prefix from config
+		// 		payload.LoadFilePrefix = timeWindow
+		// 	}
+
+		// 	payloadJSON, err := json.Marshal(payload)
+		// 	if err != nil {
+		// 		panic(err)
+		// 	}
+		// 	message := pgnotifier.MessageT{
+		// 		Payload: payloadJSON,
+		// 	}
+		// 	messages = append(messages, message)
+		// }
+
 		// td : add prefix to payload for s3 dest
 		var messages []pgnotifier.MessageT
-		for timeWindow, stagingFiles := range batchedStagingFiles {
+		for _, stagingFile := range toProcessStagingFiles[i:j] {
 			payload := PayloadT{
 				UploadID:            job.upload.ID,
-				StagingFiles:        stagingFiles,
+				StagingFileID:       stagingFile.ID,
+				StagingFileLocation: stagingFile.Location,
 				Schema:              job.upload.Schema,
 				SourceID:            job.warehouse.Source.ID,
 				SourceName:          job.warehouse.Source.Name,
@@ -1541,7 +1577,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 
 			if job.warehouse.Type == "S3_DATALAKE" {
 				// td: use prefix from config
-				payload.LoadFilePrefix = timeWindow
+				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(time.RFC3339)
 			}
 
 			payloadJSON, err := json.Marshal(payload)
@@ -1553,39 +1589,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			}
 			messages = append(messages, message)
 		}
-
-		// // td : add prefix to payload for s3 dest
-		// var messages []pgnotifier.MessageT
-		// for _, stagingFile := range toProcessStagingFiles[i:j] {
-		// payload := PayloadT{
-		// 	UploadID:            job.upload.ID,
-		// 	StagingFiles:        []StagingFileEntryT{{ID: stagingFile.ID, Location: stagingFile.Location}},
-		// 	Schema:              job.upload.Schema,
-		// 	SourceID:            job.warehouse.Source.ID,
-		// 	SourceName:          job.warehouse.Source.Name,
-		// 	DestinationID:       destID,
-		// 	DestinationName:     job.warehouse.Destination.Name,
-		// 	DestinationType:     destType,
-		// 	DestinationConfig:   job.warehouse.Destination.Config,
-		// 	UniqueLoadGenID:     uniqueLoadGenID,
-		// 	UseRudderStorage:    job.upload.UseRudderStorage,
-		// 	RudderStoragePrefix: misc.GetRudderObjectStoragePrefix(),
-		// }
-
-		// if job.warehouse.Type == "S3_DATALAKE" {
-		// 	// td: use prefix from config
-		// 	payload.LoadFilePrefix = time.RFC3339
-		// }
-
-		// payloadJSON, err := json.Marshal(payload)
-		// if err != nil {
-		// 	panic(err)
-		// }
-		// message := pgnotifier.MessageT{
-		// 	Payload: payloadJSON,
-		// }
-		// messages = append(messages, message)
-		// }
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
 		ch, err := job.pgNotifier.Publish(StagingFilesPGNotifierChannel, messages)
@@ -1693,7 +1696,6 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 		return
 	}
 
-	// td: convert staging_file_id int64 to staging_file_ids []int64
 	stmt, err := txn.Prepare(pq.CopyIn("wh_load_files", "staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at"))
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Error starting bulk copy using CopyIn: %v`, err)
@@ -1702,7 +1704,7 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 	defer stmt.Close()
 
 	for _, loadFile := range loadFiles {
-		_, err = stmt.Exec(loadFile.StagingFileIDs, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now())
+		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now())
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for loadFules: %v Error: %v`, loadFile, err)
 			txn.Rollback()
@@ -1947,28 +1949,28 @@ func initializeStateMachine() {
 	abortState.nextState = nil
 }
 
-func (job *UploadJobT) BatchStagingFilesOnTimeWindow(stagingFiles []*StagingFileT) map[string][]StagingFileEntryT {
-	var batchedStagingFiles = map[string][]StagingFileEntryT{}
-	if job.warehouse.Type != "S3_DATALAKE" {
-		var stagingFileEntries = []StagingFileEntryT{}
-		for _, stagingFile := range stagingFiles {
-			stagingFileEntries = append(stagingFileEntries, StagingFileEntryT{
-				ID:       stagingFile.ID,
-				Location: stagingFile.Location,
-			})
-		}
-		// return single batch with a zero value timeWindow for all whs except S3_DATALAKE
-		batchedStagingFiles[time.Time{}.Format(time.RFC3339)] = stagingFileEntries
-		return batchedStagingFiles
-	}
-	for _, stagingFile := range stagingFiles {
-		// td: take prefix from config
-		prefixFormat := time.RFC3339
-		timeWindow := stagingFile.TimeWindow.Format(prefixFormat)
-		batchedStagingFiles[timeWindow] = append(batchedStagingFiles[timeWindow], StagingFileEntryT{
-			ID:       stagingFile.ID,
-			Location: stagingFile.Location,
-		})
-	}
-	return batchedStagingFiles
-}
+// func (job *UploadJobT) BatchStagingFilesOnTimeWindow(stagingFiles []*StagingFileT) map[string][]StagingFileEntryT {
+// 	var batchedStagingFiles = map[string][]StagingFileEntryT{}
+// 	if job.warehouse.Type != "S3_DATALAKE" {
+// 		var stagingFileEntries = []StagingFileEntryT{}
+// 		for _, stagingFile := range stagingFiles {
+// 			stagingFileEntries = append(stagingFileEntries, StagingFileEntryT{
+// 				ID:       stagingFile.ID,
+// 				Location: stagingFile.Location,
+// 			})
+// 		}
+// 		// return single batch with a zero value timeWindow for all whs except S3_DATALAKE
+// 		batchedStagingFiles[time.Time{}.Format(time.RFC3339)] = stagingFileEntries
+// 		return batchedStagingFiles
+// 	}
+// 	for _, stagingFile := range stagingFiles {
+// 		// td: take prefix from config
+// 		prefixFormat := time.RFC3339
+// 		timeWindow := stagingFile.TimeWindow.Format(prefixFormat)
+// 		batchedStagingFiles[timeWindow] = append(batchedStagingFiles[timeWindow], StagingFileEntryT{
+// 			ID:       stagingFile.ID,
+// 			Location: stagingFile.Location,
+// 		})
+// 	}
+// 	return batchedStagingFiles
+// }
