@@ -266,7 +266,7 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[stri
 
 func (brt *HandleT) pollAsyncStatus() {
 	for {
-		for key := range brt.asyncDestinationStruct {
+		for key := range brt.destinationsMap {
 			if IsAsyncDestination(brt.destType) {
 				parameterFilters := make([]jobsdb.ParameterFilterT, 0)
 				for _, param := range QueryFilters.ParameterFilters {
@@ -645,14 +645,16 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		brt.asyncDestinationStruct[destinationID].fileName = jsonPath
 		brt.asyncDestinationStruct[destinationID].createdAt = time.Now()
 	}
-	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].fileName, os.O_CREATE|os.O_WRONLY, 0644)
 	canUpload := false
 	var url string
 	var jobString string
+	offset := brt.asyncDestinationStruct[destinationID].size
 	for _, job := range batchJobs.Jobs {
-		if brt.asyncDestinationStruct[destinationID].size+len(job.EventPayload) < maxFileUploadSize && brt.asyncDestinationStruct[destinationID].count < 3 {
-			brt.asyncDestinationStruct[destinationID].size = brt.asyncDestinationStruct[destinationID].size + len(job.EventPayload)
-			jobString = jobString + gjson.Get(string(job.EventPayload), "body.CSVRow").String() + "|"
+		csvRow := gjson.Get(string(job.EventPayload), "body.CSVRow").String()
+		if brt.asyncDestinationStruct[destinationID].size+len([]byte(csvRow)) < maxFileUploadSize && brt.asyncDestinationStruct[destinationID].count < 3 {
+			brt.asyncDestinationStruct[destinationID].size = brt.asyncDestinationStruct[destinationID].size + len([]byte(csvRow)) + 1
+			jobString = jobString + csvRow + "|"
 			if err != nil {
 				panic(err)
 			}
@@ -664,12 +666,13 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 			brt.asyncDestinationStruct[destinationID].failedJobIDs = append(brt.asyncDestinationStruct[destinationID].failedJobIDs, job.JobID)
 		}
 	}
+	fmt.Println("Offset: ", offset)
 	uploadConfig, err := json.Marshal(config)
 	fmt.Println(string(uploadConfig))
 	if err != nil {
 		panic("json Marshal Failed" + err.Error())
 	}
-	_, err = file.WriteString(jobString)
+	_, err = file.WriteAt([]byte(jobString), int64(offset))
 	if err != nil {
 		panic("file write failed" + err.Error())
 	}

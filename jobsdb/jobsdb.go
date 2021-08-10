@@ -1974,7 +1974,6 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
                                              %[4]s %[5]s
                                              AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[6]s`,
 			ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
-
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
 		jd.assertError(err)
 		defer stmt.Close()
@@ -1982,7 +1981,6 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		jd.assertError(err)
 		defer rows.Close()
 	}
-
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
