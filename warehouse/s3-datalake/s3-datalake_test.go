@@ -19,8 +19,8 @@ var _ = Describe("S3Datalake", func() {
 		sd = &s3datalake.HandleT{}
 		sd.Warehouse.Destination.Config = map[string]interface{}{
 			"region":      "us-east-1",
-			"accessKeyID": "AKIAWTVBJHCTKWPYEFJ3",
-			"accessKey":   "fcgOL1JOjTYWlQY6YE30ninmPnuHqnLSditk4vC+",
+			"accessKeyID": "xxxxxxx",
+			"accessKey":   "xxxxxxx",
 		}
 	})
 
