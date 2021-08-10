@@ -355,6 +355,7 @@ func (worker *workerT) workerProcess() {
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
 					ErrorResponse: []byte(`{"reason": "Aborted because destination is not available in the config" }`),
+					Parameters:    []byte(`{}`),
 				}
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				continue
@@ -632,6 +633,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				AttemptNum:    attemptNum,
 				ErrorCode:     strconv.Itoa(respStatusCode),
 				ErrorResponse: []byte(`{}`),
+				Parameters:    []byte(`{}`),
 			}
 
 			worker.postStatusOnResponseQ(respStatusCode, respBody, destinationJob.Message, &destinationJobMetadata, &status)
@@ -662,6 +664,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				AttemptNum:    routerJob.JobMetadata.AttemptNum,
 				ErrorCode:     strconv.Itoa(500),
 				ErrorResponse: []byte(`{}`),
+				Parameters:    []byte(`{}`),
 			}
 
 			worker.postStatusOnResponseQ(500, "transformer failed to handle this job", nil, &routerJob.JobMetadata, &status)
@@ -950,6 +953,7 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 			RetryTime:     time.Now(),
 			JobState:      jobsdb.Waiting.State,
 			ErrorResponse: []byte(resp), // check
+			Parameters:    []byte(`{}`),
 		}
 		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 		return true
@@ -1525,6 +1529,7 @@ func (rt *HandleT) readAndProcess() int {
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or confifgured to be aborted via ENV" }`),
+				Parameters:    []byte(`{}`),
 			}
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
@@ -1544,6 +1549,7 @@ func (rt *HandleT) readAndProcess() int {
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check
+				Parameters:    []byte(`{}`),
 			}
 			statusList = append(statusList, &status)
 			toProcess = append(toProcess, workerJobT{worker: w, job: job})

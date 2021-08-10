@@ -1051,6 +1051,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			RetryTime:     time.Now(),
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":"OK"}`),
+			Parameters:    []byte(`{}`),
 		}
 		statusList = append(statusList, &newStatus)
 	}

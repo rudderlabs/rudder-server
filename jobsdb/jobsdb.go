@@ -1296,8 +1296,8 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
                                      exec_time TIMESTAMP,
                                      retry_time TIMESTAMP,
                                      error_code VARCHAR(32),
-                                     error_response JSONB,
-									 parameters JSONB);`, newDS.JobStatusTable, newDS.JobTable)
+                                     error_response JSONB DEFAULT '{}'::JSONB,
+									 parameters JSONB DEFAULT '{}'::JSONB);`, newDS.JobStatusTable, newDS.JobTable)
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
@@ -1568,6 +1568,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 			RetryTime:     job.LastJobStatus.RetryTime,
 			ErrorCode:     job.LastJobStatus.ErrorCode,
 			ErrorResponse: job.LastJobStatus.ErrorResponse,
+			Parameters:    job.LastJobStatus.Parameters,
 		}
 		statusList = append(statusList, &newStatus)
 	}
@@ -1943,11 +1944,11 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
                                   %[1]s.created_at, %[1]s.expire_at,
                                   job_latest_state.job_state, job_latest_state.attempt,
                                   job_latest_state.exec_time, job_latest_state.retry_time,
-                                  job_latest_state.error_code, job_latest_state.error_response
+                                  job_latest_state.error_code, job_latest_state.error_response,job_latest_state.parameters
                                  FROM
                                   %[1]s,
                                   (SELECT job_id, job_state, attempt, exec_time, retry_time,
-                                    error_code, error_response FROM %[2]s WHERE id IN
+                                    error_code, error_response,parameters FROM %[2]s WHERE id IN
                                     (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
                                   AS job_latest_state
                                    WHERE %[1]s.job_id=job_latest_state.job_id`,
@@ -1962,11 +1963,11 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
                                                %[1]s.created_at, %[1]s.expire_at,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
-                                               job_latest_state.error_code, job_latest_state.error_response
+                                               job_latest_state.error_code, job_latest_state.error_response,job_latest_state.parameters
                                             FROM
                                                %[1]s,
                                                (SELECT job_id, job_state, attempt, exec_time, retry_time,
-                                                 error_code, error_response FROM %[2]s WHERE id IN
+                                                 error_code, error_response,parameters FROM %[2]s WHERE id IN
                                                    (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
                                                AS job_latest_state
                                             WHERE %[1]s.job_id=job_latest_state.job_id
@@ -1989,7 +1990,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 			&job.EventPayload, &job.CreatedAt, &job.ExpireAt,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
-			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse)
+			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
 		jd.assertError(err)
 		jobList = append(jobList, &job)
 	}
@@ -2135,7 +2136,7 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 	defer queryStat.End()
 
 	stmt, err := txHandler.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
-		"retry_time", "error_code", "error_response"))
+		"retry_time", "error_code", "error_response", "parameters"))
 	if err != nil {
 		return
 	}
@@ -2148,7 +2149,7 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 			status.ErrorResponse = []byte(`{}`)
 		}
 		_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
-			status.RetryTime, status.ErrorCode, string(status.ErrorResponse))
+			status.RetryTime, status.ErrorCode, string(status.ErrorResponse), string(status.Parameters))
 		if err != nil {
 			return
 		}
