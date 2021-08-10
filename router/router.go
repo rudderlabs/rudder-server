@@ -565,7 +565,9 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
-							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
+							//for proxying through transformer
+							//respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
+							respStatusCode, respBodyTemp = worker.rt.transformer.Send(val)
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -25,16 +26,18 @@ const (
 
 //HandleT is the handle for this class
 type HandleT struct {
-	tr                        *http.Transport
-	client                    *http.Client
-	transformRequestTimerStat stats.RudderStats
-	logger                    logger.LoggerI
+	tr                                 *http.Transport
+	client                             *http.Client
+	transformRequestTimerStat          stats.RudderStats
+	transformerNetworkRequestTimerStat stats.RudderStats
+	logger                             logger.LoggerI
 }
 
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
+	Send(transformedData integrations.PostParametersT) (statusCode int, respBody string)
 }
 
 //NewTransformer creates a new transformer
@@ -150,11 +153,52 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
+func (trans *HandleT) Send(transformedData integrations.PostParametersT) (statusCode int, respBody string) {
+	rawJSON, err := json.Marshal(transformedData)
+	if err != nil {
+		panic(err)
+	}
+	trans.logger.Debugf("[Transfomrer Network request] :: prepared destination payload : %s", string(rawJSON))
+	var resp *http.Response
+	var respData []byte
+	//We should rarely have error communicating with our JS
+	url := getNetworkTransformerURL()
+
+	trans.transformerNetworkRequestTimerStat.Start()
+	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+	trans.transformerNetworkRequestTimerStat.End()
+	if resp != nil && resp.Body != nil {
+		respData, _ = ioutil.ReadAll(resp.Body)
+	}
+	var contentTypeHeader string
+	if resp != nil && resp.Header != nil {
+		contentTypeHeader = resp.Header.Get("Content-Type")
+	}
+	if contentTypeHeader == "" {
+		//Detecting content type of the respBody
+		contentTypeHeader = http.DetectContentType(respData)
+	}
+	//If content type is not of type "*text*", overriding it with empty string
+	if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
+		strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
+		strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
+		respData = []byte("")
+	}
+	if err != nil {
+		trans.logger.Errorf("[Transfomrer Network request] :: destaination request failed: %+v", err)
+		return http.StatusInternalServerError, string(respData)
+	}
+	resp.Body.Close()
+	return resp.StatusCode, string(respData)
+
+}
+
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
-	trans.client = &http.Client{Transport: trans.tr}
+	trans.client = &http.Client{Transport: trans.tr, Timeout: 60 * time.Second}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
+	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
 }
 
 func getBatchURL() string {
@@ -163,4 +207,8 @@ func getBatchURL() string {
 
 func getRouterTransformURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
+}
+
+func getNetworkTransformerURL() string {
+	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/network/proxy"
 }
