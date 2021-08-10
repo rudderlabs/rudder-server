@@ -11,6 +11,8 @@ service Warehouse {
   rpc GetWHUploads (WHUploadsRequest) returns (WHUploadsResponse);
   rpc GetWHUpload (WHUploadRequest) returns (WHUploadResponse);
   rpc TriggerWHUpload (WHUploadRequest) returns (google.protobuf.Empty);
+  rpc TriggerWHUploads (WHUploadsRequest) returns (google.protobuf.Empty);
+
 }
 
 message Pagination {

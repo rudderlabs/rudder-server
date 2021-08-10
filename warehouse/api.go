@@ -250,6 +250,19 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 	return
 }
 
+func (uploadsReq *UploadsReqT) TriggerWhUploads() (err error) {
+	err = uploadsReq.validateReq()
+	if err != nil {
+		return
+	}
+	authorizedSourceIDs := uploadsReq.authorizedSources()
+	if len(authorizedSourceIDs) == 0 {
+		return fmt.Errorf("No authorized sourceId's")
+	}
+	return TriggerUploadHandler(uploadsReq.SourceID, uploadsReq.DestinationID)
+}
+
+
 func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	err := uploadReq.validateReq()
 	if err != nil {

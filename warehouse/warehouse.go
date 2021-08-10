@@ -1333,6 +1333,18 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	//TODO : support cases where both source id and dest id is present and only dest id is present
 
+	if destID != "" {
+		connectionsMapLock.Lock()
+		for destinationId, srcMap := range connectionsMap {
+			if destinationId == destID {
+				for _, w := range srcMap {
+					wh = append(wh, w)
+				}
+			}
+		}
+		connectionsMapLock.Unlock()
+	}
+
 	// return error if no such destinations found
 	if len(wh) == 0 {
 		err := fmt.Errorf("No warehouse destinations found for source id '%s'", sourceID)
@@ -1347,6 +1359,58 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+func TriggerUploadHandler(srcId string, destId string) (error){
+
+	sourceID := srcId
+	destID := destId
+
+	// return error if source id and dest id is empty
+	if sourceID == "" && destID == "" {
+		err := fmt.Errorf("Empty source and destination id")
+		pkgLogger.Errorf("[WH]: trigger upload : %v", err)
+		return err
+	}
+
+	wh := make([]warehouseutils.WarehouseT, 0)
+
+	if sourceID != "" && destID == "" {
+		// get all wh destinations for given source id
+		connectionsMapLock.Lock()
+		for _, srcMap := range connectionsMap {
+			for srcID, w := range srcMap {
+				if srcID == sourceID {
+					wh = append(wh, w)
+				}
+			}
+		}
+		connectionsMapLock.Unlock()
+	}
+	if destID != "" {
+		connectionsMapLock.Lock()
+		for destinationId, srcMap := range connectionsMap {
+			if destinationId == destID {
+				for _, w := range srcMap {
+					wh = append(wh, w)
+				}
+			}
+		}
+		connectionsMapLock.Unlock()
+	}
+
+	// return error if no such destinations found
+	if len(wh) == 0 {
+		err := fmt.Errorf("No warehouse destinations found for source id '%s'", sourceID)
+		pkgLogger.Errorf("[WH]: %v", err)
+		return err
+	}
+
+	// iterate over each wh destination and trigger upload
+	for _, warehouse := range wh {
+		triggerUpload(warehouse)
+	}
+	return nil
 }
 
 func isUploadTriggered(wh warehouseutils.WarehouseT) bool {
@@ -1409,7 +1473,9 @@ func startWebHandler() {
 	if isMaster() {
 		backendconfig.WaitForConfig()
 		http.HandleFunc("/v1/process", processHandler)
+		// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
 		http.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
+		// triggers uploads for a source
 		http.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
 		pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 	} else {
