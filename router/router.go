@@ -566,8 +566,9 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
 							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
-							fmt.Println(respStatusCode)
-							respStatusCode = 500
+							if config.GetBool("Router.force500", false) {
+								respStatusCode = 500
+							}
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
