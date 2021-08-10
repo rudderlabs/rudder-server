@@ -296,7 +296,6 @@ func (brt *HandleT) pollAsyncStatus() {
 					if err != nil {
 						panic("sjson Set Failed" + err.Error())
 					}
-					fmt.Println(string(payload))
 					response, err := brt.netHandle.Post(transformerURL+pollUrl, "application/json; charset=utf-8",
 						bytes.NewBuffer(payload))
 					if err != nil {
@@ -636,7 +635,6 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		}
 		path := fmt.Sprintf("%v%v", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", batchJobs.BatchDestination.Source.ID, uuid.String()))
 		jsonPath := fmt.Sprintf(`%v.json`, path)
-		fmt.Println(jsonPath)
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		if err != nil {
 			panic(err)
@@ -666,9 +664,6 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 			brt.asyncDestinationStruct[destinationID].failedJobIDs = append(brt.asyncDestinationStruct[destinationID].failedJobIDs, job.JobID)
 		}
 	}
-	fmt.Println("Offset: ", offset)
-	uploadConfig, err := json.Marshal(config)
-	fmt.Println(string(uploadConfig))
 	if err != nil {
 		panic("json Marshal Failed" + err.Error())
 	}
@@ -1061,7 +1056,6 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput AsyncUploadOutput) {
 			},
 		}
 	}
-	fmt.Println(asyncOutput.FailedReason)
 	//Mark the status of the jobs
 	txn := brt.jobsDB.BeginGlobalTransaction()
 	brt.jobsDB.AcquireUpdateJobStatusLocks()
