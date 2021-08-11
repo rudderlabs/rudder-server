@@ -631,23 +631,36 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 			procErr, _ := params["error"].(string)
 			procErr = strconv.Quote(procErr)
 			statusCode := fmt.Sprint(params["status_code"])
-			eventName := misc.GetStringifiedData(gjson.GetBytes(job.EventPayload, "0.event").String())
-			eventType := misc.GetStringifiedData(gjson.GetBytes(job.EventPayload, "0.type").String())
 			sentAt := time.Now().Format(misc.RFC3339Milli)
-
-			deliveryStatus := destinationdebugger.DeliveryStatusT{
-				EventName:     eventName,
-				EventType:     eventType,
-				SentAt:        sentAt,
-				DestinationID: destID,
-				SourceID:      sourceID,
-				Payload:       job.EventPayload,
-				AttemptNum:    1,
-				JobState:      jobsdb.Aborted.State,
-				ErrorCode:     statusCode,
-				ErrorResponse: []byte(fmt.Sprintf(`{"error": %s}`, procErr)),
+			events := make([]map[string]interface{}, 0)
+			err = json.Unmarshal(job.EventPayload, &events)
+			if err != nil {
+				panic(err)
 			}
-			destinationdebugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
+			for i := range events {
+				event := &events[i]
+				eventPayload, err := json.Marshal(*event)
+				if err != nil {
+					panic(err)
+				}
+
+				eventName := misc.GetStringifiedData(gjson.GetBytes(eventPayload, "event").String())
+				eventType := misc.GetStringifiedData(gjson.GetBytes(eventPayload, "type").String())
+				deliveryStatus := destinationdebugger.DeliveryStatusT{
+					EventName:     eventName,
+					EventType:     eventType,
+					SentAt:        sentAt,
+					DestinationID: destID,
+					SourceID:      sourceID,
+					Payload:       eventPayload,
+					AttemptNum:    1,
+					JobState:      jobsdb.Aborted.State,
+					ErrorCode:     statusCode,
+					ErrorResponse: []byte(fmt.Sprintf(`{"error": %s}`, procErr)),
+				}
+				destinationdebugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
+			}
+
 		}
 	}
 }
