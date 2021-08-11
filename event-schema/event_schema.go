@@ -740,8 +740,15 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) {
 		err = json.Unmarshal(eventModel.PrivateData, &privateData)
 		assertError(err)
 
-		eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, len(metadata.SampledEvents), metadata.TotalCount)
-		for sampledEvent := range metadata.SampledEvents {
+		reservoirSize := len(metadata.SampledEvents)
+		if reservoirSize > reservoirSampleSize {
+			reservoirSize = reservoirSampleSize
+		}
+		eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, reservoirSize, metadata.TotalCount)
+		for idx, sampledEvent := range metadata.SampledEvents {
+			if idx > reservoirSampleSize-1 {
+				continue
+			}
 			eventModel.reservoirSample.add(sampledEvent, false)
 		}
 		manager.updateEventModelCache(&eventModel, false)
@@ -807,8 +814,15 @@ func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVers
 	err = json.Unmarshal(schemaVersion.PrivateData, &privateData)
 	assertError(err)
 
-	schemaVersion.reservoirSample = NewReservoirSampler(reservoirSampleSize, len(metadata.SampledEvents), metadata.TotalCount)
-	for sampledEvent := range metadata.SampledEvents {
+	reservoirSize := len(metadata.SampledEvents)
+	if reservoirSize > reservoirSampleSize {
+		reservoirSize = reservoirSampleSize
+	}
+	schemaVersion.reservoirSample = NewReservoirSampler(reservoirSampleSize, reservoirSize, metadata.TotalCount)
+	for idx, sampledEvent := range metadata.SampledEvents {
+		if idx > reservoirSampleSize-1 {
+			continue
+		}
 		schemaVersion.reservoirSample.add(sampledEvent, false)
 	}
 
