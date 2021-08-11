@@ -108,12 +108,30 @@ type BatchDestinationDataT struct {
 type AsyncDestinationStruct struct {
 	pendingJobIDs []int64
 	failedJobIDs  []int64
-	responseQ     chan bool
 	isOpen        bool
 	size          int
 	createdAt     time.Time
 	fileName      string
 	count         int
+}
+
+type AsyncUploadT struct {
+	Config   map[string]interface{} `json:"config"`
+	Data     []byte                 `json:"data"`
+	DestType string                 `json:"destType"`
+}
+
+type AsyncPollT struct {
+	Config   map[string]interface{} `json:"config"`
+	ImportId string                 `json:"importId"`
+	DestType string                 `json:"destType"`
+}
+
+type AsyncFailedPayload struct {
+	Config   map[string]interface{} `json:"config"`
+	Data     map[string]interface{} `json:"data"`
+	DestType string                 `json:"destType"`
+	ImportId string                 `json:"string"`
 }
 
 type ObjectStorageT struct {
@@ -283,18 +301,13 @@ func (brt *HandleT) pollAsyncStatus() {
 					parameters := pendingJob.LastJobStatus.Parameters
 					pollUrl := gjson.GetBytes(parameters, "pollURL").String()
 					importId := gjson.GetBytes(parameters, "importId").String()
-					payload := []byte{}
-					payload, err := sjson.SetBytes(payload, "importId", importId)
+					var pollStruct AsyncPollT
+					pollStruct.ImportId = importId
+					pollStruct.Config = brt.destinationsMap[key].Destination.Config
+					pollStruct.DestType = brt.destType
+					payload, err := json.Marshal(pollStruct)
 					if err != nil {
-						panic("sjson Set Failed" + err.Error())
-					}
-					payload, err = sjson.SetBytes(payload, "config", brt.destinationsMap[key].Destination.Config)
-					if err != nil {
-						panic("sjson Set Failed" + err.Error())
-					}
-					payload, err = sjson.SetBytes(payload, "destType", brt.destType)
-					if err != nil {
-						panic("sjson Set Failed" + err.Error())
+						panic("JSON Marshal Failed" + err.Error())
 					}
 					response, err := brt.netHandle.Post(transformerURL+pollUrl, "application/json; charset=utf-8",
 						bytes.NewBuffer(payload))
@@ -331,16 +344,16 @@ func (brt *HandleT) pollAsyncStatus() {
 								}
 							} else {
 								failedJobUrl := asyncResponse.FailedJobsURL
-								failedJobsPayload := []byte{}
-								failedJobsPayload, err = sjson.SetBytes(failedJobsPayload, "config", brt.destinationsMap[key].Destination.Config)
-								if err != nil {
-									panic("sjson Set Failed" + err.Error())
-								}
+								var failedPayloadT AsyncFailedPayload
+								failedPayloadT.Config = brt.destinationsMap[key].Destination.Config
 								for _, job := range pendingList {
-									failedJobsPayload, err = sjson.SetBytes(failedJobsPayload, strconv.Itoa(int(job.JobID)), gjson.Get(string(job.EventPayload), "body.CSVRow").String())
-									if err != nil {
-										panic("sjson Set Failed" + err.Error())
-									}
+									failedPayloadT.Data[strconv.Itoa(int(job.JobID))] = gjson.Get(string(job.EventPayload), "body.CSVRow").String()
+								}
+								failedPayloadT.DestType = brt.destType
+								failedPayloadT.ImportId = importId
+								payload, err := json.Marshal(failedPayloadT)
+								if err != nil {
+									panic("JSON Marshal Failed" + err.Error())
 								}
 								response, err := brt.netHandle.Post(transformerURL+failedJobUrl, "application/json; charset=utf-8",
 									bytes.NewBuffer(payload))
@@ -664,9 +677,6 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 			brt.asyncDestinationStruct[destinationID].failedJobIDs = append(brt.asyncDestinationStruct[destinationID].failedJobIDs, job.JobID)
 		}
 	}
-	if err != nil {
-		panic("json Marshal Failed" + err.Error())
-	}
 	_, err = file.WriteAt([]byte(jobString), int64(offset))
 	if err != nil {
 		panic("file write failed" + err.Error())
@@ -677,18 +687,13 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		if err != nil {
 			panic("Read File Failed" + err.Error())
 		}
-		payload := []byte{}
-		payload, err = sjson.SetBytes(payload, "data", data)
+		var uploadT AsyncUploadT
+		uploadT.Data = data
+		uploadT.Config = config
+		uploadT.DestType = brt.destType
+		payload, err := json.Marshal(uploadT)
 		if err != nil {
-			panic("sjson Set Failed" + err.Error())
-		}
-		payload, err = sjson.SetBytes(payload, "config", config)
-		if err != nil {
-			panic("sjson Set Failed" + err.Error())
-		}
-		payload, err = sjson.SetBytes(payload, "destType", brt.destType)
-		if err != nil {
-			panic("sjson Set Failed" + err.Error())
+			panic("JSON Marshal Failed " + err.Error())
 		}
 		response, err := brt.netHandle.Post(transformerURL+url, "application/json; charset=utf-8",
 			bytes.NewBuffer(payload))
@@ -700,8 +705,9 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		if err != nil {
 			panic("Read Body Failed" + err.Error())
 		}
+		statusCode := gjson.GetBytes(bodyBytes, "statusCode").String()
 		var uploadResponse AsyncUploadOutput
-		if isSuccessStatus(response.StatusCode) {
+		if statusCode == "" {
 			uploadResponse = AsyncUploadOutput{
 				PendingJobIDs:     brt.asyncDestinationStruct[destinationID].pendingJobIDs,
 				FailedJobIDs:      brt.asyncDestinationStruct[destinationID].failedJobIDs,
@@ -711,7 +717,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 				FailedCount:       len(brt.asyncDestinationStruct[destinationID].failedJobIDs),
 				DestinationID:     destinationID,
 			}
-		} else if isJobTerminated(response.StatusCode) {
+		} else if statusCode == "400" {
 			uploadResponse = AsyncUploadOutput{
 				AbortJobIDs:   brt.asyncDestinationStruct[destinationID].pendingJobIDs,
 				FailedJobIDs:  brt.asyncDestinationStruct[destinationID].failedJobIDs,
