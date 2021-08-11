@@ -667,7 +667,7 @@ func GetLoadFileType(wh string) string {
 	switch wh {
 	case "BQ":
 		return LOAD_FILE_TYPE_JSON
-	case "RS":
+	case "RS", "S3_DATALAKE":
 		return LOAD_FILE_TYPE_PARQUET
 	default:
 		return LOAD_FILE_TYPE_CSV
