@@ -138,6 +138,7 @@ const (
 	UploadUpdatedAtField       = "updated_at"
 	UploadTimingsField         = "timings"
 	UploadSchemaField          = "schema"
+	MergedSchemaField          = "mergedschema"
 	UploadLastExecAtField      = "last_exec_at"
 )
 
@@ -197,12 +198,16 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 
 func (job *UploadJobT) generateUploadSchema(schemaHandle *SchemaHandleT) error {
 	schemaHandle.uploadSchema = schemaHandle.consolidateStagingFilesSchemaUsingWarehouseSchema()
-	// set upload schema
-	err := job.setSchema(schemaHandle.uploadSchema)
 	if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		// set merged schema if the loadFileType is parquet
-		job.upload.MergedSchema = mergeUploadAndLocalSchemas(schemaHandle.uploadSchema, schemaHandle.localSchema)
+		mergedSchema := mergeUploadAndLocalSchemas(schemaHandle.uploadSchema, schemaHandle.localSchema)
+		err := job.setMergedSchema(mergedSchema)
+		if err != nil {
+			return err
+		}
 	}
+	// set upload schema
+	err := job.setUploadSchema(schemaHandle.uploadSchema)
 	return err
 }
 
@@ -1173,8 +1178,8 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 	// )
 }
 
-// SetSchema
-func (job *UploadJobT) setSchema(consolidatedSchema warehouseutils.SchemaT) error {
+// SetUploadSchema
+func (job *UploadJobT) setUploadSchema(consolidatedSchema warehouseutils.SchemaT) error {
 	marshalledSchema, err := json.Marshal(consolidatedSchema)
 	if err != nil {
 		panic(err)
@@ -1184,6 +1189,15 @@ func (job *UploadJobT) setSchema(consolidatedSchema warehouseutils.SchemaT) erro
 	// 	UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
 	// )
 	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema}}})
+}
+
+func (job *UploadJobT) setMergedSchema(mergedSchema warehouseutils.SchemaT) error {
+	marshalledSchema, err := json.Marshal(mergedSchema)
+	if err != nil {
+		panic(err)
+	}
+	job.upload.MergedSchema = mergedSchema
+	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: MergedSchemaField, Value: marshalledSchema}}})
 }
 
 // Set LoadFileIDs

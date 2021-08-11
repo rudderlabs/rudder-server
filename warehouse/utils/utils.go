@@ -673,3 +673,9 @@ func GetLoadFileType(wh string) string {
 		return LOAD_FILE_TYPE_CSV
 	}
 }
+
+// GetTablePathInObjectStorage returns the path of the table relative to the object storage bucket
+// for location - "s3://testbucket/rudder-datalake/tableName/srcId/" - it returns "rudder-datalake/tableName/srcId"
+func GetTablePathInObjectStorage(tableName string, sourceID string) string {
+	return fmt.Sprintf("%s/%s/%s", config.GetEnv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), tableName, sourceID)
+}

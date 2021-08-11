@@ -660,7 +660,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 	sqlStatement := fmt.Sprintf(`
 			SELECT
-					id, status, schema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming, metadata->>'use_rudder_storage', timings
+					id, status, schema, mergedSchema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming, metadata->>'use_rudder_storage', timings
 				FROM (
 					SELECT
 						ROW_NUMBER() OVER (PARTITION BY destination_id, namespace ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
@@ -699,14 +699,16 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 	for rows.Next() {
 		var upload UploadT
 		var schema json.RawMessage
+		var mergedSchema json.RawMessage
 		var firstTiming sql.NullString
 		var lastTiming sql.NullString
 		var useRudderStorage sql.NullBool
-		err := rows.Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error, &upload.Metadata, &firstTiming, &lastTiming, &useRudderStorage, &upload.TimingsObj)
+		err := rows.Scan(&upload.ID, &upload.Status, &schema, &mergedSchema, &upload.Namespace, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error, &upload.Metadata, &firstTiming, &lastTiming, &useRudderStorage, &upload.TimingsObj)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
+		upload.MergedSchema = warehouseutils.JSONSchemaToMap(mergedSchema)
 		upload.UseRudderStorage = useRudderStorage.Bool
 		// cloud sources info
 		upload.SourceBatchID = gjson.GetBytes(upload.Metadata, "source_batch_id").String()

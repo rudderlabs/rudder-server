@@ -14,15 +14,39 @@ import (
 )
 
 const (
+	// config
 	AWSAccessKey        = "accessKey"
 	AWSAccessKeyID      = "accessKeyID"
 	AWSBucketNameConfig = "bucketName"
 	AWSRegion           = "region"
-	GlueDatabase        = "database"
+
+	// glue
+	glueSerdeName             = "ParquetHiveSerDe"
+	glueSerdeSerializationLib = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+	glueParquetInputFormat    = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
+	glueParquetOutputFormat   = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
 )
 
 var (
-	pkgLogger logger.LoggerI
+	pkgLogger    logger.LoggerI
+	dataTypesMap = map[string]string{
+		"boolean":  "boolean",
+		"int":      "bigint",
+		"bigint":   "bigint",
+		"float":    "double",
+		"string":   "varchar(512)",
+		"text":     "varchar(max)",
+		"datetime": "timestamp",
+	}
+	dataTypesMapToRudder = map[string]string{
+		"boolean":      "boolean",
+		"bigint":       "int",
+		"double":       "float",
+		"varchar(512)": "string",
+		"varchar(max)": "text",
+		"timestamp":    "datetime",
+		"string":       "string",
+	}
 )
 
 func init() {
@@ -31,22 +55,23 @@ func init() {
 
 type HandleT struct {
 	glueClient *glue.Glue
+	s3bucket   string
+	Namespace  string
 	Warehouse  warehouseutils.WarehouseT
 	Uploader   warehouseutils.UploaderI
-	Database   string
 }
 
 func (wh *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) error {
 	wh.Warehouse = warehouse
+	wh.Namespace = warehouse.Namespace
 	wh.Uploader = uploader
+	wh.s3bucket = warehouseutils.GetConfigValue(AWSBucketNameConfig, wh.Warehouse)
 
 	cl, err := wh.SgetGlueClient()
 	if err != nil {
 		return err
 	}
 	wh.glueClient = cl
-
-	wh.Database = warehouseutils.GetConfigValue(GlueDatabase, wh.Warehouse)
 
 	return nil
 }
@@ -58,18 +83,17 @@ func (wh *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 func (wh *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error) {
 	var schema = warehouseutils.SchemaT{}
 	wh.Warehouse = warehouse
+	wh.Namespace = warehouse.Namespace
 
 	glueClient, err := wh.SgetGlueClient()
 	if err != nil {
 		return nil, err
 	}
 
-	database := warehouseutils.GetConfigValue(GlueDatabase, wh.Warehouse)
-
 	var getTablesOutput *glue.GetTablesOutput
 	var getTablesInput *glue.GetTablesInput
 	for true {
-		getTablesInput = &glue.GetTablesInput{DatabaseName: &database}
+		getTablesInput = &glue.GetTablesInput{DatabaseName: &warehouse.Namespace}
 
 		if getTablesOutput != nil && getTablesOutput.NextToken != nil {
 			// add nextToken to the request if there are multiple list segments
@@ -89,7 +113,8 @@ func (wh *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseut
 				}
 
 				for _, col := range table.StorageDescriptor.Columns {
-					schema[tableName][*col.Name] = *col.Type
+					// td: what to do if col.Type does not exist in dataTypesMapToRudder
+					schema[tableName][*col.Name] = dataTypesMapToRudder[*col.Type]
 				}
 			}
 		}
@@ -106,9 +131,15 @@ func (wh *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseut
 func (wh *HandleT) CreateSchema() (err error) {
 	_, err = wh.glueClient.CreateDatabase(&glue.CreateDatabaseInput{
 		DatabaseInput: &glue.DatabaseInput{
-			Name: &wh.Database,
+			Name: &wh.Namespace,
 		},
 	})
+	if err != nil {
+		if _, ok := err.(*glue.AlreadyExistsException); ok {
+			pkgLogger.Infof("Skipping database creation : database %s already eists", wh.Namespace)
+			err = nil
+		}
+	}
 	return
 }
 
@@ -117,23 +148,14 @@ func (wh *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	// td: add location too when load file name is finalized.
 	// create table request
 	input := glue.CreateTableInput{
-		DatabaseName: aws.String(wh.Database),
+		DatabaseName: aws.String(wh.Namespace),
 		TableInput: &glue.TableInput{
 			Name: aws.String(tableName),
 		},
 	}
 
-	// add columns to request
-	storageDescriptor := glue.StorageDescriptor{
-		Columns: []*glue.Column{},
-	}
-	for colName, colType := range columnMap {
-		storageDescriptor.Columns = append(storageDescriptor.Columns, &glue.Column{
-			Name: aws.String(colName),
-			Type: aws.String(colType),
-		})
-	}
-	input.TableInput.StorageDescriptor = &storageDescriptor
+	// add storage descriptor to create table request
+	input.TableInput.StorageDescriptor = wh.SgetStorageDescriptor(tableName, columnMap)
 
 	_, err = wh.glueClient.CreateTable(&input)
 	if err != nil {
@@ -147,7 +169,7 @@ func (wh *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 
 func (wh *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
 	updateTableInput := glue.UpdateTableInput{
-		DatabaseName: aws.String(wh.Database),
+		DatabaseName: aws.String(wh.Namespace),
 		TableInput: &glue.TableInput{
 			Name: aws.String(tableName),
 		},
@@ -168,17 +190,8 @@ func (wh *HandleT) AddColumn(tableName string, columnName string, columnType str
 	// add new column to tableSchema
 	tableSchema[columnName] = columnType
 
-	// add all columns in tableSchema to table update request
-	storageDescriptor := glue.StorageDescriptor{
-		Columns: []*glue.Column{},
-	}
-	for colName, colType := range tableSchema {
-		storageDescriptor.Columns = append(storageDescriptor.Columns, &glue.Column{
-			Name: aws.String(colName),
-			Type: aws.String(colType),
-		})
-	}
-	updateTableInput.TableInput.StorageDescriptor = &storageDescriptor
+	// add storage descriptor to update table request
+	updateTableInput.TableInput.StorageDescriptor = wh.SgetStorageDescriptor(tableName, tableSchema)
 
 	// update table
 	_, err = wh.glueClient.UpdateTable(&updateTableInput)
@@ -260,4 +273,31 @@ func (wh *HandleT) SgetGlueClient() (*glue.Glue, error) {
 	// td: need to read region and accountId or one of them??
 	svc := glue.New(sess, config)
 	return svc, nil
+}
+
+func (wh *HandleT) SgetStorageDescriptor(tableName string, columnMap map[string]string) *glue.StorageDescriptor {
+	storageDescriptor := glue.StorageDescriptor{
+		Columns:  []*glue.Column{},
+		Location: aws.String(wh.SgetS3LocationForTable(tableName)),
+		SerdeInfo: &glue.SerDeInfo{
+			Name:                 aws.String(glueSerdeName),
+			SerializationLibrary: aws.String(glueSerdeSerializationLib),
+		},
+		InputFormat:  aws.String(glueParquetInputFormat),
+		OutputFormat: aws.String(glueParquetOutputFormat),
+	}
+
+	// add columns to storage descriptor
+	for colName, colType := range columnMap {
+		storageDescriptor.Columns = append(storageDescriptor.Columns, &glue.Column{
+			Name: aws.String(colName),
+			Type: aws.String(dataTypesMap[colType]),
+		})
+	}
+
+	return &storageDescriptor
+}
+
+func (wh *HandleT) SgetS3LocationForTable(tableName string) string {
+	return fmt.Sprintf("s3://%s/%s", wh.s3bucket, warehouseutils.GetTablePathInObjectStorage(tableName, wh.Warehouse.Source.ID))
 }
