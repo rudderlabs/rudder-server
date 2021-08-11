@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -88,6 +89,21 @@ var SnowflakeStorageMap = map[string]string{
 	"AZURE": "AZURE_BLOB",
 }
 
+var DiscardsSchema = map[string]string{
+	"table_name":   "string",
+	"row_id":       "string",
+	"column_name":  "string",
+	"column_value": "string",
+	"received_at":  "datetime",
+	"uuid_ts":      "datetime",
+}
+
+const (
+	LOAD_FILE_TYPE_CSV     = "csv"
+	LOAD_FILE_TYPE_JSON    = "json"
+	LOAD_FILE_TYPE_PARQUET = "parquet"
+)
+
 var pkgLogger logger.LoggerI
 
 func init() {
@@ -138,19 +154,25 @@ type UploaderI interface {
 	GetSchemaInWarehouse() SchemaT
 	GetTableSchemaInWarehouse(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
-	GetLoadFileLocations(options GetLoadFileLocationsOptionsT) []string
+	GetLoadFiles(options GetLoadFilesOptionsT) []LoadFile
 	GetSampleLoadFileLocation(tableName string) (string, error)
-	GetSingleLoadFileLocation(tableName string) (string, error)
+	GetSingleLoadFile(tableName string) (LoadFile, error)
 	ShouldOnDedupUseNewRecord() bool
 	UseRudderStorage() bool
 	GetLoadFileGenStartTIme() time.Time
+	GetLoadFileType() string
 }
 
-type GetLoadFileLocationsOptionsT struct {
+type GetLoadFilesOptionsT struct {
 	Table   string
 	StartID int64
 	EndID   int64
 	Limit   int64
+}
+
+type LoadFile struct {
+	Location string
+	Metadata json.RawMessage
 }
 
 func IDResolutionEnabled() bool {
@@ -184,6 +206,14 @@ type PendingEventsResponseT struct {
 type TriggerUploadRequestT struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
+}
+
+type LoadFileWriterI interface {
+	WriteGZ(s string) error
+	Write(p []byte) (int, error)
+	WriteRow(r []interface{}) error
+	Close() error
+	GetLoadFile() *os.File
 }
 
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
@@ -364,9 +394,9 @@ func GetGCSLocationFolder(location string, options GCSLocationOptionsT) string {
 	return s3Location[:lastPos]
 }
 
-func GetGCSLocations(locations []string, options GCSLocationOptionsT) (gcsLocations []string) {
-	for _, location := range locations {
-		gcsLocations = append(gcsLocations, GetGCSLocation(location, options))
+func GetGCSLocations(loadFiles []LoadFile, options GCSLocationOptionsT) (gcsLocations []string) {
+	for _, loadFile := range loadFiles {
+		gcsLocations = append(gcsLocations, GetGCSLocation(loadFile.Location, options))
 	}
 	return
 }
@@ -386,12 +416,11 @@ func GetAzureBlobLocationFolder(location string) string {
 	return s3Location[:lastPos]
 }
 
-func GetS3Locations(locations []string) (s3Locations []string) {
-	for _, location := range locations {
-		s3Location, _ := GetS3Location(location)
-		s3Locations = append(s3Locations, s3Location)
+func GetS3Locations(loadFiles []LoadFile) []LoadFile {
+	for idx, loadfile := range loadFiles {
+		loadFiles[idx].Location, _ = GetS3Location(loadfile.Location)
 	}
-	return
+	return loadFiles
 }
 
 func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
@@ -632,4 +661,15 @@ func GetTimeWindow(ts time.Time) time.Time {
 
 	// create and return time struct for window
 	return time.Date(ts.Year(), ts.Month(), ts.Day(), ts.Hour(), lastHalfHourWindow, 0, 0, time.UTC)
+}
+
+func GetLoadFileType(wh string) string {
+	switch wh {
+	case "BQ":
+		return LOAD_FILE_TYPE_JSON
+	case "RS":
+		return LOAD_FILE_TYPE_PARQUET
+	default:
+		return LOAD_FILE_TYPE_CSV
+	}
 }

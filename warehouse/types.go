@@ -19,7 +19,7 @@ type PayloadT struct {
 	UploadID            int64
 	StagingFileID       int64
 	StagingFileLocation string
-	Schema              map[string]map[string]string
+	UploadSchema        map[string]map[string]string
 	SourceID            string
 	SourceName          string
 	DestinationID       string
@@ -31,6 +31,7 @@ type PayloadT struct {
 	RudderStoragePrefix string
 	Output              []loadFileUploadOutputT
 	LoadFilePrefix      string // prefix for the load file name
+	LoadFileType        string
 }
 
 type ProcessStagingFilesJobT struct {

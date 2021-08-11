@@ -434,6 +434,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
 		"source_job_id":      jsonUploadsList[0].SourceJobID,
 		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
+		"load_file_type":     warehouseutils.GetLoadFileType(wh.destType),
 	}
 	if isUploadTriggered {
 		// set priority to 50 if the upload was manually triggered
@@ -705,7 +706,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
-		upload.Schema = warehouseutils.JSONSchemaToMap(schema)
+		upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
 		upload.UseRudderStorage = useRudderStorage.Bool
 		// cloud sources info
 		upload.SourceBatchID = gjson.GetBytes(upload.Metadata, "source_batch_id").String()
@@ -713,6 +714,8 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		upload.SourceTaskRunID = gjson.GetBytes(upload.Metadata, "source_task_run_id").String()
 		upload.SourceJobID = gjson.GetBytes(upload.Metadata, "source_job_id").String()
 		upload.SourceJobRunID = gjson.GetBytes(upload.Metadata, "source_job_run_id").String()
+		// load file type
+		upload.LoadFileType = gjson.GetBytes(upload.Metadata, "load_file_type").String()
 
 		_, upload.FirstAttemptAt = warehouseutils.TimingFromJSONString(firstTiming)
 		var lastStatus string
@@ -925,13 +928,13 @@ func (wh *HandleT) monitorUploadStatus() {
 }
 
 var loadFileFormatMap = map[string]string{
-	"BQ":          "json",
-	"S3_DATALAKE": "json",
-	"RS":          "csv",
-	"SNOWFLAKE":   "csv",
-	"POSTGRES":    "csv",
-	"CLICKHOUSE":  "csv",
-	"MSSQL":       "csv",
+	"BQ":          "json.gz",
+	"S3_DATALAKE": "parquet",
+	"RS":          "parquet",
+	"SNOWFLAKE":   "csv.gz",
+	"POSTGRES":    "csv.gz",
+	"CLICKHOUSE":  "csv.gz",
+	"MSSQL":       "csv.gz",
 }
 
 func minimalConfigSubscriber() {

@@ -28,7 +28,7 @@ type JobRunT struct {
 	job                  PayloadT
 	stagingFilePath      string
 	uuidTS               time.Time
-	outputFileWritersMap map[string]misc.GZipWriter
+	outputFileWritersMap map[string]warehouseutils.LoadFileWriterI
 	tableEventCountMap   map[string]int
 	stagingFileReader    *gzip.Reader
 	whIdentifier         string
@@ -137,7 +137,7 @@ func (job *PayloadT) getDiscardsTable() string {
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 	job := jobRun.job
 	randomness := uuid.NewV4().String()
-	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType]) + ".gz"
+	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, loadFileFormatMap[job.DestinationType])
 }
 
 func (job *PayloadT) getColumnName(columnName string) string {
@@ -146,13 +146,14 @@ func (job *PayloadT) getColumnName(columnName string) string {
 
 type loadFileUploadJob struct {
 	tableName  string
-	outputFile misc.GZipWriter
+	outputFile warehouseutils.LoadFileWriterI
 }
 
 type loadFileUploadOutputT struct {
 	TableName     string
 	Location      string
 	TotalRows     int
+	ContentLength int64
 	StagingFileID int64
 }
 
@@ -190,9 +191,15 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 						uploadErrorChan <- err
 						return
 					}
+					loadFileStats, err := os.Stat(uploadJob.outputFile.GetLoadFile().Name())
+					if err != nil {
+						uploadErrorChan <- err
+						return
+					}
 					loadFileOutputChan <- loadFileUploadOutputT{
 						TableName:     tableName,
 						Location:      uploadOutput.Location,
+						ContentLength: loadFileStats.Size(),
 						TotalRows:     jobRun.tableEventCountMap[tableName],
 						StagingFileID: stagingFileId,
 					}
@@ -223,11 +230,11 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 	}
 }
 
-func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile misc.GZipWriter, tableName string) (filemanager.UploadOutput, error) {
+func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileManager, uploadFile warehouseutils.LoadFileWriterI, tableName string) (filemanager.UploadOutput, error) {
 	job := jobRun.job
-	file, err := os.Open(uploadFile.File.Name()) // opens file in read mode
+	file, err := os.Open(uploadFile.GetLoadFile().Name()) // opens file in read mode
 	if err != nil {
-		pkgLogger.Errorf("[WH]: Failed to Open File: %s", uploadFile.File.Name())
+		pkgLogger.Errorf("[WH]: Failed to Open File: %s", uploadFile.GetLoadFile().Name())
 		return filemanager.UploadOutput{}, err
 	}
 	defer file.Close()
@@ -245,7 +252,8 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 // Sort columns per table to maintain same order in load file (needed in case of csv load file)
 func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
 	sortedTableColumnMap := make(map[string][]string)
-	for tableName, columnMap := range job.Schema {
+
+	for tableName, columnMap := range job.UploadSchema {
 		sortedTableColumnMap[tableName] = []string{}
 		for k := range columnMap {
 			sortedTableColumnMap[tableName] = append(sortedTableColumnMap[tableName], k)
@@ -255,14 +263,18 @@ func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
 	return sortedTableColumnMap
 }
 
-func (jobRun *JobRunT) getWriter(tableName string) (misc.GZipWriter, error) {
+func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWriterI, error) {
 	writer, ok := jobRun.outputFileWritersMap[tableName]
 	if !ok {
-		outputFilePath := jobRun.getLoadFilePath(tableName)
 		var err error
-		writer, err = misc.CreateGZ(outputFilePath)
+		outputFilePath := jobRun.getLoadFilePath(tableName)
+		if jobRun.job.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.UploadSchema[tableName], outputFilePath, jobRun.job.DestinationType)
+		} else {
+			writer, err = misc.CreateGZ(outputFilePath)
+		}
 		if err != nil {
-			return misc.GZipWriter{}, err
+			return nil, err
 		}
 		jobRun.outputFileWritersMap[tableName] = writer
 		jobRun.tableEventCountMap[tableName] = 0
@@ -286,7 +298,7 @@ func (jobRun *JobRunT) cleanup() {
 	}
 	if jobRun.outputFileWritersMap != nil {
 		for _, writer := range jobRun.outputFileWritersMap {
-			os.Remove(writer.File.Name())
+			os.Remove(writer.GetLoadFile().Name())
 		}
 	}
 }
@@ -348,7 +360,7 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 	scanner.Buffer(buf, maxCapacity)
 
 	// read from staging file and write a separate load file for each table in warehouse
-	jobRun.outputFileWritersMap = make(map[string]misc.GZipWriter)
+	jobRun.outputFileWritersMap = make(map[string]warehouseutils.LoadFileWriterI)
 	jobRun.tableEventCountMap = make(map[string]int)
 	jobRun.uuidTS = timeutil.Now()
 	misc.PrintMemUsage()
@@ -385,16 +397,16 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 		columnData := batchRouterEvent.Data
 
 		// Create separate load file for each table
-		gzWriter, err := jobRun.getWriter(tableName)
+		writer, err := jobRun.GetWriter(tableName)
 		if err != nil {
 			return nil, err
 		}
 
-		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType)
+		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
 				timestampFormat := eventLoader.GetLoadTimeFomat(columnName)
-				eventLoader.AddColumn(job.getColumnName(columnName), jobRun.uuidTS.Format(timestampFormat))
+				eventLoader.AddColumn(job.getColumnName(columnName), job.UploadSchema[tableName][columnName], jobRun.uuidTS.Format(timestampFormat))
 				continue
 			}
 			columnInfo, ok := batchRouterEvent.getColumnInfo(columnName)
@@ -414,16 +426,19 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 				columnVal = int(floatVal)
 			}
 
-			dataTypeInSchema, ok := job.Schema[tableName][columnName]
+			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			if ok && columnType != dataTypeInSchema {
 				newColumnVal, ok := handleSchemaChange(dataTypeInSchema, columnType, columnVal)
 				if !ok {
 					eventLoader.AddEmptyColumn(columnName)
 
-					discardWriter, err := jobRun.getWriter(discardsTable)
+					discardWriter, err := jobRun.GetWriter(discardsTable)
 					if err != nil {
 						return nil, err
 					}
+					// add discardWriter to outputFileWritersMap
+					jobRun.outputFileWritersMap[discardsTable] = discardWriter
+
 					err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, discardWriter)
 
 					if err != nil {
@@ -451,16 +466,15 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 				columnVal = string(marshalledVal)
 			}
 
-			eventLoader.AddColumn(columnName, columnVal)
+			eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], columnVal)
 		}
 
 		// Completed parsing all columns, write single event to the file
-		eventData, err := eventLoader.WriteToString()
+		err = eventLoader.Write()
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to write event to string: %v", err)
+			pkgLogger.Errorf("[WH]: Failed to write event: %v", err)
 			return loadFileUploadOutputs, err
 		}
-		gzWriter.WriteGZ(eventData)
 		jobRun.tableEventCountMap[tableName]++
 	}
 	timer.End()
@@ -469,7 +483,10 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
 	for _, loadFile := range jobRun.outputFileWritersMap {
-		loadFile.CloseGZ()
+		err = loadFile.Close()
+		if err != nil {
+			pkgLogger.Errorf("Error while closing load file %s : %v", loadFile.GetLoadFile().Name(), err)
+		}
 	}
 	loadFileUploadOutputs, err = jobRun.uploadLoadFilesToObjectStorage()
 	return loadFileUploadOutputs, err

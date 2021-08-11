@@ -89,7 +89,8 @@ type UploadT struct {
 	StartLoadFileID      int64
 	EndLoadFileID        int64
 	Status               string
-	Schema               warehouseutils.SchemaT
+	UploadSchema         warehouseutils.SchemaT
+	MergedSchema         warehouseutils.SchemaT
 	Error                json.RawMessage
 	Timings              []map[string]string
 	FirstAttemptAt       time.Time
@@ -107,6 +108,7 @@ type UploadT struct {
 	SourceTaskRunID string
 	SourceJobID     string
 	SourceJobRunID  string
+	LoadFileType    string
 }
 
 type UploadJobT struct {
@@ -195,12 +197,17 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 
 func (job *UploadJobT) generateUploadSchema(schemaHandle *SchemaHandleT) error {
 	schemaHandle.uploadSchema = schemaHandle.consolidateStagingFilesSchemaUsingWarehouseSchema()
+	// set upload schema
 	err := job.setSchema(schemaHandle.uploadSchema)
+	if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+		// set merged schema if the loadFileType is parquet
+		job.upload.MergedSchema = mergeUploadAndLocalSchemas(schemaHandle.uploadSchema, schemaHandle.localSchema)
+	}
 	return err
 }
 
 func (job *UploadJobT) initTableUploads() error {
-	schemaForUpload := job.upload.Schema
+	schemaForUpload := job.upload.UploadSchema
 	destType := job.warehouse.Type
 	tables := make([]string, 0, len(schemaForUpload))
 	for t := range schemaForUpload {
@@ -319,7 +326,7 @@ func (job *UploadJobT) run() (err error) {
 		pkgLogger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
 	}
 	schemaHandle := job.schemaHandle
-	schemaHandle.uploadSchema = job.upload.Schema
+	schemaHandle.uploadSchema = job.upload.UploadSchema
 
 	// td: move this before sync remote schema?
 	whManager := job.whManager
@@ -392,7 +399,7 @@ func (job *UploadJobT) run() (err error) {
 
 		case UpdatedTableUploadsCounts:
 			newStatus = nextUploadState.failed
-			for tableName := range job.upload.Schema {
+			for tableName := range job.upload.UploadSchema {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)
 				err = tableUpload.updateTableEventsCount(job)
 				if err != nil {
@@ -543,7 +550,7 @@ func (job *UploadJobT) run() (err error) {
 }
 
 func (job *UploadJobT) exportUserTables() (err error) {
-	uploadSchema := job.upload.Schema
+	uploadSchema := job.upload.UploadSchema
 	if _, ok := uploadSchema[job.identifiesTableName()]; ok {
 
 		loadTimeStat := job.timerStat("user_tables_load_time")
@@ -566,7 +573,7 @@ func (job *UploadJobT) exportUserTables() (err error) {
 
 func (job *UploadJobT) exportIdentities() (err error) {
 	// Load Identitties if enabled
-	uploadSchema := job.upload.Schema
+	uploadSchema := job.upload.UploadSchema
 	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
 		if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {
 			loadTimeStat := job.timerStat("identity_tables_load_time")
@@ -776,7 +783,7 @@ func (tse *TableSkipError) Error() string {
 }
 
 func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
-	uploadSchema := job.upload.Schema
+	uploadSchema := job.upload.UploadSchema
 	var parallelLoads int
 	var ok bool
 	if parallelLoads, ok = maxParallelLoads[job.warehouse.Type]; !ok {
@@ -847,7 +854,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 }
 
 func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error) {
-	tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
+	tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema)
 	if tableSchemaDiff.Exists {
 		err = job.updateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
@@ -970,7 +977,7 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 		return job.processLoadTableResponse(map[string]error{job.identifiesTableName(): err})
 	}
 	var alteredUserSchema bool
-	if _, ok := job.upload.Schema[job.usersTableName()]; ok {
+	if _, ok := job.upload.UploadSchema[job.usersTableName()]; ok {
 		userTableUpload := NewTableUpload(job.upload.ID, job.usersTableName())
 		userTableUpload.setStatus(TableUploadExecuting)
 		alteredUserSchema, err = job.updateSchema(job.usersTableName())
@@ -1017,7 +1024,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 		errorMap[tableName] = nil
 		tableUpload := NewTableUpload(job.upload.ID, tableName)
 
-		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.Schema)
+		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema)
 		if tableSchemaDiff.Exists {
 			err := job.updateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
@@ -1172,7 +1179,7 @@ func (job *UploadJobT) setSchema(consolidatedSchema warehouseutils.SchemaT) erro
 	if err != nil {
 		panic(err)
 	}
-	job.upload.Schema = consolidatedSchema
+	job.upload.UploadSchema = consolidatedSchema
 	// return job.setUploadColumns(
 	// 	UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
 	// )
@@ -1563,7 +1570,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				UploadID:            job.upload.ID,
 				StagingFileID:       stagingFile.ID,
 				StagingFileLocation: stagingFile.Location,
-				Schema:              job.upload.Schema,
+				UploadSchema:        job.upload.UploadSchema,
+				LoadFileType:        job.upload.LoadFileType,
 				SourceID:            job.warehouse.Source.ID,
 				SourceName:          job.warehouse.Source.Name,
 				DestinationID:       destID,
@@ -1578,6 +1586,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			if job.warehouse.Type == "S3_DATALAKE" {
 				// td: use prefix from config
 				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(time.RFC3339)
+			}
+
+			// set merged schema as upload schema if the load file type is parquet
+			if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+				payload.UploadSchema = job.upload.MergedSchema
 			}
 
 			payloadJSON, err := json.Marshal(payload)
@@ -1656,12 +1669,12 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 
 	// verify if all load files are in same folder in object storage
 	if misc.ContainsString(warehousesToVerifyLoadFilesFolder, job.warehouse.Type) {
-		locations := job.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{
+		locations := job.GetLoadFiles(warehouseutils.GetLoadFilesOptionsT{
 			StartID: startLoadFileID,
 			EndID:   endLoadFileID,
 		})
 		for _, location := range locations {
-			if !strings.Contains(location, uniqueLoadGenID) {
+			if !strings.Contains(location.Location, uniqueLoadGenID) {
 				err = fmt.Errorf(`All loadfiles do not contain the same uniqueLoadGenID: %s`, uniqueLoadGenID)
 				return
 			}
@@ -1696,7 +1709,7 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn("wh_load_files", "staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at"))
+	stmt, err := txn.Prepare(pq.CopyIn("wh_load_files", "staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at", "metadata"))
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Error starting bulk copy using CopyIn: %v`, err)
 		return
@@ -1704,7 +1717,8 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 	defer stmt.Close()
 
 	for _, loadFile := range loadFiles {
-		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now())
+		metadata := json.RawMessage(fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength))
+		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for loadFules: %v Error: %v`, loadFile, err)
 			txn.Rollback()
@@ -1751,7 +1765,7 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	return
 }
 
-func (job *UploadJobT) GetLoadFileLocations(options warehouseutils.GetLoadFileLocationsOptionsT) (locations []string) {
+func (job *UploadJobT) GetLoadFiles(options warehouseutils.GetLoadFilesOptionsT) (loadFiles []warehouseutils.LoadFile) {
 	var tableFilterSQL string
 	if options.Table != "" {
 		tableFilterSQL = fmt.Sprintf(` AND table_name='%s'`, options.Table)
@@ -1772,12 +1786,12 @@ func (job *UploadJobT) GetLoadFileLocations(options warehouseutils.GetLoadFileLo
 	sqlStatement := fmt.Sprintf(`
 		WITH row_numbered_load_files as (
 			SELECT
-				location,
+				location, metadata,
 				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
 				FROM %[1]s
 				WHERE staging_file_id IN (%[2]v) %[3]s
 		)
-		SELECT location
+		SELECT location, metadata
 			FROM row_numbered_load_files
 			WHERE
 				row_number=1
@@ -1793,21 +1807,25 @@ func (job *UploadJobT) GetLoadFileLocations(options warehouseutils.GetLoadFileLo
 
 	for rows.Next() {
 		var location string
-		err := rows.Scan(&location)
+		var metadata json.RawMessage
+		err := rows.Scan(&location, &metadata)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
-		locations = append(locations, location)
+		loadFiles = append(loadFiles, warehouseutils.LoadFile{
+			Location: location,
+			Metadata: metadata,
+		})
 	}
 	return
 }
 
 func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location string, err error) {
-	locations := job.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName, Limit: 1})
+	locations := job.GetLoadFiles(warehouseutils.GetLoadFilesOptionsT{Table: tableName, Limit: 1})
 	if len(locations) == 0 {
 		return "", fmt.Errorf(`No load file found for table:%s`, tableName)
 	}
-	return locations[0], nil
+	return locations[0].Location, nil
 }
 
 func (job *UploadJobT) GetSchemaInWarehouse() (schema warehouseutils.SchemaT) {
@@ -1825,12 +1843,12 @@ func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.T
 	return job.schemaHandle.uploadSchema[tableName]
 }
 
-func (job *UploadJobT) GetSingleLoadFileLocation(tableName string) (string, error) {
+func (job *UploadJobT) GetSingleLoadFile(tableName string) (warehouseutils.LoadFile, error) {
 	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, tableName)
 	pkgLogger.Infof("SF: Fetching load file location for %s: %s", tableName, sqlStatement)
 	var location string
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&location)
-	return location, err
+	return warehouseutils.LoadFile{Location: location}, err
 }
 
 func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
@@ -1849,6 +1867,10 @@ func (job *UploadJobT) GetLoadFileGenStartTIme() time.Time {
 		return job.upload.LoadFileGenStartTime
 	}
 	return warehouseutils.GetLoadFileGenTime(job.upload.TimingsObj)
+}
+
+func (job *UploadJobT) GetLoadFileType() string {
+	return job.upload.LoadFileType
 }
 
 /*
