@@ -114,6 +114,7 @@ func (wh *HandleT) CreateSchema() (err error) {
 
 func (wh *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// td: assign table owner as rudderstack?
+	// td: add location too when load file name is finalized.
 	// create table request
 	input := glue.CreateTableInput{
 		DatabaseName: aws.String(wh.Database),
