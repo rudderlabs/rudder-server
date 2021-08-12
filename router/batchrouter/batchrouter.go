@@ -1212,7 +1212,6 @@ func (brt *HandleT) SplitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Ti
 	// split batchJobs based on timeWindow
 	for _, job := range batchJobs.Jobs {
 		// ignore error as receivedAt will always be in the expected format
-		fmt.Println(string(job.EventPayload))
 		receivedAt, err := time.Parse(time.RFC3339, gjson.Get(string(job.EventPayload), "metadata.receivedAt").String())
 		err = err
 		timeWindow := warehouseutils.GetTimeWindow(receivedAt)

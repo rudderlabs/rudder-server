@@ -654,14 +654,14 @@ func GetTimeWindow(ts time.Time) time.Time {
 	// td: check if time is already in utc
 	ts = ts.UTC()
 
-	// get lastHalfHourWindow
-	lastHalfHourWindow := 0
-	if ts.Minute() >= 30 {
-		lastHalfHourWindow = 30
-	}
+	// // get lastHalfHourWindow
+	// lastHalfHourWindow := 0
+	// if ts.Minute() >= 30 {
+	// 	lastHalfHourWindow = 30
+	// }
 
 	// create and return time struct for window
-	return time.Date(ts.Year(), ts.Month(), ts.Day(), ts.Hour(), lastHalfHourWindow, 0, 0, time.UTC)
+	return time.Date(ts.Year(), ts.Month(), ts.Day(), ts.Hour(), 0, 0, 0, time.UTC)
 }
 
 func GetLoadFileType(wh string) string {
