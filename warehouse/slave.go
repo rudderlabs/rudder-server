@@ -242,7 +242,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	var uploadLocation filemanager.UploadOutput
 	// td: discuss how load files should be named for datalake destinations
 	if job.DestinationType == "S3_DATALAKE" {
-		uploadLocation, err = uploader.Upload(file, warehouseutils.GetTablePathInObjectStorage(tableName, job.SourceID), job.LoadFilePrefix)
+		uploadLocation, err = uploader.Upload(file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 	} else {
 		uploadLocation, err = uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
 	}

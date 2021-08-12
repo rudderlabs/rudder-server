@@ -66,8 +66,9 @@ const (
 )
 
 const (
-	BQLoadedAtFormat = "2006-01-02 15:04:05.999999 Z"
-	BQUuidTSFormat   = "2006-01-02 15:04:05 Z"
+	BQLoadedAtFormat         = "2006-01-02 15:04:05.999999 Z"
+	BQUuidTSFormat           = "2006-01-02 15:04:05 Z"
+	DatalakeTimeWindowFormat = "2006/01/02/15"
 )
 
 var (
@@ -676,6 +677,6 @@ func GetLoadFileType(wh string) string {
 
 // GetTablePathInObjectStorage returns the path of the table relative to the object storage bucket
 // for location - "s3://testbucket/rudder-datalake/tableName/srcId/" - it returns "rudder-datalake/tableName/srcId"
-func GetTablePathInObjectStorage(tableName string, sourceID string) string {
-	return fmt.Sprintf("%s/%s/%s", config.GetEnv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), tableName, sourceID)
+func GetTablePathInObjectStorage(namespace string, tableName string) string {
+	return fmt.Sprintf("%s/%s/%s", config.GetEnv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), namespace, tableName)
 }

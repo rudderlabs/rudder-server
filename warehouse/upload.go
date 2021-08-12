@@ -1581,25 +1581,26 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		var messages []pgnotifier.MessageT
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
 			payload := PayloadT{
-				UploadID:            job.upload.ID,
-				StagingFileID:       stagingFile.ID,
-				StagingFileLocation: stagingFile.Location,
-				UploadSchema:        job.upload.UploadSchema,
-				LoadFileType:        job.upload.LoadFileType,
-				SourceID:            job.warehouse.Source.ID,
-				SourceName:          job.warehouse.Source.Name,
-				DestinationID:       destID,
-				DestinationName:     job.warehouse.Destination.Name,
-				DestinationType:     destType,
-				DestinationConfig:   job.warehouse.Destination.Config,
-				UniqueLoadGenID:     uniqueLoadGenID,
-				UseRudderStorage:    job.upload.UseRudderStorage,
-				RudderStoragePrefix: misc.GetRudderObjectStoragePrefix(),
+				UploadID:             job.upload.ID,
+				StagingFileID:        stagingFile.ID,
+				StagingFileLocation:  stagingFile.Location,
+				UploadSchema:         job.upload.UploadSchema,
+				LoadFileType:         job.upload.LoadFileType,
+				SourceID:             job.warehouse.Source.ID,
+				SourceName:           job.warehouse.Source.Name,
+				DestinationID:        destID,
+				DestinationName:      job.warehouse.Destination.Name,
+				DestinationType:      destType,
+				DestinationNamespace: job.warehouse.Namespace,
+				DestinationConfig:    job.warehouse.Destination.Config,
+				UniqueLoadGenID:      uniqueLoadGenID,
+				UseRudderStorage:     job.upload.UseRudderStorage,
+				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
 			}
 
 			if job.warehouse.Type == "S3_DATALAKE" {
 				// td: use prefix from config
-				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(time.RFC3339)
+				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 			}
 
 			// set merged schema as upload schema if the load file type is parquet

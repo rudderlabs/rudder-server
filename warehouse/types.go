@@ -15,23 +15,24 @@ import (
 // }
 
 type PayloadT struct {
-	BatchID             string
-	UploadID            int64
-	StagingFileID       int64
-	StagingFileLocation string
-	UploadSchema        map[string]map[string]string
-	SourceID            string
-	SourceName          string
-	DestinationID       string
-	DestinationName     string
-	DestinationType     string
-	DestinationConfig   interface{}
-	UniqueLoadGenID     string
-	UseRudderStorage    bool
-	RudderStoragePrefix string
-	Output              []loadFileUploadOutputT
-	LoadFilePrefix      string // prefix for the load file name
-	LoadFileType        string
+	BatchID              string
+	UploadID             int64
+	StagingFileID        int64
+	StagingFileLocation  string
+	UploadSchema         map[string]map[string]string
+	SourceID             string
+	SourceName           string
+	DestinationID        string
+	DestinationName      string
+	DestinationType      string
+	DestinationNamespace string
+	DestinationConfig    interface{}
+	UniqueLoadGenID      string
+	UseRudderStorage     bool
+	RudderStoragePrefix  string
+	Output               []loadFileUploadOutputT
+	LoadFilePrefix       string // prefix for the load file name
+	LoadFileType         string
 }
 
 type ProcessStagingFilesJobT struct {

@@ -299,5 +299,5 @@ func (wh *HandleT) SgetStorageDescriptor(tableName string, columnMap map[string]
 }
 
 func (wh *HandleT) SgetS3LocationForTable(tableName string) string {
-	return fmt.Sprintf("s3://%s/%s", wh.s3bucket, warehouseutils.GetTablePathInObjectStorage(tableName, wh.Warehouse.Source.ID))
+	return fmt.Sprintf("s3://%s/%s", wh.s3bucket, warehouseutils.GetTablePathInObjectStorage(wh.Namespace, tableName))
 }
