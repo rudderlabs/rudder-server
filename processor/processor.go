@@ -1190,7 +1190,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		// OR
 		//router and transformer supports router transform, then no destination transformation happens.
 		if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
-			response = ConvertToTransformerResponse(eventsToTransform)
+			response = ConvertToFilteredTransformerResponse(eventsToTransform, transformAt != "none")
 		} else {
 			destTransformationStat.transformTime.Start()
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize)
@@ -1398,14 +1398,44 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Print()
 }
 
-func ConvertToTransformerResponse(events []transformer.TransformerEventT) transformer.ResponseT {
+func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT, filterUnsupportedMessageTypes bool) transformer.ResponseT {
 	var responses []transformer.TransformerResponseT
+	var failedEvents []transformer.TransformerResponseT
+
+	// filter unsupported message types
+	var resp transformer.TransformerResponseT
+	var errMessage string
 	for _, event := range events {
-		resp := transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
-		responses = append(responses, resp)
+		destinationDef := event.Destination.DestinationDefinition
+		supportedTypes, ok := destinationDef.Config["supportedMessageTypes"]
+		if ok && filterUnsupportedMessageTypes {
+			messageType, typOk := event.Message["type"].(string)
+			if !typOk {
+				// add to FailedEvents
+				errMessage = "Invalid message type. Type assertion failed"
+				resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
+				failedEvents = append(failedEvents, resp)
+				continue
+			}
+
+			messageType = strings.TrimSpace(strings.ToLower(messageType))
+			if misc.Contains(supportedTypes, messageType) {
+				resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
+				responses = append(responses, resp)
+			} else {
+				// add to FailedEvents
+				errMessage = "Message type " + messageType + " not supported"
+				resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 400, Metadata: event.Metadata, Error: errMessage}
+				failedEvents = append(failedEvents, resp)
+			}
+		} else {
+			// allow event
+			resp = transformer.TransformerResponseT{Output: event.Message, StatusCode: 200, Metadata: event.Metadata}
+			responses = append(responses, resp)
+		}
 	}
 
-	return transformer.ResponseT{Events: responses}
+	return transformer.ResponseT{Events: responses, FailedEvents: failedEvents}
 }
 
 func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList []*jobsdb.JobT, totalEvents int) {
