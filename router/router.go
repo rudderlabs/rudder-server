@@ -114,17 +114,17 @@ type jobResponseT struct {
 
 //JobParametersT struct holds source id and destination id of a job
 type JobParametersT struct {
-	SourceID        string `json:"source_id"`
-	DestinationID   string `json:"destination_id"`
-	ReceivedAt      string `json:"received_at"`
-	TransformAt     string `json:"transform_at"`
-	SourceBatchID   string `json:"source_batch_id"`
-	SourceTaskID    string `json:"source_task_id"`
-	SourceTaskRunID string `json:"source_task_run_id"`
-	SourceJobID     string `json:"source_job_id"`
-	SourceJobRunID  string `json:"source_job_run_id"`
-	RecordID        string `json:"record_id"`
-	MessageID       string `json:"message_id"`
+	SourceID        string      `json:"source_id"`
+	DestinationID   string      `json:"destination_id"`
+	ReceivedAt      string      `json:"received_at"`
+	TransformAt     string      `json:"transform_at"`
+	SourceBatchID   string      `json:"source_batch_id"`
+	SourceTaskID    string      `json:"source_task_id"`
+	SourceTaskRunID string      `json:"source_task_run_id"`
+	SourceJobID     string      `json:"source_job_id"`
+	SourceJobRunID  string      `json:"source_job_run_id"`
+	RecordID        interface{} `json:"record_id"`
+	MessageID       string      `json:"message_id"`
 }
 
 type workerMessageT struct {
@@ -1841,7 +1841,7 @@ func (rt *HandleT) Resume() {
 func SaveSourceFailedEvents(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
 	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").Str
 	destinationID := gjson.GetBytes(parameters, "destination_id").Str
-	recordID := gjson.GetBytes(parameters, "record_id").Str
+	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").Raw)
 	if taskRunID == "" {
 		return
 	}

@@ -2,6 +2,7 @@ package router
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"github.com/rudderlabs/rudder-server/config"
 	"time"
@@ -16,7 +17,7 @@ var (
 
 type FailedEventRowT struct {
 	DestinationID string
-	RecordID      string
+	RecordID      json.RawMessage
 }
 
 var (
@@ -64,13 +65,12 @@ func (fem *FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap ma
 		table := fmt.Sprintf(`%s_%s`, failedKeysTablePrefix, taskRunID)
 		sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		destination_id TEXT NOT NULL,
-		record_id TEXT NOT NULL,
+		record_id JSONB NOT NULL,
 		created_at TIMESTAMP NOT NULL);`, table)
 		_, err := txn.Exec(sqlStatement)
 		if err != nil {
 			panic(err)
 		}
-
 		stmt, err := txn.Prepare(pq.CopyIn(table, "destination_id", "record_id", "created_at"))
 		if err != nil {
 			panic(err)

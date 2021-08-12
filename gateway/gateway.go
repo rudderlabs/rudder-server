@@ -883,10 +883,10 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 	switch reqType {
 	case "fetch":
 		failedEvents := router.GetFailedEventsManager().FetchFailedRecordIDs(reqPayload.TaskRunID)
-		failedMsgIDsByDestinationID := make(map[string][]string)
+		failedMsgIDsByDestinationID := make(map[string][]interface{})
 		for _, failedEvent := range failedEvents {
 			if _, ok := failedMsgIDsByDestinationID[failedEvent.DestinationID]; !ok {
-				failedMsgIDsByDestinationID[failedEvent.DestinationID] = []string{}
+				failedMsgIDsByDestinationID[failedEvent.DestinationID] = []interface{}{}
 			}
 			failedMsgIDsByDestinationID[failedEvent.DestinationID] = append(failedMsgIDsByDestinationID[failedEvent.DestinationID], failedEvent.RecordID)
 		}

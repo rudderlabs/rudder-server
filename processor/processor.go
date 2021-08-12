@@ -111,18 +111,18 @@ type DestStatT struct {
 }
 
 type ParametersT struct {
-	SourceID        string `json:"source_id"`
-	DestinationID   string `json:"destination_id"`
-	ReceivedAt      string `json:"received_at"`
-	TransformAt     string `json:"transform_at"`
-	MessageID       string `json:"message_id"`
-	GatewayJobID    int64  `json:"gateway_job_id"`
-	SourceBatchID   string `json:"source_batch_id"`
-	SourceTaskID    string `json:"source_task_id"`
-	SourceTaskRunID string `json:"source_task_run_id"`
-	RecordID        string `json:"record_id"`
-	SourceJobID     string `json:"source_job_id"`
-	SourceJobRunID  string `json:"source_job_run_id"`
+	SourceID        string      `json:"source_id"`
+	DestinationID   string      `json:"destination_id"`
+	ReceivedAt      string      `json:"received_at"`
+	TransformAt     string      `json:"transform_at"`
+	MessageID       string      `json:"message_id"`
+	GatewayJobID    int64       `json:"gateway_job_id"`
+	SourceBatchID   string      `json:"source_batch_id"`
+	SourceTaskID    string      `json:"source_task_id"`
+	SourceTaskRunID string      `json:"source_task_run_id"`
+	RecordID        interface{} `json:"record_id"`
+	SourceJobID     string      `json:"source_job_id"`
+	SourceJobRunID  string      `json:"source_job_run_id"`
 }
 
 type MetricMetadata struct {
@@ -571,7 +571,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceTaskRunID = gjson.GetBytes(eventBytes, "context.sources.task_run_id").String()
 	commonMetadata.SourceJobID = gjson.GetBytes(eventBytes, "context.sources.job_id").String()
 	commonMetadata.SourceJobRunID = gjson.GetBytes(eventBytes, "context.sources.job_run_id").String()
-	commonMetadata.RecordID = gjson.GetBytes(eventBytes, "recordId").String()
+	commonMetadata.RecordID = gjson.GetBytes(eventBytes, "recordId").Value()
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
 
