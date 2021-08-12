@@ -78,6 +78,7 @@ type HandleT struct {
 	batchRequestsMetric         []batchRequestMetric
 	logger                      logger.LoggerI
 	noOfWorkers                 int
+	maxEventsInABatch           int
 	maxFailedCountForJob        int
 	retryTimeWindow             time.Duration
 	reporting                   types.ReportingI
@@ -387,7 +388,7 @@ func (brt *HandleT) pollAsyncStatus() {
 									} else if misc.Contains(failedKeys, job.JobID) {
 										status = jobsdb.JobStatusT{
 											JobID:         job.JobID,
-											JobState:      "failed",
+											JobState:      "aborted",
 											ExecTime:      time.Now(),
 											RetryTime:     time.Now(),
 											ErrorCode:     "",
@@ -663,7 +664,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 	offset := brt.asyncDestinationStruct[destinationID].size
 	for _, job := range batchJobs.Jobs {
 		csvRow := gjson.Get(string(job.EventPayload), "body.CSVRow").String()
-		if brt.asyncDestinationStruct[destinationID].size+len([]byte(csvRow)) < maxFileUploadSize && brt.asyncDestinationStruct[destinationID].count < 3 {
+		if brt.asyncDestinationStruct[destinationID].size+len([]byte(csvRow)) < maxFileUploadSize && brt.asyncDestinationStruct[destinationID].count < brt.maxEventsInABatch {
 			brt.asyncDestinationStruct[destinationID].size = brt.asyncDestinationStruct[destinationID].size + len([]byte(csvRow)) + 1
 			jobString = jobString + csvRow + "|"
 			if err != nil {
@@ -1738,6 +1739,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.isEnabled = true
 	brt.asyncDestinationStruct = make(map[string]*AsyncDestinationStruct)
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
+	brt.maxEventsInABatch = getBatchRouterConfigInt("maxEventsInABatch", destType, 100000)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	tr := &http.Transport{}
