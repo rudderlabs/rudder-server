@@ -1944,7 +1944,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
                                   %[1]s.created_at, %[1]s.expire_at,
                                   job_latest_state.job_state, job_latest_state.attempt,
                                   job_latest_state.exec_time, job_latest_state.retry_time,
-                                  job_latest_state.error_code, job_latest_state.error_response,job_latest_state.parameters
+                                  job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
                                  FROM
                                   %[1]s,
                                   (SELECT job_id, job_state, attempt, exec_time, retry_time,
@@ -1963,11 +1963,11 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
                                                %[1]s.created_at, %[1]s.expire_at,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
-                                               job_latest_state.error_code, job_latest_state.error_response,job_latest_state.parameters
+                                               job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
                                             FROM
                                                %[1]s,
                                                (SELECT job_id, job_state, attempt, exec_time, retry_time,
-                                                 error_code, error_response,parameters FROM %[2]s WHERE id IN
+                                                 error_code, error_response, parameters FROM %[2]s WHERE id IN
                                                    (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
                                                AS job_latest_state
                                             WHERE %[1]s.job_id=job_latest_state.job_id
