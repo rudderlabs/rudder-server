@@ -37,7 +37,7 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	Send(transformedData integrations.PostParametersT) (statusCode int, respBody string)
+	Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string)
 }
 
 //NewTransformer creates a new transformer
@@ -153,7 +153,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) Send(transformedData integrations.PostParametersT) (statusCode int, respBody string) {
+func (trans *HandleT) Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string) {
 	rawJSON, err := json.Marshal(transformedData)
 	if err != nil {
 		panic(err)
@@ -161,8 +161,7 @@ func (trans *HandleT) Send(transformedData integrations.PostParametersT) (status
 	trans.logger.Debugf("[Transfomrer Network request] :: prepared destination payload : %s", string(rawJSON))
 	var resp *http.Response
 	var respData []byte
-	//We should rarely have error communicating with our JS
-	url := getNetworkTransformerURL()
+	url := getNetworkTransformerURL(destName)
 
 	trans.transformerNetworkRequestTimerStat.Start()
 	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
@@ -185,6 +184,7 @@ func (trans *HandleT) Send(transformedData integrations.PostParametersT) (status
 		respData = []byte("")
 	}
 	if err != nil {
+		respData = []byte("")
 		trans.logger.Errorf("[Transfomrer Network request] :: destaination request failed: %+v", err)
 		return http.StatusInternalServerError, string(respData)
 	}
@@ -193,10 +193,11 @@ func (trans *HandleT) Send(transformedData integrations.PostParametersT) (status
 
 }
 
+//is it ok to use same client for network and transformer calls? need to understand timeout setup in router
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
-	trans.client = &http.Client{Transport: trans.tr, Timeout: 60 * time.Second}
+	trans.client = &http.Client{Transport: trans.tr, Timeout: 30 * time.Minute}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
 }
@@ -209,6 +210,6 @@ func getRouterTransformURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
 }
 
-func getNetworkTransformerURL() string {
-	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/network/proxy"
+func getNetworkTransformerURL(destName string) string {
+	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/network/" + strings.ToLower(destName) + "/proxy"
 }

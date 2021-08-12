@@ -484,7 +484,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 	var destinationResponseHandler ResponseHandlerI
 	worker.rt.configSubscriberLock.RLock()
 	destinationResponseHandler = worker.rt.destinationResponseHandler
-	saveDestinationResponse := worker.rt.saveDestinationResponse
+	// saveDestinationResponse := worker.rt.saveDestinationResponse
 	worker.rt.configSubscriberLock.RUnlock()
 
 	/*
@@ -567,7 +567,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 						} else {
 							//for proxying through transformer
 							//respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
-							respStatusCode, respBodyTemp = worker.rt.transformer.Send(val)
+							respStatusCode, respBodyTemp = worker.rt.transformer.Send(val, worker.rt.destName)
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
@@ -591,15 +591,15 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				deliveryLatencyStat.End()
 				// END: request to destination endpoint
 
-				if isSuccessStatus(respStatusCode) {
-					if saveDestinationResponse {
-						if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
-							respBody = ""
-						}
-					} else {
-						respBody = ""
-					}
-				}
+				// if isSuccessStatus(respStatusCode) {
+				// 	if saveDestinationResponse {
+				// 		if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
+				// 			respBody = ""
+				// 		}
+				// 	} else {
+				// 		respBody = ""
+				// 	}
+				// }
 
 				worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
 			} else {
