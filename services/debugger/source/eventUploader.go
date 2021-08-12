@@ -58,7 +58,7 @@ type EventUploader struct {
 
 //Setup initializes this module
 func Setup(backendConfig backendconfig.BackendConfig) {
-	url := fmt.Sprintf("%s/dataplane/eventUploads", configBackendURL)
+	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", configBackendURL)
 	eventUploader := &EventUploader{}
 	uploader = debugger.New(url, eventUploader)
 	uploader.Start()

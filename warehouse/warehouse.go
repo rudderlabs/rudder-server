@@ -214,7 +214,6 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	// Process the upload job
 	err = uploadJob.run()
-	wh.recordDeliveryStatus(uploadJob.warehouse.Destination.ID, uploadJob.upload.ID)
 	return
 }
 
@@ -270,14 +269,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 				connectionsMap[destination.ID][source.ID] = warehouse
 				connectionsMapLock.Unlock()
 
-				// send last 10 warehouse upload's status to control plane
-				if destination.Config != nil && destination.Enabled && destination.Config["eventDelivery"] == true {
-					sourceID := source.ID
-					destinationID := destination.ID
-					rruntime.Go(func() {
-						wh.syncLiveWarehouseStatus(sourceID, destinationID)
-					})
-				}
 				// test and send connection status to control plane
 				if val, ok := destination.Config["testConnection"].(bool); ok && val {
 					destination := destination
