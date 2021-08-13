@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -560,6 +561,24 @@ func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 		replacedStr = exp.ReplaceAllString(replacedStr, substitute)
 	}
 	return replacedStr, nil
+}
+
+func ConvertStringInterfaceToIntArray(interfaceArray []interface{}) []int64 {
+	var intArr []int64
+	if interfaceArray == nil {
+		return intArr
+	}
+
+	for _, val := range interfaceArray {
+		strVal, ok := val.(string)
+		if ok {
+			intVal, err := strconv.ParseInt(strVal, 10, 64)
+			if err == nil {
+				intArr = append(intArr, intVal)
+			}
+		}
+	}
+	return intArr
 }
 
 func IntArrayToString(a []int64, delim string) string {

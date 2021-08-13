@@ -118,7 +118,7 @@ type AsyncDestinationStruct struct {
 
 type AsyncUploadT struct {
 	Config   map[string]interface{} `json:"config"`
-	Data     []byte                 `json:"data"`
+	Data     string                 `json:"data"`
 	DestType string                 `json:"destType"`
 }
 
@@ -132,7 +132,7 @@ type AsyncFailedPayload struct {
 	Config   map[string]interface{} `json:"config"`
 	Data     map[string]interface{} `json:"data"`
 	DestType string                 `json:"destType"`
-	ImportId string                 `json:"string"`
+	ImportId string                 `json:"importId"`
 }
 
 type ObjectStorageT struct {
@@ -310,6 +310,7 @@ func (brt *HandleT) pollAsyncStatus() {
 					if err != nil {
 						panic("JSON Marshal Failed" + err.Error())
 					}
+
 					response, err := brt.netHandle.Post(transformerURL+pollUrl, "application/json; charset=utf-8",
 						bytes.NewBuffer(payload))
 					if err != nil {
@@ -346,6 +347,7 @@ func (brt *HandleT) pollAsyncStatus() {
 							} else {
 								failedJobUrl := asyncResponse.FailedJobsURL
 								var failedPayloadT AsyncFailedPayload
+								failedPayloadT.Data = make(map[string]interface{})
 								failedPayloadT.Config = brt.destinationsMap[key].Destination.Config
 								for _, job := range pendingList {
 									failedPayloadT.Data[strconv.Itoa(int(job.JobID))] = gjson.Get(string(job.EventPayload), "body.CSVRow").String()
@@ -370,14 +372,15 @@ func (brt *HandleT) pollAsyncStatus() {
 								if err != nil {
 									panic("JSON Unmarshal Failed" + err.Error())
 								}
-								failedKeys := failedJobsResponse["failedKeys"].([]int)
-								warningKeys := failedJobsResponse["warningKeys"].([]int)
-								succeededKeys := failedJobsResponse["succeededKeys"].([]int)
-								var status jobsdb.JobStatusT
+								failedKeys := misc.ConvertStringInterfaceToIntArray(failedJobsResponse["failedKeys"].([]interface{}))
+								warningKeys := misc.ConvertStringInterfaceToIntArray(failedJobsResponse["warningKeys"].([]interface{}))
+								succeededKeys := misc.ConvertStringInterfaceToIntArray(failedJobsResponse["succeededKeys"].([]interface{}))
+								var status *jobsdb.JobStatusT
 								for _, job := range pendingList {
-									if misc.Contains(append(succeededKeys, warningKeys...), job.JobID) {
-										status = jobsdb.JobStatusT{
-											JobID:         job.JobID,
+									jobID := job.JobID
+									if misc.Contains(append(succeededKeys, warningKeys...), jobID) {
+										status = &jobsdb.JobStatusT{
+											JobID:         jobID,
 											JobState:      "succeeded",
 											ExecTime:      time.Now(),
 											RetryTime:     time.Now(),
@@ -386,17 +389,18 @@ func (brt *HandleT) pollAsyncStatus() {
 											Parameters:    []byte(`{}`),
 										}
 									} else if misc.Contains(failedKeys, job.JobID) {
-										status = jobsdb.JobStatusT{
-											JobID:         job.JobID,
+										errorResp, _ := json.Marshal(ErrorResponseT{Error: gjson.GetBytes(failedBodyBytes, fmt.Sprintf("failedReasons.%v", job.JobID)).String()})
+										status = &jobsdb.JobStatusT{
+											JobID:         jobID,
 											JobState:      "aborted",
 											ExecTime:      time.Now(),
 											RetryTime:     time.Now(),
 											ErrorCode:     "",
-											ErrorResponse: []byte(gjson.GetBytes(failedBodyBytes, fmt.Sprintf("failedReasons.%v", job.JobID)).String()),
+											ErrorResponse: errorResp,
 											Parameters:    []byte(`{}`),
 										}
 									}
-									statusList = append(statusList, &status)
+									statusList = append(statusList, status)
 								}
 							}
 							txn := brt.jobsDB.BeginGlobalTransaction()
@@ -689,7 +693,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 			panic("Read File Failed" + err.Error())
 		}
 		var uploadT AsyncUploadT
-		uploadT.Data = data
+		uploadT.Data = string(data)
 		uploadT.Config = config
 		uploadT.DestType = brt.destType
 		payload, err := json.Marshal(uploadT)
