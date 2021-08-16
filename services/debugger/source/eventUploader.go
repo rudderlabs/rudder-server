@@ -108,7 +108,7 @@ func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) 
 
 		var arr []EventUploadT
 		if value, ok := res[batchedEvent.WriteKey]; ok {
-			arr = value.([]EventUploadT)
+			arr, _ = value.([]EventUploadT)
 		} else {
 			arr = make([]EventUploadT, 0)
 		}

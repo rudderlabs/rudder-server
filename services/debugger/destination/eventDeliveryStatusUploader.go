@@ -96,7 +96,7 @@ func (eventDeliveryStatusUploader *EventDeliveryStatusUploader) Transform(data i
 		job := j.(*DeliveryStatusT)
 		var arr []*DeliveryStatusT
 		if value, ok := res[job.DestinationID]; ok {
-			arr = value.([]*DeliveryStatusT)
+			arr, _ = value.([]*DeliveryStatusT)
 		} else {
 			arr = make([]*DeliveryStatusT, 0)
 		}
