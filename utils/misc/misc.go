@@ -27,6 +27,7 @@ import (
 	"unicode"
 
 	"github.com/araddon/dateparse"
+	"github.com/cenkalti/backoff"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
@@ -563,22 +564,65 @@ func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 	return replacedStr, nil
 }
 
-func ConvertStringInterfaceToIntArray(interfaceArray []interface{}) []int64 {
+func ConvertStringInterfaceToIntArray(interfaceArray []interface{}) ([]int64, error) {
 	var intArr []int64
 	if interfaceArray == nil {
-		return intArr
+		return intArr, nil
 	}
 
 	for _, val := range interfaceArray {
-		strVal, ok := val.(string)
-		if ok {
-			intVal, err := strconv.ParseInt(strVal, 10, 64)
-			if err == nil {
-				intArr = append(intArr, intVal)
-			}
+		strVal, _ := val.(string)
+		intVal, err := strconv.ParseInt(strVal, 10, 64)
+		if err != nil {
+			return intArr, err
 		}
+		intArr = append(intArr, intVal)
 	}
-	return intArr
+	return intArr, nil
+}
+
+func MakeHTTPRequest(url string, payload io.Reader) ([]byte, int, error) {
+	req, err := http.NewRequest("POST", url, payload)
+	if err != nil {
+		return []byte{}, 400, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return []byte{}, 400, err
+	}
+
+	var respBody []byte
+	if resp != nil && resp.Body != nil {
+		respBody, _ = ioutil.ReadAll(resp.Body)
+		defer resp.Body.Close()
+	}
+
+	return respBody, resp.StatusCode, nil
+}
+
+func HTTPCallWithRetry(url string, payload []byte) ([]byte, int) {
+	var respBody []byte
+	var statusCode int
+	operation := func() error {
+		var fetchError error
+		respBody, statusCode, fetchError = MakeHTTPRequest(url, bytes.NewBuffer(payload))
+		return fetchError
+	}
+
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", err, t)
+	})
+
+	if err != nil {
+		pkgLogger.Error("Error sending request to the server", err)
+		return respBody, statusCode
+	}
+	return respBody, statusCode
 }
 
 func IntArrayToString(a []int64, delim string) string {

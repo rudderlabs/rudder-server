@@ -516,7 +516,7 @@ var _ = Describe("jobsdb", func() {
 			})
 		}
 
-		nonTerminalStates := []string{"executing", "failed", "waiting", "throttled", "pending"}
+		nonTerminalStates := []string{"executing", "failed", "waiting", "throttled", "importing"}
 		for _, nonTerminalState := range nonTerminalStates {
 			assertGetProcessedJobsWithCustomVal(nonTerminalState)
 		}

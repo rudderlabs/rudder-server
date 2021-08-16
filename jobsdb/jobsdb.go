@@ -103,7 +103,7 @@ type JobsDB interface {
 	GetProcessed(params GetQueryParamsT) []*JobT
 	GetUnprocessed(params GetQueryParamsT) []*JobT
 	GetExecuting(params GetQueryParamsT) []*JobT
-	GetPendingList(params GetQueryParamsT) []*JobT
+	GetImportingList(params GetQueryParamsT) []*JobT
 
 	Status() interface{}
 	GetIdentifier() string
@@ -437,7 +437,7 @@ var (
 	WaitingRetry = jobStateT{isValid: true, isTerminal: false, State: "waiting_retry"}
 	Migrating    = jobStateT{isValid: true, isTerminal: false, State: "migrating"}
 	Throttled    = jobStateT{isValid: true, isTerminal: false, State: "throttled"}
-	Pending      = jobStateT{isValid: true, isTerminal: false, State: "pending"}
+	Importing    = jobStateT{isValid: true, isTerminal: false, State: "importing"}
 
 	//Valid, Terminal
 	Succeeded   = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
@@ -459,7 +459,7 @@ var jobStates []jobStateT = []jobStateT{
 	Aborted,
 	Migrated,
 	WontMigrate,
-	Pending,
+	Importing,
 }
 
 //OwnerType for this jobsdb instance
@@ -781,8 +781,8 @@ func (jd *HandleT) dbReader() {
 			readReq.jobsListChan <- jd.getUnprocessed(readReq.getQueryParams)
 		} else if readReq.reqType == Executing.State {
 			readReq.jobsListChan <- jd.getExecuting(readReq.getQueryParams)
-		} else if readReq.reqType == Pending.State {
-			readReq.jobsListChan <- jd.getPendingList(readReq.getQueryParams)
+		} else if readReq.reqType == Importing.State {
+			readReq.jobsListChan <- jd.getImportingList(readReq.getQueryParams)
 		} else {
 			panic(fmt.Errorf("[[ %s ]] unknown read request type: %s", jd.tablePrefix, readReq.reqType))
 		}
@@ -3212,40 +3212,40 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 	return outJobs
 }
 
-func (jd *HandleT) GetPendingList(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetImportingList(params GetQueryParamsT) []*JobT {
 	if params.Count == 0 {
 		return []*JobT{}
 	}
 
-	params.StateFilters = []string{Pending.State}
+	params.StateFilters = []string{Importing.State}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	totalReadTime := jd.getTimerStat("pending_total_time", tags)
+	totalReadTime := jd.getTimerStat("importing_total_time", tags)
 	totalReadTime.Start()
 	defer totalReadTime.End()
 
 	if jd.enableReaderQueue {
-		readChannelWaitTime := jd.getTimerStat("pending_wait_time", tags)
+		readChannelWaitTime := jd.getTimerStat("importing_wait_time", tags)
 		readChannelWaitTime.Start()
 		readJobRequest := readJob{
 			getQueryParams: params,
 			jobsListChan:   make(chan []*JobT),
-			reqType:        Pending.State,
+			reqType:        Importing.State,
 		}
 		jd.readChannel <- readJobRequest
 		readChannelWaitTime.End()
 		jobsList := <-readJobRequest.jobsListChan
 		return jobsList
 	} else {
-		return jd.getPendingList(params)
+		return jd.getImportingList(params)
 	}
 }
 
 /*
-getPendingList returns events which need are pending.
+getImportingList returns events which need are Importing.
 This is a wrapper over GetProcessed call above
 */
-func (jd *HandleT) getPendingList(params GetQueryParamsT) []*JobT {
+func (jd *HandleT) getImportingList(params GetQueryParamsT) []*JobT {
 	return jd.GetProcessed(params)
 }
 

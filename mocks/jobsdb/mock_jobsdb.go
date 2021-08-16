@@ -141,6 +141,20 @@ func (mr *MockJobsDBMockRecorder) GetIdentifier() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetIdentifier", reflect.TypeOf((*MockJobsDB)(nil).GetIdentifier))
 }
 
+// GetImportingList mocks base method.
+func (m *MockJobsDB) GetImportingList(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetImportingList", arg0)
+	ret0, _ := ret[0].([]*jobsdb.JobT)
+	return ret0
+}
+
+// GetImportingList indicates an expected call of GetImportingList.
+func (mr *MockJobsDBMockRecorder) GetImportingList(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetImportingList", reflect.TypeOf((*MockJobsDB)(nil).GetImportingList), arg0)
+}
+
 // GetJournalEntries mocks base method.
 func (m *MockJobsDB) GetJournalEntries(arg0 string) []jobsdb.JournalEntryT {
 	m.ctrl.T.Helper()
@@ -153,20 +167,6 @@ func (m *MockJobsDB) GetJournalEntries(arg0 string) []jobsdb.JournalEntryT {
 func (mr *MockJobsDBMockRecorder) GetJournalEntries(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetJournalEntries", reflect.TypeOf((*MockJobsDB)(nil).GetJournalEntries), arg0)
-}
-
-// GetPendingList mocks base method.
-func (m *MockJobsDB) GetPendingList(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPendingList", arg0)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
-	return ret0
-}
-
-// GetPendingList indicates an expected call of GetPendingList.
-func (mr *MockJobsDBMockRecorder) GetPendingList(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPendingList", reflect.TypeOf((*MockJobsDB)(nil).GetPendingList), arg0)
 }
 
 // GetProcessed mocks base method.
