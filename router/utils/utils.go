@@ -19,10 +19,12 @@ type BatchDestinationT struct {
 func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) bool {
 	//drain if job is older than a day
 	jobReceivedAt := gjson.GetBytes(job.Parameters, "received_at")
-	jobReceivedAtTime, err := time.Parse(misc.RFC3339Milli, jobReceivedAt.String())
-	if err == nil {
-		if jobReceivedAt.Exists() && time.Now().UTC().Sub(jobReceivedAtTime.UTC()) > config.GetDuration("Router.jobRetention", time.Duration(24), time.Hour) {
-			return true
+	if jobReceivedAt.Exists() {
+		jobReceivedAtTime, err := time.Parse(misc.RFC3339Milli, jobReceivedAt.String())
+		if err == nil {
+			if time.Now().UTC().Sub(jobReceivedAtTime.UTC()) > config.GetDuration("Router.jobRetention", time.Duration(24), time.Hour) {
+				return true
+			}
 		}
 	}
 	if d, ok := destinationsMap[destID]; ok && !d.Destination.Enabled {
