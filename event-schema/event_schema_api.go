@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -46,40 +47,6 @@ func (manager *EventSchemaManagerT) GetEventModels(w http.ResponseWriter, r *htt
 
 	eventTypes := manager.fetchEventModelsByWriteKey(writeKey)
 
-	//generating json schema from eventTypes
-	schema := eventTypes[1].Schema
-	var jsonProp map[string]string
-	//jsonProp, ok := schema.(map[string]string)
-	err = json.Unmarshal(schema, &jsonProp)
-	if err != nil {
-		pkgLogger.Errorf("Unable to parse eventSch sch")
-	}
-	pkgLogger.Info(jsonProp)
-
-	jsonSchemaProp := make(map[string]string)
-	for k,v := range jsonProp {
-		if strings.HasPrefix(k, "properties.") {
-			keys := strings.Split(k, ".")
-			if len(keys) != 2 {
-				pkgLogger.Infof("multi level json found")
-			}
-			jsonSchemaProp[keys[1]] = v
-		}
-	}
-	var jsonProp1 map[string]interface{}
-	//jsonProp, ok := schema.(map[string]string)
-	err = json.Unmarshal(schema, &jsonProp1)
-	nested, err := unflatten(jsonProp1)
-	if err!= nil {
-
-	}
-	pkgLogger.Infof("using inbuilt")
-	pkgLogger.Info(nested)
-	nested1,_:=json.Marshal(nested)
-	pkgLogger.Info(string(nested1))
-
-	// meta := eventTypes[0].WriteKey + ":" + eventTypes[0].EventType
-	// generateJsonSchema(jsonSchemaProp, meta)
 	eventTypesJSON, err := json.Marshal(eventTypes)
 	if err != nil {
 		http.Error(w, response.MakeResponse("Internal Error: Failed to Marshal event types"), 500)
@@ -89,43 +56,142 @@ func (manager *EventSchemaManagerT) GetEventModels(w http.ResponseWriter, r *htt
 	w.Write(eventTypesJSON)
 }
 
+func (manager *EventSchemaManagerT) GetJsonSchemas(w http.ResponseWriter, r *http.Request) {
+	err := handleBasicAuth(r)
+	if err != nil {
+		http.Error(w, response.MakeResponse(err.Error()), 400)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, response.MakeResponse("Only HTTP GET method is supported"), 400)
+		return
+	}
+
+	writeKeys, ok := r.URL.Query()["WriteKey"]
+	writeKey := ""
+	if ok && writeKeys[0] != "" {
+		writeKey = writeKeys[0]
+	}
+
+	eventTypes := manager.fetchEventModelsByWriteKey(writeKey)
+
+	// generating json schema from eventTypes
+	jsonSchemas, err := generateAllJsonSch(eventTypes)
+	if err != nil {
+		http.Error(w, response.MakeResponse("Internal Error: Failed to Marshal event types"), 500)
+		return
+	}
+
+	w.Write(jsonSchemas)
+}
+
 type PropertyTypeT struct {
 	Type []string `json:"type"`
 }
 
 type PropertiesT struct {
-	Required []string //`json:"required"`
-	Property map[string]PropertyTypeT `json:"properties"`
+	Required []string `json:"required"`
+	Property map[string]interface{} `json:"properties"`
 }
 
-func generateJsonSchema(schemaProp map[string]string, meta string) {
+func generateAllJsonSch(eventModels []*EventModelT)([]byte, error) {
+	jsonSchs := []map[string]interface{}{}
+	for _, eventModel := range eventModels {
+		flattenedSchema := make(map[string]interface{})
+		err := json.Unmarshal(eventModel.Schema, &flattenedSchema)
+		if err!=nil {
+		pkgLogger.Errorf("Unable to unmarshal eventModelSch")
+		}
+		unFlattened, err := unflatten(flattenedSchema)
+		if err!= nil {
+		}
+		filtered, ok := unFlattened["properties"].(map[string]interface{})
+		if !ok{
+			pkgLogger.Errorf("unable to get properties from filtered map")
+		}
+
+		finalJson := generateJsonSchFromUnflattened(filtered)
+		finalJson["additionalProperties"] = true
+		finalJson["$schema"] = "http://json-schema.org/draft-07/schema#"
+		meta := eventModel.WriteKey + ":" + eventModel.EventType
+		if eventModel.EventIdentifier != "" {
+			meta = meta + ":" + eventModel.EventIdentifier
+		}
+		finalJson["$id"] = "http://rudder.com/" + meta
+		//finalJson["description"] = "detail about model"
+		jsonSchs = append(jsonSchs,finalJson)
+	}
+	eventJsonSchs, err := json.Marshal(jsonSchs)
+	if err!=nil {
+		return nil, err
+	}
+	return eventJsonSchs, nil
+}
+
+func generateJsonSchFromUnflattened(nestedProperties map[string]interface{})map[string]interface{}{
 	properties := PropertiesT{
-		Property: make(map[string]PropertyTypeT),
+		Property: make(map[string]interface{}),
 	}
 	required := make([]string,0)
-	for k,v := range schemaProp {
+	finalSchema := make(map[string]interface{})
+
+	for k, v := range nestedProperties{
 		required = append(required, k)
-		properties.Property[k] = PropertyTypeT {
-			Type: []string{v},
+		switch value := v.(type) {
+		case string: {
+			properties.Property[k] = PropertyTypeT {
+				Type: []string{value},
+			}
+		}
+		case map[string]interface{}: {
+			//check if map is an array or map
+			if checkIfArray(value) {
+				//if len(value) == 0 {return false}
+				var vType interface{}
+				for _,v := range value {
+					vt, ok := v.(string)
+					if ok {
+						vType=map[string]interface{}{"type":vt}
+					} else {
+						vType = generateJsonSchFromUnflattened(v.(map[string]interface{}))
+					}
+					break
+				}
+				properties.Property[k] = map[string]interface{}{
+					"type": "array",
+					"items": vType,
+				}
+			break
+			}
+			properties.Property[k] = generateJsonSchFromUnflattened(value)
+		}
+			default:
+			pkgLogger.Errorf("unknown type found")
 		}
 	}
-	//pkgLogger.Info(string(json.Marshal(properties)))
+	properties.Required = required
+	finalSchema["properties"] = properties.Property
+	finalSchema["required"] = required
+	finalSchema["type"] = "object"
+	return finalSchema
+}
 
-	finalJson := make(map[string]interface{})
-	finalJson["properties"] = properties.Property
-	finalJson["required"] = required
-	finalJson["$schema"] = "http://json-schema.org/draft-07/schema#"
-	finalJson["additionalProperties"] = true
-	finalJson["type"] = "object"
-	finalJson["$id"] = "http://rudder.com/"+ meta
-	finalJson["description"] = "Who bought what"
 
-	json2, err := json.Marshal(finalJson)
-	if err != nil {
-		pkgLogger.Errorf("unable to form properties json:  %v", err)
+//prop.myarr.0
+//will not be able to say if above is prop{myarr:[0]} or prop{myarr{"0":0}}
+func checkIfArray(value map[string]interface{})bool{
+	if len(value) == 0 {return false}
+
+	for k,_ := range value {
+		_, err := strconv.Atoi(k)
+		if err != nil {
+			return false
+		}
+		// need not check the array continuity
+		//keys= append(keys,index)
 	}
-
-	pkgLogger.Info(string(json2))
+	return true
 }
 
 //https://play.golang.org/p/4juOff38ea
