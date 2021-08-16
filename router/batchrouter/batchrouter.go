@@ -87,6 +87,7 @@ type HandleT struct {
 	drainedJobsStat             stats.RudderStats
 	backendConfig               backendconfig.BackendConfig
 	fileManagerFactory          filemanager.FileManagerFactory
+	maxFileUploadSize           int
 	inProgressMap               map[string]bool
 	inProgressMapLock           sync.RWMutex
 	lastExecMap                 map[string]int64
@@ -285,6 +286,7 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[stri
 
 func (brt *HandleT) pollAsyncStatus() {
 	for {
+		brt.configSubscriberLock.RLock()
 		for key := range brt.destinationsMap {
 			if IsAsyncDestination(brt.destType) {
 				parameterFilters := make([]jobsdb.ParameterFilterT, 0)
@@ -465,6 +467,7 @@ func (brt *HandleT) pollAsyncStatus() {
 			}
 		}
 		time.Sleep(10 * time.Second)
+		brt.configSubscriberLock.RUnlock()
 	}
 }
 
@@ -662,6 +665,10 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		brt.asyncDestinationStruct[destinationID].createdAt = time.Now()
 	}
 	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].fileName, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		panic("file open failed" + err.Error())
+	}
+	defer file.Close()
 	canUpload := false
 	var url string
 	var jobString string
@@ -1744,6 +1751,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.asyncDestinationStruct = make(map[string]*AsyncDestinationStruct)
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 	brt.maxEventsInABatch = getBatchRouterConfigInt("maxEventsInABatch", destType, 100000)
+	config.RegisterIntConfigVariable(4000, &brt.maxFileUploadSize, true, 1024, []string{"BatchRouter." + brt.destType + "." + "maxFileUploadSize", "BatchRouter.maxFileUploadSize"}...)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	tr := &http.Transport{}

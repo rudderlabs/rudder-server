@@ -3220,12 +3220,12 @@ func (jd *HandleT) GetPendingList(params GetQueryParamsT) []*JobT {
 	params.StateFilters = []string{Pending.State}
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	totalReadTime := jd.getTimerStat("processed_total_time", tags)
+	totalReadTime := jd.getTimerStat("pending_total_time", tags)
 	totalReadTime.Start()
 	defer totalReadTime.End()
 
 	if jd.enableReaderQueue {
-		readChannelWaitTime := jd.getTimerStat("processed_wait_time", tags)
+		readChannelWaitTime := jd.getTimerStat("pending_wait_time", tags)
 		readChannelWaitTime.Start()
 		readJobRequest := readJob{
 			getQueryParams: params,
