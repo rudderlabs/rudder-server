@@ -253,10 +253,6 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func isSuccessStatus(status int) bool {
-	return status >= 200 && status < 300
-}
-
 func isJobTerminated(status int) bool {
 	if status == 429 {
 		return false
@@ -1089,6 +1085,9 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput AsyncUploadOutput) {
 			statusList = append(statusList, &status)
 		}
 	}
+	if len(statusList) != 0 {
+		return
+	}
 
 	var parameterFilters []jobsdb.ParameterFilterT
 	if readPerDestination {
@@ -1101,6 +1100,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput AsyncUploadOutput) {
 		}
 	}
 	//Mark the status of the jobs
+
 	txn := brt.jobsDB.BeginGlobalTransaction()
 	brt.jobsDB.AcquireUpdateJobStatusLocks()
 	err := brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
