@@ -60,6 +60,10 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 	return UploadOutput{Location: location, ObjectName: fileName}, err
 }
 
+func (manager *DOSpacesManager) GetStorageDateFormat(prefixes ...string) (date string, err error) {
+	return "YYYY-MM-DD", nil
+}
+
 func (manager *DOSpacesManager) Download(output *os.File, key string) error {
 
 	region := misc.GetSpacesLocation(manager.Config.EndPoint)

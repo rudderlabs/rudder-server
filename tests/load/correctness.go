@@ -163,7 +163,7 @@ func computeTestResults(testDuration int) {
 
 func getS3DestData() {
 	// TODO: Handle Pagination for ListFilesWithPrefix
-	s3Objects, err := s3Manager.ListFilesWithPrefix(fmt.Sprintf("rudder-logs/%s", *sourceID))
+	s3Objects, err := s3Manager.ListFilesWithPrefix(fmt.Sprintf("rudder-logs/%s", *sourceID), 1000)
 	if err != nil {
 		panic(err)
 	}

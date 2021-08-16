@@ -100,6 +100,10 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 	return UploadOutput{Location: blobURL.String(), ObjectName: fileName}, nil
 }
 
+func (manager *AzureBlobStorageManager) GetStorageDateFormat(prefixes ...string) (date string, err error) {
+	return "YYYY-MM-DD", nil
+}
+
 func (manager *AzureBlobStorageManager) Download(output *os.File, key string) error {
 	containerURL, err := manager.getContainerURL()
 	if err != nil {

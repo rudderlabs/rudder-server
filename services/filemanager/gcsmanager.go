@@ -3,9 +3,11 @@ package filemanager
 import (
 	"context"
 	"fmt"
+	"google.golang.org/api/iterator"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/option"
@@ -56,6 +58,65 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 		return UploadOutput{}, err
 	}
 	return UploadOutput{Location: objectURL(attrs), ObjectName: fileName}, err
+}
+
+func (manager *GCSManager) GetStorageDateFormat(prefixes ...string) (dateFormat string, err error) {
+	dateFormat = "YYYY-MM-DD"
+	prefix := strings.Join(prefixes[0:2],"/")
+	gcsObjects, err := manager.ListFilesWithPrefix(prefix,1)
+	if err != nil {
+		return
+	}
+	if len(gcsObjects) == 0 {
+		return
+	}
+	date := strings.Split(gcsObjects[0], "/")[2]
+	allDateLayouts := map[string]string{
+		"01-02-2006" : "MM-DD-YYYY",
+		"2006-01-02" : "YYYY-MM-DD",
+		//"02-01-2006" : "DD-MM-YYYY", //adding this might match with that of MM-DD-YYYY too
+	}
+	for layout, format := range allDateLayouts {
+		_, err = time.Parse(layout, date)
+		if err == nil {
+			dateFormat = format
+			return
+		}
+	}
+	return "", nil
+}
+
+func (manager *GCSManager) ListFilesWithPrefix(prefix string, maxItems int64) ([]string, error) {
+	gcsObjects := []string{}
+	ctx := context.Background()
+	var client *storage.Client
+	var err error
+	if manager.Config.Credentials == "" {
+		client, err = storage.NewClient(ctx)
+	} else {
+		client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	it := client.Bucket(manager.Config.Bucket).Objects(ctx, &storage.Query{
+		Prefix:    prefix,
+		Delimiter: "",
+	})
+	for {
+		if maxItems == 0 {break}
+		attrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("Bucket(%q).Objects(): %v", manager.Config.Bucket, err)
+		}
+		gcsObjects = append(gcsObjects, attrs.Name)
+		maxItems--
+	}
+	return gcsObjects, err
 }
 
 func (manager *GCSManager) getClient() (*storage.Client, error) {

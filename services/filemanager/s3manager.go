@@ -47,6 +47,7 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	s3manager := awsS3Manager.NewUploader(uploadSession)
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
+
 	if len(prefixes) > 0 {
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
@@ -72,6 +73,32 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 		return UploadOutput{}, err
 	}
 	return UploadOutput{Location: output.Location, ObjectName: fileName}, err
+}
+
+func (manager *S3Manager) GetStorageDateFormat(prefixes ...string) (dateFormat string, err error) {
+	dateFormat = "YYYY-MM-DD"
+	prefix := strings.Join(prefixes[0:2],"/")
+	s3objects, err := manager.ListFilesWithPrefix(prefix,1)
+	if err != nil {
+		return
+	}
+	if len(s3objects) == 0 {
+		return
+	}
+	date := strings.Split(s3objects[0].Key, "/")[2]
+	allDateLayouts := map[string]string{
+		"01-02-2006" : "MM-DD-YYYY",
+		"2006-01-02" : "YYYY-MM-DD",
+		//"02-01-2006" : "DD-MM-YYYY", //adding this might match with that of MM-DD-YYYY too
+	}
+	for layout, format := range allDateLayouts {
+		_, err = time.Parse(layout, date)
+		if err == nil {
+			dateFormat = format
+			return
+		}
+	}
+	return
 }
 
 func (manager *S3Manager) Download(output *os.File, key string) error {
@@ -193,7 +220,7 @@ type S3Object struct {
 	LastModifiedTime time.Time
 }
 
-func (manager *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error) {
+func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) ([]*S3Object, error) {
 	s3Objects := make([]*S3Object, 0)
 
 	getRegionSession := session.Must(session.NewSession())
@@ -225,6 +252,7 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error
 	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{
 		Bucket: aws.String(manager.Config.Bucket),
 		Prefix: aws.String(prefix),
+		MaxKeys: &maxItems,
 		// Delimiter: aws.String("/"),
 	})
 	if err != nil {

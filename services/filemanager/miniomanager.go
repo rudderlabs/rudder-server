@@ -51,6 +51,10 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 	return UploadOutput{Location: manager.ObjectUrl(fileName), ObjectName: fileName}, nil
 }
 
+func (manager *MinioManager) GetStorageDateFormat(prefixes ...string) (date string, err error) {
+	return "YYYY-MM-DD", nil
+}
+
 func (manager *MinioManager) Download(file *os.File, key string) error {
 	minioClient, err := minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
 	if err != nil {

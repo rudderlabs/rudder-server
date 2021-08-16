@@ -32,6 +32,7 @@ type FileManager interface {
 	GetObjectNameFromLocation(string) (string, error)
 	GetDownloadKeyFromFileLocation(location string) string
 	DeleteObjects(locations []string) error
+	GetStorageDateFormat(...string) (string, error)
 }
 
 // SettingsT sets configuration for FileManager
