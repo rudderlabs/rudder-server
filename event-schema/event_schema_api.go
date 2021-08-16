@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-server/gateway/response"
@@ -45,6 +46,40 @@ func (manager *EventSchemaManagerT) GetEventModels(w http.ResponseWriter, r *htt
 
 	eventTypes := manager.fetchEventModelsByWriteKey(writeKey)
 
+	//generating json schema from eventTypes
+	schema := eventTypes[1].Schema
+	var jsonProp map[string]string
+	//jsonProp, ok := schema.(map[string]string)
+	err = json.Unmarshal(schema, &jsonProp)
+	if err != nil {
+		pkgLogger.Errorf("Unable to parse eventSch sch")
+	}
+	pkgLogger.Info(jsonProp)
+
+	jsonSchemaProp := make(map[string]string)
+	for k,v := range jsonProp {
+		if strings.HasPrefix(k, "properties.") {
+			keys := strings.Split(k, ".")
+			if len(keys) != 2 {
+				pkgLogger.Infof("multi level json found")
+			}
+			jsonSchemaProp[keys[1]] = v
+		}
+	}
+	var jsonProp1 map[string]interface{}
+	//jsonProp, ok := schema.(map[string]string)
+	err = json.Unmarshal(schema, &jsonProp1)
+	nested, err := unflatten(jsonProp1)
+	if err!= nil {
+
+	}
+	pkgLogger.Infof("using inbuilt")
+	pkgLogger.Info(nested)
+	nested1,_:=json.Marshal(nested)
+	pkgLogger.Info(string(nested1))
+
+	// meta := eventTypes[0].WriteKey + ":" + eventTypes[0].EventType
+	// generateJsonSchema(jsonSchemaProp, meta)
 	eventTypesJSON, err := json.Marshal(eventTypes)
 	if err != nil {
 		http.Error(w, response.MakeResponse("Internal Error: Failed to Marshal event types"), 500)
@@ -52,6 +87,82 @@ func (manager *EventSchemaManagerT) GetEventModels(w http.ResponseWriter, r *htt
 	}
 
 	w.Write(eventTypesJSON)
+}
+
+type PropertyTypeT struct {
+	Type []string `json:"type"`
+}
+
+type PropertiesT struct {
+	Required []string //`json:"required"`
+	Property map[string]PropertyTypeT `json:"properties"`
+}
+
+func generateJsonSchema(schemaProp map[string]string, meta string) {
+	properties := PropertiesT{
+		Property: make(map[string]PropertyTypeT),
+	}
+	required := make([]string,0)
+	for k,v := range schemaProp {
+		required = append(required, k)
+		properties.Property[k] = PropertyTypeT {
+			Type: []string{v},
+		}
+	}
+	//pkgLogger.Info(string(json.Marshal(properties)))
+
+	finalJson := make(map[string]interface{})
+	finalJson["properties"] = properties.Property
+	finalJson["required"] = required
+	finalJson["$schema"] = "http://json-schema.org/draft-07/schema#"
+	finalJson["additionalProperties"] = true
+	finalJson["type"] = "object"
+	finalJson["$id"] = "http://rudder.com/"+ meta
+	finalJson["description"] = "Who bought what"
+
+	json2, err := json.Marshal(finalJson)
+	if err != nil {
+		pkgLogger.Errorf("unable to form properties json:  %v", err)
+	}
+
+	pkgLogger.Info(string(json2))
+}
+
+//https://play.golang.org/p/4juOff38ea
+//or use https://pkg.go.dev/github.com/wolfeidau/unflatten
+//or use https://github.com/nqd/flat
+func unflatten(flat map[string]interface{}) (map[string]interface{}, error) {
+	unflat := map[string]interface{}{}
+
+	for key, value := range flat {
+		keyParts := strings.Split(key, ".")
+
+		// Walk the keys until we get to a leaf node.
+		m := unflat
+		for i, k := range keyParts[:len(keyParts)-1] {
+			v, exists := m[k]
+			if !exists {
+				newMap := map[string]interface{}{}
+				m[k] = newMap
+				m = newMap
+				continue
+			}
+
+			innerMap, ok := v.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("key=%v is not an object", strings.Join(keyParts[0:i+1], "."))
+			}
+			m = innerMap
+		}
+
+		leafKey := keyParts[len(keyParts)-1]
+		if _, exists := m[leafKey]; exists {
+			return nil, fmt.Errorf("key=%v already exists", key)
+		}
+		m[keyParts[len(keyParts)-1]] = value
+	}
+
+	return unflat, nil
 }
 
 func (manager *EventSchemaManagerT) GetEventVersions(w http.ResponseWriter, r *http.Request) {
