@@ -673,7 +673,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		brt.asyncDestinationStruct[destinationID].fileName = jsonPath
 		brt.asyncDestinationStruct[destinationID].createdAt = time.Now()
 	}
-	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].fileName, os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].fileName, os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		panic("BRT: file open failed" + err.Error())
 	}
