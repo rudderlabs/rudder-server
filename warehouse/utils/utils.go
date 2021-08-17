@@ -652,7 +652,10 @@ func GetLoadFileType(wh string) string {
 	case "BQ":
 		return LOAD_FILE_TYPE_JSON
 	case "RS":
-		return LOAD_FILE_TYPE_PARQUET
+		if config.GetEnvAsBool("WAREHOUSE_RS_USE_PARQUET_LOAD_FILES", false) {
+			return LOAD_FILE_TYPE_PARQUET
+		}
+		return LOAD_FILE_TYPE_CSV
 	default:
 		return LOAD_FILE_TYPE_CSV
 	}

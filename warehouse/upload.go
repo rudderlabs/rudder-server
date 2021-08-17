@@ -1624,7 +1624,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 
 	// verify if all load files are in same folder in object storage
 	if misc.ContainsString(warehousesToVerifyLoadFilesFolder, job.warehouse.Type) {
-		locations := job.GetLoadFiles(warehouseutils.GetLoadFilesOptionsT{
+		locations := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{
 			StartID: startLoadFileID,
 			EndID:   endLoadFileID,
 		})
@@ -1776,7 +1776,7 @@ func (job *UploadJobT) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesO
 }
 
 func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location string, err error) {
-	locations := job.GetLoadFiles(warehouseutils.GetLoadFilesOptionsT{Table: tableName, Limit: 1})
+	locations := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName, Limit: 1})
 	if len(locations) == 0 {
 		return "", fmt.Errorf(`No load file found for table:%s`, tableName)
 	}
