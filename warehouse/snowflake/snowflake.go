@@ -367,7 +367,7 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	pkgLogger.Infof("SF: Starting load for table:%s\n", identityMergeRulesTable)
 
 	pkgLogger.Infof("SF: Fetching load file location for %s", identityMergeRulesTable)
-	var loadfile warehouseutils.LoadFile
+	var loadfile warehouseutils.LoadFileT
 	loadfile, err = sf.Uploader.GetSingleLoadFile(identityMergeRulesTable)
 	if err != nil {
 		return err
@@ -404,7 +404,7 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	pkgLogger.Infof("SF: Starting load for table:%s\n", identityMappingsTable)
 	pkgLogger.Infof("SF: Fetching load file location for %s", identityMappingsTable)
-	var loadfile warehouseutils.LoadFile
+	var loadfile warehouseutils.LoadFileT
 
 	loadfile, err = sf.Uploader.GetSingleLoadFile(identityMappingsTable)
 	if err != nil {

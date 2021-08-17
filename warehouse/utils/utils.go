@@ -152,9 +152,9 @@ type UploaderI interface {
 	GetSchemaInWarehouse() SchemaT
 	GetTableSchemaInWarehouse(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
-	GetLoadFiles(options GetLoadFilesOptionsT) []LoadFile
+	GetLoadFilesMetadata(options GetLoadFilesOptionsT) []LoadFileT
 	GetSampleLoadFileLocation(tableName string) (string, error)
-	GetSingleLoadFile(tableName string) (LoadFile, error)
+	GetSingleLoadFile(tableName string) (LoadFileT, error)
 	ShouldOnDedupUseNewRecord() bool
 	UseRudderStorage() bool
 	GetLoadFileGenStartTIme() time.Time
@@ -168,7 +168,7 @@ type GetLoadFilesOptionsT struct {
 	Limit   int64
 }
 
-type LoadFile struct {
+type LoadFileT struct {
 	Location string
 	Metadata json.RawMessage
 }
@@ -392,7 +392,7 @@ func GetGCSLocationFolder(location string, options GCSLocationOptionsT) string {
 	return s3Location[:lastPos]
 }
 
-func GetGCSLocations(loadFiles []LoadFile, options GCSLocationOptionsT) (gcsLocations []string) {
+func GetGCSLocations(loadFiles []LoadFileT, options GCSLocationOptionsT) (gcsLocations []string) {
 	for _, loadFile := range loadFiles {
 		gcsLocations = append(gcsLocations, GetGCSLocation(loadFile.Location, options))
 	}
@@ -414,7 +414,7 @@ func GetAzureBlobLocationFolder(location string) string {
 	return s3Location[:lastPos]
 }
 
-func GetS3Locations(loadFiles []LoadFile) []LoadFile {
+func GetS3Locations(loadFiles []LoadFileT) []LoadFileT {
 	for idx, loadfile := range loadFiles {
 		loadFiles[idx].Location, _ = GetS3Location(loadfile.Location)
 	}

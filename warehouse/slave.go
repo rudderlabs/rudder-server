@@ -556,3 +556,33 @@ func setupSlave() {
 		}
 	})
 }
+
+func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, discardWriter warehouseutils.LoadFileWriterI) error {
+	job := jobRun.job
+	rowID, hasID := columnData[job.getColumnName("id")]
+	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
+	if hasID && hasReceivedAt {
+		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, discardWriter)
+		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
+		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
+		eventLoader.AddColumn("received_at", warehouseutils.DiscardsSchema["received_at"], receivedAt)
+		eventLoader.AddColumn("row_id", warehouseutils.DiscardsSchema["row_id"], rowID)
+		eventLoader.AddColumn("table_name", warehouseutils.DiscardsSchema["table_name"], tableName)
+		if eventLoader.IsLoadTimeColumn("uuid_ts") {
+			timestampFormat := eventLoader.GetLoadTimeFomat("uuid_ts")
+			eventLoader.AddColumn("uuid_ts", warehouseutils.DiscardsSchema["uuid_ts"], jobRun.uuidTS.Format(timestampFormat))
+		}
+		if eventLoader.IsLoadTimeColumn("loaded_at") {
+			timestampFormat := eventLoader.GetLoadTimeFomat("loaded_at")
+			eventLoader.AddColumn("loaded_at", "datetime", jobRun.uuidTS.Format(timestampFormat))
+		}
+
+		err := eventLoader.Write()
+		if err != nil {
+			pkgLogger.Errorf("[WH]: Failed to write event to discards table: %v", err)
+			return err
+		}
+
+	}
+	return nil
+}

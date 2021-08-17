@@ -1720,7 +1720,7 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	return
 }
 
-func (job *UploadJobT) GetLoadFiles(options warehouseutils.GetLoadFilesOptionsT) (loadFiles []warehouseutils.LoadFile) {
+func (job *UploadJobT) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesOptionsT) (loadFiles []warehouseutils.LoadFileT) {
 	var tableFilterSQL string
 	if options.Table != "" {
 		tableFilterSQL = fmt.Sprintf(` AND table_name='%s'`, options.Table)
@@ -1767,7 +1767,7 @@ func (job *UploadJobT) GetLoadFiles(options warehouseutils.GetLoadFilesOptionsT)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
-		loadFiles = append(loadFiles, warehouseutils.LoadFile{
+		loadFiles = append(loadFiles, warehouseutils.LoadFileT{
 			Location: location,
 			Metadata: metadata,
 		})
@@ -1798,12 +1798,12 @@ func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.T
 	return job.schemaHandle.uploadSchema[tableName]
 }
 
-func (job *UploadJobT) GetSingleLoadFile(tableName string) (warehouseutils.LoadFile, error) {
+func (job *UploadJobT) GetSingleLoadFile(tableName string) (warehouseutils.LoadFileT, error) {
 	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, tableName)
 	pkgLogger.Infof("SF: Fetching load file location for %s: %s", tableName, sqlStatement)
 	var location string
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&location)
-	return warehouseutils.LoadFile{Location: location}, err
+	return warehouseutils.LoadFileT{Location: location}, err
 }
 
 func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {

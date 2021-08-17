@@ -641,7 +641,7 @@ func (b BufferedWriter) Write(p []byte) (int, error) {
 	return b.Writer.Write(p)
 }
 
-func (b BufferedWriter) GetLoadFile() *os.File {
+func (b BufferedWriter) GetFile() *os.File {
 	return b.File
 }
 
