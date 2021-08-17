@@ -1,4 +1,4 @@
-package asyncfilemanager
+package asyncdestinationmanager
 
 import (
 	"encoding/json"
@@ -9,17 +9,21 @@ import (
 )
 
 var (
-	DefaultAsyncFileManagerFactory AsyncFileManagerFactory
+	DefaultAsyncDestinationFactory AsyncDestinationFactory
 )
 
-type AsyncFileManagerFactoryT struct{}
+type AsyncDestinationFactoryT struct {
+	destManagers map[string]AsyncFileManager
+}
 
 type AsyncUploadOutput struct {
 	Key                 string
 	ImportingJobIDs     []int64
 	ImportingParameters json.RawMessage
+	SuccessJobIDs       []int64
 	FailedJobIDs        []int64
 	SucceededJobIDs     []int64
+	SuccessResponse     string
 	FailedReason        string
 	AbortJobIDs         []int64
 	AbortReason         string
@@ -45,8 +49,8 @@ type AsyncUploadT struct {
 	DestType string                 `json:"destType"`
 }
 
-type AsyncFileManagerFactory interface {
-	New(destType string) (AsyncFileManager, error)
+type AsyncDestinationFactory interface {
+	Get(destType string) (AsyncFileManager, error)
 }
 
 // FileManager inplements all upload methods
@@ -70,14 +74,21 @@ type SettingsT struct {
 }
 
 func init() {
-	DefaultAsyncFileManagerFactory = &AsyncFileManagerFactoryT{}
+	asyncFileManagerFactory := &AsyncDestinationFactoryT{}
+	asyncFileManagerFactory.destManagers = make(map[string]AsyncFileManager)
+	DefaultAsyncDestinationFactory = asyncFileManagerFactory
 }
 
 // New returns FileManager backed by configured provider
-func (factory *AsyncFileManagerFactoryT) New(destType string) (AsyncFileManager, error) {
+func (factory *AsyncDestinationFactoryT) Get(destType string) (AsyncFileManager, error) {
 	switch destType {
 	case "MARKETO_BULK_UPLOAD":
-		return &MarketoManager{}, nil
+		marketoManager, ok := factory.destManagers["MARKETO_BULK_UPLOAD"]
+		if !ok {
+			marketoManager = &MarketoManager{}
+			factory.destManagers["MARKETO_BULK_UPLOAD"] = marketoManager
+		}
+		return marketoManager, nil
 	}
 	return nil, errors.New("no provider configured for FileManager")
 }

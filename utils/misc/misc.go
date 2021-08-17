@@ -615,7 +615,7 @@ func HTTPCallWithRetry(url string, payload []byte) ([]byte, int) {
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", err, t)
+		pkgLogger.Errorf("Failed to make call. Error: %v, retrying after %v", err, t)
 	})
 
 	if err != nil {
