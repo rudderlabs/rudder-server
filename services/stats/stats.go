@@ -172,7 +172,7 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 		taggedClientsMap[tagStr] = taggedClient
 		taggedClientsMapLock.Unlock()
 		if err != nil {
-			// pkgLogger.Error(err)
+			pkgLogger.Error(err)
 		}
 	}
 

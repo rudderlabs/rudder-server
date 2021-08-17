@@ -213,7 +213,7 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[stri
 	}
 }
 
-func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
+func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
 	if disableEgress {
 		return StorageUploadOutput{Error: errors.New(DISABLED_EGRESS)}
 	}
@@ -379,7 +379,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	}
 }
 
-func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOutput) (err error) {
+func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadOutput) (err error) {
 	schemaMap := make(map[string]map[string]interface{})
 	for _, job := range batchJobs.Jobs {
 		var payload map[string]interface{}
@@ -450,7 +450,7 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 	return
 }
 
-func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err error, postToWarehouseErr bool) {
+func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err error, postToWarehouseErr bool) {
 	var (
 		batchJobState string
 		errorResp     []byte
@@ -889,9 +889,9 @@ func (worker *workerT) workerProcess() {
 					case misc.ContainsString(objectStorageDestinations, brt.destType):
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 						destUploadStat.Start()
-						output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
+						output := brt.copyJobsToStorage(brt.destType, &batchJobs, true, false)
 						brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, false)
-						brt.setJobStatus(batchJobs, false, output.Error, false)
+						brt.setJobStatus(&batchJobs, false, output.Error, false)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						if output.JournalOpID > 0 {
 							brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
@@ -907,11 +907,10 @@ func (worker *workerT) workerProcess() {
 						objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 						destUploadStat.Start()
-						splitBatchJobs := brt.SplitBatchJobsOnTimeWindow(batchJobs)
+						splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
 						// td: add new case for s3
 						// td: move s3 specific stuff to s3 case
-						for _, batchJobPtr := range splitBatchJobs {
-							batchJob := *batchJobPtr
+						for _, batchJob := range splitBatchJobs {
 							output := brt.copyJobsToStorage(objectStorageType, batchJob, true, true)
 							postToWarehouseErr := false
 							if output.Error == nil && output.Key != "" {
@@ -1201,7 +1200,7 @@ func IsWarehouseDestination(destType string) bool {
 	return misc.Contains(warehouseDestinations, destType)
 }
 
-func (brt *HandleT) SplitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
+func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
 	var splitBatches = map[time.Time]*BatchJobsT{}
 	if brt.destType != "S3_DATALAKE" {
 		// return only one batchJob if the destination type is not s3 datalake
@@ -1212,8 +1211,12 @@ func (brt *HandleT) SplitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Ti
 	// split batchJobs based on timeWindow
 	for _, job := range batchJobs.Jobs {
 		// ignore error as receivedAt will always be in the expected format
-		receivedAt, err := time.Parse(time.RFC3339, gjson.Get(string(job.EventPayload), "metadata.receivedAt").String())
-		err = err
+		receivedAtStr := gjson.Get(string(job.EventPayload), "metadata.receivedAt").String()
+		receivedAt, err := time.Parse(time.RFC3339, receivedAtStr)
+		if err != nil {
+			pkgLogger.Errorf("Invalid value '%s' for receivedAt : %v ", receivedAtStr, err)
+			panic(err)
+		}
 		timeWindow := warehouseutils.GetTimeWindow(receivedAt)
 
 		// create batchJob for timeWindow if it does not exist

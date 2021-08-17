@@ -344,8 +344,8 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 	return diff
 }
 
-// returns the merged schema(uploadSchema+localSchema) for all tables in uploadSchema
-func mergeUploadAndLocalSchemas(uploadSchema, localSchema warehouseutils.SchemaT) warehouseutils.SchemaT {
+// returns the merged schema(uploadSchema+schemaInWarehousePreUpload) for all tables in uploadSchema
+func mergeUploadAndLocalSchemas(uploadSchema, schemaInWarehousePreUpload warehouseutils.SchemaT) warehouseutils.SchemaT {
 	mergedSchema := warehouseutils.SchemaT{}
 	// iterate over all tables in uploadSchema
 	for uploadTableName, uploadTableSchema := range uploadSchema {
@@ -355,7 +355,7 @@ func mergeUploadAndLocalSchemas(uploadSchema, localSchema warehouseutils.SchemaT
 		}
 
 		// uploadSchema becomes the merged schema if the table does not exist in local Schema
-		localTableSchema, ok := localSchema[uploadTableName]
+		localTableSchema, ok := schemaInWarehousePreUpload[uploadTableName]
 		if !ok {
 			mergedSchema[uploadTableName] = uploadTableSchema
 			continue
