@@ -107,24 +107,10 @@ type BatchDestinationDataT struct {
 	jobs             []*jobsdb.JobT
 	parentWG         *sync.WaitGroup
 }
-
-type AsyncUploadT struct {
-	Config   map[string]interface{} `json:"config"`
-	Data     string                 `json:"data"`
-	DestType string                 `json:"destType"`
-}
-
 type AsyncPollT struct {
 	Config   map[string]interface{} `json:"config"`
 	ImportId string                 `json:"importId"`
 	DestType string                 `json:"destType"`
-}
-
-type AsyncFailedPayload struct {
-	Config   map[string]interface{} `json:"config"`
-	Data     map[string]interface{} `json:"data"`
-	DestType string                 `json:"destType"`
-	ImportId string                 `json:"importId"`
 }
 
 type ObjectStorageT struct {
@@ -224,22 +210,6 @@ type AsyncStatusResponse struct {
 	FailedJobsURL  string
 	WarningJobsURL string
 }
-
-type AsyncUploadOutput struct {
-	Key                 string
-	importingJobIDs     []int64
-	importingParameters json.RawMessage
-	FailedJobIDs        []int64
-	SucceededJobIDs     []int64
-	FailedReason        string
-	AbortJobIDs         []int64
-	AbortReason         string
-	importingCount      int
-	FailedCount         int
-	AbortCount          int
-	DestinationID       string
-}
-
 type ErrorResponseT struct {
 	Error string
 }
@@ -334,18 +304,8 @@ func (brt *HandleT) pollAsyncStatus() {
 								}
 							} else {
 								failedJobUrl := asyncResponse.FailedJobsURL
-								var failedPayloadT AsyncFailedPayload
-								failedPayloadT.Data = make(map[string]interface{})
-								failedPayloadT.Config = brt.destinationsMap[key].Destination.Config
-								for _, job := range importingList {
-									failedPayloadT.Data[strconv.Itoa(int(job.JobID))] = gjson.Get(string(job.EventPayload), "body.CSVRow").String()
-								}
-								failedPayloadT.DestType = brt.destType
-								failedPayloadT.ImportId = importId
-								payload, err := json.Marshal(failedPayloadT)
-								if err != nil {
-									panic("JSON Marshal Failed" + err.Error())
-								}
+								asyncManagerFactory, _ := brt.asyncFileManagerFactory.New(brt.destType)
+								payload = asyncManagerFactory.GenerateFailedPayload(brt.destinationsMap[key].Destination.Config, importingList, importId, brt.destType)
 								failedBodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+failedJobUrl, payload)
 								var failedJobsResponse map[string]interface{}
 								err = json.Unmarshal(failedBodyBytes, &failedJobsResponse)
