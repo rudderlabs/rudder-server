@@ -180,6 +180,7 @@ type batchRequestMetric struct {
 type StorageUploadOutput struct {
 	Config           map[string]interface{}
 	Key              string
+	FileLocation     string
 	LocalFilePaths   []string
 	JournalOpID      int64
 	Error            error
@@ -370,6 +371,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	return StorageUploadOutput{
 		Config:           batchJobs.BatchDestination.Destination.Config,
 		Key:              uploadOutput.ObjectName,
+		FileLocation:     uploadOutput.Location,
 		LocalFilePaths:   []string{gzipFilePath},
 		JournalOpID:      opID,
 		FirstEventAt:     firstEventAt,
@@ -689,13 +691,17 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output S
 
 	//Payload and AttemptNum don't make sense in recording batch router delivery status,
 	//So they are set to default values.
+	payload, err := sjson.SetBytes([]byte(`{}`), "location", output.FileLocation)
+	if err != nil {
+		payload = []byte(`{}`)
+	}
 	deliveryStatus := destinationdebugger.DeliveryStatusT{
 		EventName:     fmt.Sprint(output.TotalEvents) + " events",
 		EventType:     "",
 		SentAt:        time.Now().Format(misc.RFC3339Milli),
 		DestinationID: batchDestination.Destination.ID,
 		SourceID:      batchDestination.Source.ID,
-		Payload:       []byte(`{}`),
+		Payload:       payload,
 		AttemptNum:    1,
 		JobState:      jobState,
 		ErrorCode:     errorCode,
