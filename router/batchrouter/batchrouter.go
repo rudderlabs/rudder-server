@@ -714,24 +714,16 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 			panic("BRT: JSON Marshal Failed " + err.Error())
 		}
 		responseBody, statusCodeHTTP := misc.HTTPCallWithRetry(transformerURL+url, payload)
-		response, err := brt.netHandle.Post(transformerURL+url, "application/json; charset=utf-8",
-			bytes.NewBuffer(payload))
 		var bodyBytes []byte
 		var httpFailed bool
 		var statusCode string
 		if statusCodeHTTP != 200 {
-			bodyBytes = []byte(err.Error())
+			bodyBytes = []byte("HTTP Call to Transformer Returned Non 200")
 			httpFailed = true
 		} else {
 			bodyBytes = responseBody
-			if err != nil {
-				bodyBytes = []byte(err.Error())
-				httpFailed = true
-			}
 			statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
 		}
-		defer response.Body.Close()
-
 		var uploadResponse AsyncUploadOutput
 
 		if httpFailed {
@@ -1085,7 +1077,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput AsyncUploadOutput) {
 			statusList = append(statusList, &status)
 		}
 	}
-	if len(statusList) != 0 {
+	if len(statusList) == 0 {
 		return
 	}
 
