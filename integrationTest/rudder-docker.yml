@@ -1,0 +1,58 @@
+version: "3.7"
+
+services:
+  db:
+    image: postgres:11-alpine
+    environment:
+      - POSTGRES_USER=rudder
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=jobsdb
+    ports:
+      - "6432:5432"
+  backend:
+    depends_on:
+      - db
+      - d-transformer
+    image: rudderlabs/rudder-server:03082021.185438
+    entrypoint: sh -c '/wait-for db:5432 -- /rudder-server'
+    ports:
+      - "8080:8080"
+    environment:
+      - JOBS_DB_HOST=db
+      - JOBS_DB_USER=rudder
+      - JOBS_DB_PORT=5432
+      - JOBS_DB_DB_NAME=jobsdb
+      - JOBS_DB_PASSWORD=password
+      - DEST_TRANSFORM_URL=http://d-transformer:9090
+      - CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com
+      - WORKSPACE_TOKEN=1vLbwltztKUgpuFxmJlSe1esX8c
+      - HOSTED_SERVICE=true
+      - HOSTED_SERVICE_SECRET=NY+k1r32Qr
+      - RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID=
+      - RUDDER_AWS_S3_COPY_USER_ACCESS_KEY=
+      - RUDDER_WAREHOUSE_BUCKET=priyamrudderservertest
+      - RSERVER_DEDUP_ENABLE_DEDUP=true
+      - JOBS_BACKUP_STORAGE_PROVIDER=S3
+      - JOBS_BACKUP_BUCKET=priyamrudderservertest
+      - JOBS_BACKUP_PREFIX=test
+      - AWS_ACCESS_KEY_ID=
+      - AWS_SECRET_ACCESS_KEY=
+      - RSERVER_EVENT_SCHEMAS_ENABLE_EVENT_SCHEMAS_FEATURE=true
+      - RUDDER_ADMIN_USER=rudder
+      - RUDDER_ADMIN_PASSWORD=rudderstack
+      # - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
+      # - RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH=<workspace_config_filepath_in_container> # For ex., /etc/rudderstack/workspaceConfig.json
+    # Uncomment the following lines to mount workspaceConfig file
+    # volumes:
+    #   - <absolute_path_to_workspace_config>:<workspace_config_filepath_in_container> # Value for <workspace_config_filepath_in_container> should be same as the value provided for RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH
+  d-transformer:
+    image: rudderlabs/rudder-transformer:latest
+    environment:
+      - CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com
+    ports:
+      - "9090:9090"
+  # minio:
+  #   image: minio/minio
+  #   ports:
+  #     - "9000:9000"
+  #   command: server /data

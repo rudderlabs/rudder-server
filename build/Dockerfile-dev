@@ -7,3 +7,4 @@ ADD . /app
 WORKDIR /app
 ENTRYPOINT ["go", "run", "-mod", "vendor", "main.go"]
 #ENTRYPOINT ["go", "run", "main.go"]
+
