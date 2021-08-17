@@ -103,8 +103,8 @@ func NewPeristedFrequencyCounter(persistedFc *FrequencyCounter) *FrequencyCounte
 	return &fc
 }
 
-func (fc *FrequencyCounter) Observe(key string) {
-	fc.getCounter().Observe(key)
+func (fc *FrequencyCounter) Observe(key *string) {
+	fc.getCounter().Observe(*key)
 }
 
 // If we add counter support per key, change accordingly
