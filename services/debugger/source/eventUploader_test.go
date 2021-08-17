@@ -100,7 +100,7 @@ var _ = Describe("eventUploader", func() {
 			eventUploader := EventUploader{}
 			rawJson, err := eventUploader.Transform([]interface{}{&GatewayEventBatchT{writeKey: WriteKeyEnabled, eventBatch: recordingEvent0}})
 			Expect(err).To(BeNil())
-			Expect(string(rawJson)).To(Equal(`{"version":"v1"}`))
+			Expect(string(rawJson)).To(Equal(`{"version":"v2"}`))
 		})
 
 		It("records events", func() {
