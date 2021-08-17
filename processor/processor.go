@@ -793,9 +793,8 @@ func reportViolations(validateEvent *transformer.TransformerResponseT) {
 	pkgLogger.Error(validationErrors)
 
 	eventContext, castOk := output["context"].(map[string]interface{})
-	if !castOk {
-		eventContext["violationType"] = validationErrors[0].Type
-		eventContext["violationError"] = validationErrors[0].Message
+	if castOk {
+		eventContext["violationErrors"] = validationErrors
 	}
 }
 
