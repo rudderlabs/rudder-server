@@ -624,7 +624,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 
 	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].FileName, os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
-		panic(fmt.Errorf("BRT: %s: file open failed", brt.destType, err.Error()))
+		panic(fmt.Errorf("BRT: %s: file open failed : %s", brt.destType, err.Error()))
 	}
 	defer file.Close()
 
@@ -648,7 +648,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 
 	_, err = file.WriteAt([]byte(jobString), int64(offset))
 	if err != nil {
-		panic(fmt.Errorf("BRT: %s: file write failed", brt.destType, err.Error()))
+		panic(fmt.Errorf("BRT: %s: file write failed : %s", brt.destType, err.Error()))
 	}
 
 	timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].CreatedAt)
