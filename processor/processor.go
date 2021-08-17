@@ -637,7 +637,7 @@ func (proc *HandleT) getTransformerEvents(response transformer.ResponseT, events
 			Metadata: validatedEvent.Metadata,
 		}
 		// report all violations irrespective of SchemaConfig
-		reportViolations(validatedEvent.ValidationErrors)
+		reportViolations(&validatedEvent)
 
 		sourceTpConfig := validatedEvent.Metadata.SourceTpConfig
 		if len(validatedEvent.ValidationErrors) == 0 || len(sourceTpConfig) == 0 {
@@ -662,13 +662,13 @@ func (proc *HandleT) getTransformerEvents(response transformer.ResponseT, events
 
 		//not grouping by eventTypes as sourceConfig could differ
 		eventType, ok := validatedEvent.Output["type"].(string)
-		if(!ok){
+		if !ok {
 			pkgLogger.Error("singular event type is unknown")
 		}
 
 		eventSpecificConfig := fetchEventConfig(sourceTpConfig, eventType)
-		globalConfig := fetchEventConfig(sourceTpConfig,"global")
-		mergeMaps(globalConfig,eventSpecificConfig)
+		globalConfig := fetchEventConfig(sourceTpConfig, "global")
+		mergeMaps(globalConfig, eventSpecificConfig)
 
 		if len(globalConfig) == 0 {
 			//All events are forwarded
@@ -677,45 +677,45 @@ func (proc *HandleT) getTransformerEvents(response transformer.ResponseT, events
 		}
 
 		dropEvent := false
-		for k, v := range globalConfig{
+		for k, v := range globalConfig {
 			value := fmt.Sprint(v)
 			switch k {
 			case "allowUnplannedEvents":
 				_, exists := violationsByType[transformer.UnplannedEvent]
-				if value == "false" && exists{
+				if value == "false" && exists {
 					dropEvent = true
 					break
 				}
 				if !(value == "true" || value == "false") {
-					pkgLogger.Errorf("Unknown option %s in %s",value,k)
+					pkgLogger.Errorf("Unknown option %s in %s", value, k)
 				}
 			case "unplannedProperties":
 				_, exists := violationsByType[transformer.AdditionalProperties]
-				if value == "drop" && exists{
+				if value == "drop" && exists {
 					dropEvent = true
 					break
 				}
 				if !(value == "forward" || value == "drop") {
-					pkgLogger.Errorf("Unknown option %s in %s",value,k)
+					pkgLogger.Errorf("Unknown option %s in %s", value, k)
 				}
 			case "anyOtherViolation":
 				_, exists := violationsByType[transformer.UnknownViolation]
 				_, exists1 := violationsByType[transformer.DatatypeMismatch]
 				_, exists2 := violationsByType[transformer.RequiredMissing]
-				if value == "drop" && (exists || exists1 || exists2){
+				if value == "drop" && (exists || exists1 || exists2) {
 					dropEvent = true
 					break
 				}
 				if !(value == "forward" || value == "drop") {
-					pkgLogger.Errorf("Unknown option %s in %s",value,k)
+					pkgLogger.Errorf("Unknown option %s in %s", value, k)
 				}
 			case "sendViolatedEventsTo":
 				if value != "procErrors" {
-					pkgLogger.Errorf("Unknown option %s in %s",value,k)
+					pkgLogger.Errorf("Unknown option %s in %s", value, k)
 				}
 			case "ajvOptions":
 			default:
-				pkgLogger.Errorf("Unknown option %s in %s in eventSchema config",value,k)
+				pkgLogger.Errorf("Unknown option %s in %s in eventSchema config", value, k)
 			}
 		}
 		if dropEvent {
@@ -763,7 +763,7 @@ func (proc *HandleT) getTransformerEvents(response transformer.ResponseT, events
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			//CustomVal:    commonMetaData.DestinationType,
-			UserID:       dropEvent.Metadata.RudderID,
+			UserID: dropEvent.Metadata.RudderID,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
@@ -771,23 +771,32 @@ func (proc *HandleT) getTransformerEvents(response transformer.ResponseT, events
 	return eventsToTransform, failedEventsToStore
 }
 
-func fetchEventConfig(sourceTpConfig map[string]interface{}, eventType string) map[string]interface{}{
+func fetchEventConfig(sourceTpConfig map[string]interface{}, eventType string) map[string]interface{} {
 	emptyMap := map[string]interface{}{}
-	_, eventSpecificConfigPresent:= sourceTpConfig[eventType]
-	if !eventSpecificConfigPresent{
+	_, eventSpecificConfigPresent := sourceTpConfig[eventType]
+	if !eventSpecificConfigPresent {
 		return emptyMap
 	}
 	eventSpecificConfig, castOk := sourceTpConfig[eventType].(map[string]interface{})
-	if !castOk{
+	if !castOk {
 		pkgLogger.Errorf("config not parseable for %s", eventType)
 		return emptyMap
 	}
 	return eventSpecificConfig
 }
 
-func reportViolations(validationErrors []transformer.ValidationErrorT){
+func reportViolations(validateEvent *transformer.TransformerResponseT) {
+	validationErrors := validateEvent.ValidationErrors
+	output := validateEvent.Output
+
 	pkgLogger.Errorf("%d errors reported", len(validationErrors))
 	pkgLogger.Error(validationErrors)
+
+	eventContext, castOk := output["context"].(map[string]interface{})
+	if !castOk {
+		eventContext["violationType"] = validationErrors[0].Type
+		eventContext["violationError"] = validationErrors[0].Message
+	}
 }
 
 // tmp keys will override output if any
@@ -1242,7 +1251,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize)
 		endedAt := time.Now()
 		timeTaken := endedAt.Sub(startedAt).Seconds()
-		fmt.Println( timeTaken)
+		fmt.Println(timeTaken)
 
 		commonMetaData := transformer.MetadataT{
 			SourceID:       srcId,
