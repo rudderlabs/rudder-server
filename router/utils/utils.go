@@ -12,9 +12,21 @@ import (
 	"github.com/tidwall/sjson"
 )
 
+var (
+	JobRetention time.Duration
+)
+
 type BatchDestinationT struct {
 	Destination backendconfig.DestinationT
 	Sources     []backendconfig.SourceT
+}
+
+func init() {
+	loadConfig()
+}
+
+func loadConfig() {
+	config.RegisterDurationConfigVariable(time.Duration(24), &JobRetention, true, time.Hour, "Router.jobRetention")
 }
 
 func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) (bool, string) {
@@ -23,7 +35,7 @@ func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destina
 	if jobReceivedAt.Exists() {
 		jobReceivedAtTime, err := time.Parse(misc.RFC3339Milli, jobReceivedAt.String())
 		if err == nil {
-			if time.Now().UTC().Sub(jobReceivedAtTime.UTC()) > config.GetDuration("Router.jobRetention", time.Duration(24), time.Hour) {
+			if time.Now().UTC().Sub(jobReceivedAtTime.UTC()) > JobRetention {
 				return true, "job expired"
 			}
 		}
