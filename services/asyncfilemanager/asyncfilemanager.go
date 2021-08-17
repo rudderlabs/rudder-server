@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 var (
@@ -51,6 +53,14 @@ type AsyncFileManagerFactory interface {
 type AsyncFileManager interface {
 	Upload(string, string, map[string]interface{}, string, []int64, []int64, string) AsyncUploadOutput
 	GetTransformedData(json.RawMessage) string
+	GenerateFailedPayload(map[string]interface{}, []*jobsdb.JobT, string, string) []byte
+}
+
+type AsyncFailedPayload struct {
+	Config   map[string]interface{} `json:"config"`
+	Data     map[string]interface{} `json:"data"`
+	DestType string                 `json:"destType"`
+	ImportId string                 `json:"importId"`
 }
 
 // SettingsT sets configuration for FileManager
@@ -69,5 +79,5 @@ func (factory *AsyncFileManagerFactoryT) New(destType string) (AsyncFileManager,
 	case "MARKETO_BULK_UPLOAD":
 		return &MarketoManager{}, nil
 	}
-	return nil, errors.New("No provider configured for FileManager")
+	return nil, errors.New("no provider configured for FileManager")
 }

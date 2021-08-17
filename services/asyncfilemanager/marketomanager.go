@@ -3,7 +3,9 @@ package asyncfilemanager
 import (
 	"encoding/json"
 	"io/ioutil"
+	"strconv"
 
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
@@ -76,4 +78,20 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 }
 func (manager *MarketoManager) GetTransformedData(payload json.RawMessage) string {
 	return gjson.Get(string(payload), "body.CSVRow").String()
+}
+
+func (manager *MarketoManager) GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID string, destType string) []byte {
+	var failedPayloadT AsyncFailedPayload
+	failedPayloadT.Data = make(map[string]interface{})
+	failedPayloadT.Config = config
+	for _, job := range jobs {
+		failedPayloadT.Data[strconv.Itoa(int(job.JobID))] = gjson.Get(string(job.EventPayload), "body.CSVRow").String()
+	}
+	failedPayloadT.DestType = destType
+	failedPayloadT.ImportId = importID
+	payload, err := json.Marshal(failedPayloadT)
+	if err != nil {
+		panic("JSON Marshal Failed" + err.Error())
+	}
+	return payload
 }

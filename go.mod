@@ -28,7 +28,7 @@ require (
 	github.com/fsnotify/fsnotify v1.4.7
 	github.com/garyburd/redigo v1.6.0 // indirect
 	github.com/go-redis/redis v6.15.7+incompatible
-	github.com/gofrs/uuid v3.2.0+incompatible // indirect
+	github.com/gofrs/uuid v3.2.0+incompatible
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-migrate/migrate/v4 v4.11.0
 	github.com/golang/mock v1.5.0
