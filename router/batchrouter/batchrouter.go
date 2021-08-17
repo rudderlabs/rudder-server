@@ -700,7 +700,7 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output S
 		EventType:     "",
 		SentAt:        time.Now().Format(misc.RFC3339Milli),
 		DestinationID: batchDestination.Destination.ID,
-		SourceID:      batchDestination.Source.ID,
+		SourceID:      []string{batchDestination.Source.ID},
 		Payload:       payload,
 		AttemptNum:    1,
 		JobState:      jobState,

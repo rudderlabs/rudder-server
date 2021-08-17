@@ -616,6 +616,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			}
 		}
 
+		var sourceIDs []string
 		for i, destinationJobMetadata := range destinationJob.JobMetadataArray {
 			handledJobMetadatas[destinationJobMetadata.JobID] = &destinationJobMetadata
 
@@ -645,9 +646,12 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				payload = destinationJobMetadata.JobT.EventPayload
 			}
 
+			if !misc.Contains(sourceIDs, destinationJobMetadata.SourceID) {
+				sourceIDs = append(sourceIDs, destinationJobMetadata.SourceID)
+			}
 			//Sending only one destination live event for every destinationJob.
-			if i == 0 {
-				worker.sendDestinationResponseToConfigBackend(payload, &destinationJobMetadata, &status)
+			if i == len(destinationJob.JobMetadataArray)-1 {
+				worker.sendDestinationResponseToConfigBackend(payload, &destinationJobMetadata, &status, sourceIDs)
 			}
 		}
 	}
@@ -923,11 +927,12 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 	}
 }
 
-func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
+func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
 	//Sending destination response to config backend
 	if destinationdebugger.HasUploadEnabled(destinationJobMetadata.DestinationID) {
 		deliveryStatus := destinationdebugger.DeliveryStatusT{
 			DestinationID: destinationJobMetadata.DestinationID,
+			SourceID:      sourceIDs,
 			Payload:       payload,
 			AttemptNum:    status.AttemptNum,
 			JobState:      status.JobState,

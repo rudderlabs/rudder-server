@@ -144,7 +144,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 
 var faultyData = DeliveryStatusT{
 	DestinationID: DestinationIDEnabledA,
-	SourceID:      SourceIDEnabled,
+	SourceID:      []string{SourceIDEnabled},
 	Payload:       []byte(`{"t":"a"`),
 	AttemptNum:    1,
 	JobState:      `failed`,
@@ -184,7 +184,7 @@ var _ = Describe("eventDesliveryStatusUploader", func() {
 		c.Setup()
 		deliveryStatus = DeliveryStatusT{
 			DestinationID: DestinationIDEnabledA,
-			SourceID:      SourceIDEnabled,
+			SourceID:      []string{SourceIDEnabled},
 			Payload:       []byte(`{"t":"a"}`),
 			AttemptNum:    1,
 			JobState:      `failed`,

@@ -90,7 +90,7 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) {
 	eventBuffer := data.([]interface{})
 	res := make(map[string]interface{})
-	res["version"] = "v1"
+	res["version"] = "v2"
 	for _, e := range eventBuffer {
 		event := e.(*GatewayEventBatchT)
 		batchedEvent := EventUploadBatchT{}

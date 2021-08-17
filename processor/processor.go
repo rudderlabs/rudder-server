@@ -651,7 +651,7 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 					EventType:     eventType,
 					SentAt:        sentAt,
 					DestinationID: destID,
-					SourceID:      sourceID,
+					SourceID:      []string{sourceID},
 					Payload:       eventPayload,
 					AttemptNum:    1,
 					JobState:      jobsdb.Aborted.State,
