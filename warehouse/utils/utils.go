@@ -153,6 +153,8 @@ type StagingFileT struct {
 
 type UploaderI interface {
 	GetSchemaInWarehouse() SchemaT
+	GetLocalSchema() SchemaT
+	UpdateLocalSchema(schema SchemaT) error
 	GetTableSchemaInWarehouse(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
 	GetLoadFiles(options GetLoadFilesOptionsT) []LoadFile

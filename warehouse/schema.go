@@ -126,12 +126,7 @@ func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Sch
 	return err
 }
 
-func (sHandle *SchemaHandleT) fetchSchemaFromWarehouse() (schemaInWarehouse warehouseutils.SchemaT, err error) {
-	whManager, err := manager.New(sHandle.warehouse.Type)
-	if err != nil {
-		panic(err)
-	}
-
+func (sHandle *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
 	schemaInWarehouse, err = whManager.FetchSchema(sHandle.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)

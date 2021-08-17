@@ -236,7 +236,7 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 	}
 	job.schemaHandle = &schemaHandle
 	schemaHandle.localSchema = schemaHandle.getLocalSchema()
-	schemaHandle.schemaInWarehouse, err = schemaHandle.fetchSchemaFromWarehouse()
+	schemaHandle.schemaInWarehouse, err = schemaHandle.fetchSchemaFromWarehouse(job.whManager)
 	if err != nil {
 		return false, err
 	}
@@ -322,6 +322,14 @@ func (job *UploadJobT) run() (err error) {
 		return err
 	}
 
+	whManager := job.whManager
+	err = whManager.Setup(job.warehouse, job)
+	if err != nil {
+		job.setUploadError(err, InternalProcessingFailed)
+		return err
+	}
+	defer whManager.Cleanup()
+
 	hasSchemaChanged, err := job.syncRemoteSchema()
 	if err != nil {
 		job.setUploadError(err, FetchingRemoteSchemaFailed)
@@ -334,13 +342,6 @@ func (job *UploadJobT) run() (err error) {
 	schemaHandle.uploadSchema = job.upload.UploadSchema
 
 	// td: move this before sync remote schema?
-	whManager := job.whManager
-	err = whManager.Setup(job.warehouse, job)
-	if err != nil {
-		job.setUploadError(err, InternalProcessingFailed)
-		return err
-	}
-	defer whManager.Cleanup()
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
@@ -1984,6 +1985,14 @@ func initializeStateMachine() {
 	createRemoteSchemaState.nextState = exportDataState
 	exportDataState.nextState = nil
 	abortState.nextState = nil
+}
+
+func (job *UploadJobT) GetLocalSchema() warehouseutils.SchemaT {
+	return job.schemaHandle.getLocalSchema()
+}
+
+func (job *UploadJobT) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
+	return job.schemaHandle.updateLocalSchema(schema)
 }
 
 // func (job *UploadJobT) BatchStagingFilesOnTimeWindow(stagingFiles []*StagingFileT) map[string][]StagingFileEntryT {
