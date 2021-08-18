@@ -96,6 +96,9 @@ func canStartServer() bool {
 func canStartWarehouse() bool {
 	return warehouseMode != config.OffMode
 }
+func Run(){
+	main()
+}
 
 func main() {
 	options := app.LoadOptions()
