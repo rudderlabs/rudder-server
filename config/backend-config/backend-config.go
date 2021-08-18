@@ -207,7 +207,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &configEnvReplacementEnabled, false, "BackendConfig.envReplacementEnabled")
 }
 
-func init() {
+func Init() {
 	loadConfig()
 }
 

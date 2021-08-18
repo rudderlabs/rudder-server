@@ -63,7 +63,7 @@ type RudderError struct {
 
 var pkgLogger logger.LoggerI
 
-func init() {
+func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
 	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
 }

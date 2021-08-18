@@ -27,10 +27,14 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
 	"github.com/rudderlabs/rudder-server/warehouse"
 
 	// This is necessary for compatibility with enterprise features
@@ -96,11 +100,20 @@ func canStartServer() bool {
 func canStartWarehouse() bool {
 	return warehouseMode != config.OffMode
 }
-func Run(){
+func Run() {
 	main()
 }
 
 func main() {
+	config.Load()
+	logger.Init()
+	misc.Init()
+	stats.Init()
+	db.Init()
+	diagnostics.Init()
+	backendconfig.Init()
+	warehouseutils.Init()
+	bigquery.Init()
 	options := app.LoadOptions()
 	if options.VersionFlag {
 		printVersion()
