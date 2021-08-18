@@ -19,7 +19,6 @@ phases:
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
-      - curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add -
       - apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
       - apt-add-repository https://cli.github.com/packages
       - apt update
