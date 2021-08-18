@@ -311,8 +311,9 @@ func (brt *HandleT) pollAsyncStatus() {
 								asyncManager, _ := brt.asyncFileManagerFactory.Get(brt.destType)
 								payload = asyncManager.GenerateFailedPayload(brt.destinationsMap[key].Destination.Config, importingList, importId, brt.destType)
 								failedBodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+failedJobUrl, payload)
-								fmt.Println(string(payload))
-								fmt.Println(string(failedBodyBytes))
+								if statusCode != 200 {
+									continue
+								}
 								var failedJobsResponse map[string]interface{}
 								err = json.Unmarshal(failedBodyBytes, &failedJobsResponse)
 								if err != nil {

@@ -3,7 +3,6 @@ package asyncdestinationmanager
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -82,8 +81,6 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 		statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
 	}
 	var uploadResponse AsyncUploadOutput
-	fmt.Println(string(bodyBytes))
-	fmt.Println(string(payload))
 	if httpFailed {
 		uploadResponse = AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
