@@ -275,6 +275,7 @@ func (brt *HandleT) pollAsyncStatus() {
 					}
 
 					bodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+pollUrl, payload)
+					fmt.Println(string(bodyBytes))
 					if err != nil {
 						panic("HTTP Request Failed" + err.Error())
 					}
@@ -310,14 +311,20 @@ func (brt *HandleT) pollAsyncStatus() {
 								asyncManager, _ := brt.asyncFileManagerFactory.Get(brt.destType)
 								payload = asyncManager.GenerateFailedPayload(brt.destinationsMap[key].Destination.Config, importingList, importId, brt.destType)
 								failedBodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+failedJobUrl, payload)
+								fmt.Println(string(payload))
+								fmt.Println(string(failedBodyBytes))
 								var failedJobsResponse map[string]interface{}
 								err = json.Unmarshal(failedBodyBytes, &failedJobsResponse)
 								if err != nil {
 									panic("JSON Unmarshal Failed" + err.Error())
 								}
-								failedKeys, errFailed := misc.ConvertStringInterfaceToIntArray(failedJobsResponse["failedKeys"].([]interface{}))
-								warningKeys, errWarning := misc.ConvertStringInterfaceToIntArray(failedJobsResponse["warningKeys"].([]interface{}))
-								succeededKeys, errSuccess := misc.ConvertStringInterfaceToIntArray(failedJobsResponse["succeededKeys"].([]interface{}))
+								metadata, ok := failedJobsResponse["metadata"].(map[string]interface{})
+								if !ok {
+									panic("Typecasting Failed Because of Transformer Response" + err.Error())
+								}
+								failedKeys, errFailed := misc.ConvertStringInterfaceToIntArray(metadata["failedKeys"])
+								warningKeys, errWarning := misc.ConvertStringInterfaceToIntArray(metadata["warningKeys"])
+								succeededKeys, errSuccess := misc.ConvertStringInterfaceToIntArray(metadata["succeededKeys"])
 								var status *jobsdb.JobStatusT
 								if errFailed != nil || errWarning != nil || errSuccess != nil || statusCode != 200 {
 									for _, job := range importingList {
@@ -357,7 +364,7 @@ func (brt *HandleT) pollAsyncStatus() {
 											Parameters:    []byte(`{}`),
 										}
 									} else if misc.Contains(failedKeys, job.JobID) {
-										errorResp, _ := json.Marshal(ErrorResponseT{Error: gjson.GetBytes(failedBodyBytes, fmt.Sprintf("failedReasons.%v", job.JobID)).String()})
+										errorResp, _ := json.Marshal(ErrorResponseT{Error: gjson.GetBytes(failedBodyBytes, fmt.Sprintf("metadata.failedReasons.%v", job.JobID)).String()})
 										status = &jobsdb.JobStatusT{
 											JobID:         jobID,
 											JobState:      jobsdb.Aborted.State,

@@ -8,6 +8,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -564,12 +565,17 @@ func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 	return replacedStr, nil
 }
 
-func ConvertStringInterfaceToIntArray(interfaceArray []interface{}) ([]int64, error) {
+func ConvertStringInterfaceToIntArray(interfaceT interface{}) ([]int64, error) {
 	var intArr []int64
-	if interfaceArray == nil {
+	if interfaceT == nil || (reflect.ValueOf(interfaceT).Kind() == reflect.Ptr && reflect.ValueOf(interfaceT).IsNil()) {
 		return intArr, nil
 	}
+	typeInterface := reflect.TypeOf(interfaceT).Kind()
+	if !(typeInterface != reflect.Slice) && !(typeInterface != reflect.Array) {
+		return intArr, errors.New("didn't recieve array from transformer")
+	}
 
+	interfaceArray := interfaceT.([]interface{})
 	for _, val := range interfaceArray {
 		strVal, _ := val.(string)
 		intVal, err := strconv.ParseInt(strVal, 10, 64)

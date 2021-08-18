@@ -3,6 +3,7 @@ package asyncdestinationmanager
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -25,18 +26,18 @@ type Parameters struct {
 }
 
 func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
-	successJobsInterface, ok := keyMap["successfulJobs"].([]interface{})
+	_, ok := keyMap["successfulJobs"].([]interface{})
 	var succesfulJobIDs, failedJobIDsTrans []int64
 	var err error
 	if ok {
-		succesfulJobIDs, err = misc.ConvertStringInterfaceToIntArray(successJobsInterface)
+		succesfulJobIDs, err = misc.ConvertStringInterfaceToIntArray(keyMap["successfulJobs"])
 		if err != nil {
 			failedJobIDsTrans = importingJobIDs
 		}
 	}
-	failedJobsInterface, ok := keyMap["unsuccessfulJobs"].([]interface{})
+	_, ok = keyMap["unsuccessfulJobs"].([]interface{})
 	if ok {
-		failedJobIDsTrans, err = misc.ConvertStringInterfaceToIntArray(failedJobsInterface)
+		failedJobIDsTrans, err = misc.ConvertStringInterfaceToIntArray(keyMap["unsuccessfulJobs"])
 		if err != nil {
 			failedJobIDsTrans = importingJobIDs
 		}
@@ -81,7 +82,8 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 		statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
 	}
 	var uploadResponse AsyncUploadOutput
-
+	fmt.Println(string(bodyBytes))
+	fmt.Println(string(payload))
 	if httpFailed {
 		uploadResponse = AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
@@ -174,6 +176,7 @@ func (manager *MarketoManager) GenerateFailedPayload(config map[string]interface
 		metadata["job_id"] = job.JobID
 		failedPayloadT.Input[index]["message"] = message
 		failedPayloadT.Input[index]["metadata"] = metadata
+		index++
 	}
 	failedPayloadT.DestType = destType
 	failedPayloadT.ImportId = importID
