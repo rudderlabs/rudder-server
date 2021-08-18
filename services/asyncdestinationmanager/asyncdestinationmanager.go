@@ -45,8 +45,13 @@ type AsyncDestinationStruct struct {
 
 type AsyncUploadT struct {
 	Config   map[string]interface{} `json:"config"`
-	Data     string                 `json:"data"`
+	Input    []AsyncJob             `json:"input"`
 	DestType string                 `json:"destType"`
+}
+
+type AsyncJob struct {
+	Message  map[string]interface{} `json:"message"`
+	Metadata map[string]interface{} `json:"metadata"`
 }
 
 type AsyncDestinationFactory interface {
@@ -58,13 +63,14 @@ type AsyncFileManager interface {
 	Upload(string, string, map[string]interface{}, string, []int64, []int64, string) AsyncUploadOutput
 	GetTransformedData(json.RawMessage) string
 	GenerateFailedPayload(map[string]interface{}, []*jobsdb.JobT, string, string) []byte
+	GetMarshalledData(string, int64) string
 }
 
 type AsyncFailedPayload struct {
-	Config   map[string]interface{} `json:"config"`
-	Data     map[string]interface{} `json:"data"`
-	DestType string                 `json:"destType"`
-	ImportId string                 `json:"importId"`
+	Config   map[string]interface{}   `json:"config"`
+	Input    []map[string]interface{} `json:"input"`
+	DestType string                   `json:"destType"`
+	ImportId string                   `json:"importId"`
 }
 
 // SettingsT sets configuration for FileManager

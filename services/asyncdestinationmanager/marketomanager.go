@@ -1,9 +1,9 @@
 package asyncdestinationmanager
 
 import (
+	"bufio"
 	"encoding/json"
-	"io/ioutil"
-	"strconv"
+	"os"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -13,13 +13,31 @@ import (
 type MarketoManager struct {
 }
 
+type UploadStruct struct {
+	ImportId int                    `json:"importId"`
+	PollUrl  string                 `json:"pollUrl"`
+	Metadata map[string]interface{} `json:"metadata"`
+}
+
 func (manager *MarketoManager) Upload(url string, filePath string, config map[string]interface{}, destType string, failedJobIDs []int64, importingJobIDs []int64, destinationID string) AsyncUploadOutput {
-	data, err := ioutil.ReadFile(filePath)
+	file, err := os.Open(filePath)
 	if err != nil {
 		panic("BRT: Read File Failed" + err.Error())
 	}
+	defer file.Close()
+	var input []AsyncJob
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var tempJob AsyncJob
+		jobBytes := scanner.Bytes()
+		err := json.Unmarshal(jobBytes, &tempJob)
+		if err != nil {
+			panic("Unmarshalling a Single Line Failed")
+		}
+		input = append(input, tempJob)
+	}
 	var uploadT AsyncUploadT
-	uploadT.Data = string(data)
+	uploadT.Input = input
 	uploadT.Config = config
 	uploadT.DestType = destType
 	payload, err := json.Marshal(uploadT)
@@ -47,8 +65,28 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 			DestinationID: destinationID,
 		}
 	} else if statusCode == "" {
+		var responseStruct UploadStruct
+		err := json.Unmarshal(bodyBytes, &responseStruct)
+		if err != nil {
+			panic("Incorrect Response from Transformer: " + err.Error())
+		}
+		successJobsInterface, ok := responseStruct.Metadata["successfulJobs"].([]interface{})
+		var succesfulJobIDs, failedJobIDs []int64
+		if ok {
+			succesfulJobIDs, err = misc.ConvertStringInterfaceToIntArray(successJobsInterface)
+			if err != nil {
+				failedJobIDs = importingJobIDs
+			}
+		}
+		failedJobsInterface, ok := responseStruct.Metadata["unsuccessfulJob"].([]interface{})
+		if ok {
+			failedJobIDs, err = misc.ConvertStringInterfaceToIntArray(failedJobsInterface)
+			if err != nil {
+				failedJobIDs = importingJobIDs
+			}
+		}
 		uploadResponse = AsyncUploadOutput{
-			ImportingJobIDs:     importingJobIDs,
+			ImportingJobIDs:     succesfulJobIDs,
 			FailedJobIDs:        failedJobIDs,
 			FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
 			ImportingParameters: json.RawMessage(bodyBytes),
@@ -77,15 +115,40 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 	return uploadResponse
 }
 func (manager *MarketoManager) GetTransformedData(payload json.RawMessage) string {
-	return gjson.Get(string(payload), "body.CSVRow").String()
+	return gjson.Get(string(payload), "body.JSON").String()
+}
+
+func (manager *MarketoManager) GetMarshalledData(payload string, jobID int64) string {
+	var job AsyncJob
+	err := json.Unmarshal([]byte(payload), &job.Message)
+	if err != nil {
+		panic("Unmarshalling Transformer Response Failed")
+	}
+	job.Metadata = make(map[string]interface{})
+	job.Metadata["job_id"] = jobID
+	responsePayload, err := json.Marshal(job)
+	if err != nil {
+		panic("Marshalling Response Payload Failed")
+	}
+	return string(responsePayload)
 }
 
 func (manager *MarketoManager) GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID string, destType string) []byte {
 	var failedPayloadT AsyncFailedPayload
-	failedPayloadT.Data = make(map[string]interface{})
+	failedPayloadT.Input = make([]map[string]interface{}, len(jobs))
+	index := 0
 	failedPayloadT.Config = config
 	for _, job := range jobs {
-		failedPayloadT.Data[strconv.Itoa(int(job.JobID))] = gjson.Get(string(job.EventPayload), "body.CSVRow").String()
+		failedPayloadT.Input[index] = make(map[string]interface{})
+		var message map[string]interface{}
+		metadata := make(map[string]interface{})
+		err := json.Unmarshal([]byte(manager.GetTransformedData(job.EventPayload)), &message)
+		if err != nil {
+			panic("Unmarshalling Transformer Data to JSON Failed")
+		}
+		metadata["job_id"] = job.JobID
+		failedPayloadT.Input[index]["message"] = message
+		failedPayloadT.Input[index]["metadata"] = metadata
 	}
 	failedPayloadT.DestType = destType
 	failedPayloadT.ImportId = importID
