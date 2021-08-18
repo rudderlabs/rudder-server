@@ -14,9 +14,34 @@ type MarketoManager struct {
 }
 
 type UploadStruct struct {
-	ImportId int                    `json:"importId"`
-	PollUrl  string                 `json:"pollUrl"`
+	ImportId string                 `json:"importId"`
+	PollUrl  string                 `json:"pollURL"`
 	Metadata map[string]interface{} `json:"metadata"`
+}
+
+type Parameters struct {
+	ImportId string `json:"importId"`
+	PollUrl  string `json:"pollURL"`
+}
+
+func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
+	successJobsInterface, ok := keyMap["successfulJobs"].([]interface{})
+	var succesfulJobIDs, failedJobIDsTrans []int64
+	var err error
+	if ok {
+		succesfulJobIDs, err = misc.ConvertStringInterfaceToIntArray(successJobsInterface)
+		if err != nil {
+			failedJobIDsTrans = importingJobIDs
+		}
+	}
+	failedJobsInterface, ok := keyMap["unsuccessfulJobs"].([]interface{})
+	if ok {
+		failedJobIDsTrans, err = misc.ConvertStringInterfaceToIntArray(failedJobsInterface)
+		if err != nil {
+			failedJobIDsTrans = importingJobIDs
+		}
+	}
+	return succesfulJobIDs, failedJobIDsTrans
 }
 
 func (manager *MarketoManager) Upload(url string, filePath string, config map[string]interface{}, destType string, failedJobIDs []int64, importingJobIDs []int64, destinationID string) AsyncUploadOutput {
@@ -70,38 +95,38 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 		if err != nil {
 			panic("Incorrect Response from Transformer: " + err.Error())
 		}
-		successJobsInterface, ok := responseStruct.Metadata["successfulJobs"].([]interface{})
-		var succesfulJobIDs, failedJobIDs []int64
-		if ok {
-			succesfulJobIDs, err = misc.ConvertStringInterfaceToIntArray(successJobsInterface)
-			if err != nil {
-				failedJobIDs = importingJobIDs
-			}
+		var parameters Parameters
+		parameters.ImportId = responseStruct.ImportId
+		parameters.PollUrl = responseStruct.PollUrl
+		importParameters, err := json.Marshal(parameters)
+		if err != nil {
+			panic("Errored in Marshalling" + err.Error())
 		}
-		failedJobsInterface, ok := responseStruct.Metadata["unsuccessfulJob"].([]interface{})
-		if ok {
-			failedJobIDs, err = misc.ConvertStringInterfaceToIntArray(failedJobsInterface)
-			if err != nil {
-				failedJobIDs = importingJobIDs
-			}
-		}
+		succesfulJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
+
 		uploadResponse = AsyncUploadOutput{
 			ImportingJobIDs:     succesfulJobIDs,
-			FailedJobIDs:        failedJobIDs,
+			FailedJobIDs:        append(failedJobIDs, failedJobIDsTrans...),
 			FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
-			ImportingParameters: json.RawMessage(bodyBytes),
+			ImportingParameters: json.RawMessage(importParameters),
 			importingCount:      len(importingJobIDs),
-			FailedCount:         len(failedJobIDs),
+			FailedCount:         len(failedJobIDs) + len(failedJobIDsTrans),
 			DestinationID:       destinationID,
 		}
 	} else if statusCode == "400" {
+		var responseStruct UploadStruct
+		err := json.Unmarshal(bodyBytes, &responseStruct)
+		if err != nil {
+			panic("Incorrect Response from Transformer: " + err.Error())
+		}
+		succesfulJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
 		uploadResponse = AsyncUploadOutput{
-			AbortJobIDs:   importingJobIDs,
-			FailedJobIDs:  failedJobIDs,
+			AbortJobIDs:   succesfulJobIDs,
+			FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),
 			FailedReason:  `{"error":"Jobs flowed over the prescribed limit"}`,
 			AbortReason:   string(bodyBytes),
 			AbortCount:    len(importingJobIDs),
-			FailedCount:   len(failedJobIDs),
+			FailedCount:   len(failedJobIDs) + len(failedJobIDsTrans),
 			DestinationID: destinationID,
 		}
 	} else {
