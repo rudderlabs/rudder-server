@@ -83,6 +83,7 @@ var (
 	waitForWorkerSleep                  time.Duration
 	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
+	useParquetLoadFilesRS               bool
 )
 
 var (
@@ -167,6 +168,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(false, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
+	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -334,7 +336,7 @@ func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT
 }
 
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
-	sqlStatement := fmt.Sprintf(`SELECT id, location, status, timewindow
+	sqlStatement := fmt.Sprintf(`SELECT id, location, status, metadata->>'time_window_year', metadata->>'time_window_month', metadata->>'time_window_day', metadata->>'time_window_hour'
                                 FROM %[1]s
 								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
 								ORDER BY id ASC`,
@@ -348,10 +350,12 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID 
 	var stagingFilesList []*StagingFileT
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &jsonUpload.TimeWindow)
+		var timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour sql.NullInt64
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &timeWindowYear, &timeWindowMonth, &timeWindowDay, &timeWindowHour)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
+		jsonUpload.TimeWindow = time.Date(int(timeWindowYear.Int64), time.Month(timeWindowMonth.Int64), int(timeWindowDay.Int64), int(timeWindowHour.Int64), 0, 0, 0, time.UTC)
 		stagingFilesList = append(stagingFilesList, &jsonUpload)
 	}
 
@@ -367,7 +371,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at, metadata->>'source_batch_id', metadata->>'source_task_id', metadata->>'source_task_run_id', metadata->>'source_job_id', metadata->>'source_job_run_id', metadata->>'use_rudder_storage', timewindow
+	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at, metadata->>'source_batch_id', metadata->>'source_task_id', metadata->>'source_task_run_id', metadata->>'source_job_id', metadata->>'source_job_run_id', metadata->>'use_rudder_storage', metadata->>'time_window_year', metadata->>'time_window_month', metadata->>'time_window_day', metadata->>'time_window_hour'
                                 FROM %[1]s
 								WHERE %[1]s.id > %[2]v AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s'
 								ORDER BY id ASC`,
@@ -379,18 +383,19 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 	defer rows.Close()
 
 	var stagingFilesList []*StagingFileT
-	var firstEventAt, lastEventAt, timeWindow sql.NullTime
+	var firstEventAt, lastEventAt sql.NullTime
 	var sourceBatchID, sourceTaskID, sourceTaskRunID, sourceJobID, sourceJobRunID sql.NullString
+	var timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour sql.NullInt64
 	var UseRudderStorage sql.NullBool
 	for rows.Next() {
 		var jsonUpload StagingFileT
-		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt, &sourceBatchID, &sourceTaskID, &sourceTaskRunID, &sourceJobID, &sourceJobRunID, &UseRudderStorage, &timeWindow)
+		err := rows.Scan(&jsonUpload.ID, &jsonUpload.Location, &jsonUpload.Status, &firstEventAt, &lastEventAt, &sourceBatchID, &sourceTaskID, &sourceTaskRunID, &sourceJobID, &sourceJobRunID, &UseRudderStorage, &timeWindowYear, &timeWindowMonth, &timeWindowDay, &timeWindowHour)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		jsonUpload.FirstEventAt = firstEventAt.Time
 		jsonUpload.LastEventAt = lastEventAt.Time
-		jsonUpload.TimeWindow = timeWindow.Time
+		jsonUpload.TimeWindow = time.Date(int(timeWindowYear.Int64), time.Month(timeWindowMonth.Int64), int(timeWindowDay.Int64), int(timeWindowHour.Int64), 0, 0, 0, time.UTC)
 		jsonUpload.UseRudderStorage = UseRudderStorage.Bool
 		// add cloud sources metadata
 		jsonUpload.SourceBatchID = sourceBatchID.String
@@ -434,7 +439,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
 		"source_job_id":      jsonUploadsList[0].SourceJobID,
 		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
-		"load_file_type":     warehouseutils.GetLoadFileType(wh.destType),
+		"load_file_type":     getLoadFileType(wh.destType),
 	}
 	if isUploadTriggered {
 		// set priority to 50 if the upload was manually triggered
@@ -929,14 +934,20 @@ func (wh *HandleT) monitorUploadStatus() {
 	})
 }
 
-var loadFileFormatMap = map[string]string{
-	"BQ":          "json.gz",
-	"S3_DATALAKE": "parquet",
-	"RS":          "parquet",
-	"SNOWFLAKE":   "csv.gz",
-	"POSTGRES":    "csv.gz",
-	"CLICKHOUSE":  "csv.gz",
-	"MSSQL":       "csv.gz",
+func getLoadFileFormat(whType string) string {
+	switch whType {
+	case "BQ":
+		return "json.gz"
+	case "S3_DATALAKE":
+		return "parquet"
+	case "RS":
+		if useParquetLoadFilesRS {
+			return "parquet"
+		}
+		return "csv.gz"
+	default:
+		return "csv.gz"
+	}
 }
 
 func minimalConfigSubscriber() {
@@ -1079,7 +1090,6 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		firstEventAt = nil
 		lastEventAt = nil
 	}
-	timeWindowStr := stagingFile.TimeWindow.Format(time.RFC3339)
 	metadataMap := map[string]interface{}{
 		"use_rudder_storage": stagingFile.UseRudderStorage,
 		"source_batch_id":    stagingFile.SourceBatchID,
@@ -1087,6 +1097,10 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		"source_task_run_id": stagingFile.SourceTaskRunID,
 		"source_job_id":      stagingFile.SourceJobID,
 		"source_job_run_id":  stagingFile.SourceJobRunID,
+		"time_window_year":   stagingFile.TimeWindow.Year(),
+		"time_window_month":  stagingFile.TimeWindow.Month(),
+		"time_window_day":    stagingFile.TimeWindow.Day(),
+		"time_window_hour":   stagingFile.TimeWindow.Hour(),
 	}
 	metadata, err := json.Marshal(metadataMap)
 	if err != nil {
@@ -1095,15 +1109,15 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 
 	pkgLogger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
 	schemaPayload, _ := json.Marshal(stagingFile.Schema)
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, total_events, first_event_at, last_event_at, created_at, updated_at, metadata, timewindow)
-									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11)`, warehouseutils.WarehouseStagingFilesTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, total_events, first_event_at, last_event_at, created_at, updated_at, metadata)
+									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10)`, warehouseutils.WarehouseStagingFilesTable)
 	stmt, err := dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(stagingFile.Location, schemaPayload, stagingFile.BatchDestination.Source.ID, stagingFile.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, stagingFile.TotalEvents, firstEventAt, lastEventAt, timeutil.Now(), metadata, timeWindowStr)
+	_, err = stmt.Exec(stagingFile.Location, schemaPayload, stagingFile.BatchDestination.Source.ID, stagingFile.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, stagingFile.TotalEvents, firstEventAt, lastEventAt, timeutil.Now(), metadata)
 	if err != nil {
 		panic(err)
 	}
@@ -1521,5 +1535,21 @@ func Start(app app.Interface) {
 			runArchiver(dbHandle)
 		})
 		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+	}
+}
+
+func getLoadFileType(wh string) string {
+	switch wh {
+	case "BQ":
+		return warehouseutils.LOAD_FILE_TYPE_JSON
+	case "RS":
+		if useParquetLoadFilesRS {
+			return warehouseutils.LOAD_FILE_TYPE_PARQUET
+		}
+		return warehouseutils.LOAD_FILE_TYPE_CSV
+	case "S3_DATALAKE":
+		return warehouseutils.LOAD_FILE_TYPE_PARQUET
+	default:
+		return warehouseutils.LOAD_FILE_TYPE_CSV
 	}
 }

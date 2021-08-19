@@ -880,7 +880,7 @@ func (worker *workerT) workerProcess() {
 				if !ok {
 					// TODO: Should not happen. Handle this
 					err := fmt.Errorf("BRT: Batch destination source not found in config for sourceID: %s", sourceID)
-					brt.setJobStatus(batchJobs, false, err, false)
+					brt.setJobStatus(&batchJobs, false, err, false)
 					wg.Done()
 					continue
 				}

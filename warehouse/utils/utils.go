@@ -666,22 +666,6 @@ func GetTimeWindow(ts time.Time) time.Time {
 	return time.Date(ts.Year(), ts.Month(), ts.Day(), ts.Hour(), 0, 0, 0, time.UTC)
 }
 
-func GetLoadFileType(wh string) string {
-	switch wh {
-	case "BQ":
-		return LOAD_FILE_TYPE_JSON
-	case "RS":
-		if config.GetEnvAsBool("WAREHOUSE_RS_USE_PARQUET_LOAD_FILES", false) {
-			return LOAD_FILE_TYPE_PARQUET
-		}
-		return LOAD_FILE_TYPE_CSV
-	case "S3_DATALAKE":
-		return LOAD_FILE_TYPE_PARQUET
-	default:
-		return LOAD_FILE_TYPE_CSV
-	}
-}
-
 // GetTablePathInObjectStorage returns the path of the table relative to the object storage bucket
 // for location - "s3://testbucket/rudder-datalake/namespace/tableName/" - it returns "rudder-datalake/namespace/tableName"
 func GetTablePathInObjectStorage(namespace string, tableName string) string {
