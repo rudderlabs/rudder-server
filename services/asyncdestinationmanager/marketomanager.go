@@ -94,7 +94,7 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
-	} else if statusCode == "" {
+	} else if statusCode == "200" {
 		var responseStruct UploadStruct
 		err := json.Unmarshal(bodyBytes, &responseStruct)
 		if err != nil {
