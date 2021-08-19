@@ -130,11 +130,11 @@ type SourceRegulationT struct {
 }
 
 type ConfigT struct {
-	EnableMetrics      bool                  `json:"enableMetrics"`
-	WorkspaceID        string                `json:"workspaceId"`
-	Sources            []SourceT             `json:"sources"`
-	Libraries          LibrariesT            `json:"libraries"`
-	ConnectionFlags    ConnectionFlags       `json:"flags"`
+	EnableMetrics   bool            `json:"enableMetrics"`
+	WorkspaceID     string          `json:"workspaceId"`
+	Sources         []SourceT       `json:"sources"`
+	Libraries       LibrariesT      `json:"libraries"`
+	ConnectionFlags ConnectionFlags `json:"flags"`
 }
 
 type ConnectionFlags struct {
@@ -178,12 +178,16 @@ type LibraryT struct {
 type LibrariesT []LibraryT
 
 type DgSourceTrackingPlanConfigT struct {
-	SourceId string
-	TrackingPlanId string
-	TrackingPlanVersion int
-	Version int
-	Config map[string]interface{}
-	Deleted bool
+	SourceId            string                 `json:"sourceId"`
+	SourceConfigVersion int                    `json:"version"`
+	Config              map[string]interface{} `json:"id"`
+	Deleted             bool                   `json:"deleted"`
+	TrackingPlan        TrackingPlanT          `json:"trackingPlan"`
+}
+
+type TrackingPlanT struct {
+	Id      string `json:"id"`
+	Version int    `json:"version"`
 }
 
 type BackendConfig interface {
