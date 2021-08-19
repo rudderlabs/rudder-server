@@ -180,7 +180,7 @@ type LibrariesT []LibraryT
 type DgSourceTrackingPlanConfigT struct {
 	SourceId            string                 `json:"sourceId"`
 	SourceConfigVersion int                    `json:"version"`
-	Config              map[string]interface{} `json:"id"`
+	Config              map[string]interface{} `json:"config"`
 	Deleted             bool                   `json:"deleted"`
 	TrackingPlan        TrackingPlanT          `json:"trackingPlan"`
 }

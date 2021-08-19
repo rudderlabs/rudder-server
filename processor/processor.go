@@ -749,8 +749,7 @@ func (proc *HandleT) getTransformerEvents(response transformer.ResponseT, events
 		id := uuid.NewV4()
 
 		params := map[string]interface{}{
-			"source_id": dropEvent.Metadata.SourceID,
-			//"destination_id":    commonMetaData.DestinationID,
+			"source_id":         dropEvent.Metadata.SourceID,
 			"source_job_run_id": dropEvent.Metadata.JobRunID,
 			"error":             dropEvent.Error,
 			"status_code":       dropEvent.StatusCode,
@@ -768,7 +767,6 @@ func (proc *HandleT) getTransformerEvents(response transformer.ResponseT, events
 			Parameters:   marshalledParams,
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
-			//CustomVal:    commonMetaData.DestinationType,
 			UserID:       dropEvent.Metadata.RudderID,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
@@ -792,6 +790,9 @@ func fetchEventConfig(sourceTpConfig map[string]interface{}, eventType string) m
 }
 
 func reportViolations(validateEvent *transformer.TransformerResponseT) {
+	if len(validateEvent.ValidationErrors) == 0 {
+		return
+	}
 	validationErrors := validateEvent.ValidationErrors
 	output := validateEvent.Output
 
@@ -815,7 +816,6 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 	for _, userTransformedEvent := range response.Events {
 		//Update metrics maps
 		proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, []byte(`{}`))
-		//todo: set tp here too? may not
 		eventMetadata := commonMetaData
 		eventMetadata.MessageIDs = userTransformedEvent.Metadata.MessageIDs
 		eventMetadata.MessageID = userTransformedEvent.Metadata.MessageID
@@ -1119,12 +1119,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				totalEvents++
 				eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{SingularEvent: singularEvent, ReceivedAt: receivedAt}
 
-				//Getting all the destinations which are enabled for this
-				//event
+				//Getting all the destinations which are enabled for this event
 				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
-				//workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-				//workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
 				sourceForSingularEvent, sourceIdError := getSourceByWriteKey(writeKey)
 				if sourceIdError != nil {
 					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
@@ -1146,7 +1143,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				shallowEventCopy := transformer.TransformerEventT{}
 				shallowEventCopy.Message = singularEvent
 				shallowEventCopy.Message["request_ip"] = requestIP
-				//shallowEventCopy.Libraries = workspaceLibraries
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
 				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, backendconfig.DestinationT{})
 				configT, ok := proc.backendConfig.Get()
@@ -1246,10 +1242,25 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			SourceID:       srcId,
 			SourceType:     eventList[0].Metadata.SourceType,
 			SourceCategory: eventList[0].Metadata.SourceCategory,
-			//DestinationID:   destID,
-			//DestinationType: destination.DestinationDefinition.Name,
 		}
+
+		//handling incompatible version types between rudder-server and transformer
+		filteredFailedEvents := []transformer.TransformerResponseT{}
+		for _, event := range response.FailedEvents {
+			//handling case when rudder-transformer is missing validation end-point
+			//passing on the events as successfull further forward to user/dest transformation
+			if event.StatusCode == 404 {
+				event.Output = eventsByMessageID[event.Metadata.MessageID].SingularEvent
+				response.Events = append(response.Events, event)
+				pkgLogger.Errorf("Missing validation endpoint(upgrade rudder-transformer), Error : %v",event.Error)
+				continue
+			}
+			filteredFailedEvents = append(filteredFailedEvents, event)
+		}
+		response.FailedEvents = filteredFailedEvents
+
 		eventsToTransform, validationFailedJobs := proc.getTransformerEvents(response, eventsByMessageID)
+		//dumps violated events as per sourceTpConfig to proc_error
 		if len(validationFailedJobs) > 0 {
 			proc.logger.Info("[Processor] Total validationFailedJobs written to proc_error: ", len(validationFailedJobs))
 			err := proc.errorDB.Store(validationFailedJobs)
@@ -1259,8 +1270,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				panic(err)
 			}
 		}
-		//eventsToTransform, successMetrics, successCountMap, successCountMetadataMap := proc.getDestTransformerEvents(response, commonMetaData, backendconfig.DestinationT{})
-		//what should be transformationEnabled below? used in reporting service.
+		// dumps all non-200 jobs from validation endpoint. (code:404 jobs are not dumped-handled above)
 		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.TrackingPlanValidationStage, false)
 		if len(failedJobs) > 0 {
 			proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(failedJobs))
@@ -1293,7 +1303,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		if writeKey == "" {
 			proc.logger.Error("src not found for writeKey")
-			//PANIC?
 		}
 
 		backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)

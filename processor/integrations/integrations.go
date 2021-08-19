@@ -153,7 +153,7 @@ func GetUserTransformURL() string {
 	return destTransformURL + "/customTransform"
 }
 
-//GetTrackingPlanValidationURL returns the port of running user transform
+//GetTrackingPlanValidationURL returns the port of running tracking plan validation
 func GetTrackingPlanValidationURL() string {
 	return destTransformURL + "/v0/validate"
 }
