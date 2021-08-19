@@ -75,7 +75,6 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.WarehouseT)
 				}
 
 				for _, col := range table.StorageDescriptor.Columns {
-					// td: what to do if col.Type does not exist in dataTypesMapToRudder
 					schema[tableName][*col.Name] = dataTypesMapToRudder[*col.Type]
 				}
 			}
@@ -106,8 +105,6 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 }
 
 func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	// td: assign table owner as rudderstack?
-	// td: add location too when load file name is finalized.
 	// create table request
 	input := glue.CreateTableInput{
 		DatabaseName: aws.String(gl.Namespace),
@@ -189,7 +186,6 @@ func getGlueClient(wh warehouseutils.WarehouseT) (*glue.Glue, error) {
 		config = config.WithRegion(region)
 	}
 
-	// td: need to read region and accountId or one of them??
 	svc := glue.New(sess, config)
 	return svc, nil
 }

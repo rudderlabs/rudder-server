@@ -653,7 +653,6 @@ func GetTempFileExtension(destType string) string {
 }
 
 func GetTimeWindow(ts time.Time) time.Time {
-	// td: check if time is already in utc
 	ts = ts.UTC()
 
 	// // get lastHalfHourWindow

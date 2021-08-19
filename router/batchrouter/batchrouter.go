@@ -901,15 +901,12 @@ func (worker *workerT) workerProcess() {
 						}
 
 						destUploadStat.End()
-						// td: add case foor s3 anmd batch here based on time window - batch opn receivedAt
 					case misc.ContainsString(warehouseDestinations, brt.destType):
 						useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 						objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 						destUploadStat.Start()
 						splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
-						// td: add new case for s3
-						// td: move s3 specific stuff to s3 case
 						for _, batchJob := range splitBatchJobs {
 							output := brt.copyJobsToStorage(objectStorageType, batchJob, true, true)
 							postToWarehouseErr := false
@@ -921,7 +918,6 @@ func (worker *workerT) workerProcess() {
 								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJob.BatchDestination.Destination.ID).Count(1)
 								warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJob.BatchDestination.Destination.ID).Count(len(batchJob.Jobs))
 							}
-							// td: should record all these statuses like before or is this fine?
 							brt.recordDeliveryStatus(*batchJob.BatchDestination, output.Error, true)
 							brt.setJobStatus(batchJob, true, output.Error, postToWarehouseErr)
 							misc.RemoveFilePaths(output.LocalFilePaths...)

@@ -341,7 +341,6 @@ func (job *UploadJobT) run() (err error) {
 	schemaHandle := job.schemaHandle
 	schemaHandle.uploadSchema = job.upload.UploadSchema
 
-	// td: move this before sync remote schema?
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
@@ -1600,7 +1599,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			}
 
 			if job.warehouse.Type == "S3_DATALAKE" {
-				// td: use prefix from config
 				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 			}
 
