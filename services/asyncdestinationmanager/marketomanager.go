@@ -3,6 +3,7 @@ package asyncdestinationmanager
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 
@@ -71,6 +72,10 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 		panic("BRT: JSON Marshal Failed " + err.Error())
 	}
 	responseBody, statusCodeHTTP := misc.HTTPCallWithRetry(url, payload)
+	fmt.Println("***********************************************")
+	fmt.Println("uploadURL  : ", url)
+	fmt.Println("Payload : ", string(payload))
+	fmt.Println("Response : ", string(responseBody))
 	var bodyBytes []byte
 	var httpFailed bool
 	var statusCode string

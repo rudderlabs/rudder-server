@@ -275,6 +275,12 @@ func (brt *HandleT) pollAsyncStatus() {
 					}
 
 					bodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+pollUrl, payload)
+
+					fmt.Println("***********************************************")
+					fmt.Println("Poll URL : ", pollUrl)
+					fmt.Println("Payload : ", string(payload))
+					fmt.Println("Response : ", string(bodyBytes))
+
 					if err != nil {
 						panic("HTTP Request Failed" + err.Error())
 					}
@@ -310,6 +316,10 @@ func (brt *HandleT) pollAsyncStatus() {
 								asyncManager, _ := brt.asyncFileManagerFactory.Get(brt.destType)
 								payload = asyncManager.GenerateFailedPayload(brt.destinationsMap[key].Destination.Config, importingList, importId, brt.destType)
 								failedBodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+failedJobUrl, payload)
+								fmt.Println("***********************************************")
+								fmt.Println("failedJobUrl  : ", failedJobUrl)
+								fmt.Println("Payload : ", string(payload))
+								fmt.Println("Response : ", string(failedBodyBytes))
 								if statusCode != 200 {
 									continue
 								}
