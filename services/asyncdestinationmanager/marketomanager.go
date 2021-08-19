@@ -75,7 +75,7 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 	var httpFailed bool
 	var statusCode string
 	if statusCodeHTTP != 200 {
-		bodyBytes = []byte("HTTP Call to Transformer Returned Non 200")
+		bodyBytes = []byte(`"error" : "HTTP Call to Transformer Returned Non 200"`)
 		httpFailed = true
 	} else {
 		bodyBytes = responseBody

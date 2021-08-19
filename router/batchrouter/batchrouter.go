@@ -275,7 +275,6 @@ func (brt *HandleT) pollAsyncStatus() {
 					}
 
 					bodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+pollUrl, payload)
-					fmt.Println(string(bodyBytes))
 					if err != nil {
 						panic("HTTP Request Failed" + err.Error())
 					}
