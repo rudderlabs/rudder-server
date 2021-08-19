@@ -644,14 +644,16 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		panic(fmt.Errorf("BRT: %s: file open failed : %s", brt.destType, err.Error()))
 	}
 	defer file.Close()
-
+	fmt.Println(brt.asyncDestinationStruct[destinationID].FileName)
 	canUpload := false
 	var url string
 	var jobString string
+	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
 	for _, job := range batchJobs.Jobs {
 		transformedData := asyncManager.GetTransformedData(job.EventPayload)
 		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch {
 			fileData := asyncManager.GetMarshalledData(transformedData, job.JobID)
+			brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))
 			jobString = jobString + fileData + "\n"
 			brt.asyncDestinationStruct[destinationID].ImportingJobIDs = append(brt.asyncDestinationStruct[destinationID].ImportingJobIDs, job.JobID)
 			brt.asyncDestinationStruct[destinationID].Count = brt.asyncDestinationStruct[destinationID].Count + 1
@@ -662,7 +664,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		}
 	}
 
-	_, err = file.Write([]byte(jobString))
+	_, err = file.WriteAt([]byte(jobString), int64(writeAtBytes))
 	if err != nil {
 		panic(fmt.Errorf("BRT: %s: file write failed : %s", brt.destType, err.Error()))
 	}
