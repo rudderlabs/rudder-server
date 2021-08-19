@@ -974,3 +974,17 @@ func GetWarehouseURL() (url string) {
 	}
 	return
 }
+
+// tmp keys will override output if any
+func MergeMaps(output map[string]interface{}, tmp map[string]interface{}) {
+	for k, v := range tmp {
+		if reflect.TypeOf(v).Kind() == reflect.Map {
+			if output[k] == nil {
+				output[k] = make(map[string]interface{})
+			}
+			MergeMaps(output[k].(map[string]interface{}), v.(map[string]interface{}))
+		} else {
+			output[k] = v
+		}
+	}
+}

@@ -660,15 +660,6 @@ func (proc *HandleT) getTransformerEvents(response transformer.ResponseT, events
 			continue
 		}
 
-		//violationsByType := map[string][]transformer.ValidationErrorT{}
-		//for _, violation := range validatedEvent.ValidationErrors {
-		//	_, ok := violationsByType[violation.Type]
-		//	if !ok {
-		//		violationsByType[violation.Type] = make([]transformer.ValidationErrorT, 0)
-		//	}
-		//	violationsByType[violation.Type] = append(violationsByType[violation.Type], violation)
-		//}
-
 		//set of all violationTypes in event
 		violationsByType := make(map[string]struct{})
 		for _, violation := range validatedEvent.ValidationErrors {
@@ -683,7 +674,7 @@ func (proc *HandleT) getTransformerEvents(response transformer.ResponseT, events
 
 		eventSpecificConfig := fetchEventConfig(sourceTpConfig, eventType)
 		globalConfig := fetchEventConfig(sourceTpConfig,"global")
-		mergeMaps(globalConfig,eventSpecificConfig)
+		misc.MergeMaps(globalConfig,eventSpecificConfig)
 
 		if len(globalConfig) == 0 {
 			//All events are forwarded
@@ -810,20 +801,6 @@ func reportViolations(validateEvent *transformer.TransformerResponseT) {
 	eventContext, castOk := output["context"].(map[string]interface{})
 	if castOk {
 		eventContext["violationErrors"] = validationErrors
-	}
-}
-
-// tmp keys will override output if any
-func mergeMaps(output map[string]interface{}, tmp map[string]interface{}) {
-	for k, v := range tmp {
-		if reflect.TypeOf(v).Kind() == reflect.Map {
-			if output[k] == nil {
-				output[k] = make(map[string]interface{})
-			}
-			mergeMaps(output[k].(map[string]interface{}), v.(map[string]interface{}))
-		} else {
-			output[k] = v
-		}
 	}
 }
 
