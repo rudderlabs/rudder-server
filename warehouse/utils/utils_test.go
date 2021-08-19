@@ -49,7 +49,7 @@ var _ = Describe("Utils", func() {
 
 			Context("GetS3Locations", func() {
 				It("should parse multiple urls and return array with locations ", func() {
-					var inputs = []LoadFile{
+					var inputs = []LoadFileT{
 						{Location: "https://test-bucket.s3.amazonaws.com/test-object.csv"},
 						{Location: "https://test-bucket.s3.eu-west-1.amazonaws.com/test-object.csv"},
 						{Location: "https://my.test-bucket.s3.amazonaws.com/test-object.csv"},
@@ -92,7 +92,7 @@ var _ = Describe("Utils", func() {
 
 			Context("GetGCSLocations", func() {
 				It("should parse multiple urls and return array with locations ", func() {
-					var inputs = []LoadFile{
+					var inputs = []LoadFileT{
 						{Location: "https://storage.googleapis.com/test-bucket/test-object.csv"},
 						{Location: "https://storage.googleapis.com/my.test-bucket/test-object.csv"},
 						{Location: "https://storage.googleapis.com/my.test-bucket2/test-object.csv"},

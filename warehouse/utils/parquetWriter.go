@@ -41,9 +41,9 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 }
 
 type ParquetWriter struct {
-	ParquetWriter *writer.CSVWriter
-	FileWriter    misc.BufferedWriter
-	Schema        []string
+	writer     *writer.CSVWriter
+	fileWriter misc.BufferedWriter
+	schema     []string
 }
 
 func CreateParquetWriter(schema TableSchemaT, outputFilePath string, destType string) (*ParquetWriter, error) {
@@ -56,29 +56,30 @@ func CreateParquetWriter(schema TableSchemaT, outputFilePath string, destType st
 	if err != nil {
 		return nil, err
 	}
-	parallelReaderWriters := config.GetEnvAsInt("WH_PARQUET_PARALLEL_READER_WRITERS", 4)
-	w, err := writer.NewCSVWriterFromWriter(pSchema, bufWriter, int64(parallelReaderWriters))
+	var noOfParallelWriters int64
+	config.RegisterInt64ConfigVariable(8, &noOfParallelWriters, true, 1, "Warehouse.parquetParallelWriters")
+	w, err := writer.NewCSVWriterFromWriter(pSchema, bufWriter, noOfParallelWriters)
 	if err != nil {
 		return nil, err
 	}
 	return &ParquetWriter{
-		ParquetWriter: w,
-		Schema:        pSchema,
-		FileWriter:    bufWriter,
+		writer:     w,
+		schema:     pSchema,
+		fileWriter: bufWriter,
 	}, nil
 }
 
 func (p *ParquetWriter) WriteRow(row []interface{}) error {
-	return p.ParquetWriter.Write(row)
+	return p.writer.Write(row)
 }
 
 func (p *ParquetWriter) Close() error {
-	err := p.ParquetWriter.WriteStop()
+	err := p.writer.WriteStop()
 	if err != nil {
 		return err
 	}
 	// close the bufWriter
-	return p.FileWriter.Close()
+	return p.fileWriter.Close()
 }
 
 func (p *ParquetWriter) WriteGZ(s string) error {
@@ -90,7 +91,7 @@ func (p *ParquetWriter) Write(b []byte) (int, error) {
 }
 
 func (p *ParquetWriter) GetLoadFile() *os.File {
-	return p.FileWriter.GetLoadFile()
+	return p.fileWriter.GetFile()
 }
 
 func getSortedTableColumns(schema TableSchemaT) []string {

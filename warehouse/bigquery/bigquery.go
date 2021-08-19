@@ -204,7 +204,7 @@ func partitionedTable(tableName string, partitionDate string) string {
 
 func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFromTableUploads bool) (partitionDate string, err error) {
 	pkgLogger.Infof("BQ: Starting load for table:%s\n", tableName)
-	var loadFiles []warehouseutils.LoadFile
+	var loadFiles []warehouseutils.LoadFileT
 	if getLoadFileLocFromTableUploads {
 		loadFile, err := bq.Uploader.GetSingleLoadFile(tableName)
 		if err != nil {
@@ -212,7 +212,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFro
 		}
 		loadFiles = append(loadFiles, loadFile)
 	} else {
-		loadFiles = bq.Uploader.GetLoadFiles(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
+		loadFiles = bq.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	}
 	gcsLocations := warehouseutils.GetGCSLocations(loadFiles, warehouseutils.GCSLocationOptionsT{})
 	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, loadFiles)
