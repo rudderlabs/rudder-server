@@ -414,6 +414,9 @@ func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOut
 					if err != nil {
 						return nil, err
 					}
+					// add discardWriter to outputFileWritersMap
+					jobRun.outputFileWritersMap[discardsTable] = discardWriter
+
 					err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, discardWriter)
 
 					if err != nil {

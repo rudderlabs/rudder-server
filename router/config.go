@@ -1,8 +1,6 @@
 package router
 
 import (
-	"time"
-
 	"github.com/rudderlabs/rudder-server/config"
 )
 
@@ -55,15 +53,5 @@ func getRouterConfigString(key string, destType string, defaultValue string) str
 		return config.GetString("Router."+destType+"."+key, defaultValue)
 	} else {
 		return config.GetString("Router."+key, defaultValue)
-	}
-}
-
-func getRouterConfigDuration(key string, destType string, defaultValue time.Duration) time.Duration {
-
-	destOverrideFound := config.IsSet("Router." + destType + "." + key)
-	if destOverrideFound {
-		return config.GetDuration("Router."+destType+"."+key, defaultValue)
-	} else {
-		return config.GetDuration("Router."+key, defaultValue)
 	}
 }

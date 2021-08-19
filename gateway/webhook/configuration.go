@@ -14,13 +14,13 @@ func loadConfig() {
 	// Number of incoming webhooks that are batched before calling source transformer
 	config.RegisterIntConfigVariable(32, &maxWebhookBatchSize, true, 1, "Gateway.webhook.maxBatchSize")
 	// Timeout after which batch is formed anyway with whatever webhooks are available
-	config.RegisterDurationConfigVariable(time.Duration(20), &webhookBatchTimeout, true, time.Millisecond, "Gateway.webhook.batchTimeoutInMS")
+	config.RegisterDurationConfigVariable(time.Duration(20), &webhookBatchTimeout, true, time.Millisecond, []string{"Gateway.webhook.batchTimeout", "Gateway.webhook.batchTimeoutInMS"}...)
 	// Multiple source transformers are used to generate rudder events from webhooks
-	maxTransformerProcess = config.GetInt("Gateway.webhook.maxTransformerProcess", 64)
+	config.RegisterIntConfigVariable(64, &maxTransformerProcess, false, 1, "Gateway.webhook.maxTransformerProcess")
 	// Max time till when retries to source transformer are done
-	webhookRetryWaitMax = (config.GetDuration("Gateway.webhook.maxRetryTimeInS", time.Duration(10)) * time.Second)
+	config.RegisterDurationConfigVariable(time.Duration(10), &webhookRetryWaitMax, false, time.Second, []string{"Gateway.webhook.maxRetryTime", "Gateway.webhook.maxRetryTimeInS"}...)
 	// Min time gap when retries to source transformer are done
-	webhookRetryWaitMin = (config.GetDuration("Gateway.webhook.minRetryTimeInMS", time.Duration(100)) * time.Millisecond)
+	config.RegisterDurationConfigVariable(time.Duration(100), &webhookRetryWaitMin, false, time.Millisecond, []string{"Gateway.webhook.minRetryTime", "Gateway.webhook.minRetryTimeInMS"}...)
 	// Max retry attempts to source transformer
-	webhookRetryMax = config.GetInt("Gateway.webhook.maxRetry", 5)
+	config.RegisterIntConfigVariable(5, &webhookRetryMax, false, 1, "Gateway.webhook.maxRetry")
 }

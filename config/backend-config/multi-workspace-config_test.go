@@ -92,7 +92,7 @@ var _ = Describe("workspace-config", func() {
 			mockHttp.EXPECT().NewRequest("GET", fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL), nil).Return(testRequest, nil).Times(1)
 
 			workspaceToken = "testToken"
-			mockLogger.EXPECT().Error("Error while parsing request", gomock.Any(), "", http.StatusNoContent).Times(1)
+			mockLogger.EXPECT().Error("Error while parsing request", gomock.Any(), http.StatusNoContent).Times(1)
 			config, ok := backendConfig.Get()
 			Expect(config).To(Equal(ConfigT{}))
 			Expect(ok).To(BeFalse())

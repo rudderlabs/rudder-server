@@ -249,7 +249,7 @@ var _ = Describe("jobsdb", func() {
 			c.mock.ExpectPrepare(`SELECT tablename
 			FROM pg_catalog.pg_tables
 			WHERE schemaname != 'pg_catalog' AND
-			schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(mockRows)
+			schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(mockRows())
 
 			Expect(jd.getDSList(true)).To(Equal(dsListInDB))
 
@@ -810,19 +810,6 @@ var _ = Describe("jobsdb", func() {
 	})
 })
 
-func (jd *HandleT) wrapper() {
-	defer func() {
-		r := recover()
-		if r == nil {
-			fmt.Println("function did not panic")
-		} else {
-			fmt.Println("function panicked")
-		}
-	}()
-
-	jd.DeleteExecuting(GetQueryParamsT{Count: 1, CustomValFilters: []string{"MOCKDEST"}})
-}
-
 func assertJobs(expected, actual []*JobT) {
 	Expect(len(actual)).To(Equal(len(expected)))
 	for i, job := range actual {
@@ -879,8 +866,33 @@ var dsListInDB = []dataSetT{
 	},
 }
 
+var gwDSListInDB = []dataSetT{
+	{
+		JobTable:       "gw_jobs_2",
+		JobStatusTable: "gw_job_status_2",
+		Index:          "2",
+	},
+	{
+		JobTable:       "gw_jobs_3",
+		JobStatusTable: "gw_job_status_3",
+		Index:          "3",
+	},
+}
+
 var tablesNamesInDB = []string{
 	"tt_jobs_2", "tt_job_status_2", "tt_jobs_3", "tt_job_status_3",
+}
+
+var gwTableNamesIndb = []string{
+	"gw_jobs_2", "gw_job_status_2", "gw_jobs_3", "gw_job_status_3",
+}
+
+var gwmockTables = func() *sqlmock.Rows {
+	sqlMockRows := sqlmock.NewRows([]string{"tablename"})
+	for _, row := range gwTableNamesIndb {
+		sqlMockRows.AddRow(row)
+	}
+	return sqlMockRows
 }
 
 var mockRows = func() *sqlmock.Rows {
@@ -889,7 +901,7 @@ var mockRows = func() *sqlmock.Rows {
 		sqlMockRows.AddRow(row)
 	}
 	return sqlMockRows
-}()
+}
 
 var mockJobs = []*JobT{
 	{
@@ -916,7 +928,7 @@ func getJobsWithLastState(state string) []*JobT {
 
 	if state != "" {
 		for _, job := range jobs {
-			job.LastJobStatus.JobState = "failed"
+			job.LastJobStatus.JobState = state
 			job.LastJobStatus.AttemptNum = 1
 		}
 	}

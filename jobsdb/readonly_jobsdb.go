@@ -172,6 +172,7 @@ func (jd *ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement str
 	if err != nil {
 		return err
 	}
+	defer stmt.Close()
 
 	_, err = stmt.Exec()
 	if err != nil {
@@ -205,6 +206,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
+		txn.Rollback()
 		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %w", sqlStatement, err)
 		return 0
 	}
@@ -212,6 +214,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
+		txn.Rollback()
 		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %w", sqlStatement, err)
 		return 0
 	}
@@ -345,6 +348,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
+		txn.Rollback()
 		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %w", sqlStatement, err)
 		return 0
 	}
@@ -352,6 +356,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
+		txn.Rollback()
 		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %w", sqlStatement, err)
 		return 0
 	}
@@ -466,13 +471,13 @@ func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string
 	eventStatusMap := make(map[string][]EventStatusDetailed)
 	var dsString string
 	for _, dsPair := range dsListArr {
-		sqlStatement := fmt.Sprintf(`SELECT COUNT(*), 
-     					%[1]s.parameters->'source_id' as source, 
-     					%[1]s.custom_val ,%[1]s.parameters->'destination_id' as destination, 
+		sqlStatement := fmt.Sprintf(`SELECT COUNT(*),
+     					%[1]s.parameters->'source_id' as source,
+     					%[1]s.custom_val ,%[1]s.parameters->'destination_id' as destination,
      					job_latest_state.job_state
-						FROM %[1]s 
-     					LEFT JOIN 
-      					(SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[2]s 
+						FROM %[1]s
+     					LEFT JOIN
+      					(SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[2]s
 						WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id)) AS job_latest_state
      					ON %[1]s.job_id=job_latest_state.job_id GROUP BY job_latest_state.job_state,%[1]s.parameters->'source_id',%[1]s.parameters->'destination_id', %[1]s.custom_val;`, dsPair.JobTableName, dsPair.JobStatusTableName)
 		row, err := jd.DbHandle.Query(sqlStatement)
@@ -592,7 +597,7 @@ func (jd *ReadonlyHandleT) GetJobByID(job_id string, prefix string) (string, err
 						job_latest_state.error_code, job_latest_state.error_response
 					FROM
 						%[1]s
-					LEFT JOIN 
+					LEFT JOIN
 						(SELECT job_id, job_state, attempt, exec_time, retry_time,
 						error_code, error_response FROM %[2]s WHERE id IN
 							(SELECT MAX(id) from %[2]s GROUP BY job_id))
@@ -684,7 +689,7 @@ func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		_, err = strconv.Atoi(args[3])
+		jobId2, err := strconv.Atoi(args[3])
 		if err != nil {
 			return "", err
 		}
@@ -702,7 +707,7 @@ func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
 		if !min.Valid || !max.Valid {
 			continue
 		}
-		if jobId1 < int(min.Int32) || jobId1 > int(max.Int32) {
+		if jobId2 < int(min.Int32) || jobId1 > int(max.Int32) {
 			continue
 		}
 		sqlStatement = fmt.Sprintf(`SELECT job_id FROM %[1]s WHERE job_id >= %[2]s AND job_id <= %[3]s AND user_id = '%[4]s';`, dsPair.JobTable, args[2], args[3], userID)

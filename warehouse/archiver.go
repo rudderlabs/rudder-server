@@ -35,7 +35,7 @@ func init() {
 func loadConfigArchiver() {
 	config.RegisterBoolConfigVariable(true, &archiveUploadRelatedRecords, true, "Warehouse.archiveUploadRelatedRecords")
 	config.RegisterIntConfigVariable(5, &uploadsArchivalTimeInDays, true, 1, "Warehouse.uploadsArchivalTimeInDays")
-	config.RegisterDurationConfigVariable(time.Duration(1440), &archiverTickerTime, true, time.Minute, "Warehouse.archiverTickerTimeInMin") // default 1 day
+	config.RegisterDurationConfigVariable(time.Duration(1440), &archiverTickerTime, true, time.Minute, []string{"Warehouse.archiverTickerTime", "Warehouse.archiverTickerTimeInMin"}...) // default 1 day
 }
 
 type backupRecordsArgs struct {
@@ -167,47 +167,46 @@ func archiveUploads(dbHandle *sql.DB) {
 		}
 		stagingFileRows.Close()
 
-		var storedStagingFilesLocation string
-		if archiver.IsArchiverObjectStorageConfigured() {
-			filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
-			storedStagingFilesLocation, err = backupRecords(backupRecordsArgs{
-				tableName:      warehouseutils.WarehouseStagingFilesTable,
-				sourceID:       sourceID,
-				destID:         destID,
-				tableFilterSQL: filterSQL,
-				uploadID:       uploadID,
-			})
-
-			if err != nil {
-				pkgLogger.Errorf(`Error backing up staging files for upload:%d : %v`, uploadID, err)
-				txn.Rollback()
-				continue
-			}
-		} else {
-			pkgLogger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archived for upload:%d`, uploadID)
-		}
-
-		if hasUsedRudderStorage {
-			err = deleteFilesInStorage(stagingFileLocations)
-			if err != nil {
-				pkgLogger.Errorf(`Error deleting staging files from Rudder S3. Error: %v`, stmt, err)
-				txn.Rollback()
-				continue
-			}
-		}
-
-		// delete staging files
-		stmt = fmt.Sprintf(`DELETE FROM %s WHERE id IN (%v)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(stagingFileIDs, ","))
-		_, err = txn.Query(stmt)
-		if err != nil {
-			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-			txn.Rollback()
-			continue
-		}
-
-		// archive load files
-		var storedLoadFilesLocation string
+		var storedStagingFilesLocation, storedLoadFilesLocation string
 		if len(stagingFileIDs) > 0 {
+			if archiver.IsArchiverObjectStorageConfigured() {
+				filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
+				storedStagingFilesLocation, err = backupRecords(backupRecordsArgs{
+					tableName:      warehouseutils.WarehouseStagingFilesTable,
+					sourceID:       sourceID,
+					destID:         destID,
+					tableFilterSQL: filterSQL,
+					uploadID:       uploadID,
+				})
+
+				if err != nil {
+					pkgLogger.Errorf(`Error backing up staging files for upload:%d : %v`, uploadID, err)
+					txn.Rollback()
+					continue
+				}
+			} else {
+				pkgLogger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archived for upload:%d`, uploadID)
+			}
+
+			if hasUsedRudderStorage {
+				err = deleteFilesInStorage(stagingFileLocations)
+				if err != nil {
+					pkgLogger.Errorf(`Error deleting staging files from Rudder S3. Error: %v`, stmt, err)
+					txn.Rollback()
+					continue
+				}
+			}
+
+			// delete staging files
+			stmt = fmt.Sprintf(`DELETE FROM %s WHERE id IN (%v)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(stagingFileIDs, ","))
+			_, err = txn.Query(stmt)
+			if err != nil {
+				pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+				txn.Rollback()
+				continue
+			}
+
+			// archive load files
 			if archiver.IsArchiverObjectStorageConfigured() {
 				filterSQL := fmt.Sprintf(`staging_file_id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
 				storedLoadFilesLocation, err = backupRecords(backupRecordsArgs{

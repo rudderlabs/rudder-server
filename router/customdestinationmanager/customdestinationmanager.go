@@ -62,7 +62,7 @@ func loadConfig() {
 	KVStoreDestinations = []string{"REDIS"}
 	Destinations = append(ObjectStreamDestinations, KVStoreDestinations...)
 	customManagerMap = make(map[string]*CustomManagerT)
-	disableEgress = config.GetBool("disableEgress", false)
+	config.RegisterBoolConfigVariable(false, &disableEgress, false, "disableEgress")
 }
 
 // newClient delegates the call to the appropriate manager
@@ -206,7 +206,10 @@ func (customManager *CustomManagerT) onConfigChange(destination backendconfig.De
 	customDestination, ok := customManager.destinationsMap[destination.ID]
 
 	if ok {
-		hasDestConfigChanged := !reflect.DeepEqual(customDestination.Config, newDestConfig)
+		hasDestConfigChanged := !reflect.DeepEqual(
+			customManager.genComparisonConfig(customDestination.Config),
+			customManager.genComparisonConfig(newDestConfig),
+		)
 
 		if !hasDestConfigChanged {
 			return nil
@@ -278,4 +281,20 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 		}
 		customManager.configSubscriberLock.Unlock()
 	}
+}
+
+func (customManager *CustomManagerT) genComparisonConfig(config interface{}) map[string]interface{} {
+	var relevantConfigs = make(map[string]interface{})
+	configMap, ok := config.(map[string]interface{})
+	if !ok {
+		pkgLogger.Error("[CustomDestinationManager] Desttype: %s. Destination's config is not of expected type (map). Returning empty map", customManager.destType)
+		return map[string]interface{}{}
+	}
+
+	for k, v := range configMap {
+		if k != "eventDeliveryTS" && k != "eventDelivery" {
+			relevantConfigs[k] = v
+		}
+	}
+	return relevantConfigs
 }

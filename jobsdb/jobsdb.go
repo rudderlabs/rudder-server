@@ -122,6 +122,8 @@ type AssertInterface interface {
 }
 
 var globalDBHandle *sql.DB
+var masterBackupEnabled, instanceBackupEnabled, instanceBackupFailedAndAborted bool
+var pathPrefix string
 
 //initGlobalDBHandle inits a sql.DB handle to be used across jobsdb instances
 func (jd *HandleT) initGlobalDBHandle() {
@@ -352,10 +354,10 @@ var dbErrorMap = map[string]string{
 // instanceBackupFailedAndAborted = true => the individual jobdb backsup failed and aborted jobs only
 // pathPrefix = by default is the jobsdb table prefix, is the path appended before instanceID in s3 folder structure
 func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
-	masterBackupEnabled := config.GetBool("JobsDB.backup.enabled", true)
-	instanceBackupEnabled := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix), false)
-	instanceBackupFailedAndAborted := config.GetBool(fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix), false)
-	pathPrefix := config.GetString(fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix), jd.tablePrefix)
+	config.RegisterBoolConfigVariable(true, &masterBackupEnabled, false, "JobsDB.backup.enabled")
+	config.RegisterBoolConfigVariable(false, &instanceBackupEnabled, false, fmt.Sprintf("JobsDB.backup.%v.enabled", jd.tablePrefix))
+	config.RegisterBoolConfigVariable(false, &instanceBackupFailedAndAborted, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
+	config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
 
 	backupSettings := BackupSettingsT{BackupEnabled: masterBackupEnabled && instanceBackupEnabled,
 		FailedOnly: instanceBackupFailedAndAborted, PathPrefix: strings.TrimSpace(pathPrefix)}
@@ -540,10 +542,10 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(10, &maxMigrateDSProbe, true, 1, "JobsDB.maxMigrateDSProbe")
 	config.RegisterInt64ConfigVariable(300, &maxTableSize, true, 1000000, "JobsDB.maxTableSizeInMB")
 	config.RegisterInt64ConfigVariable(1000, &backupRowsBatchSize, true, 1, "JobsDB.backupRowsBatchSize")
-	config.RegisterDurationConfigVariable(time.Duration(30), &migrateDSLoopSleepDuration, true, time.Second, "JobsDB.migrateDSLoopSleepDurationInS")
-	config.RegisterDurationConfigVariable(time.Duration(5), &addNewDSLoopSleepDuration, true, time.Second, "JobsDB.addNewDSLoopSleepDurationInS")
-	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, "JobsDB.refreshDSListLoopSleepDurationInS")
-	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, "JobsDB.backupCheckSleepDurationIns")
+	config.RegisterDurationConfigVariable(time.Duration(30), &migrateDSLoopSleepDuration, true, time.Second, []string{"JobsDB.migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDurationInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(5), &addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 	config.RegisterBoolConfigVariable(true, &useNewCacheBurst, true, "JobsDB.useNewCacheBurst")
 }
@@ -1349,8 +1351,13 @@ func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
 func (jd *HandleT) prepareAndExecStmtInTxnAllowMissing(txn *sql.Tx, sqlStatement string, allowMissing bool) *sql.Tx {
 	stmt, err := txn.Prepare(sqlStatement)
 	jd.assertError(err)
+	defer stmt.Close()
+
 	_, err = stmt.Exec()
 	if err != nil {
+		//rolling back old failed transaction
+		txn.Rollback()
+
 		pqError := err.(*pq.Error)
 		if allowMissing && pqError.Code == pq.ErrorCode("42P01") {
 			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
@@ -1400,7 +1407,7 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	jd.assertError(err)
 
 	//Bursting Cache for this dataset
-	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, dropDSFromCache, nil)
+	jd.invalidateCache(ds)
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
@@ -1408,6 +1415,20 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	}
 	jd.statDropDSPeriod.Start()
 	jd.isStatDropDSPeriodInitialized = true
+}
+
+func (jd *HandleT) invalidateCache(ds dataSetT) {
+	//Trimming pre_drop from the table name
+	if strings.HasPrefix(ds.JobTable, "pre_drop_") {
+		parentDS := dataSetT{
+			JobTable:       strings.ReplaceAll(ds.JobTable, "pre_drop_", ""),
+			JobStatusTable: strings.ReplaceAll(ds.JobStatusTable, "pre_drop_", ""),
+			Index:          ds.Index,
+		}
+		jd.markClearEmptyResult(parentDS, []string{}, []string{}, nil, dropDSFromCache, nil)
+	} else {
+		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, dropDSFromCache, nil)
+	}
 }
 
 //Rename a dataset
