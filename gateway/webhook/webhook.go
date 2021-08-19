@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"io/ioutil"
+	"mime/multipart"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -120,6 +123,53 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		webhook.failRequest(w, r, response.GetStatus(response.InvalidWriteKey), response.GetStatusCode(response.InvalidWriteKey), writeKey)
 		atomic.AddUint64(&webhook.ackCount, 1)
 		return
+	}
+
+	var postFrom url.Values
+	var multipartForm *multipart.Form
+
+	if r.Method == "GET" {
+		return
+	}
+	contentType := r.Header.Get("Content-Type")
+	if strings.ToLower(contentType) == "application/x-www-form-urlencoded" {
+		if err := r.ParseForm(); err != nil {
+			webhook.failRequest(w, r, response.GetStatus(response.ErrorInParseForm), response.GetStatusCode(response.ErrorInParseForm), "couldNotParseForm")
+			atomic.AddUint64(&webhook.ackCount, 1)
+			return
+		}
+		postFrom = r.PostForm
+	} else if strings.Contains(strings.ToLower(contentType), "multipart/form-data") {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			webhook.failRequest(w, r, response.GetStatus(response.ErrorInParseMultiform), response.GetStatusCode(response.ErrorInParseMultiform), "couldNotParseMultiform")
+			atomic.AddUint64(&webhook.ackCount, 1)
+			return
+		}
+		multipartForm = r.MultipartForm
+	}
+
+	var jsonByte []byte
+	var err error
+
+	if r.MultipartForm != nil {
+		jsonByte, err = json.Marshal(multipartForm)
+		if err != nil {
+			webhook.failRequest(w, r, response.GetStatus(response.ErrorInMarshal), response.GetStatusCode(response.ErrorInMarshal), "couldNotMarshal")
+			atomic.AddUint64(&webhook.ackCount, 1)
+			return
+		}
+	} else if len(postFrom) != 0 {
+		jsonByte, err = json.Marshal(postFrom)
+		if err != nil {
+			webhook.failRequest(w, r, response.GetStatus(response.ErrorInMarshal), response.GetStatusCode(response.ErrorInMarshal), "couldNotMarshal")
+			atomic.AddUint64(&webhook.ackCount, 1)
+			return
+		}
+	}
+
+	if len(jsonByte) != 0 {
+		r.Body = ioutil.NopCloser(bytes.NewReader(jsonByte))
+		r.Header.Set("Content-Type", "application/json")
 	}
 
 	done := make(chan webhookErrorRespT)
