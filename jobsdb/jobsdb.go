@@ -1351,8 +1351,13 @@ func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
 func (jd *HandleT) prepareAndExecStmtInTxnAllowMissing(txn *sql.Tx, sqlStatement string, allowMissing bool) *sql.Tx {
 	stmt, err := txn.Prepare(sqlStatement)
 	jd.assertError(err)
+	defer stmt.Close()
+
 	_, err = stmt.Exec()
 	if err != nil {
+		//rolling back old failed transaction
+		txn.Rollback()
+
 		pqError := err.(*pq.Error)
 		if allowMissing && pqError.Code == pq.ErrorCode("42P01") {
 			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
@@ -1402,7 +1407,7 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	jd.assertError(err)
 
 	//Bursting Cache for this dataset
-	jd.markClearEmptyResult(ds, []string{}, []string{}, nil, dropDSFromCache, nil)
+	jd.invalidateCache(ds)
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
@@ -1410,6 +1415,20 @@ func (jd *HandleT) dropDS(ds dataSetT, allowMissing bool) {
 	}
 	jd.statDropDSPeriod.Start()
 	jd.isStatDropDSPeriodInitialized = true
+}
+
+func (jd *HandleT) invalidateCache(ds dataSetT) {
+	//Trimming pre_drop from the table name
+	if strings.HasPrefix(ds.JobTable, "pre_drop_") {
+		parentDS := dataSetT{
+			JobTable:       strings.ReplaceAll(ds.JobTable, "pre_drop_", ""),
+			JobStatusTable: strings.ReplaceAll(ds.JobStatusTable, "pre_drop_", ""),
+			Index:          ds.Index,
+		}
+		jd.markClearEmptyResult(parentDS, []string{}, []string{}, nil, dropDSFromCache, nil)
+	} else {
+		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, dropDSFromCache, nil)
+	}
 }
 
 //Rename a dataset

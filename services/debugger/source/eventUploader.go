@@ -34,7 +34,7 @@ type EventUploadBatchT struct {
 var uploadEnabledWriteKeys []string
 var configSubscriberLock sync.RWMutex
 
-var uploader *debugger.Uploader
+var uploader debugger.UploaderI
 
 var (
 	configBackendURL    string
@@ -61,7 +61,7 @@ func Setup() {
 	url := fmt.Sprintf("%s/dataplane/eventUploads", configBackendURL)
 	eventUploader := &EventUploader{}
 	uploader = debugger.New(url, eventUploader)
-	uploader.Setup()
+	uploader.Start()
 
 	rruntime.Go(func() {
 		backendConfigSubscriber()
@@ -95,8 +95,7 @@ func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) 
 		batchedEvent := EventUploadBatchT{}
 		err := json.Unmarshal([]byte(event.eventBatch), &batchedEvent)
 		if err != nil {
-			pkgLogger.Errorf(string(event.eventBatch))
-			misc.AssertErrorIfDev(err)
+			pkgLogger.Errorf("[Source live events] Failed to unmarshal. Err: %v", err)
 			continue
 		}
 
@@ -125,8 +124,7 @@ func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) 
 
 	rawJSON, err := json.Marshal(res)
 	if err != nil {
-		pkgLogger.Debugf(string(rawJSON))
-		misc.AssertErrorIfDev(err)
+		pkgLogger.Errorf("[Source live events] Failed to marshal payload. Err: %v", err)
 		return nil, err
 	}
 

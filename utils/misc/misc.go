@@ -147,19 +147,6 @@ func RecordAppError(err error) {
 	saveErrorStore(errorStore)
 }
 
-func AssertErrorIfDev(err error) {
-
-	goEnv := os.Getenv("GO_ENV")
-	if goEnv == "production" {
-		pkgLogger.Error(err.Error())
-		return
-	}
-
-	if err != nil {
-		panic(err)
-	}
-}
-
 func GetHash(s string) int {
 	h := fnv.New32a()
 	h.Write([]byte(s))
