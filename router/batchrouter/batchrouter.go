@@ -268,7 +268,7 @@ func (brt *HandleT) pollAsyncStatus() {
 					var pollStruct AsyncPollT
 					pollStruct.ImportId = importId
 					pollStruct.Config = brt.destinationsMap[key].Destination.Config
-					pollStruct.DestType = brt.destType
+					pollStruct.DestType = strings.ToLower(brt.destType)
 					payload, err := json.Marshal(pollStruct)
 					if err != nil {
 						panic("JSON Marshal Failed" + err.Error())

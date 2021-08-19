@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -64,7 +65,7 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 	var uploadT AsyncUploadT
 	uploadT.Input = input
 	uploadT.Config = config
-	uploadT.DestType = destType
+	uploadT.DestType = strings.ToLower(destType)
 	payload, err := json.Marshal(uploadT)
 	if err != nil {
 		panic("BRT: JSON Marshal Failed " + err.Error())
@@ -175,7 +176,7 @@ func (manager *MarketoManager) GenerateFailedPayload(config map[string]interface
 		failedPayloadT.Input[index]["metadata"] = metadata
 		index++
 	}
-	failedPayloadT.DestType = destType
+	failedPayloadT.DestType = strings.ToLower(destType)
 	failedPayloadT.ImportId = importID
 	payload, err := json.Marshal(failedPayloadT)
 	if err != nil {
