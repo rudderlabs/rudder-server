@@ -27,6 +27,10 @@ type Parameters struct {
 }
 
 func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
+	if keyMap == nil {
+		return []int64{}, importingJobIDs
+	}
+
 	_, ok := keyMap["successfulJobs"].([]interface{})
 	var succesfulJobIDs, failedJobIDsTrans []int64
 	var err error
