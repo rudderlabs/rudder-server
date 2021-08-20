@@ -162,12 +162,12 @@ func TestMain(m *testing.M) {
 
 	database := "jobsdb"
 	// pulls an image, creates a container based on it and runs it
-	resource, err = postgrespool.Run("postgres", "9.6", []string{"POSTGRES_PASSWORD=password", "POSTGRES_DB=" + database, "POSTGRES_USER=rudder"})
+	resource, err = postgrespool.Run("postgres", "11-alpine", []string{"POSTGRES_PASSWORD=password", "POSTGRES_DB=" + database, "POSTGRES_USER=rudder"})
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
 	}
 	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resource.GetPort("5432/tcp"), database)
-	os.Setenv("JOBS_DB_PORT",resource.GetPort("5432/tcp"))
+	os.Setenv("JOBS_DB_PORT", resource.GetPort("5432/tcp"))
 	fmt.Println("************")
 	fmt.Println(os.Getenv("JOBS_DB_PORT"))
 
