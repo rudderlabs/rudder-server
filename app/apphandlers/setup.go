@@ -33,7 +33,7 @@ var (
 	routerLoaded                                               bool
 	processorLoaded                                            bool
 	pkgLogger                                                  logger.LoggerI
-	Diagnostics                                                diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Diagnostics                                                diagnostics.DiagnosticsI
 	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyHandleT
 	readonlyProcErrorDB                                        jobsdb.ReadonlyHandleT
 )
@@ -64,6 +64,7 @@ func GetAppHandler(application app.Interface, appType string, versionHandler fun
 func Init2() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("apphandlers")
+	Diagnostics = diagnostics.Diagnostics
 }
 
 func loadConfig() {

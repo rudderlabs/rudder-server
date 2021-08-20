@@ -49,7 +49,7 @@ var (
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTime       time.Duration
 	pkgLogger                          logger.LoggerI
-	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Diagnostics                        diagnostics.DiagnosticsI
 	QueryFilters                       jobsdb.QueryFiltersT
 	readPerDestination                 bool
 	disableEgress                      bool
@@ -1236,6 +1236,7 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("batchrouter")
 
 	setQueryFilters()
+	Diagnostics = diagnostics.Diagnostics
 }
 
 func setQueryFilters() {

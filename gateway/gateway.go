@@ -83,7 +83,7 @@ var (
 	allowReqsWithoutUserIDAndAnonymousID                                      bool
 	gwAllowPartialWriteWithErrors                                             bool
 	pkgLogger                                                                 logger.LoggerI
-	Diagnostics                                                               diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Diagnostics                                                               diagnostics.DiagnosticsI
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -99,6 +99,7 @@ var BatchEvent = []byte(`
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("gateway")
+	Diagnostics = diagnostics.Diagnostics
 }
 
 type userWorkerBatchRequestT struct {

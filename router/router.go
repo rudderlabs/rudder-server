@@ -167,7 +167,7 @@ var (
 	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout            time.Duration
 	noOfJobsToBatchInAWorker                                      int
 	pkgLogger                                                     logger.LoggerI
-	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Diagnostics                                                   diagnostics.DiagnosticsI
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
 	QueryFilters                                                  jobsdb.QueryFiltersT
@@ -1605,6 +1605,7 @@ func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
 	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
+	Diagnostics = diagnostics.Diagnostics
 }
 
 //Setup initializes this module

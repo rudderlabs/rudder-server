@@ -3,6 +3,7 @@ package backendconfig
 //go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
 
 import (
+	"fmt"
 	"reflect"
 	"sort"
 	"sync"
@@ -44,10 +45,10 @@ var (
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
-	Http                 sysUtils.HttpI           = sysUtils.NewHttp()
-	pkgLogger            logger.LoggerI           = logger.NewLogger().Child("backend-config")
-	IoUtil               sysUtils.IoUtilI         = sysUtils.NewIoUtil()
-	Diagnostics          diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Http                 sysUtils.HttpI   = sysUtils.NewHttp()
+	pkgLogger            logger.LoggerI   = logger.NewLogger().Child("backend-config")
+	IoUtil               sysUtils.IoUtilI = sysUtils.NewIoUtil()
+	Diagnostics          diagnostics.DiagnosticsI
 )
 
 var Eb utils.PublishSubscriber = new(utils.EventBus)
@@ -208,13 +209,17 @@ func loadConfig() {
 }
 
 func Init() {
+
+	Diagnostics = diagnostics.Diagnostics
 	loadConfig()
 }
 
 func trackConfig(preConfig ConfigT, curConfig ConfigT) {
+	fmt.Println("Diagnostics", Diagnostics)
 	Diagnostics.DisableMetrics(curConfig.EnableMetrics)
 	if diagnostics.EnableConfigIdentifyMetric {
 		if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
+			fmt.Println("curConfig", curConfig.Sources[0].WorkspaceID)
 			Diagnostics.Identify(map[string]interface{}{
 				diagnostics.ConfigIdentify: curConfig.Sources[0].WorkspaceID,
 			})
