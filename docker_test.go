@@ -272,6 +272,7 @@ func run(m *testing.M) int {
 	svcCancel()
 	fmt.Println("test done, ignore errors bellow:")
 
+	// wait for the service to be stopped
 	pool.Retry(func() error {
 		_, err := http.Get(serviceHealthEndpoint)
 		if err != nil {
