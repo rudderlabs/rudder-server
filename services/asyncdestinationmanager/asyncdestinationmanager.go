@@ -62,7 +62,7 @@ type AsyncDestinationFactory interface {
 type AsyncFileManager interface {
 	Upload(string, string, map[string]interface{}, string, []int64, []int64, string) AsyncUploadOutput
 	GetTransformedData(json.RawMessage) string
-	GenerateFailedPayload(map[string]interface{}, []*jobsdb.JobT, string, string) []byte
+	GenerateFailedPayload(map[string]interface{}, []*jobsdb.JobT, string, string, string) []byte
 	GetMarshalledData(string, int64) string
 }
 
@@ -71,6 +71,11 @@ type AsyncFailedPayload struct {
 	Input    []map[string]interface{} `json:"input"`
 	DestType string                   `json:"destType"`
 	ImportId string                   `json:"importId"`
+	MetaData MetaDataT                `json:"metadata"`
+}
+
+type MetaDataT struct {
+	CSVHeaders string `json:"csvHeader"`
 }
 
 // SettingsT sets configuration for FileManager

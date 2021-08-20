@@ -22,8 +22,9 @@ type UploadStruct struct {
 }
 
 type Parameters struct {
-	ImportId string `json:"importId"`
-	PollUrl  string `json:"pollURL"`
+	ImportId string    `json:"importId"`
+	PollUrl  string    `json:"pollURL"`
+	MetaData MetaDataT `json:"metadata"`
 }
 
 func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
@@ -107,6 +108,12 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 		var parameters Parameters
 		parameters.ImportId = responseStruct.ImportId
 		parameters.PollUrl = responseStruct.PollUrl
+		metaDataStruct, ok := responseStruct.Metadata["csvHeader"].(MetaDataT)
+		if !ok {
+			parameters.MetaData = MetaDataT{CSVHeaders: ""}
+		} else {
+			parameters.MetaData = metaDataStruct
+		}
 		importParameters, err := json.Marshal(parameters)
 		if err != nil {
 			panic("Errored in Marshalling" + err.Error())
@@ -167,7 +174,7 @@ func (manager *MarketoManager) GetMarshalledData(payload string, jobID int64) st
 	return string(responsePayload)
 }
 
-func (manager *MarketoManager) GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID string, destType string) []byte {
+func (manager *MarketoManager) GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID string, destType string, csvHeaders string) []byte {
 	var failedPayloadT AsyncFailedPayload
 	failedPayloadT.Input = make([]map[string]interface{}, len(jobs))
 	index := 0
@@ -187,6 +194,7 @@ func (manager *MarketoManager) GenerateFailedPayload(config map[string]interface
 	}
 	failedPayloadT.DestType = strings.ToLower(destType)
 	failedPayloadT.ImportId = importID
+	failedPayloadT.MetaData = MetaDataT{CSVHeaders: csvHeaders}
 	payload, err := json.Marshal(failedPayloadT)
 	if err != nil {
 		panic("JSON Marshal Failed" + err.Error())

@@ -265,6 +265,7 @@ func (brt *HandleT) pollAsyncStatus() {
 					parameters := importingJob.LastJobStatus.Parameters
 					pollUrl := gjson.GetBytes(parameters, "pollURL").String()
 					importId := gjson.GetBytes(parameters, "importId").String()
+					csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
 					var pollStruct AsyncPollT
 					pollStruct.ImportId = importId
 					pollStruct.Config = brt.destinationsMap[key].Destination.Config
@@ -314,7 +315,7 @@ func (brt *HandleT) pollAsyncStatus() {
 							} else {
 								failedJobUrl := asyncResponse.FailedJobsURL
 								asyncManager, _ := brt.asyncFileManagerFactory.Get(brt.destType)
-								payload = asyncManager.GenerateFailedPayload(brt.destinationsMap[key].Destination.Config, importingList, importId, brt.destType)
+								payload = asyncManager.GenerateFailedPayload(brt.destinationsMap[key].Destination.Config, importingList, importId, brt.destType, csvHeaders)
 								failedBodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+failedJobUrl, payload)
 								fmt.Println("***********************************************")
 								fmt.Println("failedJobUrl  : ", failedJobUrl)
