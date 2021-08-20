@@ -3,6 +3,7 @@ package asyncdestinationmanager
 import (
 	"encoding/json"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -41,6 +42,9 @@ type AsyncDestinationStruct struct {
 	CreatedAt       time.Time
 	FileName        string
 	Count           int
+	CanUpload       bool
+	UploadMutex     sync.RWMutex
+	URL             string
 }
 
 type AsyncUploadT struct {
