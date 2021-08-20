@@ -20,7 +20,7 @@ var (
 	postParametersTFields []string
 )
 
-func init() {
+func Init() {
 	loadConfig()
 	// This is called in init and it should be a one time call. Making reflect calls during runtime is not a great idea.
 	// We unmarshal json response from transformer into PostParametersT struct.

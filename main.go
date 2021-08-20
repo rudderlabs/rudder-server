@@ -23,8 +23,10 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/processor"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 
 	"github.com/rudderlabs/rudder-server/router"
@@ -127,10 +129,6 @@ func canStartServer() bool {
 func canStartWarehouse() bool {
 	return warehouseMode != config.OffMode
 }
-func Run() {
-	main()
-}
-
 
 func runAllInit() {
 	config.Load()
@@ -174,12 +172,26 @@ func runAllInit() {
 	apphandlers.Init()
 	apphandlers.Init2()
 	rruntime.Init()
-
+	integrations.Init()
 	Init()
 
 }
 
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		c := make(chan os.Signal, 1) // we need to reserve to buffer size 1, so the notifier are not blocked
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+		<-c
+		cancel()
+		close(c)
+	}()
+
+	Run(ctx)
+}
+
+func Run(ctx context.Context) {
 	runAllInit()
 
 	options := app.LoadOptions()
@@ -207,7 +219,7 @@ func main() {
 		AppVersion:   version["Version"].(string),
 		PanicHandler: func() {},
 	})
-	ctx := bugsnag.StartSession(context.Background())
+	ctx = bugsnag.StartSession(ctx)
 	defer func() {
 		if r := recover(); r != nil {
 			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
@@ -240,17 +252,15 @@ func main() {
 
 	backendconfig.Setup(pollRegulations, configEnvHandler)
 
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-c
+		<-ctx.Done()
 		application.Stop()
 		// clearing zap Log buffer to std output
 		if logger.Log != nil {
 			logger.Log.Sync()
 		}
 		stats.StopRuntimeStats()
-		os.Exit(1)
+		// os.Exit(1) FIXME - why we are doing this ?
 	}()
 
 	rruntime.Go(admin.StartServer)

@@ -8,7 +8,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -16,13 +19,17 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest"
+	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
 )
 
-var db *sql.DB
-var redisClient *redis.Client
-var DB_DSN = "root@tcp(127.0.0.1:3306)/service"
-var resource *dockertest.Resource
+var (
+	hold        bool
+	db          *sql.DB
+	redisClient *redis.Client
+	DB_DSN      = "root@tcp(127.0.0.1:3306)/service"
+	httpPort    string
+)
 
 type Author struct {
 	Name string `json:"name"`
@@ -51,6 +58,21 @@ func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.
 	}
 }
 
+func blockOnHold() {
+	if !hold {
+		return
+	}
+
+	fmt.Println("Test on hold, before cleanup")
+	fmt.Println("Press Ctrl+C to exit")
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	<-c
+	close(c)
+}
+
 func CreateTablePostgres() {
 	_, err := db.Exec("CREATE TABLE example ( id integer, username varchar(255) )")
 	if err != nil {
@@ -59,7 +81,7 @@ func CreateTablePostgres() {
 }
 
 func VerifyHealth() {
-	url := fmt.Sprintf("http://localhost:%s/health", "8080")
+	url := fmt.Sprintf("http://localhost:%s/health", httpPort)
 	method := "GET"
 
 	client := &http.Client{}
@@ -81,7 +103,7 @@ func VerifyHealth() {
 }
 func SendEvent() {
 
-	url := "http://localhost:8080/v1/identify"
+	url := fmt.Sprintf("http://localhost:%s/v1/identify", httpPort)
 	method := "POST"
 
 	payload := strings.NewReader(`{
@@ -126,6 +148,11 @@ func SendEvent() {
 }
 
 func TestMain(m *testing.M) {
+	// hack to make defer work, without being affected by the os.Exit in TestMain
+	os.Exit(run(m))
+}
+
+func run(m *testing.M) int {
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
 	if err != nil {
@@ -137,7 +164,11 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
 	}
-
+	defer func() {
+		if err := pool.Purge(resourceRedis); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		address := fmt.Sprintf("localhost:%s", resourceRedis.GetPort("6379/tcp"))
@@ -153,26 +184,27 @@ func TestMain(m *testing.M) {
 	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
-	// ----------
-	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
-	postgrespool, err := dockertest.NewPool("")
-	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
 
 	database := "jobsdb"
 	// pulls an image, creates a container based on it and runs it
-	resource, err = postgrespool.Run("postgres", "11-alpine", []string{"POSTGRES_PASSWORD=password", "POSTGRES_DB=" + database, "POSTGRES_USER=rudder"})
+	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
+		"POSTGRES_PASSWORD=password",
+		"POSTGRES_DB=" + database,
+		"POSTGRES_USER=rudder",
+	})
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
 	}
-	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resource.GetPort("5432/tcp"), database)
-	os.Setenv("JOBS_DB_PORT", resource.GetPort("5432/tcp"))
-	fmt.Println("************")
-	fmt.Println(os.Getenv("JOBS_DB_PORT"))
+	defer func() {
+		if err := pool.Purge(resourcePostgres); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
 
+	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
+	os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := postgrespool.Retry(func() error {
+	if err := pool.Retry(func() error {
 		var err error
 		db, err = sql.Open("postgres", DB_DSN)
 		if err != nil {
@@ -182,40 +214,73 @@ func TestMain(m *testing.M) {
 	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
+
 	// ----------
 	// Set Rudder Transformer
 	// pulls an image, creates a container based on it and runs it
-	// rudder_trans_pool, err := dockertest.NewPool("")
-	// if err != nil {
-	// 	log.Fatalf("Could not connect to docker: %s", err)
-	// }
-	// rudder_tran_res, err := rudder_trans_pool.Run("rudderlabs/rudder-transformer", "latest", []string{"USER=node"})
-	// if err != nil {
-	// 	log.Fatalf("Could not start resource: %s", err)
-	// }
-	// waitUntilReady(
-	// 	context.Background(),
-	// 	fmt.Sprintf("http://localhost:%s/health", rudder_tran_res.GetPort("9090/tcp")),
-	// 	time.Minute,
-	// 	time.Second,
-	// )
-	// os.Setenv("JOBS_DB_PORT","7632")
+	transformerRes, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository:   "rudderlabs/rudder-transformer",
+		Tag:          "latest",
+		ExposedPorts: []string{"9090"},
+		Env: []string{
+			"CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com",
+		},
+	})
+	defer func() {
+		if err := pool.Purge(transformerRes); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
 
-	go main.Run()
+	transformURL := fmt.Sprintf("http://localhost:%s", transformerRes.GetPort("9090/tcp"))
 	waitUntilReady(
 		context.Background(),
-		fmt.Sprintf("http://localhost:%s/health", "8080"),
+		fmt.Sprintf("%s/health", transformURL),
+		time.Minute,
+		time.Second,
+	)
+	os.Setenv("DEST_TRANSFORM_URL", transformURL)
+
+	httpPortInt, err := freeport.GetFreePort()
+	if err != nil {
+		log.Panic(err)
+	}
+	httpPort = strconv.Itoa(httpPortInt)
+	os.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
+	httpAdminPort, err := freeport.GetFreePort()
+	if err != nil {
+		log.Panic(err)
+	}
+	os.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+
+	os.Setenv("RSERVER_ENABLE_STATS", "false")
+
+	svcCtx, svcCancel := context.WithCancel(context.Background())
+	go main.Run(svcCtx)
+
+	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
+	fmt.Println("serviceHealthEndpoint", serviceHealthEndpoint)
+	waitUntilReady(
+		context.Background(),
+		serviceHealthEndpoint,
 		time.Minute,
 		time.Second,
 	)
 	code := m.Run()
+	blockOnHold()
 
-	// You can't defer this because os.Exit doesn't care for defer
-	// if err := pool.Purge(resource); err != nil {
-	// 	log.Fatalf("Could not purge resource: %s", err)
-	// }
+	svcCancel()
+	fmt.Println("test done, ignore errors bellow:")
 
-	os.Exit(code)
+	pool.Retry(func() error {
+		_, err := http.Get(serviceHealthEndpoint)
+		if err != nil {
+			return nil
+		}
+		return fmt.Errorf("still working")
+	})
+
+	return code
 }
 
 func TestSomething(t *testing.T) {
