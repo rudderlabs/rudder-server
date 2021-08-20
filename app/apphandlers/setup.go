@@ -61,7 +61,7 @@ func GetAppHandler(application app.Interface, appType string, versionHandler fun
 	return handler
 }
 
-func init() {
+func Init2() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("apphandlers")
 }

@@ -49,7 +49,7 @@ func (processor *ProcessorApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.PROCESSOR)
 }
 
-func init() {
+func Init() {
 	loadConfigHandler()
 }
 

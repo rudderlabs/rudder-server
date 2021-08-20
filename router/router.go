@@ -1601,7 +1601,7 @@ func (rt *HandleT) crashRecover() {
 	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
 	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}

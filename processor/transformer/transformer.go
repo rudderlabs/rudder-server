@@ -103,16 +103,16 @@ var (
 	pkgLogger                                 logger.LoggerI
 )
 
+func Init() {
+	loadConfig()
+	pkgLogger = logger.NewLogger().Child("processor").Child("transformer")
+}
+
 func loadConfig() {
 	config.RegisterIntConfigVariable(2048, &maxChanSize, false, 1, "Processor.maxChanSize")
 	config.RegisterIntConfigVariable(8, &numTransformWorker, false, 1, "Processor.numTransformWorker")
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
-}
-
-func init() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("processor").Child("transformer")
 }
 
 type TransformerResponseT struct {

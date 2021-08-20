@@ -182,7 +182,7 @@ func loadConfig() {
 	}
 }
 
-func init() {
+func Init2() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("event-schema")
 }

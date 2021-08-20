@@ -199,7 +199,7 @@ func (proc *HandleT) Print() {
 	}
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("processor")
 }

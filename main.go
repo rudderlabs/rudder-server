@@ -18,7 +18,21 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
 
+	"github.com/rudderlabs/rudder-server/gateway"
+	"github.com/rudderlabs/rudder-server/gateway/webhook"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
+	"github.com/rudderlabs/rudder-server/processor"
+	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
+
+	"github.com/rudderlabs/rudder-server/router"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
+	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
+	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
+
+	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
@@ -26,9 +40,21 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/db"
+
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+
+	"github.com/rudderlabs/rudder-server/services/dedup"
+	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
+
+	destination_connection_tester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -36,6 +62,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-server/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 
 	// This is necessary for compatibility with enterprise features
 	_ "github.com/rudderlabs/rudder-server/imports"
@@ -67,7 +94,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("main")
 }
@@ -104,7 +131,8 @@ func Run() {
 	main()
 }
 
-func main() {
+
+func runAllInit() {
 	config.Load()
 	logger.Init()
 	misc.Init()
@@ -114,6 +142,46 @@ func main() {
 	backendconfig.Init()
 	warehouseutils.Init()
 	bigquery.Init()
+	clickhouse.Init()
+	archiver.Init()
+	destinationdebugger.Init()
+	pgnotifier.Init()
+	jobsdb.Init()
+	jobsdb.Init2()
+	destination_connection_tester.Init()
+	warehouse.Init()
+	warehouse.Init2()
+	warehouse.Init3()
+	warehouse.Init4()
+	transformer.Init()
+	webhook.Init()
+	batchrouter.Init()
+	dedup.Init()
+	event_schema.Init()
+	event_schema.Init2()
+	stash.Init()
+	transformationdebugger.Init()
+	processor.Init()
+	kafka.Init()
+	customdestinationmanager.Init()
+	routertransformer.Init()
+	router.Init()
+	operationmanager.Init()
+	operationmanager.Init2()
+	ratelimiter.Init()
+	sourcedebugger.Init()
+	gateway.Init()
+	apphandlers.Init()
+	apphandlers.Init2()
+	rruntime.Init()
+
+	Init()
+
+}
+
+func main() {
+	runAllInit()
+
 	options := app.LoadOptions()
 	if options.VersionFlag {
 		printVersion()

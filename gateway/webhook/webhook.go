@@ -30,7 +30,7 @@ var (
 	pkgLogger             logger.LoggerI
 )
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("gateway").Child("webhook")
 }

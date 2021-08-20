@@ -96,7 +96,7 @@ var BatchEvent = []byte(`
 	}
 `)
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("gateway")
 }

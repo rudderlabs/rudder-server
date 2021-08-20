@@ -23,7 +23,7 @@ var (
 	populatedHistoricIdentitiesMapLock          sync.RWMutex
 )
 
-func init() {
+func Init2() {
 	config.RegisterBoolConfigVariable(false, &shouldPopulateHistoricIdentities, false, "Warehouse.populateHistoricIdentities")
 	populatingHistoricIdentitiesProgressMap = map[string]bool{}
 	populatedHistoricIdentitiesMap = map[string]bool{}
