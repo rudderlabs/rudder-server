@@ -108,11 +108,11 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 		var parameters Parameters
 		parameters.ImportId = responseStruct.ImportId
 		parameters.PollUrl = responseStruct.PollUrl
-		metaDataStruct, ok := responseStruct.Metadata["csvHeader"].(MetaDataT)
+		metaDataString, ok := responseStruct.Metadata["csvHeader"].(string)
 		if !ok {
 			parameters.MetaData = MetaDataT{CSVHeaders: ""}
 		} else {
-			parameters.MetaData = metaDataStruct
+			parameters.MetaData = MetaDataT{CSVHeaders: metaDataString}
 		}
 		importParameters, err := json.Marshal(parameters)
 		if err != nil {
