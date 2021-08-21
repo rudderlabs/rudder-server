@@ -82,7 +82,13 @@ func (wh *HandleT) LoadTable(tableName string) error {
 
 func (wh *HandleT) LoadUserTables() map[string]error {
 	pkgLogger.Infof("Skipping load for user tables : %s is a s3 datalake destination", wh.Warehouse.Destination.ID)
-	return nil
+	// return map with nil error entries for identifies and users(if any) tables
+	// this is so that they are marked as succeeded
+	errorMap := map[string]error{warehouseutils.IdentifiesTable: nil}
+	if len(wh.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) > 0 {
+		errorMap[warehouseutils.UsersTable] = nil
+	}
+	return errorMap
 }
 
 func (wh *HandleT) LoadIdentityMergeRulesTable() error {
