@@ -160,8 +160,6 @@ func (uploadsReq *UploadsReqT) generateQuery(authorizedSourceIDs []string, selec
 	}
 	if uploadsReq.Status != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`status like '%s'`, statusMap[uploadsReq.Status]))
-	} else {
-		whereClauses = append(whereClauses, fmt.Sprintf(`status != '%s'`, "waiting"))
 	}
 
 	query = query + strings.Join(whereClauses, " AND ") + fmt.Sprintf(` order by id desc limit %d offset %d`, uploadsReq.Limit, uploadsReq.Offset)
@@ -258,6 +256,23 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (err error) {
 	authorizedSourceIDs := uploadsReq.authorizedSources()
 	if len(authorizedSourceIDs) == 0 {
 		return fmt.Errorf("No authorized sourceId's")
+	}
+	if uploadsReq.DestinationID == "" {
+		return fmt.Errorf("Valid destinationId must be provided")
+	}
+	var pendingStagingFileCount int64
+	pendingUploadCount, err := getPendingUploadCount(uploadsReq.DestinationID, false)
+	if err != nil {
+		return
+	}
+	if pendingUploadCount == int64(0) {
+		pendingStagingFileCount, err = getPendingStagingFileCount(uploadsReq.DestinationID, false)
+		if err != nil {
+			return
+		}
+	}
+	if (pendingUploadCount + pendingStagingFileCount) == int64(0) {
+		return fmt.Errorf("No pending jobs to trigger for destination : %s", uploadsReq.DestinationID)
 	}
 	return TriggerUploadHandler(uploadsReq.SourceID, uploadsReq.DestinationID)
 }
