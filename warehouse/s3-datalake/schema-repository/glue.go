@@ -64,6 +64,10 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.WarehouseT)
 
 		getTablesOutput, err = gl.glueClient.GetTables(getTablesInput)
 		if err != nil {
+			if _, ok := err.(*glue.EntityNotFoundException); ok {
+				pkgLogger.Debugf("FetchSchema: database %s not found in glue. returning empty schema", warehouse.Namespace)
+				err = nil
+			}
 			return schema, err
 		}
 
