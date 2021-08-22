@@ -439,16 +439,6 @@ func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUse
 	return true
 }
 
-//rawMsg passed must be a valid JSON
-func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) []byte {
-	resp, err := sjson.SetBytes(rawMsg, key, val)
-	if err != nil {
-		return []byte(`{}`)
-	}
-
-	return resp
-}
-
 func getIterableStruct(payload []byte, transformAt string) []integrations.PostParametersT {
 	var err error
 	var response integrations.PostParametersT
@@ -777,9 +767,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 	}
 
-	status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
+	status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
 	if respBody != "" {
-		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "response", respBody)
+		status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "response", respBody)
 	}
 
 	if isSuccessStatus(respStatusCode) {
@@ -806,7 +796,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		//2. if router job undergoes batching or dest transform.
 		if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
 			if worker.rt.savePayloadOnError {
-				status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+				status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "payload", string(payload))
 			}
 		}
 		// the job failed
@@ -1516,7 +1506,7 @@ func (rt *HandleT) readAndProcess() int {
 	for _, job := range combinedList {
 		destID := destinationID(job)
 		rt.configSubscriberLock.RLock()
-		drain := router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap)
+		drain, reason := router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap)
 		rt.configSubscriberLock.RUnlock()
 		if drain {
 			status := jobsdb.JobStatusT{
@@ -1526,7 +1516,7 @@ func (rt *HandleT) readAndProcess() int {
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
-				ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or confifgured to be aborted via ENV" }`),
+				ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
 			}
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)

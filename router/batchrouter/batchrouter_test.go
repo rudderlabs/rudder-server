@@ -14,6 +14,7 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -97,6 +98,7 @@ var _ = Describe("BatchRouter", func() {
 	var c *context
 
 	BeforeEach(func() {
+		router_utils.JobRetention = time.Duration(175200) * time.Hour //20 Years(20*365*24)
 		c = &context{}
 		c.Setup()
 

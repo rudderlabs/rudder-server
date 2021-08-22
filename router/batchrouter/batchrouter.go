@@ -800,7 +800,10 @@ func (worker *workerT) workerProcess() {
 
 			jobsBySource := make(map[string][]*jobsdb.JobT)
 			for _, job := range combinedList {
-				if router_utils.ToBeDrained(job, batchDest.Destination.ID, toAbortDestinationIDs, brt.destinationsMap) {
+				brt.configSubscriberLock.RLock()
+				drain, reason := router_utils.ToBeDrained(job, batchDest.Destination.ID, toAbortDestinationIDs, brt.destinationsMap)
+				brt.configSubscriberLock.RUnlock()
+				if drain {
 					status := jobsdb.JobStatusT{
 						JobID:         job.JobID,
 						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -808,7 +811,7 @@ func (worker *workerT) workerProcess() {
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
 						ErrorCode:     "",
-						ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or configured to be aborted via ENV" }`),
+						ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
 					}
 					drainList = append(drainList, &status)
 					if _, ok := drainCountByDest[batchDest.Destination.ID]; !ok {
