@@ -12,11 +12,14 @@ import (
 	"testing"
 	"time"
 
+	// "os/exec"
+
 	"github.com/go-redis/redis"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest"
-	main "github.com/rudderlabs/rudder-server"
+	"github.com/ory/dockertest/docker"
+	// main "github.com/rudderlabs/rudder-server"
 )
 
 var db *sql.DB
@@ -167,9 +170,6 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Could not start resource: %s", err)
 	}
 	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resource.GetPort("5432/tcp"), database)
-	os.Setenv("JOBS_DB_PORT",resource.GetPort("5432/tcp"))
-	fmt.Println("************")
-	fmt.Println(os.Getenv("JOBS_DB_PORT"))
 
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := postgrespool.Retry(func() error {
@@ -182,32 +182,60 @@ func TestMain(m *testing.M) {
 	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
-	// ----------
-	// Set Rudder Transformer
-	// pulls an image, creates a container based on it and runs it
-	// rudder_trans_pool, err := dockertest.NewPool("")
+
+	// Setup Rudder Transformer
+	// ruddertransformerpool, err := dockertest.NewPool("")
 	// if err != nil {
 	// 	log.Fatalf("Could not connect to docker: %s", err)
 	// }
-	// rudder_tran_res, err := rudder_trans_pool.Run("rudderlabs/rudder-transformer", "latest", []string{"USER=node"})
+
+	// resource, err = ruddertransformerpool.Run("rudderlabs/rudder-transformer","latest",[]string{"PORT=9090"})
 	// if err != nil {
 	// 	log.Fatalf("Could not start resource: %s", err)
 	// }
+	// fmt.Println(resource.GetPort("9090/tcp"))
+	// go exec.Command("node", "/Users/priyamdixit/rudder-server/rudder-transformer/destTransformer.js")
+
+	// Setup Rudder Server
+
+	rudderserverpool, err := dockertest.NewPool("")
+	if err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+	// /Users/priyamdixit/rudder-server/build/Dockerfile-dev
+	resourcepostgres, err := rudderserverpool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "rudderlabs/rudder-server",
+		Mounts:        []string{"/Users/priyamdixit/Desktop/workspaceConfig.json"},
+		Env: []string{
+			"JOBS_DB_HOST=db",
+			"JOBS_DB_USER=rudder",
+			"JOBS_DB_PORT=5432",
+			"JOBS_DB_DB_NAME=jobsdb",
+			"JOBS_DB_PASSWORD=password",
+			"DEST_TRANSFORM_URL=http://d-transformer:9090",
+			"CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com",
+			"WORKSPACE_TOKEN=1vLbwltztKUgpuFxmJlSe1esX8c",
+			"HOSTED_SERVICE=true",
+		},
+	}, func(config *docker.HostConfig) {
+		// set AutoRemove to true so that stopped container goes away by itself
+		config.AutoRemove = true
+		config.RestartPolicy = docker.RestartPolicy{
+			Name: "no",
+		}
+	})
+
+	fmt.Println(err)
+	fmt.Println(resourcepostgres.GetPort("9090/tcp"))
+
+
+
 	// waitUntilReady(
 	// 	context.Background(),
-	// 	fmt.Sprintf("http://localhost:%s/health", rudder_tran_res.GetPort("9090/tcp")),
+	// 	fmt.Sprintf("http://localhost:%s/health", "8080"),
 	// 	time.Minute,
 	// 	time.Second,
 	// )
-	// os.Setenv("JOBS_DB_PORT","7632")
-
-	go main.Run()
-	waitUntilReady(
-		context.Background(),
-		fmt.Sprintf("http://localhost:%s/health", "8080"),
-		time.Minute,
-		time.Second,
-	)
 	code := m.Run()
 
 	// You can't defer this because os.Exit doesn't care for defer
