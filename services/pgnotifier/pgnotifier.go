@@ -366,7 +366,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority
 	return
 }
 
-func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err error) {
+func (notifier *PgNotifierT) Subscribe(topic string, channelSize int) (ch chan NotificationT, err error) {
 	//Create a listener & start listening -- TODO: check if panic is required
 	listener := pq.NewListener(notifier.URI,
 		10*time.Second,
@@ -382,7 +382,7 @@ func (notifier *PgNotifierT) Subscribe(topic string) (ch chan NotificationT, err
 		return
 	}
 
-	ch = make(chan NotificationT)
+	ch = make(chan NotificationT, channelSize)
 	rruntime.Go(func() {
 		for {
 			select {
