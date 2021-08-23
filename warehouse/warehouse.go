@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -1451,7 +1452,7 @@ func getConnectionString() string {
 		host, port, user, password, dbname, sslmode)
 }
 
-func startWebHandler() {
+func startWebHandler(ctx context.Context) error {
 	// do not register same endpoint when running embedded in rudder backend
 	if isStandAlone() {
 		http.HandleFunc("/health", healthHandler)
@@ -1467,7 +1468,8 @@ func startWebHandler() {
 	} else {
 		pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
 	}
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
+
+	return (http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
 }
 
 // CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present
@@ -1522,7 +1524,7 @@ func setupDB(connInfo string) {
 	setupTables(dbHandle)
 }
 
-func Start(app app.Interface) {
+func Start(ctx context.Context, app app.Interface) {
 	application = app
 	time.Sleep(1 * time.Second)
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core

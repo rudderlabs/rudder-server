@@ -17,6 +17,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 
@@ -84,8 +85,8 @@ func printVersion() {
 	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
-func startWarehouseService(application app.Interface) {
-	warehouse.Start(application)
+func startWarehouseService(ctx context.Context, application app.Interface) {
+	warehouse.Start(ctx, application)
 }
 
 func canStartServer() bool {
@@ -98,6 +99,14 @@ func canStartWarehouse() bool {
 }
 
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		c := make(chan os.Signal)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		<-c
+		cancel()
+	}()
+
 	options := app.LoadOptions()
 	if options.VersionFlag {
 		printVersion()
@@ -123,7 +132,7 @@ func main() {
 		AppVersion:   version["Version"].(string),
 		PanicHandler: func() {},
 	})
-	ctx := bugsnag.StartSession(context.Background())
+	ctx = bugsnag.StartSession(ctx)
 	defer func() {
 		if r := recover(); r != nil {
 			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
@@ -156,46 +165,50 @@ func main() {
 
 	backendconfig.Setup(pollRegulations, configEnvHandler)
 
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		application.Stop()
-		// clearing zap Log buffer to std output
-		if logger.Log != nil {
-			logger.Log.Sync()
-		}
-		stats.StopRuntimeStats()
-		os.Exit(1)
-	}()
 
-	rruntime.Go(admin.StartServer)
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return admin.StartServer(ctx)
+	})
+
 
 	misc.AppStartTime = time.Now().Unix()
 	//If the server is standby mode, then no major services (gateway, processor, routers...) run
 	if options.StandByMode {
 		appHandler.HandleRecovery(options)
-		startStandbyWebHandler()
+		g.Go(func() error {
+			return startStandbyWebHandler(ctx)
+		})
 	} else {
 		if canStartServer() {
 			appHandler.HandleRecovery(options)
-			rruntime.Go(func() {
-				appHandler.StartRudderCore(options)
+			g.Go(func() error {
+				return appHandler.StartRudderCore(ctx, options)
 			})
 		}
 
 		// initialize warehouse service after core to handle non-normal recovery modes
 		if appTypeStr != app.GATEWAY && canStartWarehouse() {
-			rruntime.Go(func() {
-				startWarehouseService(application)
+			g.Go(func() error {
+				return startWarehouseService(ctx, application)
 			})
 		}
-
-		misc.KeepProcessAlive()
 	}
+
+	err := g.Wait()
+	if err != nil {
+		pkgLogger.Error(err)
+	}
+
+	application.Stop()
+	// clearing zap Log buffer to std output
+	if logger.Log != nil {
+		logger.Log.Sync()
+	}
+	stats.StopRuntimeStats()
 }
 
-func startStandbyWebHandler() {
+func startStandbyWebHandler(ctx context.Context) error {
 	webPort := getWebPort()
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/health", standbyHealthHandler)
@@ -214,7 +227,15 @@ func startStandbyWebHandler() {
 		IdleTimeout:       IdleTimeout,
 		MaxHeaderBytes:    MaxHeaderBytes,
 	}
-	pkgLogger.Fatal(srv.ListenAndServe())
+	func() {
+		<-ctx.Done()
+		srv.Shutdown(context.Background())
+	}()
+
+	if err := srv.ListenAndServe(); err != nil {
+		return fmt.Errorf("web server: %w", err)
+	}
+	return nil
 }
 
 func getWebPort() int {

@@ -1,6 +1,7 @@
 package apphandlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -43,7 +44,7 @@ var (
 type AppHandler interface {
 	GetAppType() string
 	HandleRecovery(*app.Options)
-	StartRudderCore(*app.Options)
+	StartRudderCore(context.Context, *app.Options)
 }
 
 func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {

@@ -30,6 +30,7 @@ func (p *PackageAdmin) SomeAdminFunction(arg *string, reply *string) error {
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -230,7 +231,7 @@ func (a Admin) GetFormattedEnv(env string, reply *string) (err error) {
 }
 
 // StartServer starts an http server listening on unix socket and serving rpc communication
-func StartServer() {
+func StartServer(ctx context.Context) error {
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		panic(err)
@@ -239,12 +240,31 @@ func StartServer() {
 	if err := os.RemoveAll(sockAddr); err != nil {
 		pkgLogger.Fatal(err)
 	}
+	defer func() {
+		if err := os.RemoveAll(sockAddr); err != nil {
+			pkgLogger.Warn(err)
+		}
+	}()
+
 	l, e := net.Listen("unix", sockAddr)
 	if e != nil {
 		pkgLogger.Fatal("listen error:", e)
 	}
+	defer func() {
+		if err := l.Close(); err != nil {
+			pkgLogger.Warn(err)
+		}
+	}()
+
 	pkgLogger.Info("Serving on admin interface @ ", sockAddr)
 	srvMux := http.NewServeMux()
 	srvMux.Handle(rpc.DefaultRPCPath, instance.rpcServer)
-	http.Serve(l, srvMux)
+
+	srv := &http.Server{Handler: srvMux}
+	go func() {
+		<-ctx.Done()
+		srv.Shutdown(context.Background())
+	}()
+
+	return srv.Serve(l)
 }
