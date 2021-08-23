@@ -323,7 +323,7 @@ var (
 	writeKeySourceMap                   map[string]backendconfig.SourceT
 	destinationIDtoTypeMap              map[string]string
 	destinationTransformationEnabledMap map[string]bool
-	rawDataDestinations                 []string
+	batchDestinations                   []string
 	configSubscriberLock                sync.RWMutex
 	customDestinations                  []string
 	pkgLogger                           logger.LoggerI
@@ -346,7 +346,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 	// Enable dedup of incoming events by default
 	config.RegisterBoolConfigVariable(false, &enableDedup, false, "Dedup.enableDedup")
-	rawDataDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE"}
+	batchDestinations = []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "MARKETO_BULK_UPLOAD"}
 	customDestinations = []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	// EventSchemas feature. false by default
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
@@ -1051,6 +1051,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			RetryTime:     time.Now(),
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":"OK"}`),
+			Parameters:    []byte(`{}`),
 		}
 		statusList = append(statusList, &newStatus)
 	}
@@ -1281,7 +1282,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				CustomVal:    destType,
 				EventPayload: destEventJSON,
 			}
-			if misc.Contains(rawDataDestinations, newJob.CustomVal) {
+			if misc.Contains(batchDestinations, newJob.CustomVal) {
 				batchDestJobs = append(batchDestJobs, &newJob)
 			} else {
 				destJobs = append(destJobs, &newJob)

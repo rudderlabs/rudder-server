@@ -40,35 +40,6 @@ func handleSchemaChange(existingDataType string, columnType string, columnVal in
 	return newColumnVal, true
 }
 
-func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, gzWriter misc.GZipWriter) error {
-	job := jobRun.job
-	rowID, hasID := columnData[job.getColumnName("id")]
-	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
-	if hasID && hasReceivedAt {
-		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType)
-		eventLoader.AddColumn("column_name", columnName)
-		eventLoader.AddColumn("column_value", fmt.Sprintf("%v", columnVal))
-		eventLoader.AddColumn("received_at", receivedAt)
-		eventLoader.AddColumn("row_id", rowID)
-		eventLoader.AddColumn("table_name", tableName)
-		if eventLoader.IsLoadTimeColumn("uuid_ts") {
-			timestampFormat := eventLoader.GetLoadTimeFomat("uuid_ts")
-			eventLoader.AddColumn("uuid_ts", jobRun.uuidTS.Format(timestampFormat))
-		}
-		if eventLoader.IsLoadTimeColumn("loaded_at") {
-			timestampFormat := eventLoader.GetLoadTimeFomat("loaded_at")
-			eventLoader.AddColumn("loaded_at", jobRun.uuidTS.Format(timestampFormat))
-		}
-
-		eventData, err := eventLoader.WriteToString()
-		if err != nil {
-			return err
-		}
-		gzWriter.WriteGZ(eventData)
-	}
-	return nil
-}
-
 func (sHandle *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT) {
 	destID := sHandle.warehouse.Destination.ID
 	namespace := sHandle.warehouse.Namespace
@@ -125,12 +96,7 @@ func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Sch
 	return err
 }
 
-func (sHandle *SchemaHandleT) fetchSchemaFromWarehouse() (schemaInWarehouse warehouseutils.SchemaT, err error) {
-	whManager, err := manager.New(sHandle.warehouse.Type)
-	if err != nil {
-		panic(err)
-	}
-
+func (sHandle *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
 	schemaInWarehouse, err = whManager.FetchSchema(sHandle.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
@@ -210,14 +176,11 @@ func (sHandle *SchemaHandleT) safeName(columnName string) string {
 }
 
 func (sh *SchemaHandleT) getDiscardsSchema() map[string]string {
-	discards := map[string]string{
-		sh.safeName("table_name"):   "string",
-		sh.safeName("row_id"):       "string",
-		sh.safeName("column_name"):  "string",
-		sh.safeName("column_value"): "string",
-		sh.safeName("received_at"):  "datetime",
-		sh.safeName("uuid_ts"):      "datetime",
+	discards := map[string]string{}
+	for colName, colType := range warehouseutils.DiscardsSchema {
+		discards[sh.safeName(colName)] = colType
 	}
+
 	// add loaded_at for bq to be segment compatible
 	if sh.warehouse.Type == "BQ" {
 		discards[sh.safeName("loaded_at")] = "datetime"
@@ -349,4 +312,43 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 		}
 	}
 	return diff
+}
+
+// returns the merged schema(uploadSchema+schemaInWarehousePreUpload) for all tables in uploadSchema
+func mergeUploadAndLocalSchemas(uploadSchema, schemaInWarehousePreUpload warehouseutils.SchemaT) warehouseutils.SchemaT {
+	mergedSchema := warehouseutils.SchemaT{}
+	// iterate over all tables in uploadSchema
+	for uploadTableName, uploadTableSchema := range uploadSchema {
+		if _, ok := mergedSchema[uploadTableName]; !ok {
+			// init map if it does not exist
+			mergedSchema[uploadTableName] = map[string]string{}
+		}
+
+		// uploadSchema becomes the merged schema if the table does not exist in local Schema
+		localTableSchema, ok := schemaInWarehousePreUpload[uploadTableName]
+		if !ok {
+			mergedSchema[uploadTableName] = uploadTableSchema
+			continue
+		}
+
+		// iterate over all columns in localSchema and add them to merged schema
+		for localColName, localColType := range localTableSchema {
+			mergedSchema[uploadTableName][localColName] = localColType
+		}
+
+		// iterate over all columns in uploadSchema and add them to merged schema if required
+		for uploadColName, uploadColType := range uploadTableSchema {
+			localColType, ok := localTableSchema[uploadColName]
+			// add uploadCol to mergedSchema if the col does not exist in localSchema
+			if !ok {
+				mergedSchema[uploadTableName][uploadColName] = uploadColType
+				continue
+			}
+			// change type of uploadCol to text if it was string in localSchema
+			if uploadColType == "text" && localColType == "string" {
+				mergedSchema[uploadTableName][uploadColName] = uploadColType
+			}
+		}
+	}
+	return mergedSchema
 }
