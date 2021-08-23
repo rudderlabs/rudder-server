@@ -45,7 +45,6 @@ var (
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
 	WarehouseDestinations               []string
-	noOfWorkers                         int
 	noOfSlaveWorkerRoutines             int
 	slaveWorkerRoutineBusy              []bool //Busy-true
 	uploadFreqInS                       int64
@@ -531,13 +530,12 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.War
 }
 
 func (wh *HandleT) getLatestUploadStatus(warehouse warehouseutils.WarehouseT) (uploadID int64, status string, priority int) {
-	var p sql.NullInt32
-	sqlStatement := fmt.Sprintf(`SELECT id, status, metadata->>'priority' FROM %[1]s WHERE %[1]s.destination_type='%[2]s' AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s' ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseUploadsTable, wh.destType, warehouse.Source.ID, warehouse.Destination.ID)
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&uploadID, &status, &p)
+	sqlStatement := fmt.Sprintf(`SELECT id, status, COALESCE(metadata->>'priority', '100')::int FROM %[1]s WHERE %[1]s.destination_type='%[2]s' AND %[1]s.source_id='%[3]s' AND %[1]s.destination_id='%[4]s' ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseUploadsTable, wh.destType, warehouse.Source.ID, warehouse.Destination.ID)
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&uploadID, &status, &priority)
 	if err != nil && err != sql.ErrNoRows {
 		pkgLogger.Errorf(`Error getting latest upload status for warehouse: %v`, err)
 	}
-	return uploadID, status, int(p.Int32)
+	return
 }
 
 func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
