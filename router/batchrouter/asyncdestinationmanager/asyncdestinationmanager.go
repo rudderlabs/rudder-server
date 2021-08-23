@@ -3,7 +3,6 @@ package asyncdestinationmanager
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -145,10 +144,6 @@ func Upload(url string, filePath string, config map[string]interface{}, destType
 	payloadSizeStat.SendTiming(time.Millisecond * time.Duration(len(payload)))
 	responseBody, statusCodeHTTP := misc.HTTPCallWithRetry(url, payload)
 	uploadTimeStat.End()
-	fmt.Println("***********************************************")
-	fmt.Println("uploadURL  : ", url)
-	fmt.Println("Payload : ", string(payload))
-	fmt.Println("Response : ", string(responseBody))
 	var bodyBytes []byte
 	var httpFailed bool
 	var statusCode string

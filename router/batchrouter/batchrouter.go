@@ -283,11 +283,6 @@ func (brt *HandleT) pollAsyncStatus() {
 					bodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+pollUrl, payload)
 					pollTimeStat.End()
 
-					fmt.Println("***********************************************")
-					fmt.Println("Poll URL : ", pollUrl)
-					fmt.Println("Payload : ", string(payload))
-					fmt.Println("Response : ", string(bodyBytes))
-
 					if err != nil {
 						panic("HTTP Request Failed" + err.Error())
 					}
@@ -329,10 +324,7 @@ func (brt *HandleT) pollAsyncStatus() {
 								failedJobsTimeStat.Start()
 								failedBodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+failedJobUrl, payload)
 								failedJobsTimeStat.End()
-								fmt.Println("***********************************************")
-								fmt.Println("failedJobUrl  : ", failedJobUrl)
-								fmt.Println("Payload : ", string(payload))
-								fmt.Println("Response : ", string(failedBodyBytes))
+
 								if statusCode != 200 {
 									continue
 								}
@@ -672,7 +664,6 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		panic(fmt.Errorf("BRT: %s: file open failed : %s", brt.destType, err.Error()))
 	}
 	defer file.Close()
-	fmt.Println(brt.asyncDestinationStruct[destinationID].FileName)
 	var jobString string
 	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
 	for _, job := range batchJobs.Jobs {
