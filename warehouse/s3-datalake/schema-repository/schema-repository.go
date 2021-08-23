@@ -41,7 +41,7 @@ type SchemaRepository interface {
 }
 
 func NewSchemaRepository(wh warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (SchemaRepository, error) {
-	if misc.HasAWSRegionInConfig(wh.Destination.Config) {
+	if warehouseutils.GetConfigValueBoolString(UseGlueConfig, wh) == "true" && misc.HasAWSRegionInConfig(wh.Destination.Config) {
 		return NewGlueSchemaRepository(wh)
 	}
 	return NewLocalSchemaRepository(wh, uploader)

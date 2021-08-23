@@ -18,6 +18,7 @@ var (
 	AWSBucketNameConfig = "bucketName"
 	AWSS3Prefix         = "prefix"
 	AWSRegion           = "region"
+	UseGlueConfig       = "useGlue"
 
 	// glue
 	glueSerdeName             = "ParquetHiveSerDe"
