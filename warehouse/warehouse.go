@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -1524,6 +1525,25 @@ func setupDB(connInfo string) {
 	setupTables(dbHandle)
 }
 
+func getDBHandleForAPI(connInfo string) *sql.DB {
+	if config.IsEnvSet("WAREHOUSE_JOBS_DB_SLAVE_HOST") {
+		var re = regexp.MustCompile(`^host=[^\s]*`)
+		newConnInfo := re.ReplaceAllString(connInfo, fmt.Sprintf(`host=%s`, config.GetRequiredEnv("WAREHOUSE_JOBS_DB_SLAVE_HOST")))
+
+		apiDBHandle, err := sql.Open("postgres", newConnInfo)
+		if err != nil {
+			panic(err)
+		}
+
+		_, err = validators.IsPostgresCompatible(apiDBHandle)
+		if err != nil {
+			panic(err)
+		}
+		return apiDBHandle
+	}
+	return dbHandle
+}
+
 func Start(app app.Interface) {
 	application = app
 	time.Sleep(1 * time.Second)
@@ -1552,7 +1572,7 @@ func Start(app app.Interface) {
 			rruntime.Go(func() {
 				minimalConfigSubscriber()
 			})
-			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+			InitWarehouseAPI(getDBHandleForAPI(psqlInfo), pkgLogger.Child("upload_api"))
 		}
 		return
 	}
@@ -1593,7 +1613,7 @@ func Start(app app.Interface) {
 		rruntime.Go(func() {
 			runArchiver(dbHandle)
 		})
-		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+		InitWarehouseAPI(getDBHandleForAPI(psqlInfo), pkgLogger.Child("upload_api"))
 	}
 }
 
