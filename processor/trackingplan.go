@@ -13,7 +13,7 @@ import (
 )
 
 // extracts the events from Validation response and make them transformer ready
-func (proc *HandleT) getTransformerEvents(response transformer.ResponseT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) ([]transformer.TransformerEventT, []*jobsdb.JobT) {
+func (proc *HandleT) GetTransformerEventsFromValidationResponse(response transformer.ResponseT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) ([]transformer.TransformerEventT, []*jobsdb.JobT) {
 	var eventsToTransform []transformer.TransformerEventT
 	var eventsToDrop []transformer.TransformerResponseT
 	var failedEventsToStore []*jobsdb.JobT
@@ -215,7 +215,7 @@ func (proc *HandleT) validateEvents(groupedEventsBySourceID map[string][]transfo
 		}
 		response.FailedEvents = filteredFailedEvents
 
-		eventsToTransform, validationFailedJobs := proc.getTransformerEvents(response, eventsByMessageID)
+		eventsToTransform, validationFailedJobs := proc.GetTransformerEventsFromValidationResponse(response, eventsByMessageID)
 		//dumps violated events as per sourceTpConfig to proc_error
 		if len(validationFailedJobs) > 0 {
 			proc.logger.Info("[Processor] Total validationFailedJobs written to proc_error: ", len(validationFailedJobs))
