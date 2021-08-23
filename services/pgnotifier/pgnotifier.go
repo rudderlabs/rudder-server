@@ -290,7 +290,7 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 						SELECT id
 						FROM %[1]s
 						WHERE status='%[5]s' OR status='%[6]s'
-						ORDER BY id
+						ORDER BY priority ASC, id ASC
 						FOR UPDATE SKIP LOCKED
 						LIMIT 1
 						)
