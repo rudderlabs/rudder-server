@@ -367,8 +367,8 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	pkgLogger.Infof("SF: Starting load for table:%s\n", identityMergeRulesTable)
 
 	pkgLogger.Infof("SF: Fetching load file location for %s", identityMergeRulesTable)
-	var location string
-	location, err = sf.Uploader.GetSingleLoadFileLocation(identityMergeRulesTable)
+	var loadfile warehouseutils.LoadFileT
+	loadfile, err = sf.Uploader.GetSingleLoadFile(identityMergeRulesTable)
 	if err != nil {
 		return err
 	}
@@ -380,7 +380,7 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	}
 
 	sortedColumnNames := strings.Join([]string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"}, ",")
-	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, location)
+	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadfile.Location)
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`"%s"."%s"`, sf.Namespace, identityMergeRulesTable), sortedColumnNames, loadLocation, sf.authString())
 
@@ -404,9 +404,9 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	pkgLogger.Infof("SF: Starting load for table:%s\n", identityMappingsTable)
 	pkgLogger.Infof("SF: Fetching load file location for %s", identityMappingsTable)
-	var location string
+	var loadfile warehouseutils.LoadFileT
 
-	location, err = sf.Uploader.GetSingleLoadFileLocation(identityMappingsTable)
+	loadfile, err = sf.Uploader.GetSingleLoadFile(identityMappingsTable)
 	if err != nil {
 		return err
 	}
@@ -427,7 +427,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 		return
 	}
 
-	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, location)
+	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadfile.Location)
 	sqlStatement = fmt.Sprintf(`COPY INTO %v("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT") FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`"%s"."%s"`, sf.Namespace, stagingTableName), loadLocation, sf.authString())
 

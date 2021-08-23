@@ -9,22 +9,30 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+// type StagingFileEntryT struct {
+// 	ID       int64
+// 	Location string
+// }
+
 type PayloadT struct {
-	BatchID             string
-	UploadID            int64
-	StagingFileID       int64
-	StagingFileLocation string
-	Schema              map[string]map[string]string
-	SourceID            string
-	SourceName          string
-	DestinationID       string
-	DestinationName     string
-	DestinationType     string
-	DestinationConfig   interface{}
-	UniqueLoadGenID     string
-	UseRudderStorage    bool
-	RudderStoragePrefix string
-	Output              []loadFileUploadOutputT
+	BatchID              string
+	UploadID             int64
+	StagingFileID        int64
+	StagingFileLocation  string
+	UploadSchema         map[string]map[string]string
+	SourceID             string
+	SourceName           string
+	DestinationID        string
+	DestinationName      string
+	DestinationType      string
+	DestinationNamespace string
+	DestinationConfig    interface{}
+	UniqueLoadGenID      string
+	UseRudderStorage     bool
+	RudderStoragePrefix  string
+	Output               []loadFileUploadOutputT
+	LoadFilePrefix       string // prefix for the load file name
+	LoadFileType         string
 }
 
 type ProcessStagingFilesJobT struct {
@@ -60,6 +68,7 @@ type StagingFileT struct {
 	SourceTaskRunID string
 	SourceJobID     string
 	SourceJobRunID  string
+	TimeWindow      time.Time
 }
 
 type BatchRouterEventT struct {
