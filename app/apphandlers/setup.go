@@ -28,6 +28,7 @@ var (
 	gwDBRetention, routerDBRetention                           time.Duration
 	enableProcessor, enableRouter, enableReplay                bool
 	objectStorageDestinations                                  []string
+	asyncDestinations                                          []string
 	warehouseDestinations                                      []string
 	moduleLoadLock                                             sync.Mutex
 	routerLoaded                                               bool
@@ -74,6 +75,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &enableReplay, false, "Replay.enabled")
 	config.RegisterBoolConfigVariable(true, &enableRouter, false, "enableRouter")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
+	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
 }
 
@@ -157,7 +159,7 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, re
 			for _, destination := range source.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
 				//For batch router destinations
-				if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) {
+				if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) || misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 					if !ok {
 						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)

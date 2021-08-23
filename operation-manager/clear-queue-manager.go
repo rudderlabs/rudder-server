@@ -158,6 +158,7 @@ func (handler *ClearOperationHandlerT) clearFromJobsdb(db jobsdb.JobsDB, paramet
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{"reason": "aborted as per request"}`), // check
+				Parameters:    []byte(`{}`),
 			}
 			statusList = append(statusList, &status)
 		}
