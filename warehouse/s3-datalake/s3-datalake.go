@@ -11,25 +11,7 @@ import (
 )
 
 var (
-	pkgLogger    logger.LoggerI
-	dataTypesMap = map[string]string{
-		"boolean":  "boolean",
-		"int":      "bigint",
-		"bigint":   "bigint",
-		"float":    "double",
-		"string":   "varchar(512)",
-		"text":     "varchar(max)",
-		"datetime": "timestamp",
-	}
-	dataTypesMapToRudder = map[string]string{
-		"boolean":      "boolean",
-		"bigint":       "int",
-		"double":       "float",
-		"varchar(512)": "string",
-		"varchar(max)": "text",
-		"timestamp":    "datetime",
-		"string":       "string",
-	}
+	pkgLogger logger.LoggerI
 )
 
 func init() {
