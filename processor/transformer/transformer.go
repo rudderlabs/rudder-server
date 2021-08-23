@@ -28,11 +28,11 @@ const (
 	DestTransformerStage        = "dest_transformer"
 	TrackingPlanValidationStage = "trackingPlan_validation"
 
-	RequiredMissing      = "Required-Missing"
-	DatatypeMismatch     = "Datatype-Mismatch"
-	AdditionalProperties = "Additional-Properties"
-	UnknownViolation     = "Unknown-Violation"
-	UnplannedEvent       = "Unplanned-Event"
+	RequiredMissing             = "Required-Missing"
+	DatatypeMismatch            = "Datatype-Mismatch"
+	AdditionalProperties        = "Additional-Properties"
+	UnknownViolation            = "Unknown-Violation"
+	UnplannedEvent              = "Unplanned-Event"
 )
 const supportedTransformerAPIVersion = 1
 
