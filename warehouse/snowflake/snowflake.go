@@ -561,12 +561,13 @@ type SnowflakeCredentialsT struct {
 
 func connect(cred SnowflakeCredentialsT) (*sql.DB, error) {
 	urlConfig := snowflake.Config{
-		Account:   cred.account,
-		User:      cred.username,
-		Password:  cred.password,
-		Database:  cred.dbName,
-		Schema:    cred.schemaName,
-		Warehouse: cred.whName,
+		Account:     cred.account,
+		User:        cred.username,
+		Password:    cred.password,
+		Database:    cred.dbName,
+		Schema:      cred.schemaName,
+		Warehouse:   cred.whName,
+		Application: "Rudderstack",
 	}
 
 	var err error

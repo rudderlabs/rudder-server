@@ -3,10 +3,11 @@ package backendconfig
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/config"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/config"
 
 	"github.com/cenkalti/backoff"
 	"github.com/tidwall/gjson"
@@ -90,7 +91,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 	var workspaces WorkspacesT
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
-		pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
+		pkgLogger.Error("Error while parsing request", err, statusCode)
 		return ConfigT{}, false
 	}
 
@@ -141,7 +142,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetRegulations() (RegulationsT
 	var hostedWorkspaces HostedWorkspacesT
 	err = json.Unmarshal(respBody, &hostedWorkspaces)
 	if err != nil {
-		pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
+		pkgLogger.Error("Error while parsing request", err, statusCode)
 		return RegulationsT{}, false
 	}
 
@@ -201,7 +202,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(worksp
 		var workspaceRegulationsJSON WRegulationsT
 		err = json.Unmarshal(respBody, &workspaceRegulationsJSON)
 		if err != nil {
-			pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
+			pkgLogger.Error("Error while parsing request", err, statusCode)
 			return []WorkspaceRegulationT{}, false
 		}
 
@@ -256,7 +257,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getSourceRegulations(workspace
 		var sourceRegulationsJSON SRegulationsT
 		err = json.Unmarshal(respBody, &sourceRegulationsJSON)
 		if err != nil {
-			pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
+			pkgLogger.Error("Error while parsing request", err, statusCode)
 			return []SourceRegulationT{}, false
 		}
 
