@@ -102,6 +102,7 @@ type UploadT struct {
 	UseRudderStorage     bool
 	LoadFileGenStartTime time.Time
 	TimingsObj           sql.NullString
+	Priority             int
 	// cloud sources specific info
 	SourceBatchID   string
 	SourceTaskID    string
@@ -340,7 +341,6 @@ func (job *UploadJobT) run() (err error) {
 	}
 	schemaHandle := job.schemaHandle
 	schemaHandle.uploadSchema = job.upload.UploadSchema
-
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
@@ -1615,7 +1615,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		}
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		ch, err := job.pgNotifier.Publish(StagingFilesPGNotifierChannel, messages)
+		ch, err := job.pgNotifier.Publish(StagingFilesPGNotifierChannel, messages, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}

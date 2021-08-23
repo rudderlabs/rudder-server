@@ -171,7 +171,7 @@ func (notifier *PgNotifierT) triggerPending(topic string) {
 									SELECT id FROM %[1]s
 									WHERE status='%[3]s' OR status='%[4]s' OR (status='%[5]s' AND last_exec_time <= NOW() - INTERVAL '%[6]v seconds')
 									AND workspace='%[7]s'
-									ORDER BY id
+									ORDER BY priority ASC, id ASC
 									FOR UPDATE SKIP LOCKED
 									LIMIT %[8]v
 								) RETURNING id`,
@@ -328,7 +328,7 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 	return claim, true
 }
 
-func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority int) (ch chan []ResponseT, err error) {
 	ch = make(chan []ResponseT)
 
 	//Using transactions for bulk copying
@@ -337,7 +337,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "topic", "payload", "workspace"))
+	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "topic", "payload", "workspace", "priority"))
 	if err != nil {
 		return
 	}
@@ -346,7 +346,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT) (ch chan
 	batchID := uuid.NewV4().String()
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(messages), queueName, batchID)
 	for _, message := range messages {
-		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload), notifier.workspaceIdentifier)
+		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload), notifier.workspaceIdentifier, priority)
 		if err != nil {
 			return
 		}
@@ -496,6 +496,12 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 	}
 
 	sqlStmt = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS workspace VARCHAR(64)`, queueName)
+	_, err = notifier.dbHandle.Exec(sqlStmt)
+	if err != nil {
+		return
+	}
+
+	sqlStmt = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS priority int`, queueName)
 	_, err = notifier.dbHandle.Exec(sqlStmt)
 	if err != nil {
 		return
