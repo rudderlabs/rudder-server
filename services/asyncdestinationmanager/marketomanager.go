@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
@@ -19,6 +21,10 @@ type UploadStruct struct {
 	ImportId string                 `json:"importId"`
 	PollUrl  string                 `json:"pollURL"`
 	Metadata map[string]interface{} `json:"metadata"`
+}
+
+func init() {
+
 }
 
 type Parameters struct {
@@ -73,10 +79,24 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 	uploadT.Config = config
 	uploadT.DestType = strings.ToLower(destType)
 	payload, err := json.Marshal(uploadT)
+	uploadTimeStat := stats.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+		"module":   "batch_router",
+		"destType": destType,
+		"url":      url,
+	})
 	if err != nil {
 		panic("BRT: JSON Marshal Failed " + err.Error())
 	}
+
+	payloadSizeStat := stats.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
+		"module":   "batch_router",
+		"destType": destType,
+		"url":      url,
+	})
+	uploadTimeStat.Start()
+	payloadSizeStat.SendTiming(time.Millisecond * time.Duration(len(payload)))
 	responseBody, statusCodeHTTP := misc.HTTPCallWithRetry(url, payload)
+	uploadTimeStat.End()
 	fmt.Println("***********************************************")
 	fmt.Println("uploadURL  : ", url)
 	fmt.Println("Payload : ", string(payload))
@@ -91,6 +111,22 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 		bodyBytes = responseBody
 		statusCode = gjson.GetBytes(bodyBytes, "statusCode").String()
 	}
+	eventsDeliveredStat := stats.NewTaggedStat("events_delivery_success", stats.CountType, map[string]string{
+		"module":   "batch_router",
+		"destType": destType,
+		"url":      url,
+	})
+	eventsFailedStat := stats.NewTaggedStat("events_delivery_failed", stats.CountType, map[string]string{
+		"module":   "batch_router",
+		"destType": destType,
+		"url":      url,
+	})
+	eventsAbortedStat := stats.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
+		"module":   "batch_router",
+		"destType": destType,
+		"url":      url,
+	})
+
 	var uploadResponse AsyncUploadOutput
 	if httpFailed {
 		uploadResponse = AsyncUploadOutput{
@@ -119,6 +155,8 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 			panic("Errored in Marshalling" + err.Error())
 		}
 		succesfulJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
+		eventsFailedStat.Count(len(failedJobIDsTrans))
+		eventsDeliveredStat.Count(len(succesfulJobIDs))
 
 		uploadResponse = AsyncUploadOutput{
 			ImportingJobIDs:     succesfulJobIDs,
@@ -136,6 +174,8 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 			panic("Incorrect Response from Transformer: " + err.Error())
 		}
 		succesfulJobIDs, failedJobIDsTrans := CleanUpData(responseStruct.Metadata, importingJobIDs)
+		eventsFailedStat.Count(len(failedJobIDsTrans))
+		eventsAbortedStat.Count(len(succesfulJobIDs))
 		uploadResponse = AsyncUploadOutput{
 			AbortJobIDs:   succesfulJobIDs,
 			FailedJobIDs:  append(failedJobIDs, failedJobIDsTrans...),

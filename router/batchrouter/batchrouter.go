@@ -275,7 +275,14 @@ func (brt *HandleT) pollAsyncStatus() {
 						panic("JSON Marshal Failed" + err.Error())
 					}
 
+					pollTimeStat := stats.NewTaggedStat("async_poll_time", stats.TimerType, map[string]string{
+						"module":   "batch_router",
+						"destType": brt.destType,
+						"url":      pollUrl,
+					})
+					pollTimeStat.Start()
 					bodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+pollUrl, payload)
+					pollTimeStat.End()
 
 					fmt.Println("***********************************************")
 					fmt.Println("Poll URL : ", pollUrl)
@@ -316,7 +323,14 @@ func (brt *HandleT) pollAsyncStatus() {
 								failedJobUrl := asyncResponse.FailedJobsURL
 								asyncManager, _ := brt.asyncFileManagerFactory.Get(brt.destType)
 								payload = asyncManager.GenerateFailedPayload(brt.destinationsMap[key].Destination.Config, importingList, importId, brt.destType, csvHeaders)
+								failedJobsTimeStat := stats.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, map[string]string{
+									"module":   "batch_router",
+									"destType": brt.destType,
+									"url":      pollUrl,
+								})
+								failedJobsTimeStat.Start()
 								failedBodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+failedJobUrl, payload)
+								failedJobsTimeStat.End()
 								fmt.Println("***********************************************")
 								fmt.Println("failedJobUrl  : ", failedJobUrl)
 								fmt.Println("Payload : ", string(payload))
