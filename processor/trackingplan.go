@@ -188,11 +188,7 @@ func (proc *HandleT) validateEvents(groupedEventsBySourceID map[string][]transfo
 			validatedEventsBySourceID[srcId] = append(validatedEventsBySourceID[srcId], eventList...)
 			continue
 		}
-		startedAt := time.Now()
 		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize)
-		endedAt := time.Now()
-		timeTaken := endedAt.Sub(startedAt).Seconds()
-		fmt.Println(timeTaken)
 
 		commonMetaData := transformer.MetadataT{
 			SourceID:       srcId,
