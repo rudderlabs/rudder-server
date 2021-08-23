@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/asyncdestinationmanager"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
@@ -87,7 +87,6 @@ type HandleT struct {
 	drainedJobsStat             stats.RudderStats
 	backendConfig               backendconfig.BackendConfig
 	fileManagerFactory          filemanager.FileManagerFactory
-	asyncFileManagerFactory     asyncdestinationmanager.AsyncDestinationFactory
 	maxFileUploadSize           int
 	inProgressMap               map[string]bool
 	inProgressMapLock           sync.RWMutex
@@ -321,8 +320,7 @@ func (brt *HandleT) pollAsyncStatus() {
 								}
 							} else {
 								failedJobUrl := asyncResponse.FailedJobsURL
-								asyncManager, _ := brt.asyncFileManagerFactory.Get(brt.destType)
-								payload = asyncManager.GenerateFailedPayload(brt.destinationsMap[key].Destination.Config, importingList, importId, brt.destType, csvHeaders)
+								payload = asyncdestinationmanager.GenerateFailedPayload(brt.destinationsMap[key].Destination.Config, importingList, importId, brt.destType, csvHeaders)
 								failedJobsTimeStat := stats.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, map[string]string{
 									"module":   "batch_router",
 									"destType": brt.destType,
@@ -642,11 +640,6 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		return
 	}
 
-	asyncManager, err := brt.asyncFileManagerFactory.Get(brt.destType)
-	if err != nil {
-		panic(fmt.Errorf("unexpected async destination type. Err: %v", err))
-	}
-
 	destinationID := batchJobs.BatchDestination.Destination.ID
 	brt.logger.Debugf("BRT: Starting logging to %s", provider)
 	_, ok := brt.asyncDestinationStruct[destinationID]
@@ -683,9 +676,9 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 	var jobString string
 	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
 	for _, job := range batchJobs.Jobs {
-		transformedData := asyncManager.GetTransformedData(job.EventPayload)
+		transformedData := asyncdestinationmanager.GetTransformedData(job.EventPayload)
 		if brt.asyncDestinationStruct[destinationID].Count < brt.maxEventsInABatch {
-			fileData := asyncManager.GetMarshalledData(transformedData, job.JobID)
+			fileData := asyncdestinationmanager.GetMarshalledData(transformedData, job.JobID)
 			brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))
 			jobString = jobString + fileData + "\n"
 			brt.asyncDestinationStruct[destinationID].ImportingJobIDs = append(brt.asyncDestinationStruct[destinationID].ImportingJobIDs, job.JobID)
@@ -709,11 +702,6 @@ func (brt *HandleT) asyncUploadWorker() {
 		return
 	}
 
-	asyncManager, err := brt.asyncFileManagerFactory.Get(brt.destType)
-	if err != nil {
-		panic(fmt.Errorf("unexpected async destination type. Err: %v", err))
-	}
-
 	for {
 		brt.configSubscriberLock.RLock()
 		destinationsMap := brt.destinationsMap
@@ -730,7 +718,7 @@ func (brt *HandleT) asyncUploadWorker() {
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > brt.asyncUploadTimeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
-					uploadResponse := asyncManager.Upload(transformerURL+brt.asyncDestinationStruct[destinationID].URL, brt.asyncDestinationStruct[destinationID].FileName, brt.destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
+					uploadResponse := asyncdestinationmanager.Upload(transformerURL+brt.asyncDestinationStruct[destinationID].URL, brt.asyncDestinationStruct[destinationID].FileName, brt.destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
 					brt.asyncStructCleanUp(destinationID)
 					brt.setMultipleJobStatus(uploadResponse)
 				}
@@ -1758,11 +1746,9 @@ func setQueryFilters() {
 
 //Setup initializes this module
 func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI) {
-
 	brt.isBackendConfigInitialized = false
 	brt.backendConfigInitialized = make(chan bool)
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
-	brt.asyncFileManagerFactory = asyncdestinationmanager.DefaultAsyncDestinationFactory
 	brt.backendConfig = backendConfig
 	brt.reporting = reporting
 	config.RegisterBoolConfigVariable(true, &brt.reportingEnabled, false, "Reporting.enabled")

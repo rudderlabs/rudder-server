@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -14,17 +15,63 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-type MarketoManager struct {
+type AsyncUploadOutput struct {
+	Key                 string
+	ImportingJobIDs     []int64
+	ImportingParameters json.RawMessage
+	SuccessJobIDs       []int64
+	FailedJobIDs        []int64
+	SucceededJobIDs     []int64
+	SuccessResponse     string
+	FailedReason        string
+	AbortJobIDs         []int64
+	AbortReason         string
+	importingCount      int
+	FailedCount         int
+	AbortCount          int
+	DestinationID       string
+}
+
+type AsyncDestinationStruct struct {
+	ImportingJobIDs []int64
+	FailedJobIDs    []int64
+	Exists          bool
+	Size            int
+	CreatedAt       time.Time
+	FileName        string
+	Count           int
+	CanUpload       bool
+	UploadMutex     sync.RWMutex
+	URL             string
+}
+
+type AsyncUploadT struct {
+	Config   map[string]interface{} `json:"config"`
+	Input    []AsyncJob             `json:"input"`
+	DestType string                 `json:"destType"`
+}
+
+type AsyncJob struct {
+	Message  map[string]interface{} `json:"message"`
+	Metadata map[string]interface{} `json:"metadata"`
+}
+
+type AsyncFailedPayload struct {
+	Config   map[string]interface{}   `json:"config"`
+	Input    []map[string]interface{} `json:"input"`
+	DestType string                   `json:"destType"`
+	ImportId string                   `json:"importId"`
+	MetaData MetaDataT                `json:"metadata"`
+}
+
+type MetaDataT struct {
+	CSVHeaders string `json:"csvHeader"`
 }
 
 type UploadStruct struct {
 	ImportId string                 `json:"importId"`
 	PollUrl  string                 `json:"pollURL"`
 	Metadata map[string]interface{} `json:"metadata"`
-}
-
-func init() {
-
 }
 
 type Parameters struct {
@@ -57,7 +104,7 @@ func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int6
 	return succesfulJobIDs, failedJobIDsTrans
 }
 
-func (manager *MarketoManager) Upload(url string, filePath string, config map[string]interface{}, destType string, failedJobIDs []int64, importingJobIDs []int64, destinationID string) AsyncUploadOutput {
+func Upload(url string, filePath string, config map[string]interface{}, destType string, failedJobIDs []int64, importingJobIDs []int64, destinationID string) AsyncUploadOutput {
 	file, err := os.Open(filePath)
 	if err != nil {
 		panic("BRT: Read File Failed" + err.Error())
@@ -79,14 +126,15 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 	uploadT.Config = config
 	uploadT.DestType = strings.ToLower(destType)
 	payload, err := json.Marshal(uploadT)
+	if err != nil {
+		panic("BRT: JSON Marshal Failed " + err.Error())
+	}
+
 	uploadTimeStat := stats.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 		"url":      url,
 	})
-	if err != nil {
-		panic("BRT: JSON Marshal Failed " + err.Error())
-	}
 
 	payloadSizeStat := stats.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
 		"module":   "batch_router",
@@ -195,11 +243,11 @@ func (manager *MarketoManager) Upload(url string, filePath string, config map[st
 	}
 	return uploadResponse
 }
-func (manager *MarketoManager) GetTransformedData(payload json.RawMessage) string {
+func GetTransformedData(payload json.RawMessage) string {
 	return gjson.Get(string(payload), "body.JSON").String()
 }
 
-func (manager *MarketoManager) GetMarshalledData(payload string, jobID int64) string {
+func GetMarshalledData(payload string, jobID int64) string {
 	var job AsyncJob
 	err := json.Unmarshal([]byte(payload), &job.Message)
 	if err != nil {
@@ -214,7 +262,7 @@ func (manager *MarketoManager) GetMarshalledData(payload string, jobID int64) st
 	return string(responsePayload)
 }
 
-func (manager *MarketoManager) GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID string, destType string, csvHeaders string) []byte {
+func GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID string, destType string, csvHeaders string) []byte {
 	var failedPayloadT AsyncFailedPayload
 	failedPayloadT.Input = make([]map[string]interface{}, len(jobs))
 	index := 0
@@ -223,7 +271,7 @@ func (manager *MarketoManager) GenerateFailedPayload(config map[string]interface
 		failedPayloadT.Input[index] = make(map[string]interface{})
 		var message map[string]interface{}
 		metadata := make(map[string]interface{})
-		err := json.Unmarshal([]byte(manager.GetTransformedData(job.EventPayload)), &message)
+		err := json.Unmarshal([]byte(GetTransformedData(job.EventPayload)), &message)
 		if err != nil {
 			panic("Unmarshalling Transformer Data to JSON Failed")
 		}
