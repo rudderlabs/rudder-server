@@ -56,6 +56,8 @@ require (
 	github.com/satori/go.uuid v1.2.0
 	github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c // indirect
 	github.com/segmentio/ksuid v1.0.2
+	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749 // indirect
+	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546 // indirect
 	github.com/snowflakedb/gosnowflake v1.3.4
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/afero v1.2.2 // indirect
@@ -63,7 +65,7 @@ require (
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.6.2
-	github.com/stretchr/testify v1.6.1
+	github.com/stretchr/testify v1.6.1 // indirect
 	github.com/thoas/go-funk v0.5.0
 	github.com/tidwall/gjson v1.5.0
 	github.com/tidwall/pretty v1.0.1 // indirect
