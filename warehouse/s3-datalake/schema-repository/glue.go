@@ -16,6 +16,7 @@ var (
 	AWSAccessKey        = "accessKey"
 	AWSAccessKeyID      = "accessKeyID"
 	AWSBucketNameConfig = "bucketName"
+	AWSS3Prefix         = "prefix"
 	AWSRegion           = "region"
 
 	// glue
@@ -28,6 +29,7 @@ var (
 type GlueSchemaRepository struct {
 	glueClient *glue.Glue
 	s3bucket   string
+	s3prefix   string
 	Warehouse  warehouseutils.WarehouseT
 	Namespace  string
 }
@@ -35,6 +37,7 @@ type GlueSchemaRepository struct {
 func NewGlueSchemaRepository(wh warehouseutils.WarehouseT) (*GlueSchemaRepository, error) {
 	gl := GlueSchemaRepository{
 		s3bucket:  warehouseutils.GetConfigValue(AWSBucketNameConfig, wh),
+		s3prefix:  warehouseutils.GetConfigValue(AWSS3Prefix, wh),
 		Warehouse: wh,
 		Namespace: wh.Namespace,
 	}
@@ -218,5 +221,11 @@ func (gl *GlueSchemaRepository) getStorageDescriptor(tableName string, columnMap
 }
 
 func (gl *GlueSchemaRepository) getS3LocationForTable(tableName string) string {
-	return fmt.Sprintf("s3://%s/%s", gl.s3bucket, warehouseutils.GetTablePathInObjectStorage(gl.Namespace, tableName))
+	bucketPath := fmt.Sprintf("s3://%s", gl.s3bucket)
+	var filePath string
+	if gl.s3prefix != "" {
+		filePath = fmt.Sprintf("%s/", gl.s3prefix)
+	}
+	filePath += warehouseutils.GetTablePathInObjectStorage(gl.Namespace, tableName)
+	return fmt.Sprintf("%s/%s", bucketPath, filePath)
 }
