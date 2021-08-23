@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -65,8 +66,9 @@ const (
 )
 
 const (
-	BQLoadedAtFormat = "2006-01-02 15:04:05.999999 Z"
-	BQUuidTSFormat   = "2006-01-02 15:04:05 Z"
+	BQLoadedAtFormat         = "2006-01-02 15:04:05.999999 Z"
+	BQUuidTSFormat           = "2006-01-02 15:04:05 Z"
+	DatalakeTimeWindowFormat = "2006/01/02/15"
 )
 
 var (
@@ -77,8 +79,9 @@ var (
 )
 
 var ObjectStorageMap = map[string]string{
-	"RS": "S3",
-	"BQ": "GCS",
+	"RS":          "S3",
+	"S3_DATALAKE": "S3",
+	"BQ":          "GCS",
 }
 
 var SnowflakeStorageMap = map[string]string{
@@ -86,6 +89,21 @@ var SnowflakeStorageMap = map[string]string{
 	"GCP":   "GCS",
 	"AZURE": "AZURE_BLOB",
 }
+
+var DiscardsSchema = map[string]string{
+	"table_name":   "string",
+	"row_id":       "string",
+	"column_name":  "string",
+	"column_value": "string",
+	"received_at":  "datetime",
+	"uuid_ts":      "datetime",
+}
+
+const (
+	LOAD_FILE_TYPE_CSV     = "csv"
+	LOAD_FILE_TYPE_JSON    = "json"
+	LOAD_FILE_TYPE_PARQUET = "parquet"
+)
 
 var pkgLogger logger.LoggerI
 
@@ -130,25 +148,34 @@ type StagingFileT struct {
 	SourceTaskRunID string
 	SourceJobID     string
 	SourceJobRunID  string
+	TimeWindow      time.Time
 }
 
 type UploaderI interface {
 	GetSchemaInWarehouse() SchemaT
+	GetLocalSchema() SchemaT
+	UpdateLocalSchema(schema SchemaT) error
 	GetTableSchemaInWarehouse(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
-	GetLoadFileLocations(options GetLoadFileLocationsOptionsT) []string
+	GetLoadFilesMetadata(options GetLoadFilesOptionsT) []LoadFileT
 	GetSampleLoadFileLocation(tableName string) (string, error)
-	GetSingleLoadFileLocation(tableName string) (string, error)
+	GetSingleLoadFile(tableName string) (LoadFileT, error)
 	ShouldOnDedupUseNewRecord() bool
 	UseRudderStorage() bool
 	GetLoadFileGenStartTIme() time.Time
+	GetLoadFileType() string
 }
 
-type GetLoadFileLocationsOptionsT struct {
+type GetLoadFilesOptionsT struct {
 	Table   string
 	StartID int64
 	EndID   int64
 	Limit   int64
+}
+
+type LoadFileT struct {
+	Location string
+	Metadata json.RawMessage
 }
 
 func IDResolutionEnabled() bool {
@@ -182,6 +209,14 @@ type PendingEventsResponseT struct {
 type TriggerUploadRequestT struct {
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
+}
+
+type LoadFileWriterI interface {
+	WriteGZ(s string) error
+	Write(p []byte) (int, error)
+	WriteRow(r []interface{}) error
+	Close() error
+	GetLoadFile() *os.File
 }
 
 func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.Time) {
@@ -362,9 +397,9 @@ func GetGCSLocationFolder(location string, options GCSLocationOptionsT) string {
 	return s3Location[:lastPos]
 }
 
-func GetGCSLocations(locations []string, options GCSLocationOptionsT) (gcsLocations []string) {
-	for _, location := range locations {
-		gcsLocations = append(gcsLocations, GetGCSLocation(location, options))
+func GetGCSLocations(loadFiles []LoadFileT, options GCSLocationOptionsT) (gcsLocations []string) {
+	for _, loadFile := range loadFiles {
+		gcsLocations = append(gcsLocations, GetGCSLocation(loadFile.Location, options))
 	}
 	return
 }
@@ -384,12 +419,11 @@ func GetAzureBlobLocationFolder(location string) string {
 	return s3Location[:lastPos]
 }
 
-func GetS3Locations(locations []string) (s3Locations []string) {
-	for _, location := range locations {
-		s3Location, _ := GetS3Location(location)
-		s3Locations = append(s3Locations, s3Location)
+func GetS3Locations(loadFiles []LoadFileT) []LoadFileT {
+	for idx, loadfile := range loadFiles {
+		loadFiles[idx].Location, _ = GetS3Location(loadfile.Location)
 	}
-	return
+	return loadFiles
 }
 
 func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
@@ -528,7 +562,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	if useRudderStorage {
 		return "S3"
 	}
-	if destType == "RS" || destType == "BQ" {
+	if destType == "RS" || destType == "BQ" || destType == "S3_DATALAKE" {
 		return ObjectStorageMap[destType]
 	}
 	if destType == "SNOWFLAKE" {
@@ -616,4 +650,23 @@ func GetTempFileExtension(destType string) string {
 		return "json.gz"
 	}
 	return "csv.gz"
+}
+
+func GetTimeWindow(ts time.Time) time.Time {
+	ts = ts.UTC()
+
+	// // get lastHalfHourWindow
+	// lastHalfHourWindow := 0
+	// if ts.Minute() >= 30 {
+	// 	lastHalfHourWindow = 30
+	// }
+
+	// create and return time struct for window
+	return time.Date(ts.Year(), ts.Month(), ts.Day(), ts.Hour(), 0, 0, 0, time.UTC)
+}
+
+// GetTablePathInObjectStorage returns the path of the table relative to the object storage bucket
+// for location - "s3://testbucket/rudder-datalake/namespace/tableName/" - it returns "rudder-datalake/namespace/tableName"
+func GetTablePathInObjectStorage(namespace string, tableName string) string {
+	return fmt.Sprintf("%s/%s/%s", config.GetEnv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), namespace, tableName)
 }

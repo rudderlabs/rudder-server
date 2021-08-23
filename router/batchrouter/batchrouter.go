@@ -455,7 +455,7 @@ func (brt *HandleT) pollAsyncStatus() {
 	}
 }
 
-func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
+func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
 	if disableEgress {
 		return StorageUploadOutput{Error: errors.New(DISABLED_EGRESS)}
 	}
@@ -751,7 +751,7 @@ func (brt *HandleT) asyncStructCleanUp(destinationID string) {
 	brt.asyncDestinationStruct[destinationID].URL = ""
 }
 
-func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOutput) (err error) {
+func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadOutput) (err error) {
 	schemaMap := make(map[string]map[string]interface{})
 	for _, job := range batchJobs.Jobs {
 		var payload map[string]interface{}
@@ -803,6 +803,10 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 		SourceJobRunID:   sampleParameters.SourceJobRunID,
 	}
 
+	if brt.destType == "S3_DATALAKE" {
+		payload.TimeWindow = batchJobs.TimeWindow
+	}
+
 	jsonPayload, err := json.Marshal(&payload)
 	if err != nil {
 		brt.logger.Errorf("BRT: Failed to marshal WH staging file payload error:%v", err)
@@ -818,7 +822,7 @@ func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOu
 	return
 }
 
-func (brt *HandleT) setJobStatus(batchJobs BatchJobsT, isWarehouse bool, err error, postToWarehouseErr bool) {
+func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err error, postToWarehouseErr bool) {
 	var (
 		batchJobState string
 		errorResp     []byte
@@ -1343,7 +1347,7 @@ func (worker *workerT) workerProcess() {
 				if !ok {
 					// TODO: Should not happen. Handle this
 					err := fmt.Errorf("BRT: Batch destination source not found in config for sourceID: %s", sourceID)
-					brt.setJobStatus(batchJobs, false, err, false)
+					brt.setJobStatus(&batchJobs, false, err, false)
 					wg.Done()
 					continue
 				}
@@ -1352,9 +1356,9 @@ func (worker *workerT) workerProcess() {
 					case misc.ContainsString(objectStorageDestinations, brt.destType):
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 						destUploadStat.Start()
-						output := brt.copyJobsToStorage(brt.destType, batchJobs, true, false)
+						output := brt.copyJobsToStorage(brt.destType, &batchJobs, true, false)
 						brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, false)
-						brt.setJobStatus(batchJobs, false, output.Error, false)
+						brt.setJobStatus(&batchJobs, false, output.Error, false)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						if output.JournalOpID > 0 {
 							brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
@@ -1369,19 +1373,22 @@ func (worker *workerT) workerProcess() {
 						objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 						destUploadStat.Start()
-						output := brt.copyJobsToStorage(objectStorageType, batchJobs, true, true)
-						postToWarehouseErr := false
-						if output.Error == nil && output.Key != "" {
-							output.Error = brt.postToWarehouse(batchJobs, output)
-							if output.Error != nil {
-								postToWarehouseErr = true
+						splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
+						for _, batchJob := range splitBatchJobs {
+							output := brt.copyJobsToStorage(objectStorageType, batchJob, true, true)
+							postToWarehouseErr := false
+							if output.Error == nil && output.Key != "" {
+								output.Error = brt.postToWarehouse(batchJob, output)
+								if output.Error != nil {
+									postToWarehouseErr = true
+								}
+								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJob.BatchDestination.Destination.ID).Count(1)
+								warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJob.BatchDestination.Destination.ID).Count(len(batchJob.Jobs))
 							}
-							warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJobs.BatchDestination.Destination.ID).Count(1)
-							warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJobs.BatchDestination.Destination.ID).Count(len(batchJobs.Jobs))
+							brt.recordDeliveryStatus(*batchJob.BatchDestination, output.Error, true)
+							brt.setJobStatus(batchJob, true, output.Error, postToWarehouseErr)
+							misc.RemoveFilePaths(output.LocalFilePaths...)
 						}
-						brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, true)
-						brt.setJobStatus(batchJobs, true, output.Error, postToWarehouseErr)
-						misc.RemoveFilePaths(output.LocalFilePaths...)
 						destUploadStat.End()
 					case misc.ContainsString(asyncDestinations, brt.destType):
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
@@ -1440,6 +1447,7 @@ type DestinationT struct {
 type BatchJobsT struct {
 	Jobs             []*jobsdb.JobT
 	BatchDestination *DestinationT
+	TimeWindow       time.Time
 }
 
 func connectionIdentifier(batchDestination DestinationT) string {
@@ -1675,6 +1683,39 @@ func IsWarehouseDestination(destType string) bool {
 	return misc.Contains(warehouseDestinations, destType)
 }
 
+func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
+	var splitBatches = map[time.Time]*BatchJobsT{}
+	if brt.destType != "S3_DATALAKE" {
+		// return only one batchJob if the destination type is not s3 datalake
+		splitBatches[time.Time{}] = &batchJobs
+		return splitBatches
+	}
+
+	// split batchJobs based on timeWindow
+	for _, job := range batchJobs.Jobs {
+		// ignore error as receivedAt will always be in the expected format
+		receivedAtStr := gjson.Get(string(job.EventPayload), "metadata.receivedAt").String()
+		receivedAt, err := time.Parse(time.RFC3339, receivedAtStr)
+		if err != nil {
+			pkgLogger.Errorf("Invalid value '%s' for receivedAt : %v ", receivedAtStr, err)
+			panic(err)
+		}
+		timeWindow := warehouseutils.GetTimeWindow(receivedAt)
+
+		// create batchJob for timeWindow if it does not exist
+		if _, ok := splitBatches[timeWindow]; !ok {
+			splitBatches[timeWindow] = &BatchJobsT{
+				Jobs:             make([]*jobsdb.JobT, 0),
+				BatchDestination: batchJobs.BatchDestination,
+				TimeWindow:       timeWindow,
+			}
+		}
+
+		splitBatches[timeWindow].Jobs = append(splitBatches[timeWindow].Jobs, job)
+	}
+	return splitBatches
+}
+
 func (brt *HandleT) collectMetrics() {
 	if diagnostics.EnableBatchRouterMetric {
 		for range brt.diagnosisTicker.C {
@@ -1708,7 +1749,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, []string{"BatchRouter.mainLoopSleep", "BatchRouter.mainLoopSleepInS"}...)
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE"}
 	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
 	warehouseURL = misc.GetWarehouseURL()
 	// Time period for diagnosis ticker
