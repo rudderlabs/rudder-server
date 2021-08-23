@@ -104,6 +104,7 @@ type HandleT struct {
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
 	savePayloadOnError                     bool
+	transformerProxy                       bool
 }
 
 type jobResponseT struct {
@@ -556,8 +557,15 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
 							//for proxying through transformer
-							//respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
-							respStatusCode, respBodyTemp = worker.rt.transformer.Send(val, worker.rt.destName)
+							pkgLogger.Infof(`transformerProxy status : %s`, worker.rt.transformerProxy)
+							if worker.rt.transformerProxy {
+								pkgLogger.Infof(`routing via server, proxy disabled`)
+								respStatusCode, respBodyTemp = worker.rt.transformer.Send(val, worker.rt.destName)
+							} else {
+								pkgLogger.Infof(`routing via server, proxy disabled`)
+								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
+							}
+
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
@@ -1649,10 +1657,12 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
 	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
+	transformerProxyKeys := []string{"Router." + rt.destName + "." + "transformerProxy", "Router." + "transformerProxy"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
+	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
