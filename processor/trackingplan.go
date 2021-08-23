@@ -205,7 +205,9 @@ func (proc *HandleT) validateEvents(groupedEventsBySourceID map[string][]transfo
 		for _, event := range response.FailedEvents {
 			//handling case when rudder-transformer is missing validation end-point
 			//passing on the events as successfull further forward to user/dest transformation
-			if event.StatusCode == 404 {
+			//As tp is still in initial phase, forward all 400 events too for now,
+			//Once when fully developed(like supporting multiple jsonschema versions etc), events can be dropped to proc_error
+			if event.StatusCode == 404 || event.StatusCode == 400 {
 				event.Output = eventsByMessageID[event.Metadata.MessageID].SingularEvent
 				response.Events = append(response.Events, event)
 				pkgLogger.Errorf("Missing validation endpoint(upgrade rudder-transformer), Error : %v", event.Error)
