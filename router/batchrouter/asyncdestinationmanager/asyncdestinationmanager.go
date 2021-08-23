@@ -8,8 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
@@ -79,6 +81,19 @@ type Parameters struct {
 	MetaData MetaDataT `json:"metadata"`
 }
 
+var HTTPTimeout time.Duration
+var pkgLogger logger.LoggerI
+
+func loadConfig() {
+	config.RegisterDurationConfigVariable(time.Duration(600), &HTTPTimeout, true, time.Second, "AsyncDestination.HTTPTimeout")
+}
+
+func init() {
+	loadConfig()
+	pkgLogger = logger.NewLogger().Child("asyncDestinationManager")
+
+}
+
 func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {
 	if keyMap == nil {
 		return []int64{}, importingJobIDs
@@ -142,7 +157,9 @@ func Upload(url string, filePath string, config map[string]interface{}, destType
 	})
 	uploadTimeStat.Start()
 	payloadSizeStat.SendTiming(time.Millisecond * time.Duration(len(payload)))
-	responseBody, statusCodeHTTP := misc.HTTPCallWithRetry(url, payload)
+	pkgLogger.Debugf("[Async Destination Maanger] File Upload Started for Dest Type %v", destType)
+	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(url, payload, HTTPTimeout)
+	pkgLogger.Debugf("[Async Destination Maanger] File Upload Finished for Dest Type %v", destType)
 	uploadTimeStat.End()
 	var bodyBytes []byte
 	var httpFailed bool

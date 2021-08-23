@@ -57,6 +57,7 @@ var (
 	disableEgress                      bool
 	toAbortDestinationIDs              string
 	transformerURL                     string
+	HTTPTimeout                        time.Duration
 )
 
 const DISABLED_EGRESS = "200: outgoing disabled"
@@ -280,7 +281,9 @@ func (brt *HandleT) pollAsyncStatus() {
 						"url":      pollUrl,
 					})
 					pollTimeStat.Start()
-					bodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+pollUrl, payload)
+					pkgLogger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
+					bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformerURL+pollUrl, payload, HTTPTimeout)
+					pkgLogger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
 					pollTimeStat.End()
 
 					if err != nil {
@@ -322,7 +325,9 @@ func (brt *HandleT) pollAsyncStatus() {
 									"url":      pollUrl,
 								})
 								failedJobsTimeStat.Start()
-								failedBodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+failedJobUrl, payload)
+								pkgLogger.Debugf("[Batch Router] Fetching Failed Jobs Started for Dest Type %v", brt.destType)
+								failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformerURL+failedJobUrl, payload, HTTPTimeout)
+								pkgLogger.Debugf("[Batch Router] Fetching Failed Jobs for Dest Type %v", brt.destType)
 								failedJobsTimeStat.End()
 
 								if statusCode != 200 {
@@ -1718,6 +1723,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	config.RegisterDurationConfigVariable(time.Duration(600), &HTTPTimeout, true, time.Second, "AsyncDestination.HTTPTimeout")
 }
 
 func init() {
