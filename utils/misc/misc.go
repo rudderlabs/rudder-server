@@ -587,7 +587,7 @@ func ConvertStringInterfaceToIntArray(interfaceT interface{}) ([]int64, error) {
 	return intArr, nil
 }
 
-func MakeHTTPRequest(url string, payload io.Reader) ([]byte, int, error) {
+func MakeHTTPRequestWithTimeout(url string, payload io.Reader, timeout time.Duration) ([]byte, int, error) {
 	req, err := http.NewRequest("POST", url, payload)
 	if err != nil {
 		return []byte{}, 400, err
@@ -595,7 +595,9 @@ func MakeHTTPRequest(url string, payload io.Reader) ([]byte, int, error) {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: timeout,
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return []byte{}, 400, err
@@ -611,11 +613,15 @@ func MakeHTTPRequest(url string, payload io.Reader) ([]byte, int, error) {
 }
 
 func HTTPCallWithRetry(url string, payload []byte) ([]byte, int) {
+	return HTTPCallWithRetryWithTimeout(url, payload, time.Second*150)
+}
+
+func HTTPCallWithRetryWithTimeout(url string, payload []byte, timeout time.Duration) ([]byte, int) {
 	var respBody []byte
 	var statusCode int
 	operation := func() error {
 		var fetchError error
-		respBody, statusCode, fetchError = MakeHTTPRequest(url, bytes.NewBuffer(payload))
+		respBody, statusCode, fetchError = MakeHTTPRequestWithTimeout(url, bytes.NewBuffer(payload), timeout)
 		return fetchError
 	}
 

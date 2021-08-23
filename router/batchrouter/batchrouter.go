@@ -280,7 +280,9 @@ func (brt *HandleT) pollAsyncStatus() {
 						"url":      pollUrl,
 					})
 					pollTimeStat.Start()
-					bodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+pollUrl, payload)
+					pkgLogger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
+					bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformerURL+pollUrl, payload, asyncdestinationmanager.HTTPTimeout)
+					pkgLogger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
 					pollTimeStat.End()
 
 					if err != nil {
@@ -322,7 +324,9 @@ func (brt *HandleT) pollAsyncStatus() {
 									"url":      pollUrl,
 								})
 								failedJobsTimeStat.Start()
-								failedBodyBytes, statusCode := misc.HTTPCallWithRetry(transformerURL+failedJobUrl, payload)
+								pkgLogger.Debugf("[Batch Router] Fetching Failed Jobs Started for Dest Type %v", brt.destType)
+								failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformerURL+failedJobUrl, payload, asyncdestinationmanager.HTTPTimeout)
+								pkgLogger.Debugf("[Batch Router] Fetching Failed Jobs for Dest Type %v", brt.destType)
 								failedJobsTimeStat.End()
 
 								if statusCode != 200 {
