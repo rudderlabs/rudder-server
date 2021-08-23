@@ -30,6 +30,7 @@ var (
 		"bigint":       "int",
 		"double":       "float",
 		"varchar(512)": "string",
+		"varchar(max)": "string",
 		VARCHAR_TYPE:   "string",
 		"timestamp":    "datetime",
 		"string":       "string",
