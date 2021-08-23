@@ -17,8 +17,7 @@ var (
 		"int":      "bigint",
 		"bigint":   "bigint",
 		"float":    "double",
-		"string":   "varchar(512)",
-		"text":     "varchar(max)",
+		"string":   "varchar(max)",
 		"datetime": "timestamp",
 	}
 	dataTypesMapToRudder = map[string]string{
@@ -26,7 +25,7 @@ var (
 		"bigint":       "int",
 		"double":       "float",
 		"varchar(512)": "string",
-		"varchar(max)": "text",
+		"varchar(max)": "string",
 		"timestamp":    "datetime",
 		"string":       "string",
 	}
