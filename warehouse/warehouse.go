@@ -59,8 +59,6 @@ var (
 	warehouseMode                       string
 	warehouseSyncPreFetchCount          int
 	warehouseSyncFreqIgnore             bool
-	activeWorkerCount                   int
-	activeWorkerCountLock               sync.RWMutex
 	minRetryAttempts                    int
 	retryTimeWindow                     time.Duration
 	maxStagingFileReadBufferCapacityInK int
@@ -104,20 +102,23 @@ const (
 )
 
 type HandleT struct {
-	destType             string
-	warehouses           []warehouseutils.WarehouseT
-	dbHandle             *sql.DB
-	notifier             pgnotifier.PgNotifierT
-	uploadToWarehouseQ   chan []ProcessStagingFilesJobT
-	createLoadFilesQ     chan LoadFileJobT
-	isEnabled            bool
-	configSubscriberLock sync.RWMutex
-	workerChannelMap     map[string]chan *UploadJobT
-	workerChannelMapLock sync.RWMutex
-	initialConfigFetched bool
-	inProgressMap        map[string]int64
-	inProgressMapLock    sync.RWMutex
-	areBeingEnqueuedLock sync.RWMutex
+	destType              string
+	warehouses            []warehouseutils.WarehouseT
+	dbHandle              *sql.DB
+	notifier              pgnotifier.PgNotifierT
+	uploadToWarehouseQ    chan []ProcessStagingFilesJobT
+	createLoadFilesQ      chan LoadFileJobT
+	isEnabled             bool
+	configSubscriberLock  sync.RWMutex
+	workerChannelMap      map[string]chan *UploadJobT
+	workerChannelMapLock  sync.RWMutex
+	initialConfigFetched  bool
+	inProgressMap         map[string]int64
+	inProgressMapLock     sync.RWMutex
+	areBeingEnqueuedLock  sync.RWMutex
+	noOfWorkers           int
+	activeWorkerCount     int
+	activeWorkerCountLock sync.RWMutex
 }
 
 type ErrorResponseT struct {
@@ -133,7 +134,6 @@ func loadConfig() {
 	//Port where WH is running
 	config.RegisterIntConfigVariable(8082, &webPort, false, 1, "Warehouse.webPort")
 	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE"}
-	config.RegisterIntConfigVariable(8, &noOfWorkers, true, 1, "Warehouse.noOfWorkers")
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
@@ -174,24 +174,24 @@ func workerIdentifier(warehouse warehouseutils.WarehouseT) string {
 	return fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
 }
 
-func getActiveWorkerCount() int {
-	activeWorkerCountLock.Lock()
-	defer activeWorkerCountLock.Unlock()
-	return activeWorkerCount
+func (wh *HandleT) getActiveWorkerCount() int {
+	wh.activeWorkerCountLock.Lock()
+	defer wh.activeWorkerCountLock.Unlock()
+	return wh.activeWorkerCount
 }
 
 func (wh *HandleT) decrementActiveWorkers() {
 	// decrement number of workers actively engaged
-	activeWorkerCountLock.Lock()
-	activeWorkerCount--
-	activeWorkerCountLock.Unlock()
+	wh.activeWorkerCountLock.Lock()
+	wh.activeWorkerCount--
+	wh.activeWorkerCountLock.Unlock()
 }
 
 func (wh *HandleT) incrementActiveWorkers() {
 	// increment number of workers actively engaged
-	activeWorkerCountLock.Lock()
-	activeWorkerCount++
-	activeWorkerCountLock.Unlock()
+	wh.activeWorkerCountLock.Lock()
+	wh.activeWorkerCount++
+	wh.activeWorkerCountLock.Unlock()
 }
 
 func (wh *HandleT) initWorker() chan *UploadJobT {
@@ -800,7 +800,7 @@ func (wh *HandleT) runUploadJobAllocator() {
 			continue
 		}
 
-		availableWorkers := noOfWorkers - getActiveWorkerCount()
+		availableWorkers := wh.noOfWorkers - wh.getActiveWorkerCount()
 		if availableWorkers < 1 {
 			time.Sleep(waitForWorkerSleep)
 			continue
@@ -921,7 +921,7 @@ func (wh *HandleT) setInterruptedDestinations() {
 	}
 }
 
-func (wh *HandleT) Setup(whType string) {
+func (wh *HandleT) Setup(whType string, whName string) {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.dbHandle = dbHandle
 	wh.notifier = notifier
@@ -932,6 +932,7 @@ func (wh *HandleT) Setup(whType string) {
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
 	wh.inProgressMap = make(map[string]int64)
+	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
 	})
@@ -1024,7 +1025,7 @@ func monitorDestRouters() {
 						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 						wh = &HandleT{}
 						wh.configSubscriberLock.Lock()
-						wh.Setup(destination.DestinationDefinition.Name)
+						wh.Setup(destination.DestinationDefinition.Name, destination.DestinationDefinition.DisplayName)
 						wh.configSubscriberLock.Unlock()
 						dstToWhRouter[destination.DestinationDefinition.Name] = wh
 						wh.monitorUploadStatus()
