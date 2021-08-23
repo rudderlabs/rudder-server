@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -325,13 +326,14 @@ func (event *BatchRouterEventT) getColumnInfo(columnName string) (columnInfo Col
 // 5. Delete the staging and load files from tmp directory
 //
 
-func processStagingFile(job PayloadT) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
+func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
 
 	jobRun := JobRunT{
 		job:          job,
 		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 	}
 
+	defer jobRun.counterStat("staging_files_processed", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Count(1)
 	defer jobRun.cleanup()
 
 	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
@@ -659,7 +661,7 @@ func claim(workerIdx int, slaveID string) (claimedJob pgnotifier.ClaimT, claimed
 	return
 }
 
-func processClaimedJob(claimedJob pgnotifier.ClaimT) {
+func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	handleErr := func(err error, claim pgnotifier.ClaimT) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponseT{
@@ -676,7 +678,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT) {
 	}
 	job.BatchID = claimedJob.BatchID
 	pkgLogger.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.ID)
-	loadFileOutputs, err := processStagingFile(job)
+	loadFileOutputs, err := processStagingFile(job, workerIndex)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
@@ -712,7 +714,7 @@ func setupSlave() {
 					}
 					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 					rruntime.Go(func() {
-						processClaimedJob(claimedJob)
+						processClaimedJob(claimedJob, idx)
 						freeWorker(idx)
 					})
 					break
