@@ -181,7 +181,7 @@ type LibrariesT []LibraryT
 type DgSourceTrackingPlanConfigT struct {
 	SourceId            string                 `json:"sourceId"`
 	SourceConfigVersion int                    `json:"version"`
-	Config              map[string]interface{} `json:"config"`
+	Config              map[string]map[string]interface{}	`json:"config"`
 	MergedConfig        map[string]interface{} `json:"mergedConfig"`
 	Deleted             bool                   `json:"deleted"`
 	TrackingPlan        TrackingPlanT          `json:"trackingPlan"`
@@ -200,18 +200,13 @@ func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType 
 	return dgSourceTPConfigT.MergedConfig
 }
 
-func fetchEventConfig(sourceTpConfig map[string]interface{}, eventType string) map[string]interface{} {
+func fetchEventConfig(sourceTpConfig map[string]map[string]interface{}, eventType string) map[string]interface{} {
 	emptyMap := map[string]interface{}{}
 	_, eventSpecificConfigPresent := sourceTpConfig[eventType]
 	if !eventSpecificConfigPresent {
 		return emptyMap
 	}
-	eventSpecificConfig, castOk := sourceTpConfig[eventType].(map[string]interface{})
-	if !castOk {
-		pkgLogger.Errorf("config not parseable for %s", eventType)
-		return emptyMap
-	}
-	return eventSpecificConfig
+	return sourceTpConfig[eventType]
 }
 
 type TrackingPlanT struct {

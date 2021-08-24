@@ -45,7 +45,7 @@ type MetadataT struct {
 	SourceCategory      string                 `json:"sourceCategory"`
 	TrackingPlanId      string                 `json:"trackingPlanId"`
 	TrackingPlanVersion int                    `json:"trackingPlanVersion"`
-	SourceTpConfig      map[string]interface{} `json:"sourceTpConfig"`
+	SourceTpConfig      map[string]map[string]interface{} `json:"sourceTpConfig"`
 	MergedTpConfig      map[string]interface{} `json:"mergedTpConfig"`
 	DestinationID       string                 `json:"destinationId"`
 	JobRunID            string                 `json:"jobRunId"`
