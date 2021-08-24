@@ -103,6 +103,7 @@ type JobsDB interface {
 	GetProcessed(params GetQueryParamsT) []*JobT
 	GetUnprocessed(params GetQueryParamsT) []*JobT
 	GetExecuting(params GetQueryParamsT) []*JobT
+	GetImportingList(params GetQueryParamsT) []*JobT
 
 	Status() interface{}
 	GetIdentifier() string
@@ -229,6 +230,7 @@ type JobStatusT struct {
 	RetryTime     time.Time       `json:"RetryTime"`
 	ErrorCode     string          `json:"ErrorCode"`
 	ErrorResponse json.RawMessage `json:"ErrorResponse"`
+	Parameters    json.RawMessage `json:"Parameters"`
 }
 
 /*
@@ -435,6 +437,7 @@ var (
 	WaitingRetry = jobStateT{isValid: true, isTerminal: false, State: "waiting_retry"}
 	Migrating    = jobStateT{isValid: true, isTerminal: false, State: "migrating"}
 	Throttled    = jobStateT{isValid: true, isTerminal: false, State: "throttled"}
+	Importing    = jobStateT{isValid: true, isTerminal: false, State: "importing"}
 
 	//Valid, Terminal
 	Succeeded   = jobStateT{isValid: true, isTerminal: true, State: "succeeded"}
@@ -456,6 +459,7 @@ var jobStates []jobStateT = []jobStateT{
 	Aborted,
 	Migrated,
 	WontMigrate,
+	Importing,
 }
 
 //OwnerType for this jobsdb instance
@@ -782,6 +786,8 @@ func (jd *HandleT) dbReader() {
 			readReq.jobsListChan <- jd.getUnprocessed(readReq.getQueryParams)
 		} else if readReq.reqType == Executing.State {
 			readReq.jobsListChan <- jd.getExecuting(readReq.getQueryParams)
+		} else if readReq.reqType == Importing.State {
+			readReq.jobsListChan <- jd.getImportingList(readReq.getQueryParams)
 		} else {
 			panic(fmt.Errorf("[[ %s ]] unknown read request type: %s", jd.tablePrefix, readReq.reqType))
 		}
@@ -1295,7 +1301,8 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
                                      exec_time TIMESTAMP,
                                      retry_time TIMESTAMP,
                                      error_code VARCHAR(32),
-                                     error_response JSONB);`, newDS.JobStatusTable, newDS.JobTable)
+                                     error_response JSONB DEFAULT '{}'::JSONB,
+									 parameters JSONB DEFAULT '{}'::JSONB);`, newDS.JobStatusTable, newDS.JobTable)
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
@@ -1571,6 +1578,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 			RetryTime:     job.LastJobStatus.RetryTime,
 			ErrorCode:     job.LastJobStatus.ErrorCode,
 			ErrorResponse: job.LastJobStatus.ErrorResponse,
+			Parameters:    job.LastJobStatus.Parameters,
 		}
 		statusList = append(statusList, &newStatus)
 	}
@@ -1946,11 +1954,11 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
                                   %[1]s.created_at, %[1]s.expire_at,
                                   job_latest_state.job_state, job_latest_state.attempt,
                                   job_latest_state.exec_time, job_latest_state.retry_time,
-                                  job_latest_state.error_code, job_latest_state.error_response
+                                  job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
                                  FROM
                                   %[1]s,
                                   (SELECT job_id, job_state, attempt, exec_time, retry_time,
-                                    error_code, error_response FROM %[2]s WHERE id IN
+                                    error_code, error_response,parameters FROM %[2]s WHERE id IN
                                     (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
                                   AS job_latest_state
                                    WHERE %[1]s.job_id=job_latest_state.job_id`,
@@ -1965,18 +1973,17 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
                                                %[1]s.created_at, %[1]s.expire_at,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
-                                               job_latest_state.error_code, job_latest_state.error_response
+                                               job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
                                             FROM
                                                %[1]s,
                                                (SELECT job_id, job_state, attempt, exec_time, retry_time,
-                                                 error_code, error_response FROM %[2]s WHERE id IN
+                                                 error_code, error_response, parameters FROM %[2]s WHERE id IN
                                                    (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
                                                AS job_latest_state
                                             WHERE %[1]s.job_id=job_latest_state.job_id
                                              %[4]s %[5]s
                                              AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[6]s`,
 			ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
-
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
 		jd.assertError(err)
 		defer stmt.Close()
@@ -1984,7 +1991,6 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		jd.assertError(err)
 		defer rows.Close()
 	}
-
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
@@ -1992,7 +1998,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 			&job.EventPayload, &job.CreatedAt, &job.ExpireAt,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
-			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse)
+			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
 		jd.assertError(err)
 		jobList = append(jobList, &job)
 	}
@@ -2138,7 +2144,7 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 	defer queryStat.End()
 
 	stmt, err := txHandler.Prepare(pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
-		"retry_time", "error_code", "error_response"))
+		"retry_time", "error_code", "error_response", "parameters"))
 	if err != nil {
 		return
 	}
@@ -2151,7 +2157,7 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 			status.ErrorResponse = []byte(`{}`)
 		}
 		_, err = stmt.Exec(status.JobID, status.JobState, status.AttemptNum, status.ExecTime,
-			status.RetryTime, status.ErrorCode, string(status.ErrorResponse))
+			status.RetryTime, status.ErrorCode, string(status.ErrorResponse), string(status.Parameters))
 		if err != nil {
 			return
 		}
@@ -3209,6 +3215,43 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 
 	//Release lock
 	return outJobs
+}
+
+func (jd *HandleT) GetImportingList(params GetQueryParamsT) []*JobT {
+	if params.Count == 0 {
+		return []*JobT{}
+	}
+
+	params.StateFilters = []string{Importing.State}
+
+	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	totalReadTime := jd.getTimerStat("importing_total_time", tags)
+	totalReadTime.Start()
+	defer totalReadTime.End()
+
+	if jd.enableReaderQueue {
+		readChannelWaitTime := jd.getTimerStat("importing_wait_time", tags)
+		readChannelWaitTime.Start()
+		readJobRequest := readJob{
+			getQueryParams: params,
+			jobsListChan:   make(chan []*JobT),
+			reqType:        Importing.State,
+		}
+		jd.readChannel <- readJobRequest
+		readChannelWaitTime.End()
+		jobsList := <-readJobRequest.jobsListChan
+		return jobsList
+	} else {
+		return jd.getImportingList(params)
+	}
+}
+
+/*
+getImportingList returns events which need are Importing.
+This is a wrapper over GetProcessed call above
+*/
+func (jd *HandleT) getImportingList(params GetQueryParamsT) []*JobT {
+	return jd.GetProcessed(params)
 }
 
 /*

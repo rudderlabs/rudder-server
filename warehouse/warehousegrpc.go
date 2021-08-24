@@ -28,6 +28,17 @@ func (w *warehousegrpc) GetWHUploads(context context.Context, request *proto.WHU
 	return res, err
 }
 
+func (w *warehousegrpc) TriggerWHUploads(context context.Context, request *proto.WHUploadsRequest) (*emptypb.Empty, error) {
+	uploadsReq := UploadsReqT{
+		WorkspaceID:     request.WorkspaceId,
+		SourceID:        request.SourceId,
+		DestinationID:   request.DestinationId,
+		API:             UploadAPI,
+	}
+	err := uploadsReq.TriggerWhUploads()
+	return new(emptypb.Empty), err
+}
+
 func (w *warehousegrpc) GetWHUpload(context context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
 	uploadReq := UploadReqT{
 		UploadId:    request.UploadId,

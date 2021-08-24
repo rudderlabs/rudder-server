@@ -5,15 +5,20 @@ const UUID_TS_COLUMN = "uuid_ts"
 type EventLoader interface {
 	IsLoadTimeColumn(columnName string) bool
 	GetLoadTimeFomat(columnName string) string
-	AddColumn(columnName string, val interface{})
+	AddColumn(columnName string, columnType string, val interface{})
 	AddRow(columnNames []string, values []string)
 	AddEmptyColumn(columnName string)
 	WriteToString() (string, error)
+	Write() error
 }
 
-func GetNewEventLoader(destinationType string) EventLoader {
-	if destinationType == "BQ" {
-		return NewJSONLoader(destinationType)
+func GetNewEventLoader(destinationType, loadFileType string, w LoadFileWriterI) EventLoader {
+	switch loadFileType {
+	case LOAD_FILE_TYPE_JSON:
+		return NewJSONLoader(destinationType, w)
+	case LOAD_FILE_TYPE_PARQUET:
+		return NewParquetLoader(destinationType, w)
+	default:
+		return NewCSVLoader(destinationType, w)
 	}
-	return NewCSVLoader(destinationType)
 }
