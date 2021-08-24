@@ -5,36 +5,35 @@
 package mock_network
 
 import (
-	reflect "reflect"
-
 	gomock "github.com/golang/mock/gomock"
 	integrations "github.com/rudderlabs/rudder-server/processor/integrations"
+	reflect "reflect"
 )
 
-// MockNetHandleI is a mock of NetHandleI interface.
+// MockNetHandleI is a mock of NetHandleI interface
 type MockNetHandleI struct {
 	ctrl     *gomock.Controller
 	recorder *MockNetHandleIMockRecorder
 }
 
-// MockNetHandleIMockRecorder is the mock recorder for MockNetHandleI.
+// MockNetHandleIMockRecorder is the mock recorder for MockNetHandleI
 type MockNetHandleIMockRecorder struct {
 	mock *MockNetHandleI
 }
 
-// NewMockNetHandleI creates a new mock instance.
+// NewMockNetHandleI creates a new mock instance
 func NewMockNetHandleI(ctrl *gomock.Controller) *MockNetHandleI {
 	mock := &MockNetHandleI{ctrl: ctrl}
 	mock.recorder = &MockNetHandleIMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use.
+// EXPECT returns an object that allows the caller to indicate expected use
 func (m *MockNetHandleI) EXPECT() *MockNetHandleIMockRecorder {
 	return m.recorder
 }
 
-// SendPost mocks base method.
+// SendPost mocks base method
 func (m *MockNetHandleI) SendPost(arg0 integrations.PostParametersT) (int, string) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SendPost", arg0)
@@ -43,7 +42,7 @@ func (m *MockNetHandleI) SendPost(arg0 integrations.PostParametersT) (int, strin
 	return ret0, ret1
 }
 
-// SendPost indicates an expected call of SendPost.
+// SendPost indicates an expected call of SendPost
 func (mr *MockNetHandleIMockRecorder) SendPost(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendPost", reflect.TypeOf((*MockNetHandleI)(nil).SendPost), arg0)
