@@ -985,16 +985,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				if !ok {
 					proc.logger.Error("singular event type is unknown")
 				}
-				for _, source := range configT.Sources {
-					if source.ID == commonMetadataFromSingularEvent.SourceID && !source.DgSourceTrackingPlanConfig.Deleted && source.DgSourceTrackingPlanConfig.TrackingPlan.Id != "" {
-						// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
-						shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
-						shallowEventCopy.Metadata.TrackingPlanVersion = source.DgSourceTrackingPlanConfig.TrackingPlan.Version
-						shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
-						shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(eventType)
-						break
-					}
+
+				source, sourceError := getSourceByWriteKey(writeKey)
+				if sourceError != nil {
+					proc.logger.Error("Source not found for writeKey : ", writeKey);
+				} else {
+					// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
+					shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
+					shallowEventCopy.Metadata.TrackingPlanVersion = source.DgSourceTrackingPlanConfig.TrackingPlan.Version
+					shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
+					shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(eventType)
 				}
+
 				groupedEventsBySourceID[commonMetadataFromSingularEvent.SourceID] = append(groupedEventsBySourceID[commonMetadataFromSingularEvent.SourceID],
 					shallowEventCopy)
 
