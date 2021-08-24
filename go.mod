@@ -33,13 +33,7 @@ require (
 	github.com/fsnotify/fsnotify v1.4.7
 	github.com/garyburd/redigo v1.6.0 // indirect
 	github.com/go-redis/redis v6.15.7+incompatible
-<<<<<<< HEAD
-	github.com/go-sql-driver/mysql v1.5.0 // indirect
-	github.com/gofrs/uuid v3.2.0+incompatible
-	github.com/gogo/protobuf v1.3.2 // indirect
-=======
 	github.com/gofrs/uuid v3.2.0+incompatible // indirect
->>>>>>> 1662935ab1648df4a2e0dcc2aa284e3fc866c63e
 	github.com/golang-migrate/migrate/v4 v4.11.0
 	github.com/golang/mock v1.5.0
 	github.com/golang/protobuf v1.5.0
