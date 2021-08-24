@@ -44,6 +44,7 @@ var (
 	LastRegulationSync                    string
 	maxRegulationsPerRequest              int
 	configEnvReplacementEnabled           bool
+	successfulQueryTimeStamp              time.Time
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
@@ -223,6 +224,7 @@ type BackendConfig interface {
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	WaitForConfig(ctx context.Context) error
 	Subscribe(channel chan utils.DataEvent, topic Topic)
+	PatchConfig(ConfigT)
 }
 type CommonBackendConfig struct {
 	configEnvHandler types.ConfigEnvI
@@ -321,7 +323,7 @@ func regulationsUpdate(statConfigBackendError stats.RudderStats) {
 }
 
 func configUpdate(statConfigBackendError stats.RudderStats) {
-
+	queryTimeStamp := time.Now()
 	sourceJSON, ok := backendConfig.Get()
 	if !ok {
 		statConfigBackendError.Increment()
@@ -333,19 +335,20 @@ func configUpdate(statConfigBackendError stats.RudderStats) {
 		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
 	})
 
-	if ok && !reflect.DeepEqual(curSourceJSON, sourceJSON) {
+	if ok && !((isMultiWorkspace && reflect.DeepEqual(ConfigT{}, sourceJSON)) || reflect.DeepEqual(curSourceJSON, sourceJSON)) {
 		pkgLogger.Info("Workspace Config changed")
 		curSourceJSONLock.Lock()
 		trackConfig(curSourceJSON, sourceJSON)
-		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
-		curSourceJSON = sourceJSON
+		backendConfig.PatchConfig(sourceJSON)
+		filteredSourcesJSON := filterProcessorEnabledDestinations(curSourceJSON)
 		curSourceJSONLock.Unlock()
 		initializedLock.Lock()
 		defer initializedLock.Unlock()
 		initialized = true
 		LastSync = time.Now().Format(time.RFC3339)
-		Eb.Publish(string(TopicBackendConfig), sourceJSON)
+		Eb.Publish(string(TopicBackendConfig), curSourceJSON)
 		Eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
+		successfulQueryTimeStamp = queryTimeStamp
 	}
 }
 
@@ -440,6 +443,7 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 
 // Setup backend config
 func Setup(pollRegulations bool, configEnvHandler types.ConfigEnvI) {
+	successfulQueryTimeStamp = time.Now()
 	if isMultiWorkspace {
 		backendConfig = new(MultiWorkspaceConfig)
 	} else {

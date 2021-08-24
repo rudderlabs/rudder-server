@@ -94,6 +94,18 @@ func (mr *MockBackendConfigMockRecorder) GetWorkspaceLibrariesForWorkspaceID(arg
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceLibrariesForWorkspaceID", reflect.TypeOf((*MockBackendConfig)(nil).GetWorkspaceLibrariesForWorkspaceID), arg0)
 }
 
+// PatchConfig mocks base method.
+func (m *MockBackendConfig) PatchConfig(arg0 backendconfig.ConfigT) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "PatchConfig", arg0)
+}
+
+// PatchConfig indicates an expected call of PatchConfig.
+func (mr *MockBackendConfigMockRecorder) PatchConfig(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PatchConfig", reflect.TypeOf((*MockBackendConfig)(nil).PatchConfig), arg0)
+}
+
 // SetUp mocks base method.
 func (m *MockBackendConfig) SetUp() {
 	m.ctrl.T.Helper()

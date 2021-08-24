@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/cenkalti/backoff"
 	"github.com/tidwall/gjson"
@@ -68,7 +69,12 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceLibrariesForWorksp
 
 //Get returns sources from all hosted workspaces
 func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
-	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
+	url := fmt.Sprintf("%s/cachedHostedWorkspaceConfig?fetchAll=true", configBackendURL)
+	initializedLock.RLock()
+	if initialized {
+		url += fmt.Sprintf("&updatedAfter=%s", successfulQueryTimeStamp.UTC().Format(misc.RFC3339Milli))
+	}
+	initializedLock.RUnlock()
 
 	var respBody []byte
 	var statusCode int
@@ -88,6 +94,10 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 		pkgLogger.Error("Error sending request to the server", err)
 		return ConfigT{}, false
 	}
+	if string(respBody) == `{}` {
+		return ConfigT{}, true
+	}
+
 	var workspaces WorkspacesT
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
@@ -165,6 +175,31 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetRegulations() (RegulationsT
 	}
 
 	return regulationsJSON, true
+}
+
+func (multiWorkspaceConfig *MultiWorkspaceConfig) PatchConfig(configToPatch ConfigT) {
+	initializedLock.RLock()
+	defer initializedLock.RUnlock()
+	if !initialized {
+		curSourceJSON = configToPatch
+		return
+	}
+	curSourceJSON.Libraries = configToPatch.Libraries
+	curSourceJSON.EnableMetrics = configToPatch.EnableMetrics
+	curSourceJSON.ConnectionFlags = configToPatch.ConnectionFlags
+
+	for _, sourcePatch := range configToPatch.Sources {
+		newSource := true
+		for i := range curSourceJSON.Sources {
+			if sourcePatch.ID == curSourceJSON.Sources[i].ID {
+				curSourceJSON.Sources[i] = sourcePatch
+				newSource = false
+			}
+		}
+		if newSource {
+			curSourceJSON.Sources = append(curSourceJSON.Sources, sourcePatch)
+		}
+	}
 }
 
 func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(workspaceID string) ([]WorkspaceRegulationT, bool) {

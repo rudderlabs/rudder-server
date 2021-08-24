@@ -47,6 +47,10 @@ func (workspaceConfig *WorkspaceConfig) Get() (ConfigT, bool) {
 	}
 }
 
+func (workspaceConfig *WorkspaceConfig) PatchConfig(configToPatch ConfigT) {
+	curSourceJSON = configToPatch
+}
+
 //GetRegulations returns sources from the workspace
 func (workspaceConfig *WorkspaceConfig) GetRegulations() (RegulationsT, bool) {
 	if configFromFile {
