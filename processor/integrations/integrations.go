@@ -50,12 +50,11 @@ type PostParametersT struct {
 	URL           string `json:"endpoint"`
 	RequestMethod string `json:"method"`
 	//Invalid tag used in struct. skipcq: SCC-SA5008
-	UserID         string                 `json:"userId,,optional"`
-	Headers        map[string]interface{} `json:"headers"`
-	QueryParams    map[string]interface{} `json:"params"`
-	Body           map[string]interface{} `json:"body"`
-	Files          map[string]interface{} `json:"files"`
-	RequestOptions map[string]interface{} `json:"requestOptions"`
+	UserID      string                 `json:"userId,,optional"`
+	Headers     map[string]interface{} `json:"headers"`
+	QueryParams map[string]interface{} `json:"params"`
+	Body        map[string]interface{} `json:"body"`
+	Files       map[string]interface{} `json:"files"`
 }
 
 // GetPostInfo parses the transformer response

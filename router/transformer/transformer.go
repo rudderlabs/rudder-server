@@ -154,8 +154,6 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 }
 
 func (trans *HandleT) Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string) {
-	// handle request options here
-	transformedData = requestOptionHandler(transformedData)
 
 	rawJSON, err := json.Marshal(transformedData)
 	if err != nil {
@@ -203,16 +201,6 @@ func (trans *HandleT) Setup() {
 	trans.client = &http.Client{Transport: trans.tr, Timeout: 10 * time.Minute}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
-}
-
-// here we can handle network level configs for requests
-func requestOptionHandler(transformedData integrations.PostParametersT) integrations.PostParametersT {
-	requestOptions := transformedData.RequestOptions
-	if requestOptions["timeout"] == nil {
-		requestOptions["timeout"] = 1000 * 30
-	}
-	transformedData.RequestOptions = requestOptions
-	return transformedData
 }
 
 func getBatchURL() string {
