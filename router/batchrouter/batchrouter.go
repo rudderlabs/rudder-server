@@ -86,7 +86,6 @@ type HandleT struct {
 	drainedJobsStat                stats.RudderStats
 	backendConfig                  backendconfig.BackendConfig
 	fileManagerFactory             filemanager.FileManagerFactory
-	maxFileUploadSize              int
 	inProgressMap                  map[string]bool
 	inProgressMapLock              sync.RWMutex
 	lastExecMap                    map[string]int64
@@ -1841,11 +1840,10 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 	config.RegisterDurationConfigVariable(time.Duration(10), &brt.pollStatusLoopSleep, true, time.Second, []string{"BatchRouter." + brt.destType + "." + "pollStatusLoopSleep", "BatchRouter.pollStatusLoopSleep"}...)
 	config.RegisterIntConfigVariable(100000, &brt.jobQueryBatchSize, true, 1, []string{"BatchRouter." + brt.destType + "." + "jobQueryBatchSize", "BatchRouter.jobQueryBatchSize"}...)
-	config.RegisterIntConfigVariable(100000, &brt.maxEventsInABatch, false, 1, []string{"BatchRouter." + brt.destType + "." + "maxEventsInABatch", "BatchRouter.maxEventsInABatch"}...)
-	config.RegisterIntConfigVariable(10000, &brt.maxFileUploadSize, true, 1024, []string{"BatchRouter." + brt.destType + "." + "maxFileUploadSize", "BatchRouter.maxFileUploadSize"}...)
+	config.RegisterIntConfigVariable(10000, &brt.maxEventsInABatch, false, 1, []string{"BatchRouter." + brt.destType + "." + "maxEventsInABatch", "BatchRouter.maxEventsInABatch"}...)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
-	config.RegisterDurationConfigVariable(180, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
+	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
 	brt.netHandle = client
