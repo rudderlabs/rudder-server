@@ -91,7 +91,6 @@ func loadConfig() {
 func init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("asyncDestinationManager")
-
 }
 
 func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int64, []int64) {

@@ -47,71 +47,11 @@ We prefer squash or rebase commits so that all changes from a branch are committ
 
 ## Installing and Setting Up RudderStack
 
-To contribute to this project, you need to install RudderStack on your machine. By following a few simple instructions, you can get your machine up and running to use RudderStack in no time.
-
-
-1. Download and install [Golang 1.13](https://golang.org/dl/) or above.
-
-2. Download and install [Node.js 10.6](https://nodej.org/en/download/) or above.
-
-3. Download and install [PostgreSQL 10](https://www.postgresql.org/download/) or above, and set up the database using the following commands:
-
- ```
- createdb jobsdb
- createuser --superuser rudder
- psql "jobsdb" -c "alter user rudder with encrypted password 'rudder'";
- psql "jobsdb" -c "grant all privileges on database jobsdb to rudder";
-
- ```
-
-4. Go to the [**RudderStack dashboard**](https://app.rudderstack.com/signup) and set up your account. Copy your workspace token from the top of the home page, as shown:
-
-![Workspace Token](https://user-images.githubusercontent.com/59817155/124143266-99862b80-daa8-11eb-9e12-37126551e2d9.png)
-
-
-5. Clone the **`rudder-server`** repository. Run `git submodule init` and `git submodule update` to fetch the [**rudder-transformer**](https://github.com/rudderlabs/rudder-transformer) repository. Then, navigate to the transformer directory using the following command:
-
-```
-cd rudder-transformer
-```
-
-6. Install the dependencies using the command `npm install` and start the destination transformer using the following command:
-
-```
-npm start
-
-```
-
-7. Navigate back to the main directory using the following command:
-
-```
-cd rudder-server
-
-```
-
-8. Copy the `sample.env` to the main directory using the following command:
-
-```
-cp config/sample.env .env
-
-```
-
-9. Update the `WORKSPACE_TOKEN` environment variable with the workspace token fetched from the RudderStack dashboard.
-
-10. Run the backend server using the following command:
-
-```
-go run -mod=vendor main.go
-
-```
-
-Once you have successfully followed the steps above, follow our guide on [**How to Send Test Events**](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack#sending-test-events-to-verify-the-installation) to test if there are any issues with the installation.
-
-There you go! You can now start using RudderStack on your machine.
+To contribute to this project, you need to install RudderStack on your machine. You can do so by following our [**docs**](https://docs.rudderstack.com/get-started/installing-and-setting-up-rudderstack) and set up RudderStack in no time.
 
 ## Getting Help
 
-If you have a question about RudderStack or have encountered problems using it, you can start by asking a question on our [Slack](https://resources.rudderstack.com/join-rudderstack-slack) channel.
+For any questions, concerns, or queries, you can start by asking a question on our [**Slack**](https://resources.rudderstack.com/join-rudderstack-slack) channel.
 
 ### We look forward to your feedback on improving this project.
 
