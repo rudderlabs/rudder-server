@@ -1283,6 +1283,7 @@ func (worker *workerT) workerProcess() {
 						RetryTime:     time.Now(),
 						ErrorCode:     "",
 						ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
+						Parameters:    []byte(`{}`), // check
 					}
 					drainList = append(drainList, &status)
 					if _, ok := drainCountByDest[batchDest.Destination.ID]; !ok {
