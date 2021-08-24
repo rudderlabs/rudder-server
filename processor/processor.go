@@ -980,13 +980,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				shallowEventCopy.Message["request_ip"] = requestIP
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
 				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, backendconfig.DestinationT{})
-				configT, ok := proc.backendConfig.Get()
-				if !ok {
-					pkgLogger.Errorf("unable to get backend config")
-				}
+
 				eventType, ok := singularEvent["type"].(string)
 				if !ok {
-					pkgLogger.Error("singular event type is unknown")
+					proc.logger.Error("singular event type is unknown")
 				}
 				for _, source := range configT.Sources {
 					if source.ID == commonMetadataFromSingularEvent.SourceID && !source.DgSourceTrackingPlanConfig.Deleted && source.DgSourceTrackingPlanConfig.TrackingPlan.Id != "" {
