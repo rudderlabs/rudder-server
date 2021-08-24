@@ -56,7 +56,6 @@ var (
 	disableEgress                      bool
 	toAbortDestinationIDs              string
 	transformerURL                     string
-	HTTPTimeout                        time.Duration
 )
 
 const DISABLED_EGRESS = "200: outgoing disabled"
@@ -1763,7 +1762,6 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	config.RegisterDurationConfigVariable(time.Duration(600), &HTTPTimeout, true, time.Second, "AsyncDestination.HTTPTimeout")
 }
 
 func init() {
