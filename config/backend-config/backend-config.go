@@ -3,6 +3,7 @@ package backendconfig
 //go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
 
 import (
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"reflect"
 	"sort"
 	"sync"
@@ -181,8 +182,36 @@ type DgSourceTrackingPlanConfigT struct {
 	SourceId            string                 `json:"sourceId"`
 	SourceConfigVersion int                    `json:"version"`
 	Config              map[string]interface{} `json:"config"`
+	MergedConfig        map[string]interface{} `json:"mergedConfig"`
 	Deleted             bool                   `json:"deleted"`
 	TrackingPlan        TrackingPlanT          `json:"trackingPlan"`
+}
+
+func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType string) map[string]interface{} {
+	if dgSourceTPConfigT.MergedConfig == nil {
+		sourceTpConfig := dgSourceTPConfigT.Config
+		eventSpecificConfig := fetchEventConfig(sourceTpConfig, eventType)
+		globalConfig := fetchEventConfig(sourceTpConfig, "global")
+		misc.MergeMaps(globalConfig, eventSpecificConfig)
+
+		dgSourceTPConfigT.MergedConfig = globalConfig
+		return globalConfig
+	}
+	return dgSourceTPConfigT.MergedConfig
+}
+
+func fetchEventConfig(sourceTpConfig map[string]interface{}, eventType string) map[string]interface{} {
+	emptyMap := map[string]interface{}{}
+	_, eventSpecificConfigPresent := sourceTpConfig[eventType]
+	if !eventSpecificConfigPresent {
+		return emptyMap
+	}
+	eventSpecificConfig, castOk := sourceTpConfig[eventType].(map[string]interface{})
+	if !castOk {
+		pkgLogger.Errorf("config not parseable for %s", eventType)
+		return emptyMap
+	}
+	return eventSpecificConfig
 }
 
 type TrackingPlanT struct {

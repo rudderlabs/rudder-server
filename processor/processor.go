@@ -984,12 +984,17 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				if !ok {
 					pkgLogger.Errorf("unable to get backend config")
 				}
+				eventType, ok := singularEvent["type"].(string)
+				if !ok {
+					pkgLogger.Error("singular event type is unknown")
+				}
 				for _, source := range configT.Sources {
 					if source.ID == commonMetadataFromSingularEvent.SourceID && !source.DgSourceTrackingPlanConfig.Deleted && source.DgSourceTrackingPlanConfig.TrackingPlan.Id != "" {
 						// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
 						shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
 						shallowEventCopy.Metadata.TrackingPlanVersion = source.DgSourceTrackingPlanConfig.TrackingPlan.Version
 						shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
+						shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(eventType)
 						break
 					}
 				}

@@ -6,7 +6,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	uuid "github.com/satori/go.uuid"
 	"time"
@@ -27,6 +26,7 @@ func (proc *HandleT) GetTransformerEventsFromValidationResponse(response transfo
 		reportViolations(&validatedEvent)
 
 		sourceTpConfig := validatedEvent.Metadata.SourceTpConfig
+		mergedTpConfig := validatedEvent.Metadata.MergedTpConfig
 		if len(validatedEvent.ValidationErrors) == 0 || len(sourceTpConfig) == 0 {
 			eventsToTransform = append(eventsToTransform, updatedEvent)
 			continue
@@ -38,24 +38,14 @@ func (proc *HandleT) GetTransformerEventsFromValidationResponse(response transfo
 			violationsByType[violation.Type] = struct{}{}
 		}
 
-		//not grouping by eventTypes as sourceConfig could differ
-		eventType, ok := validatedEvent.Output["type"].(string)
-		if !ok {
-			pkgLogger.Error("singular event type is unknown")
-		}
-
-		eventSpecificConfig := fetchEventConfig(sourceTpConfig, eventType)
-		globalConfig := fetchEventConfig(sourceTpConfig, "global")
-		misc.MergeMaps(globalConfig, eventSpecificConfig)
-
-		if len(globalConfig) == 0 {
+		if len(mergedTpConfig) == 0 {
 			//All events are forwarded
 			eventsToTransform = append(eventsToTransform, updatedEvent)
 			continue
 		}
 
 		dropEvent := false
-		for k, v := range globalConfig {
+		for k, v := range mergedTpConfig {
 			value := fmt.Sprint(v)
 			switch k {
 			case "allowUnplannedEvents":
@@ -145,20 +135,6 @@ func (proc *HandleT) GetTransformerEventsFromValidationResponse(response transfo
 
 	}
 	return eventsToTransform, failedEventsToStore
-}
-
-func fetchEventConfig(sourceTpConfig map[string]interface{}, eventType string) map[string]interface{} {
-	emptyMap := map[string]interface{}{}
-	_, eventSpecificConfigPresent := sourceTpConfig[eventType]
-	if !eventSpecificConfigPresent {
-		return emptyMap
-	}
-	eventSpecificConfig, castOk := sourceTpConfig[eventType].(map[string]interface{})
-	if !castOk {
-		pkgLogger.Errorf("config not parseable for %s", eventType)
-		return emptyMap
-	}
-	return eventSpecificConfig
 }
 
 func reportViolations(validateEvent *transformer.TransformerResponseT) {
