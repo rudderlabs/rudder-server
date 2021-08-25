@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -117,9 +118,16 @@ func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
+	// TODO: do we need sorted order here?
+	keys := []string{}
+	for colName := range columns {
+		keys = append(keys, colName)
+	}
+	sort.Strings(keys)
+
 	arr := []string{}
-	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, getRSDataType(dataType)))
+	for _, name := range keys {
+		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, getRSDataType(columns[name])))
 	}
 	return strings.Join(arr[:], ",")
 }
@@ -172,9 +180,14 @@ func (rs *HandleT) createSchema() (err error) {
 	return
 }
 
+type S3ManifestEntryMetadataT struct {
+	ContentLength int64 `json:"content_length"`
+}
+
 type S3ManifestEntryT struct {
-	Url       string `json:"url"`
-	Mandatory bool   `json:"mandatory"`
+	Url       string                   `json:"url"`
+	Mandatory bool                     `json:"mandatory"`
+	Metadata  S3ManifestEntryMetadataT `json:"meta"`
 }
 
 type S3ManifestT struct {
@@ -182,11 +195,17 @@ type S3ManifestT struct {
 }
 
 func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
-	csvObjectLocations := rs.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
-	csvS3Locations := warehouseutils.GetS3Locations(csvObjectLocations)
+	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
+	loadFiles = warehouseutils.GetS3Locations(loadFiles)
 	var manifest S3ManifestT
-	for _, location := range csvS3Locations {
-		manifest.Entries = append(manifest.Entries, S3ManifestEntryT{Url: location, Mandatory: true})
+	for idx, loadFile := range loadFiles {
+		manifestEntry := S3ManifestEntryT{Url: loadFile.Location, Mandatory: true}
+		// add contentLength to manifest entry if it exists
+		contentLength := gjson.Get(string(loadFiles[idx].Metadata), "content_length")
+		if contentLength.Exists() {
+			manifestEntry.Metadata.ContentLength = contentLength.Int()
+		}
+		manifest.Entries = append(manifest.Entries, manifestEntry)
 	}
 	pkgLogger.Infof("RS: Generated manifest for table:%s", tableName)
 	manifestJSON, _ := json.Marshal(&manifest)
@@ -288,7 +307,16 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	sqlStatement := fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token, region)
+	var sqlStatement string
+	if rs.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+		// copy statement for parquet load files
+		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' MANIFEST FORMAT PARQUET`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token)
+	} else {
+		// copy statement for csv load files
+		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
+			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token, region)
+	}
+
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
 		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",

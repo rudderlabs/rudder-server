@@ -1121,7 +1121,7 @@ var _ = Describe("Processor", func() {
 var _ = Describe("Static Function Tests", func() {
 
 	Context("TransformerFormatResponse Tests", func() {
-		It("Should match ConvertToTransformerResponse ", func() {
+		It("Should match ConvertToTransformerResponse without filtering", func() {
 			var events = []transformer.TransformerEventT{
 				{
 					Metadata: transformer.MetadataT{
@@ -1162,7 +1162,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToTransformerResponse(events)
+			response := ConvertToFilteredTransformerResponse(events, false)
 			Expect(response.Events[0].StatusCode).To(Equal(expectedResponses.Events[0].StatusCode))
 			Expect(response.Events[0].Metadata.MessageID).To(Equal(expectedResponses.Events[0].Metadata.MessageID))
 			Expect(response.Events[0].Output["some-key-1"]).To(Equal(expectedResponses.Events[0].Output["some-key-1"]))
@@ -1267,6 +1267,93 @@ var _ = Describe("Static Function Tests", func() {
 			response := getDiffMetrics("some-string-1", "some-string-2", inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
 			assertReportMetric(expectedResponse, response)
 
+		})
+	})
+
+	Context("ConvertToTransformerResponse Tests", func() {
+		It("Should match expectedResponses with filtering", func() {
+			destinationConfig := backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"supportedMessageTypes": []string{"identify"},
+					},
+				},
+			}
+
+			var events = []transformer.TransformerEventT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-1",
+					},
+					Message: map[string]interface{}{
+						"some-key-1": "some-value-1",
+						"type":       "  IDENTIFY ",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-2",
+					},
+					Message: map[string]interface{}{
+						"some-key-2": "some-value-2",
+						"type":       "track",
+					},
+					Destination: destinationConfig,
+				},
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: "message-2",
+					},
+					Message: map[string]interface{}{
+						"some-key-2": "some-value-2",
+						"type":       123,
+					},
+					Destination: destinationConfig,
+				},
+			}
+			var expectedResponses = transformer.ResponseT{
+				Events: []transformer.TransformerResponseT{
+					{
+						Output: map[string]interface{}{
+							"some-key-1": "some-value-1",
+						},
+						StatusCode: 200,
+						Metadata: transformer.MetadataT{
+							MessageID: "message-1",
+						},
+					},
+				},
+				FailedEvents: []transformer.TransformerResponseT{
+					{
+						Output: map[string]interface{}{
+							"some-key-2": "some-value-2",
+						},
+						StatusCode: 400,
+						Metadata: transformer.MetadataT{
+							MessageID: "message-2",
+						},
+					},
+					{
+						Output: map[string]interface{}{
+							"some-key-2": "some-value-2",
+						},
+						StatusCode: 400,
+						Metadata: transformer.MetadataT{
+							MessageID: "message-2",
+						},
+						Error: "Invalid message type. Type assertion failed",
+					},
+				},
+			}
+			response := ConvertToFilteredTransformerResponse(events, true)
+			Expect(response.Events[0].StatusCode).To(Equal(expectedResponses.Events[0].StatusCode))
+			Expect(response.Events[0].Metadata.MessageID).To(Equal(expectedResponses.Events[0].Metadata.MessageID))
+			Expect(response.Events[0].Output["some-key-1"]).To(Equal(expectedResponses.Events[0].Output["some-key-1"]))
+			Expect(response.FailedEvents[0].StatusCode).To(Equal(expectedResponses.FailedEvents[0].StatusCode))
+			Expect(response.FailedEvents[0].Metadata.MessageID).To(Equal(expectedResponses.FailedEvents[0].Metadata.MessageID))
+			Expect(response.FailedEvents[0].Output["some-key-2"]).To(Equal(expectedResponses.FailedEvents[0].Output["some-key-2"]))
+			Expect(response.FailedEvents[1].Error).To(Equal(expectedResponses.FailedEvents[1].Error))
 		})
 	})
 })

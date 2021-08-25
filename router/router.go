@@ -103,6 +103,7 @@ type HandleT struct {
 	saveDestinationResponse                bool
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
+	savePayloadOnError                     bool
 }
 
 type jobResponseT struct {
@@ -354,6 +355,7 @@ func (worker *workerT) workerProcess() {
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
 					ErrorResponse: []byte(`{"reason": "Aborted because destination is not available in the config" }`),
+					Parameters:    []byte(`{}`),
 				}
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				continue
@@ -436,16 +438,6 @@ func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUse
 	}
 
 	return true
-}
-
-//rawMsg passed must be a valid JSON
-func (worker *workerT) enhanceResponse(rawMsg []byte, key, val string) []byte {
-	resp, err := sjson.SetBytes(rawMsg, key, val)
-	if err != nil {
-		return []byte(`{}`)
-	}
-
-	return resp
 }
 
 func getIterableStruct(payload []byte, transformAt string) []integrations.PostParametersT {
@@ -632,6 +624,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				AttemptNum:    attemptNum,
 				ErrorCode:     strconv.Itoa(respStatusCode),
 				ErrorResponse: []byte(`{}`),
+				Parameters:    []byte(`{}`),
 			}
 
 			worker.postStatusOnResponseQ(respStatusCode, respBody, destinationJob.Message, &destinationJobMetadata, &status)
@@ -669,6 +662,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				AttemptNum:    routerJob.JobMetadata.AttemptNum,
 				ErrorCode:     strconv.Itoa(500),
 				ErrorResponse: []byte(`{}`),
+				Parameters:    []byte(`{}`),
 			}
 
 			worker.postStatusOnResponseQ(500, "transformer failed to handle this job", nil, &routerJob.JobMetadata, &status)
@@ -782,9 +776,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 	}
 
-	status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
+	status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
 	if respBody != "" {
-		status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "response", respBody)
+		status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "response", respBody)
 	}
 
 	if isSuccessStatus(respStatusCode) {
@@ -810,7 +804,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		//1. if job failed and
 		//2. if router job undergoes batching or dest transform.
 		if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
-			status.ErrorResponse = worker.enhanceResponse(status.ErrorResponse, "payload", string(payload))
+			if worker.rt.savePayloadOnError {
+				status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "payload", string(payload))
+			}
 		}
 		// the job failed
 		worker.rt.logger.Debugf("[%v Router] :: Job failed to send, analyzing...", worker.rt.destName)
@@ -958,6 +954,7 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 			RetryTime:     time.Now(),
 			JobState:      jobsdb.Waiting.State,
 			ErrorResponse: []byte(resp), // check
+			Parameters:    []byte(`{}`),
 		}
 		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 		return true
@@ -1521,7 +1518,10 @@ func (rt *HandleT) readAndProcess() int {
 	//Identify jobs which can be processed
 	for _, job := range combinedList {
 		destID := destinationID(job)
-		if router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap) {
+		rt.configSubscriberLock.RLock()
+		drain, reason := router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap)
+		rt.configSubscriberLock.RUnlock()
+		if drain {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -1529,7 +1529,8 @@ func (rt *HandleT) readAndProcess() int {
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
-				ErrorResponse: []byte(`{"reason": "Job aborted since destination was disabled or confifgured to be aborted via ENV" }`),
+				Parameters:    []byte(`{}`),
+				ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
 			}
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
@@ -1549,6 +1550,7 @@ func (rt *HandleT) readAndProcess() int {
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check
+				Parameters:    []byte(`{}`),
 			}
 			statusList = append(statusList, &status)
 			toProcess = append(toProcess, workerJobT{worker: w, job: job})
@@ -1661,9 +1663,11 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
+	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
-	rt.enableBatching = getRouterConfigBool("enableBatching", rt.destName, false)
+	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
+	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 

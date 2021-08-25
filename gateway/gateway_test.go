@@ -493,11 +493,16 @@ var _ = Describe("Gateway", func() {
 				for i := range data {
 					data[i] = 'a'
 				}
-				body := fmt.Sprintf(`{"data":"%s"}`, string(data))
+				body := `{
+					"anonymousId": "anon_id"
+				  }`
+				body, _ = sjson.Set(body, "properties", data)
 				if handlerType == "batch" || handlerType == "import" {
 					body = fmt.Sprintf(`{"batch":[%s]}`, body)
 				}
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(body)), 400, response.RequestBodyTooLarge+"\n")
+				if handlerType != "audiencelist" {
+					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body)), 400, response.RequestBodyTooLarge+"\n")
+				}
 			})
 
 			It("should reject requests with invalid write keys", func() {
@@ -586,14 +591,15 @@ func expectBatch(expectations []*RequestExpectation) {
 
 func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"alias":    gateway.webAliasHandler,
-		"batch":    gateway.webBatchHandler,
-		"group":    gateway.webGroupHandler,
-		"identify": gateway.webIdentifyHandler,
-		"page":     gateway.webPageHandler,
-		"screen":   gateway.webScreenHandler,
-		"track":    gateway.webTrackHandler,
-		"import":   gateway.webImportHandler,
+		"alias":        gateway.webAliasHandler,
+		"batch":        gateway.webBatchHandler,
+		"group":        gateway.webGroupHandler,
+		"identify":     gateway.webIdentifyHandler,
+		"page":         gateway.webPageHandler,
+		"screen":       gateway.webScreenHandler,
+		"track":        gateway.webTrackHandler,
+		"import":       gateway.webImportHandler,
+		"audiencelist": gateway.webAudienceListHandler,
 	}
 }
 

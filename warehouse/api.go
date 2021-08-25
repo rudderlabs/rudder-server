@@ -160,8 +160,6 @@ func (uploadsReq *UploadsReqT) generateQuery(authorizedSourceIDs []string, selec
 	}
 	if uploadsReq.Status != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`status like '%s'`, statusMap[uploadsReq.Status]))
-	} else {
-		whereClauses = append(whereClauses, fmt.Sprintf(`status != '%s'`, "waiting"))
 	}
 
 	query = query + strings.Join(whereClauses, " AND ") + fmt.Sprintf(` order by id desc limit %d offset %d`, uploadsReq.Limit, uploadsReq.Offset)
@@ -193,7 +191,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		return uploadsRes, nil
 	}
 
-	query := uploadsReq.generateQuery(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime'`)
+	query := uploadsReq.generateQuery(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	uploadsReq.API.log.Info(query)
 	rows, err := uploadsReq.API.dbHandle.Query(query)
 	if err != nil {
@@ -207,7 +205,8 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		var timingsObject sql.NullString
 		var totalUploads int32
 		var firstEventAt, lastEventAt, lastExecAt, updatedAt sql.NullTime
-		err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &totalUploads)
+		var isUploadArchived sql.NullBool
+		err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived, &totalUploads)
 		if err != nil {
 			uploadsReq.API.log.Errorf(err.Error())
 			return &proto.WHUploadsResponse{}, err
@@ -215,6 +214,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		uploadsRes.Pagination.Total = totalUploads
 		upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 		upload.LastEventAt = timestamppb.New(lastEventAt.Time)
+		upload.IsArchivedUpload = isUploadArchived.Bool // will be false if archivedStagingAndLoadFiles is not set
 		gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
 			upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 			return true
@@ -248,20 +248,51 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 	return
 }
 
+func (uploadsReq *UploadsReqT) TriggerWhUploads() (err error) {
+	err = uploadsReq.validateReq()
+	if err != nil {
+		return
+	}
+	authorizedSourceIDs := uploadsReq.authorizedSources()
+	if len(authorizedSourceIDs) == 0 {
+		return fmt.Errorf("No authorized sourceId's")
+	}
+	if uploadsReq.DestinationID == "" {
+		return fmt.Errorf("Valid destinationId must be provided")
+	}
+	var pendingStagingFileCount int64
+	pendingUploadCount, err := getPendingUploadCount(uploadsReq.DestinationID, false)
+	if err != nil {
+		return
+	}
+	if pendingUploadCount == int64(0) {
+		pendingStagingFileCount, err = getPendingStagingFileCount(uploadsReq.DestinationID, false)
+		if err != nil {
+			return
+		}
+	}
+	if (pendingUploadCount + pendingStagingFileCount) == int64(0) {
+		return fmt.Errorf("No pending jobs to trigger for destination : %s", uploadsReq.DestinationID)
+	}
+	return TriggerUploadHandler(uploadsReq.SourceID, uploadsReq.DestinationID)
+}
+
+
 func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	err := uploadReq.validateReq()
 	if err != nil {
 		return &proto.WHUploadResponse{}, err
 	}
-	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, created_at, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime'`)
+	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, created_at, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	uploadReq.API.log.Debug(query)
 	var upload proto.WHUploadResponse
 	var nextRetryTimeStr sql.NullString
 	var firstEventAt, lastEventAt, createdAt, lastExecAt, updatedAt sql.NullTime
 	var timingsObject sql.NullString
 	var uploadError string
+	var isUploadArchived sql.NullBool
 	row := uploadReq.API.dbHandle.QueryRow(query)
-	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &createdAt, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr)
+	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &createdAt, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived)
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadResponse{}, err
@@ -274,6 +305,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 	upload.LastEventAt = timestamppb.New(lastEventAt.Time)
 	upload.LastExecAt = timestamppb.New(lastExecAt.Time)
+	upload.IsArchivedUpload = isUploadArchived.Bool
 	gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
 		upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 		return true

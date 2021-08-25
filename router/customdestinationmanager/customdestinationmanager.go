@@ -207,8 +207,8 @@ func (customManager *CustomManagerT) onConfigChange(destination backendconfig.De
 
 	if ok {
 		hasDestConfigChanged := !reflect.DeepEqual(
-			genComparisonConfig(customDestination.Config),
-			genComparisonConfig(newDestConfig),
+			customManager.genComparisonConfig(customDestination.Config),
+			customManager.genComparisonConfig(newDestConfig),
 		)
 
 		if !hasDestConfigChanged {
@@ -283,9 +283,15 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 	}
 }
 
-func genComparisonConfig(configMap interface{}) map[string]interface{} {
+func (customManager *CustomManagerT) genComparisonConfig(config interface{}) map[string]interface{} {
 	var relevantConfigs = make(map[string]interface{})
-	for k, v := range configMap.(map[string]interface{}) {
+	configMap, ok := config.(map[string]interface{})
+	if !ok {
+		pkgLogger.Error("[CustomDestinationManager] Desttype: %s. Destination's config is not of expected type (map). Returning empty map", customManager.destType)
+		return map[string]interface{}{}
+	}
+
+	for k, v := range configMap {
 		if k != "eventDeliveryTS" && k != "eventDelivery" {
 			relevantConfigs[k] = v
 		}
