@@ -95,26 +95,29 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		reportingI = processor.App.Features().Reporting.GetReportingInstance()
 	}
 
+	g, ctx := errgroup.WithContext(ctx)
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startProcessorFunc := func() {
+			startProcessorFunc := func(ctx context.Context) {
 				clearDB := false
-				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+				StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 			}
-			startRouterFunc := func() {
-				StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+			startRouterFunc := func(ctx context.Context) {
+				StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 			}
 			enableRouter = false
 			enableProcessor = false
 
 			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
-			processor.App.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+			g.Go(func() error {
+				processor.App.Features().Migrator.Run(ctx,&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+				return nil
+			})
 		}
 	}
 
 	operationmanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
 
-	g, ctx := errgroup.WithContext(ctx)
 	g.Go(misc.WithBugsnag(func() error {
 		return operationmanager.OperationManager.StartProcessLoop(ctx)
 	}))

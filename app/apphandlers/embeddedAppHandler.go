@@ -75,6 +75,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		reportingI = embedded.App.Features().Reporting.GetReportingInstance()
 	}
 
+	g, ctx := errgroup.WithContext(ctx)
+
 	if embedded.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func(ctx context.Context) {
@@ -89,11 +91,14 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			enableGateway = (migrationMode != db.EXPORT)
 
 			embedded.App.Features().Migrator.PrepareJobsdbsForImport(&gatewayDB, &routerDB, &batchRouterDB)
-			embedded.App.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+			
+			g.Go(func() error {
+				embedded.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+				return nil
+			})
 		}
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
 
 	operationmanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
 
