@@ -559,7 +559,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							//for proxying through transformer
 							pkgLogger.Infof(`transformerProxy status : %s`, worker.rt.transformerProxy)
 							if worker.rt.transformerProxy {
-								pkgLogger.Infof(`routing via server, proxy disabled`)
+								pkgLogger.Infof(`routing via transformer, proxy enabled`)
 								respStatusCode, respBodyTemp = worker.rt.transformer.Send(val, worker.rt.destName)
 							} else {
 								pkgLogger.Infof(`routing via server, proxy disabled`)
