@@ -37,6 +37,7 @@ func (embedded *EmbeddedApp) GetAppType() string {
 func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	pkgLogger.Info("Main starting")
 
+	rudderCoreDBValidator()
 	rudderCoreDBSetup()
 	rudderCoreBaseSetup()
 

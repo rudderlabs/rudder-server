@@ -65,6 +65,7 @@ func loadConfigHandler() {
 func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 	pkgLogger.Info("Processor starting")
 
+	rudderCoreDBValidator()
 	rudderCoreDBSetup()
 	rudderCoreBaseSetup()
 

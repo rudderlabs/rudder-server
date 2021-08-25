@@ -79,10 +79,11 @@ func loadConfig() {
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE"}
 }
 
+func rudderCoreDBValidator() {
+	validators.ValidateEnv()
+}
+
 func rudderCoreDBSetup() {
-	if !validators.ValidateEnv() {
-		panic(errors.New("Failed to start rudder-server"))
-	}
 	validators.InitializeEnv()
 }
 

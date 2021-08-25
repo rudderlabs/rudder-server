@@ -31,6 +31,7 @@ func (gatewayApp *GatewayApp) GetAppType() string {
 func (gatewayApp *GatewayApp) StartRudderCore(options *app.Options) {
 	pkgLogger.Info("Gateway starting")
 
+	rudderCoreDBValidator()
 	rudderCoreBaseSetup()
 
 	var gatewayDB jobsdb.HandleT
