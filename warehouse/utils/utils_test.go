@@ -49,18 +49,18 @@ var _ = Describe("Utils", func() {
 
 			Context("GetS3Locations", func() {
 				It("should parse multiple urls and return array with locations ", func() {
-					var inputs = []string{
-						"https://test-bucket.s3.amazonaws.com/test-object.csv",
-						"https://test-bucket.s3.eu-west-1.amazonaws.com/test-object.csv",
-						"https://my.test-bucket.s3.amazonaws.com/test-object.csv",
-						"https://my.test-bucket.s3.us-west-1.amazonaws.com/test-object.csv",
+					var inputs = []LoadFileT{
+						{Location: "https://test-bucket.s3.amazonaws.com/test-object.csv"},
+						{Location: "https://test-bucket.s3.eu-west-1.amazonaws.com/test-object.csv"},
+						{Location: "https://my.test-bucket.s3.amazonaws.com/test-object.csv"},
+						{Location: "https://my.test-bucket.s3.us-west-1.amazonaws.com/test-object.csv"},
 					}
 
 					locations := GetS3Locations(inputs)
-					Expect(locations[0]).To(Equal("s3://test-bucket/test-object.csv"))
-					Expect(locations[1]).To(Equal("s3://test-bucket/test-object.csv"))
-					Expect(locations[2]).To(Equal("s3://my.test-bucket/test-object.csv"))
-					Expect(locations[3]).To(Equal("s3://my.test-bucket/test-object.csv"))
+					Expect(locations[0].Location).To(Equal("s3://test-bucket/test-object.csv"))
+					Expect(locations[1].Location).To(Equal("s3://test-bucket/test-object.csv"))
+					Expect(locations[2].Location).To(Equal("s3://my.test-bucket/test-object.csv"))
+					Expect(locations[3].Location).To(Equal("s3://my.test-bucket/test-object.csv"))
 				})
 			})
 		})
@@ -92,11 +92,11 @@ var _ = Describe("Utils", func() {
 
 			Context("GetGCSLocations", func() {
 				It("should parse multiple urls and return array with locations ", func() {
-					var inputs = []string{
-						"https://storage.googleapis.com/test-bucket/test-object.csv",
-						"https://storage.googleapis.com/my.test-bucket/test-object.csv",
-						"https://storage.googleapis.com/my.test-bucket2/test-object.csv",
-						"https://storage.googleapis.com/my.test-bucket/test-object2.csv",
+					var inputs = []LoadFileT{
+						{Location: "https://storage.googleapis.com/test-bucket/test-object.csv"},
+						{Location: "https://storage.googleapis.com/my.test-bucket/test-object.csv"},
+						{Location: "https://storage.googleapis.com/my.test-bucket2/test-object.csv"},
+						{Location: "https://storage.googleapis.com/my.test-bucket/test-object2.csv"},
 					}
 
 					locations := GetGCSLocations(inputs, GCSLocationOptionsT{})
