@@ -168,14 +168,14 @@ func loadConfig() {
 	adminUser = config.GetEnv("RUDDER_ADMIN_USER", "rudder")
 	adminPassword = config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
 	noOfWorkers = config.GetInt("EventSchemas.noOfWorkers", 128)
-	config.RegisterDurationConfigVariable(time.Duration(240), &flushInterval, false, time.Second, []string{"EventSchemas.syncInterval", "EventSchemas.syncIntervalInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(240), &flushInterval, true, time.Second, []string{"EventSchemas.syncInterval", "EventSchemas.syncIntervalInS"}...)
 
 	config.RegisterIntConfigVariable(5, &reservoirSampleSize, true, 1, "EventSchemas.sampleEventsSize")
 	config.RegisterIntConfigVariable(200, &eventModelLimit, true, 1, "EventSchemas.eventModelLimit")
 	config.RegisterIntConfigVariable(20, &schemaVersionPerEventModelLimit, true, 1, "EventSchemas.schemaVersionPerEventModelLimit")
 	config.RegisterBoolConfigVariable(false, &shouldCaptureNilAsUnknowns, true, "EventSchemas.captureUnknowns")
-	config.RegisterDurationConfigVariable(time.Duration(60), &offloadLoopInterval, false, time.Second, []string{"EventSchemas.offloadLoopInterval"}...)
-	config.RegisterDurationConfigVariable(time.Duration(1800), &offloadThreshold, false, time.Second, []string{"EventSchemas.offloadThreshold"}...)
+	config.RegisterDurationConfigVariable(time.Duration(60), &offloadLoopInterval, true, time.Second, []string{"EventSchemas.offloadLoopInterval"}...)
+	config.RegisterDurationConfigVariable(time.Duration(1800), &offloadThreshold, true, time.Second, []string{"EventSchemas.offloadThreshold"}...)
 
 	if adminPassword == "rudderstack" {
 		fmt.Println("[EventSchemas] You are using default password. Please change it by setting env variable RUDDER_ADMIN_PASSWORD")
@@ -726,22 +726,30 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) {
 
 	for rows.Next() {
 		var eventModel EventModelT
+		var metadataRaw, privateDataRaw json.RawMessage
 		err := rows.Scan(&eventModel.ID, &eventModel.UUID, &eventModel.WriteKey, &eventModel.EventType,
-			&eventModel.EventIdentifier, &eventModel.CreatedAt, &eventModel.Schema, &eventModel.Metadata,
-			&eventModel.PrivateData, &eventModel.TotalCount, &eventModel.LastSeen)
+			&eventModel.EventIdentifier, &eventModel.CreatedAt, &eventModel.Schema, &metadataRaw,
+			&privateDataRaw, &eventModel.TotalCount, &eventModel.LastSeen)
 
 		assertError(err)
 
 		var metadata MetaDataT
-		err = json.Unmarshal(eventModel.Metadata, &metadata)
+		err = json.Unmarshal(metadataRaw, &metadata)
 		assertError(err)
 
 		var privateData PrivateDataT
-		err = json.Unmarshal(eventModel.PrivateData, &privateData)
+		err = json.Unmarshal(privateDataRaw, &privateData)
 		assertError(err)
 
-		eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, len(metadata.SampledEvents), metadata.TotalCount)
-		for sampledEvent := range metadata.SampledEvents {
+		reservoirSize := len(metadata.SampledEvents)
+		if reservoirSize > reservoirSampleSize {
+			reservoirSize = reservoirSampleSize
+		}
+		eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, reservoirSize, metadata.TotalCount)
+		for idx, sampledEvent := range metadata.SampledEvents {
+			if idx > reservoirSampleSize-1 {
+				continue
+			}
 			eventModel.reservoirSample.add(sampledEvent, false)
 		}
 		manager.updateEventModelCache(&eventModel, false)
@@ -794,21 +802,30 @@ func (manager *EventSchemaManagerT) populateSchemaVersionsMinimal(modelIDFilters
 
 func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVersionT) {
 	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, metadata, private_data,first_seen, last_seen, total_count FROM %s WHERE uuid = '%s'`, SCHEMA_VERSIONS_TABLE, o.UUID)
-	var schemaVersion SchemaVersionT
 
-	err := manager.dbHandle.QueryRow(schemaVersionsSelectSQL).Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash, &schemaVersion.Schema, &schemaVersion.Metadata, &schemaVersion.PrivateData, &schemaVersion.FirstSeen, &schemaVersion.LastSeen, &schemaVersion.TotalCount)
+	var schemaVersion SchemaVersionT
+	var metadataRaw, privateDataRaw json.RawMessage
+
+	err := manager.dbHandle.QueryRow(schemaVersionsSelectSQL).Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash, &schemaVersion.Schema, &metadataRaw, &privateDataRaw, &schemaVersion.FirstSeen, &schemaVersion.LastSeen, &schemaVersion.TotalCount)
 	assertError(err)
 
 	var metadata MetaDataT
-	err = json.Unmarshal(schemaVersion.Metadata, &metadata)
+	err = json.Unmarshal(privateDataRaw, &metadata)
 	assertError(err)
 
 	var privateData PrivateDataT
-	err = json.Unmarshal(schemaVersion.PrivateData, &privateData)
+	err = json.Unmarshal(privateDataRaw, &privateData)
 	assertError(err)
 
-	schemaVersion.reservoirSample = NewReservoirSampler(reservoirSampleSize, len(metadata.SampledEvents), metadata.TotalCount)
-	for sampledEvent := range metadata.SampledEvents {
+	reservoirSize := len(metadata.SampledEvents)
+	if reservoirSize > reservoirSampleSize {
+		reservoirSize = reservoirSampleSize
+	}
+	schemaVersion.reservoirSample = NewReservoirSampler(reservoirSampleSize, reservoirSize, metadata.TotalCount)
+	for idx, sampledEvent := range metadata.SampledEvents {
+		if idx > reservoirSampleSize-1 {
+			continue
+		}
 		schemaVersion.reservoirSample.add(sampledEvent, false)
 	}
 
@@ -863,7 +880,7 @@ func computeFrequencies(flattenedEvent map[string]interface{}, schemaHash string
 	for k, v := range flattenedEvent {
 		fc := getFrequencyCounter(schemaHash, k)
 		stringVal := fmt.Sprintf("%v", v)
-		fc.Observe(stringVal)
+		fc.Observe(&stringVal)
 	}
 }
 
