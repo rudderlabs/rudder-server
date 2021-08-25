@@ -1,12 +1,14 @@
 package warehouse_test
 
 import (
-	_ "encoding/json"
 	"database/sql"
+	_ "encoding/json"
+
 	// "reflect"
 	_ "fmt"
 	"strings"
 	"time"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
@@ -35,7 +37,7 @@ var (
 
 const (
 	exportedDataState = "exported_data"
-	)
+)
 const (
 	BQ        = "BQ"
 	RS        = "RS"
@@ -69,11 +71,12 @@ func initializeWarehouseConfig(src string, des string) map[string][]warehouseuti
 		if source.Name == src {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					  if destination.Name == des{
-						warehouses[destination.DestinationDefinition.Name] = append(warehouses[destination.DestinationDefinition.Name], 
-						warehouseutils.WarehouseT{Source: source, Destination: destination})
+					if destination.Name == des {
+						warehouses[destination.DestinationDefinition.Name] = append(warehouses[destination.DestinationDefinition.Name],
+							warehouseutils.WarehouseT{Source: source, Destination: destination})
 						return warehouses
-				}}
+					}
+				}
 			}
 		}
 	}
@@ -94,7 +97,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to create a load file in database for BQ destination")
 			Eventually(func() bool {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				tables := []string{"tracks", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
 				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
@@ -103,7 +106,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to create a load file in database for RS destination")
 			Eventually(func() bool {
 				destType := RS
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				tables := []string{"tracks", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
 				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
@@ -112,7 +115,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to create a load file in database for SNOWFLAKE destination")
 			Eventually(func() bool {
 				destType := SNOWFLAKE
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				tables := []string{"TRACKS", strings.Replace(strings.ToUpper(eventName), " ", "_", -1)}
 				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
@@ -121,7 +124,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to create a load file in database for POSTGRES destination")
 			Eventually(func() bool {
 				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				tables := []string{"tracks", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
 				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
@@ -130,7 +133,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to create a load file in database for POSTGRES destination")
 			Eventually(func() bool {
 				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				tables := []string{"tracks", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
 				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
@@ -139,7 +142,7 @@ var _ = Describe("Warehouse", func() {
 			By("test create load files if source has two warehouse destinations")
 			Eventually(func() bool {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				loadedDestinationIDs := helpers.GetDestinationIDsFromLoadFileTable(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID)
 				return helpers.IsThisInThatSliceString([]string{WarehouseConfig[0].Destination.ID, WarehouseConfig[0].Destination.ID}, loadedDestinationIDs)
@@ -147,7 +150,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to BQ with state exported_data in db")
 			Eventually(func() string {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -155,7 +158,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to RS with state exported_data in db")
 			Eventually(func() string {
 				destType := RS
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -163,7 +166,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to SNOWFLAKE with state exported_data in db")
 			Eventually(func() string {
 				destType := SNOWFLAKE
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -171,7 +174,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to POSTGRES with state exported_data in db")
 			Eventually(func() string {
 				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -179,7 +182,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to query with anonymousId and compare properties on table eventName in BQ")
 			Eventually(func() string {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
@@ -188,7 +191,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to query with anonymousId and compare properties on table eventName in RS")
 			Eventually(func() string {
 				destType := RS
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
@@ -206,7 +209,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to query with anonymousId and compare properties on table eventName in POSTGRES")
 			Eventually(func() string {
 				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
@@ -228,7 +231,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to create a load file in database for BQ destination")
 			Eventually(func() bool {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				tables := []string{"identifies", "users", "pages", "tracks", "screens", "_groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
 				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
@@ -237,7 +240,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to BQ with state exported_data in db")
 			Eventually(func() string {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -245,7 +248,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to BQ with state exported_data in db and should have created tables in db which are updated")
 			Eventually(func() bool {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				uploadId, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				updatedTables := helpers.VerifyUpdatedTables(dbHandle, warehouseutils.WarehouseTableUploadsTable, uploadId, state)
@@ -309,7 +312,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to create a load file in database for POSTGRES destination")
 			Eventually(func() bool {
 				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				tables := []string{"identifies", "users", "pages", "tracks", "screens", "groups", "aliases", strings.Replace(strings.ToLower(eventName), " ", "_", -1)}
 				loadedTables := helpers.GetLoadFileTableName(dbHandle, warehouseutils.WarehouseLoadFilesTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
@@ -318,7 +321,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to POSTGRES with state exported_data in db")
 			Eventually(func() string {
 				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -326,7 +329,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to POSTGRES with state exported_data in db and should have created tables in db which are updated")
 			Eventually(func() bool {
 				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				uploadId, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				updatedTables := helpers.VerifyUpdatedTables(dbHandle, warehouseutils.WarehouseTableUploadsTable, uploadId, state)
@@ -336,7 +339,7 @@ var _ = Describe("Warehouse", func() {
 		})
 	})
 
-    Describe("testing with different string formats", func() {
+	Describe("testing with different string formats", func() {
 		BeforeEach(func() {
 			helpers.DeleteRowsInTables(dbHandle, warehouseTables)
 		})
@@ -352,7 +355,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to BQ with state exported_data in db")
 			Eventually(func() string {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -360,7 +363,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to query with anonymousId and compare properties and timestamps on table eventName on BQ")
 			Eventually(func() string {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
@@ -369,7 +372,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to RS with state exported_data in db")
 			Eventually(func() string {
 				destType := RS
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -377,7 +380,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to query with anonymousId and compare properties and timestamps on table eventName on RS")
 			Eventually(func() string {
 				destType := RS
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, namespace, _ := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
@@ -386,7 +389,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to SNOWFLAKE with state exported_data in db")
 			Eventually(func() string {
 				destType := SNOWFLAKE
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -403,7 +406,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to POSTGRES with state exported_data in db")
 			Eventually(func() string {
 				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -419,7 +422,7 @@ var _ = Describe("Warehouse", func() {
 			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(label))
 		})
 	})
-	
+
 	Describe("sending different data types for a key consecutively", func() {
 		BeforeEach(func() {
 			helpers.DeleteRowsInTables(dbHandle, warehouseTables)
@@ -445,7 +448,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to BQ with state exported_data in db")
 			Eventually(func() string {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -453,7 +456,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to BQ with state exported_data in db and match with the schema")
 			Eventually(func() bool {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				uploadedSchema := helpers.GetWarehouseSchema(dbHandle, warehouseutils.WarehouseSchemasTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID)
 				return helpers.IsMapSubset(uploadedSchema, helpers.BigQuerySchema)
@@ -461,7 +464,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to RS with state exported_data in db")
 			Eventually(func() string {
 				destType := RS
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -469,21 +472,15 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to RS with state exported_data in db and match with the schema")
 			Eventually(func() bool {
 				destType := RS
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				uploadedSchema := helpers.GetWarehouseSchema(dbHandle, warehouseutils.WarehouseSchemasTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID)
-				fmt.Println("******")
-				testjson1, _ := json.Marshal(uploadedSchema)
-				fmt.Println(string(testjson1))
-				testjson, _ := json.Marshal(helpers.RedshiftSchema)
-				fmt.Println(string(testjson))
-				fmt.Println("******")
 				return helpers.IsMapSubset(uploadedSchema, helpers.RedshiftSchema)
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 			By("test to upload to SNOWFLAKE with state exported_data in db")
 			Eventually(func() string {
 				destType := SNOWFLAKE
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -499,7 +496,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to POSTGRES with state exported_data in db")
 			Eventually(func() string {
 				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -507,7 +504,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to POSTGRES with state exported_data in db and match with the schema")
 			Eventually(func() bool {
 				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				uploadedSchema := helpers.GetWarehouseSchema(dbHandle, warehouseutils.WarehouseSchemasTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID)
 				return helpers.IsMapSubset(uploadedSchema, helpers.POSTGRESSchema)
@@ -538,7 +535,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to BQ with state exported_data in db")
 			Eventually(func() string {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -546,15 +543,15 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to BQ with state exported_data in db and match with the schema")
 			Eventually(func() bool {
 				destType := BQ
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "BQ Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				uploadedSchema := helpers.GetWarehouseSchema(dbHandle, warehouseutils.WarehouseSchemasTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID)
-				return helpers.IsMapSubset(uploadedSchema,helpers.ReserverKeyWordsBigQuerySchema)
+				return helpers.IsMapSubset(uploadedSchema, helpers.ReserverKeyWordsBigQuerySchema)
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 			By("test to upload to RS with state exported_data in db")
 			Eventually(func() string {
 				destType := RS
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -562,21 +559,15 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to RS with state exported_data in db and match with the schema")
 			Eventually(func() bool {
 				destType := RS
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "RS Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				uploadedSchema := helpers.GetWarehouseSchema(dbHandle, warehouseutils.WarehouseSchemasTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID)
-				fmt.Println("******")
-				testjson1, _ := json.Marshal(uploadedSchema)
-				fmt.Println(string(testjson1))
-				testjson, _ := json.Marshal(helpers.ReservedKeywordsRedshiftSchema)
-				fmt.Println(string(testjson))
-				fmt.Println("******")
-				return helpers.IsMapSubset(uploadedSchema,helpers.ReservedKeywordsRedshiftSchema)
+				return helpers.IsMapSubset(uploadedSchema, helpers.ReservedKeywordsRedshiftSchema)
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 			By("test to upload to SNOWFLAKE with state exported_data in db")
 			Eventually(func() string {
 				destType := SNOWFLAKE
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "SNOWFLAKE Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -588,11 +579,11 @@ var _ = Describe("Warehouse", func() {
 			// 	WarehouseConfig := warehouses[destType]
 			// 	uploadedSchema := helpers.GetWarehouseSchema(dbHandle, warehouseutils.WarehouseSchemasTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID)
 			// 	return helpers.IsMapSubset(uploadedSchema, helpers.ReservedKeywordsSnowflakeSchema)
-			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true)) 
+			// }, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 			By("test to upload to POSTGRES with state exported_data in db")
 			Eventually(func() string {
 				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				_, _, state := helpers.FetchUpdateState(dbHandle, warehouseutils.WarehouseUploadsTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID, destType)
 				return state
@@ -600,7 +591,7 @@ var _ = Describe("Warehouse", func() {
 			By("test to upload to POSTGRES with state exported_data in db and match with the schema")
 			Eventually(func() bool {
 				destType := POSTGRES
-				warehouses :=  initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
+				warehouses := initializeWarehouseConfig("E2E Warehouse Automation Test 1", "POSTGRES Warehouse Automation Test")
 				WarehouseConfig := warehouses[destType]
 				uploadedSchema := helpers.GetWarehouseSchema(dbHandle, warehouseutils.WarehouseSchemasTable, WarehouseConfig[0].Source.ID, WarehouseConfig[0].Destination.ID)
 				return helpers.IsMapSubset(uploadedSchema, helpers.ReservedKeywordsPostgreschema)
