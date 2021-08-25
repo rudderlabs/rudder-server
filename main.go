@@ -26,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -85,8 +84,8 @@ func printVersion() {
 	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
-func startWarehouseService(ctx context.Context, application app.Interface) {
-	warehouse.Start(ctx, application)
+func startWarehouseService(ctx context.Context, application app.Interface) error {
+	return warehouse.Start(ctx, application)
 }
 
 func canStartServer() bool {
@@ -165,12 +164,10 @@ func main() {
 
 	backendconfig.Setup(pollRegulations, configEnvHandler)
 
-
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return admin.StartServer(ctx)
 	})
-
 
 	misc.AppStartTime = time.Now().Unix()
 	//If the server is standby mode, then no major services (gateway, processor, routers...) run
@@ -182,9 +179,9 @@ func main() {
 	} else {
 		if canStartServer() {
 			appHandler.HandleRecovery(options)
-			g.Go(func() error {
+			g.Go(misc.WithBugsnag(func() error {
 				return appHandler.StartRudderCore(ctx, options)
-			})
+			}))
 		}
 
 		// initialize warehouse service after core to handle non-normal recovery modes

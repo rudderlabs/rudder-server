@@ -2,6 +2,7 @@ package processor
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -297,16 +299,19 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 }
 
 // Start starts this processor's main loops.
-func (proc *HandleT) Start() {
-	rruntime.Go(func() {
-		//waiting till the backend config is received
+func (proc *HandleT) Start(ctx context.Context) {
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
 		proc.backendConfig.WaitForConfig()
-		proc.mainLoop()
+		proc.mainLoop(ctx)
+		return nil
 	})
-	rruntime.Go(func() {
+	g.Go(func() error { 
 		st := stash.New()
 		st.Setup(proc.errorDB)
-		st.Start()
+		st.Start(ctx)
+		return nil
 	})
 }
 
@@ -1530,7 +1535,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	return true
 }
 
-func (proc *HandleT) mainLoop() {
+func (proc *HandleT) mainLoop(ctx context.Context) {
 	//waiting for reporting client setup
 	if proc.reporting != nil {
 		proc.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
@@ -1538,17 +1543,17 @@ func (proc *HandleT) mainLoop() {
 
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
-	timeout := time.After(mainLoopTimeout)
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case pause := <-proc.pauseChannel:
 			pkgLogger.Info("Processor is paused.")
 			proc.paused = true
 			pause.respChannel <- true
 			<-proc.resumeChannel
-		case <-timeout:
+		case <-time.After(mainLoopTimeout):
 			proc.paused = false
-			timeout = time.After(mainLoopTimeout)
 			if isUnLocked {
 				if proc.handlePendingGatewayJobs() {
 					currLoopSleep = time.Duration(0)

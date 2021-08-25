@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"runtime"
 	"sort"
@@ -38,6 +37,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -1027,51 +1027,60 @@ func minimalConfigSubscriber() {
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters() {
+func monitorDestRouters(ctx context.Context) {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
 
 	for {
-		config := <-ch
-		pkgLogger.Debug("Got config from config-backend", config)
-		sources := config.Data.(backendconfig.ConfigT)
-		enabledDestinations := make(map[string]bool)
-		for _, source := range sources.Sources {
-			for _, destination := range source.Destinations {
-				enabledDestinations[destination.DestinationDefinition.Name] = true
-				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
-					wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-					if !ok {
-						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-						wh = &HandleT{}
-						wh.configSubscriberLock.Lock()
-						wh.Setup(destination.DestinationDefinition.Name, destination.DestinationDefinition.DisplayName)
-						wh.configSubscriberLock.Unlock()
-						dstToWhRouter[destination.DestinationDefinition.Name] = wh
-						wh.monitorUploadStatus()
-					} else {
-						pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-						wh.configSubscriberLock.Lock()
-						wh.Enable()
-						wh.configSubscriberLock.Unlock()
-					}
-				}
-			}
+		select {
+		case <-ctx.Done():
+			return
+		case config := <-ch:
+			onConfigDataEvent(config, dstToWhRouter)
 		}
+	}
+}
 
-		keys := misc.StringKeys(dstToWhRouter)
-		for _, key := range keys {
-			if _, ok := enabledDestinations[key]; !ok {
-				if wh, ok := dstToWhRouter[key]; ok {
-					pkgLogger.Info("Disabling a existing warehouse destination: ", key)
+func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT) {
+	pkgLogger.Debug("Got config from config-backend", config)
+	sources := config.Data.(backendconfig.ConfigT)
+	enabledDestinations := make(map[string]bool)
+	for _, source := range sources.Sources {
+		for _, destination := range source.Destinations {
+			enabledDestinations[destination.DestinationDefinition.Name] = true
+			if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
+				wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
+				if !ok {
+					pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+					wh = &HandleT{}
 					wh.configSubscriberLock.Lock()
-					wh.Disable()
+					wh.Setup(destination.DestinationDefinition.Name, destination.DestinationDefinition.DisplayName)
+					wh.configSubscriberLock.Unlock()
+					dstToWhRouter[destination.DestinationDefinition.Name] = wh
+					wh.monitorUploadStatus()
+				} else {
+					pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+					wh.configSubscriberLock.Lock()
+					wh.Enable()
 					wh.configSubscriberLock.Unlock()
 				}
 			}
 		}
 	}
+
+	keys := misc.StringKeys(dstToWhRouter)
+	for _, key := range keys {
+		if _, ok := enabledDestinations[key]; !ok {
+			if wh, ok := dstToWhRouter[key]; ok {
+				pkgLogger.Info("Disabling a existing warehouse destination: ", key)
+				wh.configSubscriberLock.Lock()
+				wh.Disable()
+				wh.configSubscriberLock.Unlock()
+			}
+		}
+	}
+
 }
 
 func setupTables(dbHandle *sql.DB) {
@@ -1524,13 +1533,13 @@ func setupDB(connInfo string) {
 	setupTables(dbHandle)
 }
 
-func Start(ctx context.Context, app app.Interface) {
+func Start(ctx context.Context, app app.Interface) error {
 	application = app
 	time.Sleep(1 * time.Second)
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
 	if !isStandAlone() && !db.IsNormalMode() {
 		pkgLogger.Infof("Skipping start of warehouse service...")
-		return
+		return nil
 	}
 
 	pkgLogger.Infof("WH: Starting Warehouse service...")
@@ -1542,7 +1551,7 @@ func Start(ctx context.Context, app app.Interface) {
 			pkgLogger.Fatal(r)
 			panic(r)
 		}
-		startWebHandler()
+		startWebHandler(ctx)
 	}()
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
@@ -1554,7 +1563,7 @@ func Start(ctx context.Context, app app.Interface) {
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 		}
-		return
+		return nil
 	}
 	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
@@ -1581,20 +1590,27 @@ func Start(ctx context.Context, app app.Interface) {
 		setupSlave()
 	}
 
+	g, ctx := errgroup.WithContext(ctx)
+
 	if isMaster() {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")
 		err = notifier.AddTopic(StagingFilesPGNotifierChannel)
 		if err != nil {
 			panic(err)
 		}
-		rruntime.Go(func() {
-			monitorDestRouters()
-		})
-		rruntime.Go(func() {
-			runArchiver(dbHandle)
-		})
+
+		g.Go(misc.WithBugsnag(func() error { 
+			monitorDestRouters(ctx)
+			return nil
+		}))
+		g.Go(misc.WithBugsnag(func() error { 
+			runArchiver(ctx, dbHandle)
+			return nil
+		}))
 		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 	}
+
+	return g.Wait()
 }
 
 func getLoadFileType(wh string) string {

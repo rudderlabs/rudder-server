@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -294,11 +295,15 @@ func archiveUploads(dbHandle *sql.DB) {
 	pkgLogger.Infof(`Successfully archived %d uploads`, archivedUploads)
 }
 
-func runArchiver(dbHandle *sql.DB) {
+func runArchiver(ctx context.Context, dbHandle *sql.DB) {
 	for {
-		if archiveUploadRelatedRecords {
-			archiveUploads(dbHandle)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(archiverTickerTime):
+			if archiveUploadRelatedRecords {
+				archiveUploads(dbHandle)
+			}
 		}
-		time.Sleep(archiverTickerTime)
 	}
 }

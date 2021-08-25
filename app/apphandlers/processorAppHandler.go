@@ -1,6 +1,7 @@
 package apphandlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -15,12 +16,12 @@ import (
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"golang.org/x/sync/errgroup"
 
 	// This is necessary for compatibility with enterprise features
 	_ "github.com/rudderlabs/rudder-server/imports"
@@ -62,7 +63,7 @@ func loadConfigHandler() {
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 }
 
-func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
+func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	pkgLogger.Info("Processor starting")
 
 	rudderCoreBaseSetup()
@@ -112,12 +113,20 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 	}
 
 	operationmanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
-	rruntime.Go(func() {
-		operationmanager.OperationManager.StartProcessLoop()
-	})
 
-	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
-	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(misc.WithBugsnag(func() error {
+		return operationmanager.OperationManager.StartProcessLoop(ctx)
+	}))
+
+	g.Go(func() error {
+		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+		return nil
+	})
+	g.Go(func() error {
+		StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+		return nil
+	})
 
 	if processor.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
@@ -125,7 +134,10 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 		processor.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB)
 	}
 
-	startHealthWebHandler()
+	g.Go(func() error {
+		return startHealthWebHandler(ctx)
+	})
+	return g.Wait()
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
@@ -133,7 +145,7 @@ func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
 	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
 }
 
-func startHealthWebHandler() {
+func startHealthWebHandler(ctx context.Context) error {
 	//Port where Processor health handler is running
 	pkgLogger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
@@ -148,7 +160,17 @@ func startHealthWebHandler() {
 		IdleTimeout:       IdleTimeout,
 		MaxHeaderBytes:    MaxHeaderBytes,
 	}
-	pkgLogger.Fatal(srv.ListenAndServe())
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+	    <-ctx.Done()
+	    return srv.Shutdown(ctx)
+	})
+	g.Go(func() error {
+	    return srv.ListenAndServe()
+	    //      pkgLogger.Fatal()
+	})
+
+	return g.Wait()
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {

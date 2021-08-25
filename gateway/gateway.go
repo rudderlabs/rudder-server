@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
@@ -1175,7 +1177,7 @@ StartWebHandler starts all gateway web handlers, listening on gateway port.
 Supports CORS from all origins.
 This function will block.
 */
-func (gateway *HandleT) StartWebHandler() {
+func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 
 	gateway.logger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
@@ -1230,11 +1232,22 @@ func (gateway *HandleT) StartWebHandler() {
 		IdleTimeout:       IdleTimeout,
 		MaxHeaderBytes:    MaxHeaderBytes,
 	}
-	gateway.logger.Fatal(srv.ListenAndServe())
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		<-ctx.Done()
+		return srv.Shutdown(ctx)
+	})
+	g.Go(func() error {
+		return srv.ListenAndServe()
+		// 	gateway.logger.Fatal()
+	})
+
+	return g.Wait()
 }
 
 //AdminHandler for Admin Operations
-func (gateway *HandleT) StartAdminHandler() {
+func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	gateway.logger.Infof("Starting AdminHandler in %d", adminWebPort)
 	srvMux := mux.NewRouter()
 	srvMux.Use(headerMiddleware)
@@ -1246,7 +1259,18 @@ func (gateway *HandleT) StartAdminHandler() {
 		Addr:    ":" + strconv.Itoa(adminWebPort),
 		Handler: bugsnag.Handler(srvMux),
 	}
-	gateway.logger.Fatal(srv.ListenAndServe())
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		<-ctx.Done()
+		return srv.Shutdown(ctx)
+	})
+	g.Go(func() error {
+	    return srv.ListenAndServe()
+	    //      gateway.logger.Fatal()
+	})
+
+	return g.Wait()
 }
 
 //Currently sets the content-type only for eventSchemas, health responses.
