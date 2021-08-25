@@ -226,6 +226,7 @@ func (manager *EventSchemaManagerT) deleteFromEventModelCache(eventModel *EventM
 	delete(updatedEventModels, eventModel.UUID)
 	delete(offloadedEventModels[eventModel.WriteKey], eventTypeIdentifier(eventType, eventIdentifier))
 	delete(manager.eventModelMap[WriteKey(writeKey)][EventType(eventType)], EventIdentifier(eventIdentifier))
+	delete(countersCache, eventModel.UUID)
 }
 
 func (manager *EventSchemaManagerT) deleteFromSchemaVersionCache(schemaVersion *SchemaVersionT) {
@@ -235,6 +236,7 @@ func (manager *EventSchemaManagerT) deleteFromSchemaVersionCache(schemaVersion *
 	delete(updatedSchemaVersions, schemaVersion.UUID)
 	delete(offloadedSchemaVersions[eventModelID], schemaHash)
 	delete(manager.schemaVersionMap[eventModelID], schemaHash)
+	delete(countersCache, schemaHash)
 }
 
 func (manager *EventSchemaManagerT) deleteModelFromSchemaVersionCache(eventModel *EventModelT) {
@@ -718,7 +720,7 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) {
 		uuidFilter = fmt.Sprintf(`WHERE uuid in ('%s')`, strings.Join(uuidFilters, "', '"))
 	}
 
-	eventModelsSelectSQL := fmt.Sprintf(`SELECT * FROM %s %s`, EVENT_MODELS_TABLE, uuidFilter)
+	eventModelsSelectSQL := fmt.Sprintf(`SELECT id, uuid, write_key, event_type, event_model_identifier, created_at, schema, private_data, total_count, last_seen, (metadata->>'TotalCount')::int, metadata->'SampledEvents' FROM %s %s`, EVENT_MODELS_TABLE, uuidFilter)
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
 	assertError(err)
@@ -726,33 +728,36 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) {
 
 	for rows.Next() {
 		var eventModel EventModelT
-		var metadataRaw, privateDataRaw json.RawMessage
+		var privateDataRaw json.RawMessage
+		var totalCount int64
+		var sampleEventsRaw json.RawMessage
 		err := rows.Scan(&eventModel.ID, &eventModel.UUID, &eventModel.WriteKey, &eventModel.EventType,
-			&eventModel.EventIdentifier, &eventModel.CreatedAt, &eventModel.Schema, &metadataRaw,
-			&privateDataRaw, &eventModel.TotalCount, &eventModel.LastSeen)
+			&eventModel.EventIdentifier, &eventModel.CreatedAt, &eventModel.Schema,
+			&privateDataRaw, &eventModel.TotalCount, &eventModel.LastSeen, &totalCount, &sampleEventsRaw)
 
-		assertError(err)
-
-		var metadata MetaDataT
-		err = json.Unmarshal(metadataRaw, &metadata)
 		assertError(err)
 
 		var privateData PrivateDataT
 		err = json.Unmarshal(privateDataRaw, &privateData)
 		assertError(err)
 
-		reservoirSize := len(metadata.SampledEvents)
+		var sampleEvents []interface{}
+		err = json.Unmarshal(sampleEventsRaw, &sampleEvents)
+		assertError(err)
+
+		reservoirSize := len(sampleEvents)
 		if reservoirSize > reservoirSampleSize {
 			reservoirSize = reservoirSampleSize
 		}
-		eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, reservoirSize, metadata.TotalCount)
-		for idx, sampledEvent := range metadata.SampledEvents {
+		eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, reservoirSize, totalCount)
+		for idx, sampledEvent := range sampleEvents {
 			if idx > reservoirSampleSize-1 {
 				continue
 			}
 			eventModel.reservoirSample.add(sampledEvent, false)
 		}
 		manager.updateEventModelCache(&eventModel, false)
+		populateFrequencyCounters(eventModel.UUID, privateData.FrequencyCounters)
 	}
 }
 
@@ -801,28 +806,30 @@ func (manager *EventSchemaManagerT) populateSchemaVersionsMinimal(modelIDFilters
 }
 
 func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVersionT) {
-	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, metadata, private_data,first_seen, last_seen, total_count FROM %s WHERE uuid = '%s'`, SCHEMA_VERSIONS_TABLE, o.UUID)
+	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, private_data,first_seen, last_seen, total_count, (metadata->>'TotalCount')::int, metadata->'SampledEvents' FROM %s WHERE uuid = '%s'`, SCHEMA_VERSIONS_TABLE, o.UUID)
 
 	var schemaVersion SchemaVersionT
-	var metadataRaw, privateDataRaw json.RawMessage
+	var privateDataRaw json.RawMessage
+	var totalCount int64
+	var sampleEventsRaw json.RawMessage
 
-	err := manager.dbHandle.QueryRow(schemaVersionsSelectSQL).Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash, &schemaVersion.Schema, &metadataRaw, &privateDataRaw, &schemaVersion.FirstSeen, &schemaVersion.LastSeen, &schemaVersion.TotalCount)
-	assertError(err)
-
-	var metadata MetaDataT
-	err = json.Unmarshal(privateDataRaw, &metadata)
+	err := manager.dbHandle.QueryRow(schemaVersionsSelectSQL).Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash, &schemaVersion.Schema, &privateDataRaw, &schemaVersion.FirstSeen, &schemaVersion.LastSeen, &schemaVersion.TotalCount, &totalCount, &sampleEventsRaw)
 	assertError(err)
 
 	var privateData PrivateDataT
 	err = json.Unmarshal(privateDataRaw, &privateData)
 	assertError(err)
 
-	reservoirSize := len(metadata.SampledEvents)
+	var sampleEvents []interface{}
+	err = json.Unmarshal(sampleEventsRaw, &sampleEvents)
+	assertError(err)
+
+	reservoirSize := len(sampleEvents)
 	if reservoirSize > reservoirSampleSize {
 		reservoirSize = reservoirSampleSize
 	}
-	schemaVersion.reservoirSample = NewReservoirSampler(reservoirSampleSize, reservoirSize, metadata.TotalCount)
-	for idx, sampledEvent := range metadata.SampledEvents {
+	schemaVersion.reservoirSample = NewReservoirSampler(reservoirSampleSize, reservoirSize, totalCount)
+	for idx, sampledEvent := range sampleEvents {
 		if idx > reservoirSampleSize-1 {
 			continue
 		}
