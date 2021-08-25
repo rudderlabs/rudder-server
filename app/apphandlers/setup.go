@@ -79,13 +79,14 @@ func loadConfig() {
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE"}
 }
 
-func rudderCoreBaseSetup() {
-
+func rudderCoreDBSetup() {
 	if !validators.ValidateEnv() {
 		panic(errors.New("Failed to start rudder-server"))
 	}
 	validators.InitializeEnv()
+}
 
+func rudderCoreBaseSetup() {
 	// Check if there is a probable inconsistent state of Data
 	if diagnostics.EnableServerStartMetric {
 		Diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
