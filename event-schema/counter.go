@@ -24,14 +24,6 @@ type FrequencyCounter struct {
 
 func (fc *FrequencyCounter) getCounter() countish.Counter {
 	return &fc.Counter
-	// switch fc.CounterType {
-	// case LossyCount:
-	// 	return fc.Counter.(*countish.LossyCounter)
-	// case StickySampler:
-	// 	return fc.Counter.(*countish.StickySampler)
-	// default:
-	// 	panic("Unexpected countertype") //TODO: Handle it in a better way
-	// }
 }
 
 func (fc *FrequencyCounter) setCounter(counterType CounterTypeT, counter *countish.LossyCounter) {
@@ -62,13 +54,7 @@ func init() {
 func NewFrequencyCounter(name string) *FrequencyCounter {
 	fc := FrequencyCounter{}
 	fc.Name = name
-	// var counter countish.Counter
 	counter := countish.NewLossyCounter(counterSupport, counterErrorTolerance)
-	// if defaultCounterType == LossyCount {
-	// 	counter = countish.NewLossyCounter(counterSupport, counterErrorTolerance)
-	// } else {
-	// 	counter = countish.NewSampler(counterSupport, counterErrorTolerance, counterFailureProb)
-	// }
 	fc.setCounter(defaultCounterType, counter)
 	return &fc
 }
@@ -76,29 +62,6 @@ func NewFrequencyCounter(name string) *FrequencyCounter {
 func NewPeristedFrequencyCounter(persistedFc *FrequencyCounter) *FrequencyCounter {
 	fc := FrequencyCounter{}
 	fc.Name = persistedFc.Name
-	// var cType CounterTypeT
-	// var counter countish.Counter
-
-	// if persistedFc.CounterType == LossyCount {
-	// 	var lc countish.LossyCounter
-	// 	persistedFcJSON, _ := json.Marshal(persistedFc.Counter)
-	// 	err := json.Unmarshal(persistedFcJSON, &lc)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	counter = countish.Counter(&lc)
-	// 	cType = LossyCount
-	// } else {
-	// 	var ss countish.StickySampler
-	// 	persistedFcJSON, _ := json.Marshal(persistedFc.Counter)
-	// 	err := json.Unmarshal(persistedFcJSON, &ss)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	counter = countish.Counter(&ss)
-	// 	cType = StickySampler
-	// }
-
 	fc.setCounter(LossyCount, &persistedFc.Counter)
 	return &fc
 }
