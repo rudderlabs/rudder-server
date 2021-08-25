@@ -1,10 +1,10 @@
 package warehouse_test
 
 import (
-	"encoding/json"
+	_ "encoding/json"
 	"database/sql"
 	// "reflect"
-	"fmt"
+	_ "fmt"
 	"strings"
 	"time"
 	. "github.com/onsi/ginkgo"
