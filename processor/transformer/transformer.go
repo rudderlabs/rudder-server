@@ -51,6 +51,8 @@ type MetadataT struct {
 	RudderID   string   `json:"rudderId"`
 	SessionID  string   `json:"sessionId,omitempty"`
 	ReceivedAt string   `json:"receivedAt"`
+	EventName  string   `json:"eventName"`
+	EventType  string   `json:"eventType"`
 }
 
 type TransformerEventT struct {
@@ -206,7 +208,8 @@ func (trans *HandleT) transformWorker() {
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			for _, transformEvent := range job.data {
+			for i := range job.data {
+				transformEvent := &job.data[i]
 				resp := TransformerResponseT{StatusCode: resp.StatusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 				transformerResponses = append(transformerResponses, resp)
 			}

@@ -1104,3 +1104,16 @@ func GetWarehouseURL() (url string) {
 	}
 	return
 }
+
+func GetStringifiedData(data interface{}) string {
+	switch d := data.(type) {
+	case string:
+		return d
+	default:
+		dataBytes, err := json.Marshal(d)
+		if err != nil {
+			return fmt.Sprint(d)
+		}
+		return string(dataBytes)
+	}
+}
