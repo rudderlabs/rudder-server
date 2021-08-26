@@ -302,17 +302,17 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 func (proc *HandleT) Start(ctx context.Context) {
 	g, ctx := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
+	g.Go(misc.WithBugsnag(func() error {
 		proc.backendConfig.WaitForConfig()
 		proc.mainLoop(ctx)
 		return nil
-	})
-	g.Go(func() error { 
+	}))
+	g.Go(misc.WithBugsnag(func() error {
 		st := stash.New()
 		st.Setup(proc.errorDB)
 		st.Start(ctx)
 		return nil
-	})
+	}))
 }
 
 var (

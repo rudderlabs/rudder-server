@@ -1599,11 +1599,11 @@ func Start(ctx context.Context, app app.Interface) error {
 			panic(err)
 		}
 
-		g.Go(misc.WithBugsnag(func() error { 
+		g.Go(misc.WithBugsnag(func() error {
 			monitorDestRouters(ctx)
 			return nil
 		}))
-		g.Go(misc.WithBugsnag(func() error { 
+		g.Go(misc.WithBugsnag(func() error {
 			runArchiver(ctx, dbHandle)
 			return nil
 		}))

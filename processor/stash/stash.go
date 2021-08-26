@@ -115,7 +115,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	g, _ := errgroup.WithContext(ctx)
 
 	for i := 0; i < noOfErrStashWorkers; i++ {
-		g.Go(func() error {
+		g.Go(misc.WithBugsnag(func() error {
 			for jobs := range st.errProcessQ {
 				uploadStat := stats.NewStat("Processor.err_upload_time", stats.TimerType)
 				uploadStat.Start()
@@ -125,7 +125,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 			}
 
 			return nil
-		})
+		}))
 	}
 
 	g.Wait()

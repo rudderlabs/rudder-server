@@ -100,7 +100,7 @@ func canStartWarehouse() bool {
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		c := make(chan os.Signal)
+		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 		<-c
 		cancel()
@@ -186,18 +186,31 @@ func main() {
 
 		// initialize warehouse service after core to handle non-normal recovery modes
 		if appTypeStr != app.GATEWAY && canStartWarehouse() {
-			g.Go(func() error {
+			g.Go(misc.WithBugsnag(func() error {
 				return startWarehouseService(ctx, application)
-			})
+			}))
 		}
 	}
 
+	var ctxDoneTime time.Time
+	g.Go(func() error {
+		<-ctx.Done()
+		ctxDoneTime = time.Now()
+		return nil
+	})
+
 	err := g.Wait()
-	if err != nil {
+	if err != nil && err != context.Canceled {
 		pkgLogger.Error(err)
 	}
 
 	application.Stop()
+
+	pkgLogger.Infof(
+		"Graceful terminal after %s, with %d go-routines",
+		time.Since(ctxDoneTime),
+		runtime.NumGoroutine(),
+	)
 	// clearing zap Log buffer to std output
 	if logger.Log != nil {
 		logger.Log.Sync()
