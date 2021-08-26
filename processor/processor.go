@@ -962,14 +962,14 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			if enableDedup {
 				var allMessageIdsInBatch []string
 				for _, singularEvent := range singularEvents {
-					allMessageIdsInBatch = append(allMessageIdsInBatch, singularEvent["messageId"].(string))
+					allMessageIdsInBatch = append(allMessageIdsInBatch, misc.GetStringifiedData(singularEvent["messageId"]))
 				}
 				duplicateIndexes = proc.dedupHandler.FindDuplicates(allMessageIdsInBatch, uniqueMessageIds)
 			}
 
 			//Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
-				messageId := singularEvent["messageId"].(string)
+				messageId := misc.GetStringifiedData(singularEvent["messageId"])
 				if enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
