@@ -1,6 +1,7 @@
 package redshift
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -19,7 +20,6 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -669,16 +669,19 @@ func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 		return
 	}
 	defer rs.Db.Close()
-	pingResultChannel := make(chan error, 1)
-	rruntime.Go(func() {
-		pingResultChannel <- rs.Db.Ping()
-	})
-	var timeOut time.Duration = 5
-	select {
-	case err = <-pingResultChannel:
-	case <-time.After(timeOut * time.Second):
-		err = fmt.Errorf("connection testing timed out after %d sec", timeOut)
+	timeOut := 5 * time.Second
+
+	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	defer cancel()
+
+	err = rs.Db.PingContext(ctx)
+	if err == context.DeadlineExceeded {
+		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
 	}
+	if err != nil {
+		return err
+	}
+
 	return
 }
 

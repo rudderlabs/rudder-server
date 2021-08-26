@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"compress/gzip"
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -544,18 +544,23 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	if err != nil {
 		return
 	}
-	pingResultChannel := make(chan error, 1)
 	defer pg.Db.Close()
-	rruntime.Go(func() {
-		pingResultChannel <- pg.Db.Ping()
-	})
-	var timeOut time.Duration = 5
-	select {
-	case err = <-pingResultChannel:
-	case <-time.After(timeOut * time.Second):
-		err = fmt.Errorf("connection testing timed out after %d sec", timeOut)
+
+	timeOut := 5 * time.Second
+
+	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	defer cancel()
+
+	err = pg.Db.PingContext(ctx)
+	if err == context.DeadlineExceeded {
+		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
 	}
-	return
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
 func (pg *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
