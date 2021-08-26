@@ -215,8 +215,6 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	// Process the upload job
 	err = uploadJob.run()
-	// skipping recording live events in favor of syncs dashboard via grpc
-	// wh.recordDeliveryStatus(uploadJob.warehouse.Destination.ID, uploadJob.upload.ID)
 	return
 }
 
@@ -1564,7 +1562,7 @@ func Start(app app.Interface) {
 	}
 
 	if isStandAlone() && isMaster() {
-		destinationdebugger.Setup()
+		destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 	}
 
 	if isSlave() {

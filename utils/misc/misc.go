@@ -1105,6 +1105,19 @@ func GetWarehouseURL() (url string) {
 	return
 }
 
+func GetStringifiedData(data interface{}) string {
+	switch d := data.(type) {
+	case string:
+		return d
+	default:
+		dataBytes, err := json.Marshal(d)
+		if err != nil {
+			return fmt.Sprint(d)
+		}
+		return string(dataBytes)
+	}
+}
+
 // tmp keys will override output if any
 func MergeMaps(output map[string]interface{}, tmp map[string]interface{}) {
 	for k, v := range tmp {
