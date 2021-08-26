@@ -166,7 +166,7 @@ func startHealthWebHandler(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 	    <-ctx.Done()
-	    return srv.Shutdown(ctx)
+	    return srv.Shutdown(context.Background())
 	})
 	g.Go(func() error {
 	    return srv.ListenAndServe()

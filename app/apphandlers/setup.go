@@ -32,8 +32,8 @@ var (
 	objectStorageDestinations                                  []string
 	asyncDestinations                                          []string
 	warehouseDestinations                                      []string
-	routerLoaded                                               *utilsync.First
-	processorLoaded                                            *utilsync.First
+	routerLoaded                                               utilsync.First
+	processorLoaded                                            utilsync.First
 	pkgLogger                                                  logger.LoggerI
 	Diagnostics                                                diagnostics.DiagnosticsI = diagnostics.Diagnostics
 	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyHandleT
@@ -136,6 +136,8 @@ func StartRouter(ctx context.Context, enableRouter bool, routerDB, batchRouterDB
 		return
 	}
 
+	router.RoutersManagerSetup()
+	batchrouter.BatchRoutersManagerSetup()
 	monitorDestRouters(ctx, routerDB, batchRouterDB, procErrorDB, reporting)
 }
 
@@ -179,12 +181,12 @@ func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB, procErrorD
 					}
 				}
 			}
-	
+
 			rm, err := router.GetRoutersManager()
 			if rm != nil && err == nil {
 				rm.SetRoutersReady()
 			}
-	
+
 			brm, err := batchrouter.GetBatchRoutersManager()
 			if brm != nil && err == nil {
 				brm.SetBatchRoutersReady()
