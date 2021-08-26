@@ -1236,7 +1236,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		<-ctx.Done()
-		return srv.Shutdown(ctx)
+		return srv.Shutdown(context.Background())
 	})
 	g.Go(func() error {
 		return srv.ListenAndServe()
@@ -1263,7 +1263,7 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		<-ctx.Done()
-		return srv.Shutdown(ctx)
+		return srv.Shutdown(context.Background())
 	})
 	g.Go(func() error {
 	    return srv.ListenAndServe()
