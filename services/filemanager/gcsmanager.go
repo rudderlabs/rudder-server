@@ -86,11 +86,8 @@ func (manager *GCSManager) ListFilesWithPrefix(prefix string, maxItems int64) (f
 			break
 		}
 		attrs, err := it.Next()
-		if err == iterator.Done {
+		if err == iterator.Done || err != nil {
 			break
-		}
-		if err != nil {
-			return
 		}
 		fileObjects = append(fileObjects, &FileObject{attrs.Name, attrs.Updated})
 		maxItems--
