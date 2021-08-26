@@ -2,12 +2,13 @@ package stash
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
-	"context"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -78,13 +79,13 @@ func (st *HandleT) Start(ctx context.Context) {
 	st.errProcessQ = make(chan []*jobsdb.JobT)
 
 	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func () error {
-		st.initErrWorkers(ctx)
+	g.Go(func() error {
+		st.runErrWorkers(ctx)
 
 		return nil
 	})
 
-	g.Go(func () error {
+	g.Go(func() error {
 		st.readErrJobsLoop(ctx)
 
 		return nil
@@ -110,21 +111,23 @@ func (st *HandleT) setupFileUploader() {
 	}
 }
 
-func (st *HandleT) initErrWorkers(ctx context.Context) {
-	g, ctx := errgroup.WithContext(ctx)
+func (st *HandleT) runErrWorkers(ctx context.Context) {
+	g, _ := errgroup.WithContext(ctx)
 
 	for i := 0; i < noOfErrStashWorkers; i++ {
-		g.Go(func () error {
+		g.Go(func() error {
 			for {
-				select {
-				case <- ctx.Done():
-				case jobs := <-st.errProcessQ:
-					uploadStat := stats.NewStat("Processor.err_upload_time", stats.TimerType)
-					uploadStat.Start()
-					output := st.storeErrorsToObjectStorage(jobs)
-					st.setErrJobStatus(jobs, output)
-					uploadStat.End()
+				jobs, ok := <-st.errProcessQ
+				if !ok {
+					return nil
 				}
+
+				uploadStat := stats.NewStat("Processor.err_upload_time", stats.TimerType)
+				uploadStat.Start()
+				output := st.storeErrorsToObjectStorage(jobs)
+				st.setErrJobStatus(jobs, output)
+				uploadStat.End()
+
 			}
 		})
 	}
@@ -222,7 +225,8 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			return 
+			close(st.errProcessQ)
+			return
 		case <-time.After(errReadLoopSleep):
 			st.statErrDBR.Start()
 
@@ -231,24 +235,24 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, Count: toQuery, IgnoreCustomValFiltersInQuery: true})
 			toQuery -= len(retryList)
 			unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, Count: toQuery, IgnoreCustomValFiltersInQuery: true})
-	
+
 			st.statErrDBR.End()
-	
+
 			combinedList := append(retryList, unprocessedList...)
-	
+
 			if len(combinedList) == 0 {
 				st.logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")
 				continue
 			}
-	
+
 			hasFileUploader := st.errFileUploader != nil
-	
+
 			jobState := jobsdb.Executing.State
 			// abort jobs if file uploader not configured to store them to object storage
 			if !hasFileUploader {
 				jobState = jobsdb.Aborted.State
 			}
-	
+
 			var statusList []*jobsdb.JobStatusT
 			for _, job := range combinedList {
 				status := jobsdb.JobStatusT{
@@ -263,16 +267,16 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				}
 				statusList = append(statusList, &status)
 			}
-	
+
 			err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
 			if err != nil {
 				pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
 				panic(err)
 			}
-	
+
 			if hasFileUploader {
 				st.errProcessQ <- combinedList
-			}	
+			}
 		}
 	}
 }
