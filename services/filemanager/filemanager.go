@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 )
@@ -25,14 +26,20 @@ type FileManagerFactory interface {
 	New(settings *SettingsT) (FileManager, error)
 }
 
-// FileManager inplements all upload methods
+type FileObject struct {
+	Key              string
+	LastModified 	 time.Time
+}
+
+// FileManager implements all upload methods
 type FileManager interface {
 	Upload(*os.File, ...string) (UploadOutput, error)
 	Download(*os.File, string) error
 	GetObjectNameFromLocation(string) (string, error)
 	GetDownloadKeyFromFileLocation(location string) string
 	DeleteObjects(locations []string) error
-	GetStorageDateFormat(...string) (string, error)
+	ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error)
+	GetConfigPrefix() (string)
 }
 
 // SettingsT sets configuration for FileManager

@@ -51,10 +51,6 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 	return UploadOutput{Location: manager.ObjectUrl(fileName), ObjectName: fileName}, nil
 }
 
-func (manager *MinioManager) GetStorageDateFormat(prefixes ...string) (date string, err error) {
-	return "YYYY-MM-DD", nil
-}
-
 func (manager *MinioManager) Download(file *os.File, key string) error {
 	minioClient, err := minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
 	if err != nil {
@@ -135,4 +131,29 @@ type MinioConfig struct {
 	AccessKeyID     string
 	SecretAccessKey string
 	UseSSL          bool
+}
+
+func (manager *MinioManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	fileObjects = make([]*FileObject, 0)
+
+	// Created minio core
+	core, err := minio.NewCore(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
+	if err != nil {
+		return
+	}
+
+	// List the Objects in the bucket
+	bucket, err := core.ListObjects(manager.Config.Bucket, prefix, prefix, "", int(maxItems))
+	if err != nil {
+		return
+	}
+
+	for _, item := range bucket.Contents {
+		fileObjects = append(fileObjects, &FileObject{item.Key, item.LastModified})
+	}
+	return
+}
+
+func (manager *MinioManager) GetConfigPrefix() (string) {
+	return manager.Config.Prefix
 }

@@ -55,6 +55,8 @@ var (
 	disableEgress                      bool
 	toAbortDestinationIDs              string
 	datePrefixOverride                 string
+	dateFormatLayouts                  map[string]string
+	dateFormatMap                      map[string]string // (sourceId:destinationId) -> dateFormat
 )
 
 const DISABLED_EGRESS = "200: outgoing disabled"
@@ -340,14 +342,16 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 	} else {
 		folderName = config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs")
 	}
-	dateFormat, err := uploader.GetStorageDateFormat([]string{folderName, batchJobs.BatchDestination.Source.ID}...)
-	datePrefixLayout := ""
+
+	var datePrefixLayout string
 	if datePrefixOverride != "" {
 		datePrefixLayout = datePrefixOverride
 	} else {
+		dateFormat, _ := GetStorageDateFormat(uploader, batchJobs.BatchDestination, folderName)
 		datePrefixLayout = dateFormat
 	}
-	pkgLogger.Debug(datePrefixLayout)
+
+	brt.logger.Debugf("BRT: Date prefix layout is %s", datePrefixLayout)
 	switch datePrefixLayout {
 	case "MM-DD-YYYY": //used to be earlier default
 		datePrefixLayout = time.Now().Format("01-02-2006")
@@ -393,6 +397,62 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs BatchJobsT, mak
 		TotalEvents:      len(batchJobs.Jobs) - dedupedIDMergeRuleJobs,
 		UseRudderStorage: useRudderStorage,
 	}
+}
+
+func GetFullPrefix(manager filemanager.FileManager, prefix string) (fullPrefix string) {
+	fullPrefix = prefix
+	configPrefix := manager.GetConfigPrefix()
+
+	if configPrefix != "" {
+		if configPrefix[len(configPrefix)-1:] == "/" {
+			fullPrefix = configPrefix + prefix
+		} else {
+			fullPrefix = configPrefix + "/" + prefix
+		}
+	}
+	return
+}
+
+func GetStorageDateFormat(manager filemanager.FileManager, destination *DestinationT, folderName string) (dateFormat string, err error) {
+	sourceDestinationId := fmt.Sprintf(`%s:%s`, destination.Source.ID, destination.Destination.ID)
+	if misc.Contains(dateFormatMap, sourceDestinationId) {
+		return dateFormatMap[sourceDestinationId], err
+	}
+
+	dateFormat = "YYYY-MM-DD"
+	prefixes := []string{folderName, destination.Source.ID}
+	prefix := strings.Join(prefixes[0:2], "/")
+	fullPrefix := GetFullPrefix(manager, prefix)
+	fileObjects, err := manager.ListFilesWithPrefix(fullPrefix, 5)
+	if err != nil {
+		return
+	}
+	if len(fileObjects) == 0 {
+		return
+	}
+
+	defer func() {
+		if err == nil {
+			dateFormatMap[sourceDestinationId] = dateFormat
+		}
+	}()
+
+	for idx, _ := range fileObjects {
+		key := fileObjects[idx].Key
+		replacedKey := strings.Replace(key, fullPrefix, "", 1)
+		splittedKeys := strings.Split(replacedKey, "/")
+		if len(splittedKeys) >= 1 {
+			date := splittedKeys[1]
+			for layout, format := range dateFormatLayouts {
+				_, err = time.Parse(layout, date)
+				if err == nil {
+					dateFormat = format
+					return
+				}
+			}
+		}
+	}
+	return
 }
 
 func (brt *HandleT) postToWarehouse(batchJobs BatchJobsT, output StorageUploadOutput) (err error) {
@@ -1246,6 +1306,12 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 	config.RegisterStringConfigVariable("", &datePrefixOverride, true, "BatchRouter.datePrefixOverride")
+	dateFormatLayouts = map[string]string{
+		"01-02-2006": "MM-DD-YYYY",
+		"2006-01-02": "YYYY-MM-DD",
+		//"02-01-2006" : "DD-MM-YYYY", //adding this might match with that of MM-DD-YYYY too
+	}
+	dateFormatMap = make(map[string]string)
 }
 
 func init() {
