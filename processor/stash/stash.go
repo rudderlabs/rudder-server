@@ -116,19 +116,15 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 
 	for i := 0; i < noOfErrStashWorkers; i++ {
 		g.Go(func() error {
-			for {
-				jobs, ok := <-st.errProcessQ
-				if !ok {
-					return nil
-				}
-
+			for jobs := range st.errProcessQ {
 				uploadStat := stats.NewStat("Processor.err_upload_time", stats.TimerType)
 				uploadStat.Start()
 				output := st.storeErrorsToObjectStorage(jobs)
 				st.setErrJobStatus(jobs, output)
 				uploadStat.End()
-
 			}
+
+			return nil
 		})
 	}
 
