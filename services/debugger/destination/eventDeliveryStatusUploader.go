@@ -16,7 +16,7 @@ import (
 //DeliveryStatusT is a structure to hold everything related to event delivery
 type DeliveryStatusT struct {
 	DestinationID string          `json:"destinationId"`
-	SourceID      []string        `json:"sourceId"`
+	SourceID      string          `json:"sourceId"`
 	Payload       json.RawMessage `json:"payload"`
 	AttemptNum    int             `json:"attemptNum"`
 	JobState      string          `json:"jobState"`

@@ -623,7 +623,8 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 			var params map[string]interface{}
 			err := json.Unmarshal(job.Parameters, &params)
 			if err != nil {
-				panic(err)
+				pkgLogger.Errorf("Error while UnMarshaling live event parameters: %w", err)
+				continue
 			}
 
 			sourceID, _ := params["source_id"].(string)
@@ -635,13 +636,15 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 			events := make([]map[string]interface{}, 0)
 			err = json.Unmarshal(job.EventPayload, &events)
 			if err != nil {
-				panic(err)
+				pkgLogger.Errorf("Error while UnMarshaling live event payload: %w", err)
+				continue
 			}
 			for i := range events {
 				event := &events[i]
 				eventPayload, err := json.Marshal(*event)
 				if err != nil {
-					panic(err)
+					pkgLogger.Errorf("Error while Marshaling live event payload: %w", err)
+					continue
 				}
 
 				eventName := misc.GetStringifiedData(gjson.GetBytes(eventPayload, "event").String())
@@ -651,7 +654,7 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 					EventType:     eventType,
 					SentAt:        sentAt,
 					DestinationID: destID,
-					SourceID:      []string{sourceID},
+					SourceID:      sourceID,
 					Payload:       eventPayload,
 					AttemptNum:    1,
 					JobState:      jobsdb.Aborted.State,

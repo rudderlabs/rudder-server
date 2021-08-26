@@ -928,7 +928,7 @@ func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMe
 	if destinationdebugger.HasUploadEnabled(destinationJobMetadata.DestinationID) {
 		deliveryStatus := destinationdebugger.DeliveryStatusT{
 			DestinationID: destinationJobMetadata.DestinationID,
-			SourceID:      sourceIDs,
+			SourceID:      strings.Join(sourceIDs, ","),
 			Payload:       payload,
 			AttemptNum:    status.AttemptNum,
 			JobState:      status.JobState,
