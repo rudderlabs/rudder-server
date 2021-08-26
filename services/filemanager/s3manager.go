@@ -69,6 +69,9 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	}
 	output, err := s3manager.Upload(uploadInput)
 	if err != nil {
+		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {
+			err = errors.New(fmt.Sprintf(`Bucket '%s' not found.`, manager.Config.Bucket))
+		}
 		return UploadOutput{}, err
 	}
 	return UploadOutput{Location: output.Location, ObjectName: fileName}, err

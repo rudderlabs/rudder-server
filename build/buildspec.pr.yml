@@ -34,7 +34,6 @@ phases:
       - bash build/codecov.sh
       - TAG=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
       - echo tag.. $TAG
-      - chmod +rx ./dockertag.sh
       - SEMVER=$(head -1 .version)
       - UPDATEDTAG=$SEMVER"_internal-"$TAG
       - echo sem version.. $SEMVER
