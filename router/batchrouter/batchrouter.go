@@ -823,23 +823,26 @@ func GetStorageDateFormat(manager filemanager.FileManager, destination *Destinat
 		return dateFormatMap[sourceDestinationId], err
 	}
 
+	defer func() {
+		if err == nil {
+			dateFormatMap[sourceDestinationId] = dateFormat
+		}
+	}()
+
 	dateFormat = "YYYY-MM-DD"
 	prefixes := []string{folderName, destination.Source.ID}
 	prefix := strings.Join(prefixes[0:2], "/")
 	fullPrefix := GetFullPrefix(manager, prefix)
 	fileObjects, err := manager.ListFilesWithPrefix(fullPrefix, 5)
 	if err != nil {
+		// Returning the earlier default as we might not able to fetch the list.
+		// because "*:GetObject" and "*:ListBucket" permissions are not available.
+		dateFormat = "MM-DD-YYYY"
 		return
 	}
 	if len(fileObjects) == 0 {
 		return
 	}
-
-	defer func() {
-		if err == nil {
-			dateFormatMap[sourceDestinationId] = dateFormat
-		}
-	}()
 
 	for idx, _ := range fileObjects {
 		key := fileObjects[idx].Key
