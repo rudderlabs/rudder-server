@@ -4,6 +4,7 @@ package debugger
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -87,6 +88,9 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 
 	url := uploader.url
 
+	fmt.Println("url: ", string(url))
+	fmt.Println("sending paylod: ", string(rawJSON))
+
 	retryCount := 0
 	var resp *http.Response
 	//Sending event schema to Config Backend
@@ -117,6 +121,14 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 	if resp.StatusCode != http.StatusOK {
 		pkgLogger.Errorf("[Uploader] Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
 	}
+
+	var respBody []byte
+	IoUtil := sysUtils.NewIoUtil()
+	if resp != nil && resp.Body != nil {
+		respBody, _ = IoUtil.ReadAll(resp.Body)
+		defer resp.Body.Close()
+	}
+	fmt.Println("response: ", string(respBody))
 }
 
 func (uploader *Uploader) handleEvents() {
