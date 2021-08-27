@@ -1572,12 +1572,18 @@ func Start(ctx context.Context, app app.Interface) error {
 		panic(err)
 	}
 
+	g, ctx := errgroup.WithContext(ctx)
+
 	//Setting up reporting client
 	// only if standalone or embeded connecting to diff DB for warehouse
 	if (isStandAlone() && isMaster()) || (jobsdb.GetConnectionString() != psqlInfo) {
 		if application.Features().Reporting != nil {
 			reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
-			reporting.AddClient(types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
+
+			g.Go(misc.WithBugsnag(func() error {
+				reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
+				return nil
+			}))
 		}
 	}
 
@@ -1589,8 +1595,6 @@ func Start(ctx context.Context, app app.Interface) error {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
 		setupSlave()
 	}
-
-	g, ctx := errgroup.WithContext(ctx)
 
 	if isMaster() {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")

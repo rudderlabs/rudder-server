@@ -277,7 +277,6 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (err error) {
 	return TriggerUploadHandler(uploadsReq.SourceID, uploadsReq.DestinationID)
 }
 
-
 func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	err := uploadReq.validateReq()
 	if err != nil {

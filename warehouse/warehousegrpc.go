@@ -30,10 +30,10 @@ func (w *warehousegrpc) GetWHUploads(context context.Context, request *proto.WHU
 
 func (w *warehousegrpc) TriggerWHUploads(context context.Context, request *proto.WHUploadsRequest) (*emptypb.Empty, error) {
 	uploadsReq := UploadsReqT{
-		WorkspaceID:     request.WorkspaceId,
-		SourceID:        request.SourceId,
-		DestinationID:   request.DestinationId,
-		API:             UploadAPI,
+		WorkspaceID:   request.WorkspaceId,
+		SourceID:      request.SourceId,
+		DestinationID: request.DestinationId,
+		API:           UploadAPI,
 	}
 	err := uploadsReq.TriggerWhUploads()
 	return new(emptypb.Empty), err
