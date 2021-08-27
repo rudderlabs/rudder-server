@@ -106,27 +106,12 @@ func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (stri
 func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
-	getRegionSession := session.Must(session.NewSession())
-	region, err := SpacesManager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
-	if err != nil {
-		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
-		/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
-	}
-	var sess *session.Session
-	if manager.Config.AccessKeyID == "" || manager.Config.AccessKey == "" {
-		pkgLogger.Debug("Credentials not found in the destination's config. Using the host credentials instead")
-		sess = session.Must(session.NewSession(&aws.Config{
-			Region:                        aws.String(region),
-			CredentialsChainVerboseErrors: aws.Bool(true),
-		}))
-	} else {
-		pkgLogger.Debug("Credentials found in the destination's config.")
-		sess = session.Must(session.NewSession(&aws.Config{
-			Region:                        aws.String(region),
-			Credentials:                   credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
-			CredentialsChainVerboseErrors: aws.Bool(true),
-		}))
-	}
+	region := misc.GetSpacesLocation(manager.Config.EndPoint)
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region:      aws.String(region),
+		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+		Endpoint:    aws.String(manager.Config.EndPoint),
+	}))
 
 	// Create S3 service client
 	svc := s3.New(sess)
