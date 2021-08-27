@@ -608,7 +608,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			}
 		}
 
-		for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
+		var sourceIDs []string
+		for i, destinationJobMetadata := range destinationJob.JobMetadataArray {
 			handledJobMetadatas[destinationJobMetadata.JobID] = &destinationJobMetadata
 
 			attemptNum := destinationJobMetadata.AttemptNum
@@ -637,7 +638,14 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 			if destinationJob.Message == nil {
 				payload = destinationJobMetadata.JobT.EventPayload
 			}
-			worker.sendDestinationResponseToConfigBackend(payload, &destinationJobMetadata, &status)
+
+			if !misc.Contains(sourceIDs, destinationJobMetadata.SourceID) {
+				sourceIDs = append(sourceIDs, destinationJobMetadata.SourceID)
+			}
+			//Sending only one destination live event for every destinationJob.
+			if i == len(destinationJob.JobMetadataArray)-1 {
+				worker.sendDestinationResponseToConfigBackend(payload, &destinationJobMetadata, &status, sourceIDs)
+			}
 		}
 	}
 
@@ -915,17 +923,20 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 	}
 }
 
-func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
+func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
 	//Sending destination response to config backend
 	if destinationdebugger.HasUploadEnabled(destinationJobMetadata.DestinationID) {
 		deliveryStatus := destinationdebugger.DeliveryStatusT{
 			DestinationID: destinationJobMetadata.DestinationID,
-			SourceID:      destinationJobMetadata.SourceID,
+			SourceID:      strings.Join(sourceIDs, ","),
 			Payload:       payload,
 			AttemptNum:    status.AttemptNum,
 			JobState:      status.JobState,
 			ErrorCode:     status.ErrorCode,
 			ErrorResponse: status.ErrorResponse,
+			SentAt:        status.ExecTime.Format(misc.RFC3339Milli),
+			EventName:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_name").String(),
+			EventType:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_type").String(),
 		}
 		destinationdebugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
 	}
