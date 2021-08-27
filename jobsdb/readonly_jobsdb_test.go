@@ -17,10 +17,10 @@ import (
 )
 
 var _ = Describe("readonly_jobsdb", func() {
-	var c *context
+	var c *tContext
 
 	BeforeEach(func() {
-		c = &context{}
+		c = &tContext{}
 		c.Setup()
 		stats.Setup()
 	})

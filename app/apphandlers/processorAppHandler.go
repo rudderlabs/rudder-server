@@ -67,11 +67,16 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	pkgLogger.Info("Processor starting")
 
 	rudderCoreBaseSetup()
+	g, ctx := errgroup.WithContext(ctx)
 
 	//Setting up reporting client
 	if processor.App.Features().Reporting != nil {
 		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
-		reporting.AddClient(types.Config{ConnInfo: jobsdb.GetConnectionString()})
+
+		g.Go(misc.WithBugsnag(func() error {
+			reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+			return nil
+		}))
 	}
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
@@ -95,7 +100,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		reportingI = processor.App.Features().Reporting.GetReportingInstance()
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func(ctx context.Context) {
@@ -140,7 +144,9 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	g.Go(func() error {
 		return startHealthWebHandler(ctx)
 	})
-	return g.Wait()
+	err := g.Wait()
+
+	return err
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 

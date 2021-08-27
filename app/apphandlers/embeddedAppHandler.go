@@ -41,10 +41,16 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	rudderCoreBaseSetup()
 
+	g, ctx := errgroup.WithContext(ctx)
+
 	//Setting up reporting client
 	if embedded.App.Features().Reporting != nil {
 		reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
-		reporting.AddClient(types.Config{ConnInfo: jobsdb.GetConnectionString()})
+
+		g.Go(func() error {
+			reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+			return nil
+		})
 	}
 
 	var gatewayDB jobsdb.HandleT
@@ -75,7 +81,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		reportingI = embedded.App.Features().Reporting.GetReportingInstance()
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
 
 	if embedded.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {

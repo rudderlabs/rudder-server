@@ -1538,7 +1538,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 func (proc *HandleT) mainLoop(ctx context.Context) {
 	//waiting for reporting client setup
 	if proc.reporting != nil {
-		proc.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
+		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
 	}
 
 	proc.logger.Info("Processor loop started")

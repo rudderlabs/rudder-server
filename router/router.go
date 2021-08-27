@@ -2,6 +2,7 @@ package router
 
 import (
 	"container/list"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -1619,7 +1620,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 
 	//waiting for reporting client setup
 	if rt.reporting != nil {
-		rt.reporting.WaitForSetup(utilTypes.CORE_REPORTING_CLIENT)
+		rt.reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)
 	}
 
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
