@@ -170,6 +170,6 @@ func (manager *GCSManager) DeleteObjects(locations []string) (err error) {
 	return
 }
 
-func (manager *GCSManager) GetConfigPrefix() (string) {
+func (manager *GCSManager) GetConfiguredPrefix() (string) {
 	return manager.Config.Prefix
 }

@@ -59,6 +59,7 @@ var (
 	datePrefixOverride                 string
 	dateFormatLayouts                  map[string]string // string -> string
 	dateFormatMap                      map[string]string // (sourceId:destinationId) -> dateFormat
+	dateFormatMapLock                  sync.RWMutex
 )
 
 const DISABLED_EGRESS = "200: outgoing disabled"
@@ -805,7 +806,7 @@ func (brt *HandleT) asyncStructCleanUp(destinationID string) {
 
 func GetFullPrefix(manager filemanager.FileManager, prefix string) (fullPrefix string) {
 	fullPrefix = prefix
-	configPrefix := manager.GetConfigPrefix()
+	configPrefix := manager.GetConfiguredPrefix()
 
 	if configPrefix != "" {
 		if configPrefix[len(configPrefix)-1:] == "/" {
@@ -817,15 +818,23 @@ func GetFullPrefix(manager filemanager.FileManager, prefix string) (fullPrefix s
 	return
 }
 
+func isDateFormatExists(connIdentifier string) bool {
+	dateFormatMapLock.RLock()
+	defer dateFormatMapLock.RUnlock()
+	return misc.Contains(dateFormatMap, connIdentifier)
+}
+
 func GetStorageDateFormat(manager filemanager.FileManager, destination *DestinationT, folderName string) (dateFormat string, err error) {
-	sourceDestinationId := fmt.Sprintf(`%s:%s`, destination.Source.ID, destination.Destination.ID)
-	if misc.Contains(dateFormatMap, sourceDestinationId) {
-		return dateFormatMap[sourceDestinationId], err
+	connIdentifier := connectionIdentifier(DestinationT{Destination: destination.Destination, Source: destination.Source})
+	if isDateFormatExists(connIdentifier) {
+		return dateFormatMap[connIdentifier], err
 	}
 
 	defer func() {
 		if err == nil {
-			dateFormatMap[sourceDestinationId] = dateFormat
+			dateFormatMapLock.RLock()
+			defer dateFormatMapLock.RUnlock()
+			dateFormatMap[connIdentifier] = dateFormat
 		}
 	}()
 
@@ -835,6 +844,7 @@ func GetStorageDateFormat(manager filemanager.FileManager, destination *Destinat
 	fullPrefix := GetFullPrefix(manager, prefix)
 	fileObjects, err := manager.ListFilesWithPrefix(fullPrefix, 5)
 	if err != nil {
+		pkgLogger.Errorf("[BRT]: Failed to fetch fileObjects with connIdentifier: %s, prefix: %s, Err: %v", connIdentifier, fullPrefix, err)
 		// Returning the earlier default as we might not able to fetch the list.
 		// because "*:GetObject" and "*:ListBucket" permissions are not available.
 		dateFormat = "MM-DD-YYYY"

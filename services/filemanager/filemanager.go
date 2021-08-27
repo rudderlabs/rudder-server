@@ -39,7 +39,7 @@ type FileManager interface {
 	GetDownloadKeyFromFileLocation(location string) string
 	DeleteObjects(locations []string) error
 	ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error)
-	GetConfigPrefix() (string)
+	GetConfiguredPrefix() (string)
 }
 
 // SettingsT sets configuration for FileManager

@@ -169,6 +169,6 @@ type DOSpacesConfig struct {
 	AccessKey   string
 }
 
-func (manager *DOSpacesManager) GetConfigPrefix() (string) {
+func (manager *DOSpacesManager) GetConfiguredPrefix() (string) {
 	return manager.Config.Prefix
 }

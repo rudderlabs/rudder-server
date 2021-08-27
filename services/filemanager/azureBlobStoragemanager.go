@@ -225,6 +225,6 @@ func (manager *AzureBlobStorageManager) DeleteObjects(locations []string) (err e
 	return
 }
 
-func (manager *AzureBlobStorageManager) GetConfigPrefix() (string) {
+func (manager *AzureBlobStorageManager) GetConfiguredPrefix() (string) {
 	return manager.Config.Prefix
 }

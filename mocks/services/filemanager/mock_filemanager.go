@@ -102,9 +102,9 @@ func (mr *MockFileManagerMockRecorder) Download(arg0, arg1 interface{}) *gomock.
 }
 
 // GetConfigPrefix mocks base method.
-func (m *MockFileManager) GetConfigPrefix() string {
+func (m *MockFileManager) GetConfiguredPrefix() string {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetConfigPrefix")
+	ret := m.ctrl.Call(m, "GetConfiguredPrefix")
 	ret0, _ := ret[0].(string)
 	return ret0
 }
@@ -112,7 +112,7 @@ func (m *MockFileManager) GetConfigPrefix() string {
 // GetConfigPrefix indicates an expected call of GetConfigPrefix.
 func (mr *MockFileManagerMockRecorder) GetConfigPrefix() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetConfigPrefix", reflect.TypeOf((*MockFileManager)(nil).GetConfigPrefix))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetConfiguredPrefix", reflect.TypeOf((*MockFileManager)(nil).GetConfiguredPrefix))
 }
 
 // GetDownloadKeyFromFileLocation mocks base method.

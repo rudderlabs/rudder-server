@@ -275,6 +275,6 @@ type S3Config struct {
 	RegionHint  string
 }
 
-func (manager *S3Manager) GetConfigPrefix() (string) {
+func (manager *S3Manager) GetConfiguredPrefix() (string) {
 	return manager.Config.Prefix
 }
