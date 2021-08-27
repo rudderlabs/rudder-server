@@ -189,28 +189,28 @@ var sampleTestJob = JobT{
 	CustomVal:    "MOCKDS",
 }
 
-type context struct {
+type tContext struct {
 	mock       sqlmock.Sqlmock
 	db         *sql.DB
 	globalMock sqlmock.Sqlmock
 	globalDB   *sql.DB
 }
 
-func (c *context) Setup() {
+func (c *tContext) Setup() {
 	c.db, c.mock, _ = sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
 	c.globalDB, c.globalMock, _ = sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
 }
 
-func (c *context) Finish() {
+func (c *tContext) Finish() {
 	c.db.Close()
 }
 
 var _ = Describe("jobsdb", func() {
 
-	var c *context
+	var c *tContext
 
 	BeforeEach(func() {
-		c = &context{}
+		c = &tContext{}
 		c.Setup()
 
 		// setup static requirements of dependencies
