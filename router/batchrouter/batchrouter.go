@@ -57,7 +57,7 @@ var (
 	toAbortDestinationIDs              string
 	transformerURL                     string
 	datePrefixOverride                 string
-	dateFormatLayouts                  map[string]string
+	dateFormatLayouts                  map[string]string // string -> string
 	dateFormatMap                      map[string]string // (sourceId:destinationId) -> dateFormat
 )
 

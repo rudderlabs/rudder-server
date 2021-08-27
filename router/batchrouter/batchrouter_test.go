@@ -50,6 +50,18 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
+var sampleConfigPrefix = "config_prefix"
+var sampleFileObjects = []*filemanager.FileObject{
+	{
+		Key:          fmt.Sprintf("%s/%s/%s/%s/%s", sampleConfigPrefix, SourceIDEnabled, WriteKeyEnabled, "01-02-2006", "tmp1.log"),
+		LastModified: time.Now(),
+	},
+	{
+		Key:          fmt.Sprintf("%s/%s/%s/%s/%s", sampleConfigPrefix, SourceIDEnabled, WriteKeyEnabled, "2006-01-02", "tmp2.log"),
+		LastModified: time.Now(),
+	},
+}
+
 type context struct {
 	asyncHelper       testutils.AsyncTestHelper
 	jobQueryBatchSize int
@@ -60,6 +72,8 @@ type context struct {
 	mockBackendConfig      *mocksBackendConfig.MockBackendConfig
 	mockFileManagerFactory *mocksFileManager.MockFileManagerFactory
 	mockFileManager        *mocksFileManager.MockFileManager
+	mockConfigPrefix       string
+	mockFileObjects 	   []*filemanager.FileObject
 }
 
 // Initiaze mocks and common expectations
@@ -82,6 +96,8 @@ func (c *context) Setup() {
 		Return().Times(1)
 
 	c.jobQueryBatchSize = 100000
+	c.mockConfigPrefix = sampleConfigPrefix
+	c.mockFileObjects = sampleFileObjects
 }
 
 func (c *context) Finish() {
@@ -140,6 +156,8 @@ var _ = Describe("BatchRouter", func() {
 
 			c.mockFileManagerFactory.EXPECT().New(gomock.Any()).Times(1).Return(c.mockFileManager, nil)
 			c.mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any()).Return(filemanager.UploadOutput{Location: "local", ObjectName: "file"}, nil)
+			c.mockFileManager.EXPECT().GetConfigPrefix().Return(c.mockConfigPrefix)
+			c.mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any()).Return(c.mockFileObjects, nil)
 
 			s3Payload := `{
 				"userId": "identified user id",
