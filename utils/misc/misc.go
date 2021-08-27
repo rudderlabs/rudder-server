@@ -1106,6 +1106,9 @@ func GetWarehouseURL() (url string) {
 }
 
 func GetStringifiedData(data interface{}) string {
+	if data == nil {
+		return ""
+	}
 	switch d := data.(type) {
 	case string:
 		return d
