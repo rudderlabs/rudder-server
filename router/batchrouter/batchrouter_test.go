@@ -156,7 +156,7 @@ var _ = Describe("BatchRouter", func() {
 
 			c.mockFileManagerFactory.EXPECT().New(gomock.Any()).Times(1).Return(c.mockFileManager, nil)
 			c.mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any()).Return(filemanager.UploadOutput{Location: "local", ObjectName: "file"}, nil)
-			c.mockFileManager.EXPECT().GetConfigPrefix().Return(c.mockConfigPrefix)
+			c.mockFileManager.EXPECT().GetConfiguredPrefix().Return(c.mockConfigPrefix)
 			c.mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any()).Return(c.mockFileObjects, nil)
 
 			s3Payload := `{
