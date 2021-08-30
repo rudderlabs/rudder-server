@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilsync "github.com/rudderlabs/rudder-server/utils/sync"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -149,10 +150,13 @@ func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB, procErrorD
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
 	// dstToWhRouter := make(map[string]*warehouse.HandleT)
 
+	cleanup := make([]func(), 0)
+
+loop:
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			break loop
 		case config := <-ch:
 			sources := config.Data.(backendconfig.ConfigT)
 			enabledDestinations := make(map[string]bool)
@@ -167,6 +171,7 @@ func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB, procErrorD
 							var brt batchrouter.HandleT
 							brt.Setup(backendconfig.DefaultBackendConfig, batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
 							brt.Start()
+							// TODO cleanup = append(cleanup, router.Shutdown)
 							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 						}
 					} else {
@@ -176,6 +181,7 @@ func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB, procErrorD
 							var router router.HandleT
 							router.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition, reporting)
 							router.Start()
+							cleanup = append(cleanup, router.Shutdown)
 							dstToRouter[destination.DestinationDefinition.Name] = &router
 						}
 					}
@@ -193,4 +199,14 @@ func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB, procErrorD
 			}
 		}
 	}
+
+	g, _ := errgroup.WithContext(context.Background())
+	for _, f := range cleanup {
+		f := f
+		g.Go(func() error {
+			f()
+			return nil
+		})
+	}
+	g.Wait()
 }
