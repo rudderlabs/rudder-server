@@ -194,8 +194,8 @@ func (trans *HandleT) TransformResponse(response string, destName string) (int, 
 	}
 	resp.Body.Close()
 	if respStatus != http.StatusOK {
-		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
-		err = fmt.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
+		trans.logger.Errorf("[Router Response Transformer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
+		err = fmt.Errorf("[Router Response Transformer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
 		return respStatus, string(respData), err
 	}
 	return respStatus, string(respData), nil

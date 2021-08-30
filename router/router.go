@@ -566,7 +566,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 								pkgLogger.Infof(`routing via server, proxy disabled`)
 								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
 								if worker.rt.responseTransformer {
-									pkgLogger.Infof(`response transformer enabled, handling responses`)
+									pkgLogger.Infof(`response transformer enabled, handling responses %s`, worker.rt.destName)
 									handledRespStatusCode, handledRespBody, err := worker.rt.transformer.TransformResponse(respBodyTemp, worker.rt.destName)
 									if err != nil {
 										respStatusCode = handledRespStatusCode
