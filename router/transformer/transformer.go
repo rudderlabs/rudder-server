@@ -159,7 +159,6 @@ func (trans *HandleT) TransformResponse(response string, destName string) (int, 
 	retryCount := 0
 	var resp *http.Response
 	var respData []byte
-	var respStatus int
 	var err error
 	//We should rarely have error communicating with our JS
 	reqFailed := false
@@ -167,7 +166,6 @@ func (trans *HandleT) TransformResponse(response string, destName string) (int, 
 
 	for {
 		resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
-		respStatus = resp.StatusCode
 		if err == nil {
 			//If no err returned by client.Post, reading body.
 			//If reading body fails, retrying.
@@ -193,12 +191,12 @@ func (trans *HandleT) TransformResponse(response string, destName string) (int, 
 		break
 	}
 	resp.Body.Close()
-	if respStatus != http.StatusOK {
+	if resp.StatusCode != http.StatusOK {
 		trans.logger.Errorf("[Router Response Transformer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
 		err = fmt.Errorf("[Router Response Transformer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
-		return respStatus, string(respData), err
+		return resp.StatusCode, string(respData), err
 	}
-	return respStatus, string(respData), nil
+	return resp.StatusCode, string(respData), nil
 
 }
 
