@@ -74,6 +74,7 @@ type HandleT struct {
 	statDBW                        stats.RudderStats
 	statLoopTime                   stats.RudderStats
 	eventSchemasTime               stats.RudderStats
+	validateEventsTime             stats.RudderStats
 	statSessionTransform           stats.RudderStats
 	statUserTransform              stats.RudderStats
 	statDestTransform              stats.RudderStats
@@ -263,6 +264,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statProcErrDBW = proc.stats.NewStat("processor.proc_err_db_write", stats.CountType)
 	proc.statLoopTime = proc.stats.NewStat("processor.loop_time", stats.TimerType)
 	proc.eventSchemasTime = proc.stats.NewStat("processor.event_schemas_time", stats.TimerType)
+	proc.validateEventsTime = proc.stats.NewStat("processor.validate_events_time", stats.TimerType)
 	proc.statSessionTransform = proc.stats.NewStat("processor.session_transform_time", stats.TimerType)
 	proc.statUserTransform = proc.stats.NewStat("processor.user_transform_time", stats.TimerType)
 	proc.statDestTransform = proc.stats.NewStat("processor.dest_transform_time", stats.TimerType)
@@ -1092,7 +1094,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.marshalSingularEvents.End()
 	//Placing the trackingPlan validation filters here.
 	//Else further down events are duplicated by destId, so multiple validation takes places for same event
+	proc.validateEventsTime.Start()
 	validatedEventsByWriteKey := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID)
+	proc.validateEventsTime.End()
 	// tracking plan validation end
 
 	// The below part further segregates events by sourceID and DestinationID.
@@ -1139,6 +1143,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					uniqueMessageIdsBySrcDestKey[srcAndDestKey][event.Metadata.MessageID] = struct{}{}
 				}
 			}
+
+			tags := BuildTrackingPlanStatTags(&event.Metadata)
+			tags["statusCode"] = strconv.Itoa(200)
+
+			validateEventsOutputStat := proc.stats.NewTaggedStat("processor.validate_events_output", stats.CountType, tags)
+			validateEventsOutputStat.Count(1)
 		}
 	}
 
