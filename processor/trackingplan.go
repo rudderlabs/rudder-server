@@ -6,16 +6,27 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	uuid "github.com/satori/go.uuid"
 	"time"
 )
 
+type TrackingPlanStatT struct {
+	numEvents             stats.RudderStats
+	validateSuccessEvents stats.RudderStats
+	validateFailedEvents  stats.RudderStats
+	validateEventTime     stats.RudderStats
+	violationsByType      stats.RudderStats
+}
+
 // extracts the events from Validation response and make them transformer ready
-func (proc *HandleT) GetTransformerEventsFromValidationResponse(response transformer.ResponseT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) ([]transformer.TransformerEventT, []*jobsdb.JobT) {
+func (proc *HandleT) GetTransformerEventsFromValidationResponse(response transformer.ResponseT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) ([]transformer.TransformerEventT, []*jobsdb.JobT, map[string]int) {
 	var eventsToTransform []transformer.TransformerEventT
 	var eventsToDrop []transformer.TransformerResponseT
 	var failedEventsToStore []*jobsdb.JobT
+	var violationsByTypeStats = make(map[string]int)
 
 	for _, validatedEvent := range response.Events {
 		updatedEvent := transformer.TransformerEventT{
@@ -51,6 +62,7 @@ func (proc *HandleT) GetTransformerEventsFromValidationResponse(response transfo
 			case "allowUnplannedEvents":
 				_, exists := violationsByType[transformer.UnplannedEvent]
 				if value == "false" && exists {
+					misc.IncrementMapByKey(violationsByTypeStats, transformer.UnplannedEvent, 1)
 					dropEvent = true
 					break
 				}
@@ -60,6 +72,7 @@ func (proc *HandleT) GetTransformerEventsFromValidationResponse(response transfo
 			case "unplannedProperties":
 				_, exists := violationsByType[transformer.AdditionalProperties]
 				if value == "drop" && exists {
+					misc.IncrementMapByKey(violationsByTypeStats, transformer.AdditionalProperties, 1)
 					dropEvent = true
 					break
 				}
@@ -71,6 +84,13 @@ func (proc *HandleT) GetTransformerEventsFromValidationResponse(response transfo
 				_, exists1 := violationsByType[transformer.DatatypeMismatch]
 				_, exists2 := violationsByType[transformer.RequiredMissing]
 				if value == "drop" && (exists || exists1 || exists2) {
+					if exists {
+						misc.IncrementMapByKey(violationsByTypeStats, transformer.UnknownViolation, 1)
+					} else if exists1 {
+						misc.IncrementMapByKey(violationsByTypeStats, transformer.DatatypeMismatch, 1)
+					} else {
+						misc.IncrementMapByKey(violationsByTypeStats, transformer.RequiredMissing, 1)
+					}
 					dropEvent = true
 					break
 				}
@@ -134,7 +154,7 @@ func (proc *HandleT) GetTransformerEventsFromValidationResponse(response transfo
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
 	}
-	return eventsToTransform, failedEventsToStore
+	return eventsToTransform, failedEventsToStore, violationsByTypeStats
 }
 
 func reportViolations(validateEvent *transformer.TransformerResponseT) {
@@ -167,7 +187,11 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[string][]transfo
 			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
 			continue
 		}
+		tpValidationStat := proc.newTrackingPlanStat(eventList[0])
+		tpValidationStat.numEvents.Count(len(eventList))
+		tpValidationStat.validateEventTime.Start()
 		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize)
+		tpValidationStat.validateEventTime.End()
 
 		commonMetaData := transformer.MetadataT{
 			SourceID:       eventList[0].Metadata.SourceID,
@@ -191,8 +215,7 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[string][]transfo
 			filteredFailedEvents = append(filteredFailedEvents, event)
 		}
 		response.FailedEvents = filteredFailedEvents
-
-		eventsToTransform, validationFailedJobs := proc.GetTransformerEventsFromValidationResponse(response, eventsByMessageID)
+		eventsToTransform, validationFailedJobs, violationsByTypeStats := proc.GetTransformerEventsFromValidationResponse(response, eventsByMessageID)
 		//dumps violated events as per sourceTpConfig to proc_error
 		if len(validationFailedJobs) > 0 {
 			proc.logger.Info("[Processor] Total validationFailedJobs written to proc_error: ", len(validationFailedJobs))
@@ -216,6 +239,10 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[string][]transfo
 			proc.logger.Errorf("Failed metrics : ", failedMetrics, failedCountMap)
 		}
 
+		tpValidationStat.validateSuccessEvents.Count(len(eventsToTransform))
+		tpValidationStat.validateFailedEvents.Count(len(validationFailedJobs) + len(failedJobs))
+		tpValidationStat.violationsByType.Gauge(violationsByTypeStats)
+
 		if len(eventsToTransform) == 0 {
 			continue
 		} else {
@@ -224,4 +251,29 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[string][]transfo
 		}
 	}
 	return validatedEventsByWriteKey
+}
+
+func (proc *HandleT) newTrackingPlanStat(event transformer.TransformerEventT) *TrackingPlanStatT {
+	tags := map[string]string{
+		"source":              event.Metadata.SourceID,
+		"workspaceId":         event.Metadata.WorkspaceID,
+		"destination":         event.Destination.ID,
+		"destType":            event.Destination.Name,
+		"trackingPlanId":      event.Metadata.TrackingPlanId,
+		"trackingPlanVersion": string(rune(event.Metadata.TrackingPlanVersion)),
+	}
+
+	numEvents := proc.stats.NewTaggedStat("processor.num_tp_events", stats.CountType, tags)
+	validateSuccessEvents := proc.stats.NewTaggedStat("processor.num_tp_validate_success_events", stats.CountType, tags)
+	validateFailedEvents := proc.stats.NewTaggedStat("processor.num_tp_validate_failed_events", stats.CountType, tags)
+	violationsByType := proc.stats.NewTaggedStat("processor.tp_violation_by_type", stats.GaugeType, tags)
+	validateTime := proc.stats.NewTaggedStat("processor.tp_validate_time", stats.TimerType, tags)
+
+	return &TrackingPlanStatT{
+		numEvents:             numEvents,
+		validateSuccessEvents: validateSuccessEvents,
+		validateFailedEvents:  validateFailedEvents,
+		validateEventTime:     validateTime,
+		violationsByType:      violationsByType,
+	}
 }
