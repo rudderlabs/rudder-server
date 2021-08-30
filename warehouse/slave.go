@@ -269,6 +269,7 @@ func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWrite
 		var err error
 		outputFilePath := jobRun.getLoadFilePath(tableName)
 		if jobRun.job.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+			fmt.Println("----\nCreating parquet writer for tableName: ", tableName, "-----\n schema: ", jobRun.job.UploadSchema[tableName])
 			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.UploadSchema[tableName], outputFilePath, jobRun.job.DestinationType)
 		} else {
 			writer, err = misc.CreateGZ(outputFilePath)

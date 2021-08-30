@@ -53,6 +53,7 @@ func CreateParquetWriter(schema TableSchemaT, outputFilePath string, destType st
 	}
 
 	pSchema, err := getParquetSchema(schema, destType)
+	fmt.Println("------\npSchema : ", pSchema)
 	if err != nil {
 		return nil, err
 	}
