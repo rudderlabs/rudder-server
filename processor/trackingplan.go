@@ -153,21 +153,21 @@ func reportViolations(validateEvent *transformer.TransformerResponseT) {
 	}
 }
 
-func (proc *HandleT) validateEvents(groupedEventsBySourceID map[string][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) map[string][]transformer.TransformerEventT {
-	//validating with the tp here for every sourceID
-	var validatedEventsBySourceID = make(map[string][]transformer.TransformerEventT)
-	for srcId, eventList := range groupedEventsBySourceID {
+func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[string][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) map[string][]transformer.TransformerEventT {
+	//validating with the tp here for every writeKey
+	var validatedEventsByWriteKey = make(map[string][]transformer.TransformerEventT)
+	for writeKey, eventList := range groupedEventsByWriteKey {
 		isTpExists := eventList[0].Metadata.TrackingPlanId != ""
 		if !isTpExists {
 			// pass on the jobs for transformation(User,Dest)
-			validatedEventsBySourceID[srcId] = make([]transformer.TransformerEventT, 0)
-			validatedEventsBySourceID[srcId] = append(validatedEventsBySourceID[srcId], eventList...)
+			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
+			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
 			continue
 		}
 		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize)
 
 		commonMetaData := transformer.MetadataT{
-			SourceID:       srcId,
+			SourceID:       eventList[0].Metadata.SourceID,
 			SourceType:     eventList[0].Metadata.SourceType,
 			SourceCategory: eventList[0].Metadata.SourceCategory,
 		}
@@ -216,9 +216,9 @@ func (proc *HandleT) validateEvents(groupedEventsBySourceID map[string][]transfo
 		if len(eventsToTransform) == 0 {
 			continue
 		} else {
-			validatedEventsBySourceID[srcId] = make([]transformer.TransformerEventT, 0)
-			validatedEventsBySourceID[srcId] = append(validatedEventsBySourceID[srcId], eventsToTransform...)
+			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
+			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventsToTransform...)
 		}
 	}
-	return validatedEventsBySourceID
+	return validatedEventsByWriteKey
 }

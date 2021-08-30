@@ -914,7 +914,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
-	var groupedEventsBySourceID = make(map[string][]transformer.TransformerEventT)
+	var groupedEventsByWriteKey = make(map[string][]transformer.TransformerEventT)
 	var eventsByMessageID = make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 
@@ -1001,9 +1001,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(singularEvent, batchEvent, receivedAt, sourceForSingularEvent)
 
-				_, ok = groupedEventsBySourceID[commonMetadataFromSingularEvent.SourceID]
+				_, ok = groupedEventsByWriteKey[writeKey]
 				if !ok {
-					groupedEventsBySourceID[commonMetadataFromSingularEvent.SourceID] = make([]transformer.TransformerEventT, 0)
+					groupedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
 				}
 				shallowEventCopy := transformer.TransformerEventT{}
 				shallowEventCopy.Message = singularEvent
@@ -1027,8 +1027,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(eventType)
 				}
 
-				groupedEventsBySourceID[commonMetadataFromSingularEvent.SourceID] = append(groupedEventsBySourceID[commonMetadataFromSingularEvent.SourceID],
-					shallowEventCopy)
+				groupedEventsByWriteKey[writeKey] = append(groupedEventsByWriteKey[writeKey], shallowEventCopy)
 
 				//REPORTING - GATEWAY metrics - START
 				if proc.reporting != nil && proc.reportingEnabled {
@@ -1091,22 +1090,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.marshalSingularEvents.End()
 	//Placing the trackingPlan validation filters here.
 	//Else further down events are duplicated by destId, so multiple validation takes places for same event
-	validatedEventsBySourceID := proc.validateEvents(groupedEventsBySourceID, eventsByMessageID)
+	validatedEventsByWriteKey := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID)
 	// tracking plan validation end
 
 	// The below part further segregates events by sourceID and DestinationID.
-	for srcId, eventList := range validatedEventsBySourceID {
-		writeKey := ""
-		for wKey, source := range writeKeySourceMap {
-			if source.ID == srcId {
-				writeKey = wKey
-				break
-			}
-		}
-		if writeKey == "" {
-			proc.logger.Error("src not found for writeKey")
-		}
-
+	for writeKey, eventList := range validatedEventsByWriteKey {
 		backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 		workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 		workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
