@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -104,23 +103,14 @@ func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (stri
 	return strings.TrimPrefix(path, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 }
 
-type SpacesObject struct {
-	Key              string
-	LastModifiedTime time.Time
-}
+func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	fileObjects = make([]*FileObject, 0)
 
-func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string) ([]*SpacesObject, error) {
-	spacesObjects := make([]*SpacesObject, 0)
-
-	getRegionSession := session.Must(session.NewSession())
-	region, err := SpacesManager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, "us-east-1")
-	if err != nil {
-		pkgLogger.Errorf("Failed to fetch AWS region for bucket %s. Error %v", manager.Config.Bucket, err)
-		return spacesObjects, err
-	}
+	region := misc.GetSpacesLocation(manager.Config.EndPoint)
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
+		Endpoint:    aws.String(manager.Config.EndPoint),
 	}))
 
 	// Create S3 service client
@@ -128,19 +118,19 @@ func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string) ([]*SpacesObj
 
 	// Get the list of items
 	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{
-		Bucket: aws.String(manager.Config.Bucket),
-		Prefix: aws.String(prefix),
+		Bucket:  aws.String(manager.Config.Bucket),
+		Prefix:  aws.String(prefix),
+		MaxKeys: &maxItems,
 		// Delimiter: aws.String("/"),
 	})
 	if err != nil {
-		return spacesObjects, err
+		return
 	}
 
 	for _, item := range resp.Contents {
-		spacesObjects = append(spacesObjects, &SpacesObject{*item.Key, *item.LastModified})
+		fileObjects = append(fileObjects, &FileObject{*item.Key, *item.LastModified})
 	}
-
-	return spacesObjects, nil
+	return
 }
 
 func (manager *DOSpacesManager) DeleteObjects(locations []string) (err error) {
@@ -177,4 +167,8 @@ type DOSpacesConfig struct {
 	EndPoint    string
 	AccessKeyID string
 	AccessKey   string
+}
+
+func (manager *DOSpacesManager) GetConfiguredPrefix() (string) {
+	return manager.Config.Prefix
 }
