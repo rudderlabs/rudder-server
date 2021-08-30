@@ -138,6 +138,9 @@ func (proc *HandleT) GetTransformerEventsFromValidationResponse(response transfo
 }
 
 func reportViolations(validateEvent *transformer.TransformerResponseT) {
+	if !sourceSchemaConfig {
+		return
+	}
 	if len(validateEvent.ValidationErrors) == 0 {
 		return
 	}

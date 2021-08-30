@@ -338,6 +338,7 @@ var (
 	pollInterval                        time.Duration
 	isUnLocked                          bool
 	GWCustomVal                         string
+	sourceSchemaConfig					bool
 )
 
 func loadConfig() {
@@ -364,6 +365,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, []string{"Processor.pollInterval", "Processor.pollIntervalInS"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
 	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
+	config.RegisterBoolConfigVariable(true, &sourceSchemaConfig, false, "Processor.sourceSchemaConfig")
 }
 
 func (proc *HandleT) getTransformerFeatureJson() {
