@@ -100,6 +100,49 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 	return UploadOutput{Location: blobURL.String(), ObjectName: fileName}, nil
 }
 
+func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	fileObjects = make([]*FileObject, 0)
+	ctx := context.Background()
+	marker := string("")
+
+	// From the Azure portal, get your storage account blob service URL endpoint.
+	azureURL, err := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net", manager.Config.AccountName))
+	if err != nil {
+		return
+	}
+
+	// From the Azure portal, get your storage account name and key and set environment variables.
+	credential, err := azblob.NewSharedKeyCredential(manager.Config.AccountName, manager.Config.AccountKey)
+	if err != nil {
+		return
+	}
+
+	// pipeline to make requests.
+	// Create a ContainerURL object that wraps the container URL and a request
+	p := azblob.NewPipeline(credential, azblob.PipelineOptions{})
+	serviceURL := azblob.NewServiceURL(*azureURL, p)
+	containerURL := serviceURL.NewContainerURL(manager.Config.Container)
+	blobListingDetails := azblob.BlobListingDetails{
+		Metadata: true,
+	}
+	segmentOptions := azblob.ListBlobsSegmentOptions{
+		Details:    blobListingDetails,
+		Prefix:     prefix,
+		MaxResults: int32(maxItems),
+	}
+
+	// List the blobs in the container
+	response, err := containerURL.ListBlobsFlatSegment(ctx, azblob.Marker{Val: &marker}, segmentOptions)
+	if err != nil {
+		return
+	}
+
+	for _, item := range response.Segment.BlobItems {
+		fileObjects = append(fileObjects, &FileObject{item.Name, item.Properties.LastModified})
+	}
+	return
+}
+
 func (manager *AzureBlobStorageManager) Download(output *os.File, key string) error {
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
@@ -180,4 +223,8 @@ type AzureBlobStorageConfig struct {
 
 func (manager *AzureBlobStorageManager) DeleteObjects(locations []string) (err error) {
 	return
+}
+
+func (manager *AzureBlobStorageManager) GetConfiguredPrefix() (string) {
+	return manager.Config.Prefix
 }
