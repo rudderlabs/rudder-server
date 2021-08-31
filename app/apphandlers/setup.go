@@ -172,6 +172,7 @@ loop:
 							brt.Setup(backendconfig.DefaultBackendConfig, batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
 							brt.Start()
 							// TODO cleanup = append(cleanup, router.Shutdown)
+							cleanup = append(cleanup, brt.Shutdown)
 							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 						}
 					} else {
