@@ -1,6 +1,7 @@
 package main_test
 
 import (
+	"encoding/json"
 	"context"
 	"database/sql"
 	"fmt"
@@ -24,16 +25,73 @@ import (
 )
 
 var (
-	hold        bool
+	hold        bool=true
 	db          *sql.DB
 	redisClient *redis.Client
 	DB_DSN      = "root@tcp(127.0.0.1:3306)/service"
 	httpPort    string
 )
 
+type WebHook struct {
+	Data []struct {
+		UUID      string      `json:"uuid"`
+		Type      string      `json:"type"`
+		TokenID   string      `json:"token_id"`
+		IP        string      `json:"ip"`
+		Hostname  string      `json:"hostname"`
+		Method    string      `json:"method"`
+		UserAgent string      `json:"user_agent"`
+		Content   string   `json:"content"`
+		Query     interface{} `json:"query"`
+		Headers   struct {
+			Connection     []string `json:"connection"`
+			AcceptEncoding []string `json:"accept-encoding"`
+			ContentType    []string `json:"content-type"`
+			ContentLength  []string `json:"content-length"`
+			UserAgent      []string `json:"user-agent"`
+			Host           []string `json:"host"`
+		} `json:"headers"`
+		URL                string        `json:"url"`
+		Size               int           `json:"size"`
+		Files              []interface{} `json:"files"`
+		CreatedAt          string        `json:"created_at"`
+		UpdatedAt          string        `json:"updated_at"`
+		Sorting            int64         `json:"sorting"`
+		CustomActionOutput []interface{} `json:"custom_action_output"`
+	} `json:"data"`
+	Total       int  `json:"total"`
+	PerPage     int  `json:"per_page"`
+	CurrentPage int  `json:"current_page"`
+	IsLastPage  bool `json:"is_last_page"`
+	From        int  `json:"from"`
+	To          int  `json:"to"`
+}
+
 type Author struct {
 	Name string `json:"name"`
 	Age  int    `json:"age"`
+}
+
+// getFromFile reads the workspace config from JSON file
+func getWebhookResponse() (int, bool){
+    filePath := "./webhooktest.json";
+    fmt.Printf( "// reading file %s\n", filePath )
+    file, err1 := ioutil.ReadFile( filePath )
+    if err1 != nil {
+        fmt.Printf( "// error while reading file %s\n", filePath )
+        fmt.Printf("File error: %v\n", err1)
+        os.Exit(1)
+    }
+    var WebHookstruct WebHook
+
+    err2 := json.Unmarshal(file, &WebHookstruct)
+    if err2 != nil {
+        fmt.Println("error:", err2)
+        os.Exit(1)
+    }
+    // fmt.Println(WebHookstruct.Total)
+	fmt.Printf("%+v\n", WebHookstruct)
+    return WebHookstruct.Total, true
 }
 
 func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration) {
@@ -101,11 +159,43 @@ func VerifyHealth() {
 	}
 	fmt.Println(string(body))
 }
+
+func GetDestinationWebhookEvent() string {
+	url := "https://webhook.site/token/72db9e77-e002-4612-826c-e8c72ba5b334/requests?page=1&password=&sorting=oldest"
+	method := "GET"
+
+	client := &http.Client {
+	}
+	req, err := http.NewRequest(method, url, nil)
+
+	if err != nil {
+		fmt.Println(err)
+		return ""
+	}
+	req.Header.Add("Cookie", "laravel_session=UZyYPg2FfrV0UNnxsuKKKYEOzGVScROClyvjWYmx")
+
+	res, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return ""
+	}
+	defer res.Body.Close()
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println(err)
+		return ""
+	}
+	fmt.Println(string(body))
+	_ = ioutil.WriteFile("webhooktest.json", body, 0644)
+	return string(body)
+}
+
 func SendEvent() {
-
-	url := fmt.Sprintf("http://localhost:%s/v1/identify", httpPort)
+	fmt.Println("Sending Track Event")
+	url := fmt.Sprintf("http://localhost:%s/v1/track", httpPort)
 	method := "POST"
-
+  
 	payload := strings.NewReader(`{
 	"userId": "identified user id",
 	"anonymousId":"anon-id-new",
@@ -120,28 +210,29 @@ func SendEvent() {
 	},
 	"timestamp": "2020-02-02T00:23:09.544Z"
   }`)
-
-	client := &http.Client{}
+  
+	client := &http.Client {
+	}
 	req, err := http.NewRequest(method, url, payload)
-
+  
 	if err != nil {
-		fmt.Println(err)
-		return
+	  fmt.Println(err)
+	  return
 	}
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", "Basic MXRmSlZHMlFnNnRoNzdHNjZOZlg4YnRNdFROOg==")
-
+	req.Header.Add("Authorization", "Basic MXhJY0tneXp5QjFyNnV0S0F0TzZlamg4b0tJOg==")
+  
 	res, err := client.Do(req)
 	if err != nil {
-		fmt.Println(err)
-		return
+	  fmt.Println(err)
+	  return
 	}
 	defer res.Body.Close()
-
+  
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		fmt.Println(err)
-		return
+	  fmt.Println(err)
+	  return
 	}
 	fmt.Println(string(body))
 	fmt.Println("Event Sent Successfully")
@@ -203,6 +294,7 @@ func run(m *testing.M) int {
 
 	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
 	os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
+	os.Setenv("WAREHOUSE_JOBS_DB_PORT",resourcePostgres.GetPort("5432/tcp"))
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		var err error
@@ -240,6 +332,18 @@ func run(m *testing.M) int {
 		time.Second,
 	)
 	os.Setenv("DEST_TRANSFORM_URL", transformURL)
+
+	os.Setenv("RUDDER_ADMIN_PASSWORD", "password")
+
+	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
+
+	mydir, _ := os.Getwd()
+	CONFIG_JSONPATH := mydir + "/workspaceConfig.json"
+	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", CONFIG_JSONPATH)
+
+	os.Setenv("WORKSPACE_TOKEN", "1vLbwltztKUgpuFxmJlSe1esX8c")
+
+	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
 
 	httpPortInt, err := freeport.GetFreePort()
 	if err != nil {
@@ -284,15 +388,33 @@ func run(m *testing.M) int {
 	return code
 }
 
-func TestSomething(t *testing.T) {
+func TestWebhook(t *testing.T) {
 	//Testing postgres Client
 	CreateTablePostgres()
 
 	//  Test Rudder docker health point
 	VerifyHealth()
-
+ 	GetDestinationWebhookEvent()
+	var beforeWebHookResponseTotal int
+	beforeWebHookResponseTotal, _ = getWebhookResponse()
+	fmt.Println("beforeWebHookResponseTotal := ", beforeWebHookResponseTotal)
+	
 	//SEND EVENT
 	SendEvent()
+	time.Sleep(300 * time.Second)
+	body := GetDestinationWebhookEvent()
+	fmt.Println(body)
+	var afterWebHookResponseTotal int
+	afterWebHookResponseTotal, _ = getWebhookResponse()
+	fmt.Println("afterWebHookResponseTotal := ", afterWebHookResponseTotal)
+
+	if afterWebHookResponseTotal == beforeWebHookResponseTotal+1{
+		fmt.Println("TC01 PASSED")
+		} else {
+		fmt.Println("TC01 FAILED")
+		os.Exit(1)
+		}
+
 	// TODO: Verify in POSTGRES
 	// TODO: Verify in Live Evets API
 }

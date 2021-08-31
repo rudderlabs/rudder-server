@@ -557,11 +557,6 @@ func Init2() {
 
 // GetConnectionString Returns Jobs DB connection configuration
 func GetConnectionString() string {
-	fmt.Println("**********")
-	fmt.Println(fmt.Sprintf("host=%s port=%d user=%s "+
-	"password=%s dbname=%s sslmode=%s",
-	host, port, user, password, dbname, sslmode))
-	fmt.Println("**********")
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s",
 		host, port, user, password, dbname, sslmode)

@@ -1396,6 +1396,10 @@ func getConnectionString() string {
 	if !CheckForWarehouseEnvVars() {
 		return jobsdb.GetConnectionString()
 	}
+	fmt.Println("********")
+	fmt.Println(fmt.Sprintf("host=%s port=%d user=%s "+
+	"password=%s dbname=%s sslmode=%s",
+	host, port, user, password, dbname, sslmode))
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s",
 		host, port, user, password, dbname, sslmode)

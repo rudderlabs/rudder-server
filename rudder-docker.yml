@@ -13,7 +13,7 @@ services:
     depends_on:
       - db
       - d-transformer
-    image: rudderlabs/rudder-server:03082021.185438
+    image: rudderstack/rudder-server-enterprise:27082021.112408
     entrypoint: sh -c '/wait-for db:5432 -- /rudder-server'
     ports:
       - "8080:8080"
@@ -26,8 +26,6 @@ services:
       - DEST_TRANSFORM_URL=http://d-transformer:9090
       - CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com
       - WORKSPACE_TOKEN=1vLbwltztKUgpuFxmJlSe1esX8c
-      - HOSTED_SERVICE=true
-      - HOSTED_SERVICE_SECRET=NY+k1r32Qr
       - RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID=
       - RUDDER_AWS_S3_COPY_USER_ACCESS_KEY=
       - RUDDER_WAREHOUSE_BUCKET=priyamrudderservertest
@@ -46,7 +44,7 @@ services:
     # volumes:
     #   - <absolute_path_to_workspace_config>:<workspace_config_filepath_in_container> # Value for <workspace_config_filepath_in_container> should be same as the value provided for RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH
   d-transformer:
-    image: rudderlabs/rudder-transformer:latest
+    image: rudderlabs/rudder-transformer:24082021.110550
     environment:
       - CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com
     ports:
