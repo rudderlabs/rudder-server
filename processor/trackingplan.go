@@ -175,9 +175,9 @@ func reportViolations(validateEvent *transformer.TransformerResponseT) {
 	}
 }
 
-func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[string][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) map[string][]transformer.TransformerEventT {
+func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) map[WriteKeyT][]transformer.TransformerEventT {
 	//validating with the tp here for every writeKey
-	var validatedEventsByWriteKey = make(map[string][]transformer.TransformerEventT)
+	var validatedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
 	for writeKey, eventList := range groupedEventsByWriteKey {
 		isTpExists := eventList[0].Metadata.TrackingPlanId != ""
 		if !isTpExists {

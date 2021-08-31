@@ -136,6 +136,8 @@ type MetricMetadata struct {
 	sourceJobRunID  string
 }
 
+type WriteKeyT string
+
 const USER_TRANSFORMATION = "USER_TRANSFORMATION"
 const DEST_TRANSFORMATION = "DEST_TRANSFORMATION"
 
@@ -917,7 +919,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
-	var groupedEventsByWriteKey = make(map[string][]transformer.TransformerEventT)
+	var groupedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
 	var eventsByMessageID = make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 
@@ -1004,9 +1006,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(singularEvent, batchEvent, receivedAt, sourceForSingularEvent)
 
-				_, ok = groupedEventsByWriteKey[writeKey]
+				_, ok = groupedEventsByWriteKey[WriteKeyT(writeKey)]
 				if !ok {
-					groupedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
+					groupedEventsByWriteKey[WriteKeyT(writeKey)] = make([]transformer.TransformerEventT, 0)
 				}
 				shallowEventCopy := transformer.TransformerEventT{}
 				shallowEventCopy.Message = singularEvent
@@ -1030,7 +1032,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(eventType)
 				}
 
-				groupedEventsByWriteKey[writeKey] = append(groupedEventsByWriteKey[writeKey], shallowEventCopy)
+				groupedEventsByWriteKey[WriteKeyT(writeKey)] = append(groupedEventsByWriteKey[WriteKeyT(writeKey)], shallowEventCopy)
 
 				//REPORTING - GATEWAY metrics - START
 				if proc.reporting != nil && proc.reportingEnabled {
@@ -1099,7 +1101,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	// tracking plan validation end
 
 	// The below part further segregates events by sourceID and DestinationID.
-	for writeKey, eventList := range validatedEventsByWriteKey {
+	for writeKeyT, eventList := range validatedEventsByWriteKey {
+		writeKey := string(writeKeyT)
 		backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 		workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 		workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
