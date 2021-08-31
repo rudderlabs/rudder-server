@@ -22,6 +22,9 @@ import (
 	"github.com/ory/dockertest"
 	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
@@ -30,6 +33,9 @@ var (
 	redisClient *redis.Client
 	DB_DSN      = "root@tcp(127.0.0.1:3306)/service"
 	httpPort    string
+	dbHandle *sql.DB
+	sourceJSON backendconfig.ConfigT
+	webhookurl string
 )
 
 type WebHook struct {
@@ -72,6 +78,29 @@ type Author struct {
 	Age  int    `json:"age"`
 }
 
+func getWorkspaceConfig() backendconfig.ConfigT {
+	backendConfig := new(backendconfig.WorkspaceConfig)
+	sourceJSON, _ := backendConfig.Get()
+	return sourceJSON
+}
+
+func initializeWarehouseConfig(src string, des string) map[string][]warehouseutils.WarehouseT {
+	var warehouses = make(map[string][]warehouseutils.WarehouseT)
+	for _, source := range sourceJSON.Sources {
+		if source.Name == src {
+			if len(source.Destinations) > 0 {
+				for _, destination := range source.Destinations {
+					  if destination.Name == des{
+						warehouses[destination.DestinationDefinition.Name] = append(warehouses[destination.DestinationDefinition.Name], 
+						warehouseutils.WarehouseT{Source: source, Destination: destination})
+						return warehouses
+				}}
+			}
+		}
+	}
+	return warehouses
+}
+
 // getFromFile reads the workspace config from JSON file
 func getWebhookResponse() (int, bool){
     filePath := "./webhooktest.json";
@@ -89,8 +118,7 @@ func getWebhookResponse() (int, bool){
         fmt.Println("error:", err2)
         os.Exit(1)
     }
-    // fmt.Println(WebHookstruct.Total)
-	fmt.Printf("%+v\n", WebHookstruct)
+	// fmt.Printf("%+v\n", WebHookstruct)
     return WebHookstruct.Total, true
 }
 
@@ -161,7 +189,10 @@ func VerifyHealth() {
 }
 
 func GetDestinationWebhookEvent() string {
-	url := "https://webhook.site/token/72db9e77-e002-4612-826c-e8c72ba5b334/requests?page=1&password=&sorting=oldest"
+	
+	url := fmt.Sprintf("%s/requests?page=1&password=&sorting=oldest", webhookurl)
+    url = strings.Replace(url, "https://webhook.site", "https://webhook.site/token", -1)
+	fmt.Println("GetDestinationWebhookEvent:- ",url)
 	method := "GET"
 
 	client := &http.Client {
@@ -186,7 +217,6 @@ func GetDestinationWebhookEvent() string {
 		fmt.Println(err)
 		return ""
 	}
-	fmt.Println(string(body))
 	_ = ioutil.WriteFile("webhooktest.json", body, 0644)
 	return string(body)
 }
@@ -394,6 +424,20 @@ func TestWebhook(t *testing.T) {
 
 	//  Test Rudder docker health point
 	VerifyHealth()
+
+	// 
+	var err error
+	psqlInfo := jobsdb.GetConnectionString()
+	dbHandle, err = sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	// Pulling config form workspaceConfig.json
+	sourceJSON = getWorkspaceConfig()
+
+	warehouses :=  initializeWarehouseConfig("Dev Integration Test 1", "Des WebHook Integration Test 1")
+	webhookurl = fmt.Sprintf("%+v", warehouses["WEBHOOK"][0].Destination.Config["webhookUrl"])
+	fmt.Printf("%+v\n", webhookurl)
  	GetDestinationWebhookEvent()
 	var beforeWebHookResponseTotal int
 	beforeWebHookResponseTotal, _ = getWebhookResponse()
@@ -402,8 +446,7 @@ func TestWebhook(t *testing.T) {
 	//SEND EVENT
 	SendEvent()
 	time.Sleep(300 * time.Second)
-	body := GetDestinationWebhookEvent()
-	fmt.Println(body)
+	GetDestinationWebhookEvent()
 	var afterWebHookResponseTotal int
 	afterWebHookResponseTotal, _ = getWebhookResponse()
 	fmt.Println("afterWebHookResponseTotal := ", afterWebHookResponseTotal)
