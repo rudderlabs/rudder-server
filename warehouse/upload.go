@@ -153,6 +153,7 @@ const (
 	UploadSchemaField          = "schema"
 	MergedSchemaField          = "mergedschema"
 	UploadLastExecAtField      = "last_exec_at"
+	UploadMetadataField        = "metadata"
 )
 
 var (
@@ -1150,21 +1151,26 @@ func (job *UploadJobT) getUploadFirstAttemptTime() (timing time.Time) {
 
 type UploadStatusOpts struct {
 	Status           string
+	SkipTimingsField bool
 	AdditionalFields []UploadColumnT
 	ReportingMetric  types.PUReportedMetric
 }
 
 func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	pkgLogger.Debugf("[WH]: Setting status of %s for wh_upload:%v", statusOpts.Status, job.upload.ID)
-	marshalledTimings, timings := job.getNewTimings(statusOpts.Status)
+
 	opts := []UploadColumnT{
 		{Column: UploadStatusField, Value: statusOpts.Status},
-		{Column: UploadTimingsField, Value: marshalledTimings},
 		{Column: UploadUpdatedAtField, Value: timeutil.Now()},
 	}
 
+	if !statusOpts.SkipTimingsField {
+		marshalledTimings, timings := job.getNewTimings(statusOpts.Status)
+		opts = append(opts, UploadColumnT{Column: UploadTimingsField, Value: marshalledTimings})
+		job.upload.Timings = timings
+	}
+
 	job.upload.Status = statusOpts.Status
-	job.upload.Timings = timings
 	additionalFields := append(statusOpts.AdditionalFields, opts...)
 
 	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
@@ -1495,7 +1501,6 @@ func (job *UploadJobT) deleteLoadFiles(stagingFiles []*StagingFileT) {
 		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
 	}
 
-	// tds: delete where uploadId
 	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]s WHERE staging_file_id IN (%v)`, warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(stagingFileIDs, ","))
 	pkgLogger.Debugf(`Deleting any load files present for staging files (upload:%d) before generating them for the staging files again. Query: %s`, job.upload.ID, sqlStatement)
 

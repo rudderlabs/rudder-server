@@ -37,6 +37,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 var (
@@ -422,13 +423,14 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 
 	now := timeutil.Now()
 	metadataMap := map[string]interface{}{
-		"use_rudder_storage": jsonUploadsList[0].UseRudderStorage,
-		"source_batch_id":    jsonUploadsList[0].SourceBatchID,
-		"source_task_id":     jsonUploadsList[0].SourceTaskID,
-		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
-		"source_job_id":      jsonUploadsList[0].SourceJobID,
-		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
-		"load_file_type":     getLoadFileType(wh.destType),
+		"use_rudder_storage":  jsonUploadsList[0].UseRudderStorage,
+		"source_batch_id":     jsonUploadsList[0].SourceBatchID,
+		"source_task_id":      jsonUploadsList[0].SourceTaskID,
+		"source_task_run_id":  jsonUploadsList[0].SourceTaskRunID,
+		"source_job_id":       jsonUploadsList[0].SourceJobID,
+		"source_job_run_id":   jsonUploadsList[0].SourceJobRunID,
+		"load_file_type":      getLoadFileType(wh.destType),
+		"batch_staging_files": true,
 	}
 	if isUploadTriggered {
 		// set priority to 50 if the upload was manually triggered
@@ -735,6 +737,8 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		upload.SourceJobRunID = gjson.GetBytes(upload.Metadata, "source_job_run_id").String()
 		// load file type
 		upload.LoadFileType = gjson.GetBytes(upload.Metadata, "load_file_type").String()
+		// get batch_staging_files from upload metadata
+		batchStagingFiles := gjson.GetBytes(upload.Metadata, "batch_staging_files").Bool()
 
 		_, upload.FirstAttemptAt = warehouseutils.TimingFromJSONString(firstTiming)
 		var lastStatus string
@@ -783,6 +787,39 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			whManager:      whManager,
 			dbHandle:       wh.dbHandle,
 			pgNotifier:     &wh.notifier,
+		}
+
+		// if batchStagingFiles is not true, set the upload state to waiting
+		// this is to ensure backward compatibility
+		if !batchStagingFiles {
+			upload.FirstAttemptAt = time.Time{}
+			upload.LastAttemptAt = time.Time{}
+			upload.Attempts = 0
+			upload.StartLoadFileID = 0
+			upload.EndLoadFileID = 0
+			upload.Timings = []map[string]string{}
+			upload.UploadSchema = nil
+			upload.MergedSchema = nil
+			upload.Metadata, err = sjson.SetBytes(upload.Metadata, "batch_staging_files", true)
+			if err != nil {
+				return nil, err
+			}
+
+			err = uploadJob.setUploadStatus(UploadStatusOpts{
+				Status: "waiting",
+				AdditionalFields: []UploadColumnT{
+					{Column: UploadStartLoadFileIDField, Value: 0},
+					{Column: UploadEndLoadFileIDField, Value: 0},
+					{Column: UploadTimingsField, Value: nil},
+					{Column: UploadSchemaField, Value: "{}"},
+					{Column: MergedSchemaField, Value: "{}"},
+					{Column: UploadMetadataField, Value: upload.Metadata},
+				},
+				SkipTimingsField: true,
+			})
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)
