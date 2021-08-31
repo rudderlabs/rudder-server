@@ -1055,7 +1055,7 @@ func (rt *HandleT) initWorkers() {
 		// clean up channels workers are publishing to:
 		close(rt.responseQ)
 		close(rt.failedEventsChan)
-	
+
 		return err
 	})
 }
@@ -1322,7 +1322,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 }
 
-// statusInsertLoop will run in a separate goroutine 
+// statusInsertLoop will run in a separate goroutine
 // Blocking method, returns when rt.responseQ channel is closed.
 func (rt *HandleT) statusInsertLoop() {
 

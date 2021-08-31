@@ -59,9 +59,8 @@ type HandleT struct {
 	ackCount      uint64
 	recvCount     uint64
 
-	batchRequestsWg sync.WaitGroup
-	backgroundWait  func() error
-
+	batchRequestsWg  sync.WaitGroup
+	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
 }
 

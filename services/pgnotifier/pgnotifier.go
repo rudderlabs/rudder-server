@@ -165,9 +165,9 @@ func GetPGNotifierConnectionString() string {
 func (notifier *PgNotifierT) triggerPending(ctx context.Context, topic string) {
 	for {
 		select {
-			case <-time.After(retriggerInterval):
-			case <-ctx.Done():
-				return
+		case <-time.After(retriggerInterval):
+		case <-ctx.Done():
+			return
 		}
 
 		stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[3]s',

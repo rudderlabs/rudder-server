@@ -284,13 +284,13 @@ type MigrationState struct {
 }
 
 type writeReqType int
+
 const (
-	writeReqTypeStore  writeReqType = iota
+	writeReqTypeStore writeReqType = iota
 	writeReqTypeStoreWithRetry
 	writeReqTypeUpdateJobStatus
 	writeReqTypeDeleteExecuting
 )
-
 
 /*
 HandleT is the main type implementing the database for implementing
