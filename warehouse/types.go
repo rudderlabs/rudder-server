@@ -17,8 +17,7 @@ import (
 type PayloadT struct {
 	BatchID              string
 	UploadID             int64
-	StagingFileID        int64
-	StagingFileLocation  string
+	StagingFiles         StagingFileBatchT
 	UploadSchema         map[string]map[string]string
 	SourceID             string
 	SourceName           string

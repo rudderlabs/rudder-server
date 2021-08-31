@@ -1,0 +1,1 @@
+ALTER TABLE wh_load_files ADD COLUMN IF NOT EXISTS upload_id bigint;

@@ -62,7 +62,7 @@ type NotificationT struct {
 }
 
 type ResponseT struct {
-	JobID  int64
+	JobIDs []int64
 	Status string
 	Output json.RawMessage
 	Error  string
@@ -217,7 +217,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				panic(err)
 			}
 			if count == 0 {
-				stmt = fmt.Sprintf(`SELECT payload->'StagingFileID', payload->'Output', status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
+				stmt = fmt.Sprintf(`SELECT payload->'StagingFiles'->'IDs', payload->'Output', status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
 				rows, err := notifier.dbHandle.Query(stmt)
 				if err != nil {
 					panic(err)
@@ -225,13 +225,18 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				responses := []ResponseT{}
 				for rows.Next() {
 					var status, jobError, output sql.NullString
-					var jobID int64
-					err = rows.Scan(&jobID, &output, &status, &jobError)
+					var jobIDsJSON json.RawMessage
+					var jobIDs []int64
+					err = rows.Scan(&jobIDsJSON, &output, &status, &jobError)
 					if err != nil {
 						panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", stmt, err))
 					}
+					err = json.Unmarshal(jobIDsJSON, &jobIDs)
+					if err != nil {
+						panic(fmt.Errorf("Failed to unmarshall jobIDs from scanned value '%v': %v", jobIDsJSON, err))
+					}
 					responses = append(responses, ResponseT{
-						JobID:  jobID,
+						JobIDs: jobIDs,
 						Output: []byte(output.String),
 						Status: status.String,
 						Error:  jobError.String,
