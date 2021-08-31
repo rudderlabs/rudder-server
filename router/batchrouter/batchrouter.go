@@ -56,6 +56,10 @@ var (
 	disableEgress                      bool
 	toAbortDestinationIDs              string
 	transformerURL                     string
+	datePrefixOverride                 string
+	dateFormatLayouts                  map[string]string // string -> string
+	dateFormatMap                      map[string]string // (sourceId:destinationId) -> dateFormat
+	dateFormatMapLock                  sync.RWMutex
 )
 
 const DISABLED_EGRESS = "200: outgoing disabled"
@@ -595,13 +599,30 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 	}
 
 	brt.logger.Debugf("BRT: Starting upload to %s", provider)
-
-	var keyPrefixes []string
+	folderName := ""
 	if isWarehouse {
-		keyPrefixes = []string{config.GetEnv("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+		folderName = config.GetEnv("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs")
 	} else {
-		keyPrefixes = []string{config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+		folderName = config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs")
 	}
+
+	var datePrefixLayout string
+	if datePrefixOverride != "" {
+		datePrefixLayout = datePrefixOverride
+	} else {
+		dateFormat, _ := GetStorageDateFormat(uploader, batchJobs.BatchDestination, folderName)
+		datePrefixLayout = dateFormat
+	}
+
+	brt.logger.Debugf("BRT: Date prefix layout is %s", datePrefixLayout)
+	switch datePrefixLayout {
+	case "MM-DD-YYYY": //used to be earlier default
+		datePrefixLayout = time.Now().Format("01-02-2006")
+		break
+	default:
+		datePrefixLayout = time.Now().Format("2006-01-02")
+	}
+	keyPrefixes := []string{folderName, batchJobs.BatchDestination.Source.ID, datePrefixLayout}
 
 	_, fileName := filepath.Split(gzipFilePath)
 	var (
@@ -781,6 +802,74 @@ func (brt *HandleT) asyncStructCleanUp(destinationID string) {
 	brt.asyncDestinationStruct[destinationID].Count = 0
 	brt.asyncDestinationStruct[destinationID].CanUpload = false
 	brt.asyncDestinationStruct[destinationID].URL = ""
+}
+
+func GetFullPrefix(manager filemanager.FileManager, prefix string) (fullPrefix string) {
+	fullPrefix = prefix
+	configPrefix := manager.GetConfiguredPrefix()
+
+	if configPrefix != "" {
+		if configPrefix[len(configPrefix)-1:] == "/" {
+			fullPrefix = configPrefix + prefix
+		} else {
+			fullPrefix = configPrefix + "/" + prefix
+		}
+	}
+	return
+}
+
+func isDateFormatExists(connIdentifier string) bool {
+	dateFormatMapLock.RLock()
+	defer dateFormatMapLock.RUnlock()
+	return misc.Contains(dateFormatMap, connIdentifier)
+}
+
+func GetStorageDateFormat(manager filemanager.FileManager, destination *DestinationT, folderName string) (dateFormat string, err error) {
+	connIdentifier := connectionIdentifier(DestinationT{Destination: destination.Destination, Source: destination.Source})
+	if isDateFormatExists(connIdentifier) {
+		return dateFormatMap[connIdentifier], err
+	}
+
+	defer func() {
+		if err == nil {
+			dateFormatMapLock.RLock()
+			defer dateFormatMapLock.RUnlock()
+			dateFormatMap[connIdentifier] = dateFormat
+		}
+	}()
+
+	dateFormat = "YYYY-MM-DD"
+	prefixes := []string{folderName, destination.Source.ID}
+	prefix := strings.Join(prefixes[0:2], "/")
+	fullPrefix := GetFullPrefix(manager, prefix)
+	fileObjects, err := manager.ListFilesWithPrefix(fullPrefix, 5)
+	if err != nil {
+		pkgLogger.Errorf("[BRT]: Failed to fetch fileObjects with connIdentifier: %s, prefix: %s, Err: %v", connIdentifier, fullPrefix, err)
+		// Returning the earlier default as we might not able to fetch the list.
+		// because "*:GetObject" and "*:ListBucket" permissions are not available.
+		dateFormat = "MM-DD-YYYY"
+		return
+	}
+	if len(fileObjects) == 0 {
+		return
+	}
+
+	for idx, _ := range fileObjects {
+		key := fileObjects[idx].Key
+		replacedKey := strings.Replace(key, fullPrefix, "", 1)
+		splittedKeys := strings.Split(replacedKey, "/")
+		if len(splittedKeys) >= 1 {
+			date := splittedKeys[1]
+			for layout, format := range dateFormatLayouts {
+				_, err = time.Parse(layout, date)
+				if err == nil {
+					dateFormat = format
+					return
+				}
+			}
+		}
+	}
+	return
 }
 
 func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadOutput) (err error) {
@@ -1801,6 +1890,13 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	config.RegisterStringConfigVariable("", &datePrefixOverride, true, "BatchRouter.datePrefixOverride")
+	dateFormatLayouts = map[string]string{
+		"01-02-2006": "MM-DD-YYYY",
+		"2006-01-02": "YYYY-MM-DD",
+		//"02-01-2006" : "DD-MM-YYYY", //adding this might match with that of MM-DD-YYYY too
+	}
+	dateFormatMap = make(map[string]string)
 }
 
 func init() {

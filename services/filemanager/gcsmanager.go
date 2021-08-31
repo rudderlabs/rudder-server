@@ -3,6 +3,7 @@ package filemanager
 import (
 	"context"
 	"fmt"
+	"google.golang.org/api/iterator"
 	"io"
 	"os"
 	"strings"
@@ -56,6 +57,42 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 		return UploadOutput{}, err
 	}
 	return UploadOutput{Location: objectURL(attrs), ObjectName: fileName}, err
+}
+
+func (manager *GCSManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	fileObjects = make([]*FileObject, 0)
+	ctx := context.Background()
+
+	// Create GCS storage client
+	var client *storage.Client
+	if manager.Config.Credentials == "" {
+		client, err = storage.NewClient(ctx)
+	} else {
+		client, err = storage.NewClient(ctx, option.WithCredentialsJSON([]byte(manager.Config.Credentials)))
+	}
+
+	if err != nil {
+		return
+	}
+	defer client.Close()
+
+	// Create GCS Bucket handle
+	it := client.Bucket(manager.Config.Bucket).Objects(ctx, &storage.Query{
+		Prefix:    prefix,
+		Delimiter: "",
+	})
+	for {
+		if maxItems == 0 {
+			break
+		}
+		attrs, err := it.Next()
+		if err == iterator.Done || err != nil {
+			break
+		}
+		fileObjects = append(fileObjects, &FileObject{attrs.Name, attrs.Updated})
+		maxItems--
+	}
+	return
 }
 
 func (manager *GCSManager) getClient() (*storage.Client, error) {
@@ -131,4 +168,8 @@ type GCSConfig struct {
 
 func (manager *GCSManager) DeleteObjects(locations []string) (err error) {
 	return
+}
+
+func (manager *GCSManager) GetConfiguredPrefix() (string) {
+	return manager.Config.Prefix
 }
