@@ -1,11 +1,13 @@
 package webhook
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/hashicorp/go-retryablehttp"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"golang.org/x/sync/errgroup"
 )
 
 type GatewayI interface {
@@ -31,8 +33,13 @@ func Setup(gwHandle GatewayI) *HandleT {
 	webhook.netClient.RetryWaitMin = webhookRetryWaitMin
 	webhook.netClient.RetryWaitMax = webhookRetryWaitMax
 	webhook.netClient.RetryMax = webhookRetryMax
+
+	ctx, cancel := context.WithCancel(context.Background())
+	webhook.backgroundCancel = cancel
+
+	g, _ := errgroup.WithContext(ctx)
 	for i := 0; i < maxTransformerProcess; i++ {
-		rruntime.Go(func() {
+		g.Go(misc.WithBugsnag(func() error {
 			wStats := webhookStatsT{}
 			wStats.sentStat = stats.NewStat("webhook.transformer_sent", stats.CountType)
 			wStats.receivedStat = stats.NewStat("webhook.transformer_received", stats.CountType)
@@ -44,11 +51,14 @@ func Setup(gwHandle GatewayI) *HandleT {
 				stats:   &wStats,
 			}
 			bt.batchTransformLoop()
-		})
+			return nil
+		}))
 	}
-	rruntime.Go(func() {
-		webhook.printStats()
-	})
+	g.Go(misc.WithBugsnag(func() error {
+		webhook.printStats(ctx)
+		return nil
+	}))
 
+	webhook.backgroundWait = g.Wait
 	return webhook
 }

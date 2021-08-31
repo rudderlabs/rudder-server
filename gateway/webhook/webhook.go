@@ -2,12 +2,15 @@ package webhook
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -55,6 +58,11 @@ type HandleT struct {
 	gwHandle      GatewayI
 	ackCount      uint64
 	recvCount     uint64
+
+	batchRequestsWg sync.WaitGroup
+	backgroundWait  func() error
+
+	backgroundCancel context.CancelFunc
 }
 
 type webhookSourceStatT struct {
@@ -199,13 +207,21 @@ func (webhook *HandleT) batchRequests(sourceDef string) {
 	timeout := time.After(webhookBatchTimeout)
 	for {
 		select {
-		case req := <-webhook.requestQ[sourceDef]:
+		case req, hasMore := <-webhook.requestQ[sourceDef]:
+			if !hasMore {
+				if len(reqBuffer) > 0 {
+					//If there are requests in the buffer, send them to the batcher
+					breq := batchWebhookT{batchRequest: reqBuffer, sourceType: sourceDef}
+					webhook.batchRequestQ <- &breq
+				}
+				return
+			}
+
 			//Append to request buffer
 			reqBuffer = append(reqBuffer, req)
 			if len(reqBuffer) == maxWebhookBatchSize {
 				breq := batchWebhookT{batchRequest: reqBuffer, sourceType: sourceDef}
 				webhook.batchRequestQ <- &breq
-				reqBuffer = nil
 				reqBuffer = make([]*webhookT, 0)
 			}
 		case <-timeout:
@@ -213,7 +229,6 @@ func (webhook *HandleT) batchRequests(sourceDef string) {
 			if len(reqBuffer) > 0 {
 				breq := batchWebhookT{batchRequest: reqBuffer, sourceType: sourceDef}
 				webhook.batchRequestQ <- &breq
-				reqBuffer = nil
 				reqBuffer = make([]*webhookT, 0)
 			}
 		}
@@ -312,10 +327,26 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) {
 func (webhook *HandleT) Register(name string) {
 	if _, ok := webhook.requestQ[name]; !ok {
 		webhook.requestQ[name] = make(chan *webhookT)
-		rruntime.Go(func() {
+
+		webhook.batchRequestsWg.Add(1)
+		go (func() {
+			defer webhook.batchRequestsWg.Done()
 			webhook.batchRequests(name)
-		})
+		})()
 	}
+}
+
+func (webhook *HandleT) Shutdown() {
+	webhook.backgroundCancel()
+	for _, q := range webhook.requestQ {
+		close(q)
+	}
+	fmt.Println("batchRequestsWg.wait()")
+	webhook.batchRequestsWg.Wait()
+	close(webhook.batchRequestQ)
+	fmt.Println("backgroundWait()")
+
+	webhook.backgroundWait()
 }
 
 //TODO: Check if correct
@@ -334,14 +365,19 @@ func newWebhookStat(sourceType string) *webhookSourceStatT {
 	}
 }
 
-func (webhook *HandleT) printStats() {
+func (webhook *HandleT) printStats(ctx context.Context) {
 	var lastRecvCount, lastackCount uint64
 	for {
-		time.Sleep(10 * time.Second)
 		if lastRecvCount != webhook.recvCount || lastackCount != webhook.ackCount {
 			lastRecvCount = webhook.recvCount
 			lastackCount = webhook.ackCount
 			pkgLogger.Info("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(10 * time.Second):
 		}
 	}
 }

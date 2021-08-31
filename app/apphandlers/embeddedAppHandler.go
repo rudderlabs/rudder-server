@@ -137,14 +137,18 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 		rateLimiter.SetUp()
 		gateway.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gateway.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
+		gateway.Setup(ctx, embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
 
 		g.Go(func() error {
 			return gateway.StartAdminHandler(ctx)
 		})
-
 		g.Go(func() error {
 			return gateway.StartWebHandler(ctx)
+		})
+		g.Go(func() error {
+			<-ctx.Done()
+			gateway.Shutdown()
+			return nil
 		})
 	}
 
