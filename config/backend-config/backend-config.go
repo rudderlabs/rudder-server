@@ -195,7 +195,6 @@ func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType 
 		misc.MergeMaps(globalConfig, eventSpecificConfig)
 
 		dgSourceTPConfigT.MergedConfig = globalConfig
-		return globalConfig
 	}
 	return dgSourceTPConfigT.MergedConfig
 }

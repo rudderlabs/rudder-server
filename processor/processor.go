@@ -679,7 +679,6 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 	successCountMap := make(map[string]int64)
 	successCountMetadataMap := make(map[string]MetricMetadata)
 	var eventsToTransform []transformer.TransformerEventT
-
 	for _, userTransformedEvent := range response.Events {
 		//Update metrics maps
 		proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, []byte(`{}`))
