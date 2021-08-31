@@ -66,9 +66,3 @@ func (mr *MockTransformer) Send(transformedData integrations.PostParametersT, de
 	respBody = "OK"
 	return statusCode, respBody
 }
-
-func (mr *MockTransformer) TransformResponse(response string, destName string) (int, string, error) {
-	statusCode := 200
-	respBody := "OK"
-	return statusCode, respBody, nil
-}

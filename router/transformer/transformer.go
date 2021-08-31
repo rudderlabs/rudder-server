@@ -38,7 +38,6 @@ type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
 	Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string)
-	TransformResponse(response string, destName string) (int, string, error)
 }
 
 //NewTransformer creates a new transformer
@@ -154,52 +153,6 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) TransformResponse(response string, destName string) (int, string, error) {
-	rawJSON := []byte(response)
-	retryCount := 0
-	var resp *http.Response
-	var respData []byte
-	var err error
-	//We should rarely have error communicating with our JS
-	reqFailed := false
-	url := getResponseTransformerURL(destName)
-
-	for {
-		resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
-		if err == nil {
-			//If no err returned by client.Post, reading body.
-			//If reading body fails, retrying.
-			respData, err = ioutil.ReadAll(resp.Body)
-		}
-
-		if err != nil {
-
-			reqFailed = true
-			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
-			if retryCount > maxRetry {
-				panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err))
-			}
-			retryCount++
-			time.Sleep(retrySleep)
-			//Refresh the connection
-			continue
-		}
-		if reqFailed {
-			trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
-		}
-
-		break
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		trans.logger.Errorf("[Router Response Transformer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
-		err = fmt.Errorf("[Router Response Transformer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
-		return resp.StatusCode, string(respData), err
-	}
-	return resp.StatusCode, string(respData), nil
-
-}
-
 func (trans *HandleT) Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string) {
 
 	rawJSON, err := json.Marshal(transformedData)
@@ -260,8 +213,4 @@ func getRouterTransformURL() string {
 
 func getNetworkTransformerURL(destName string) string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/network/" + strings.ToLower(destName) + "/proxy"
-}
-
-func getResponseTransformerURL(destName string) string {
-	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/response/" + strings.ToLower(destName) + "/transform"
 }

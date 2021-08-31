@@ -105,7 +105,6 @@ type HandleT struct {
 	reportingEnabled                       bool
 	savePayloadOnError                     bool
 	transformerProxy                       bool
-	responseTransformer                    bool
 }
 
 type jobResponseT struct {
@@ -565,16 +564,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							} else {
 								pkgLogger.Infof(`routing via server, proxy disabled`)
 								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
-								if worker.rt.responseTransformer {
-									pkgLogger.Infof(`response transformer enabled, handling responses %s`, worker.rt.destName)
-									handledRespStatusCode, handledRespBody, err := worker.rt.transformer.TransformResponse(respBodyTemp, worker.rt.destName)
-									if err != nil {
-										respStatusCode = handledRespStatusCode
-										respBodyTemp = handledRespBody
-									}
-								}
 							}
-
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
@@ -1667,13 +1657,11 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
 	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
 	transformerProxyKeys := []string{"Router." + rt.destName + "." + "transformerProxy", "Router." + "transformerProxy"}
-	responseTransformerKeys := []string{"Router." + rt.destName + "." + "responseTransformer", "Router." + "responseTransformer"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
-	config.RegisterBoolConfigVariable(false, &rt.responseTransformer, true, responseTransformerKeys...)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
