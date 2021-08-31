@@ -103,12 +103,12 @@ const (
 )
 
 type HandleT struct {
-	destType              string
-	warehouses            []warehouseutils.WarehouseT
-	dbHandle              *sql.DB
-	notifier              pgnotifier.PgNotifierT
-	uploadToWarehouseQ    chan []ProcessStagingFilesJobT
-	createLoadFilesQ      chan LoadFileJobT
+	destType   string
+	warehouses []warehouseutils.WarehouseT
+	dbHandle   *sql.DB
+	notifier   pgnotifier.PgNotifierT
+	// TODO Do we need this -> //uploadToWarehouseQ    chan []ProcessStagingFilesJobT
+	// TODO Do we need this -> //createLoadFilesQ      chan LoadFileJobT
 	isEnabled             bool
 	configSubscriberLock  sync.RWMutex
 	workerChannelMap      map[string]chan *UploadJobT
@@ -120,6 +120,10 @@ type HandleT struct {
 	noOfWorkers           int
 	activeWorkerCount     int
 	activeWorkerCountLock sync.RWMutex
+
+	backgroundCancel context.CancelFunc
+	backgroundGroup  errgroup.Group
+	backgroundWait   func() error
 }
 
 type ErrorResponseT struct {
@@ -198,9 +202,8 @@ func (wh *HandleT) incrementActiveWorkers() {
 
 func (wh *HandleT) initWorker() chan *UploadJobT {
 	workerChan := make(chan *UploadJobT, 1000)
-	rruntime.Go(func() {
-		for {
-			uploadJob := <-workerChan
+	wh.backgroundGroup.Go(func() error {
+		for uploadJob := range workerChan {
 			wh.incrementActiveWorkers()
 			err := wh.handleUploadJob(uploadJob)
 			if err != nil {
@@ -209,6 +212,7 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 			wh.removeDestInProgress(uploadJob.warehouse)
 			wh.decrementActiveWorkers()
 		}
+		return nil
 	})
 	return workerChan
 }
@@ -652,11 +656,16 @@ func (wh *HandleT) sortWarehousesByOldestUnSyncedEventAt() (err error) {
 	return
 }
 
-func (wh *HandleT) mainLoop() {
+func (wh *HandleT) mainLoop(ctx context.Context) {
 	for {
 		wh.configSubscriberLock.RLock()
 		if !wh.isEnabled {
-			time.Sleep(mainLoopSleep)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(mainLoopSleep):
+			}
+
 			wh.configSubscriberLock.RUnlock()
 			continue
 		}
@@ -674,7 +683,13 @@ func (wh *HandleT) mainLoop() {
 				pkgLogger.Errorf("[WH] Failed to process warehouse Jobs: %v", err)
 			}
 		}
-		time.Sleep(mainLoopSleep)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(mainLoopSleep):
+		}
+
 	}
 }
 
@@ -807,16 +822,25 @@ func (wh *HandleT) getInProgressNamespaces() (identifiers []string) {
 	return misc.StringKeys(wh.inProgressMap)
 }
 
-func (wh *HandleT) runUploadJobAllocator() {
+func (wh *HandleT) runUploadJobAllocator(ctx context.Context) {
+loop:
 	for {
 		if !wh.initialConfigFetched {
-			time.Sleep(waitForConfig)
+			select {
+			case <-ctx.Done():
+				break loop
+			case <-time.After(waitForConfig):
+			}
 			continue
 		}
 
 		availableWorkers := wh.noOfWorkers - wh.getActiveWorkerCount()
 		if availableWorkers < 1 {
-			time.Sleep(waitForWorkerSleep)
+			select {
+			case <-ctx.Done():
+				break loop
+			case <-time.After(waitForWorkerSleep):
+			}
 			continue
 		}
 
@@ -843,11 +867,21 @@ func (wh *HandleT) runUploadJobAllocator() {
 			wh.workerChannelMapLock.Unlock()
 		}
 
-		time.Sleep(uploadAllocatorSleep)
+		select {
+		case <-ctx.Done():
+			break loop
+		case <-time.After(uploadAllocatorSleep):
+		}
 	}
+
+	wh.workerChannelMapLock.Lock()
+	for _, workerChannel := range wh.workerChannelMap {
+		close(workerChannel)
+	}
+	wh.workerChannelMapLock.Unlock()
 }
 
-func (wh *HandleT) uploadStatusTrack() {
+func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 	for {
 		for _, warehouse := range wh.warehouses {
 			source := warehouse.Source
@@ -896,7 +930,11 @@ func (wh *HandleT) uploadStatusTrack() {
 
 			getUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name).Count(uploaded)
 		}
-		time.Sleep(uploadStatusTrackFrequency)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(uploadStatusTrackFrequency):
+		}
 	}
 }
 
@@ -942,27 +980,41 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	wh.destType = whType
 	wh.setInterruptedDestinations()
 	wh.Enable()
-	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
-	wh.createLoadFilesQ = make(chan LoadFileJobT)
+	// TODO Do we need this -> // wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
+	// TODO Do we need this -> // wh.createLoadFilesQ = make(chan LoadFileJobT)
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
 	wh.inProgressMap = make(map[string]int64)
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	wh.backgroundCancel = cancel
+	wh.backgroundWait = g.Wait
+
 	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
 	})
-	rruntime.Go(func() {
-		wh.runUploadJobAllocator()
-	})
-	rruntime.Go(func() {
-		wh.mainLoop()
-	})
+
+	g.Go(misc.WithBugsnag(func() error {
+		wh.runUploadJobAllocator(ctx)
+		return nil
+	}))
+	g.Go(misc.WithBugsnag(func() error {
+		wh.mainLoop(ctx)
+		return nil
+	}))
+
+	g.Go(misc.WithBugsnag(func() error {
+		pkgLogger.Infof("WH: Warehouse Idle upload tracker started")
+		wh.uploadStatusTrack(ctx)
+		return nil
+	}))
 }
 
-func (wh *HandleT) monitorUploadStatus() {
-	pkgLogger.Infof("WH: Warehouse Idle upload tracker started")
-	rruntime.Go(func() {
-		wh.uploadStatusTrack()
-	})
+func (wh *HandleT) Shutdown() {
+	wh.backgroundCancel()
+	wh.backgroundWait()
 }
 
 func getLoadFileFormat(whType string) string {
@@ -1032,14 +1084,26 @@ func monitorDestRouters(ctx context.Context) {
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
 
+loop:
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			break loop
 		case config := <-ch:
 			onConfigDataEvent(config, dstToWhRouter)
 		}
 	}
+
+	g, _ := errgroup.WithContext(context.Background())
+	for _, wh := range dstToWhRouter {
+		wh := wh
+		g.Go(func() error {
+			wh.Shutdown()
+			return nil
+		})
+	}
+	g.Wait()
+
 }
 
 func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT) {
@@ -1058,7 +1122,6 @@ func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT
 					wh.Setup(destination.DestinationDefinition.Name, destination.DestinationDefinition.DisplayName)
 					wh.configSubscriberLock.Unlock()
 					dstToWhRouter[destination.DestinationDefinition.Name] = wh
-					wh.monitorUploadStatus()
 				} else {
 					pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
 					wh.configSubscriberLock.Lock()
@@ -1462,23 +1525,39 @@ func getConnectionString() string {
 }
 
 func startWebHandler(ctx context.Context) error {
+	mux := http.NewServeMux()
+
 	// do not register same endpoint when running embedded in rudder backend
 	if isStandAlone() {
-		http.HandleFunc("/health", healthHandler)
+		mux.HandleFunc("/health", healthHandler)
 	}
 	if isMaster() {
 		backendconfig.WaitForConfig()
-		http.HandleFunc("/v1/process", processHandler)
+		mux.HandleFunc("/v1/process", processHandler)
 		// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
-		http.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
+		mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
 		// triggers uploads for a source
-		http.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
+		mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
 		pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 	} else {
 		pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
 	}
 
-	return (http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
+	srv := http.Server{
+		Addr:    fmt.Sprintf(":%d", webPort),
+		Handler: bugsnag.Handler(mux),
+	}
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return srv.ListenAndServe()
+	})
+	g.Go(func() error {
+		<-ctx.Done()
+		return srv.Shutdown(context.Background())
+	})
+
+	return g.Wait()
 }
 
 // CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present
@@ -1551,7 +1630,6 @@ func Start(ctx context.Context, app app.Interface) error {
 			pkgLogger.Fatal(r)
 			panic(r)
 		}
-		startWebHandler(ctx)
 	}()
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
@@ -1598,11 +1676,10 @@ func Start(ctx context.Context, app app.Interface) error {
 
 	if isMaster() {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")
-		err = notifier.AddTopic(StagingFilesPGNotifierChannel)
-		if err != nil {
-			panic(err)
-		}
 
+		g.Go(misc.WithBugsnag(func() error {
+			return notifier.AddTopic(ctx, StagingFilesPGNotifierChannel)
+		}))
 		g.Go(misc.WithBugsnag(func() error {
 			monitorDestRouters(ctx)
 			return nil
@@ -1613,6 +1690,10 @@ func Start(ctx context.Context, app app.Interface) error {
 		}))
 		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 	}
+
+	g.Go(func() error {
+		return startWebHandler(ctx)
+	})
 
 	return g.Wait()
 }
