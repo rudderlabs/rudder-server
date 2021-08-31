@@ -189,12 +189,14 @@ type DgSourceTrackingPlanConfigT struct {
 
 func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType string) map[string]interface{} {
 	if dgSourceTPConfigT.MergedConfig == nil {
+		outputConfig := make(map[string]interface{})
 		sourceTpConfig := dgSourceTPConfigT.Config
 		eventSpecificConfig := fetchEventConfig(sourceTpConfig, eventType)
 		globalConfig := fetchEventConfig(sourceTpConfig, "global")
-		misc.MergeMaps(globalConfig, eventSpecificConfig)
+		misc.MergeMaps(outputConfig, globalConfig)
+		misc.MergeMaps(outputConfig, eventSpecificConfig)
 
-		dgSourceTPConfigT.MergedConfig = globalConfig
+		dgSourceTPConfigT.MergedConfig = outputConfig
 	}
 	return dgSourceTPConfigT.MergedConfig
 }
