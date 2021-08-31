@@ -123,6 +123,7 @@ func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, ga
 	var processorInstance = processor.NewProcessor()
 	processor.ProcessorManagerSetup(processorInstance)
 	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting)
+	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
 }
 

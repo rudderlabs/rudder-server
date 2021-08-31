@@ -92,6 +92,9 @@ type HandleT struct {
 	reporting                      types.ReportingI
 	reportingEnabled               bool
 	transformerFeatures            json.RawMessage
+
+	backgroundWait   func() error
+	backgroundCancel context.CancelFunc
 }
 
 var defaultTransformerFeatures = `{
@@ -285,13 +288,21 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	if enableDedup {
 		proc.dedupHandler = dedup.GetInstance(clearDB)
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	proc.backgroundWait = g.Wait
+	proc.backgroundCancel = cancel
+
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
 
-	rruntime.Go(func() {
-		proc.getTransformerFeatureJson()
-	})
+	g.Go(misc.WithBugsnag(func() error {
+		proc.getTransformerFeatureJson(ctx)
+		return nil
+	}))
 
 	proc.transformer.Setup()
 
@@ -313,6 +324,17 @@ func (proc *HandleT) Start(ctx context.Context) {
 		st.Start(ctx)
 		return nil
 	}))
+
+	g.Wait()
+}
+
+func (proc *HandleT) Shutdown() {
+	proc.backgroundCancel()
+	proc.backgroundWait()
+
+	// It is important to make sure everything has stopped,
+	//	 before we shutdown the transformer
+	proc.transformer.Shutdown()
 }
 
 var (
@@ -369,9 +391,13 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
 }
 
-func (proc *HandleT) getTransformerFeatureJson() {
+func (proc *HandleT) getTransformerFeatureJson(ctx context.Context) {
 	for {
 		for i := 0; i < featuresRetryMaxAttempts; i++ {
+			if ctx.Err() != nil {
+				return
+			}
+
 			url := transformerURL + "/features"
 			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
 			if err != nil {
@@ -407,7 +433,12 @@ func (proc *HandleT) getTransformerFeatureJson() {
 		if proc.transformerFeatures != nil && !isUnLocked {
 			isUnLocked = true
 		}
-		time.Sleep(pollInterval)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pollInterval):
+		}
 	}
 }
 
