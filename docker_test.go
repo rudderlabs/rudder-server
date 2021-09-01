@@ -135,23 +135,20 @@ func getWorkspaceConfig() backendconfig.ConfigT {
 	return sourceJSON
 }
 
-func prepareWorkspaceConfig(templatePath string, values map[string]string) string {
+func createWorkspaceConfig(templatePath string, values map[string]string) string {
 	t, err := template.ParseFiles(templatePath)
 	if err != nil {
 		panic(err)
-		return ""
 	}
 
 	f, err := ioutil.TempFile("", "workspaceConfig.*.json")
 	if err != nil {
 		panic(err)
-		return ""
 	}
 
 	err = t.Execute(f, values)
 	if err != nil {
 		panic(err)
-		return ""
 	}
 
 	f.Close()
@@ -410,7 +407,7 @@ func run(m *testing.M) int {
 	webhookurl = webhook.Server.URL
 	fmt.Println("webhookurl", webhookurl)
 
-	workspaceConfigPath := prepareWorkspaceConfig(
+	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
 			"webhookUrl": webhookurl,
