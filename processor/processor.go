@@ -104,10 +104,10 @@ var mainLoopTimeout = 200 * time.Millisecond
 var featuresRetryMaxAttempts = 10
 
 type DestStatT struct {
-	numEvents              stats.RudderStats
-	numOutputSuccessEvents stats.RudderStats
-	numOutputFailedEvents  stats.RudderStats
-	transformTime          stats.RudderStats
+	numEvents                  stats.RudderStats
+	numValidationSuccessEvents stats.RudderStats
+	numValidationFailedEvents stats.RudderStats
+	tpValidateTime            stats.RudderStats
 }
 
 type ParametersT struct {
@@ -172,10 +172,10 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 	transformTime := proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
 
 	return &DestStatT{
-		numEvents:              numEvents,
-		numOutputSuccessEvents: numOutputSuccessEvents,
-		numOutputFailedEvents:  numOutputFailedEvents,
-		transformTime:          transformTime,
+		numEvents:                  numEvents,
+		numValidationSuccessEvents: numOutputSuccessEvents,
+		numValidationFailedEvents:  numOutputFailedEvents,
+		tpValidateTime:             transformTime,
 	}
 }
 
@@ -190,14 +190,14 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
 
 	return &DestStatT{
-		numEvents:              numEvents,
-		numOutputSuccessEvents: numOutputSuccessEvents,
-		numOutputFailedEvents:  numOutputFailedEvents,
-		transformTime:          destTransform,
+		numEvents:                  numEvents,
+		numValidationSuccessEvents: numOutputSuccessEvents,
+		numValidationFailedEvents:  numOutputFailedEvents,
+		tpValidateTime:             destTransform,
 	}
 }
 
-func (proc *HandleT) newValidationStat(metadata transformer.MetadataT) *DestStatT {
+func (proc *HandleT) newValidationStat(metadata *transformer.MetadataT) *DestStatT {
 	tags := map[string]string{
 		"destination":         metadata.DestinationID,
 		"destType":            metadata.DestinationType,
@@ -208,15 +208,15 @@ func (proc *HandleT) newValidationStat(metadata transformer.MetadataT) *DestStat
 	}
 
 	numEvents := proc.stats.NewTaggedStat("proc_num_tp_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_num_tp_output_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.stats.NewTaggedStat("proc_num_tp_output_failed_events", stats.CountType, tags)
-	destTransform := proc.stats.NewTaggedStat("proc_tp_validation", stats.TimerType, tags)
+	numValidationSuccessEvents := proc.stats.NewTaggedStat("proc_num_tp_validation_success_events", stats.CountType, tags)
+	numValidationFailedEvents := proc.stats.NewTaggedStat("proc_num_tp_validation_failed_events", stats.CountType, tags)
+	tpValidateTime := proc.stats.NewTaggedStat("proc_tp_validation", stats.TimerType, tags)
 
 	return &DestStatT{
-		numEvents:              numEvents,
-		numOutputSuccessEvents: numOutputSuccessEvents,
-		numOutputFailedEvents:  numOutputFailedEvents,
-		transformTime:          destTransform,
+		numEvents:                  numEvents,
+		numValidationSuccessEvents: numValidationSuccessEvents,
+		numValidationFailedEvents:  numValidationFailedEvents,
+		tpValidateTime:             tpValidateTime,
 	}
 }
 
@@ -1125,7 +1125,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//Else further down events are duplicated by destId, so multiple validation takes places for same event
 	proc.validateEventsTime.Start()
 	for writeKey, eventList := range groupedEventsByWriteKey {
-		validationStat := proc.newValidationStat(eventList[0].Metadata)
+		validationStat := proc.newValidationStat(&eventList[0].Metadata)
 		validationStat.numEvents.Count(len(eventList))
 		proc.logger.Debug("Validation input size", len(eventList))
 
@@ -1137,12 +1137,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			continue
 		}
 
-		validationStat.transformTime.Start()
+		validationStat.tpValidateTime.Start()
 		startedAt = time.Now()
 		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize)
 		endedAt = time.Now()
 		timeTaken = endedAt.Sub(startedAt).Seconds()
-		validationStat.transformTime.End()
+		validationStat.tpValidateTime.End()
 
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
@@ -1176,8 +1176,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 		}
 		procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
-		validationStat.numOutputSuccessEvents.Count(len(eventsToTransform))
-		validationStat.numOutputFailedEvents.Count(len(failedJobs))
+		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
+		validationStat.numValidationFailedEvents.Count(len(failedJobs))
 		proc.logger.Debug("Validation output size", len(eventsToTransform))
 
 		//REPORTING - START
@@ -1302,12 +1302,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			userTransformationStat.numEvents.Count(len(eventList))
 			proc.logger.Debug("Custom Transform input size", len(eventList))
 
-			userTransformationStat.transformTime.Start()
+			userTransformationStat.tpValidateTime.Start()
 			startedAt = time.Now()
 			response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(), userTransformBatchSize)
 			endedAt = time.Now()
 			timeTaken = endedAt.Sub(startedAt).Seconds()
-			userTransformationStat.transformTime.End()
+			userTransformationStat.tpValidateTime.End()
 			proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: timeTaken, Index: -1}, &proc.userTransformEventsByTimeTaken)
 
 			var successMetrics []*types.PUReportedMetric
@@ -1319,8 +1319,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
 			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
-			userTransformationStat.numOutputSuccessEvents.Count(len(eventsToTransform))
-			userTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
+			userTransformationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
+			userTransformationStat.numValidationFailedEvents.Count(len(failedJobs))
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
 
 			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: &destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
@@ -1367,9 +1367,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
 			response = ConvertToFilteredTransformerResponse(eventsToTransform, transformAt != "none")
 		} else {
-			destTransformationStat.transformTime.Start()
+			destTransformationStat.tpValidateTime.Start()
 			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize)
-			destTransformationStat.transformTime.End()
+			destTransformationStat.tpValidateTime.End()
 			transformAt = "processor"
 		}
 
@@ -1382,8 +1382,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled)
 		destTransformationStat.numEvents.Count(len(eventsToTransform))
-		destTransformationStat.numOutputSuccessEvents.Count(len(destTransformEventList))
-		destTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
+		destTransformationStat.numValidationSuccessEvents.Count(len(destTransformEventList))
+		destTransformationStat.numValidationFailedEvents.Count(len(failedJobs))
 
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
