@@ -1121,16 +1121,26 @@ func GetStringifiedData(data interface{}) string {
 	}
 }
 
-// tmp keys will override output if any
-func MergeMaps(output map[string]interface{}, tmp map[string]interface{}) {
-	for k, v := range tmp {
-		if reflect.TypeOf(v).Kind() == reflect.Map {
-			if output[k] == nil {
-				output[k] = make(map[string]interface{})
-			}
-			MergeMaps(output[k].(map[string]interface{}), v.(map[string]interface{}))
-		} else {
-			output[k] = v
+// mergeMaps with one level of nesting.
+func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+	for _, m := range maps {
+		for k, v := range m {
+			result[k] = v
 		}
 	}
+	return result
 }
+
+//func MergeMaps(output map[string]interface{}, tmp map[string]interface{}) {
+//	for k, v := range tmp {
+//		if reflect.TypeOf(v).Kind() == reflect.Map {
+//			if output[k] == nil {
+//				output[k] = make(map[string]interface{})
+//			}
+//			MergeMaps(output[k].(map[string]interface{}), v.(map[string]interface{}))
+//		} else {
+//			output[k] = v
+//		}
+//	}
+//}
