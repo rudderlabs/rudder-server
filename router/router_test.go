@@ -427,14 +427,17 @@ var _ = Describe("Router", func() {
 									{
 										UserID: "u1",
 										JobID:  2009,
+										JobT:   toRetryJobsList[0],
 									},
 									{
 										UserID: "u2",
 										JobID:  2010,
+										JobT:   unprocessedJobsList[0],
 									},
 									{
 										UserID: "u3",
 										JobID:  2011,
+										JobT:   unprocessedJobsList[1],
 									},
 								},
 								Batched:    true,
@@ -749,6 +752,7 @@ var _ = Describe("Router", func() {
 									UserID:     "u1",
 									JobID:      2009,
 									AttemptNum: 1,
+									JobT:       toRetryJobsList[0],
 								},
 							},
 							Batched:    false,
@@ -761,6 +765,7 @@ var _ = Describe("Router", func() {
 								{
 									UserID: "u1",
 									JobID:  2010,
+									JobT:   unprocessedJobsList[0],
 								},
 							},
 							Batched:    false,
@@ -773,6 +778,7 @@ var _ = Describe("Router", func() {
 								{
 									UserID: "u2",
 									JobID:  2011,
+									JobT:   unprocessedJobsList[1],
 								},
 							},
 							Batched:    false,
@@ -785,6 +791,7 @@ var _ = Describe("Router", func() {
 								{
 									UserID: "u2",
 									JobID:  2012,
+									JobT:   unprocessedJobsList[2],
 								},
 							},
 							Batched:    false,
@@ -797,6 +804,7 @@ var _ = Describe("Router", func() {
 								{
 									UserID: "u3",
 									JobID:  2013,
+									JobT:   unprocessedJobsList[3],
 								},
 							},
 							Batched:    false,
@@ -920,6 +928,7 @@ var _ = Describe("Router", func() {
 									UserID:     "u1",
 									JobID:      2009,
 									AttemptNum: 1,
+									JobT:       toRetryJobsList[0],
 								},
 							},
 							Batched:    false,
@@ -932,6 +941,7 @@ var _ = Describe("Router", func() {
 								{
 									UserID: "u1",
 									JobID:  2010,
+									JobT:   unprocessedJobsList[0],
 								},
 							},
 							Batched:    false,
@@ -944,6 +954,7 @@ var _ = Describe("Router", func() {
 								{
 									UserID: "u1",
 									JobID:  2010,
+									JobT:   unprocessedJobsList[0],
 								},
 							},
 							Batched:    false,

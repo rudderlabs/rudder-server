@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/router"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/router"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/dedup"
@@ -123,8 +124,8 @@ type ParametersT struct {
 	RecordID        interface{} `json:"record_id"`
 	SourceJobID     string      `json:"source_job_id"`
 	SourceJobRunID  string      `json:"source_job_run_id"`
-	EventName       string `json:"event_name"`
-	EventType       string `json:"event_type"`
+	EventName       string      `json:"event_name"`
+	EventType       string      `json:"event_type"`
 }
 
 type MetricMetadata struct {
