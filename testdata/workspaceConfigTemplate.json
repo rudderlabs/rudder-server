@@ -1,0 +1,119 @@
+{
+    "enableMetrics": false,
+    "workspaceId": "1vLbwjZdDVeVeLGkTwjIxJmvo2i",
+    "sources":
+    [
+        {
+            "config":
+            {},
+            "id": "1xIcKieoEaEurW247ad9WYZLUyk",
+            "name": "Dev Integration Test 1",
+            "writeKey": "1xIcKgyzyB1r6utKAtO6ejh8oKI",
+            "enabled": true,
+            "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+            "createdBy": "1vLboECkueyoBz4jb7bRdOzDxai",
+            "workspaceId": "1vLbwjZdDVeVeLGkTwjIxJmvo2i",
+            "deleted": false,
+            "createdAt": "2021-08-27T06:33:00.305Z",
+            "updatedAt": "2021-08-27T06:33:00.305Z",
+            "destinations":
+            [
+                {
+                    "config":
+                    {
+                        "webhookUrl": "{{.webhookUrl}}",
+                        "webhookMethod": "POST"
+                    },
+                    "secretConfig":
+                    {},
+                    "id": "1xIeMAYDP9kQfzOoKd1tuxchYAG",
+                    "name": "Des WebHook Integration Test 1",
+                    "enabled": true,
+                    "workspaceId": "1vLbwjZdDVeVeLGkTwjIxJmvo2i",
+                    "deleted": false,
+                    "createdAt": "2021-08-27T06:49:38.546Z",
+                    "updatedAt": "2021-08-27T06:49:38.546Z",
+                    "transformations":
+                    [],
+                    "destinationDefinition":
+                    {
+                        "config":
+                        {
+                            "destConfig":
+                            {
+                                "defaultConfig":
+                                [
+                                    "webhookUrl",
+                                    "webhookMethod",
+                                    "headers"
+                                ]
+                            },
+                            "secretKeys":
+                            [
+                                "headers.to"
+                            ],
+                            "excludeKeys":
+                            [],
+                            "includeKeys":
+                            [],
+                            "transformAt": "processor",
+                            "transformAtV1": "processor",
+                            "supportedSourceTypes":
+                            [
+                                "android",
+                                "ios",
+                                "web",
+                                "unity",
+                                "amp",
+                                "cloud",
+                                "warehouse",
+                                "reactnative",
+                                "flutter"
+                            ],
+                            "supportedMessageTypes":
+                            [
+                                "alias",
+                                "group",
+                                "identify",
+                                "page",
+                                "screen",
+                                "track"
+                            ],
+                            "saveDestinationResponse": false
+                        },
+                        "configSchema": null,
+                        "responseRules": null,
+                        "id": "1ZDvxpIGSOU9pLRavMf0GuVnWV3",
+                        "name": "WEBHOOK",
+                        "displayName": "Webhook",
+                        "category": null,
+                        "createdAt": "2020-03-16T19:25:28.141Z",
+                        "updatedAt": "2021-08-26T07:06:01.445Z"
+                    },
+                    "isConnectionEnabled": true,
+                    "isProcessorEnabled": true
+                }
+            ],
+            "sourceDefinition":
+            {
+                "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+                "name": "HTTP",
+                "options": null,
+                "displayName": "HTTP",
+                "category": "",
+                "createdAt": "2020-06-12T06:35:35.962Z",
+                "updatedAt": "2020-06-12T06:35:35.962Z"
+            },
+            "dgSourceTrackingPlanConfig": null
+        }
+    ],
+    "libraries":
+    [
+        {
+            "versionId": "def"
+        },
+        {
+            "versionId": "ghi"
+        }
+    ]
+}

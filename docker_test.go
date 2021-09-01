@@ -3,12 +3,12 @@ package main_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"html/template"
 	"os"
 	"os/signal"
 	"strconv"
@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/go-redis/redis"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
@@ -118,6 +119,27 @@ func getWorkspaceConfig() backendconfig.ConfigT {
 	return sourceJSON
 }
 
+func prepareWorkspaceConfig(templatePath, jsonPath string, values map[string]string) {
+	t, err := template.ParseFiles(templatePath)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+
+	f, err := os.Create(jsonPath)
+	if err != nil {
+		log.Println("create file: ", err)
+		return
+	}
+
+	err = t.Execute(f, values)
+	if err != nil {
+		log.Print("execute: ", err)
+		return
+	}
+	f.Close()
+}
+
 func initializeWarehouseConfig(src string, des string) map[string][]warehouseutils.WarehouseT {
 	var warehouses = make(map[string][]warehouseutils.WarehouseT)
 	for _, source := range sourceJSON.Sources {
@@ -136,26 +158,26 @@ func initializeWarehouseConfig(src string, des string) map[string][]warehouseuti
 	return warehouses
 }
 
-// getFromFile reads the workspace config from JSON file
-func getWebhookResponse() (int, bool) {
-	filePath := "./webhooktest.json"
-	fmt.Printf("// reading file %s\n", filePath)
-	file, err1 := ioutil.ReadFile(filePath)
-	if err1 != nil {
-		fmt.Printf("// error while reading file %s\n", filePath)
-		fmt.Printf("File error: %v\n", err1)
-		os.Exit(1)
-	}
-	var WebHookstruct WebHook
+// // getFromFile reads the workspace config from JSON file
+// func getWebhookResponse() (int, bool) {
+// 	filePath := "./webhooktest.json"
+// 	fmt.Printf("// reading file %s\n", filePath)
+// 	file, err1 := ioutil.ReadFile(filePath)
+// 	if err1 != nil {
+// 		fmt.Printf("// error while reading file %s\n", filePath)
+// 		fmt.Printf("File error: %v\n", err1)
+// 		os.Exit(1)
+// 	}
+// 	var WebHookstruct WebHook
 
-	err2 := json.Unmarshal(file, &WebHookstruct)
-	if err2 != nil {
-		fmt.Println("error:", err2)
-		os.Exit(1)
-	}
-	// fmt.Printf("%+v\n", WebHookstruct)
-	return WebHookstruct.Total, true
-}
+// 	err2 := json.Unmarshal(file, &WebHookstruct)
+// 	if err2 != nil {
+// 		fmt.Println("error:", err2)
+// 		os.Exit(1)
+// 	}
+// 	// fmt.Printf("%+v\n", WebHookstruct)
+// 	return WebHookstruct.Total, true
+// }
 
 func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration) {
 	probe := time.NewTicker(interval)
@@ -223,37 +245,37 @@ func VerifyHealth() {
 	fmt.Println(string(body))
 }
 
-func GetDestinationWebhookEvent() string {
+// func GetDestinationWebhookEvent() string {
 
-	url := fmt.Sprintf("%s/requests?page=1&password=&sorting=oldest", webhookurl)
-	url = strings.Replace(url, "https://webhook.site", "https://webhook.site/token", -1)
-	fmt.Println("GetDestinationWebhookEvent:- ", url)
-	method := "GET"
+// 	url := fmt.Sprintf("%s/requests?page=1&password=&sorting=oldest", webhookurl)
+// 	url = strings.Replace(url, "https://webhook.site", "https://webhook.site/token", -1)
+// 	fmt.Println("GetDestinationWebhookEvent:- ", url)
+// 	method := "GET"
 
-	client := &http.Client{}
-	req, err := http.NewRequest(method, url, nil)
+// 	client := &http.Client{}
+// 	req, err := http.NewRequest(method, url, nil)
 
-	if err != nil {
-		fmt.Println(err)
-		return ""
-	}
-	req.Header.Add("Cookie", "laravel_session=UZyYPg2FfrV0UNnxsuKKKYEOzGVScROClyvjWYmx")
+// 	if err != nil {
+// 		fmt.Println(err)
+// 		return ""
+// 	}
+// 	req.Header.Add("Cookie", "laravel_session=UZyYPg2FfrV0UNnxsuKKKYEOzGVScROClyvjWYmx")
 
-	res, err := client.Do(req)
-	if err != nil {
-		fmt.Println(err)
-		return ""
-	}
-	defer res.Body.Close()
+// 	res, err := client.Do(req)
+// 	if err != nil {
+// 		fmt.Println(err)
+// 		return ""
+// 	}
+// 	defer res.Body.Close()
 
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		fmt.Println(err)
-		return ""
-	}
-	_ = ioutil.WriteFile("webhooktest.json", body, 0644)
-	return string(body)
-}
+// 	body, err := ioutil.ReadAll(res.Body)
+// 	if err != nil {
+// 		fmt.Println(err)
+// 		return ""
+// 	}
+// 	_ = ioutil.WriteFile("webhooktest.json", body, 0644)
+// 	return string(body)
+// }
 
 func SendEvent() {
 	fmt.Println("Sending Track Event")
@@ -400,9 +422,6 @@ func run(m *testing.M) int {
 
 	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
 
-	mydir, _ := os.Getwd()
-	CONFIG_JSONPATH := mydir + "/workspaceConfig.json"
-	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", CONFIG_JSONPATH)
 
 	os.Setenv("WORKSPACE_TOKEN", "1vLbwltztKUgpuFxmJlSe1esX8c")
 
@@ -425,7 +444,19 @@ func run(m *testing.M) int {
 	webhook = NewWebhook()
 	defer webhook.Close()
 	webhookurl = webhook.Server.URL
-	// TODO inject `webhookurl` into the config
+	fmt.Println("webhookurl", webhookurl)
+
+	prepareWorkspaceConfig(
+		"testdata/workspaceConfigTemplate.json", 
+		"testdata/workspaceConfig.json", 
+		map[string]string{
+			"webhookUrl": webhookurl,
+		},
+	)
+
+	mydir, _ := os.Getwd()
+	CONFIG_JSONPATH := mydir + "/testdata/workspaceConfig.json"
+	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", CONFIG_JSONPATH)
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	go main.Run(svcCtx)
@@ -473,30 +504,27 @@ func TestWebhook(t *testing.T) {
 	// Pulling config form workspaceConfig.json
 	sourceJSON = getWorkspaceConfig()
 
-	warehouses := initializeWarehouseConfig("Dev Integration Test 1", "Des WebHook Integration Test 1")
-	webhookurl = fmt.Sprintf("%+v", warehouses["WEBHOOK"][0].Destination.Config["webhookUrl"])
-	fmt.Printf("%+v\n", webhookurl)
-	GetDestinationWebhookEvent()
-	var beforeWebHookResponseTotal int
-	beforeWebHookResponseTotal, _ = getWebhookResponse()
-	fmt.Println("beforeWebHookResponseTotal := ", beforeWebHookResponseTotal)
+	// warehouses := initializeWarehouseConfig("Dev Integration Test 1", "Des WebHook Integration Test 1")
+	// webhookurl = fmt.Sprintf("%+v", warehouses["WEBHOOK"][0].Destination.Config["webhookUrl"])
+	// fmt.Printf("%+v\n", webhookurl)
+	// GetDestinationWebhookEvent()
+	// var beforeWebHookResponseTotal int
+	// beforeWebHookResponseTotal, _ = getWebhookResponse()
+	// fmt.Println("beforeWebHookResponseTotal := ", beforeWebHookResponseTotal)
 
 	//SEND EVENT
 	SendEvent()
-	time.Sleep(300 * time.Second)
-	GetDestinationWebhookEvent()
-	var afterWebHookResponseTotal int
-	afterWebHookResponseTotal, _ = getWebhookResponse()
-	fmt.Println("afterWebHookResponseTotal := ", afterWebHookResponseTotal)
+	// time.Sleep(300*time.Second)
+	// GetDestinationWebhookEvent()
+	// var afterWebHookResponseTotal int
+	// afterWebHookResponseTotal, _ = getWebhookResponse()
+	// fmt.Println("afterWebHookResponseTotal := ", afterWebHookResponseTotal)
 
-	afterWebHookResponseTotal = len(webhook.Requests())
+	require.Eventually(t, func () bool {
+		return 1 == len(webhook.Requests())
+	}, time.Minute, 10 * time.Millisecond)
 
-	if afterWebHookResponseTotal == beforeWebHookResponseTotal+1 {
-		fmt.Println("TC01 PASSED")
-	} else {
-		fmt.Println("TC01 FAILED")
-		os.Exit(1)
-	}
+	// req := webhook.Requests()[0]
 
 	// TODO: Verify in POSTGRES
 	// TODO: Verify in Live Evets API
