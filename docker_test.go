@@ -119,25 +119,28 @@ func getWorkspaceConfig() backendconfig.ConfigT {
 	return sourceJSON
 }
 
-func prepareWorkspaceConfig(templatePath, jsonPath string, values map[string]string) {
+func prepareWorkspaceConfig(templatePath string, values map[string]string) string {
 	t, err := template.ParseFiles(templatePath)
 	if err != nil {
-		log.Print(err)
-		return
+		panic(err)
+		return ""
 	}
 
-	f, err := os.Create(jsonPath)
+	f, err := ioutil.TempFile("", "workspaceConfig.*.json")
 	if err != nil {
-		log.Println("create file: ", err)
-		return
+		panic(err)
+		return ""
 	}
 
 	err = t.Execute(f, values)
 	if err != nil {
-		log.Print("execute: ", err)
-		return
+		panic(err)
+		return ""
 	}
+
 	f.Close()
+
+	return f.Name()
 }
 
 func initializeWarehouseConfig(src string, des string) map[string][]warehouseutils.WarehouseT {
@@ -192,7 +195,6 @@ func blockOnHold() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
 	<-c
-	close(c)
 }
 
 func CreateTablePostgres() {
@@ -393,17 +395,18 @@ func run(m *testing.M) int {
 	webhookurl = webhook.Server.URL
 	fmt.Println("webhookurl", webhookurl)
 
-	prepareWorkspaceConfig(
+	workspaceConfigPath := prepareWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json", 
-		"testdata/workspaceConfig.json", 
 		map[string]string{
 			"webhookUrl": webhookurl,
 		},
 	)
-
-	mydir, _ := os.Getwd()
-	CONFIG_JSONPATH := mydir + "/testdata/workspaceConfig.json"
-	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", CONFIG_JSONPATH)
+	defer func () {
+		err := os.Remove(workspaceConfigPath)
+		fmt.Println(err)
+	}()
+	fmt.Println("workspace config path:", workspaceConfigPath)
+	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	go main.Run(svcCtx)
@@ -422,14 +425,14 @@ func run(m *testing.M) int {
 	svcCancel()
 	fmt.Println("test done, ignore errors bellow:")
 
-	// wait for the service to be stopped
-	pool.Retry(func() error {
-		_, err := http.Get(serviceHealthEndpoint)
-		if err != nil {
-			return nil
-		}
-		return fmt.Errorf("still working")
-	})
+	// // wait for the service to be stopped
+	// pool.Retry(func() error {
+	// 	_, err := http.Get(serviceHealthEndpoint)
+	// 	if err != nil {
+	// 		return nil
+	// 	}
+	// 	return fmt.Errorf("still working")
+	// })
 
 	return code
 }
