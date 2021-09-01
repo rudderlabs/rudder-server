@@ -47,11 +47,18 @@ import (
 
 /*
  * The gateway module handles incoming requests from client devices.
- * It batches web requests and writes to DB in bulk to improce I/O.
+ * It batches web requests and writes to DB in bulk to improve I/O.
  * Only after the request payload is persisted, an ACK is sent to
  * the client.
  */
 
+/*
+ Basic WebRequest unit.
+
+ Contains some payload, could be of several types(batch, identify, track etc.)
+
+ has a `done` channel that receives a response(error if any)
+*/
 type webRequestT struct {
 	done           chan<- string
 	reqType        string
@@ -111,6 +118,11 @@ type batchUserWorkerBatchRequestT struct {
 	batchUserWorkerBatchRequest []*userWorkerBatchRequestT
 }
 
+//Basic worker unit that works on incoming webRequests.
+//
+//Has three channels used to communicate between the two goroutines each worker runs.
+//
+//One to receive new webRequests, one to send batches of said webRequests and the third to receive errors if any in response to sending the said batches to dbWriterWorker.
 type userWebRequestWorkerT struct {
 	webRequestQ                 chan *webRequestT
 	batchRequestQ               chan *batchWebRequestT
@@ -165,6 +177,11 @@ func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket str
 	}
 }
 
+// Part of the gateway module Setup call.
+// 	Initiates `maxUserWebRequestWorkerProcess` number of `webRequestWorkers` that listen on their `webRequestQ` for new WebRequests.
+// Also starts two goroutines for each worker:
+// 	1. `userWebRequestBatcher` batches the webRequests that a worker gets
+// 	2. `userWebRequestWorkerProcess` processes the requests in the batches and sends them as part of a `jobsList` to `dbWriterWorker`s.
 func (gateway *HandleT) initUserWebRequestWorkers() {
 	gateway.userWebRequestWorkers = make([]*userWebRequestWorkerT, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
@@ -193,6 +210,7 @@ func (gateway *HandleT) initUserWebRequestWorkers() {
 
 }
 
+//Initiates `maxDBWriterProcess` number of dbWriterWorkers
 func (gateway *HandleT) initDBWriterWorkers() {
 	for i := 0; i < maxDBWriterProcess; i++ {
 		gateway.logger.Debug("DB Writer Worker Started", i)
@@ -203,6 +221,10 @@ func (gateway *HandleT) initDBWriterWorkers() {
 	}
 }
 
+// 	Batches together jobLists received on the `userWorkerBatchRequestQ` channel of the gateway
+// 	and queues the batch at the `batchUserWorkerBatchRequestQ` channel of the gateway.
+//
+// Initiated during the gateway Setup and keeps batching jobLists received from webRequestWorkers
 func (gateway *HandleT) userWorkerRequestBatcher() {
 	var userWorkerBatchRequestBuffer = make([]*userWorkerBatchRequestT, 0)
 	timeout := time.After(dbBatchWriteTimeout)
@@ -232,6 +254,10 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 	}
 }
 
+//goes over the batches of jobslist, and stores each job in every jobList into gw_db
+//sends a map of errors if any(errors mapped to the job.uuid) over the responseQ channel of the webRequestWorker.
+//userWebRequestWorkerProcess method of the webRequestWorker is waiting for this errorMessageMap.
+//This in turn sends the error over the done channel of each respcetive webRequest.
 func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
 		jobList := make([]*jobsdb.JobT, 0)
@@ -259,6 +285,9 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 	}
 }
 
+//Out of all the workers, this finds and returns the worker that works on a particular `userID`.
+//
+//This is done so that requests with a userID keep going to the same worker, which would maintain the consistency in event ordering.
 func (gateway *HandleT) findUserWebRequestWorker(userID string) *userWebRequestWorkerT {
 
 	index := int(math.Abs(float64(misc.GetHash(userID) % maxUserWebRequestWorkerProcess)))
@@ -271,8 +300,10 @@ func (gateway *HandleT) findUserWebRequestWorker(userID string) *userWebRequestW
 	return userWebRequestWorker
 }
 
-//Function to process the batch requests. It saves data in DB and
-//sends and ACK on the done channel which unblocks the HTTP handler
+// 	This function listens on the `webRequestQ` channel of a worker.
+// 	Based on `userWebRequestBatchTimeout` and `maxUserWebRequestBatchSize` parameters,
+// 	batches them together and queues the batch of webreqs in the `batchRequestQ` channel of the worker
+// Every webRequestWorker keeps doing this concurrently.
 func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebRequestWorkerT) {
 	var reqBuffer = make([]*webRequestT, 0)
 	timeout := time.After(userWebRequestBatchTimeout)
@@ -308,6 +339,11 @@ func (gateway *HandleT) getSourceTagFromWriteKey(writeKey string) string {
 	return sourceTag
 }
 
+//	Listens on the `batchRequestQ` channel of the webRequestWorker for new batches of webRequests
+//	Goes over the webRequests in the batch and filters them out(`rateLimit`, `maxReqSize`).
+// 	And creates a `jobList` which is then sent to `userWorkerBatchRequestQ` of the gateway and waits for a response
+// 	from the `dbwriterWorker`s that batch them and write to the db.
+// Finally sends responses(error) if any back to the webRequests over their `done` channels
 func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
 	for breq := range userWebRequestWorker.batchRequestQ {
 		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
@@ -363,13 +399,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
 			misc.IncrementMapByKey(sourceEventStats, sourceTag, totalEventsInReq)
-			if len(body) > maxReqSize {
-				req.done <- response.GetStatus(response.RequestBodyTooLarge)
-				preDbStoreCount++
-				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
-				continue
-			}
 
 			// store sourceID before call made to check if source is enabled
 			// this prevents not setting sourceID in gw job if disabled before setting it
@@ -386,16 +415,20 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			result := gjson.GetBytes(body, "batch")
 			out := []map[string]interface{}{}
 
-			var notIdentifiable bool
+			var notIdentifiable, containsAudienceList bool
 			result.ForEach(func(_, vjson gjson.Result) bool {
 				anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
 				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
+				eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
 
 				if anonIDFromReq == "" {
 					if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
 						notIdentifiable = true
 						return false
 					}
+				}
+				if eventTypeFromReq == "audiencelist" {
+					containsAudienceList = true
 				}
 				// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
 				rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
@@ -412,6 +445,14 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				out = append(out, toSet)
 				return true // keep iterating
 			})
+
+			if len(body) > maxReqSize && !containsAudienceList {
+				req.done <- response.GetStatus(response.RequestBodyTooLarge)
+				preDbStoreCount++
+				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
+				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
+				continue
+			}
 
 			body, _ = sjson.SetBytes(body, "batch", out)
 
@@ -578,6 +619,10 @@ func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 
 func (gateway *HandleT) webImportHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.webRequestHandler(gateway.irh, w, r, "import")
+}
+
+func (gateway *HandleT) webAudienceListHandler(w http.ResponseWriter, r *http.Request) {
+	gateway.webHandler(w, r, "audiencelist")
 }
 
 func (gateway *HandleT) webBatchHandler(w http.ResponseWriter, r *http.Request) {
@@ -1214,6 +1259,7 @@ func (gateway *HandleT) StartWebHandler() {
 	srvMux.HandleFunc("/v1/group", gateway.stat(gateway.webGroupHandler)).Methods("POST")
 	srvMux.HandleFunc("/health", gateway.healthHandler).Methods("GET")
 	srvMux.HandleFunc("/v1/import", gateway.stat(gateway.webImportHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/audiencelist", gateway.stat(gateway.webAudienceListHandler)).Methods("POST")
 	srvMux.HandleFunc("/", gateway.healthHandler).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/track", gateway.stat(gateway.pixelTrackHandler)).Methods("GET")
 	srvMux.HandleFunc("/pixel/v1/page", gateway.stat(gateway.pixelPageHandler)).Methods("GET")
@@ -1315,7 +1361,11 @@ func (gateway *HandleT) backendConfigSubscriber() {
 Public methods on GatewayWebhookI
 */
 
-// addToWebRequestQ provides access to add a request to the gateway's webRequestQ
+/*
+Finds the worker for a particular userID and queues the webrequest with the worker(pushes the req into the webRequestQ channel of the worker).
+
+They are further batched together in userWebRequestBatcher
+*/
 func (gateway *HandleT) addToWebRequestQ(writer *http.ResponseWriter, req *http.Request, done chan string, reqType string, requestPayload []byte, writeKey string) {
 	userIDHeader := req.Header.Get("AnonymousId")
 	//If necessary fetch userID from request body.

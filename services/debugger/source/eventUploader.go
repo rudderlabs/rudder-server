@@ -34,7 +34,7 @@ type EventUploadBatchT struct {
 var uploadEnabledWriteKeys []string
 var configSubscriberLock sync.RWMutex
 
-var uploader *debugger.Uploader
+var uploader debugger.UploaderI
 
 var (
 	configBackendURL    string
@@ -57,14 +57,14 @@ type EventUploader struct {
 }
 
 //Setup initializes this module
-func Setup() {
-	url := fmt.Sprintf("%s/dataplane/eventUploads", configBackendURL)
+func Setup(backendConfig backendconfig.BackendConfig) {
+	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", configBackendURL)
 	eventUploader := &EventUploader{}
 	uploader = debugger.New(url, eventUploader)
-	uploader.Setup()
+	uploader.Start()
 
 	rruntime.Go(func() {
-		backendConfigSubscriber()
+		backendConfigSubscriber(backendConfig)
 	})
 }
 
@@ -89,14 +89,14 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 
 func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) {
 	eventBuffer := data.([]interface{})
-	res := make(map[string][]EventUploadT)
+	res := make(map[string]interface{})
+	res["version"] = "v2"
 	for _, e := range eventBuffer {
 		event := e.(*GatewayEventBatchT)
 		batchedEvent := EventUploadBatchT{}
 		err := json.Unmarshal([]byte(event.eventBatch), &batchedEvent)
 		if err != nil {
-			pkgLogger.Errorf(string(event.eventBatch))
-			misc.AssertErrorIfDev(err)
+			pkgLogger.Errorf("[Source live events] Failed to unmarshal. Err: %v", err)
 			continue
 		}
 
@@ -108,16 +108,22 @@ func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) 
 
 		var arr []EventUploadT
 		if value, ok := res[batchedEvent.WriteKey]; ok {
-			arr = value
+			arr, _ = value.([]EventUploadT)
 		} else {
 			arr = make([]EventUploadT, 0)
 		}
 
 		for _, ev := range batchedEvent.Batch {
 			// add the receivedAt time to each event
-			ev["receivedAt"] = receivedAtStr
-
-			arr = append(arr, ev)
+			event := map[string]interface{}{
+				"payload":       ev,
+				"receivedAt":    receivedAtStr,
+				"eventName":     misc.GetStringifiedData(ev["event"]),
+				"eventType":     misc.GetStringifiedData(ev["type"]),
+				"errorResponse": make(map[string]interface{}),
+				"errorCode":     200,
+			}
+			arr = append(arr, event)
 		}
 
 		res[batchedEvent.WriteKey] = arr
@@ -125,8 +131,7 @@ func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) 
 
 	rawJSON, err := json.Marshal(res)
 	if err != nil {
-		pkgLogger.Debugf(string(rawJSON))
-		misc.AssertErrorIfDev(err)
+		pkgLogger.Errorf("[Source live events] Failed to marshal payload. Err: %v", err)
 		return nil, err
 	}
 
@@ -146,9 +151,9 @@ func updateConfig(sources backendconfig.ConfigT) {
 	configSubscriberLock.Unlock()
 }
 
-func backendConfigSubscriber() {
+func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	configChannel := make(chan utils.DataEvent)
-	backendconfig.Subscribe(configChannel, backendconfig.TopicProcessConfig)
+	backendConfig.Subscribe(configChannel, backendconfig.TopicProcessConfig)
 	for {
 		config := <-configChannel
 		updateConfig(config.Data.(backendconfig.ConfigT))

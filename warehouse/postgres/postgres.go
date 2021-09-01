@@ -141,7 +141,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 }
 
 func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations := pg.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
+	objects := pg.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: storageProvider,
@@ -156,37 +156,37 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		return nil, err
 	}
 	var fileNames []string
-	for _, objectLocation := range objectLocations {
-		object, err := warehouseutils.GetObjectName(objectLocation, pg.Warehouse.Destination.Config, pg.ObjectStorage)
+	for _, object := range objects {
+		objectName, err := warehouseutils.GetObjectName(object.Location, pg.Warehouse.Destination.Config, pg.ObjectStorage)
 		if err != nil {
-			pkgLogger.Errorf("PG: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
+			pkgLogger.Errorf("PG: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
 			return nil, err
 		}
 		dirName := "/rudder-warehouse-load-uploads-tmp/"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
-			pkgLogger.Errorf("PG: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("PG: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
-		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.ID, time.Now().Unix()) + object
+		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.ID, time.Now().Unix()) + objectName
 		err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
 		if err != nil {
-			pkgLogger.Errorf("PG: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("PG: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, object.Location, err)
 			return nil, err
 		}
 		objectFile, err := os.Create(ObjectPath)
 		if err != nil {
-			pkgLogger.Errorf("PG: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("PG: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
-		err = downloader.Download(objectFile, object)
+		err = downloader.Download(objectFile, objectName)
 		if err != nil {
-			pkgLogger.Errorf("PG: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("PG: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
 		fileName := objectFile.Name()
 		if err = objectFile.Close(); err != nil {
-			pkgLogger.Errorf("PG: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("PG: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
 		fileNames = append(fileNames, fileName)
@@ -226,6 +226,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("PG: Error creating temporary table for table:%s: %v\n", tableName, err)
+		txn.Rollback()
 		return
 	}
 	if !skipTempTableDelete {
@@ -235,6 +236,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	stmt, err := txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		pkgLogger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
+		txn.Rollback()
 		return
 	}
 	for _, objectFileName := range fileNames {
@@ -242,6 +244,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			pkgLogger.Errorf("PG: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
+			txn.Rollback()
 			return
 		}
 
@@ -250,8 +253,8 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		if err != nil {
 			pkgLogger.Errorf("PG: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
 			gzipFile.Close()
+			txn.Rollback()
 			return
-
 		}
 		csvReader := csv.NewReader(gzipReader)
 		var csvRowsProcessedCount int
@@ -334,6 +337,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	if err = txn.Commit(); err != nil {
 		pkgLogger.Errorf("PG: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
+		txn.Rollback()
 		return
 	}
 
