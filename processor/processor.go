@@ -611,7 +611,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
-func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transformer.TransformerEventT, destination backendconfig.DestinationT) {
+func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transformer.TransformerEventT) {
 	metadata := transformer.MetadataT{}
 	metadata.SourceType = commonMetadata.SourceType
 	metadata.SourceCategory = commonMetadata.SourceCategory
@@ -631,8 +631,6 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.EventName = commonMetadata.EventName
 	metadata.EventType = commonMetadata.EventType
 
-	metadata.DestinationID = destination.ID
-	metadata.DestinationType = destination.DestinationDefinition.Name
 	if event.SessionID != "" {
 		metadata.SessionID = event.SessionID
 	}
@@ -712,6 +710,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 	for _, userTransformedEvent := range response.Events {
 		//Update metrics maps
 		proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, []byte(`{}`))
+
 		eventMetadata := commonMetaData
 		eventMetadata.MessageIDs = userTransformedEvent.Metadata.MessageIDs
 		eventMetadata.MessageID = userTransformedEvent.Metadata.MessageID
@@ -1021,7 +1020,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				totalEvents++
 				eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{SingularEvent: singularEvent, ReceivedAt: receivedAt}
 
-				//Getting all the destinations which are enabled for this event
+				//Getting all the destinations which are enabled for this
+				//event
 				backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 				sourceForSingularEvent, sourceIdError := getSourceByWriteKey(writeKey)
@@ -1046,7 +1046,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				shallowEventCopy.Message = singularEvent
 				shallowEventCopy.Message["request_ip"] = requestIP
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, backendconfig.DestinationT{})
+				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy)
 
 				eventType, ok := singularEvent["type"].(string)
 				if !ok {
@@ -1190,8 +1190,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		//REPORTING - START
 		//There will be no diff metrics for tracking plan validation
 		if proc.reporting != nil && proc.reportingEnabled {
+			diffMetrics := []*types.PUReportedMetric{}
 			reportMetrics = append(reportMetrics, successMetrics...)
 			reportMetrics = append(reportMetrics, failedMetrics...)
+			reportMetrics = append(reportMetrics, diffMetrics...)
 
 			//successCountMap will be inCountMap for destination transform
 			inCountMap = successCountMap
@@ -1228,8 +1230,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					shallowEventCopy.Destination = reflect.ValueOf(destination).Interface().(backendconfig.DestinationT)
 					shallowEventCopy.Libraries = workspaceLibraries
 					shallowEventCopy.Metadata = event.Metadata
+
+					// At the TP flow we are not having destination information, so adding it here.
 					shallowEventCopy.Metadata.DestinationID = destination.ID
 					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
+
 					//TODO: Test for multiple workspaces ex: hosted data plane
 					/* Stream destinations does not need config in transformer. As the Kafka destination config
 					holds the ca-certificate and it depends on user input, it may happen that they provide entire
