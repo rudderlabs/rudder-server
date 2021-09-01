@@ -158,27 +158,6 @@ func initializeWarehouseConfig(src string, des string) map[string][]warehouseuti
 	return warehouses
 }
 
-// // getFromFile reads the workspace config from JSON file
-// func getWebhookResponse() (int, bool) {
-// 	filePath := "./webhooktest.json"
-// 	fmt.Printf("// reading file %s\n", filePath)
-// 	file, err1 := ioutil.ReadFile(filePath)
-// 	if err1 != nil {
-// 		fmt.Printf("// error while reading file %s\n", filePath)
-// 		fmt.Printf("File error: %v\n", err1)
-// 		os.Exit(1)
-// 	}
-// 	var WebHookstruct WebHook
-
-// 	err2 := json.Unmarshal(file, &WebHookstruct)
-// 	if err2 != nil {
-// 		fmt.Println("error:", err2)
-// 		os.Exit(1)
-// 	}
-// 	// fmt.Printf("%+v\n", WebHookstruct)
-// 	return WebHookstruct.Total, true
-// }
-
 func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration) {
 	probe := time.NewTicker(interval)
 	timeout := time.After(atMost)
@@ -244,38 +223,6 @@ func VerifyHealth() {
 	}
 	fmt.Println(string(body))
 }
-
-// func GetDestinationWebhookEvent() string {
-
-// 	url := fmt.Sprintf("%s/requests?page=1&password=&sorting=oldest", webhookurl)
-// 	url = strings.Replace(url, "https://webhook.site", "https://webhook.site/token", -1)
-// 	fmt.Println("GetDestinationWebhookEvent:- ", url)
-// 	method := "GET"
-
-// 	client := &http.Client{}
-// 	req, err := http.NewRequest(method, url, nil)
-
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		return ""
-// 	}
-// 	req.Header.Add("Cookie", "laravel_session=UZyYPg2FfrV0UNnxsuKKKYEOzGVScROClyvjWYmx")
-
-// 	res, err := client.Do(req)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		return ""
-// 	}
-// 	defer res.Body.Close()
-
-// 	body, err := ioutil.ReadAll(res.Body)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		return ""
-// 	}
-// 	_ = ioutil.WriteFile("webhooktest.json", body, 0644)
-// 	return string(body)
-// }
 
 func SendEvent() {
 	fmt.Println("Sending Track Event")
@@ -504,21 +451,8 @@ func TestWebhook(t *testing.T) {
 	// Pulling config form workspaceConfig.json
 	sourceJSON = getWorkspaceConfig()
 
-	// warehouses := initializeWarehouseConfig("Dev Integration Test 1", "Des WebHook Integration Test 1")
-	// webhookurl = fmt.Sprintf("%+v", warehouses["WEBHOOK"][0].Destination.Config["webhookUrl"])
-	// fmt.Printf("%+v\n", webhookurl)
-	// GetDestinationWebhookEvent()
-	// var beforeWebHookResponseTotal int
-	// beforeWebHookResponseTotal, _ = getWebhookResponse()
-	// fmt.Println("beforeWebHookResponseTotal := ", beforeWebHookResponseTotal)
-
 	//SEND EVENT
 	SendEvent()
-	// time.Sleep(300*time.Second)
-	// GetDestinationWebhookEvent()
-	// var afterWebHookResponseTotal int
-	// afterWebHookResponseTotal, _ = getWebhookResponse()
-	// fmt.Println("afterWebHookResponseTotal := ", afterWebHookResponseTotal)
 
 	require.Eventually(t, func () bool {
 		return 1 == len(webhook.Requests())
