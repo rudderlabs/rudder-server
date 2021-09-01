@@ -90,8 +90,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		bytes := []byte(eventPayload)
 		err := json.Unmarshal(bytes, &input)
 		if err != nil {
-			fmt.Printf(err.Error())
-			fmt.Printf("Could not unmarshal jsonData according to putEvents input structure")
+			return 400, err.Error(), "Could not unmarshal jsonData according to putUsers input structure"
 		}
 		res, err := client.PutUsers(&input)
 		if err != nil {
@@ -115,8 +114,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		bytes := []byte(eventPayload)
 		err := json.Unmarshal(bytes, &input)
 		if err != nil {
-			fmt.Printf(err.Error())
-			fmt.Printf("Could not unmarshal jsonData according to putEvents input structure")
+			return 400, err.Error(), "Could not unmarshal jsonData according to putItems input structure"
 		}
 		res, err := client.PutItems(&input)
 		if err != nil {
