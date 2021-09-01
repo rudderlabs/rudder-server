@@ -207,10 +207,10 @@ func (proc *HandleT) newValidationStat(metadata transformer.MetadataT) *DestStat
 		"trackingPlanVersion": strconv.Itoa(metadata.TrackingPlanVersion),
 	}
 
-	numEvents := proc.stats.NewTaggedStat("proc_num_dt_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_num_dt_output_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.stats.NewTaggedStat("proc_num_dt_output_failed_events", stats.CountType, tags)
-	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
+	numEvents := proc.stats.NewTaggedStat("proc_num_tp_input_events", stats.CountType, tags)
+	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_num_tp_output_success_events", stats.CountType, tags)
+	numOutputFailedEvents := proc.stats.NewTaggedStat("proc_num_tp_output_failed_events", stats.CountType, tags)
+	destTransform := proc.stats.NewTaggedStat("proc_tp_validation", stats.TimerType, tags)
 
 	return &DestStatT{
 		numEvents:              numEvents,
