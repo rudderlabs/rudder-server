@@ -197,6 +197,29 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 	}
 }
 
+func (proc *HandleT) newValidationStat(metadata transformer.MetadataT) *DestStatT {
+	tags := map[string]string{
+		"destination":         metadata.DestinationID,
+		"destType":            metadata.DestinationType,
+		"source":              metadata.SourceID,
+		"workspaceId":         metadata.WorkspaceID,
+		"trackingPlanId":      metadata.TrackingPlanId,
+		"trackingPlanVersion": strconv.Itoa(metadata.TrackingPlanVersion),
+	}
+
+	numEvents := proc.stats.NewTaggedStat("proc_num_dt_input_events", stats.CountType, tags)
+	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_num_dt_output_success_events", stats.CountType, tags)
+	numOutputFailedEvents := proc.stats.NewTaggedStat("proc_num_dt_output_failed_events", stats.CountType, tags)
+	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
+
+	return &DestStatT{
+		numEvents:              numEvents,
+		numOutputSuccessEvents: numOutputSuccessEvents,
+		numOutputFailedEvents:  numOutputFailedEvents,
+		transformTime:          destTransform,
+	}
+}
+
 //Print the internal structure
 func (proc *HandleT) Print() {
 	if !proc.logger.IsDebugLevel() {
@@ -342,7 +365,6 @@ var (
 	pollInterval                        time.Duration
 	isUnLocked                          bool
 	GWCustomVal                         string
-	sourceSchemaConfig					bool
 )
 
 func loadConfig() {
@@ -369,7 +391,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, []string{"Processor.pollInterval", "Processor.pollIntervalInS"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
 	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
-	config.RegisterBoolConfigVariable(true, &sourceSchemaConfig, false, "Processor.sourceSchemaConfig")
 }
 
 func (proc *HandleT) getTransformerFeatureJson() {
@@ -834,6 +855,9 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		} else if stage == transformer.UserTransformerStage {
 			inPU = types.GATEWAY
 			pu = types.USER_TRANSFORMER
+		} else if stage == transformer.TrackingPlanValidationStage {
+			inPU = types.GATEWAY
+			pu = types.TRACKINGPLAN_VALIDATOR
 		}
 		for k, cd := range connectionDetailsMap {
 			m := &types.PUReportedMetric{
@@ -920,6 +944,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
 	var groupedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
+	var validatedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
 	var eventsByMessageID = make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 
@@ -1093,10 +1118,86 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.statNumEvents.Count(totalEvents)
 
 	proc.marshalSingularEvents.End()
+
+	var startedAt, endedAt time.Time
+	var timeTaken float64
 	//Placing the trackingPlan validation filters here.
 	//Else further down events are duplicated by destId, so multiple validation takes places for same event
 	proc.validateEventsTime.Start()
-	validatedEventsByWriteKey := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID)
+	for writeKey, eventList := range groupedEventsByWriteKey {
+		validationStat := proc.newValidationStat(eventList[0].Metadata)
+		validationStat.numEvents.Count(len(eventList))
+		proc.logger.Debug("Validation input size", len(eventList))
+
+		isTpExists := eventList[0].Metadata.TrackingPlanId != ""
+		if !isTpExists {
+			// pass on the jobs for transformation(User,Dest)
+			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
+			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
+			continue
+		}
+
+		validationStat.transformTime.Start()
+		startedAt = time.Now()
+		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize)
+		endedAt = time.Now()
+		timeTaken = endedAt.Sub(startedAt).Seconds()
+		validationStat.transformTime.End()
+
+
+		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
+		if (len(response.Events) + len(response.FailedEvents)) != len(eventList) {
+			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
+			//Capture metrics
+			continue
+		}
+
+		sourceID := eventList[0].Metadata.SourceID
+		destID := eventList[0].Metadata.DestinationID
+		destination := eventList[0].Destination
+		workspaceID := eventList[0].Metadata.WorkspaceID
+		commonMetaData := transformer.MetadataT{
+			SourceID:        sourceID,
+			SourceType:      eventList[0].Metadata.SourceType,
+			SourceCategory:  eventList[0].Metadata.SourceCategory,
+			WorkspaceID:     workspaceID,
+			Namespace:       config.GetKubeNamespace(),
+			InstanceID:      config.GetInstanceID(),
+			DestinationID:   destID,
+			DestinationType: destination.DestinationDefinition.Name,
+		}
+
+		var successMetrics []*types.PUReportedMetric
+		var successCountMap map[string]int64
+		var successCountMetadataMap map[string]MetricMetadata
+		eventsToTransform, successMetrics, successCountMap, successCountMetadataMap := proc.getDestTransformerEvents(response, commonMetaData, destination)
+		failedJobs, failedMetrics, _ := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.TrackingPlanValidationStage, false)
+		if _, ok := procErrorJobsByDestID[destID]; !ok {
+			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
+		}
+		procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
+		validationStat.numOutputSuccessEvents.Count(len(eventsToTransform))
+		validationStat.numOutputFailedEvents.Count(len(failedJobs))
+		proc.logger.Debug("Validation output size", len(eventsToTransform))
+
+		//REPORTING - START
+		//There will be no diff metrics for tracking plan validation
+		if proc.reporting != nil && proc.reportingEnabled {
+			reportMetrics = append(reportMetrics, successMetrics...)
+			reportMetrics = append(reportMetrics, failedMetrics...)
+
+			//successCountMap will be inCountMap for destination transform
+			inCountMap = successCountMap
+			inCountMetadataMap = successCountMetadataMap
+		}
+		//REPORTING - END
+
+		if len(eventsToTransform) == 0 {
+			continue
+		}
+		validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
+		validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventsToTransform...)
+	}
 	proc.validateEventsTime.End()
 	// tracking plan validation end
 
@@ -1145,12 +1246,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					uniqueMessageIdsBySrcDestKey[srcAndDestKey][event.Metadata.MessageID] = struct{}{}
 				}
 			}
-
-			tags := BuildTrackingPlanStatTags(&event.Metadata)
-			tags["statusCode"] = strconv.Itoa(200)
-
-			validateEventsOutputStat := proc.stats.NewTaggedStat("processor.validate_events_output", stats.CountType, tags)
-			validateEventsOutputStat.Count(1)
 		}
 	}
 
@@ -1159,8 +1254,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.destProcessing.Start()
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
-	var startedAt, endedAt time.Time
-	var timeTaken float64
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 		destination := eventList[0].Destination
@@ -1429,6 +1522,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
 
+	// Populate successMetrics, failedMetrics, diffmetrics, failedJobs here and append it.
 	var procErrorJobs []*jobsdb.JobT
 	for _, jobs := range procErrorJobsByDestID {
 		procErrorJobs = append(procErrorJobs, jobs...)

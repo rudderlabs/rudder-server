@@ -170,7 +170,6 @@ Processor:
   errDBReadBatchSize: 1000
   noOfErrStashWorkers: 2
   maxFailedCountForErrJob: 3
-  sourceSchemaConfig: true
   Stats:
     captureEventName: false
 Dedup:
