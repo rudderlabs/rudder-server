@@ -77,6 +77,8 @@ const (
 
 	/*RegulationSuppressAndDelete refers to Suppress and Delete Regulation */
 	RegulationSuppressAndDelete Regulation = "Suppress_With_Delete"
+
+	GlobalEventType = "global"
 )
 
 type DestinationDefinitionT struct {
@@ -190,7 +192,7 @@ type DgSourceTrackingPlanConfigT struct {
 func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType string) map[string]interface{} {
 	if dgSourceTPConfigT.MergedConfig == nil {
 		sourceTpConfig := dgSourceTPConfigT.Config
-		globalConfig := fetchEventConfig(sourceTpConfig, "global")
+		globalConfig := fetchEventConfig(sourceTpConfig, GlobalEventType)
 		eventSpecificConfig := fetchEventConfig(sourceTpConfig, eventType)
 		outputConfig := misc.MergeMaps(globalConfig, eventSpecificConfig)
 		dgSourceTPConfigT.MergedConfig = outputConfig
