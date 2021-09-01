@@ -1,17 +1,19 @@
 package main_test
 
 import (
-	"encoding/json"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -22,21 +24,53 @@ import (
 	"github.com/ory/dockertest"
 	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
-	hold        bool=true
+	hold        bool = true
 	db          *sql.DB
 	redisClient *redis.Client
 	DB_DSN      = "root@tcp(127.0.0.1:3306)/service"
 	httpPort    string
-	dbHandle *sql.DB
-	sourceJSON backendconfig.ConfigT
-	webhookurl string
+	dbHandle    *sql.DB
+	sourceJSON  backendconfig.ConfigT
+	webhookurl  string
+	webhook     *WebhookRecorder
 )
+
+type WebhookRecorder struct {
+	Server *httptest.Server
+
+	requestsMu sync.RWMutex
+	requests   []*http.Request
+}
+
+func NewWebhook() *WebhookRecorder {
+	whr := WebhookRecorder{}
+	whr.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		whr.requestsMu.Lock()
+		whr.requests = append(whr.requests, r)
+		whr.requestsMu.Unlock()
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	}))
+
+	return &whr
+}
+
+func (whr *WebhookRecorder) Requests() []*http.Request {
+	whr.requestsMu.RLock()
+	defer whr.requestsMu.RUnlock()
+	return whr.requests
+}
+
+func (whr *WebhookRecorder) Close() {
+	whr.Server.Close()
+}
 
 type WebHook struct {
 	Data []struct {
@@ -47,7 +81,7 @@ type WebHook struct {
 		Hostname  string      `json:"hostname"`
 		Method    string      `json:"method"`
 		UserAgent string      `json:"user_agent"`
-		Content   string   `json:"content"`
+		Content   string      `json:"content"`
 		Query     interface{} `json:"query"`
 		Headers   struct {
 			Connection     []string `json:"connection"`
@@ -90,11 +124,12 @@ func initializeWarehouseConfig(src string, des string) map[string][]warehouseuti
 		if source.Name == src {
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
-					  if destination.Name == des{
-						warehouses[destination.DestinationDefinition.Name] = append(warehouses[destination.DestinationDefinition.Name], 
-						warehouseutils.WarehouseT{Source: source, Destination: destination})
+					if destination.Name == des {
+						warehouses[destination.DestinationDefinition.Name] = append(warehouses[destination.DestinationDefinition.Name],
+							warehouseutils.WarehouseT{Source: source, Destination: destination})
 						return warehouses
-				}}
+					}
+				}
 			}
 		}
 	}
@@ -102,24 +137,24 @@ func initializeWarehouseConfig(src string, des string) map[string][]warehouseuti
 }
 
 // getFromFile reads the workspace config from JSON file
-func getWebhookResponse() (int, bool){
-    filePath := "./webhooktest.json";
-    fmt.Printf( "// reading file %s\n", filePath )
-    file, err1 := ioutil.ReadFile( filePath )
-    if err1 != nil {
-        fmt.Printf( "// error while reading file %s\n", filePath )
-        fmt.Printf("File error: %v\n", err1)
-        os.Exit(1)
-    }
-    var WebHookstruct WebHook
+func getWebhookResponse() (int, bool) {
+	filePath := "./webhooktest.json"
+	fmt.Printf("// reading file %s\n", filePath)
+	file, err1 := ioutil.ReadFile(filePath)
+	if err1 != nil {
+		fmt.Printf("// error while reading file %s\n", filePath)
+		fmt.Printf("File error: %v\n", err1)
+		os.Exit(1)
+	}
+	var WebHookstruct WebHook
 
-    err2 := json.Unmarshal(file, &WebHookstruct)
-    if err2 != nil {
-        fmt.Println("error:", err2)
-        os.Exit(1)
-    }
+	err2 := json.Unmarshal(file, &WebHookstruct)
+	if err2 != nil {
+		fmt.Println("error:", err2)
+		os.Exit(1)
+	}
 	// fmt.Printf("%+v\n", WebHookstruct)
-    return WebHookstruct.Total, true
+	return WebHookstruct.Total, true
 }
 
 func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration) {
@@ -189,14 +224,13 @@ func VerifyHealth() {
 }
 
 func GetDestinationWebhookEvent() string {
-	
+
 	url := fmt.Sprintf("%s/requests?page=1&password=&sorting=oldest", webhookurl)
-    url = strings.Replace(url, "https://webhook.site", "https://webhook.site/token", -1)
-	fmt.Println("GetDestinationWebhookEvent:- ",url)
+	url = strings.Replace(url, "https://webhook.site", "https://webhook.site/token", -1)
+	fmt.Println("GetDestinationWebhookEvent:- ", url)
 	method := "GET"
 
-	client := &http.Client {
-	}
+	client := &http.Client{}
 	req, err := http.NewRequest(method, url, nil)
 
 	if err != nil {
@@ -225,7 +259,7 @@ func SendEvent() {
 	fmt.Println("Sending Track Event")
 	url := fmt.Sprintf("http://localhost:%s/v1/track", httpPort)
 	method := "POST"
-  
+
 	payload := strings.NewReader(`{
 	"userId": "identified user id",
 	"anonymousId":"anon-id-new",
@@ -240,29 +274,28 @@ func SendEvent() {
 	},
 	"timestamp": "2020-02-02T00:23:09.544Z"
   }`)
-  
-	client := &http.Client {
-	}
+
+	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
-  
+
 	if err != nil {
-	  fmt.Println(err)
-	  return
+		fmt.Println(err)
+		return
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Basic MXhJY0tneXp5QjFyNnV0S0F0TzZlamg4b0tJOg==")
-  
+
 	res, err := client.Do(req)
 	if err != nil {
-	  fmt.Println(err)
-	  return
+		fmt.Println(err)
+		return
 	}
 	defer res.Body.Close()
-  
+
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-	  fmt.Println(err)
-	  return
+		fmt.Println(err)
+		return
 	}
 	fmt.Println(string(body))
 	fmt.Println("Event Sent Successfully")
@@ -324,7 +357,7 @@ func run(m *testing.M) int {
 
 	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
 	os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
-	os.Setenv("WAREHOUSE_JOBS_DB_PORT",resourcePostgres.GetPort("5432/tcp"))
+	os.Setenv("WAREHOUSE_JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		var err error
@@ -389,6 +422,11 @@ func run(m *testing.M) int {
 
 	os.Setenv("RSERVER_ENABLE_STATS", "false")
 
+	webhook = NewWebhook()
+	defer webhook.Close()
+	webhookurl = webhook.Server.URL
+	// TODO inject `webhookurl` into the config
+
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	go main.Run(svcCtx)
 
@@ -425,7 +463,7 @@ func TestWebhook(t *testing.T) {
 	//  Test Rudder docker health point
 	VerifyHealth()
 
-	// 
+	//
 	var err error
 	psqlInfo := jobsdb.GetConnectionString()
 	dbHandle, err = sql.Open("postgres", psqlInfo)
@@ -435,14 +473,14 @@ func TestWebhook(t *testing.T) {
 	// Pulling config form workspaceConfig.json
 	sourceJSON = getWorkspaceConfig()
 
-	warehouses :=  initializeWarehouseConfig("Dev Integration Test 1", "Des WebHook Integration Test 1")
+	warehouses := initializeWarehouseConfig("Dev Integration Test 1", "Des WebHook Integration Test 1")
 	webhookurl = fmt.Sprintf("%+v", warehouses["WEBHOOK"][0].Destination.Config["webhookUrl"])
 	fmt.Printf("%+v\n", webhookurl)
- 	GetDestinationWebhookEvent()
+	GetDestinationWebhookEvent()
 	var beforeWebHookResponseTotal int
 	beforeWebHookResponseTotal, _ = getWebhookResponse()
 	fmt.Println("beforeWebHookResponseTotal := ", beforeWebHookResponseTotal)
-	
+
 	//SEND EVENT
 	SendEvent()
 	time.Sleep(300 * time.Second)
@@ -451,12 +489,14 @@ func TestWebhook(t *testing.T) {
 	afterWebHookResponseTotal, _ = getWebhookResponse()
 	fmt.Println("afterWebHookResponseTotal := ", afterWebHookResponseTotal)
 
-	if afterWebHookResponseTotal == beforeWebHookResponseTotal+1{
+	afterWebHookResponseTotal = len(webhook.Requests())
+
+	if afterWebHookResponseTotal == beforeWebHookResponseTotal+1 {
 		fmt.Println("TC01 PASSED")
-		} else {
+	} else {
 		fmt.Println("TC01 FAILED")
 		os.Exit(1)
-		}
+	}
 
 	// TODO: Verify in POSTGRES
 	// TODO: Verify in Live Evets API
