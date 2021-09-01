@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Github issues on Notion
-      uses: rudderlabs/github-notion-sync@0.0.4-beta
+      uses: rudderlabs/github-notion-sync@0.0.5-beta
       with:
         notionKey: ${{ secrets.NOTION_BOT_TOKEN }}
         notionDatabaseId: ${{ secrets.NOTION_ISSUE_DB_ID }}
