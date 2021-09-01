@@ -1,14 +1,18 @@
 package main_test
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
+	"html/template"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"html/template"
+	"net/http/httputil"
 	"os"
 	"os/signal"
 	"strconv"
@@ -18,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/go-redis/redis"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
@@ -28,6 +31,8 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 var (
@@ -45,15 +50,21 @@ var (
 type WebhookRecorder struct {
 	Server *httptest.Server
 
-	requestsMu sync.RWMutex
-	requests   []*http.Request
+	requestsMu   sync.RWMutex
+	requestDumps [][]byte
 }
 
 func NewWebhook() *WebhookRecorder {
 	whr := WebhookRecorder{}
 	whr.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		dump, err := httputil.DumpRequest(r, true)
+		if err != nil {
+			http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+			return
+		}
 		whr.requestsMu.Lock()
-		whr.requests = append(whr.requests, r)
+		whr.requestDumps = append(whr.requestDumps, dump)
 		whr.requestsMu.Unlock()
 
 		w.WriteHeader(http.StatusOK)
@@ -66,7 +77,12 @@ func NewWebhook() *WebhookRecorder {
 func (whr *WebhookRecorder) Requests() []*http.Request {
 	whr.requestsMu.RLock()
 	defer whr.requestsMu.RUnlock()
-	return whr.requests
+
+	requests := make([]*http.Request, len(whr.requestDumps))
+	for i, d := range whr.requestDumps {
+		requests[i], _ = http.ReadRequest(bufio.NewReader(bytes.NewReader(d)))
+	}
+	return requests
 }
 
 func (whr *WebhookRecorder) Close() {
@@ -371,7 +387,6 @@ func run(m *testing.M) int {
 
 	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
 
-
 	os.Setenv("WORKSPACE_TOKEN", "1vLbwltztKUgpuFxmJlSe1esX8c")
 
 	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
@@ -396,12 +411,12 @@ func run(m *testing.M) int {
 	fmt.Println("webhookurl", webhookurl)
 
 	workspaceConfigPath := prepareWorkspaceConfig(
-		"testdata/workspaceConfigTemplate.json", 
+		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
 			"webhookUrl": webhookurl,
 		},
 	)
-	defer func () {
+	defer func() {
 		err := os.Remove(workspaceConfigPath)
 		fmt.Println(err)
 	}()
@@ -454,14 +469,26 @@ func TestWebhook(t *testing.T) {
 	// Pulling config form workspaceConfig.json
 	sourceJSON = getWorkspaceConfig()
 
-	//SEND EVENT
+	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
 	SendEvent()
 
-	require.Eventually(t, func () bool {
+	require.Eventually(t, func() bool {
 		return 1 == len(webhook.Requests())
-	}, time.Minute, 10 * time.Millisecond)
+	}, time.Minute, 10*time.Millisecond)
 
-	// req := webhook.Requests()[0]
+	req := webhook.Requests()[0]
+
+	body, err := io.ReadAll(req.Body)
+
+	require.Equal(t, "POST", req.Method)
+	require.Equal(t, "/", req.URL.Path)
+	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
+	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
+
+	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anon-id-new")
+	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified user id")
+	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "daf823fb-e8d3-413a-8313-d34cd756f968")
+	require.Equal(t, gjson.GetBytes(body, "type").Str, "track")
 
 	// TODO: Verify in POSTGRES
 	// TODO: Verify in Live Evets API
