@@ -111,10 +111,10 @@ type DestStatT struct {
 }
 
 type TrackingPlanT struct {
-	numEvents              stats.RudderStats
-	numOutputSuccessEvents stats.RudderStats
-	numOutputFailedEvents  stats.RudderStats
-	transformTime          stats.RudderStats
+	numEvents                  stats.RudderStats
+	numValidationSuccessEvents stats.RudderStats
+	numValidationFailedEvents  stats.RudderStats
+	tpValidationTime           stats.RudderStats
 }
 
 type ParametersT struct {
@@ -179,7 +179,7 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 	transformTime := proc.stats.NewTaggedStat("proc_user_transform", stats.TimerType, tags)
 
 	return &DestStatT{
-		numEvents:                  numEvents,
+		numEvents:              numEvents,
 		numOutputSuccessEvents: numOutputSuccessEvents,
 		numOutputFailedEvents:  numOutputFailedEvents,
 		transformTime:          transformTime,
@@ -197,7 +197,7 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 	destTransform := proc.stats.NewTaggedStat("proc_dest_transform", stats.TimerType, tags)
 
 	return &DestStatT{
-		numEvents:                  numEvents,
+		numEvents:              numEvents,
 		numOutputSuccessEvents: numOutputSuccessEvents,
 		numOutputFailedEvents:  numOutputFailedEvents,
 		transformTime:          destTransform,
@@ -215,15 +215,15 @@ func (proc *HandleT) newValidationStat(metadata transformer.MetadataT) *Tracking
 	}
 
 	numEvents := proc.stats.NewTaggedStat("proc_num_tp_input_events", stats.CountType, tags)
-	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_num_tp_output_success_events", stats.CountType, tags)
-	numOutputFailedEvents := proc.stats.NewTaggedStat("proc_num_tp_output_failed_events", stats.CountType, tags)
-	destTransform := proc.stats.NewTaggedStat("proc_tp_validation", stats.TimerType, tags)
+	numValidationSuccessEvents := proc.stats.NewTaggedStat("proc_num_tp_output_success_events", stats.CountType, tags)
+	numValidationFailedEvents := proc.stats.NewTaggedStat("proc_num_tp_output_failed_events", stats.CountType, tags)
+	tpValidationTime := proc.stats.NewTaggedStat("proc_tp_validation", stats.TimerType, tags)
 
 	return &TrackingPlanT{
 		numEvents:                  numEvents,
-		numOutputSuccessEvents: numOutputSuccessEvents,
-		numOutputFailedEvents:  numOutputFailedEvents,
-		transformTime:          destTransform,
+		numValidationSuccessEvents: numValidationSuccessEvents,
+		numValidationFailedEvents:  numValidationFailedEvents,
+		tpValidationTime:           tpValidationTime,
 	}
 }
 
@@ -1144,12 +1144,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			continue
 		}
 
-		validationStat.transformTime.Start()
+		validationStat.tpValidationTime.Start()
 		startedAt = time.Now()
 		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize)
 		endedAt = time.Now()
 		timeTaken = endedAt.Sub(startedAt).Seconds()
-		validationStat.transformTime.End()
+		validationStat.tpValidationTime.End()
 
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
@@ -1183,8 +1183,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 		}
 		procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
-		validationStat.numOutputSuccessEvents.Count(len(eventsToTransform))
-		validationStat.numOutputFailedEvents.Count(len(failedJobs))
+		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
+		validationStat.numValidationFailedEvents.Count(len(failedJobs))
 		proc.logger.Debug("Validation output size", len(eventsToTransform))
 
 		//REPORTING - START
