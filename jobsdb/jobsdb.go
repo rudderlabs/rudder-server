@@ -327,7 +327,7 @@ type HandleT struct {
 	queryFilterKeys               QueryFiltersT
 	backgroundCtx                 context.Context
 	backgroundCancel              context.CancelFunc
-	backgroundWait                func() error
+	backgroundGroup               *errgroup.Group
 }
 
 type QueryFiltersT struct {
@@ -603,7 +603,7 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 
 	jd.backgroundCtx = ctx
 	jd.backgroundCancel = cancel
-	jd.backgroundWait = g.Wait
+	jd.backgroundGroup = g
 
 	g.Go(func() error {
 		jd.initDBWriters(ctx)
@@ -613,10 +613,7 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 		jd.initDBReaders(ctx)
 		return nil
 	})
-	g.Go(func() error {
-		jd.setUpForOwnerType(ctx, ownerType, clearAll)
-		return nil
-	})
+	jd.setUpForOwnerType(ctx, ownerType, clearAll)
 }
 
 func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
@@ -677,9 +674,11 @@ func (jd *HandleT) startBackupDSLoop(ctx context.Context) {
 	if jd.BackupSettings.BackupEnabled {
 		jd.jobsFileUploader, err = jd.getFileUploader()
 		jd.assertError(err)
-		jd.backupDSLoop(ctx)
+		jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
+			jd.backupDSLoop(ctx)
+			return nil
+		}))
 	}
-
 }
 
 func (jd *HandleT) startMigrateDSLoop(ctx context.Context) {
@@ -699,26 +698,20 @@ func (jd *HandleT) readerSetup(ctx context.Context) {
 	jd.getDSList(true)
 	jd.getDSRangeList(true)
 
-	g, ctx := errgroup.WithContext(ctx)
+	g := jd.backgroundGroup
 
 	g.Go(misc.WithBugsnag(func() error {
-		jd.refreshDSListLoop(ctx)
-		return nil
-	}))
-	g.Go(misc.WithBugsnag(func() error {
-		jd.startBackupDSLoop(ctx)
-		return nil
-	}))
-	g.Go(misc.WithBugsnag(func() error {
-		jd.startMigrateDSLoop(ctx)
-		return nil
-	}))
-	g.Go(misc.WithBugsnag(func() error {
-		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)
+		jd.refreshDSListLoop(jd.backgroundCtx)
 		return nil
 	}))
 
-	g.Wait()
+	jd.startBackupDSLoop(ctx)
+	jd.startMigrateDSLoop(ctx)
+
+	g.Go(misc.WithBugsnag(func() error {
+		runArchiver(jd.backgroundCtx, jd.tablePrefix, jd.dbHandle)
+		return nil
+	}))
 }
 
 func (jd *HandleT) writerSetup(ctx context.Context) {
@@ -738,34 +731,25 @@ func (jd *HandleT) writerSetup(ctx context.Context) {
 		jd.addNewDS(appendToDsList, dataSetT{})
 	}
 
-	jd.addNewDSLoop(ctx)
+	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
+		jd.addNewDSLoop(jd.backgroundCtx)
+		return nil
+	}))
 }
 
 func (jd *HandleT) readerWriterSetup(ctx context.Context) {
 	jd.recoverFromJournal(Read)
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(misc.WithBugsnag(func() error {
-		jd.writerSetup(ctx)
+	jd.writerSetup(ctx)
+
+	jd.startBackupDSLoop(ctx)
+	jd.startMigrateDSLoop(ctx)
+
+	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
+		runArchiver(jd.backgroundCtx, jd.tablePrefix, jd.dbHandle)
 		return nil
 	}))
 
-	g.Go(misc.WithBugsnag(func() error {
-		jd.startBackupDSLoop(ctx)
-		return nil
-	}))
-
-	g.Go(misc.WithBugsnag(func() error {
-		jd.startMigrateDSLoop(ctx)
-		return nil
-	}))
-
-	g.Go(misc.WithBugsnag(func() error {
-		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)
-		return nil
-	}))
-
-	g.Wait()
 }
 
 type writeJob struct {
@@ -853,7 +837,7 @@ func (jd *HandleT) TearDown() {
 	jd.backgroundCancel()
 	close(jd.readChannel)
 	close(jd.writeChannel)
-	jd.backgroundWait()
+	jd.backgroundGroup.Wait()
 	jd.dbHandle.Close()
 }
 
