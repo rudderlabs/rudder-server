@@ -27,12 +27,6 @@ const (
 	UserTransformerStage        = "user_transformer"
 	DestTransformerStage        = "dest_transformer"
 	TrackingPlanValidationStage = "trackingPlan_validation"
-
-	RequiredMissing             = "Required-Missing"
-	DatatypeMismatch            = "Datatype-Mismatch"
-	AdditionalProperties        = "Additional-Properties"
-	UnknownViolation            = "Unknown-Violation"
-	UnplannedEvent              = "Unplanned-Event"
 )
 const supportedTransformerAPIVersion = 1
 
@@ -143,7 +137,6 @@ type ValidationErrorT struct {
 	Message string            `json:"message"`
 	Meta    map[string]string `json:"meta"`
 }
-
 
 func (trans *HandleT) transformWorker() {
 	tr := &http.Transport{}

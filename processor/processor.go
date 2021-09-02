@@ -583,7 +583,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
-func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transformer.TransformerEventT) {
+func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transformer.TransformerEventT, destination backendconfig.DestinationT) {
 	metadata := transformer.MetadataT{}
 	metadata.SourceType = commonMetadata.SourceType
 	metadata.SourceCategory = commonMetadata.SourceCategory
@@ -603,6 +603,8 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.EventName = commonMetadata.EventName
 	metadata.EventType = commonMetadata.EventType
 
+	metadata.DestinationID = destination.ID
+	metadata.DestinationType = destination.DestinationDefinition.Name
 	if event.SessionID != "" {
 		metadata.SessionID = event.SessionID
 	}
@@ -1039,7 +1041,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				shallowEventCopy.Message = singularEvent
 				shallowEventCopy.Message["request_ip"] = requestIP
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy)
+				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, backendconfig.DestinationT{})
 
 				eventType, ok := singularEvent["type"].(string)
 				if !ok {
@@ -1063,6 +1065,14 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				if proc.reporting != nil && proc.reportingEnabled {
 					//Grouping events by sourceid + destinationid + source batch id to find the count
 					key := fmt.Sprintf("%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID)
+					if _, ok := inCountMap[key]; !ok {
+						inCountMap[key] = 0
+					}
+					inCountMap[key] = inCountMap[key] + 1
+					if _, ok := inCountMetadataMap[key]; !ok {
+						inCountMetadataMap[key] = MetricMetadata{sourceID: commonMetadataFromSingularEvent.SourceID, sourceBatchID: commonMetadataFromSingularEvent.SourceBatchID, sourceTaskID: commonMetadataFromSingularEvent.SourceTaskID, sourceTaskRunID: commonMetadataFromSingularEvent.SourceTaskRunID, sourceJobID: commonMetadataFromSingularEvent.SourceJobID, sourceJobRunID: commonMetadataFromSingularEvent.SourceJobRunID}
+					}
+
 					cd, ok := connectionDetailsMap[key]
 					if !ok {
 						cd = types.CreateConnectionDetail(commonMetadataFromSingularEvent.SourceID, "", commonMetadataFromSingularEvent.SourceBatchID, commonMetadataFromSingularEvent.SourceTaskID, commonMetadataFromSingularEvent.SourceTaskRunID, commonMetadataFromSingularEvent.SourceJobID, commonMetadataFromSingularEvent.SourceJobRunID)
@@ -1120,13 +1130,15 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	// The below part further segregates events by sourceID and DestinationID.
 	for writeKeyT, eventList := range validatedEventsByWriteKey {
-		writeKey := string(writeKeyT)
-		backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
-		workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-		workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
 		for _, event := range eventList {
+			writeKey := string(writeKeyT)
 			singularEvent := event.Message
+
+			backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
+			workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+			workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
+
 			enabledDestinationsMap := map[string][]backendconfig.DestinationT{}
 			for _, destType := range enabledDestTypes {
 				enabledDestinationsList := getEnabledDestinations(writeKey, destType)
@@ -1152,7 +1164,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					if misc.ContainsString(customDestinations, destType) {
 						shallowEventCopy.Destination.Config = nil
 					}
-					srcAndDestKey := getKeyFromSourceAndDest(shallowEventCopy.Metadata.SourceID, shallowEventCopy.Metadata.DestinationID)
+
+					metadata := shallowEventCopy.Metadata
+					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
 					//We have at-least one event so marking it good
 					_, ok := groupedEvents[srcAndDestKey]
 					if !ok {
@@ -1163,7 +1177,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					if _, ok := uniqueMessageIdsBySrcDestKey[srcAndDestKey]; !ok {
 						uniqueMessageIdsBySrcDestKey[srcAndDestKey] = make(map[string]struct{})
 					}
-					uniqueMessageIdsBySrcDestKey[srcAndDestKey][event.Metadata.MessageID] = struct{}{}
+					uniqueMessageIdsBySrcDestKey[srcAndDestKey][metadata.MessageID] = struct{}{}
 				}
 			}
 		}
