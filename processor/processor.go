@@ -708,7 +708,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 	}
 
 	//REPORTING - START
-	if proc.reporting != nil && proc.reportingEnabled {
+	if proc.isReportingEnabled() {
 		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
 		var inPU, pu string
@@ -739,7 +739,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 }
 
 func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata, countMap map[string]int64, connectionDetailsMap map[string]*types.ConnectionDetails, statusDetailsMap map[string]*types.StatusDetail, event transformer.TransformerResponseT, status string, payload json.RawMessage) {
-	if proc.reporting != nil && proc.reportingEnabled {
+	if proc.isReportingEnabled() {
 		countKey := fmt.Sprintf("%s:%s:%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID)
 		if _, ok := countMap[countKey]; !ok {
 			countMap[countKey] = 0
@@ -834,7 +834,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 	}
 
 	//REPORTING - START
-	if proc.reporting != nil && proc.reportingEnabled {
+	if proc.isReportingEnabled() {
 		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
 		var inPU, pu string
@@ -1062,7 +1062,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				groupedEventsByWriteKey[WriteKeyT(writeKey)] = append(groupedEventsByWriteKey[WriteKeyT(writeKey)], shallowEventCopy)
 
 				//REPORTING - GATEWAY metrics - START
-				if proc.reporting != nil && proc.reportingEnabled {
+				if proc.isReportingEnabled() {
 					//Grouping events by sourceid + destinationid + source batch id to find the count
 					key := fmt.Sprintf("%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID)
 					if _, ok := inCountMap[key]; !ok {
@@ -1104,7 +1104,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 
 	//REPORTING - GATEWAY metrics - START
-	if proc.reporting != nil && proc.reportingEnabled {
+	if proc.isReportingEnabled() {
 		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 		for k, cd := range connectionDetailsMap {
 			m := &types.PUReportedMetric{
@@ -1128,12 +1128,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.validateEventsTime.End()
 
 	procErrorJobs = append(procErrorJobs, validatedErrorJobs...)
-
-	//REPORTING - START
-	if proc.reporting != nil && proc.reportingEnabled {
-		reportMetrics = append(reportMetrics, validatedReportMetrics...)
-	}
-	//REPORTING - END
+	reportMetrics = append(reportMetrics, validatedReportMetrics...)
 
 	// The below part further segregates events by sourceID and DestinationID.
 	for writeKeyT, eventList := range validatedEventsByWriteKey {
@@ -1222,7 +1217,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.trackingPlanEnabledMapLock.RUnlock()
 
 		//REPORTING - START
-		if proc.reporting != nil && proc.reportingEnabled {
+		if proc.isReportingEnabled() {
 			//Grouping events by sourceid + destinationid + source batch id to find the count
 			inCountMap = make(map[string]int64)
 			inCountMetadataMap = make(map[string]MetricMetadata)
@@ -1273,7 +1268,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: &destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
 
 			//REPORTING - START
-			if proc.reporting != nil && proc.reportingEnabled {
+			if proc.isReportingEnabled() {
 				diffMetrics := getDiffMetrics(types.GATEWAY, types.USER_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
 				reportMetrics = append(reportMetrics, successMetrics...)
 				reportMetrics = append(reportMetrics, failedMetrics...)
@@ -1415,7 +1410,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 
 		//REPORTING - PROCESSOR metrics - START
-		if proc.reporting != nil && proc.reportingEnabled {
+		if proc.isReportingEnabled() {
 			types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
 			var inPU string
@@ -1498,7 +1493,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
 		panic(err)
 	}
-	if proc.reporting != nil && proc.reportingEnabled {
+	if proc.isReportingEnabled() {
 		proc.reporting.Report(reportMetrics, txn)
 	}
 
@@ -1737,4 +1732,8 @@ func (proc *HandleT) Resume() {
 	}
 
 	proc.resumeChannel <- true
+}
+
+func (proc *HandleT) isReportingEnabled() bool {
+	return proc.reporting != nil && proc.reportingEnabled
 }

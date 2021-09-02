@@ -67,7 +67,7 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 		validatedErrorJobs = append(validatedErrorJobs, failedJobs...)
 
 		//REPORTING - START
-		if proc.reporting != nil && proc.reportingEnabled {
+		if proc.isReportingEnabled() {
 			//There will be no diff metrics for tracking plan validation
 			validatedReportMetrics = append(validatedReportMetrics, successMetrics...)
 			validatedReportMetrics = append(validatedReportMetrics, failedMetrics...)
