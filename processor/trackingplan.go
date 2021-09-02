@@ -17,6 +17,35 @@ type TrackingPlanT struct {
 	tpValidationTime           stats.RudderStats
 }
 
+func reportViolations(validateEvent *transformer.TransformerResponseT) {
+	if len(validateEvent.ValidationErrors) == 0 {
+		return
+	}
+	if len(validateEvent.Metadata.MergedTpConfig) == 0 || validateEvent.Metadata.MergedTpConfig["sourceSchemaConfig"] != true {
+		return
+	}
+	validationErrors := validateEvent.ValidationErrors
+	output := validateEvent.Output
+
+	pkgLogger.Errorf("%d errors reported", len(validationErrors))
+	pkgLogger.Error(validationErrors)
+
+	eventContext, castOk := output["context"].(map[string]interface{})
+	if castOk {
+		eventContext["violationErrors"] = validationErrors
+	}
+}
+
+func enhanceWithViolation(response transformer.ResponseT) {
+	for _, validatedEvent := range response.Events {
+		reportViolations(&validatedEvent)
+	}
+
+	for _, validatedEvent := range response.FailedEvents {
+		reportViolations(&validatedEvent)
+	}
+}
+
 func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[WriteKeyT][]transformer.TransformerEventT, []*types.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
 	var validatedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
 	var validatedReportMetrics = make([]*types.PUReportedMetric, 0)
@@ -48,6 +77,8 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
 			continue
 		}
+
+		enhanceWithViolation(response)
 
 		transformerEvent := eventList[0]
 		destination := transformerEvent.Destination
