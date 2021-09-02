@@ -737,10 +737,23 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 	if proc.reporting != nil && proc.reportingEnabled {
 		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
+		var inPU, pu string
+		if stage == transformer.UserTransformerStage {
+			if trackingPlanEnabled {
+				inPU = types.TRACKINGPLAN_VALIDATOR
+			} else {
+				inPU = types.GATEWAY
+			}
+			pu = types.USER_TRANSFORMER
+		} else if stage == transformer.TrackingPlanValidationStage {
+			inPU = types.GATEWAY
+			pu = types.TRACKINGPLAN_VALIDATOR
+		}
+
 		for k, cd := range connectionDetailsMap {
 			m := &types.PUReportedMetric{
 				ConnectionDetails: *cd,
-				PUDetails:         *types.CreatePUDetails(types.GATEWAY, types.USER_TRANSFORMER, false, false),
+				PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
 				StatusDetail:      statusDetailsMap[k],
 			}
 			successMetrics = append(successMetrics, m)
