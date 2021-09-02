@@ -91,6 +91,7 @@ type HandleT struct {
 	reporting                      types.ReportingI
 	reportingEnabled               bool
 	transformerFeatures            json.RawMessage
+	trackingPlanEnabledMapLock     sync.RWMutex
 }
 
 var defaultTransformerFeatures = `{
@@ -108,13 +109,6 @@ type DestStatT struct {
 	numOutputSuccessEvents stats.RudderStats
 	numOutputFailedEvents  stats.RudderStats
 	transformTime          stats.RudderStats
-}
-
-type TrackingPlanT struct {
-	numEvents                  stats.RudderStats
-	numValidationSuccessEvents stats.RudderStats
-	numValidationFailedEvents  stats.RudderStats
-	tpValidationTime           stats.RudderStats
 }
 
 type ParametersT struct {
@@ -144,6 +138,7 @@ type MetricMetadata struct {
 }
 
 type WriteKeyT string
+type SourceIDT string
 
 const USER_TRANSFORMATION = "USER_TRANSFORMATION"
 const DEST_TRANSFORMATION = "DEST_TRANSFORMATION"
@@ -201,29 +196,6 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 		numOutputSuccessEvents: numOutputSuccessEvents,
 		numOutputFailedEvents:  numOutputFailedEvents,
 		transformTime:          destTransform,
-	}
-}
-
-func (proc *HandleT) newValidationStat(metadata transformer.MetadataT) *TrackingPlanT {
-	tags := map[string]string{
-		"destination":         metadata.DestinationID,
-		"destType":            metadata.DestinationType,
-		"source":              metadata.SourceID,
-		"workspaceId":         metadata.WorkspaceID,
-		"trackingPlanId":      metadata.TrackingPlanId,
-		"trackingPlanVersion": strconv.Itoa(metadata.TrackingPlanVersion),
-	}
-
-	numEvents := proc.stats.NewTaggedStat("proc_num_tp_input_events", stats.CountType, tags)
-	numValidationSuccessEvents := proc.stats.NewTaggedStat("proc_num_tp_output_success_events", stats.CountType, tags)
-	numValidationFailedEvents := proc.stats.NewTaggedStat("proc_num_tp_output_failed_events", stats.CountType, tags)
-	tpValidationTime := proc.stats.NewTaggedStat("proc_tp_validation", stats.TimerType, tags)
-
-	return &TrackingPlanT{
-		numEvents:                  numEvents,
-		numValidationSuccessEvents: numValidationSuccessEvents,
-		numValidationFailedEvents:  numValidationFailedEvents,
-		tpValidationTime:           tpValidationTime,
 	}
 }
 
@@ -792,7 +764,7 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 	}
 }
 
-func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string, transformationEnabled bool,  trackingPlanEnabled bool) ([]*jobsdb.JobT, []*types.PUReportedMetric, map[string]int64) {
+func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMetaData transformer.MetadataT, eventsByMessageID map[string]types.SingularEventWithReceivedAt, stage string, transformationEnabled bool, trackingPlanEnabled bool) ([]*jobsdb.JobT, []*types.PUReportedMetric, map[string]int64) {
 	failedMetrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
@@ -971,10 +943,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
 	var groupedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
-	var validatedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
 	var eventsByMessageID = make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-	var sourceIDToTrackingPlan = make(map[string]bool)
+	var trackingPlanEnabledMap = make(map[SourceIDT]bool)
 
 	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
 		panic(fmt.Errorf("parsedEventList != nil and len(jobList):%d != len(parsedEventList):%d", len(jobList), len(parsedEventList)))
@@ -1140,83 +1111,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.marshalSingularEvents.End()
 
-	var startedAt, endedAt time.Time
-	var timeTaken float64
 	//Placing the trackingPlan validation filters here.
 	//Else further down events are duplicated by destId, so multiple validation takes places for same event
 	proc.validateEventsTime.Start()
-	for writeKey, eventList := range groupedEventsByWriteKey {
-		validationStat := proc.newValidationStat(eventList[0].Metadata)
-		validationStat.numEvents.Count(len(eventList))
-		proc.logger.Debug("Validation input size", len(eventList))
-
-		isTpExists := eventList[0].Metadata.TrackingPlanId != ""
-		if !isTpExists {
-			// pass on the jobs for transformation(User,Dest)
-			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
-			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
-			continue
-		}
-
-		validationStat.tpValidationTime.Start()
-		startedAt = time.Now()
-		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize)
-		endedAt = time.Now()
-		timeTaken = endedAt.Sub(startedAt).Seconds()
-		validationStat.tpValidationTime.End()
-
-
-		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
-		if (len(response.Events) + len(response.FailedEvents)) != len(eventList) {
-			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
-			//Capture metrics
-			continue
-		}
-
-		sourceID := eventList[0].Metadata.SourceID
-		destID := eventList[0].Metadata.DestinationID
-		destination := eventList[0].Destination
-		workspaceID := eventList[0].Metadata.WorkspaceID
-		commonMetaData := transformer.MetadataT{
-			SourceID:        sourceID,
-			SourceType:      eventList[0].Metadata.SourceType,
-			SourceCategory:  eventList[0].Metadata.SourceCategory,
-			WorkspaceID:     workspaceID,
-			Namespace:       config.GetKubeNamespace(),
-			InstanceID:      config.GetInstanceID(),
-			DestinationID:   destID,
-			DestinationType: destination.DestinationDefinition.Name,
-		}
-
-		sourceIDToTrackingPlan[sourceID] = true
-
-		var successMetrics []*types.PUReportedMetric
-		eventsToTransform, successMetrics, _, _ := proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.TrackingPlanValidationStage, sourceIDToTrackingPlan[sourceID])
-		failedJobs, failedMetrics, _ := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.TrackingPlanValidationStage, false, sourceIDToTrackingPlan[sourceID])
-		if _, ok := procErrorJobsByDestID[destID]; !ok {
-			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
-		}
-		procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
-		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
-		validationStat.numValidationFailedEvents.Count(len(failedJobs))
-		proc.logger.Debug("Validation output size", len(eventsToTransform))
-
-		//REPORTING - START
-		//There will be no diff metrics for tracking plan validation
-		if proc.reporting != nil && proc.reportingEnabled {
-			diffMetrics := make([]*types.PUReportedMetric, 0)
-			reportMetrics = append(reportMetrics, successMetrics...)
-			reportMetrics = append(reportMetrics, failedMetrics...)
-			reportMetrics = append(reportMetrics, diffMetrics...)
-		}
-		//REPORTING - END
-
-		if len(eventsToTransform) == 0 {
-			continue
-		}
-		validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
-		validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventsToTransform...)
-	}
+	validatedEventsByWriteKey := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID, procErrorJobsByDestID, trackingPlanEnabledMap, reportMetrics)
 	proc.validateEventsTime.End()
 	// tracking plan validation end
 
@@ -1276,6 +1174,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.destProcessing.Start()
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
+	var startedAt, endedAt time.Time
+	var timeTaken float64
 	for srcAndDestKey, eventList := range groupedEvents {
 		sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 		destination := eventList[0].Destination
@@ -1332,11 +1232,15 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			userTransformationStat.transformTime.End()
 			proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: timeTaken, Index: -1}, &proc.userTransformEventsByTimeTaken)
 
+			proc.trackingPlanEnabledMapLock.RLock()
+			trackingPlanEnabled := trackingPlanEnabledMap[SourceIDT(sourceID)]
+			proc.trackingPlanEnabledMapLock.RUnlock()
+
 			var successMetrics []*types.PUReportedMetric
 			var successCountMap map[string]int64
 			var successCountMetadataMap map[string]MetricMetadata
-			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.UserTransformerStage, sourceIDToTrackingPlan[sourceID])
-			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled, sourceIDToTrackingPlan[sourceID])
+			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.UserTransformerStage, trackingPlanEnabled)
+			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled, trackingPlanEnabled)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
@@ -1402,7 +1306,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		destTransformEventList := response.Events
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
 
-		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled, sourceIDToTrackingPlan[sourceID])
+		proc.trackingPlanEnabledMapLock.RLock()
+		trackingPlanEnabled := trackingPlanEnabledMap[SourceIDT(sourceID)]
+		proc.trackingPlanEnabledMapLock.RUnlock()
+
+		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled, trackingPlanEnabled)
 		destTransformationStat.numEvents.Count(len(eventsToTransform))
 		destTransformationStat.numOutputSuccessEvents.Count(len(destTransformEventList))
 		destTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
