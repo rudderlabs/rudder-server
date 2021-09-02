@@ -947,7 +947,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	var groupedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
 	var eventsByMessageID = make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-	var trackingPlanEnabledMap = make(map[SourceIDT]bool)
+	var procErrorJobs []*jobsdb.JobT
 
 	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
 		panic(fmt.Errorf("parsedEventList != nil and len(jobList):%d != len(parsedEventList):%d", len(jobList), len(parsedEventList)))
@@ -1124,9 +1124,16 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//Placing the trackingPlan validation filters here.
 	//Else further down events are duplicated by destId, so multiple validation takes places for same event
 	proc.validateEventsTime.Start()
-	validatedEventsByWriteKey := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID, procErrorJobsByDestID, trackingPlanEnabledMap, reportMetrics)
+	validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID)
 	proc.validateEventsTime.End()
-	// tracking plan validation end
+
+	procErrorJobs = append(procErrorJobs, validatedErrorJobs...)
+
+	//REPORTING - START
+	if proc.reporting != nil && proc.reportingEnabled {
+		reportMetrics = append(reportMetrics, validatedReportMetrics...)
+	}
+	//REPORTING - END
 
 	// The below part further segregates events by sourceID and DestinationID.
 	for writeKeyT, eventList := range validatedEventsByWriteKey {
@@ -1210,6 +1217,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		transformationEnabled := destinationTransformationEnabledMap[destID]
 		configSubscriberLock.RUnlock()
 
+		proc.trackingPlanEnabledMapLock.RLock()
+		trackingPlanEnabled := trackingPlanEnabledMap[SourceIDT(sourceID)]
+		proc.trackingPlanEnabledMapLock.RUnlock()
+
 		//REPORTING - START
 		if proc.reporting != nil && proc.reportingEnabled {
 			//Grouping events by sourceid + destinationid + source batch id to find the count
@@ -1245,10 +1256,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			timeTaken = endedAt.Sub(startedAt).Seconds()
 			userTransformationStat.transformTime.End()
 			proc.addToTransformEventByTimePQ(&TransformRequestT{Event: eventList, Stage: transformer.UserTransformerStage, ProcessingTime: timeTaken, Index: -1}, &proc.userTransformEventsByTimeTaken)
-
-			proc.trackingPlanEnabledMapLock.RLock()
-			trackingPlanEnabled := trackingPlanEnabledMap[SourceIDT(sourceID)]
-			proc.trackingPlanEnabledMapLock.RUnlock()
 
 			var successMetrics []*types.PUReportedMetric
 			var successCountMap map[string]int64
@@ -1319,10 +1326,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		destTransformEventList := response.Events
 		proc.logger.Debug("Dest Transform output size", len(destTransformEventList))
-
-		proc.trackingPlanEnabledMapLock.RLock()
-		trackingPlanEnabled := trackingPlanEnabledMap[SourceIDT(sourceID)]
-		proc.trackingPlanEnabledMapLock.RUnlock()
 
 		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.DestTransformerStage, transformationEnabled, trackingPlanEnabled)
 		destTransformationStat.numEvents.Count(len(eventsToTransform))
@@ -1415,10 +1418,17 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		if proc.reporting != nil && proc.reportingEnabled {
 			types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
-			inPU := types.GATEWAY
+			var inPU string
 			if transformationEnabled {
 				inPU = types.USER_TRANSFORMER
+			} else {
+				if trackingPlanEnabled {
+					inPU = types.TRACKINGPLAN_VALIDATOR
+				} else {
+					inPU = types.GATEWAY
+				}
 			}
+
 			for k, cd := range connectionDetailsMap {
 				m := &types.PUReportedMetric{
 					ConnectionDetails: *cd,
@@ -1466,7 +1476,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
 
-	var procErrorJobs []*jobsdb.JobT
+
 	for _, jobs := range procErrorJobsByDestID {
 		procErrorJobs = append(procErrorJobs, jobs...)
 	}

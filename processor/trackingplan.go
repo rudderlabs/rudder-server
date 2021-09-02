@@ -17,12 +17,12 @@ type TrackingPlanT struct {
 	tpValidationTime           stats.RudderStats
 }
 
-func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt, procErrorJobsByDestID map[string][]*jobsdb.JobT, trackingPlanEnabledMap map[SourceIDT]bool, reportMetrics []*types.PUReportedMetric) map[WriteKeyT][]transformer.TransformerEventT {
-	//validating with the tp here for every writeKey
+func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[WriteKeyT][]transformer.TransformerEventT, []*types.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
 	var validatedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
+	var validatedReportMetrics = make([]*types.PUReportedMetric, 0)
+	var validatedErrorJobs = make([]*jobsdb.JobT, 0)
+	var trackingPlanEnabledMap = make(map[SourceIDT]bool)
 
-	//Placing the trackingPlan validation filters here.
-	//Else further down events are duplicated by destId, so multiple validation takes places for same event
 	for writeKey, eventList := range groupedEventsByWriteKey {
 		validationStat := proc.newValidationStat(eventList[0].Metadata)
 		validationStat.numEvents.Count(len(eventList))
@@ -42,25 +42,17 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
 		if (len(response.Events) + len(response.FailedEvents)) != len(eventList) {
+			// This is a safety check we are adding so that if something unexpected comes from transformer
+			// We rae ignoring it.
+			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
 			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
-			//Capture metrics
 			continue
 		}
 
-		sourceID := eventList[0].Metadata.SourceID
-		destID := eventList[0].Metadata.DestinationID
-		destination := eventList[0].Destination
-		workspaceID := eventList[0].Metadata.WorkspaceID
-		commonMetaData := transformer.MetadataT{
-			SourceID:        sourceID,
-			SourceType:      eventList[0].Metadata.SourceType,
-			SourceCategory:  eventList[0].Metadata.SourceCategory,
-			WorkspaceID:     workspaceID,
-			Namespace:       config.GetKubeNamespace(),
-			InstanceID:      config.GetInstanceID(),
-			DestinationID:   destID,
-			DestinationType: destination.DestinationDefinition.Name,
-		}
+		transformerEvent := eventList[0]
+		destination := transformerEvent.Destination
+		sourceID := transformerEvent.Metadata.SourceID
+		commonMetaData := *makeCommonMetadataFromTransformerEvent(transformerEvent)
 
 		trackingPlanEnabledMap[SourceIDT(sourceID)] = true
 
@@ -72,16 +64,13 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 		validationStat.numValidationFailedEvents.Count(len(failedJobs))
 		proc.logger.Debug("Validation output size", len(eventsToTransform))
 
-		if _, ok := procErrorJobsByDestID[destID]; !ok {
-			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
-		}
-		procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], failedJobs...)
+		validatedErrorJobs = append(validatedErrorJobs, failedJobs...)
 
 		//REPORTING - START
 		if proc.reporting != nil && proc.reportingEnabled {
 			//There will be no diff metrics for tracking plan validation
-			reportMetrics = append(reportMetrics, successMetrics...)
-			reportMetrics = append(reportMetrics, failedMetrics...)
+			validatedReportMetrics = append(validatedReportMetrics, successMetrics...)
+			validatedReportMetrics = append(validatedReportMetrics, failedMetrics...)
 		}
 		//REPORTING - END
 
@@ -91,7 +80,22 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 		validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
 		validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventsToTransform...)
 	}
-	return validatedEventsByWriteKey
+	return validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap
+}
+
+func makeCommonMetadataFromTransformerEvent(transformerEvent transformer.TransformerEventT) *transformer.MetadataT {
+	metadata := transformerEvent.Metadata
+	commonMetaData := transformer.MetadataT{
+		SourceID:        metadata.SourceID,
+		SourceType:      metadata.SourceType,
+		SourceCategory:  metadata.SourceCategory,
+		WorkspaceID:     metadata.WorkspaceID,
+		Namespace:       config.GetKubeNamespace(),
+		InstanceID:      config.GetInstanceID(),
+		DestinationID:   metadata.DestinationID,
+		DestinationType: metadata.DestinationType,
+	}
+	return &commonMetaData
 }
 
 func (proc *HandleT) newValidationStat(metadata transformer.MetadataT) *TrackingPlanT {
