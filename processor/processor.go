@@ -700,7 +700,7 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 	}
 }
 
-func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, commonMetaData transformer.MetadataT, destination backendconfig.DestinationT) ([]transformer.TransformerEventT, []*types.PUReportedMetric, map[string]int64, map[string]MetricMetadata) {
+func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, commonMetaData transformer.MetadataT, destination backendconfig.DestinationT, stage string, trackingPlanEnabled bool) ([]transformer.TransformerEventT, []*types.PUReportedMetric, map[string]int64, map[string]MetricMetadata) {
 	successMetrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
@@ -1178,7 +1178,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		sourceIDToTrackingPlan[sourceID] = true
 
 		var successMetrics []*types.PUReportedMetric
-		eventsToTransform, successMetrics, _, _ := proc.getDestTransformerEvents(response, commonMetaData, destination)
+		eventsToTransform, successMetrics, _, _ := proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.TrackingPlanValidationStage, sourceIDToTrackingPlan[sourceID])
 		failedJobs, failedMetrics, _ := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.TrackingPlanValidationStage, false, sourceIDToTrackingPlan[sourceID])
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
@@ -1322,7 +1322,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			var successMetrics []*types.PUReportedMetric
 			var successCountMap map[string]int64
 			var successCountMetadataMap map[string]MetricMetadata
-			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination)
+			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.UserTransformerStage, sourceIDToTrackingPlan[sourceID])
 			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled, sourceIDToTrackingPlan[sourceID])
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
@@ -1531,7 +1531,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
 
-	// Populate successMetrics, failedMetrics, diffmetrics, failedJobs here and append it.
 	var procErrorJobs []*jobsdb.JobT
 	for _, jobs := range procErrorJobsByDestID {
 		procErrorJobs = append(procErrorJobs, jobs...)
