@@ -682,7 +682,10 @@ func (jd *HandleT) startBackupDSLoop(ctx context.Context) {
 }
 
 func (jd *HandleT) startMigrateDSLoop(ctx context.Context) {
-	jd.migrateDSLoop(ctx)
+	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
+		jd.migrateDSLoop(jd.backgroundCtx)
+		return nil
+	}))
 }
 
 func (jd *HandleT) readerSetup(ctx context.Context) {
