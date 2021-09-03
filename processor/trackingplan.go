@@ -10,7 +10,7 @@ import (
 	"strconv"
 )
 
-type TrackingPlanT struct {
+type TrackingPlanStatT struct {
 	numEvents                  stats.RudderStats
 	numValidationSuccessEvents stats.RudderStats
 	numValidationFailedEvents  stats.RudderStats
@@ -129,7 +129,7 @@ func makeCommonMetadataFromTransformerEvent(transformerEvent transformer.Transfo
 	return &commonMetaData
 }
 
-func (proc *HandleT) newValidationStat(metadata transformer.MetadataT) *TrackingPlanT {
+func (proc *HandleT) newValidationStat(metadata transformer.MetadataT) *TrackingPlanStatT {
 	tags := map[string]string{
 		"destination":         metadata.DestinationID,
 		"destType":            metadata.DestinationType,
@@ -144,7 +144,7 @@ func (proc *HandleT) newValidationStat(metadata transformer.MetadataT) *Tracking
 	numValidationFailedEvents := proc.stats.NewTaggedStat("proc_num_tp_output_failed_events", stats.CountType, tags)
 	tpValidationTime := proc.stats.NewTaggedStat("proc_tp_validation", stats.TimerType, tags)
 
-	return &TrackingPlanT{
+	return &TrackingPlanStatT{
 		numEvents:                  numEvents,
 		numValidationSuccessEvents: numValidationSuccessEvents,
 		numValidationFailedEvents:  numValidationFailedEvents,
