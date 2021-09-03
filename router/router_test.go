@@ -52,7 +52,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
-type context struct {
+type testContext struct {
 	asyncHelper     testutils.AsyncTestHelper
 	dbReadBatchSize int
 
@@ -63,7 +63,7 @@ type context struct {
 }
 
 // Initiaze mocks and common expectations
-func (c *context) Setup() {
+func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
@@ -82,7 +82,7 @@ func (c *context) Setup() {
 	c.dbReadBatchSize = 10000
 }
 
-func (c *context) Finish() {
+func (c *testContext) Finish() {
 	c.asyncHelper.WaitWithTimeout(testTimeout)
 	c.mockCtrl.Finish()
 }
@@ -93,11 +93,11 @@ var (
 )
 
 var _ = Describe("Router", func() {
-	var c *context
+	var c *testContext
 
 	BeforeEach(func() {
 		router_utils.JobRetention = time.Duration(175200) * time.Hour //20 Years(20*365*24)
-		c = &context{}
+		c = &testContext{}
 		c.Setup()
 
 		// setup static requirements of dependencies
