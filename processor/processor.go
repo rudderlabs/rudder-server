@@ -1121,14 +1121,19 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.marshalSingularEvents.End()
 
+	//TRACKING PLAN - START
 	//Placing the trackingPlan validation filters here.
 	//Else further down events are duplicated by destId, so multiple validation takes places for same event
 	proc.validateEventsTime.Start()
 	validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID)
 	proc.validateEventsTime.End()
 
+	// Appending validatedErrorJobs to procErrorJobs
 	procErrorJobs = append(procErrorJobs, validatedErrorJobs...)
+
+	// Appending validatedReportMetrics to reportMetrics
 	reportMetrics = append(reportMetrics, validatedReportMetrics...)
+	//TRACKING PLAN - END
 
 	// The below part further segregates events by sourceID and DestinationID.
 	for writeKeyT, eventList := range validatedEventsByWriteKey {

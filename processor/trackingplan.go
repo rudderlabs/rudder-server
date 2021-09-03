@@ -17,6 +17,9 @@ type TrackingPlanStatT struct {
 	tpValidationTime           stats.RudderStats
 }
 
+// reportViolations It is going add violationErrors in context depending upon certain criteria:
+// 1. ValidationErrors should not be empty
+// 2. sourceSchemaConfig in Metadata.MergedTpConfig should be true
 func reportViolations(validateEvent *transformer.TransformerResponseT) {
 	if len(validateEvent.ValidationErrors) == 0 {
 		return
@@ -36,6 +39,9 @@ func reportViolations(validateEvent *transformer.TransformerResponseT) {
 	}
 }
 
+// enhanceWithViolation It enhances extra information of ValidationErrors in context for:
+// 1. response.Events
+// 1. response.FailedEvents
 func enhanceWithViolation(response transformer.ResponseT) {
 	for _, validatedEvent := range response.Events {
 		reportViolations(&validatedEvent)
@@ -46,6 +52,10 @@ func enhanceWithViolation(response transformer.ResponseT) {
 	}
 }
 
+// validateEvents If the TrackingPlanId exist for a particular write key then we are going to Validate from the transformer.
+// The ResponseT will contain both the Events and FailedEvents
+// 1. eventsToTransform gets added to validatedEventsByWriteKey
+// 2. failedJobs gets added to validatedErrorJobs
 func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[WriteKeyT][]transformer.TransformerEventT, []*types.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
 	var validatedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
 	var validatedReportMetrics = make([]*types.PUReportedMetric, 0)
@@ -57,9 +67,10 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 		validationStat.numEvents.Count(len(eventList))
 		proc.logger.Debug("Validation input size", len(eventList))
 
+		// Checking if the tracking plan exists
 		isTpExists := eventList[0].Metadata.TrackingPlanId != ""
 		if !isTpExists {
-			// pass on the jobs for transformation(User,Dest)
+			// pass on the jobs for transformation(User, Dest)
 			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
 			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
 			continue
@@ -70,9 +81,9 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 		validationStat.tpValidationTime.End()
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
+		// This is a safety check we are adding so that if something unexpected comes from transformer
+		// We are ignoring it.
 		if (len(response.Events) + len(response.FailedEvents)) != len(eventList) {
-			// This is a safety check we are adding so that if something unexpected comes from transformer
-			// We rae ignoring it.
 			validatedEventsByWriteKey[writeKey] = make([]transformer.TransformerEventT, 0)
 			validatedEventsByWriteKey[writeKey] = append(validatedEventsByWriteKey[writeKey], eventList...)
 			continue
@@ -83,8 +94,10 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 		transformerEvent := eventList[0]
 		destination := transformerEvent.Destination
 		sourceID := transformerEvent.Metadata.SourceID
-		commonMetaData := *makeCommonMetadataFromTransformerEvent(transformerEvent)
+		commonMetaData := *makeCommonMetadataFromTransformerEvent(&transformerEvent)
 
+		// Set trackingPlanEnabledMap for the sourceID to true.
+		// This is being used to distinguish the flows in reporting service
 		trackingPlanEnabledMap[SourceIDT(sourceID)] = true
 
 		var successMetrics []*types.PUReportedMetric
@@ -114,7 +127,8 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 	return validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap
 }
 
-func makeCommonMetadataFromTransformerEvent(transformerEvent transformer.TransformerEventT) *transformer.MetadataT {
+// makeCommonMetadataFromTransformerEvent Creates a new MetadataT instance
+func makeCommonMetadataFromTransformerEvent(transformerEvent *transformer.TransformerEventT) *transformer.MetadataT {
 	metadata := transformerEvent.Metadata
 	commonMetaData := transformer.MetadataT{
 		SourceID:        metadata.SourceID,
@@ -129,6 +143,7 @@ func makeCommonMetadataFromTransformerEvent(transformerEvent transformer.Transfo
 	return &commonMetaData
 }
 
+// newValidationStat Creates a new TrackingPlanStatT instance
 func (proc *HandleT) newValidationStat(metadata transformer.MetadataT) *TrackingPlanStatT {
 	tags := map[string]string{
 		"destination":         metadata.DestinationID,
