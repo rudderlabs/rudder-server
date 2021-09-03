@@ -68,7 +68,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	if eventChoice == "PutEvents" {
 		input := personalizeevents.PutEventsInput{}
 		bytes := []byte(eventPayload)
-		err := json.Unmarshal(bytes, &input)
+		err = json.Unmarshal(bytes, &input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to putEvents input structure"
 		}
@@ -77,7 +77,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	} else if eventChoice == "PutUsers" {
 		input := personalizeevents.PutUsersInput{}
 		bytes := []byte(eventPayload)
-		err := json.Unmarshal(bytes, &input)
+		err = json.Unmarshal(bytes, &input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to putUsers input structure"
 		}
@@ -86,7 +86,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	} else {
 		input := personalizeevents.PutItemsInput{}
 		bytes := []byte(eventPayload)
-		err := json.Unmarshal(bytes, &input)
+		err = json.Unmarshal(bytes, &input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to putItems input structure"
 		}
