@@ -45,10 +45,12 @@ const (
 	REFRESH_TOKEN = "REFRESH_TOKEN"
 )
 
+// The response from the transformer network layer will be sent with a output property(in case of an error)
 type ErrorOutput struct {
 	Output ErrorResponse `json:"output"`
 }
 
+// This struct represents the datastructure present in Transformer network layer Error builder
 type ErrorResponse struct {
 	Message           string                 `json:"message"`
 	Destination       map[string]interface{} `json:"destination"`
@@ -107,7 +109,8 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 	}
 	res, err := json.Marshal(refTokenBody)
 	if err != nil {
-		panic(err)
+		// TODO: Is this way ok ? - Check with team
+		return http.StatusBadRequest, err.Error()
 	}
 	resp, refErr := authErrHandler.client.Post(refreshUrl, "application/json; charset=utf-8", bytes.NewBuffer(res))
 	if refErr != nil {
@@ -124,14 +127,19 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	destinationId := destination.ID
 	disableURL := fmt.Sprintf("%s/workspaces/%s/destinations/%s/disable", configBEURL, workspaceId, destinationId)
 	req, err := http.NewRequest(http.MethodDelete, disableURL, nil)
+	if err != nil {
+		// Abort on receiving an error in request formation
+		return http.StatusBadRequest, err.Error()
+	}
 	authErrHandler.logger.Debugf("[%s request] :: Disable Request sent : %s", loggerNm)
 	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
-	res, err := authErrHandler.client.Do(req)
+	res, doErr := authErrHandler.client.Do(req)
 	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
-	if err != nil {
-		panic(err)
+	if doErr != nil {
+		// Abort on receiving an error
+		return http.StatusBadRequest, err.Error()
 	}
-	statusCode, resp := authErrHandler.processResponse(res, err)
+	statusCode, resp := authErrHandler.processResponse(res, doErr)
 	authErrHandler.oauthErrHandlerReqTimerStat.End()
 	authErrHandler.logger.Debugf("[%s request] :: Disable Response received : %s", loggerNm)
 	return statusCode, resp

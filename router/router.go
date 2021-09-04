@@ -1869,33 +1869,44 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 
 	respStatusCode, respBodyTemp = rt.transformer.Send(val, rt.destName, accessToken)
 	if retryCount >= 2 {
+		// Retrial termination condition
 		return respStatusCode, respBodyTemp
 	}
-	fmt.Printf("SendToProxy Response Code: %d", respStatusCode)
-	fmt.Printf("SendToProxy Response: %s", respBodyTemp)
-	// Check the category
-	// Proxy request to Transformer to trigger the refresh endpoint/disable endpoint
-	// Or send request to config-be directly to avoid too many proxies\
+	fmt.Printf("SendToProxy Response Code: %d\n", respStatusCode)
+	fmt.Printf("SendToProxy Response: %s\n", respBodyTemp)
 	var errOutput oauth.ErrorOutput
 	if err := json.Unmarshal([]byte(respBodyTemp), &errOutput); err != nil {
+		// If respBodyTemp comes out with a string, then this will occur
+		// TODO: Should we send any other error here ?
 		return http.StatusInternalServerError, err.Error()
 	}
 	workspaceId := destinationJob.JobMetadataArray[0].WorkspaceId
 	var stCd int = 0
 	var res string = ""
+	// Check the category
+	// Trigger the refresh endpoint/disable endpoint
 	if errOutput.Output.AuthErrorCategory == oauth.DISABLE_DEST {
 		stCd, res = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
+		if stCd == 200 {
+			// Abort the jobs as the destination is disable
+			return http.StatusBadRequest, res
+		}
 	} else if errOutput.Output.AuthErrorCategory == oauth.REFRESH_TOKEN {
 		accountId := destinationJob.JobMetadataArray[0].AccountId
 		stCd, res = rt.oauth.RefreshToken(workspaceId, accountId, errOutput.Output.AccessToken)
+		if stCd == 200 && len(strings.TrimSpace(res)) > 0 {
+			retryCount += 1
+			// Retry with Refreshed Token(variable "res" - contains refreshed access token)
+			return rt.SendToTransformerProxyWithRetry(val, destinationJob, res, retryCount)
+		}
 	}
-	fmt.Printf("StatusCode: %d", stCd)
-	fmt.Printf("Response: %s", res)
+	fmt.Printf("StatusCode: %d\n", stCd)
+	fmt.Printf("Response: %s\n", res)
 
-	if stCd == 200 && len(strings.TrimSpace(res)) > 0 {
-		retryCount += 1
-		return rt.SendToTransformerProxyWithRetry(val, destinationJob, res, retryCount)
+	if stCd >= 400 && stCd < 600 {
+		// Client errors and Server errors
+		return stCd, res
 	}
 	// By default send the status code & response from destination directly
-	return statusCode, respBodyTemp
+	return respStatusCode, respBodyTemp
 }
