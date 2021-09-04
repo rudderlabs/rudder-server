@@ -425,3 +425,7 @@ func startRegulationPolling() {
 		pollRegulations()
 	})
 }
+
+func GetConfigBackendURL() string {
+	return configBackendURL
+}

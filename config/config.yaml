@@ -110,6 +110,10 @@ Router:
     forceHTTP1: true
     httpTimeout: 120s
     httpMaxIdleConnsPerHost: 32
+  INTERCOM:
+    transformerProxy: true
+  BQSTREAM:
+    transformerProxy: true
 BatchRouter:
   mainLoopSleep: 2s
   jobQueryBatchSize: 100000

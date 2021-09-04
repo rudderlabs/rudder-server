@@ -37,7 +37,7 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string)
+	Send(transformedData integrations.PostParametersT, destName string, accessToken string) (statusCode int, respBody string)
 }
 
 //NewTransformer creates a new transformer
@@ -153,8 +153,12 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string) {
+func (trans *HandleT) Send(transformedData integrations.PostParametersT, destName string, accessToken string) (statusCode int, respBody string) {
 
+	// This change is used for Re-trial mechanism
+	if isNotEmptyString(accessToken) {
+		transformedData.AccessToken = accessToken
+	}
 	rawJSON, err := json.Marshal(transformedData)
 	if err != nil {
 		panic(err)
@@ -213,4 +217,8 @@ func getRouterTransformURL() string {
 
 func getNetworkTransformerURL(destName string) string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/network/" + strings.ToLower(destName) + "/proxy"
+}
+
+func isNotEmptyString(s string) bool {
+	return len(strings.TrimSpace(s)) > 0
 }

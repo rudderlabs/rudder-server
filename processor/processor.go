@@ -121,6 +121,8 @@ type ParametersT struct {
 	SourceTaskRunID string `json:"source_task_run_id"`
 	SourceJobID     string `json:"source_job_id"`
 	SourceJobRunID  string `json:"source_job_run_id"`
+	WorkspaceId     string `json:"workspaceId"`
+	AccountId       string `json:"accountId"`
 }
 
 type MetricMetadata struct {
@@ -1219,6 +1221,19 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 		statusDetailsMap := make(map[string]*types.StatusDetail)
 		successCountMap := make(map[string]int64)
+
+		// This mapping is used to map destination with it's respective account for refresh token capability
+		destToAccountIdMapping := make(map[string]string)
+		for _, eventToTransform := range eventsToTransform {
+			// default value or if accountId doesn't exist or not convertible to string
+			destToAccountIdMapping[eventToTransform.Destination.ID] = ""
+			if x, found := eventToTransform.Destination.Config["accountId"]; found {
+				if accountId, ok := x.(string); ok {
+					destToAccountIdMapping[eventToTransform.Destination.ID] = accountId
+				}
+			}
+		}
+
 		//Save the JSON in DB. This is what the router uses
 		for _, destEvent := range destTransformEventList {
 			//Update metrics maps
@@ -1247,6 +1262,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			sourceTaskRunId := destEvent.Metadata.SourceTaskRunID
 			sourceJobId := destEvent.Metadata.SourceJobID
 			sourceJobRunId := destEvent.Metadata.SourceJobRunID
+			workspaceId := destEvent.Metadata.WorkspaceID
+			accountId := destToAccountIdMapping[destID]
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
 			if rudderID == "" {
@@ -1265,6 +1282,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				SourceTaskRunID: sourceTaskRunId,
 				SourceJobID:     sourceJobId,
 				SourceJobRunID:  sourceJobRunId,
+				WorkspaceId:     workspaceId, // Changed for Auth Error Implementation
+				AccountId:       accountId,   // Changed for Auth Error Implementation
 			}
 			marshalledParams, err := json.Marshal(params)
 			if err != nil {

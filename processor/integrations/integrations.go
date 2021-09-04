@@ -55,6 +55,7 @@ type PostParametersT struct {
 	QueryParams map[string]interface{} `json:"params"`
 	Body        map[string]interface{} `json:"body"`
 	Files       map[string]interface{} `json:"files"`
+	AccessToken string                 `json:"accessToken"`
 }
 
 // GetPostInfo parses the transformer response

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,6 +32,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -105,6 +107,7 @@ type HandleT struct {
 	reportingEnabled                       bool
 	savePayloadOnError                     bool
 	transformerProxy                       bool
+	oauth                                  oauth.Authorizer
 }
 
 type jobResponseT struct {
@@ -125,6 +128,8 @@ type JobParametersT struct {
 	SourceTaskRunID string `json:"source_task_run_id"`
 	SourceJobID     string `json:"source_job_id"`
 	SourceJobRunID  string `json:"source_job_run_id"`
+	WorkspaceId     string `json:"workspaceId"`
+	AccountId       string `json:"accountId"`
 }
 
 type workerMessageT struct {
@@ -343,6 +348,8 @@ func (worker *workerT) workerProcess() {
 				CreatedAt:        job.CreatedAt.Format(misc.RFC3339Milli),
 				FirstAttemptedAt: firstAttemptedAt,
 				TransformAt:      parameters.TransformAt,
+				AccountId:        parameters.AccountId,
+				WorkspaceId:      parameters.WorkspaceId,
 				JobT:             job}
 
 			worker.rt.configSubscriberLock.RLock()
@@ -550,6 +557,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
 					result := getIterableStruct(destinationJob.Message, transformAt)
+					fmt.Println(destinationJob)
 					for _, val := range result {
 						err := integrations.ValidatePostInfo(val)
 						if err != nil {
@@ -560,7 +568,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							pkgLogger.Infof(`transformerProxy status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
 							if worker.rt.transformerProxy {
 								pkgLogger.Infof(`routing via transformer, proxy enabled`)
-								respStatusCode, respBodyTemp = worker.rt.transformer.Send(val, worker.rt.destName)
+								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(val, destinationJob, "", 0)
 							} else {
 								pkgLogger.Infof(`routing via server, proxy disabled`)
 								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
@@ -1686,6 +1694,9 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.transformer = transformer.NewTransformer()
 	rt.transformer.Setup()
 
+	rt.oauth = oauth.NewOAuthErrorHandler()
+	rt.oauth.Setup()
+
 	var throttler throttler.HandleT
 	throttler.SetUp(rt.destName)
 	rt.throttler = &throttler
@@ -1848,4 +1859,43 @@ func (rt *HandleT) Resume() {
 	rt.generatorResumeChannel <- true
 
 	rt.paused = false
+}
+
+// Currently the retry logic has been implemented for only OAuth
+func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParametersT,
+	destinationJob types.DestinationJobT, accessToken string, retryCount int) (statusCode int, response string) {
+	var respStatusCode int
+	var respBodyTemp string
+
+	respStatusCode, respBodyTemp = rt.transformer.Send(val, rt.destName, accessToken)
+	if retryCount >= 2 {
+		return respStatusCode, respBodyTemp
+	}
+	fmt.Printf("SendToProxy Response Code: %d", respStatusCode)
+	fmt.Printf("SendToProxy Response: %s", respBodyTemp)
+	// Check the category
+	// Proxy request to Transformer to trigger the refresh endpoint/disable endpoint
+	// Or send request to config-be directly to avoid too many proxies\
+	var errOutput oauth.ErrorOutput
+	if err := json.Unmarshal([]byte(respBodyTemp), &errOutput); err != nil {
+		return http.StatusInternalServerError, err.Error()
+	}
+	workspaceId := destinationJob.JobMetadataArray[0].WorkspaceId
+	var stCd int = 0
+	var res string = ""
+	if errOutput.Output.AuthErrorCategory == oauth.DISABLE_DEST {
+		stCd, res = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
+	} else if errOutput.Output.AuthErrorCategory == oauth.REFRESH_TOKEN {
+		accountId := destinationJob.JobMetadataArray[0].AccountId
+		stCd, res = rt.oauth.RefreshToken(workspaceId, accountId, errOutput.Output.AccessToken)
+	}
+	fmt.Printf("StatusCode: %d", stCd)
+	fmt.Printf("Response: %s", res)
+
+	if stCd == 200 && len(strings.TrimSpace(res)) > 0 {
+		retryCount += 1
+		return rt.SendToTransformerProxyWithRetry(val, destinationJob, res, retryCount)
+	}
+	// By default send the status code & response from destination directly
+	return statusCode, respBodyTemp
 }
