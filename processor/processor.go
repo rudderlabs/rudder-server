@@ -75,6 +75,7 @@ type HandleT struct {
 	statLoopTime                   stats.RudderStats
 	eventSchemasTime               stats.RudderStats
 	validateEventsTime             stats.RudderStats
+	processJobsTime                stats.RudderStats
 	statSessionTransform           stats.RudderStats
 	statUserTransform              stats.RudderStats
 	statDestTransform              stats.RudderStats
@@ -269,6 +270,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statLoopTime = proc.stats.NewStat("processor.loop_time", stats.TimerType)
 	proc.eventSchemasTime = proc.stats.NewStat("processor.event_schemas_time", stats.TimerType)
 	proc.validateEventsTime = proc.stats.NewStat("processor.validate_events_time", stats.TimerType)
+	proc.processJobsTime = proc.stats.NewStat("processor.process_jobs_time", stats.TimerType)
 	proc.statSessionTransform = proc.stats.NewStat("processor.session_transform_time", stats.TimerType)
 	proc.statUserTransform = proc.stats.NewStat("processor.user_transform_time", stats.TimerType)
 	proc.statDestTransform = proc.stats.NewStat("processor.dest_transform_time", stats.TimerType)
@@ -935,7 +937,7 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 }
 
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
-
+	proc.processJobsTime.Start()
 	proc.pStatsJobs.Start()
 
 	proc.statNumRequests.Count(len(jobList))
@@ -1529,6 +1531,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
+	proc.processJobsTime.End()
 }
 
 func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT, filterUnsupportedMessageTypes bool) transformer.ResponseT {
