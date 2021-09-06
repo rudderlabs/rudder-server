@@ -11,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //DeliveryStatusT is a structure to hold everything related to event delivery
@@ -23,12 +22,15 @@ type DeliveryStatusT struct {
 	JobState      string          `json:"jobState"`
 	ErrorCode     string          `json:"errorCode"`
 	ErrorResponse json.RawMessage `json:"errorResponse"`
+	SentAt        string          `json:"sentAt"`
+	EventName     string          `json:"eventName"`
+	EventType     string          `json:"eventType"`
 }
 
 var uploadEnabledDestinationIDs map[string]bool
 var configSubscriberLock sync.RWMutex
 
-var uploader *debugger.Uploader
+var uploader debugger.UploaderI
 
 var (
 	configBackendURL                  string
@@ -59,9 +61,7 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 	}
 
 	// Check if destinationID part of enabled destinations
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
-	if _, ok := uploadEnabledDestinationIDs[destinationID]; !ok {
+	if !HasUploadEnabled(destinationID) {
 		return false
 	}
 
@@ -77,25 +77,26 @@ func HasUploadEnabled(destID string) bool {
 }
 
 //Setup initializes this module
-func Setup() {
-	url := fmt.Sprintf("%s/dataplane/eventDeliveryStatus", configBackendURL)
+func Setup(backendConfig backendconfig.BackendConfig) {
+	url := fmt.Sprintf("%s/dataplane/v2/eventDeliveryStatus", configBackendURL)
 	eventDeliveryStatusUploader := &EventDeliveryStatusUploader{}
 	uploader = debugger.New(url, eventDeliveryStatusUploader)
-	uploader.Setup()
+	uploader.Start()
 
 	rruntime.Go(func() {
-		backendConfigSubscriber()
+		backendConfigSubscriber(backendConfig)
 	})
 }
 
 func (eventDeliveryStatusUploader *EventDeliveryStatusUploader) Transform(data interface{}) ([]byte, error) {
 	deliveryStatusesBuffer := data.([]interface{})
-	res := make(map[string][]*DeliveryStatusT)
+	res := make(map[string]interface{})
+	res["version"] = "v2"
 	for _, j := range deliveryStatusesBuffer {
 		job := j.(*DeliveryStatusT)
 		var arr []*DeliveryStatusT
 		if value, ok := res[job.DestinationID]; ok {
-			arr = value
+			arr, _ = value.([]*DeliveryStatusT)
 		} else {
 			arr = make([]*DeliveryStatusT, 0)
 		}
@@ -105,7 +106,7 @@ func (eventDeliveryStatusUploader *EventDeliveryStatusUploader) Transform(data i
 
 	rawJSON, err := json.Marshal(res)
 	if err != nil {
-		misc.AssertErrorIfDev(err)
+		pkgLogger.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
 		return nil, err
 	}
 
@@ -127,9 +128,9 @@ func updateConfig(sources backendconfig.ConfigT) {
 	configSubscriberLock.Unlock()
 }
 
-func backendConfigSubscriber() {
+func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	configChannel := make(chan utils.DataEvent)
-	backendconfig.Subscribe(configChannel, "backendConfig")
+	backendConfig.Subscribe(configChannel, "backendConfig")
 	for {
 		config := <-configChannel
 		updateConfig(config.Data.(backendconfig.ConfigT))

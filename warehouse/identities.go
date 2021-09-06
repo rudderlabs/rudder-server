@@ -81,7 +81,7 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.War
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
 	found = true
-	upload.Schema = warehouseutils.JSONSchemaToMap(schema)
+	upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
 	return
 }
 
@@ -237,7 +237,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		DestinationID:   warehouse.Destination.ID,
 		DestinationType: wh.poulateHistoricIdentitiesDestType(),
 		Status:          Waiting,
-		Schema:          schema,
+		UploadSchema:    schema,
 	}
 
 	return upload
@@ -254,11 +254,11 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		return
 	}
 
-	setDestInProgress(warehouse, true)
+	wh.setDestInProgress(warehouse, 0)
 	setDestHistoricIdentitiesPopulateInProgress(warehouse, true)
 	rruntime.Go(func() {
 		var err error
-		defer setDestInProgress(warehouse, false)
+		defer wh.removeDestInProgress(warehouse)
 		defer setDestHistoricIdentitiesPopulateInProgress(warehouse, false)
 		defer setDestHistoricIndetitiesPopulated(warehouse)
 		defer wh.setFailedStat(warehouse, err)
