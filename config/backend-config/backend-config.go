@@ -215,11 +215,9 @@ func Init() {
 }
 
 func trackConfig(preConfig ConfigT, curConfig ConfigT) {
-	fmt.Println("Diagnostics", Diagnostics)
 	Diagnostics.DisableMetrics(curConfig.EnableMetrics)
 	if diagnostics.EnableConfigIdentifyMetric {
 		if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
-			fmt.Println("curConfig", curConfig.Sources[0].WorkspaceID)
 			Diagnostics.Identify(map[string]interface{}{
 				diagnostics.ConfigIdentify: curConfig.Sources[0].WorkspaceID,
 			})
