@@ -1,0 +1,2 @@
+-- Add owner test to Journal table
+ALTER TABLE {{$.Prefix}}_journal ADD COLUMN IF NOT EXISTS test TEXT NOT NULL DEFAULT '';
