@@ -1,0 +1,1 @@
+ALTER TABLE wh_table_uploads ADD COLUMN IF NOT EXISTS test TEXT;

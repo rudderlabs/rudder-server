@@ -1,0 +1,1 @@
+    ALTER TABLE reports ADD COLUMN IF NOT EXISTS parameters JSONB DEFAULT '{}'::JSONB;
