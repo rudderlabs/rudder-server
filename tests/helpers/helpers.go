@@ -53,22 +53,6 @@ type JSONDiffRow struct {
 	Got      interface{}
 }
 
-// // PrintJSONDiff prints JSONDiff to STDERR
-// func PrintJSONDiff(diff *JSONDiff) {
-// 	data := make([][]string, 0)
-
-// 	for _, r := range diff.Rows {
-// 		data = append(data, []string{r.Key, fmt.Sprintf("%s", r.Expected), fmt.Sprintf("%s", r.Got)})
-// 	}
-
-// 	table := tablewriter.NewWriter(os.Stderr)
-// 	table.SetHeader([]string{"Key", "Expected", "Got"})
-// 	for _, v := range data {
-// 		table.Append(v)
-// 	}
-// 	table.Render()
-// }
-
 // JSONIsSubset checks if a is a subset json of b
 func JSONIsSubset(a, b []byte) (bool, *JSONDiff, error) {
 	return jsonIsSubsetR(a, b, nil, nil)
