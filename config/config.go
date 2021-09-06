@@ -55,15 +55,12 @@ func Initialize() {
 }
 
 func Load() {
-	fmt.Println("Before godotenv.Load", os.Getenv("JOBS_DB_PORT"))
 	if err := godotenv.Load(); err != nil {
 		fmt.Println("INFO: No .env file found.")
 	}
-	fmt.Println("After godotenv.Load", os.Getenv("JOBS_DB_PORT"))
 	hotReloadableConfig = make(map[string]*ConfigVar)
 	nonHotReloadableConfig = make(map[string]*ConfigVar)
 	configPath := GetEnv("CONFIG_PATH", "./config/config.yaml")
-	fmt.Println("configPath", configPath)
 	viper.SetConfigFile(configPath)
 	err := viper.ReadInConfig() // Find and read the config file
 	UpdateConfig()
