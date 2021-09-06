@@ -1,3 +1,9 @@
+
+// This files implements integration tests for the rudder-server.
+// The code is responsible to run all dependencies using docker containers.
+// It then runs the service ensuring it is configurated to use the dependencies.
+// Finally, it sends events and observe the destinations expecting to get the events back.
+
 package main_test
 
 import (
