@@ -1,18 +1,18 @@
 {
     "enableMetrics": false,
-    "workspaceId": "1vLbwjZdDVeVeLGkTwjIxJmvo2i",
+    "workspaceId": "xxxyyyzzDVeVeLGkTwjIxJmvo2i",
     "sources":
     [
         {
             "config":
             {},
-            "id": "1xIcKieoEaEurW247ad9WYZLUyk",
+            "id": "xxxyyyzzEaEurW247ad9WYZLUyk",
             "name": "Dev Integration Test 1",
-            "writeKey": "1xIcKgyzyB1r6utKAtO6ejh8oKI",
+            "writeKey": "xxxyyyzzyB1r6utKAtO6ejh8oKI",
             "enabled": true,
-            "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
-            "createdBy": "1vLboECkueyoBz4jb7bRdOzDxai",
-            "workspaceId": "1vLbwjZdDVeVeLGkTwjIxJmvo2i",
+            "sourceDefinitionId": "xxxyyyzzpWDzNxgGUYzq9sZdZZB",
+            "createdBy": "xxxyyyzzueyoBz4jb7bRdOzDxai",
+            "workspaceId": "xxxyyyzzDVeVeLGkTwjIxJmvo2i",
             "deleted": false,
             "createdAt": "2021-08-27T06:33:00.305Z",
             "updatedAt": "2021-08-27T06:33:00.305Z",
@@ -26,10 +26,10 @@
                     },
                     "secretConfig":
                     {},
-                    "id": "1xIeMAYDP9kQfzOoKd1tuxchYAG",
+                    "id": "xxxyyyzzP9kQfzOoKd1tuxchYAG",
                     "name": "Des WebHook Integration Test 1",
                     "enabled": true,
-                    "workspaceId": "1vLbwjZdDVeVeLGkTwjIxJmvo2i",
+                    "workspaceId": "xxxyyyzzDVeVeLGkTwjIxJmvo2i",
                     "deleted": false,
                     "createdAt": "2021-08-27T06:49:38.546Z",
                     "updatedAt": "2021-08-27T06:49:38.546Z",
@@ -83,7 +83,7 @@
                         },
                         "configSchema": null,
                         "responseRules": null,
-                        "id": "1ZDvxpIGSOU9pLRavMf0GuVnWV3",
+                        "id": "xxxyyyzzSOU9pLRavMf0GuVnWV3",
                         "name": "WEBHOOK",
                         "displayName": "Webhook",
                         "category": null,
@@ -96,7 +96,7 @@
             ],
             "sourceDefinition":
             {
-                "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+                "id": "xxxyyyzzpWDzNxgGUYzq9sZdZZB",
                 "name": "HTTP",
                 "options": null,
                 "displayName": "HTTP",

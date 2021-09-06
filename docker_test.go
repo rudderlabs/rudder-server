@@ -180,28 +180,6 @@ func CreateTablePostgres() {
 	}
 }
 
-func VerifyHealth() {
-	url := fmt.Sprintf("http://localhost:%s/health", httpPort)
-	method := "GET"
-
-	client := &http.Client{}
-	req, err := http.NewRequest(method, url, nil)
-
-	if err != nil {
-		fmt.Println(err)
-	}
-	res, err := client.Do(req)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println(string(body))
-}
-
 func SendEvent() {
 	fmt.Println("Sending Track Event")
 	url := fmt.Sprintf("http://localhost:%s/v1/track", httpPort)
@@ -390,9 +368,6 @@ func run(m *testing.M) int {
 func TestWebhook(t *testing.T) {
 	//Testing postgres Client
 	CreateTablePostgres()
-
-	//  Test Rudder docker health point
-	VerifyHealth()
 
 	//
 	var err error
