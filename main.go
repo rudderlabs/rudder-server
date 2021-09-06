@@ -31,8 +31,10 @@ import (
 
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
+	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
 
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 
@@ -154,6 +156,8 @@ func runAllInit() {
 	transformer.Init()
 	webhook.Init()
 	batchrouter.Init()
+	asyncdestinationmanager.Init()
+	batchrouterutils.Init()
 	dedup.Init()
 	event_schema.Init()
 	event_schema.Init2()

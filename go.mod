@@ -25,7 +25,6 @@ require (
 	github.com/bugsnag/panicwrap v1.2.0 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.0.2
-	github.com/confluentinc/confluent-kafka-go v1.7.0 // indirect
 	github.com/containerd/continuity v0.1.0 // indirect
 	github.com/denisenkom/go-mssqldb v0.9.0
 	github.com/dgraph-io/badger/v2 v2.2007.2
@@ -34,19 +33,18 @@ require (
 	github.com/garyburd/redigo v1.6.0 // indirect
 	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/go-sql-driver/mysql v1.5.0
-	github.com/gofrs/uuid v3.2.0+incompatible
-	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/gofrs/uuid v3.2.0+incompatible // indirect
 	github.com/golang-migrate/migrate/v4 v4.11.0
 	github.com/golang/mock v1.5.0
 	github.com/golang/protobuf v1.5.0
 	github.com/gorilla/mux v1.7.4
+	github.com/gotestyourself/gotestyourself v2.2.0+incompatible // indirect
 	github.com/hashicorp/go-retryablehttp v0.6.6
 	github.com/hashicorp/yamux v0.0.0-20200609203250-aecfd211c9ce
-	github.com/iancoleman/strcase v0.0.0-20191112232945-16388991a334
+	github.com/iancoleman/strcase v0.1.3
 	github.com/jeremywohl/flatten v1.0.1
 	github.com/jinzhu/copier v0.3.2
 	github.com/joho/godotenv v1.3.0
-	github.com/konsorten/go-windows-terminal-sequences v1.0.3 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.3.0
 	github.com/mattn/go-ieproxy v0.0.0-20200203040449-2dbc853185d9 // indirect
@@ -67,8 +65,6 @@ require (
 	github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c // indirect
 	github.com/segmentio/ksuid v1.0.2
 	github.com/snowflakedb/gosnowflake v1.3.4
-	github.com/spaolacci/murmur3 v1.1.0
-	github.com/spf13/afero v1.2.2 // indirect
 	github.com/spf13/cast v1.3.1
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
@@ -79,6 +75,7 @@ require (
 	github.com/tidwall/pretty v1.0.1 // indirect
 	github.com/tidwall/sjson v1.0.4
 	github.com/xdg/scram v1.0.3
+	github.com/xitongsys/parquet-go v1.6.1-0.20210531003158-8ed615220b7d
 	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
 	go.uber.org/multierr v1.5.0 // indirect
 	go.uber.org/zap v1.14.0
@@ -91,8 +88,8 @@ require (
 	google.golang.org/protobuf v1.26.0
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
-	gopkg.in/confluentinc/confluent-kafka-go.v1 v1.7.0 // indirect
 	gopkg.in/ini.v1 v1.52.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v2 v2.4.0 // indirect
+	gotest.tools v2.2.0+incompatible // indirect
 )

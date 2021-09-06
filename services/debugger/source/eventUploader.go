@@ -57,14 +57,14 @@ type EventUploader struct {
 }
 
 //Setup initializes this module
-func Setup() {
-	url := fmt.Sprintf("%s/dataplane/eventUploads", configBackendURL)
+func Setup(backendConfig backendconfig.BackendConfig) {
+	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", configBackendURL)
 	eventUploader := &EventUploader{}
 	uploader = debugger.New(url, eventUploader)
 	uploader.Start()
 
 	rruntime.Go(func() {
-		backendConfigSubscriber()
+		backendConfigSubscriber(backendConfig)
 	})
 }
 
@@ -89,7 +89,8 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 
 func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) {
 	eventBuffer := data.([]interface{})
-	res := make(map[string][]EventUploadT)
+	res := make(map[string]interface{})
+	res["version"] = "v2"
 	for _, e := range eventBuffer {
 		event := e.(*GatewayEventBatchT)
 		batchedEvent := EventUploadBatchT{}
@@ -107,16 +108,22 @@ func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) 
 
 		var arr []EventUploadT
 		if value, ok := res[batchedEvent.WriteKey]; ok {
-			arr = value
+			arr, _ = value.([]EventUploadT)
 		} else {
 			arr = make([]EventUploadT, 0)
 		}
 
 		for _, ev := range batchedEvent.Batch {
 			// add the receivedAt time to each event
-			ev["receivedAt"] = receivedAtStr
-
-			arr = append(arr, ev)
+			event := map[string]interface{}{
+				"payload":       ev,
+				"receivedAt":    receivedAtStr,
+				"eventName":     misc.GetStringifiedData(ev["event"]),
+				"eventType":     misc.GetStringifiedData(ev["type"]),
+				"errorResponse": make(map[string]interface{}),
+				"errorCode":     200,
+			}
+			arr = append(arr, event)
 		}
 
 		res[batchedEvent.WriteKey] = arr
@@ -144,9 +151,9 @@ func updateConfig(sources backendconfig.ConfigT) {
 	configSubscriberLock.Unlock()
 }
 
-func backendConfigSubscriber() {
+func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	configChannel := make(chan utils.DataEvent)
-	backendconfig.Subscribe(configChannel, backendconfig.TopicProcessConfig)
+	backendConfig.Subscribe(configChannel, backendconfig.TopicProcessConfig)
 	for {
 		config := <-configChannel
 		updateConfig(config.Data.(backendconfig.ConfigT))
