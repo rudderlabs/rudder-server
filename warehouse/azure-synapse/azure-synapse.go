@@ -240,8 +240,8 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
 	extraColumns := []string{}
-	for _, column := range previousColumnKeys{
-		if !misc.ContainsString(sortedColumnKeys, column){
+	for _, column := range previousColumnKeys {
+		if !misc.ContainsString(sortedColumnKeys, column) {
 			extraColumns = append(extraColumns, column)
 		}
 	}
@@ -409,7 +409,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			// This is needed for the copyIn to proceed successfully for azure synapse else will face below err for missing old columns
 			// mssql: Column count in target table does not match column count specified in input.
 			// If BCP command, ensure format file column count matches destination table. If SSIS data import, check column mappings are consistent with target.
-			for range extraColumns{
+			for range extraColumns {
 				finalColumnValues = append(finalColumnValues, nil)
 			}
 			_, err = stmt.Exec(finalColumnValues...)

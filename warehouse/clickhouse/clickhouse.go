@@ -163,7 +163,6 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 	return db, nil
 }
 
-
 func loadConfig() {
 	config.RegisterStringConfigVariable("false", &queryDebugLogs, true, "Warehouse.clickhouse.queryDebugLogs")
 	config.RegisterStringConfigVariable("1000", &blockSize, true, "Warehouse.clickhouse.blockSize")
