@@ -129,7 +129,7 @@ Warehouse:
   minUploadBackoff: 60s
   maxUploadBackoff: 1800s
   warehouseSyncPreFetchCount: 10
-  warehouseSyncFreqIgnore: true
+  warehouseSyncFreqIgnore: false
   stagingFilesBatchSize: 960
   enableIDResolution: false
   populateHistoricIdentities: false
