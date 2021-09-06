@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest"
@@ -36,15 +35,14 @@ import (
 )
 
 var (
-	hold        bool = true
-	db          *sql.DB
-	redisClient *redis.Client
-	DB_DSN      = "root@tcp(127.0.0.1:3306)/service"
-	httpPort    string
-	dbHandle    *sql.DB
-	sourceJSON  backendconfig.ConfigT
-	webhookurl  string
-	webhook     *WebhookRecorder
+	hold       bool = true
+	db         *sql.DB
+	DB_DSN     = "root@tcp(127.0.0.1:3306)/service"
+	httpPort   string
+	dbHandle   *sql.DB
+	sourceJSON backendconfig.ConfigT
+	webhookurl string
+	webhook    *WebhookRecorder
 )
 
 type WebhookRecorder struct {
@@ -294,32 +292,6 @@ func run(m *testing.M) int {
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
 	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
-
-	// pulls an redis image, creates a container based on it and runs it
-	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
-	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
-	}
-	defer func() {
-		if err := pool.Purge(resourceRedis); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		address := fmt.Sprintf("localhost:%s", resourceRedis.GetPort("6379/tcp"))
-		redisClient = redis.NewClient(&redis.Options{
-			Addr:     address,
-			Password: "",
-			DB:       0,
-		})
-
-		pong, err := redisClient.Ping().Result()
-		fmt.Println(pong, err)
-		return err
-	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 
