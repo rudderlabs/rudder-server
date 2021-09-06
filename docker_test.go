@@ -434,7 +434,8 @@ func run(m *testing.M) int {
 	code := m.Run()
 	blockOnHold()
 
-	svcCancel()
+	_ = svcCancel
+	// TODO: svcCancel() - don't cancel service until graceful termination is implemented
 	fmt.Println("test done, ignore errors bellow:")
 
 	// // wait for the service to be stopped

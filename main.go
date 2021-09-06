@@ -185,7 +185,6 @@ func main() {
 
 		<-c
 		cancel()
-		close(c)
 	}()
 
 	Run(ctx)
@@ -260,7 +259,7 @@ func Run(ctx context.Context) {
 			logger.Log.Sync()
 		}
 		stats.StopRuntimeStats()
-		// os.Exit(1) FIXME - why we are doing this ?
+		os.Exit(1)
 	}()
 
 	rruntime.Go(admin.StartServer)
