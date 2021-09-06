@@ -86,46 +86,6 @@ func (whr *WebhookRecorder) Close() {
 	whr.Server.Close()
 }
 
-type WebHook struct {
-	Data []struct {
-		UUID      string      `json:"uuid"`
-		Type      string      `json:"type"`
-		TokenID   string      `json:"token_id"`
-		IP        string      `json:"ip"`
-		Hostname  string      `json:"hostname"`
-		Method    string      `json:"method"`
-		UserAgent string      `json:"user_agent"`
-		Content   string      `json:"content"`
-		Query     interface{} `json:"query"`
-		Headers   struct {
-			Connection     []string `json:"connection"`
-			AcceptEncoding []string `json:"accept-encoding"`
-			ContentType    []string `json:"content-type"`
-			ContentLength  []string `json:"content-length"`
-			UserAgent      []string `json:"user-agent"`
-			Host           []string `json:"host"`
-		} `json:"headers"`
-		URL                string        `json:"url"`
-		Size               int           `json:"size"`
-		Files              []interface{} `json:"files"`
-		CreatedAt          string        `json:"created_at"`
-		UpdatedAt          string        `json:"updated_at"`
-		Sorting            int64         `json:"sorting"`
-		CustomActionOutput []interface{} `json:"custom_action_output"`
-	} `json:"data"`
-	Total       int  `json:"total"`
-	PerPage     int  `json:"per_page"`
-	CurrentPage int  `json:"current_page"`
-	IsLastPage  bool `json:"is_last_page"`
-	From        int  `json:"from"`
-	To          int  `json:"to"`
-}
-
-type Author struct {
-	Name string `json:"name"`
-	Age  int    `json:"age"`
-}
-
 func getWorkspaceConfig() backendconfig.ConfigT {
 	backendConfig := new(backendconfig.WorkspaceConfig)
 	sourceJSON, _ := backendConfig.Get()
