@@ -5,25 +5,25 @@ import (
 	"encoding/json"
 	"strconv"
 	"time"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/tests/helpers"
-	// uuid "github.com/satori/go.uuid"
+	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
 var dbHandle *sql.DB
 var gatewayDBPrefix string
- var routerDBPrefix string
+var routerDBPrefix string
 var dbPollFreqInS int = 1
 var gatewayDBCheckBufferInS int = 15
 var jobSuccessStatus string = "succeeded"
 
 var _ = BeforeSuite(func() {
-	time.Sleep(300 * time.Second)
 	var err error
 	psqlInfo := jobsdb.GetConnectionString()
 	dbHandle, err = sql.Open("postgres", psqlInfo)
@@ -48,22 +48,22 @@ var _ = Describe("E2E", func() {
 				//Source id for the above writekey is 1Yc6YceKLOcUYk8je9B0GQ65mmL
 				switch eventType {
 				case "BATCH":
-					helpers.SendBatchRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.BatchPayload, "batch.0.messageId"))
+					helpers.SendBatchRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.BatchPayload, "batch.0.messageId", "batch.0.anonymousId"))
 				case "IDENTIFY":
-					helpers.SendIdentifyRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.IdentifyPayload, "messageId"))
+					helpers.SendIdentifyRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.IdentifyPayload, "messageId", "anonymousId"))
 				case "GROUP":
-					helpers.SendGroupRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.GroupPayload, "messageId" ))
+					helpers.SendGroupRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.GroupPayload, "messageId", "anonymousId"))
 				case "TRACK":
-					helpers.SendTrackRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.TrackPayload, "messageId"))
+					helpers.SendTrackRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.TrackPayload, "messageId", "anonymousId"))
 				case "SCREEN":
-					helpers.SendScreenRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.ScreenPayload, "messageId"))
+					helpers.SendScreenRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.ScreenPayload, "messageId", "anonymousId"))
 				case "PAGE":
-					helpers.SendPageRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.PagePayload, "messageId"))
+					helpers.SendPageRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.PagePayload, "messageId", "anonymousId"))
 				case "ALIAS":
-					helpers.SendAliasRequest("1tfJVG2Qg6th77G66NfX8btMtTN", helpers.RemoveKeyFromJSON(helpers.AliasPayload, "messageId" ))
+					helpers.SendAliasRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.AliasPayload, "messageId", "anonymousId"))
 
 				}
-				time.Sleep(10 * time.Second)
+
 				Eventually(func() int {
 					return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
@@ -84,10 +84,10 @@ var _ = Describe("E2E", func() {
 						writeKey:      true,
 						"requestIP":   len(requestIP) > 0,
 						"receivedAt":  len(receivedAt) > 0}
-				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(map[string]bool{"1tfJVBeOdz78EK9JAHrcmQD9Kwj": true,
+				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(map[string]bool{"1Yc6YceKLOcUYk8je9B0GQ65mmL": true,
 					"messageId":                   true,
 					"anonymousId":                 true,
-					"1tfJVG2Qg6th77G66NfX8btMtTN": true,
+					"1Yc6YbOGg6U2E8rlj97ZdOawPyr": true,
 					"requestIP":                   true,
 					"receivedAt":                  true}))
 			}
@@ -146,7 +146,7 @@ var _ = Describe("E2E", func() {
 					keys[i] = s
 					i++
 				}
-				return helpers.SameStringSlice([]string{"BuildDate", "BuiltBy", "Commit", "GitUrl", "Major", "Minor", "Patch", "TransformerVersion", "Version"}, keys)
+				return helpers.SameStringSlice([]string{"BuildDate", "BuiltBy", "Commit", "GitUrl", "Major", "Minor", "Patch", "Version"}, keys)
 			}, 2, dbPollFreqInS).Should(Equal(true))
 		})
 
@@ -157,7 +157,7 @@ var _ = Describe("E2E", func() {
 
 			//Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations.
 			helpers.SendEventRequest(helpers.EventOptsT{
-				WriteKey: "1tfJVG2Qg6th77G66NfX8btMtTN",
+				WriteKey: "1Yc6YbOGg6U2E8rlj97ZdOawPyr",
 			})
 
 			// wait for some seconds for events to be processed by gateway
@@ -170,16 +170,15 @@ var _ = Describe("E2E", func() {
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 1))
 		})
 
-		// Source with WriteKey: 1YcF00dWZXGjWpSIkfFnbGuI6OI has one GA and one AMPLITUDE as destinations.
-		It("should create router job for both GA and WEBHOOK for single event request", func() {
+		//Source with WriteKey: 1YcF00dWZXGjWpSIkfFnbGuI6OI has one GA and one AMPLITUDE as destinations.
+		It("should create router job for both GA and AM for single event request", func() {
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			//initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 			helpers.SendEventRequest(helpers.EventOptsT{
-				WriteKey: "1uL2Hd7h90uuNYwjGQx0G0nGCHe",
+				WriteKey: "1YcF00dWZXGjWpSIkfFnbGuI6OI",
 			})
-
 			// wait for some seconds for events to be processed by gateway
-			time.Sleep(10 * time.Second)
+			time.Sleep(6 * time.Second)
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 2))
@@ -190,7 +189,7 @@ var _ = Describe("E2E", func() {
 					customVals = append(customVals, job.CustomVal)
 				}
 				return customVals
-			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(SatisfyAny(Or(BeEquivalentTo([]string{"GA", "WEBHOOK"}), BeEquivalentTo([]string{"WEBHOOK", "GA"}))))
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(SatisfyAny(Or(BeEquivalentTo([]string{"GA", "AM"}), BeEquivalentTo([]string{"AM", "GA"}))))
 		})
 
 		It("should not create job with invalid write key", func() {
@@ -212,7 +211,7 @@ var _ = Describe("E2E", func() {
 				})
 			}
 			// wait for some seconds for events to be processed by gateway
-			time.Sleep(25 * time.Second)
+			time.Sleep(6 * time.Second)
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, routerDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + numOfTestEvents))
@@ -221,66 +220,62 @@ var _ = Describe("E2E", func() {
 				if index == 0 {
 					continue
 				}
-				result1, _ := strconv.Atoi(gjson.Get(string(jobs[index].EventPayload), "params.value").String())
-				result2, _ := strconv.Atoi(gjson.Get(string(jobs[index-1].EventPayload), "params.value").String())
+				result1, _ := strconv.Atoi(gjson.Get(string(jobs[index].EventPayload), "params.ev").String())
+				result2, _ := strconv.Atoi(gjson.Get(string(jobs[index-1].EventPayload), "params.ev").String())
 				Expect(result1).Should(BeNumerically("<", result2))
 			}
 		})
 
-		// It("should dedup duplicate events", func() {
-		// 	sampleID := uuid.NewV4().String()
+		It("should dedup duplicate events", func() {
+			sampleID := uuid.NewV4().String()
 
-		// 	initGatewayJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
-		// 	helpers.SendEventRequest(helpers.EventOptsT{
-		// 		MessageID: sampleID,
-		// 	})
-		// 	time.Sleep(10 * time.Second)
-		// 	Eventually(func() int {
-		// 		return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-		// 	}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
+			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			helpers.SendEventRequest(helpers.EventOptsT{
+				MessageID: sampleID,
+			})
+			Eventually(func() int {
+				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
 
-		// 	// send 2 events and verify event with prev messageID is dropped
-		// 	currentGatewayJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
-		// 	helpers.SendEventRequest(helpers.EventOptsT{
-		// 		MessageID: sampleID,
-		// 	})
-		// 	time.Sleep(10 * time.Second)
-		// 	helpers.SendEventRequest(helpers.EventOptsT{
-		// 		MessageID: uuid.NewV4().String(),
-		// 	})
-		// 	time.Sleep(10 * time.Second)
-		// 	Consistently(func() int {
-		// 		return helpers.GetJobsCount(dbHandle, routerDBPrefix)
-		// 	}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
-		// })
+			// send 2 events and verify event with prev messageID is dropped
+			currentGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			helpers.SendEventRequest(helpers.EventOptsT{
+				MessageID: sampleID,
+			})
+			helpers.SendEventRequest(helpers.EventOptsT{
+				MessageID: uuid.NewV4().String(),
+			})
+			Consistently(func() int {
+				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
+		})
 
-		// It("should dedup duplicate events only till specified TTL", func() {
-		// 	sampleID := uuid.NewV4().String()
+		It("should dedup duplicate events only till specified TTL", func() {
+			sampleID := uuid.NewV4().String()
 
-		// 	initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
-		// 	helpers.SendEventRequest(helpers.EventOptsT{
-		// 		MessageID: sampleID,
-		// 	})
-		// 	// time.Sleep(5 * time.Second)
-		// 	helpers.SendEventRequest(helpers.EventOptsT{
-		// 		MessageID: sampleID,
-		// 	})
-		// 	Eventually(func() int {
-		// 		return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
-		// 	}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
+			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			helpers.SendEventRequest(helpers.EventOptsT{
+				MessageID: sampleID,
+			})
+			helpers.SendEventRequest(helpers.EventOptsT{
+				MessageID: sampleID,
+			})
+			Eventually(func() int {
+				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initGatewayJobsCount + 1))
 
-		// 	// send 2 events and verify event with prev messageID is dropped
-		// 	currentGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
-		// 	// wait for 5 seconds for messageID to exceed its TTL
-		// 	time.Sleep(5 * time.Second)
-		// 	helpers.SendEventRequest(helpers.EventOptsT{
-		// 		MessageID: sampleID,
-		// 	})
-		// 	Eventually(func() int {
-		// 		return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
-		// 	}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
+			// send 2 events and verify event with prev messageID is dropped
+			currentGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			// wait for 5 seconds for messageID to exceed its TTL
+			time.Sleep(5 * time.Second)
+			helpers.SendEventRequest(helpers.EventOptsT{
+				MessageID: sampleID,
+			})
+			Eventually(func() int {
+				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
+			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
 
-		// })
+		})
 
 	})
 

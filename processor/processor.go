@@ -1323,7 +1323,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsDBW.Start()
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
-		fmt.Println(destJobs)
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 		err := proc.routerDB.Store(destJobs)
 		if err != nil {
@@ -1334,7 +1333,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.statDestNumOutputEvents.Count(len(destJobs))
 	}
 	if len(batchDestJobs) > 0 {
-		fmt.Println(batchDestJobs)
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 		err := proc.batchRouterDB.Store(batchDestJobs)
 		if err != nil {

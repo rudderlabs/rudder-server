@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
-
-	// "github.com/rudderlabs/rudder-server/config"
 )
 
 type jsonReader struct {
