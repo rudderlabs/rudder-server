@@ -1250,6 +1250,16 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		destTransformationStat.numOutputSuccessEvents.Count(len(destTransformEventList))
 		destTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
 
+		if len(failedJobs) > 0 {
+			txn := proc.errorDB.BeginGlobalTransaction()
+			jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
+			for _, failedJob := range failedJobs {
+				router.SaveSourceFailedEvents(failedJob.Parameters, jobRunIDAbortedEventsMap)
+			}
+			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
+			proc.errorDB.CommitTransaction(txn)
+		}
+
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 		}
