@@ -92,7 +92,6 @@ type HandleT struct {
 	reporting                      types.ReportingI
 	reportingEnabled               bool
 	transformerFeatures            json.RawMessage
-	trackingPlanEnabledMapLock     sync.RWMutex
 }
 
 var defaultTransformerFeatures = `{
@@ -1219,9 +1218,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		transformationEnabled := destinationTransformationEnabledMap[destID]
 		configSubscriberLock.RUnlock()
 
-		proc.trackingPlanEnabledMapLock.RLock()
 		trackingPlanEnabled := trackingPlanEnabledMap[SourceIDT(sourceID)]
-		proc.trackingPlanEnabledMapLock.RUnlock()
 
 		//REPORTING - START
 		if proc.isReportingEnabled() {
