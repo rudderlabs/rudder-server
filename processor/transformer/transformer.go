@@ -31,26 +31,26 @@ const (
 const supportedTransformerAPIVersion = 1
 
 type MetadataT struct {
-	SourceID            string                 `json:"sourceId"`
-	WorkspaceID         string                 `json:"workspaceId"`
-	Namespace           string                 `json:"namespace"`
-	InstanceID          string                 `json:"instanceId"`
-	SourceType          string                 `json:"sourceType"`
-	SourceCategory      string                 `json:"sourceCategory"`
-	TrackingPlanId      string                 `json:"trackingPlanId"`
-	TrackingPlanVersion int                    `json:"trackingPlanVersion"`
+	SourceID            string                            `json:"sourceId"`
+	WorkspaceID         string                            `json:"workspaceId"`
+	Namespace           string                            `json:"namespace"`
+	InstanceID          string                            `json:"instanceId"`
+	SourceType          string                            `json:"sourceType"`
+	SourceCategory      string                            `json:"sourceCategory"`
+	TrackingPlanId      string                            `json:"trackingPlanId"`
+	TrackingPlanVersion int                               `json:"trackingPlanVersion"`
 	SourceTpConfig      map[string]map[string]interface{} `json:"sourceTpConfig"`
-	MergedTpConfig      map[string]interface{} `json:"mergedTpConfig"`
-	DestinationID       string                 `json:"destinationId"`
-	JobRunID            string                 `json:"jobRunId"`
-	JobID               int64                  `json:"jobId"`
-	SourceBatchID       string                 `json:"sourceBatchId"`
-	SourceJobID         string                 `json:"sourceJobId"`
-	SourceJobRunID      string                 `json:"sourceJobRunId"`
-	SourceTaskID        string                 `json:"sourceTaskId"`
-	SourceTaskRunID     string                 `json:"sourceTaskRunId"`
-	DestinationType     string                 `json:"destinationType"`
-	MessageID           string                 `json:"messageId"`
+	MergedTpConfig      map[string]interface{}            `json:"mergedTpConfig"`
+	DestinationID       string                            `json:"destinationId"`
+	JobRunID            string                            `json:"jobRunId"`
+	JobID               int64                             `json:"jobId"`
+	SourceBatchID       string                            `json:"sourceBatchId"`
+	SourceJobID         string                            `json:"sourceJobId"`
+	SourceJobRunID      string                            `json:"sourceJobRunId"`
+	SourceTaskID        string                            `json:"sourceTaskId"`
+	SourceTaskRunID     string                            `json:"sourceTaskRunId"`
+	DestinationType     string                            `json:"destinationType"`
+	MessageID           string                            `json:"messageId"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
 	MessageIDs []string `json:"messageIds"`
 	RudderID   string   `json:"rudderId"`

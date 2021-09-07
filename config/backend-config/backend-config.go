@@ -181,12 +181,12 @@ type LibraryT struct {
 type LibrariesT []LibraryT
 
 type DgSourceTrackingPlanConfigT struct {
-	SourceId            string                 `json:"sourceId"`
-	SourceConfigVersion int                    `json:"version"`
-	Config              map[string]map[string]interface{}	`json:"config"`
-	MergedConfig        map[string]interface{} `json:"mergedConfig"`
-	Deleted             bool                   `json:"deleted"`
-	TrackingPlan        TrackingPlanT          `json:"trackingPlan"`
+	SourceId            string                            `json:"sourceId"`
+	SourceConfigVersion int                               `json:"version"`
+	Config              map[string]map[string]interface{} `json:"config"`
+	MergedConfig        map[string]interface{}            `json:"mergedConfig"`
+	Deleted             bool                              `json:"deleted"`
+	TrackingPlan        TrackingPlanT                     `json:"trackingPlan"`
 }
 
 func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType string) map[string]interface{} {
