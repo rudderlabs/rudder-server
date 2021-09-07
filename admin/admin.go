@@ -75,7 +75,7 @@ type Admin struct {
 var instance Admin
 var pkgLogger logger.LoggerI
 
-func init() {
+func Init() {
 	instance = Admin{
 		statushandlers: make(map[string]PackageStatusHandler),
 		rpcServer:      rpc.NewServer(),
