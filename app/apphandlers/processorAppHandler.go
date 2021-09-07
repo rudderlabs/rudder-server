@@ -82,7 +82,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
 	transformationdebugger.Setup()
-	destinationdebugger.Setup()
+	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 
 	migrationMode := processor.App.Options().MigrationMode
 

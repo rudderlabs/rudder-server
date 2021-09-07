@@ -61,8 +61,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
 	transformationdebugger.Setup()
-	destinationdebugger.Setup()
-	sourcedebugger.Setup()
+	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
+	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
 	migrationMode := embedded.App.Options().MigrationMode
 

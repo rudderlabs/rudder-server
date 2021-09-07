@@ -126,6 +126,8 @@ type ParametersT struct {
 	SourceTaskRunID string `json:"source_task_run_id"`
 	SourceJobID     string `json:"source_job_id"`
 	SourceJobRunID  string `json:"source_job_run_id"`
+	EventName       string `json:"event_name"`
+	EventType       string `json:"event_type"`
 }
 
 type MetricMetadata struct {
@@ -239,7 +241,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	proc.reporting = reporting
-	config.RegisterBoolConfigVariable(false, &proc.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(true, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -587,7 +589,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	eventBytes, err := json.Marshal(singularEvent)
 	if err != nil {
 		//Marshalling should never fail. But still panicking.
-		panic(fmt.Errorf("[Processor] couldn't marshal singularEvent. singularEvent: %v\n", singularEvent))
+		panic(fmt.Errorf("[Processor] couldn't marshal singularEvent. singularEvent: %v", singularEvent))
 	}
 	commonMetadata.SourceID = gjson.GetBytes(batchEvent.Parameters, "source_id").Str
 	commonMetadata.WorkspaceID = source.WorkspaceID
@@ -595,7 +597,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.InstanceID = config.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
-	commonMetadata.MessageID = singularEvent["messageId"].(string)
+	commonMetadata.MessageID = misc.GetStringifiedData(singularEvent["messageId"])
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
 	commonMetadata.SourceBatchID = gjson.GetBytes(eventBytes, "context.sources.batch_id").String()
 	commonMetadata.SourceTaskID = gjson.GetBytes(eventBytes, "context.sources.task_id").String()
@@ -604,6 +606,8 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceJobRunID = gjson.GetBytes(eventBytes, "context.sources.job_run_id").String()
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
+	commonMetadata.EventName = misc.GetStringifiedData(singularEvent["event"])
+	commonMetadata.EventType = misc.GetStringifiedData(singularEvent["type"])
 
 	return &commonMetadata
 }
@@ -626,6 +630,8 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.SourceTaskRunID = commonMetadata.SourceTaskRunID
 	metadata.SourceJobID = commonMetadata.SourceJobID
 	metadata.SourceJobRunID = commonMetadata.SourceJobRunID
+	metadata.EventName = commonMetadata.EventName
+	metadata.EventType = commonMetadata.EventType
 
 	metadata.DestinationID = destination.ID
 	metadata.DestinationType = destination.DestinationDefinition.Name
@@ -653,25 +659,47 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 			var params map[string]interface{}
 			err := json.Unmarshal(job.Parameters, &params)
 			if err != nil {
-				panic(err)
+				pkgLogger.Errorf("Error while UnMarshaling live event parameters: %w", err)
+				continue
 			}
 
 			sourceID, _ := params["source_id"].(string)
 			destID, _ := params["destination_id"].(string)
 			procErr, _ := params["error"].(string)
 			procErr = strconv.Quote(procErr)
-			statusCode, _ := params["status_code"].(string)
-
-			deliveryStatus := destinationdebugger.DeliveryStatusT{
-				DestinationID: destID,
-				SourceID:      sourceID,
-				Payload:       job.EventPayload,
-				AttemptNum:    1,
-				JobState:      jobsdb.Aborted.State,
-				ErrorCode:     statusCode,
-				ErrorResponse: []byte(fmt.Sprintf(`{"error": %s}`, procErr)),
+			statusCode := fmt.Sprint(params["status_code"])
+			sentAt := time.Now().Format(misc.RFC3339Milli)
+			events := make([]map[string]interface{}, 0)
+			err = json.Unmarshal(job.EventPayload, &events)
+			if err != nil {
+				pkgLogger.Errorf("Error while UnMarshaling live event payload: %w", err)
+				continue
 			}
-			destinationdebugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
+			for i := range events {
+				event := &events[i]
+				eventPayload, err := json.Marshal(*event)
+				if err != nil {
+					pkgLogger.Errorf("Error while Marshaling live event payload: %w", err)
+					continue
+				}
+
+				eventName := misc.GetStringifiedData(gjson.GetBytes(eventPayload, "event").String())
+				eventType := misc.GetStringifiedData(gjson.GetBytes(eventPayload, "type").String())
+				deliveryStatus := destinationdebugger.DeliveryStatusT{
+					EventName:     eventName,
+					EventType:     eventType,
+					SentAt:        sentAt,
+					DestinationID: destID,
+					SourceID:      sourceID,
+					Payload:       eventPayload,
+					AttemptNum:    1,
+					JobState:      jobsdb.Aborted.State,
+					ErrorCode:     statusCode,
+					ErrorResponse: []byte(fmt.Sprintf(`{"error": %s}`, procErr)),
+				}
+				destinationdebugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
+			}
+
 		}
 	}
 }
@@ -699,6 +727,8 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
 		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
+		eventMetadata.EventName = userTransformedEvent.Metadata.EventName
+		eventMetadata.EventType = userTransformedEvent.Metadata.EventType
 		updatedEvent := transformer.TransformerEventT{
 			Message:     userTransformedEvent.Output,
 			Metadata:    eventMetadata,
@@ -968,14 +998,14 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			if enableDedup {
 				var allMessageIdsInBatch []string
 				for _, singularEvent := range singularEvents {
-					allMessageIdsInBatch = append(allMessageIdsInBatch, singularEvent["messageId"].(string))
+					allMessageIdsInBatch = append(allMessageIdsInBatch, misc.GetStringifiedData(singularEvent["messageId"]))
 				}
 				duplicateIndexes = proc.dedupHandler.FindDuplicates(allMessageIdsInBatch, uniqueMessageIds)
 			}
 
 			//Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
-				messageId := singularEvent["messageId"].(string)
+				messageId := misc.GetStringifiedData(singularEvent["messageId"])
 				if enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
@@ -1142,7 +1172,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			//Grouping events by sourceid + destinationid + source batch id to find the count
 			inCountMap = make(map[string]int64)
 			inCountMetadataMap = make(map[string]MetricMetadata)
-			for _, event := range eventList {
+			for i := range eventList {
+				event := &eventList[i]
 				key := fmt.Sprintf("%s:%s:%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID)
 				if _, ok := inCountMap[key]; !ok {
 					inCountMap[key] = 0
@@ -1284,6 +1315,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			sourceTaskRunId := destEvent.Metadata.SourceTaskRunID
 			sourceJobId := destEvent.Metadata.SourceJobID
 			sourceJobRunId := destEvent.Metadata.SourceJobRunID
+			eventName := destEvent.Metadata.EventName
+			eventType := destEvent.Metadata.EventType
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
 			if rudderID == "" {
@@ -1302,6 +1335,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				SourceTaskRunID: sourceTaskRunId,
 				SourceJobID:     sourceJobId,
 				SourceJobRunID:  sourceJobRunId,
+				EventName:       eventName,
+				EventType:       eventType,
 			}
 			marshalledParams, err := json.Marshal(params)
 			if err != nil {

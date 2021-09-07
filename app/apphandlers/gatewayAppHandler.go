@@ -38,7 +38,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	var gatewayDB jobsdb.HandleT
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
-	sourcedebugger.Setup()
+	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
 	migrationMode := gatewayApp.App.Options().MigrationMode
 	gatewayDB.Setup(jobsdb.Write, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
