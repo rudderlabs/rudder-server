@@ -6,7 +6,7 @@ package mock_sysUtils
 
 import (
 	io "io"
-	os "os"
+	fs "io/fs"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -118,7 +118,7 @@ func (mr *MockIoUtilIMockRecorder) ReadFile(arg0 interface{}) *gomock.Call {
 }
 
 // WriteFile mocks base method.
-func (m *MockIoUtilI) WriteFile(arg0 string, arg1 []byte, arg2 os.FileMode) error {
+func (m *MockIoUtilI) WriteFile(arg0 string, arg1 []byte, arg2 fs.FileMode) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "WriteFile", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)

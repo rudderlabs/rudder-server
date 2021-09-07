@@ -7,7 +7,7 @@ package mock_sysUtils
 import (
 	zip "archive/zip"
 	io "io"
-	os "os"
+	fs "io/fs"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -37,7 +37,7 @@ func (m *MockZipI) EXPECT() *MockZipIMockRecorder {
 }
 
 // FileInfoHeader mocks base method.
-func (m *MockZipI) FileInfoHeader(arg0 os.FileInfo) (*zip.FileHeader, error) {
+func (m *MockZipI) FileInfoHeader(arg0 fs.FileInfo) (*zip.FileHeader, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "FileInfoHeader", arg0)
 	ret0, _ := ret[0].(*zip.FileHeader)
