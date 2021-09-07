@@ -24,7 +24,9 @@ func reportViolations(validateEvent *transformer.TransformerResponseT) {
 	if len(validateEvent.ValidationErrors) == 0 {
 		return
 	}
-	if len(validateEvent.Metadata.MergedTpConfig) == 0 || validateEvent.Metadata.MergedTpConfig["allowSourceSchemaConfig"] != "true" {
+	// nil or true => true
+	// false => false
+	if validateEvent.Metadata.MergedTpConfig["propagateValidationErrors"] == "false" {
 		return
 	}
 	validationErrors := validateEvent.ValidationErrors
