@@ -38,7 +38,8 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	pkgLogger.Info("Main starting")
 
 	rudderCoreDBValidator()
-	rudderCoreDBSetup()
+	rudderCoreNodeSetup()
+	rudderCoreWorkSpaceTableSetup()
 	rudderCoreBaseSetup()
 
 	//Setting up reporting client

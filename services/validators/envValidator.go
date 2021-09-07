@@ -176,7 +176,7 @@ func ValidateEnv() {
 }
 
 //InitializeEnv initializes the environment for the server
-func InitializeEnv() {
+func InitializeNodeMigrations() {
 	dbHandle := createDBConnection()
 
 	m := &migrator.Migrator{
@@ -189,7 +189,12 @@ func InitializeEnv() {
 		panic(fmt.Errorf("Could not run node migrations: %w", err))
 	}
 
-	//create workspace table and insert token
+	closeDBConnection(dbHandle)
+}
+
+func CheckAndValidateWorkspaceToken() {
+	dbHandle := createDBConnection()
+
 	createWorkspaceTable(dbHandle)
 	insertTokenIfNotExists(dbHandle)
 	setWHSchemaVersionIfNotExists(dbHandle)

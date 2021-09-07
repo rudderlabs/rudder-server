@@ -83,8 +83,12 @@ func rudderCoreDBValidator() {
 	validators.ValidateEnv()
 }
 
-func rudderCoreDBSetup() {
-	validators.InitializeEnv()
+func rudderCoreNodeSetup() {
+	validators.InitializeNodeMigrations()
+}
+
+func rudderCoreWorkSpaceTableSetup() {
+	validators.CheckAndValidateWorkspaceToken()
 }
 
 func rudderCoreBaseSetup() {

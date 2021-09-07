@@ -32,6 +32,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(options *app.Options) {
 	pkgLogger.Info("Gateway starting")
 
 	rudderCoreDBValidator()
+	rudderCoreWorkSpaceTableSetup()
 	rudderCoreBaseSetup()
 
 	var gatewayDB jobsdb.HandleT
