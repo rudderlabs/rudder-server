@@ -285,7 +285,7 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 	if (pendingUploadCount + pendingStagingFileCount) == int64(0) {
 		err = nil
 		response = &proto.TriggerWhUploadsResponse{
-			Message:    fmt.Sprintf("No pending jobs to trigger for destination : %s", uploadsReq.DestinationID),
+			Message:    fmt.Sprint("No pending events to sync for this destination"),
 			StatusCode: 200,
 		}
 		return
@@ -293,7 +293,6 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 	err = TriggerUploadHandler(uploadsReq.SourceID, uploadsReq.DestinationID)
 	return
 }
-
 
 func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	err := uploadReq.validateReq()
