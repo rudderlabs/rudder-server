@@ -683,7 +683,7 @@ func (jd *HandleT) startBackupDSLoop(ctx context.Context) {
 
 func (jd *HandleT) startMigrateDSLoop(ctx context.Context) {
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		jd.migrateDSLoop(jd.backgroundCtx)
+		jd.migrateDSLoop(ctx)
 		return nil
 	}))
 }
@@ -704,7 +704,7 @@ func (jd *HandleT) readerSetup(ctx context.Context) {
 	g := jd.backgroundGroup
 
 	g.Go(misc.WithBugsnag(func() error {
-		jd.refreshDSListLoop(jd.backgroundCtx)
+		jd.refreshDSListLoop(ctx)
 		return nil
 	}))
 
@@ -712,7 +712,7 @@ func (jd *HandleT) readerSetup(ctx context.Context) {
 	jd.startMigrateDSLoop(ctx)
 
 	g.Go(misc.WithBugsnag(func() error {
-		runArchiver(jd.backgroundCtx, jd.tablePrefix, jd.dbHandle)
+		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)
 		return nil
 	}))
 }
@@ -735,7 +735,7 @@ func (jd *HandleT) writerSetup(ctx context.Context) {
 	}
 
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		jd.addNewDSLoop(jd.backgroundCtx)
+		jd.addNewDSLoop(ctx)
 		return nil
 	}))
 }
@@ -749,7 +749,7 @@ func (jd *HandleT) readerWriterSetup(ctx context.Context) {
 	jd.startMigrateDSLoop(ctx)
 
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
-		runArchiver(jd.backgroundCtx, jd.tablePrefix, jd.dbHandle)
+		runArchiver(ctx, jd.tablePrefix, jd.dbHandle)
 		return nil
 	}))
 
