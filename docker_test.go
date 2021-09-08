@@ -1,4 +1,3 @@
-
 // This files implements integration tests for the rudder-server.
 // The code is responsible to run all dependencies using docker containers.
 // It then runs the service ensuring it is configurated to use the dependencies.
@@ -11,11 +10,13 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	b64 "encoding/base64"
 	"fmt"
 	"html/template"
 	"io"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -40,15 +41,27 @@ import (
 )
 
 var (
-	hold       bool = true
-	db         *sql.DB
-	DB_DSN     = "root@tcp(127.0.0.1:3306)/service"
-	httpPort   string
-	dbHandle   *sql.DB
-	sourceJSON backendconfig.ConfigT
-	webhookurl string
-	webhook    *WebhookRecorder
+	hold        bool = true
+	db          *sql.DB
+	DB_DSN      = "root@tcp(127.0.0.1:3306)/service"
+	httpPort    string
+	dbHandle    *sql.DB
+	sourceJSON  backendconfig.ConfigT
+	webhookurl  string
+	webhook     *WebhookRecorder
+	writeKey    string
+	workspaceID string
 )
+
+func randString(n int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+	s := make([]rune, n)
+	for i := range s {
+		s[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(s)
+}
 
 type WebhookRecorder struct {
 	Server *httptest.Server
@@ -206,9 +219,15 @@ func SendEvent() {
 	if err != nil {
 		fmt.Println(err)
 		return
+
 	}
+
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", "Basic MXhJY0tneXp5QjFyNnV0S0F0TzZlamg4b0tJOg==")
+	req.Header.Add("Authorization",
+		fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
+			[]byte(fmt.Sprintf("%s:", writeKey)),
+		)),
+	)
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -255,7 +274,13 @@ func run(m *testing.M) int {
 	}()
 
 	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
+
+	os.Setenv("JOBS_DB_HOST", "localhost")
+	os.Setenv("JOBS_DB_NAME", "jobsdb")
+	os.Setenv("JOBS_DB_USER", "rudder")
+	os.Setenv("JOBS_DB_PASSWORD", "password")
 	os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
+
 	os.Setenv("WAREHOUSE_JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
@@ -322,10 +347,15 @@ func run(m *testing.M) int {
 	webhookurl = webhook.Server.URL
 	fmt.Println("webhookurl", webhookurl)
 
+	writeKey = randString(27)
+	workspaceID = randString(27)
+
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl": webhookurl,
+			"webhookUrl":  webhookurl,
+			"writeKey":    writeKey,
+			"workspaceId": workspaceID,
 		},
 	)
 	defer func() {

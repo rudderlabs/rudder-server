@@ -1,6 +1,6 @@
 {
     "enableMetrics": false,
-    "workspaceId": "xxxyyyzzDVeVeLGkTwjIxJmvo2i",
+    "workspaceId": "{{.workspaceId}}",
     "sources":
     [
         {
@@ -8,11 +8,11 @@
             {},
             "id": "xxxyyyzzEaEurW247ad9WYZLUyk",
             "name": "Dev Integration Test 1",
-            "writeKey": "xxxyyyzzyB1r6utKAtO6ejh8oKI",
+            "writeKey": "{{.writeKey}}",
             "enabled": true,
             "sourceDefinitionId": "xxxyyyzzpWDzNxgGUYzq9sZdZZB",
             "createdBy": "xxxyyyzzueyoBz4jb7bRdOzDxai",
-            "workspaceId": "xxxyyyzzDVeVeLGkTwjIxJmvo2i",
+            "workspaceId": "{{.workspaceId}}",
             "deleted": false,
             "createdAt": "2021-08-27T06:33:00.305Z",
             "updatedAt": "2021-08-27T06:33:00.305Z",
@@ -29,7 +29,7 @@
                     "id": "xxxyyyzzP9kQfzOoKd1tuxchYAG",
                     "name": "Des WebHook Integration Test 1",
                     "enabled": true,
-                    "workspaceId": "xxxyyyzzDVeVeLGkTwjIxJmvo2i",
+                    "workspaceId": "{{.workspaceId}}",
                     "deleted": false,
                     "createdAt": "2021-08-27T06:49:38.546Z",
                     "updatedAt": "2021-08-27T06:49:38.546Z",
