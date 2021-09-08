@@ -67,43 +67,43 @@ var (
 const DISABLED_EGRESS = "200: outgoing disabled"
 
 type HandleT struct {
-	paused                      bool
-	pauseLock                   sync.Mutex
-	destType                    string
-	destinationsMap             map[string]*router_utils.BatchDestinationT // destinationID -> destination
-	connectionWHNamespaceMap    map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
-	netHandle                   *http.Client
-	processQ                    chan *BatchDestinationDataT
-	jobsDB                      jobsdb.JobsDB
-	errorDB                     jobsdb.JobsDB
-	isEnabled                   bool
-	batchRequestsMetricLock     sync.RWMutex
-	diagnosisTicker             *time.Ticker
-	batchRequestsMetric         []batchRequestMetric
-	logger                      logger.LoggerI
-	noOfWorkers                 int
-	maxEventsInABatch           int
-	maxFailedCountForJob        int
-	asyncUploadTimeout          time.Duration
-	retryTimeWindow             time.Duration
-	reporting                   types.ReportingI
-	reportingEnabled            bool
-	workers                     []*workerT
-	drainedJobsStat             stats.RudderStats
-	backendConfig               backendconfig.BackendConfig
-	fileManagerFactory          filemanager.FileManagerFactory
-	maxFileUploadSize           int
-	inProgressMap               map[string]bool
-	inProgressMapLock           sync.RWMutex
-	lastExecMap                 map[string]int64
-	lastExecMapLock             sync.RWMutex
-	configSubscriberLock        sync.RWMutex
-	encounteredMergeRuleMap     map[string]map[string]bool
-	uploadedRawDataJobsCache    map[string]map[string]bool
-	encounteredMergeRuleMapLock sync.RWMutex
-	isBackendConfigInitialized  bool
-	backendConfigInitialized    chan bool
-	asyncDestinationStruct      map[string]*asyncdestinationmanager.AsyncDestinationStruct
+	paused                         bool
+	pauseLock                      sync.Mutex
+	destType                       string
+	destinationsMap                map[string]*router_utils.BatchDestinationT // destinationID -> destination
+	connectionWHNamespaceMap       map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
+	netHandle                      *http.Client
+	processQ                       chan *BatchDestinationDataT
+	jobsDB                         jobsdb.JobsDB
+	errorDB                        jobsdb.JobsDB
+	isEnabled                      bool
+	batchRequestsMetricLock        sync.RWMutex
+	diagnosisTicker                *time.Ticker
+	batchRequestsMetric            []batchRequestMetric
+	logger                         logger.LoggerI
+	noOfWorkers                    int
+	maxEventsInABatch              int
+	maxFailedCountForJob           int
+	asyncUploadTimeout             time.Duration
+	retryTimeWindow                time.Duration
+	reporting                      types.ReportingI
+	reportingEnabled               bool
+	workers                        []*workerT
+	drainedJobsStat                stats.RudderStats
+	backendConfig                  backendconfig.BackendConfig
+	fileManagerFactory             filemanager.FileManagerFactory
+	maxFileUploadSize              int
+	inProgressMap                  map[string]bool
+	inProgressMapLock              sync.RWMutex
+	lastExecMap                    map[string]int64
+	lastExecMapLock                sync.RWMutex
+	configSubscriberLock           sync.RWMutex
+	encounteredMergeRuleMap        map[string]map[string]bool
+	uploadedRawDataJobsCache       map[string]map[string]bool
+	encounteredMergeRuleMapLock    sync.RWMutex
+	isBackendConfigInitialized     bool
+	backendConfigInitialized       chan bool
+	asyncDestinationStruct         map[string]*asyncdestinationmanager.AsyncDestinationStruct
 	jobQueryBatchSize              int
 	pollStatusLoopSleep            time.Duration
 	asyncUploadWorkerPauseChannel  chan *PauseT
@@ -266,8 +266,12 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 		case pause := <-brt.pollAsyncStatusPauseChannel:
 			pkgLogger.Infof("pollAsyncStatus is paused. Dest type: %s", brt.destType)
 			pause.respChannel <- true
-			<-brt.pollAsyncStatusResumeChannel
-			pkgLogger.Infof("pollAsyncStatus is resumed. Dest type: %s", brt.destType)
+			select {
+			case <-ctx.Done():
+				return
+			case <-brt.pollAsyncStatusResumeChannel:
+				pkgLogger.Infof("pollAsyncStatus is resumed. Dest type: %s", brt.destType)
+			}
 		case <-time.After(brt.pollStatusLoopSleep):
 			brt.configSubscriberLock.RLock()
 			destinationsMap := brt.destinationsMap
@@ -484,7 +488,6 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 		}
 	}
 }
-
 
 func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
 	if disableEgress {
@@ -749,9 +752,12 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 		case pause := <-brt.asyncUploadWorkerPauseChannel:
 			pkgLogger.Infof("asyncUploadWorker is paused. Dest type: %s", brt.destType)
 			pause.respChannel <- true
-			<-brt.asyncUploadWorkerResumeChannel
-			pkgLogger.Infof("asyncUploadWorker is resumed. Dest type: %s", brt.destType)
-
+			select {
+			case <-ctx.Done():
+				return
+			case <-brt.asyncUploadWorkerResumeChannel:
+				pkgLogger.Infof("asyncUploadWorker is resumed. Dest type: %s", brt.destType)
+			}
 		case <-time.After(10 * time.Millisecond):
 			brt.configSubscriberLock.RLock()
 			destinationsMap := brt.destinationsMap
@@ -1349,9 +1355,13 @@ func (worker *workerT) workerProcess() {
 			pkgLogger.Infof("Batch Router worker %d is paused. Dest type: %s", worker.workerID, worker.brt.destType)
 			pause.wg.Done()
 			pause.respChannel <- true
-			<-worker.resumeChannel
-			pkgLogger.Infof("Batch Router worker %d is resumed. Dest type: %s", worker.workerID, worker.brt.destType)
-
+			_, hasMore := <-worker.resumeChannel
+			if hasMore {
+				pkgLogger.Infof("Batch Router worker %d is resumed. Dest type: %s", worker.workerID, worker.brt.destType)
+			} else {
+				// TODO: SHOULD WE CLEAN UP ?
+				return
+			}
 		case batchDestData, hasMore := <-brt.processQ:
 			if !hasMore {
 				// TODO: SHOULD WE CLEAN UP ?
@@ -2042,10 +2052,15 @@ func (brt *HandleT) Start() {
 	brm.AddBatchRouter(brt)
 }
 
-func (rt *HandleT) Shutdown() {
-	rt.backgroundCancel()
+func (brt *HandleT) Shutdown() {
+	brt.backgroundCancel()
 	// TODO, Should we pause/resume workers ?
-	rt.backgroundWait()
+
+	// close paused workers
+	for _, worker := range brt.workers {
+		close(worker.resumeChannel)
+	}
+	brt.backgroundWait()
 }
 
 //
