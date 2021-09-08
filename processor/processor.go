@@ -1182,6 +1182,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			var successCountMetadataMap map[string]MetricMetadata
 			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination)
 			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled)
+			proc.saveFailedJobs(failedJobs)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
@@ -1252,16 +1253,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		destTransformationStat.numOutputSuccessEvents.Count(len(destTransformEventList))
 		destTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
 
-		if len(failedJobs) > 0 {
-			txn := proc.errorDB.BeginGlobalTransaction()
-			jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
-			for _, failedJob := range failedJobs {
-				proc.logger.Infof("failed job params, %s", string(failedJob.Parameters))
-				router.SaveSourceFailedEvents(failedJob.Parameters, jobRunIDAbortedEventsMap)
-			}
-			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
-			proc.errorDB.CommitTransaction(txn)
-		}
+		proc.saveFailedJobs(failedJobs)
 
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
@@ -1455,6 +1447,19 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
+}
+
+func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
+	if len(failedJobs) > 0 {
+		txn := proc.errorDB.BeginGlobalTransaction()
+		jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
+		for _, failedJob := range failedJobs {
+			proc.logger.Infof("failed job params, %s", string(failedJob.Parameters))
+			router.SaveSourceFailedEvents(failedJob.Parameters, jobRunIDAbortedEventsMap)
+		}
+		router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
+		proc.errorDB.CommitTransaction(txn)
+	}
 }
 
 func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT, filterUnsupportedMessageTypes bool) transformer.ResponseT {

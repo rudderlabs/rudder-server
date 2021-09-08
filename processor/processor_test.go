@@ -982,6 +982,9 @@ var _ = Describe("Processor", func() {
 				})
 			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
+			// failed jobs are stored in failed keys table
+			c.mockProcErrorsDB.EXPECT().BeginGlobalTransaction().Times(1)
+			c.mockProcErrorsDB.EXPECT().CommitTransaction(nil).Times(1)
 
 			// One Store call is expected for all events
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
