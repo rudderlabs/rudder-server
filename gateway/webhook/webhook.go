@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
@@ -340,10 +339,8 @@ func (webhook *HandleT) Shutdown() {
 	for _, q := range webhook.requestQ {
 		close(q)
 	}
-	fmt.Println("batchRequestsWg.wait()")
 	webhook.batchRequestsWg.Wait()
 	close(webhook.batchRequestQ)
-	fmt.Println("backgroundWait()")
 
 	webhook.backgroundWait()
 }
