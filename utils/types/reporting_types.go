@@ -13,6 +13,8 @@ type Config struct {
 const (
 	CORE_REPORTING_CLIENT      = "core"
 	WAREHOUSE_REPORTING_CLIENT = "warehouse"
+
+	DEFAULT_REPORTING_ENABLED = true
 )
 
 var (

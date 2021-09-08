@@ -1624,13 +1624,13 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.statusLoopPauseChannel = make(chan *PauseT)
 	rt.statusLoopResumeChannel = make(chan bool)
 	rt.reporting = reporting
-	config.RegisterBoolConfigVariable(true, &rt.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(utilTypes.DEFAULT_REPORTING_ENABLED, &rt.reportingEnabled, false, "Reporting.enabled")
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
 
 	//waiting for reporting client setup
-	if rt.reporting != nil {
+	if rt.reporting != nil && rt.reportingEnabled {
 		rt.reporting.WaitForSetup(utilTypes.CORE_REPORTING_CLIENT)
 	}
 

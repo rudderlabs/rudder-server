@@ -49,11 +49,6 @@ func TransformKey(s string) string {
 	return "RSERVER_" + strings.ToUpper(snake)
 }
 
-// Initialize used to initialize config package
-// Deprecated - There is no need to directly call Initialize, config is initialized via its package init()
-func Initialize() {
-}
-
 func Load() {
 	if err := godotenv.Load(); err != nil {
 		fmt.Println("INFO: No .env file found.")
