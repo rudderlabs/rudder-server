@@ -1,0 +1,6 @@
+ALTER TABLE reports
+ADD COLUMN IF NOT EXISTS source_category TEXT,
+ADD COLUMN IF NOT EXISTS source_definition_id TEXT,
+ADD COLUMN IF NOT EXISTS destination_definition_id TEXT,
+ADD COLUMN IF NOT EXISTS event_name TEXT,
+ADD COLUMN IF NOT EXISTS event_type TEXT;
