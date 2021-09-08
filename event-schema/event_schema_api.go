@@ -91,82 +91,114 @@ type PropertyTypeT struct {
 }
 
 type PropertiesT struct {
-	Required []string `json:"required"`
+	Required []string               `json:"required"`
 	Property map[string]interface{} `json:"properties"`
 }
 
-func generateAllJsonSch(eventModels []*EventModelT)([]byte, error) {
-	jsonSchs := []map[string]interface{}{}
+func generateAllJsonSch(eventModels []*EventModelT) ([]byte, error) {
+	var jsonSchemas []map[string]interface{}
 	for _, eventModel := range eventModels {
-		flattenedSchema := make(map[string]interface{})
-		err := json.Unmarshal(eventModel.Schema, &flattenedSchema)
-		if err!=nil {
-		pkgLogger.Errorf("Unable to unmarshal eventModelSch")
+		flattenedSch := make(map[string]interface{})
+		err := json.Unmarshal(eventModel.Schema, &flattenedSch)
+		if err != nil {
+			pkgLogger.Errorf("Error unmarshalling eventModelSch: %v for ID: %v", err, eventModel.ID)
+			continue
 		}
-		unFlattened, err := unflatten(flattenedSchema)
-		if err!= nil {
+		unFlattenedSch, err := unflatten(flattenedSch)
+		if err != nil {
+			pkgLogger.Errorf("Error unflattening flattenedSch: %v for ID: %v", err, eventModel.ID)
+			continue
 		}
-		filtered, ok := unFlattened["properties"].(map[string]interface{})
-		if !ok{
-			pkgLogger.Errorf("unable to get properties from filtered map")
+		schemaProperties, err := getSchemaPropertiesFromEventModelSchema(eventModel.EventType, unFlattenedSch)
+		if err != nil {
+			pkgLogger.Errorf("Error while getting schema properties: %v for ID: %v", err, eventModel.ID)
+			continue
+		}
+		if len(schemaProperties) == 0 {
+			pkgLogger.Error("Error schema properties doesn't exists for ID: %v", eventModel.ID)
+			continue
 		}
 
-		finalJson := generateJsonSchFromUnflattened(filtered)
-		finalJson["additionalProperties"] = true
-		finalJson["$schema"] = "http://json-schema.org/draft-07/schema#"
 		meta := eventModel.WriteKey + ":" + eventModel.EventType
 		if eventModel.EventIdentifier != "" {
 			meta = meta + ":" + eventModel.EventIdentifier
 		}
-		finalJson["$id"] = "http://rudder.com/" + meta
-		//finalJson["description"] = "detail about model"
-		jsonSchs = append(jsonSchs,finalJson)
+
+		jsonSchema := generateJsonSchFromUnflattened(schemaProperties)
+		jsonSchema["additionalProperties"] = true
+		jsonSchema["$schema"] = "http://json-schema.org/draft-07/schema#"
+		jsonSchema["$id"] = "http://rudder.com/" + meta
+
+		jsonSchemas = append(jsonSchemas, jsonSchema)
 	}
-	eventJsonSchs, err := json.Marshal(jsonSchs)
-	if err!=nil {
+	eventJsonSchs, err := json.Marshal(jsonSchemas)
+	if err != nil {
 		return nil, err
 	}
 	return eventJsonSchs, nil
 }
 
-func generateJsonSchFromUnflattened(nestedProperties map[string]interface{})map[string]interface{}{
+func getSchemaPropertiesFromEventModelSchema(eventType string, eventModelSch map[string]interface{}) (map[string]interface{}, error) {
+	switch eventType {
+	case "track", "screen", "page":
+		{
+			filtered, ok := eventModelSch["properties"].(map[string]interface{})
+			if ok {
+				return filtered, nil
+			}
+			return nil, fmt.Errorf("invalid properties")
+		}
+	case "identify", "group":
+		{
+			filtered, ok := eventModelSch["traits"].(map[string]interface{})
+			if ok {
+				return filtered, nil
+			}
+			return nil, fmt.Errorf("invalid traits")
+		}
+	}
+	return nil, fmt.Errorf("invalid eventType")
+}
+
+func generateJsonSchFromUnflattened(schemaProperties map[string]interface{}) map[string]interface{} {
 	properties := PropertiesT{
 		Property: make(map[string]interface{}),
 	}
-	required := make([]string,0)
+	required := make([]string, 0)
 	finalSchema := make(map[string]interface{})
 
-	for k, v := range nestedProperties{
+	for k, v := range schemaProperties {
 		required = append(required, k)
 		switch value := v.(type) {
-		case string: {
-			properties.Property[k] = PropertyTypeT {
-				Type: []string{value},
+		case string:
+			{
+				properties.Property[k] = PropertyTypeT{
+					Type: []string{value},
+				}
 			}
-		}
-		case map[string]interface{}: {
-			//check if map is an array or map
-			if checkIfArray(value) {
-				//if len(value) == 0 {return false}
-				var vType interface{}
-				for _,v := range value {
-					vt, ok := v.(string)
-					if ok {
-						vType=map[string]interface{}{"type":vt}
-					} else {
-						vType = generateJsonSchFromUnflattened(v.(map[string]interface{}))
+		case map[string]interface{}:
+			{
+				//check if map is an array or map
+				if checkIfArray(value) {
+					var vType interface{}
+					for _, v := range value {
+						vt, ok := v.(string)
+						if ok {
+							vType = map[string]interface{}{"type": vt}
+						} else {
+							vType = generateJsonSchFromUnflattened(v.(map[string]interface{}))
+						}
+						break
+					}
+					properties.Property[k] = map[string]interface{}{
+						"type":  "array",
+						"items": vType,
 					}
 					break
 				}
-				properties.Property[k] = map[string]interface{}{
-					"type": "array",
-					"items": vType,
-				}
-			break
+				properties.Property[k] = generateJsonSchFromUnflattened(value)
 			}
-			properties.Property[k] = generateJsonSchFromUnflattened(value)
-		}
-			default:
+		default:
 			pkgLogger.Errorf("unknown type found")
 		}
 	}
@@ -177,13 +209,14 @@ func generateJsonSchFromUnflattened(nestedProperties map[string]interface{})map[
 	return finalSchema
 }
 
-
 //prop.myarr.0
 //will not be able to say if above is prop{myarr:[0]} or prop{myarr{"0":0}}
-func checkIfArray(value map[string]interface{})bool{
-	if len(value) == 0 {return false}
+func checkIfArray(value map[string]interface{}) bool {
+	if len(value) == 0 {
+		return false
+	}
 
-	for k,_ := range value {
+	for k, _ := range value {
 		_, err := strconv.Atoi(k)
 		if err != nil {
 			return false
