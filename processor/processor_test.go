@@ -752,7 +752,6 @@ var _ = Describe("Processor", func() {
 
 	Context("transformations", func() {
 		It("messages should be skipped on destination transform failures, without failing the job", func() {
-			Skip("skipped for now...")
 			var messages map[string]mockEventData = map[string]mockEventData{
 				"message-1": {
 					id:                        "1",
@@ -816,7 +815,7 @@ var _ = Describe("Processor", func() {
 
 				var paramsMap, expectedParamsMap map[string]interface{}
 				json.Unmarshal(job.Parameters, &paramsMap)
-				expectedStr := []byte(fmt.Sprintf(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer"}`, i+1))
+				expectedStr := []byte(fmt.Sprintf(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer", "source_task_run_id": "", "record_id": null}`, i+1))
 				json.Unmarshal(expectedStr, &expectedParamsMap)
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 				Expect(equals).To(Equal(true))
@@ -857,6 +856,10 @@ var _ = Describe("Processor", func() {
 				})
 			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
+
+			// will be used to save failed events to failed keys table
+			c.mockProcErrorsDB.EXPECT().BeginGlobalTransaction().Times(1)
+			c.mockProcErrorsDB.EXPECT().CommitTransaction(nil).Times(1)
 
 			// One Store call is expected for all events
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
@@ -933,7 +936,7 @@ var _ = Describe("Processor", func() {
 
 				var paramsMap, expectedParamsMap map[string]interface{}
 				json.Unmarshal(job.Parameters, &paramsMap)
-				expectedStr := []byte(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": 400, "stage": "user_transformer"}`)
+				expectedStr := []byte(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": 400, "stage": "user_transformer", "source_task_run_id":"", "record_id": null}`)
 				json.Unmarshal(expectedStr, &expectedParamsMap)
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 				Expect(equals).To(Equal(true))
