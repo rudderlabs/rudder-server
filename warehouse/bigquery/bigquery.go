@@ -204,19 +204,19 @@ func partitionedTable(tableName string, partitionDate string) string {
 
 func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFromTableUploads bool) (partitionDate string, err error) {
 	pkgLogger.Infof("BQ: Starting load for table:%s\n", tableName)
-	var locations []string
+	var loadFiles []warehouseutils.LoadFileT
 	if getLoadFileLocFromTableUploads {
-		location, err := bq.Uploader.GetSingleLoadFileLocation(tableName)
+		loadFile, err := bq.Uploader.GetSingleLoadFile(tableName)
 		if err != nil {
 			return "", err
 		}
-		locations = append(locations, location)
+		loadFiles = append(loadFiles, loadFile)
 	} else {
-		locations = bq.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
+		loadFiles = bq.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	}
-	locations = warehouseutils.GetGCSLocations(locations, warehouseutils.GCSLocationOptionsT{})
-	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, locations)
-	gcsRef := bigquery.NewGCSReference(locations...)
+	gcsLocations := warehouseutils.GetGCSLocations(loadFiles, warehouseutils.GCSLocationOptionsT{})
+	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.Namespace, bq.ProjectID, loadFiles)
+	gcsRef := bigquery.NewGCSReference(gcsLocations...)
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false

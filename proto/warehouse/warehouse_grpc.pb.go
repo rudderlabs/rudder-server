@@ -23,7 +23,8 @@ type WarehouseClient interface {
 	GetHealth(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*wrapperspb.BoolValue, error)
 	GetWHUploads(ctx context.Context, in *WHUploadsRequest, opts ...grpc.CallOption) (*WHUploadsResponse, error)
 	GetWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*WHUploadResponse, error)
-	TriggerWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	TriggerWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error)
+	TriggerWHUploads(ctx context.Context, in *WHUploadsRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error)
 }
 
 type warehouseClient struct {
@@ -61,9 +62,18 @@ func (c *warehouseClient) GetWHUpload(ctx context.Context, in *WHUploadRequest, 
 	return out, nil
 }
 
-func (c *warehouseClient) TriggerWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
+func (c *warehouseClient) TriggerWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error) {
+	out := new(TriggerWhUploadsResponse)
 	err := c.cc.Invoke(ctx, "/proto.Warehouse/TriggerWHUpload", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *warehouseClient) TriggerWHUploads(ctx context.Context, in *WHUploadsRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error) {
+	out := new(TriggerWhUploadsResponse)
+	err := c.cc.Invoke(ctx, "/proto.Warehouse/TriggerWHUploads", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +87,8 @@ type WarehouseServer interface {
 	GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error)
 	GetWHUploads(context.Context, *WHUploadsRequest) (*WHUploadsResponse, error)
 	GetWHUpload(context.Context, *WHUploadRequest) (*WHUploadResponse, error)
-	TriggerWHUpload(context.Context, *WHUploadRequest) (*emptypb.Empty, error)
+	TriggerWHUpload(context.Context, *WHUploadRequest) (*TriggerWhUploadsResponse, error)
+	TriggerWHUploads(context.Context, *WHUploadsRequest) (*TriggerWhUploadsResponse, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -94,8 +105,11 @@ func (UnimplementedWarehouseServer) GetWHUploads(context.Context, *WHUploadsRequ
 func (UnimplementedWarehouseServer) GetWHUpload(context.Context, *WHUploadRequest) (*WHUploadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetWHUpload not implemented")
 }
-func (UnimplementedWarehouseServer) TriggerWHUpload(context.Context, *WHUploadRequest) (*emptypb.Empty, error) {
+func (UnimplementedWarehouseServer) TriggerWHUpload(context.Context, *WHUploadRequest) (*TriggerWhUploadsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TriggerWHUpload not implemented")
+}
+func (UnimplementedWarehouseServer) TriggerWHUploads(context.Context, *WHUploadsRequest) (*TriggerWhUploadsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TriggerWHUploads not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
 
@@ -182,6 +196,24 @@ func _Warehouse_TriggerWHUpload_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Warehouse_TriggerWHUploads_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WHUploadsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WarehouseServer).TriggerWHUploads(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.Warehouse/TriggerWHUploads",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WarehouseServer).TriggerWHUploads(ctx, req.(*WHUploadsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Warehouse_ServiceDesc is the grpc.ServiceDesc for Warehouse service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -204,6 +236,10 @@ var Warehouse_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TriggerWHUpload",
 			Handler:    _Warehouse_TriggerWHUpload_Handler,
+		},
+		{
+			MethodName: "TriggerWHUploads",
+			Handler:    _Warehouse_TriggerWHUploads_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

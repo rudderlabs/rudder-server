@@ -25,7 +25,7 @@ phases:
       - echo Building the Docker image...
       - TAG=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
       - echo tag.. $TAG
-      - chmod +rx ./dockertag.sh
+      - chmod +rx dockertag.sh
       - SEMVER=$(head -1 .version)
       - UPDATEDTAG=`./dockertag.sh $dockerhub_passwd $SEMVER`
       - echo sem version.. $SEMVER

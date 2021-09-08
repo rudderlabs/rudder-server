@@ -87,7 +87,7 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (ConfigT, bool) {
 	var sourcesJSON ConfigT
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
-		pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
+		pkgLogger.Error("Error while parsing request", err, statusCode)
 		return ConfigT{}, false
 	}
 
@@ -170,7 +170,7 @@ func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]Work
 		var workspaceRegulationsJSON WRegulationsT
 		err = json.Unmarshal(respBody, &workspaceRegulationsJSON)
 		if err != nil {
-			pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
+			pkgLogger.Error("Error while parsing request", err, statusCode)
 			return []WorkspaceRegulationT{}, false
 		}
 
@@ -224,7 +224,7 @@ func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceR
 		var sourceRegulationsJSON SRegulationsT
 		err = json.Unmarshal(respBody, &sourceRegulationsJSON)
 		if err != nil {
-			pkgLogger.Error("Error while parsing request", err, string(respBody), statusCode)
+			pkgLogger.Error("Error while parsing request", err, statusCode)
 			return []SourceRegulationT{}, false
 		}
 

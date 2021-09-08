@@ -14,6 +14,7 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
@@ -49,6 +50,18 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
+var sampleConfigPrefix = "config_prefix"
+var sampleFileObjects = []*filemanager.FileObject{
+	{
+		Key:          fmt.Sprintf("%s/%s/%s/%s/%s", sampleConfigPrefix, SourceIDEnabled, WriteKeyEnabled, "01-02-2006", "tmp1.log"),
+		LastModified: time.Now(),
+	},
+	{
+		Key:          fmt.Sprintf("%s/%s/%s/%s/%s", sampleConfigPrefix, SourceIDEnabled, WriteKeyEnabled, "2006-01-02", "tmp2.log"),
+		LastModified: time.Now(),
+	},
+}
+
 type context struct {
 	asyncHelper       testutils.AsyncTestHelper
 	jobQueryBatchSize int
@@ -59,6 +72,8 @@ type context struct {
 	mockBackendConfig      *mocksBackendConfig.MockBackendConfig
 	mockFileManagerFactory *mocksFileManager.MockFileManagerFactory
 	mockFileManager        *mocksFileManager.MockFileManager
+	mockConfigPrefix       string
+	mockFileObjects 	   []*filemanager.FileObject
 }
 
 // Initiaze mocks and common expectations
@@ -81,6 +96,8 @@ func (c *context) Setup() {
 		Return().Times(1)
 
 	c.jobQueryBatchSize = 100000
+	c.mockConfigPrefix = sampleConfigPrefix
+	c.mockFileObjects = sampleFileObjects
 }
 
 func (c *context) Finish() {
@@ -97,6 +114,7 @@ var _ = Describe("BatchRouter", func() {
 	var c *context
 
 	BeforeEach(func() {
+		router_utils.JobRetention = time.Duration(175200) * time.Hour //20 Years(20*365*24)
 		c = &context{}
 		c.Setup()
 
@@ -138,6 +156,8 @@ var _ = Describe("BatchRouter", func() {
 
 			c.mockFileManagerFactory.EXPECT().New(gomock.Any()).Times(1).Return(c.mockFileManager, nil)
 			c.mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any()).Return(filemanager.UploadOutput{Location: "local", ObjectName: "file"}, nil)
+			c.mockFileManager.EXPECT().GetConfiguredPrefix().Return(c.mockConfigPrefix)
+			c.mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any()).Return(c.mockFileObjects, nil)
 
 			s3Payload := `{
 				"userId": "identified user id",
@@ -214,6 +234,35 @@ var _ = Describe("BatchRouter", func() {
 			<-batchrouter.backendConfigInitialized
 			batchrouter.readAndProcess()
 		})
+
+		// It("should split batchJobs based on timeWindow for s3 datalake destination", func() {
+
+		// 	batchJobs := BatchJobsT{
+		// 		Jobs: []*jobsdb.JobT{
+		// 			{
+		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:20:50.52Z"}`),
+		// 			},
+		// 			{
+		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:20:59.52Z"}`),
+		// 			},
+		// 			{
+		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:30:50.52Z"}`),
+		// 			},
+		// 			{
+		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:30:59.52Z"}`),
+		// 			},
+		// 			{
+		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T08:00:01.52Z"}`),
+		// 			},
+		// 		},
+		// 	}
+
+		// 	brt := &HandleT{destType: "S3_DATALAKE"}
+		// 	splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
+		// 	for timeWindow, batchJob := range splitBatchJobs {
+		// 		fmt.Println(timeWindow, len(batchJob.Jobs))
+		// 	}
+		// })
 
 	})
 })
