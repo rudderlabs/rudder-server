@@ -23,8 +23,8 @@ type WarehouseClient interface {
 	GetHealth(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*wrapperspb.BoolValue, error)
 	GetWHUploads(ctx context.Context, in *WHUploadsRequest, opts ...grpc.CallOption) (*WHUploadsResponse, error)
 	GetWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*WHUploadResponse, error)
-	TriggerWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	TriggerWHUploads(ctx context.Context, in *WHUploadsRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	TriggerWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error)
+	TriggerWHUploads(ctx context.Context, in *WHUploadsRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error)
 }
 
 type warehouseClient struct {
@@ -62,8 +62,8 @@ func (c *warehouseClient) GetWHUpload(ctx context.Context, in *WHUploadRequest, 
 	return out, nil
 }
 
-func (c *warehouseClient) TriggerWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
+func (c *warehouseClient) TriggerWHUpload(ctx context.Context, in *WHUploadRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error) {
+	out := new(TriggerWhUploadsResponse)
 	err := c.cc.Invoke(ctx, "/proto.Warehouse/TriggerWHUpload", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -71,8 +71,8 @@ func (c *warehouseClient) TriggerWHUpload(ctx context.Context, in *WHUploadReque
 	return out, nil
 }
 
-func (c *warehouseClient) TriggerWHUploads(ctx context.Context, in *WHUploadsRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
+func (c *warehouseClient) TriggerWHUploads(ctx context.Context, in *WHUploadsRequest, opts ...grpc.CallOption) (*TriggerWhUploadsResponse, error) {
+	out := new(TriggerWhUploadsResponse)
 	err := c.cc.Invoke(ctx, "/proto.Warehouse/TriggerWHUploads", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -87,8 +87,8 @@ type WarehouseServer interface {
 	GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error)
 	GetWHUploads(context.Context, *WHUploadsRequest) (*WHUploadsResponse, error)
 	GetWHUpload(context.Context, *WHUploadRequest) (*WHUploadResponse, error)
-	TriggerWHUpload(context.Context, *WHUploadRequest) (*emptypb.Empty, error)
-	TriggerWHUploads(context.Context, *WHUploadsRequest) (*emptypb.Empty, error)
+	TriggerWHUpload(context.Context, *WHUploadRequest) (*TriggerWhUploadsResponse, error)
+	TriggerWHUploads(context.Context, *WHUploadsRequest) (*TriggerWhUploadsResponse, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -105,10 +105,10 @@ func (UnimplementedWarehouseServer) GetWHUploads(context.Context, *WHUploadsRequ
 func (UnimplementedWarehouseServer) GetWHUpload(context.Context, *WHUploadRequest) (*WHUploadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetWHUpload not implemented")
 }
-func (UnimplementedWarehouseServer) TriggerWHUpload(context.Context, *WHUploadRequest) (*emptypb.Empty, error) {
+func (UnimplementedWarehouseServer) TriggerWHUpload(context.Context, *WHUploadRequest) (*TriggerWhUploadsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TriggerWHUpload not implemented")
 }
-func (UnimplementedWarehouseServer) TriggerWHUploads(context.Context, *WHUploadsRequest) (*emptypb.Empty, error) {
+func (UnimplementedWarehouseServer) TriggerWHUploads(context.Context, *WHUploadsRequest) (*TriggerWhUploadsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TriggerWHUploads not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
