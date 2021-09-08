@@ -789,12 +789,14 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		id := uuid.NewV4()
 
 		params := map[string]interface{}{
-			"source_id":         commonMetaData.SourceID,
-			"destination_id":    commonMetaData.DestinationID,
-			"source_job_run_id": failedEvent.Metadata.JobRunID,
-			"error":             failedEvent.Error,
-			"status_code":       failedEvent.StatusCode,
-			"stage":             stage,
+			"source_id":          commonMetaData.SourceID,
+			"destination_id":     commonMetaData.DestinationID,
+			"source_job_run_id":  failedEvent.Metadata.SourceJobRunID,
+			"error":              failedEvent.Error,
+			"status_code":        failedEvent.StatusCode,
+			"stage":              stage,
+			"record_id":          failedEvent.Metadata.RecordID,
+			"source_task_run_id": failedEvent.Metadata.SourceTaskRunID,
 		}
 		marshalledParams, err := json.Marshal(params)
 		if err != nil {
@@ -1254,6 +1256,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			txn := proc.errorDB.BeginGlobalTransaction()
 			jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
 			for _, failedJob := range failedJobs {
+				proc.logger.Infof("failed job params, %s", string(failedJob.Parameters))
 				router.SaveSourceFailedEvents(failedJob.Parameters, jobRunIDAbortedEventsMap)
 			}
 			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
