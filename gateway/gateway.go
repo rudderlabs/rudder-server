@@ -184,7 +184,7 @@ func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket str
 
 // Part of the gateway module Setup call.
 // 	Initiates `maxUserWebRequestWorkerProcess` number of `webRequestWorkers` that listen on their `webRequestQ` for new WebRequests.
-func (gateway *HandleT) initUserWebRequestWorkers(ctx context.Context) {
+func (gateway *HandleT) initUserWebRequestWorkers() {
 	gateway.userWebRequestWorkers = make([]*userWebRequestWorkerT, maxUserWebRequestWorkerProcess)
 	for i := 0; i < maxUserWebRequestWorkerProcess; i++ {
 		gateway.logger.Debug("User Web Request Worker Started", i)
@@ -1416,7 +1416,7 @@ Setup initializes this module:
 
 This function will block until backend config is initialy received.
 */
-func (gateway *HandleT) Setup(ctx context.Context, application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request)) {
+func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request)) {
 	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = stats.DefaultStats
@@ -1466,7 +1466,7 @@ func (gateway *HandleT) Setup(ctx context.Context, application app.Interface, ba
 
 	gateway.backendConfig.WaitForConfig()
 
-	gateway.initUserWebRequestWorkers(ctx)
+	gateway.initUserWebRequestWorkers()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)

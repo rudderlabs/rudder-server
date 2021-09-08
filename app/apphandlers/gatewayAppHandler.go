@@ -63,7 +63,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 		rateLimiter.SetUp()
 		gateway.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gateway.Setup(ctx, gatewayApp.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, gatewayApp.VersionHandler)
+		gateway.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, gatewayApp.VersionHandler)
 		defer gateway.Shutdown()
 
 		g.Go(func() error {
