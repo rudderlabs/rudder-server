@@ -98,7 +98,7 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accountId string, accessToken string) (statusCode int, respBody string) {
 	authErrHandler.oauthErrHandlerReqTimerStat.Start()
 	if len(strings.TrimSpace(accessToken)) == 0 {
-		panic(`Cannot proceed with refresh token request as accessToken is empty`)
+		return http.StatusBadRequest, `Cannot proceed with refresh token request as accessToken is empty`
 	}
 	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
 	refreshUrl := fmt.Sprintf("%s/dest/workspaces/%s/accounts/%s/token", configBEURL, workspaceId, accountId)
