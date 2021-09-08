@@ -11,6 +11,7 @@ import (
 	"context"
 	"database/sql"
 	b64 "encoding/base64"
+	"flag"
 	"fmt"
 	"html/template"
 	"io"
@@ -41,16 +42,17 @@ import (
 )
 
 var (
-	hold        bool = true
-	db          *sql.DB
-	DB_DSN      = "root@tcp(127.0.0.1:3306)/service"
-	httpPort    string
-	dbHandle    *sql.DB
-	sourceJSON  backendconfig.ConfigT
-	webhookurl  string
-	webhook     *WebhookRecorder
-	writeKey    string
-	workspaceID string
+	hold           bool
+	runIntegration bool
+	db             *sql.DB
+	DB_DSN         = "root@tcp(127.0.0.1:3306)/service"
+	httpPort       string
+	dbHandle       *sql.DB
+	sourceJSON     backendconfig.ConfigT
+	webhookurl     string
+	webhook        *WebhookRecorder
+	writeKey       string
+	workspaceID    string
 )
 
 func randString(n int) string {
@@ -246,6 +248,15 @@ func SendEvent() {
 }
 
 func TestMain(m *testing.M) {
+	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
+	flag.BoolVar(&runIntegration, "integration", false, "run integration level tests")
+	flag.Parse()
+
+	if !runIntegration {
+		fmt.Println("Skipping integration test. Use `-integration` to run them.")
+		return
+	}
+
 	// hack to make defer work, without being affected by the os.Exit in TestMain
 	os.Exit(run(m))
 }
