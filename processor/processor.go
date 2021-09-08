@@ -1454,7 +1454,7 @@ func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 		txn := proc.errorDB.BeginGlobalTransaction()
 		jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
 		for _, failedJob := range failedJobs {
-			proc.logger.Infof("failed job params, %s", string(failedJob.Parameters))
+			proc.logger.Infof("failed job parameters, %s", string(failedJob.Parameters))
 			router.SaveSourceFailedEvents(failedJob.Parameters, jobRunIDAbortedEventsMap)
 		}
 		router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
