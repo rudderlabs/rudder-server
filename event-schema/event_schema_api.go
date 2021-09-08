@@ -75,10 +75,10 @@ func (manager *EventSchemaManagerT) GetJsonSchemas(w http.ResponseWriter, r *htt
 		writeKey = writeKeys[0]
 	}
 
-	eventTypes := manager.fetchEventModelsByWriteKey(writeKey)
+	eventModels := manager.fetchEventModelsByWriteKey(writeKey)
 
-	// generating json schema from eventTypes
-	jsonSchemas, err := generateAllJsonSch(eventTypes)
+	// generating json schema from eventModels
+	jsonSchemas, err := generateJsonSchFromEM(eventModels)
 	if err != nil {
 		http.Error(w, response.MakeResponse("Internal Error: Failed to Marshal event types"), 500)
 		return
@@ -96,7 +96,8 @@ type PropertiesT struct {
 	Property map[string]interface{} `json:"properties"`
 }
 
-func generateAllJsonSch(eventModels []*EventModelT) ([]byte, error) {
+// generateJsonSchFromEM Generates Json schemas from Event Models
+func generateJsonSchFromEM(eventModels []*EventModelT) ([]byte, error) {
 	var jsonSchemas []map[string]interface{}
 	for _, eventModel := range eventModels {
 		flattenedSch := make(map[string]interface{})
@@ -110,7 +111,7 @@ func generateAllJsonSch(eventModels []*EventModelT) ([]byte, error) {
 			pkgLogger.Errorf("Error unflattening flattenedSch: %v for ID: %v", err, eventModel.ID)
 			continue
 		}
-		schemaProperties, err := getSchemaPropertiesFromEventModelSchema(eventModel.EventType, unFlattenedSch)
+		schemaProperties, err := getETSchProp(eventModel.EventType, unFlattenedSch)
 		if err != nil {
 			pkgLogger.Errorf("Error while getting schema properties: %v for ID: %v", err, eventModel.ID)
 			continue
@@ -125,7 +126,7 @@ func generateAllJsonSch(eventModels []*EventModelT) ([]byte, error) {
 			meta = meta + ":" + eventModel.EventIdentifier
 		}
 
-		jsonSchema := generateJsonSchFromUnflattened(schemaProperties)
+		jsonSchema := generateJsonSchFromSchProp(schemaProperties)
 		jsonSchema["additionalProperties"] = true
 		jsonSchema["$schema"] = "http://json-schema.org/draft-07/schema#"
 		jsonSchema["$id"] = "http://rudder.com/" + meta
@@ -139,7 +140,8 @@ func generateAllJsonSch(eventModels []*EventModelT) ([]byte, error) {
 	return eventJsonSchs, nil
 }
 
-func getSchemaPropertiesFromEventModelSchema(eventType string, eventModelSch map[string]interface{}) (map[string]interface{}, error) {
+// getETSchProp Get Event Type schema from Event Model Schema
+func getETSchProp(eventType string, eventModelSch map[string]interface{}) (map[string]interface{}, error) {
 	switch eventType {
 	case "track", "screen", "page":
 		{
@@ -161,7 +163,8 @@ func getSchemaPropertiesFromEventModelSchema(eventType string, eventModelSch map
 	return nil, fmt.Errorf("invalid eventType")
 }
 
-func generateJsonSchFromUnflattened(schemaProperties map[string]interface{}) map[string]interface{} {
+// generateJsonSchFromSchProp Generated Json schema from unflattened schema properties.
+func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[string]interface{} {
 	properties := PropertiesT{
 		Property: make(map[string]interface{}),
 	}
@@ -183,7 +186,7 @@ func generateJsonSchFromUnflattened(schemaProperties map[string]interface{}) map
 			}
 		case map[string]interface{}:
 			{
-				properties.Property[k] = generateJsonSchFromUnflattened(value)
+				properties.Property[k] = generateJsonSchFromSchProp(value)
 			}
 		default:
 			pkgLogger.Errorf("unknown type found")
