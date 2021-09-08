@@ -40,7 +40,7 @@ type FailedEventsManagerT struct {
 func init() {
 	config.RegisterDurationConfigVariable(time.Duration(48), &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
 	config.RegisterDurationConfigVariable(time.Duration(24), &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
-	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
+	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", true)
 }
 
 func GetFailedEventsManager() FailedEventsManagerI {
