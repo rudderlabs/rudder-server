@@ -14,7 +14,6 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -205,7 +204,7 @@ func SendEvent() {
 	"anonymousId":"anon-id-new",
 	"context": {
 	  "traits": {
-		 "trait1": "new-val"  
+		 "trait1": "new-val"
 	  },
 	  "ip": "14.5.67.21",
 	  "library": {
@@ -429,7 +428,7 @@ func TestWebhook(t *testing.T) {
 
 	req := webhook.Requests()[0]
 
-	body, err := io.ReadAll(req.Body)
+	body, err := ioutil.ReadAll(req.Body)
 
 	require.Equal(t, "POST", req.Method)
 	require.Equal(t, "/", req.URL.Path)

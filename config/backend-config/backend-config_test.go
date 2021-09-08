@@ -7,9 +7,12 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
 	mock_utils "github.com/rudderlabs/rudder-server/mocks/utils"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	mock_sysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	stats "github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
 )
@@ -85,7 +88,16 @@ var (
 	}
 )
 
+func initBackendConfig() {
+	config.Load()
+	admin.Init()
+	diagnostics.Init()
+	Init()
+}
+
 var _ = Describe("BackendConfig", func() {
+	initBackendConfig()
+
 	BeforeEach(func() {
 		backendConfig = new(WorkspaceConfig)
 		ctrl = gomock.NewController(GinkgoT())

@@ -208,7 +208,6 @@ func loadConfig() {
 }
 
 func Init() {
-
 	Diagnostics = diagnostics.Diagnostics
 	loadConfig()
 }
