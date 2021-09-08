@@ -521,8 +521,8 @@ const (
 // Loads db config and migration related config from config file
 func loadConfig() {
 	host = config.GetEnv("JOBS_DB_HOST", "localhost")
-	user = config.GetEnv("JOBS_DB_USER", "rudder")
-	dbname = config.GetEnv("JOBS_DB_DB_NAME", "jobsdb")
+	user = config.GetEnv("JOBS_DB_USER", "ubuntu")
+	dbname = config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
 	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslmode = config.GetEnv("JOBS_DB_SSL_MODE", "disable")
