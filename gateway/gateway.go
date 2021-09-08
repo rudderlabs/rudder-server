@@ -166,7 +166,6 @@ type HandleT struct {
 	httpTimeout                                                time.Duration
 	httpWebServer                                              *http.Server
 
-	backgroundCtx    context.Context
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 }
@@ -226,27 +225,6 @@ func (gateway *HandleT) runUserWebRequestWorkers(ctx context.Context) {
 	g.Wait()
 
 	close(gateway.userWorkerBatchRequestQ)
-}
-
-func (gateway *HandleT) Shutdown() {
-	fmt.Println("gateway shutdown start")
-
-	if gateway.httpWebServer != nil {
-		gateway.httpWebServer.Shutdown(context.Background())
-		fmt.Println("gateway httpWebServer shutdown")
-	}
-	gateway.backgroundCancel()
-	gateway.webhookHandler.Shutdown()
-	fmt.Println("gateway webhookHandler shutdown")
-
-	// UserWebRequestWorkers
-	for _, worker := range gateway.userWebRequestWorkers {
-		close(worker.webRequestQ)
-	}
-	fmt.Println("close worker")
-
-	gateway.backgroundWait()
-
 }
 
 //Initiates `maxDBWriterProcess` number of dbWriterWorkers
@@ -1294,7 +1272,17 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		MaxHeaderBytes:    MaxHeaderBytes,
 	}
 
-	return gateway.httpWebServer.ListenAndServe()
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		<-ctx.Done()
+		return gateway.httpWebServer.Shutdown(context.Background())
+	})
+	g.Go(func() error {
+		return gateway.httpWebServer.ListenAndServe()
+		//      gateway.logger.Fatal()
+	})
+
+	return g.Wait()
 }
 
 //AdminHandler for Admin Operations
@@ -1483,7 +1471,6 @@ func (gateway *HandleT) Setup(ctx context.Context, application app.Interface, ba
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
-	gateway.backgroundCtx = ctx
 	gateway.backgroundCancel = cancel
 	gateway.backgroundWait = g.Wait
 
@@ -1507,4 +1494,16 @@ func (gateway *HandleT) Setup(ctx context.Context, application app.Interface, ba
 		gateway.collectMetrics(ctx)
 		return nil
 	}))
+}
+
+func (gateway *HandleT) Shutdown() {
+	gateway.backgroundCancel()
+	gateway.webhookHandler.Shutdown()
+
+	// UserWebRequestWorkers
+	for _, worker := range gateway.userWebRequestWorkers {
+		close(worker.webRequestQ)
+	}
+
+	gateway.backgroundWait()
 }
