@@ -108,7 +108,7 @@ func connect(cred credentialsT) (*sql.DB, error) {
 	return db, nil
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("postgres")
 }

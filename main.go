@@ -44,6 +44,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/db"
 
@@ -62,7 +63,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-server/warehouse"
@@ -134,6 +140,8 @@ func canStartWarehouse() bool {
 
 func runAllInit() {
 	config.Load()
+	admin.Init()
+	app.Init()
 	logger.Init()
 	misc.Init()
 	stats.Init()
@@ -148,14 +156,22 @@ func runAllInit() {
 	pgnotifier.Init()
 	jobsdb.Init()
 	jobsdb.Init2()
+	jobsdb.Init3()
 	destination_connection_tester.Init()
 	warehouse.Init()
 	warehouse.Init2()
 	warehouse.Init3()
 	warehouse.Init4()
+	warehouse.Init5()
+	azuresynapse.Init()
+	mssql.Init()
+	postgres.Init()
+	redshift.Init()
+	snowflake.Init()
 	transformer.Init()
 	webhook.Init()
 	batchrouter.Init()
+	batchrouter.Init2()
 	asyncdestinationmanager.Init()
 	batchrouterutils.Init()
 	dedup.Init()
@@ -168,6 +184,7 @@ func runAllInit() {
 	customdestinationmanager.Init()
 	routertransformer.Init()
 	router.Init()
+	router.Init2()
 	operationmanager.Init()
 	operationmanager.Init2()
 	ratelimiter.Init()
@@ -177,6 +194,7 @@ func runAllInit() {
 	apphandlers.Init2()
 	rruntime.Init()
 	integrations.Init()
+	alert.Init()
 	Init()
 
 }
