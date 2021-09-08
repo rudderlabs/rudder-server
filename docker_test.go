@@ -54,6 +54,10 @@ var (
 	writeKey       string
 	workspaceID    string
 )
+type Event struct {
+	anonymous_id       string
+	user_id    string
+}
 
 func randString(n int) string {
 	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
@@ -367,6 +371,7 @@ func run(m *testing.M) int {
 			"webhookUrl":  webhookurl,
 			"writeKey":    writeKey,
 			"workspaceId": workspaceID,
+			"postgresPort": resourcePostgres.GetPort("5432/tcp"),
 		},
 	)
 	defer func() {
@@ -441,6 +446,16 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "daf823fb-e8d3-413a-8313-d34cd756f968")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "track")
 
-	// TODO: Verify in POSTGRES
+
 	// TODO: Verify in Live Evets API
 }
+// Verify Event in POSTGRES
+func TestPostgres(t *testing.T) {
+	var myEvent Event
+	require.Eventually(t, func() bool {
+		eventSql:= "select anonymous_id, user_id from example.tracks limit 1"
+		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
+		return myEvent.anonymous_id == "anon-id-new"
+	}, time.Minute, 10*time.Millisecond)
+	require.Equal(t, "identified user id", myEvent.user_id)
+	}
