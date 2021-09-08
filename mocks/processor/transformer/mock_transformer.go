@@ -71,3 +71,17 @@ func (mr *MockTransformerMockRecorder) Transform(arg0, arg1, arg2 interface{}) *
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0, arg1, arg2)
 }
+
+// Validate mocks base method.
+func (m *MockTransformer) Validate(arg0 []transformer.TransformerEventT, arg1 string, arg2 int) transformer.ResponseT {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Validate", arg0, arg1, arg2)
+	ret0, _ := ret[0].(transformer.ResponseT)
+	return ret0
+}
+
+// Validate indicates an expected call of Validate.
+func (mr *MockTransformerMockRecorder) Validate(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Validate", reflect.TypeOf((*MockTransformer)(nil).Validate), arg0, arg1, arg2)
+}
