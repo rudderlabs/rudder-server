@@ -285,7 +285,7 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 	if (pendingUploadCount + pendingStagingFileCount) == int64(0) {
 		err = nil
 		response = &proto.TriggerWhUploadsResponse{
-			Message:    fmt.Sprint("No pending events to sync for this destination"),
+			Message:    "No pending events to sync for this destination",
 			StatusCode: 200,
 		}
 		return
