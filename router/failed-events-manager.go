@@ -40,7 +40,7 @@ type FailedEventsManagerT struct {
 func init() {
 	config.RegisterDurationConfigVariable(time.Duration(48), &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
 	config.RegisterDurationConfigVariable(time.Duration(24), &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
-	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", true)
+	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
 }
 
 func GetFailedEventsManager() FailedEventsManagerI {
@@ -59,6 +59,7 @@ func GetFailedEventsManager() FailedEventsManagerI {
 
 func (fem *FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap map[string][]*FailedEventRowT, txn *sql.Tx) {
 	if !failedKeysEnabled {
+		pkgLogger.Info("Skipping creating failed keys table")
 		return
 	}
 	for taskRunID, failedEvents := range taskRunIDFailedEventsMap {
