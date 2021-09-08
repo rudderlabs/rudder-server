@@ -7,6 +7,7 @@ package event_schema
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"net/http"
 	"strconv"
 	"strings"
@@ -172,30 +173,16 @@ func generateJsonSchFromUnflattened(schemaProperties map[string]interface{}) map
 		switch value := v.(type) {
 		case string:
 			{
+				types := strings.Split(value, ",")
+				for i, v := range types {
+					types[i] = misc.GetJsonSchemaDTFromGoDT(v)
+				}
 				properties.Property[k] = PropertyTypeT{
-					Type: []string{value},
+					Type: types,
 				}
 			}
 		case map[string]interface{}:
 			{
-				//check if map is an array or map
-				if checkIfArray(value) {
-					var vType interface{}
-					for _, v := range value {
-						vt, ok := v.(string)
-						if ok {
-							vType = map[string]interface{}{"type": vt}
-						} else {
-							vType = generateJsonSchFromUnflattened(v.(map[string]interface{}))
-						}
-						break
-					}
-					properties.Property[k] = map[string]interface{}{
-						"type":  "array",
-						"items": vType,
-					}
-					break
-				}
 				properties.Property[k] = generateJsonSchFromUnflattened(value)
 			}
 		default:
