@@ -87,11 +87,11 @@ func (manager *EventSchemaManagerT) GetJsonSchemas(w http.ResponseWriter, r *htt
 	w.Write(jsonSchemas)
 }
 
-type PropertyTypeT struct {
+type JSPropertyTypeT struct {
 	Type []string `json:"type"`
 }
 
-type PropertiesT struct {
+type JSPropertyT struct {
 	Required []string               `json:"required"`
 	Property map[string]interface{} `json:"properties"`
 }
@@ -167,7 +167,7 @@ func getETSchProp(eventType string, eventModelSch map[string]interface{}) (map[s
 
 // generateJsonSchFromSchProp Generated Json schema from unflattened schema properties.
 func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[string]interface{} {
-	properties := PropertiesT{
+	jsProperties := JSPropertyT{
 		Property: make(map[string]interface{}),
 	}
 	required := make([]string, 0)
@@ -177,15 +177,7 @@ func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[str
 		required = append(required, k)
 		switch value := v.(type) {
 		case string:
-			{
-				types := strings.Split(value, ",")
-				for i, v := range types {
-					types[i] = misc.GetJsonSchemaDTFromGoDT(v)
-				}
-				properties.Property[k] = PropertyTypeT{
-					Type: types,
-				}
-			}
+			jsProperties.Property[k] = getPropertyTypesFromSchValue(value)
 		case map[string]interface{}:
 			{
 				//check if map is an array or map
@@ -194,33 +186,39 @@ func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[str
 					for _, v := range value {
 						vt, ok := v.(string)
 						if ok {
-							types := strings.Split(vt, ",")
-							for i, v := range types {
-								types[i] = misc.GetJsonSchemaDTFromGoDT(v)
-							}
-							vType = map[string]interface{}{"type": types}
+							vType = getPropertyTypesFromSchValue(vt)
 						} else {
 							vType = generateJsonSchFromSchProp(v.(map[string]interface{}))
 						}
 						break
 					}
-					properties.Property[k] = map[string]interface{}{
+					jsProperties.Property[k] = map[string]interface{}{
 						"type":  "array",
 						"items": vType,
 					}
 					break
 				}
-				properties.Property[k] = generateJsonSchFromSchProp(value)
+				jsProperties.Property[k] = generateJsonSchFromSchProp(value)
 			}
 		default:
 			pkgLogger.Errorf("unknown type found")
 		}
 	}
-	properties.Required = required
-	finalSchema["properties"] = properties.Property
+	jsProperties.Required = required
+	finalSchema["jsProperties"] = jsProperties.Property
 	finalSchema["required"] = required
 	finalSchema["type"] = "object"
 	return finalSchema
+}
+
+func getPropertyTypesFromSchValue(schVal string) *JSPropertyTypeT {
+	types := strings.Split(schVal, ",")
+	for i, v := range types {
+		types[i] = misc.GetJsonSchemaDTFromGoDT(v)
+	}
+	return &JSPropertyTypeT{
+		Type: types,
+	}
 }
 
 //prop.myarr.0

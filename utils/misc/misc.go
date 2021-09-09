@@ -1165,7 +1165,9 @@ null
 // GetJsonSchemaDTFromGoDT returns the json schema supported data types from go lang supported data types.
 func GetJsonSchemaDTFromGoDT(goType string) string {
 	switch goType {
-	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float32", "float64":
+	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64":
+		return "integer"
+	case "float32", "float64":
 		return "number"
 	case "string":
 		return "string"
