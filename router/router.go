@@ -1906,9 +1906,9 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 				if err := json.Unmarshal([]byte(res), &accountSecret); err != nil {
 					// Some problem with AccountSecret unmarshalling
 					return http.StatusInternalServerError, err.Error()
-				} else if !router_utils.IsNotEmptyString(accountSecret.AccessToken) ||
-					!router_utils.IsNotEmptyString(accountSecret.ExpirationDate) {
-					return http.StatusBadRequest, `Empty Token cannot be processed further`
+				} else if !router_utils.IsNotEmptyString(accountSecret.AccessToken) {
+					// Status is 200, but no accesstoken or expirationDate is sent
+					return http.StatusInternalServerError, `Empty Token cannot be processed further`
 				}
 			}
 			// Retry with Refreshed Token(variable "res" - contains refreshed access token & expirationDate)

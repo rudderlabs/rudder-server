@@ -34,7 +34,7 @@ type Authorizer interface {
 	RefreshToken(workspaceId string, accountId string, accessToken string) (statusCode int, resBody string)
 }
 
-//NewOauthErrorHandler creates a new transformer
+// This function creates a new OauthErrorResponseHandler
 func NewOAuthErrorHandler() *OAuthErrResHandler {
 	return &OAuthErrResHandler{}
 }
@@ -114,14 +114,13 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 	}
 	res, err := json.Marshal(refTokenBody)
 	if err != nil {
-		// TODO: Is this way ok ? - Check with team
+		panic(err)
+	}
+	refreshResponse, refreshErr := authErrHandler.client.Post(refreshUrl, "application/json; charset=utf-8", bytes.NewBuffer(res))
+	if refreshErr != nil {
 		return http.StatusBadRequest, err.Error()
 	}
-	resp, refErr := authErrHandler.client.Post(refreshUrl, "application/json; charset=utf-8", bytes.NewBuffer(res))
-	if refErr != nil {
-		panic(refErr)
-	}
-	statusCode, response := authErrHandler.processResponse(resp, err)
+	statusCode, response := authErrHandler.processResponse(refreshResponse, refreshErr)
 	authErrHandler.oauthErrHandlerReqTimerStat.End()
 	authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
 	return statusCode, response
