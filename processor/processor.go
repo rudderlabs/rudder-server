@@ -1227,8 +1227,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		for _, eventToTransform := range eventsToTransform {
 			// default value or if accountId doesn't exist or not convertible to string
 			destToAccountIdMapping[eventToTransform.Destination.ID] = ""
-			if x, found := eventToTransform.Destination.Config["accountId"]; found {
-				if accountId, ok := x.(string); ok {
+			if accountIdInterface, found := eventToTransform.Destination.Config["accountId"]; found {
+				if accountId, ok := accountIdInterface.(string); ok {
 					destToAccountIdMapping[eventToTransform.Destination.ID] = accountId
 				}
 			}
@@ -1282,8 +1282,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				SourceTaskRunID: sourceTaskRunId,
 				SourceJobID:     sourceJobId,
 				SourceJobRunID:  sourceJobRunId,
-				WorkspaceId:     workspaceId, // Changed for Auth Error Implementation
-				AccountId:       accountId,   // Changed for Auth Error Implementation
+				WorkspaceId:     workspaceId,
+				AccountId:       accountId,
 			}
 			marshalledParams, err := json.Marshal(params)
 			if err != nil {
