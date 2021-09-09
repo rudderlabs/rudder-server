@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -186,7 +187,31 @@ func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[str
 				}
 			}
 		case map[string]interface{}:
-			properties.Property[k] = generateJsonSchFromSchProp(value)
+			{
+				//check if map is an array or map
+				if checkIfArray(value) {
+					var vType interface{}
+					for _, v := range value {
+						vt, ok := v.(string)
+						if ok {
+							types := strings.Split(vt, ",")
+							for i, v := range types {
+								types[i] = misc.GetJsonSchemaDTFromGoDT(v)
+							}
+							vType = map[string]interface{}{"type": types}
+						} else {
+							vType = generateJsonSchFromSchProp(v.(map[string]interface{}))
+						}
+						break
+					}
+					properties.Property[k] = map[string]interface{}{
+						"type":  "array",
+						"items": vType,
+					}
+					break
+				}
+				properties.Property[k] = generateJsonSchFromSchProp(value)
+			}
 		default:
 			pkgLogger.Errorf("unknown type found")
 		}
@@ -196,6 +221,24 @@ func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[str
 	finalSchema["required"] = required
 	finalSchema["type"] = "object"
 	return finalSchema
+}
+
+//prop.myarr.0
+//will not be able to say if above is prop{myarr:[0]} or prop{myarr{"0":0}}
+func checkIfArray(value map[string]interface{}) bool {
+	if len(value) == 0 {
+		return false
+	}
+
+	for k, _ := range value {
+		_, err := strconv.Atoi(k)
+		if err != nil {
+			return false
+		}
+		// need not check the array continuity
+		//keys= append(keys,index)
+	}
+	return true
 }
 
 //https://play.golang.org/p/4juOff38ea
