@@ -130,6 +130,8 @@ func generateJsonSchFromEM(eventModels []*EventModelT) ([]byte, error) {
 		jsonSchema["$schema"] = "http://json-schema.org/draft-07/schema#"
 		jsonSchema["$id"] = "http://rudder.com/" + meta
 
+		// TODO: validate if the schema is correct.
+
 		jsonSchemas = append(jsonSchemas, jsonSchema)
 	}
 	eventJsonSchs, err := json.Marshal(jsonSchemas)
