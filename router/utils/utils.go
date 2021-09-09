@@ -62,3 +62,7 @@ func EnhanceResponse(rawMsg []byte, key, val string) []byte {
 
 	return resp
 }
+
+func IsNotEmptyString(s string) bool {
+	return len(strings.TrimSpace(s)) > 0
+}

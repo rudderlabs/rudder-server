@@ -14,6 +14,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
+type AccountSecret struct {
+	AccessToken    string `json:"accessToken"`
+	ExpirationDate string `json:"expirationDate"`
+}
+
 // OAuthErrResHandler is the handle for this class
 type OAuthErrResHandler struct {
 	tr                             *http.Transport
