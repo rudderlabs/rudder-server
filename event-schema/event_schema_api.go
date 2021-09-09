@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -185,9 +184,7 @@ func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[str
 				}
 			}
 		case map[string]interface{}:
-			{
-				properties.Property[k] = generateJsonSchFromSchProp(value)
-			}
+			properties.Property[k] = generateJsonSchFromSchProp(value)
 		default:
 			pkgLogger.Errorf("unknown type found")
 		}
@@ -197,24 +194,6 @@ func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[str
 	finalSchema["required"] = required
 	finalSchema["type"] = "object"
 	return finalSchema
-}
-
-//prop.myarr.0
-//will not be able to say if above is prop{myarr:[0]} or prop{myarr{"0":0}}
-func checkIfArray(value map[string]interface{}) bool {
-	if len(value) == 0 {
-		return false
-	}
-
-	for k, _ := range value {
-		_, err := strconv.Atoi(k)
-		if err != nil {
-			return false
-		}
-		// need not check the array continuity
-		//keys= append(keys,index)
-	}
-	return true
 }
 
 //https://play.golang.org/p/4juOff38ea

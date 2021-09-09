@@ -1166,17 +1166,11 @@ null
 func GetJsonSchemaDTFromGoDT(goType string) string {
 	switch goType {
 	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float32", "float64":
-		{
-			return "number"
-		}
+		return "number"
 	case "string":
-		{
-			return "string"
-		}
+		return "string"
 	case "bool":
-		{
-			return "boolean"
-		}
+		return "boolean"
 	}
 	return "object"
 }
