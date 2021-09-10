@@ -98,6 +98,7 @@ Router:
   noOfWorkers: 64
   allowAbortedUserJobsCountForProcessing: 1
   maxFailedCountForJob: 3
+  maxFailedOAuthCountForJob: 2
   retryTimeWindow: 180m
   transformerProxy: false
   MARKETO:

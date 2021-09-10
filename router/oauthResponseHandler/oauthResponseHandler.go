@@ -10,6 +10,7 @@ import (
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -102,7 +103,7 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 
 func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accountId string, accessToken string) (statusCode int, respBody string) {
 	authErrHandler.oauthErrHandlerReqTimerStat.Start()
-	if len(strings.TrimSpace(accessToken)) == 0 {
+	if !router_utils.IsNotEmptyString(accessToken) {
 		return http.StatusBadRequest, `Cannot proceed with refresh token request as accessToken is empty`
 	}
 	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
@@ -118,7 +119,7 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 	}
 	refreshResponse, refreshErr := authErrHandler.client.Post(refreshUrl, "application/json; charset=utf-8", bytes.NewBuffer(res))
 	if refreshErr != nil {
-		return http.StatusBadRequest, err.Error()
+		return http.StatusBadRequest, refreshErr.Error()
 	}
 	statusCode, response := authErrHandler.processResponse(refreshResponse, refreshErr)
 	authErrHandler.oauthErrHandlerReqTimerStat.End()
@@ -151,16 +152,25 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 
 func (authErrHandler *OAuthErrResHandler) processResponse(resp *http.Response, err error) (statusCode int, respBody string) {
 	var respData []byte
+	var ioUtilReadErr error
+	if err != nil {
+		respData = []byte("")
+		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, err)
+		return http.StatusInternalServerError, string(respData)
+	}
 	if resp != nil && resp.Body != nil {
-		respData, _ = ioutil.ReadAll(resp.Body)
+		respData, ioUtilReadErr = ioutil.ReadAll(resp.Body)
 		defer resp.Body.Close()
+		if ioUtilReadErr != nil {
+			return http.StatusInternalServerError, ioUtilReadErr.Error()
+		}
 	}
 	var contentTypeHeader string
 	if resp != nil && resp.Header != nil {
 		contentTypeHeader = resp.Header.Get("Content-Type")
 	}
 	if contentTypeHeader == "" {
-		//Detecting content type of the respBody
+		//Detecting content type of the respData
 		contentTypeHeader = http.DetectContentType(respData)
 	}
 	//If content type is not of type "*text*", overriding it with empty string
@@ -169,10 +179,6 @@ func (authErrHandler *OAuthErrResHandler) processResponse(resp *http.Response, e
 		strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
 		respData = []byte("")
 	}
-	if err != nil {
-		respData = []byte("")
-		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, err)
-		return http.StatusInternalServerError, string(respData)
-	}
+
 	return resp.StatusCode, string(respData)
 }

@@ -108,6 +108,7 @@ type HandleT struct {
 	savePayloadOnError                     bool
 	transformerProxy                       bool
 	oauth                                  oauth.Authorizer
+	maxFailedOAuthCountForJob              int
 }
 
 type jobResponseT struct {
@@ -557,7 +558,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
 					result := getIterableStruct(destinationJob.Message, transformAt)
-					fmt.Println(destinationJob)
 					for _, val := range result {
 						err := integrations.ValidatePostInfo(val)
 						if err != nil {
@@ -1662,10 +1662,12 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
+	maxFailedOAuthCountKeys := []string{"Router." + rt.destName + "." + "maxFailedOAuthCountForJob", "Router." + "maxFailedOAuthCountForJob"}
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
 	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
 	transformerProxyKeys := []string{"Router." + rt.destName + "." + "transformerProxy", "Router." + "transformerProxy"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
+	config.RegisterIntConfigVariable(2, &rt.maxFailedOAuthCountForJob, true, 1, maxFailedOAuthCountKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
@@ -1868,57 +1870,51 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 	var respBodyTemp string
 
 	respStatusCode, respBodyTemp = rt.transformer.Send(val, rt.destName, accessToken)
-	if retryCount >= 2 {
+	if retryCount >= rt.maxFailedOAuthCountForJob {
 		// Retrial termination condition
 		return respStatusCode, respBodyTemp
 	}
-	fmt.Printf("SendToProxy Response Code: %d\n", respStatusCode)
-	fmt.Printf("SendToProxy Response: %s\n", respBodyTemp)
 	var errOutput oauth.ErrorOutput
 	if err := json.Unmarshal([]byte(respBodyTemp), &errOutput); err != nil {
-		// If respBodyTemp comes out with a string, then this will occur
-		// TODO: Should we send any other error here ?
+		// If respBodyTemp comes out with a plain string, then this will occur
 		return http.StatusInternalServerError, err.Error()
 	}
 	workspaceId := destinationJob.JobMetadataArray[0].WorkspaceId
-	var stCd int = 0
-	var res string = ""
 	// Check the category
 	// Trigger the refresh endpoint/disable endpoint
 	if errOutput.Output.AuthErrorCategory == oauth.DISABLE_DEST {
-		stCd, res = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
-		if stCd == 200 {
+		statusCode, response = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
+		if statusCode == 200 {
 			// Abort the jobs as the destination is disable
-			return http.StatusBadRequest, res
+			return http.StatusBadRequest, response
 		}
 	} else if errOutput.Output.AuthErrorCategory == oauth.REFRESH_TOKEN {
 		accountId := destinationJob.JobMetadataArray[0].AccountId
-		stCd, res = rt.oauth.RefreshToken(workspaceId, accountId, errOutput.Output.AccessToken)
-		if stCd == 200 && router_utils.IsNotEmptyString(res) {
+		statusCode, response = rt.oauth.RefreshToken(workspaceId, accountId, errOutput.Output.AccessToken)
+		if statusCode == 200 && router_utils.IsNotEmptyString(response) {
 			retryCount += 1
 			// Setting these values since we would need to update the cache using these values
 			val.WorkspaceId = workspaceId
 			val.AccountId = accountId
-			// This will be "true" only when a refresh executed successfully
 			var accountSecret oauth.AccountSecret
 
-			if router_utils.IsNotEmptyString(res) {
-				if err := json.Unmarshal([]byte(res), &accountSecret); err != nil {
+			if router_utils.IsNotEmptyString(response) {
+				if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
 					// Some problem with AccountSecret unmarshalling
 					return http.StatusInternalServerError, err.Error()
 				} else if !router_utils.IsNotEmptyString(accountSecret.AccessToken) {
-					// Status is 200, but no accesstoken or expirationDate is sent
+					// Status is 200, but no accesstoken is sent
 					return http.StatusInternalServerError, `Empty Token cannot be processed further`
 				}
 			}
-			// Retry with Refreshed Token(variable "res" - contains refreshed access token & expirationDate)
-			return rt.SendToTransformerProxyWithRetry(val, destinationJob, res, retryCount)
+			// Retry with Refreshed Token(variable "response" - contains refreshed access token & expirationDate)
+			return rt.SendToTransformerProxyWithRetry(val, destinationJob, response, retryCount)
 		}
 	}
 
-	if stCd >= 400 && stCd < 600 {
+	if statusCode >= 400 && statusCode < 600 {
 		// Client errors and Server errors
-		return stCd, res
+		return statusCode, response
 	}
 	// By default send the status code & response from destination directly
 	return respStatusCode, respBodyTemp
