@@ -65,32 +65,43 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		return 400, "Could not create producer for Personalize", "Could not create producer for Personalize"
 	}
 
-	if eventChoice == "PutEvents" {
+	if len(eventChoice) > 0 {
+		if eventChoice == "PutEvents" {
+			input := personalizeevents.PutEventsInput{}
+			bytes := []byte(eventPayload)
+			err = json.Unmarshal(bytes, &input)
+			if err != nil {
+				return 400, err.Error(), "Could not unmarshal jsonData according to putEvents input structure"
+			}
+			resEvent, err = client.PutEvents(&input)
+
+		} else if eventChoice == "PutUsers" {
+			input := personalizeevents.PutUsersInput{}
+			bytes := []byte(eventPayload)
+			err = json.Unmarshal(bytes, &input)
+			if err != nil {
+				return 400, err.Error(), "Could not unmarshal jsonData according to putUsers input structure"
+			}
+			resUser, err = client.PutUsers(&input)
+
+		} else {
+			input := personalizeevents.PutItemsInput{}
+			bytes := []byte(eventPayload)
+			err = json.Unmarshal(bytes, &input)
+			if err != nil {
+				return 400, err.Error(), "Could not unmarshal jsonData according to putItems input structure"
+			}
+			resItem, err = client.PutItems(&input)
+		}
+	} else {
 		input := personalizeevents.PutEventsInput{}
-		bytes := []byte(eventPayload)
+		bytes := []byte(jsonData)
 		err = json.Unmarshal(bytes, &input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to putEvents input structure"
 		}
 		resEvent, err = client.PutEvents(&input)
 
-	} else if eventChoice == "PutUsers" {
-		input := personalizeevents.PutUsersInput{}
-		bytes := []byte(eventPayload)
-		err = json.Unmarshal(bytes, &input)
-		if err != nil {
-			return 400, err.Error(), "Could not unmarshal jsonData according to putUsers input structure"
-		}
-		resUser, err = client.PutUsers(&input)
-
-	} else {
-		input := personalizeevents.PutItemsInput{}
-		bytes := []byte(eventPayload)
-		err = json.Unmarshal(bytes, &input)
-		if err != nil {
-			return 400, err.Error(), "Could not unmarshal jsonData according to putItems input structure"
-		}
-		resItem, err = client.PutItems(&input)
 	}
 	if err != nil {
 		pkgLogger.Errorf("Personalize Error while sending event :: %w", err)
