@@ -122,7 +122,7 @@ type ParametersT struct {
 	SourceJobID     string `json:"source_job_id"`
 	SourceJobRunID  string `json:"source_job_run_id"`
 	WorkspaceId     string `json:"workspaceId"`
-	AccountId       string `json:"accountId"`
+	RudderAccountId string `json:"rudderAccountId"`
 }
 
 type MetricMetadata struct {
@@ -1225,11 +1225,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		// This mapping is used to map destination with it's respective account for refresh token capability
 		destToAccountIdMapping := make(map[string]string)
 		for _, eventToTransform := range eventsToTransform {
-			// default value or if accountId doesn't exist or not convertible to string
+			// default value or if rudderAccountId doesn't exist or not convertible to string
 			destToAccountIdMapping[eventToTransform.Destination.ID] = ""
-			if accountIdInterface, found := eventToTransform.Destination.Config["accountId"]; found {
-				if accountId, ok := accountIdInterface.(string); ok {
-					destToAccountIdMapping[eventToTransform.Destination.ID] = accountId
+			if rudderAccountIdInterface, found := eventToTransform.Destination.Config["rudderAccountId"]; found {
+				if rudderAccountId, ok := rudderAccountIdInterface.(string); ok {
+					destToAccountIdMapping[eventToTransform.Destination.ID] = rudderAccountId
 				}
 			}
 		}
@@ -1263,7 +1263,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			sourceJobId := destEvent.Metadata.SourceJobID
 			sourceJobRunId := destEvent.Metadata.SourceJobRunID
 			workspaceId := destEvent.Metadata.WorkspaceID
-			accountId := destToAccountIdMapping[destID]
+			rudderAccountId := destToAccountIdMapping[destID]
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			//This is done to respect findWorker logic in router.
 			if rudderID == "" {
@@ -1283,7 +1283,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				SourceJobID:     sourceJobId,
 				SourceJobRunID:  sourceJobRunId,
 				WorkspaceId:     workspaceId,
-				AccountId:       accountId,
+				RudderAccountId: rudderAccountId,
 			}
 			marshalledParams, err := json.Marshal(params)
 			if err != nil {

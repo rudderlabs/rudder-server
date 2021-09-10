@@ -130,7 +130,7 @@ type JobParametersT struct {
 	SourceJobID     string `json:"source_job_id"`
 	SourceJobRunID  string `json:"source_job_run_id"`
 	WorkspaceId     string `json:"workspaceId"`
-	AccountId       string `json:"accountId"`
+	RudderAccountId string `json:"rudderAccountId"`
 }
 
 type workerMessageT struct {
@@ -349,7 +349,7 @@ func (worker *workerT) workerProcess() {
 				CreatedAt:        job.CreatedAt.Format(misc.RFC3339Milli),
 				FirstAttemptedAt: firstAttemptedAt,
 				TransformAt:      parameters.TransformAt,
-				AccountId:        parameters.AccountId,
+				RudderAccountId:  parameters.RudderAccountId,
 				WorkspaceId:      parameters.WorkspaceId,
 				JobT:             job}
 
@@ -1889,13 +1889,13 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 			return http.StatusBadRequest, response
 		}
 	} else if errOutput.Output.AuthErrorCategory == oauth.REFRESH_TOKEN {
-		accountId := destinationJob.JobMetadataArray[0].AccountId
-		statusCode, response = rt.oauth.RefreshToken(workspaceId, accountId, errOutput.Output.AccessToken)
+		rudderAccountId := destinationJob.JobMetadataArray[0].RudderAccountId
+		statusCode, response = rt.oauth.RefreshToken(workspaceId, rudderAccountId, errOutput.Output.AccessToken)
 		if statusCode == 200 && router_utils.IsNotEmptyString(response) {
 			retryCount += 1
 			// Setting these values since we would need to update the cache using these values
 			val.WorkspaceId = workspaceId
-			val.AccountId = accountId
+			val.RudderAccountId = rudderAccountId
 			var accountSecret oauth.AccountSecret
 
 			if router_utils.IsNotEmptyString(response) {
