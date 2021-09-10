@@ -14,12 +14,17 @@ import (
 	. "github.com/onsi/gomega"
 	uuid "github.com/satori/go.uuid"
 
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 
@@ -232,7 +237,19 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
+func initProcessor() {
+	config.Load()
+	logger.Init()
+	admin.Init()
+	dedup.Init()
+	misc.Init()
+	integrations.Init()
+	Init()
+}
+
 var _ = Describe("Processor", func() {
+	initProcessor()
+
 	var c *context
 
 	BeforeEach(func() {
@@ -1121,6 +1138,7 @@ var _ = Describe("Processor", func() {
 })
 
 var _ = Describe("Static Function Tests", func() {
+	initProcessor()
 
 	Context("TransformerFormatResponse Tests", func() {
 		It("Should match ConvertToTransformerResponse without filtering", func() {

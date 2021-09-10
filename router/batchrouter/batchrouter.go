@@ -50,7 +50,7 @@ var (
 	warehouseServiceMaxRetryTime       time.Duration
 	asyncDestinations                  []string
 	pkgLogger                          logger.LoggerI
-	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Diagnostics                        diagnostics.DiagnosticsI
 	QueryFilters                       jobsdb.QueryFiltersT
 	readPerDestination                 bool
 	disableEgress                      bool
@@ -1899,11 +1899,12 @@ func loadConfig() {
 	dateFormatMap = make(map[string]string)
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("batchrouter")
 
 	setQueryFilters()
+	Diagnostics = diagnostics.Diagnostics
 }
 
 func setQueryFilters() {
@@ -1921,7 +1922,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
 	brt.backendConfig = backendConfig
 	brt.reporting = reporting
-	config.RegisterBoolConfigVariable(true, &brt.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &brt.reportingEnabled, false, "Reporting.enabled")
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
@@ -1931,7 +1932,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.pollAsyncStatusResumeChannel = make(chan bool)
 
 	//waiting for reporting client setup
-	if brt.reporting != nil {
+	if brt.reporting != nil && brt.reportingEnabled {
 		brt.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
 	}
 

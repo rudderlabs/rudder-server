@@ -27,7 +27,7 @@ type HandleT struct {
 	restrictor restrictor.Restrictor
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("rate-limiter")
 }

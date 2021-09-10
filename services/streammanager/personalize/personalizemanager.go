@@ -24,6 +24,7 @@ var pkgLogger logger.LoggerI
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("personalize")
 }
+
 func NewProducer(destinationConfig interface{}) (personalizeevents.PersonalizeEvents, error) {
 	var config Config
 	jsonConfig, err := json.Marshal(destinationConfig) // produces json
