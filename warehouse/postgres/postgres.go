@@ -233,7 +233,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		defer pg.dropStagingTable(stagingTableName)
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
+	stmt, err := txn.Prepare(pq.CopyIn(fmt.Sprintf(`"%[1]s"."%[2]s"`, pg.Namespace, stagingTableName), sortedColumnKeys...))
 	if err != nil {
 		pkgLogger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
 		txn.Rollback()
@@ -381,12 +381,12 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		userColNames = append(userColNames, colName)
 		caseSubQuery := fmt.Sprintf(`case
 						  when (select true) then (
-						  	select %[1]s from %[2]s
-						  	where x.id = %[2]s.id
+						  	select %[1]s from "%[3]s"."%[2]s" as staging_table
+						  	where x.id = staging_table.id
 							  and %[1]s is not null
 							  order by received_at desc
 						  	limit 1)
-						  end as %[1]s`, colName, unionStagingTableName)
+						  end as %[1]s`, colName, unionStagingTableName, pg.Namespace)
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
@@ -490,7 +490,7 @@ func (pg *HandleT) CreateSchema() (err error) {
 
 func (pg *HandleT) dropStagingTable(stagingTableName string) {
 	pkgLogger.Infof("PG: dropping table %+v\n", stagingTableName)
-	_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, stagingTableName))
+	_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%[1]s"."%[2]s"`, pg.Namespace, stagingTableName))
 	if err != nil {
 		pkgLogger.Errorf("PG:  Error dropping staging table %s in postgres: %v", stagingTableName, err)
 	}
