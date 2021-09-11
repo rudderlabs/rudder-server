@@ -50,7 +50,7 @@ func (processor *ProcessorApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.PROCESSOR)
 }
 
-func init() {
+func Init() {
 	loadConfigHandler()
 }
 
@@ -103,7 +103,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	}
 
 	var reportingI types.ReportingI
-	if processor.App.Features().Reporting != nil {
+	if processor.App.Features().Reporting != nil && config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
 		reportingI = processor.App.Features().Reporting.GetReportingInstance()
 	}
 

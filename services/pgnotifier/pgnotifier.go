@@ -40,7 +40,7 @@ const (
 	AbortedState   = "aborted"
 )
 
-func init() {
+func Init() {
 	loadPGNotifierConfig()
 	queueName = "pg_notifier_queue"
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("pgnotifier")

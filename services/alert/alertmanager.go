@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
@@ -13,8 +14,9 @@ var (
 	victorOpsRoutingKey string
 )
 
-func init() {
+func Init() {
 	loadConfig()
+	pkgLogger = logger.NewLogger().Child("alert")
 }
 
 func loadConfig() {

@@ -45,10 +45,10 @@ var (
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
-	Http                 sysUtils.HttpI           = sysUtils.NewHttp()
-	pkgLogger            logger.LoggerI           = logger.NewLogger().Child("backend-config")
-	IoUtil               sysUtils.IoUtilI         = sysUtils.NewIoUtil()
-	Diagnostics          diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Http                 sysUtils.HttpI   = sysUtils.NewHttp()
+	pkgLogger            logger.LoggerI   = logger.NewLogger().Child("backend-config")
+	IoUtil               sysUtils.IoUtilI = sysUtils.NewIoUtil()
+	Diagnostics          diagnostics.DiagnosticsI
 )
 
 var Eb utils.PublishSubscriber = new(utils.EventBus)
@@ -244,7 +244,8 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &configEnvReplacementEnabled, false, "BackendConfig.envReplacementEnabled")
 }
 
-func init() {
+func Init() {
+	Diagnostics = diagnostics.Diagnostics
 	loadConfig()
 }
 

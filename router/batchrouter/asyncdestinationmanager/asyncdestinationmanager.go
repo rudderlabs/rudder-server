@@ -88,7 +88,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(600), &HTTPTimeout, true, time.Second, "AsyncDestination.HTTPTimeout")
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("asyncDestinationManager")
 }

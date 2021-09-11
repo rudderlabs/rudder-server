@@ -210,7 +210,7 @@ type JobsdbUtilsHandler struct {
 
 var jobsdbUtilsHandler *JobsdbUtilsHandler
 
-func init() {
+func Init3() {
 	jobsdbUtilsHandler = &JobsdbUtilsHandler{}
 	admin.RegisterAdminHandler("JobsdbUtilsHandler", jobsdbUtilsHandler)
 }

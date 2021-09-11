@@ -564,7 +564,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &useNewCacheBurst, true, "JobsDB.useNewCacheBurst")
 }
 
-func init() {
+func Init2() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("jobsdb")
 }

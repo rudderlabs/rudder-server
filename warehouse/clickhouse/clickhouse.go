@@ -129,6 +129,11 @@ type credentialsT struct {
 	tlsConfigName string
 }
 
+func Init() {
+	loadConfig()
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
+}
+
 // connect connects to warehouse with provided credentials
 func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 	var dbNameParam string
@@ -157,11 +162,6 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 		return nil, fmt.Errorf("clickhouse connection error : (%v)", err)
 	}
 	return db, nil
-}
-
-func init() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
 }
 
 func loadConfig() {

@@ -6,10 +6,26 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	. "github.com/rudderlabs/rudder-server/warehouse"
 )
 
+func initWarehouse() {
+	config.Load()
+	admin.Init()
+	logger.Init()
+	Init()
+	Init2()
+	Init3()
+	Init4()
+	Init5()
+}
+
 var _ = Describe("Warehouse", func() {
+	initWarehouse()
+
 	Describe("Scheduling", func() {
 		Describe("GetPrevScheduledTime", func() {
 			It("should return prev scheduled time", func() {
