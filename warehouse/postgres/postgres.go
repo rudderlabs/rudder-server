@@ -233,7 +233,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		defer pg.dropStagingTable(stagingTableName)
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(fmt.Sprintf(`"%[1]s"."%[2]s"`, pg.Namespace, stagingTableName), sortedColumnKeys...))
+	stmt, err := txn.Prepare(pq.CopyInSchema(pg.Namespace, stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		pkgLogger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
 		txn.Rollback()
