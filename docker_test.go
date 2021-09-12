@@ -262,10 +262,14 @@ func TestMain(m *testing.M) {
 	}
 
 	// hack to make defer work, without being affected by the os.Exit in TestMain
-	os.Exit(run(m))
+	exitCode, err := run(m)
+	if err != nil {
+		log.Fatal(err)
+	}
+	os.Exit(exitCode)
 }
 
-func run(m *testing.M) int {
+func run(m *testing.M) (int, error) {
 	setupStart := time.Now()
 
 	var tearDownStart time.Time
@@ -279,7 +283,7 @@ func run(m *testing.M) int {
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
 	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		return 0, fmt.Errorf("could not connect to docker: %w", err)
 	}
 
 	database := "jobsdb"
@@ -290,7 +294,7 @@ func run(m *testing.M) int {
 		"POSTGRES_USER=rudder",
 	})
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		return 0, fmt.Errorf("Could not start resource Postgres: %w", err)
 	}
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
@@ -322,7 +326,7 @@ func run(m *testing.M) int {
 		}
 		return db.Ping()
 	}); err != nil {
-		log.Panicf("Could not connect to docker: %s", err)
+		return 0, fmt.Errorf("Could not connect to postgres %q: %w", DB_DSN, err)
 	}
 	fmt.Println("DB_DSN:", DB_DSN)
 	// ----------
@@ -337,7 +341,7 @@ func run(m *testing.M) int {
 		},
 	})
 	if err != nil {
-		log.Panicf("Could not start resource: %s", err)
+		return 0, fmt.Errorf("Could not start resource transformer: %w", err)
 	}
 	defer func() {
 		if err := pool.Purge(transformerRes); err != nil {
@@ -364,13 +368,13 @@ func run(m *testing.M) int {
 
 	httpPortInt, err := freeport.GetFreePort()
 	if err != nil {
-		log.Panic(err)
+		return 0, fmt.Errorf("Could not get free port for http: %w", err)
 	}
 	httpPort = strconv.Itoa(httpPortInt)
 	os.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
 	httpAdminPort, err := freeport.GetFreePort()
 	if err != nil {
-		log.Panic(err)
+		return 0, fmt.Errorf("Could not get free port for http admin: %w", err)
 	}
 	os.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
 
@@ -401,6 +405,9 @@ func run(m *testing.M) int {
 	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_test")
+	if err != nil {
+		return 0, err
+	}
 	defer os.RemoveAll(rudderTmpDir)
 	os.Setenv("RUDDER_TMPDIR", rudderTmpDir)
 	fmt.Println("RUDDER_TMPDIR:", rudderTmpDir)
@@ -430,7 +437,7 @@ func run(m *testing.M) int {
 	<-svcDone
 
 	tearDownStart = time.Now()
-	return code
+	return code, nil
 }
 
 func TestWebhook(t *testing.T) {
