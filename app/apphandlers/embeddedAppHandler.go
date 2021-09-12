@@ -89,7 +89,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		reportingI = embedded.App.Features().Reporting.GetReportingInstance()
 	}
 
-	if embedded.App.Features().Migrator != nil {
+	if embedded.App.Features().Migrator != nil && config.GetBool("Migrator.enabled", false) {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func(ctx context.Context) {
 				clearDB := false
@@ -129,6 +129,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	if embedded.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+		defer replayDB.TearDown()
 		embedded.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB)
 	}
 
