@@ -22,7 +22,7 @@ type RouterAdmin struct {
 var adminInstance *RouterAdmin
 var routerJobsTableName, routerJobStatusTableName string
 
-func init() {
+func Init2() {
 	adminInstance = &RouterAdmin{
 		handles: make(map[string]*HandleT),
 	}

@@ -41,7 +41,7 @@ type OperationHandlerI interface {
 	Exec(payload []byte) error
 }
 
-func init() {
+func Init2() {
 	pkgLogger = logger.NewLogger().Child("operationmanager")
 	config.RegisterBoolConfigVariable(true, &enableOperationsManager, false, "Operations.enabled")
 }

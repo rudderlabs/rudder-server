@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
-
-	"github.com/rudderlabs/rudder-server/config"
 )
 
 type jsonReader struct {
@@ -14,9 +12,6 @@ type jsonReader struct {
 
 var maxStagingFileReadBufferCapacityInK int
 
-func init() {
-	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
-}
 func (js *jsonReader) Read(columnNames []string) (record []string, err error) {
 	ok := js.scanner.Scan()
 	if !ok {

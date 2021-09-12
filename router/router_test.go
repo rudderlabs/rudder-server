@@ -10,6 +10,8 @@ import (
 	. "github.com/onsi/gomega"
 	uuid "github.com/satori/go.uuid"
 
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
@@ -20,6 +22,7 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
@@ -92,7 +95,17 @@ var (
 	emptyJobsList []*jobsdb.JobT
 )
 
+func initRouter() {
+	config.Load()
+	admin.Init()
+	logger.Init()
+	Init()
+	Init2()
+}
+
 var _ = Describe("Router", func() {
+	initRouter()
+
 	var c *context
 
 	BeforeEach(func() {
