@@ -302,10 +302,16 @@ func run(m *testing.M) int {
 
 	os.Setenv("JOBS_DB_HOST", "localhost")
 	os.Setenv("JOBS_DB_NAME", "jobsdb")
+	os.Setenv("JOBS_DB_DB_NAME", "jobsdb")
 	os.Setenv("JOBS_DB_USER", "rudder")
 	os.Setenv("JOBS_DB_PASSWORD", "password")
 	os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
 
+	os.Setenv("WAREHOUSE_JOBS_DB_HOST", "localhost")
+	os.Setenv("WAREHOUSE_JOBS_DB_NAME", "jobsdb")
+	os.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", "jobsdb")
+	os.Setenv("WAREHOUSE_JOBS_DB_USER", "rudder")
+	os.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
 	os.Setenv("WAREHOUSE_JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
