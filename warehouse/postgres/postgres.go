@@ -410,7 +410,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 										(
 											SELECT
 											x.id, %[2]s
-											FROM %[3]s as x
+											FROM %[4]s.%[3]s as x
 										) as xyz
 									)`,
 		stagingTableName,
