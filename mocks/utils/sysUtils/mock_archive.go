@@ -6,37 +6,38 @@ package mock_sysUtils
 
 import (
 	zip "archive/zip"
-	gomock "github.com/golang/mock/gomock"
 	io "io"
-	os "os"
+	fs "io/fs"
 	reflect "reflect"
+
+	gomock "github.com/golang/mock/gomock"
 )
 
-// MockZipI is a mock of ZipI interface
+// MockZipI is a mock of ZipI interface.
 type MockZipI struct {
 	ctrl     *gomock.Controller
 	recorder *MockZipIMockRecorder
 }
 
-// MockZipIMockRecorder is the mock recorder for MockZipI
+// MockZipIMockRecorder is the mock recorder for MockZipI.
 type MockZipIMockRecorder struct {
 	mock *MockZipI
 }
 
-// NewMockZipI creates a new mock instance
+// NewMockZipI creates a new mock instance.
 func NewMockZipI(ctrl *gomock.Controller) *MockZipI {
 	mock := &MockZipI{ctrl: ctrl}
 	mock.recorder = &MockZipIMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockZipI) EXPECT() *MockZipIMockRecorder {
 	return m.recorder
 }
 
-// FileInfoHeader mocks base method
-func (m *MockZipI) FileInfoHeader(arg0 os.FileInfo) (*zip.FileHeader, error) {
+// FileInfoHeader mocks base method.
+func (m *MockZipI) FileInfoHeader(arg0 fs.FileInfo) (*zip.FileHeader, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "FileInfoHeader", arg0)
 	ret0, _ := ret[0].(*zip.FileHeader)
@@ -44,13 +45,13 @@ func (m *MockZipI) FileInfoHeader(arg0 os.FileInfo) (*zip.FileHeader, error) {
 	return ret0, ret1
 }
 
-// FileInfoHeader indicates an expected call of FileInfoHeader
+// FileInfoHeader indicates an expected call of FileInfoHeader.
 func (mr *MockZipIMockRecorder) FileInfoHeader(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FileInfoHeader", reflect.TypeOf((*MockZipI)(nil).FileInfoHeader), arg0)
 }
 
-// NewWriter mocks base method
+// NewWriter mocks base method.
 func (m *MockZipI) NewWriter(arg0 io.Writer) *zip.Writer {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NewWriter", arg0)
@@ -58,13 +59,13 @@ func (m *MockZipI) NewWriter(arg0 io.Writer) *zip.Writer {
 	return ret0
 }
 
-// NewWriter indicates an expected call of NewWriter
+// NewWriter indicates an expected call of NewWriter.
 func (mr *MockZipIMockRecorder) NewWriter(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewWriter", reflect.TypeOf((*MockZipI)(nil).NewWriter), arg0)
 }
 
-// OpenReader mocks base method
+// OpenReader mocks base method.
 func (m *MockZipI) OpenReader(arg0 string) (*zip.ReadCloser, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "OpenReader", arg0)
@@ -73,7 +74,7 @@ func (m *MockZipI) OpenReader(arg0 string) (*zip.ReadCloser, error) {
 	return ret0, ret1
 }
 
-// OpenReader indicates an expected call of OpenReader
+// OpenReader indicates an expected call of OpenReader.
 func (mr *MockZipIMockRecorder) OpenReader(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenReader", reflect.TypeOf((*MockZipI)(nil).OpenReader), arg0)
