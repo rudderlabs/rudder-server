@@ -54,10 +54,6 @@ type HandleT struct {
 	resumeChannel                  chan bool
 	backendConfig                  backendconfig.BackendConfig
 	stats                          stats.Stats
-	gatewayDB                      jobsdb.JobsDB
-	routerDB                       jobsdb.JobsDB
-	batchRouterDB                  jobsdb.JobsDB
-	errorDB                        jobsdb.JobsDB
 	transformer                    transformer.Transformer
 	pStatsJobs                     *misc.PerfStats
 	pStatsDBR                      *misc.PerfStats
@@ -237,7 +233,7 @@ func (proc *HandleT) Status() interface{} {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI) {
+func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, clearDB *bool, reporting types.ReportingI) {
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	proc.reporting = reporting
@@ -246,10 +242,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
 
-	proc.gatewayDB = gatewayDB
-	proc.routerDB = routerDB
-	proc.batchRouterDB = batchRouterDB
-	proc.errorDB = errorDB
 	proc.pStatsJobs = &misc.PerfStats{}
 	proc.pStatsDBR = &misc.PerfStats{}
 	proc.pStatsDBW = &misc.PerfStats{}
@@ -314,7 +306,7 @@ func (proc *HandleT) Start() {
 	})
 	rruntime.Go(func() {
 		st := stash.New()
-		st.Setup(proc.errorDB)
+		st.Setup()
 		st.Start()
 	})
 }
@@ -1051,7 +1043,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 				source, sourceError := getSourceByWriteKey(writeKey)
 				if sourceError != nil {
-					proc.logger.Error("Source not found for writeKey : ", writeKey);
+					proc.logger.Error("Source not found for writeKey : ", writeKey)
 				} else {
 					// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
 					shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
@@ -1451,7 +1443,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
 	}
 
-	proc.statDBW.Start()
+	//TODO fix this
+	/*proc.statDBW.Start()
 	proc.pStatsDBW.Start()
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
@@ -1474,7 +1467,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
-
 
 	for _, jobs := range procErrorJobsByDestID {
 		procErrorJobs = append(procErrorJobs, jobs...)
@@ -1513,7 +1505,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
-	proc.statDBW.End()
+	proc.statDBW.End()*/
 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
@@ -1611,7 +1603,8 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	var retryList, unprocessedList []*jobsdb.JobT
 	var totalRetryEvents, totalUnprocessedEvents int
 
-	unTruncatedRetryList := proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: toQuery})
+	//TODO fix this
+	/*unTruncatedRetryList := proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: toQuery})
 	retryList, totalRetryEvents = getTruncatedEventList(unTruncatedRetryList, maxEventsToProcess)
 
 	if len(unTruncatedRetryList) >= dbReadBatchSize || totalRetryEvents >= maxEventsToProcess {
@@ -1621,7 +1614,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		toQuery = misc.MinInt(eventsLeftToProcess, dbReadBatchSize)
 		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: toQuery})
 		unprocessedList, totalUnprocessedEvents = getTruncatedEventList(unTruncatedUnProcessedList, eventsLeftToProcess)
-	}
+	}*/
 
 	proc.statDBR.End()
 
@@ -1700,7 +1693,8 @@ func (proc *HandleT) mainLoop() {
 }
 
 func (proc *HandleT) crashRecover() {
-	proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: -1})
+	//TODO fix this
+	//proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: -1})
 }
 
 func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {

@@ -211,7 +211,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		gateway := &HandleT{}
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, nil, c.mockVersionHandler)
 		})
 
 		It("should not accept events from suppress users", func() {
@@ -258,7 +258,7 @@ var _ = Describe("Gateway", func() {
 		gateway := &HandleT{}
 
 		It("should wait for backend config", func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, nil, c.mockVersionHandler)
 		})
 	})
 
@@ -276,7 +276,7 @@ var _ = Describe("Gateway", func() {
 		}
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, nil, c.mockVersionHandler)
 		})
 
 		assertJobMetadata := func(job *jobsdb.JobT, batchLength int, batchId int) {
@@ -444,7 +444,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			SetEnableRateLimit(true)
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockRateLimiter, c.mockVersionHandler)
 		})
 
 		It("should store messages successfuly if rate limit is not reached for workspace", func() {
@@ -473,7 +473,7 @@ var _ = Describe("Gateway", func() {
 		)
 
 		BeforeEach(func() {
-			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
+			gateway.Setup(c.mockApp, c.mockBackendConfig, nil, c.mockVersionHandler)
 		})
 
 		// common tests for all web handlers

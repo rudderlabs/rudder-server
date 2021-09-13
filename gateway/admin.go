@@ -28,7 +28,7 @@ func (g *GatewayAdmin) Status() interface{} {
 		"ack-count":          g.handle.ackCount,
 		"recv-count":         g.handle.recvCount,
 		"enabled-write-keys": writeKeys,
-		"jobsdb":             g.handle.jobsDB.Status(),
+		//"jobsdb":             g.handle.jobsDB.Status(), //TODO fix this
 	}
 
 }

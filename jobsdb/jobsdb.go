@@ -248,6 +248,7 @@ type JobT struct {
 	EventPayload  json.RawMessage `json:"EventPayload"`
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
+	Customer      string          //TODO may be moved out of jobsdb. Using this temporarily
 }
 
 func (job *JobT) String() string {

@@ -71,6 +71,11 @@ func Init() {
 	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
 }
 
+func IsMultiTenant() bool {
+	tenancy := config.GetEnv("TENANCY", types.SINGLE_TENANT)
+	return tenancy == types.MULTI_TENANT
+}
+
 func getErrorStore() (ErrorStoreT, error) {
 	var errorStore ErrorStoreT
 	data, err := ioutil.ReadFile(errorStorePath)

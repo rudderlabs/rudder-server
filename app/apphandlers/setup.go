@@ -109,7 +109,7 @@ func rudderCoreBaseSetup() {
 }
 
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+func StartProcessor(clearDB *bool, enableProcessor bool, reporting types.ReportingI) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
 
@@ -120,7 +120,7 @@ func StartProcessor(clearDB *bool, enableProcessor bool, gatewayDB, routerDB, ba
 	if enableProcessor {
 		var processorInstance = processor.NewProcessor()
 		processor.ProcessorManagerSetup(processorInstance)
-		processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting)
+		processorInstance.Setup(backendconfig.DefaultBackendConfig, clearDB, reporting)
 		processorInstance.Start()
 
 		processorLoaded = true
@@ -128,7 +128,7 @@ func StartProcessor(clearDB *bool, enableProcessor bool, gatewayDB, routerDB, ba
 }
 
 //StartRouter atomically starts router process if not already started
-func StartRouter(enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+func StartRouter(enableRouter bool, reporting types.ReportingI) {
 	moduleLoadLock.Lock()
 	defer moduleLoadLock.Unlock()
 
@@ -139,13 +139,13 @@ func StartRouter(enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb
 	if enableRouter {
 		router.RoutersManagerSetup()
 		batchrouter.BatchRoutersManagerSetup()
-		go monitorDestRouters(routerDB, batchRouterDB, procErrorDB, reporting)
+		go monitorDestRouters(reporting)
 		routerLoaded = true
 	}
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+func monitorDestRouters(reporting types.ReportingI) {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
@@ -165,7 +165,7 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, re
 					if !ok {
 						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
 						var brt batchrouter.HandleT
-						brt.Setup(backendconfig.DefaultBackendConfig, batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
+						brt.Setup(backendconfig.DefaultBackendConfig, destination.DestinationDefinition.Name, reporting)
 						brt.Start()
 						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 					}
@@ -174,7 +174,7 @@ func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, re
 					if !ok {
 						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
 						var router router.HandleT
-						router.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition, reporting)
+						router.Setup(backendconfig.DefaultBackendConfig, destination.DestinationDefinition, reporting)
 						router.Start()
 						dstToRouter[destination.DestinationDefinition.Name] = &router
 					}

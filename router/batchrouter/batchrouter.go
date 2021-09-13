@@ -1,9 +1,7 @@
 package batchrouter
 
 import (
-	"bufio"
 	"bytes"
-	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/warehouse"
@@ -22,7 +21,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -72,8 +70,6 @@ type HandleT struct {
 	connectionWHNamespaceMap       map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
 	netHandle                      *http.Client
 	processQ                       chan *BatchDestinationDataT
-	jobsDB                         jobsdb.JobsDB
-	errorDB                        jobsdb.JobsDB
 	isEnabled                      bool
 	batchRequestsMetricLock        sync.RWMutex
 	diagnosisTicker                *time.Ticker
@@ -263,217 +259,220 @@ func (brt *HandleT) pollAsyncStatus() {
 		case <-timeout:
 			timeout = time.After(10 * time.Millisecond)
 			brt.configSubscriberLock.RLock()
-			destinationsMap := brt.destinationsMap
+			//TODO fix this
+			//destinationsMap := brt.destinationsMap
 			brt.configSubscriberLock.RUnlock()
 
-			for key := range destinationsMap {
-				if IsAsyncDestination(brt.destType) {
-					parameterFilters := make([]jobsdb.ParameterFilterT, 0)
-					for _, param := range QueryFilters.ParameterFilters {
-						parameterFilter := jobsdb.ParameterFilterT{
-							Name:     param,
-							Value:    key,
-							Optional: false,
-						}
-						parameterFilters = append(parameterFilters, parameterFilter)
-					}
-					importingJob := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: 1, ParameterFilters: parameterFilters})
-					if len(importingJob) != 0 {
-						importingJob := importingJob[0]
-						parameters := importingJob.LastJobStatus.Parameters
-						pollUrl := gjson.GetBytes(parameters, "pollURL").String()
-						importId := gjson.GetBytes(parameters, "importId").String()
-						csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
-						var pollStruct AsyncPollT
-						pollStruct.ImportId = importId
-						pollStruct.Config = brt.destinationsMap[key].Destination.Config
-						pollStruct.DestType = strings.ToLower(brt.destType)
-						payload, err := json.Marshal(pollStruct)
-						if err != nil {
-							panic("JSON Marshal Failed" + err.Error())
-						}
-
-						pollTimeStat := stats.NewTaggedStat("async_poll_time", stats.TimerType, map[string]string{
-							"module":   "batch_router",
-							"destType": brt.destType,
-							"url":      pollUrl,
-						})
-						pollTimeStat.Start()
-						pkgLogger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
-						bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformerURL+pollUrl, payload, asyncdestinationmanager.HTTPTimeout)
-						pkgLogger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
-						pollTimeStat.End()
-
-						if err != nil {
-							panic("HTTP Request Failed" + err.Error())
-						}
-						if statusCode == 200 {
-							var asyncResponse AsyncStatusResponse
-							if err != nil {
-								panic("Read Body Failed" + err.Error())
+			//TODO fix this
+			/*
+				for key := range destinationsMap {
+					if IsAsyncDestination(brt.destType) {
+						parameterFilters := make([]jobsdb.ParameterFilterT, 0)
+						for _, param := range QueryFilters.ParameterFilters {
+							parameterFilter := jobsdb.ParameterFilterT{
+								Name:     param,
+								Value:    key,
+								Optional: false,
 							}
-							err = json.Unmarshal(bodyBytes, &asyncResponse)
+							parameterFilters = append(parameterFilters, parameterFilter)
+						}
+						importingJob := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: 1, ParameterFilters: parameterFilters})
+						if len(importingJob) != 0 {
+							importingJob := importingJob[0]
+							parameters := importingJob.LastJobStatus.Parameters
+							pollUrl := gjson.GetBytes(parameters, "pollURL").String()
+							importId := gjson.GetBytes(parameters, "importId").String()
+							csvHeaders := gjson.GetBytes(parameters, "metadata.csvHeader").String()
+							var pollStruct AsyncPollT
+							pollStruct.ImportId = importId
+							pollStruct.Config = brt.destinationsMap[key].Destination.Config
+							pollStruct.DestType = strings.ToLower(brt.destType)
+							payload, err := json.Marshal(pollStruct)
 							if err != nil {
-								panic("JSON Unmarshal Failed" + err.Error())
+								panic("JSON Marshal Failed" + err.Error())
 							}
-							uploadStatus := asyncResponse.Success
-							statusCode := asyncResponse.StatusCode
-							if uploadStatus {
-								var statusList []*jobsdb.JobStatusT
-								importingList := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: brt.maxEventsInABatch, ParameterFilters: parameterFilters})
-								if !asyncResponse.HasFailed {
-									for _, job := range importingList {
-										status := jobsdb.JobStatusT{
-											JobID:         job.JobID,
-											JobState:      jobsdb.Succeeded.State,
-											ExecTime:      time.Now(),
-											RetryTime:     time.Now(),
-											ErrorCode:     "",
-											ErrorResponse: []byte(`{}`),
-											Parameters:    []byte(`{}`),
-										}
-										statusList = append(statusList, &status)
-									}
-								} else {
-									failedJobUrl := asyncResponse.FailedJobsURL
-									payload = asyncdestinationmanager.GenerateFailedPayload(brt.destinationsMap[key].Destination.Config, importingList, importId, brt.destType, csvHeaders)
-									failedJobsTimeStat := stats.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, map[string]string{
-										"module":   "batch_router",
-										"destType": brt.destType,
-										"url":      pollUrl,
-									})
-									failedJobsTimeStat.Start()
-									pkgLogger.Debugf("[Batch Router] Fetching Failed Jobs Started for Dest Type %v", brt.destType)
-									failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformerURL+failedJobUrl, payload, asyncdestinationmanager.HTTPTimeout)
-									pkgLogger.Debugf("[Batch Router] Fetching Failed Jobs for Dest Type %v", brt.destType)
-									failedJobsTimeStat.End()
 
-									if statusCode != 200 {
-										continue
-									}
-									var failedJobsResponse map[string]interface{}
-									err = json.Unmarshal(failedBodyBytes, &failedJobsResponse)
-									if err != nil {
-										panic("JSON Unmarshal Failed" + err.Error())
-									}
-									metadata, ok := failedJobsResponse["metadata"].(map[string]interface{})
-									if !ok {
-										panic("Typecasting Failed Because of Transformer Response" + err.Error())
-									}
-									failedKeys, errFailed := misc.ConvertStringInterfaceToIntArray(metadata["failedKeys"])
-									warningKeys, errWarning := misc.ConvertStringInterfaceToIntArray(metadata["warningKeys"])
-									succeededKeys, errSuccess := misc.ConvertStringInterfaceToIntArray(metadata["succeededKeys"])
-									var status *jobsdb.JobStatusT
-									if errFailed != nil || errWarning != nil || errSuccess != nil || statusCode != 200 {
+							pollTimeStat := stats.NewTaggedStat("async_poll_time", stats.TimerType, map[string]string{
+								"module":   "batch_router",
+								"destType": brt.destType,
+								"url":      pollUrl,
+							})
+							pollTimeStat.Start()
+							pkgLogger.Debugf("[Batch Router] Poll Status Started for Dest Type %v", brt.destType)
+							bodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformerURL+pollUrl, payload, asyncdestinationmanager.HTTPTimeout)
+							pkgLogger.Debugf("[Batch Router] Poll Status Finished for Dest Type %v", brt.destType)
+							pollTimeStat.End()
+
+							if err != nil {
+								panic("HTTP Request Failed" + err.Error())
+							}
+							if statusCode == 200 {
+								var asyncResponse AsyncStatusResponse
+								if err != nil {
+									panic("Read Body Failed" + err.Error())
+								}
+								err = json.Unmarshal(bodyBytes, &asyncResponse)
+								if err != nil {
+									panic("JSON Unmarshal Failed" + err.Error())
+								}
+								uploadStatus := asyncResponse.Success
+								statusCode := asyncResponse.StatusCode
+								if uploadStatus {
+									var statusList []*jobsdb.JobStatusT
+									importingList := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: brt.maxEventsInABatch, ParameterFilters: parameterFilters})
+									if !asyncResponse.HasFailed {
 										for _, job := range importingList {
-											jobID := job.JobID
-											status = &jobsdb.JobStatusT{
-												JobID:         jobID,
-												JobState:      jobsdb.Failed.State,
-												ExecTime:      time.Now(),
-												RetryTime:     time.Now(),
-												ErrorCode:     strconv.Itoa(statusCode),
-												ErrorResponse: []byte(`{}`),
-												Parameters:    []byte(`{}`),
-											}
-											statusList = append(statusList, status)
-										}
-										txn := brt.jobsDB.BeginGlobalTransaction()
-										brt.jobsDB.AcquireUpdateJobStatusLocks()
-										err = brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
-										if err != nil {
-											brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
-											panic(err)
-										}
-										brt.jobsDB.CommitTransaction(txn)
-										brt.jobsDB.ReleaseUpdateJobStatusLocks()
-										continue
-									}
-									for _, job := range importingList {
-										jobID := job.JobID
-										if misc.Contains(append(succeededKeys, warningKeys...), jobID) {
-											status = &jobsdb.JobStatusT{
-												JobID:         jobID,
+											status := jobsdb.JobStatusT{
+												JobID:         job.JobID,
 												JobState:      jobsdb.Succeeded.State,
 												ExecTime:      time.Now(),
 												RetryTime:     time.Now(),
-												ErrorCode:     "200",
+												ErrorCode:     "",
 												ErrorResponse: []byte(`{}`),
 												Parameters:    []byte(`{}`),
 											}
-										} else if misc.Contains(failedKeys, job.JobID) {
-											errorResp, _ := json.Marshal(ErrorResponseT{Error: gjson.GetBytes(failedBodyBytes, fmt.Sprintf("metadata.failedReasons.%v", job.JobID)).String()})
-											status = &jobsdb.JobStatusT{
-												JobID:         jobID,
+											statusList = append(statusList, &status)
+										}
+									} else {
+										failedJobUrl := asyncResponse.FailedJobsURL
+										payload = asyncdestinationmanager.GenerateFailedPayload(brt.destinationsMap[key].Destination.Config, importingList, importId, brt.destType, csvHeaders)
+										failedJobsTimeStat := stats.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, map[string]string{
+											"module":   "batch_router",
+											"destType": brt.destType,
+											"url":      pollUrl,
+										})
+										failedJobsTimeStat.Start()
+										pkgLogger.Debugf("[Batch Router] Fetching Failed Jobs Started for Dest Type %v", brt.destType)
+										failedBodyBytes, statusCode := misc.HTTPCallWithRetryWithTimeout(transformerURL+failedJobUrl, payload, asyncdestinationmanager.HTTPTimeout)
+										pkgLogger.Debugf("[Batch Router] Fetching Failed Jobs for Dest Type %v", brt.destType)
+										failedJobsTimeStat.End()
+
+										if statusCode != 200 {
+											continue
+										}
+										var failedJobsResponse map[string]interface{}
+										err = json.Unmarshal(failedBodyBytes, &failedJobsResponse)
+										if err != nil {
+											panic("JSON Unmarshal Failed" + err.Error())
+										}
+										metadata, ok := failedJobsResponse["metadata"].(map[string]interface{})
+										if !ok {
+											panic("Typecasting Failed Because of Transformer Response" + err.Error())
+										}
+										failedKeys, errFailed := misc.ConvertStringInterfaceToIntArray(metadata["failedKeys"])
+										warningKeys, errWarning := misc.ConvertStringInterfaceToIntArray(metadata["warningKeys"])
+										succeededKeys, errSuccess := misc.ConvertStringInterfaceToIntArray(metadata["succeededKeys"])
+										var status *jobsdb.JobStatusT
+										if errFailed != nil || errWarning != nil || errSuccess != nil || statusCode != 200 {
+											for _, job := range importingList {
+												jobID := job.JobID
+												status = &jobsdb.JobStatusT{
+													JobID:         jobID,
+													JobState:      jobsdb.Failed.State,
+													ExecTime:      time.Now(),
+													RetryTime:     time.Now(),
+													ErrorCode:     strconv.Itoa(statusCode),
+													ErrorResponse: []byte(`{}`),
+													Parameters:    []byte(`{}`),
+												}
+												statusList = append(statusList, status)
+											}
+											txn := brt.jobsDB.BeginGlobalTransaction()
+											brt.jobsDB.AcquireUpdateJobStatusLocks()
+											err = brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
+											if err != nil {
+												brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+												panic(err)
+											}
+											brt.jobsDB.CommitTransaction(txn)
+											brt.jobsDB.ReleaseUpdateJobStatusLocks()
+											continue
+										}
+										for _, job := range importingList {
+											jobID := job.JobID
+											if misc.Contains(append(succeededKeys, warningKeys...), jobID) {
+												status = &jobsdb.JobStatusT{
+													JobID:         jobID,
+													JobState:      jobsdb.Succeeded.State,
+													ExecTime:      time.Now(),
+													RetryTime:     time.Now(),
+													ErrorCode:     "200",
+													ErrorResponse: []byte(`{}`),
+													Parameters:    []byte(`{}`),
+												}
+											} else if misc.Contains(failedKeys, job.JobID) {
+												errorResp, _ := json.Marshal(ErrorResponseT{Error: gjson.GetBytes(failedBodyBytes, fmt.Sprintf("metadata.failedReasons.%v", job.JobID)).String()})
+												status = &jobsdb.JobStatusT{
+													JobID:         jobID,
+													JobState:      jobsdb.Aborted.State,
+													ExecTime:      time.Now(),
+													RetryTime:     time.Now(),
+													ErrorCode:     "",
+													ErrorResponse: errorResp,
+													Parameters:    []byte(`{}`),
+												}
+											}
+											statusList = append(statusList, status)
+										}
+									}
+									txn := brt.jobsDB.BeginGlobalTransaction()
+									brt.jobsDB.AcquireUpdateJobStatusLocks()
+									err = brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
+									if err != nil {
+										brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+										panic(err)
+									}
+									brt.jobsDB.CommitTransaction(txn)
+									brt.jobsDB.ReleaseUpdateJobStatusLocks()
+								} else if statusCode != 0 {
+									var statusList []*jobsdb.JobStatusT
+									importingList := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: brt.maxEventsInABatch, ParameterFilters: parameterFilters})
+									if isJobTerminated(statusCode) {
+										for _, job := range importingList {
+											status := jobsdb.JobStatusT{
+												JobID:         job.JobID,
 												JobState:      jobsdb.Aborted.State,
 												ExecTime:      time.Now(),
 												RetryTime:     time.Now(),
 												ErrorCode:     "",
-												ErrorResponse: errorResp,
+												ErrorResponse: []byte(`{}`),
 												Parameters:    []byte(`{}`),
 											}
+											statusList = append(statusList, &status)
 										}
-										statusList = append(statusList, status)
-									}
-								}
-								txn := brt.jobsDB.BeginGlobalTransaction()
-								brt.jobsDB.AcquireUpdateJobStatusLocks()
-								err = brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
-								if err != nil {
-									brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
-									panic(err)
-								}
-								brt.jobsDB.CommitTransaction(txn)
-								brt.jobsDB.ReleaseUpdateJobStatusLocks()
-							} else if statusCode != 0 {
-								var statusList []*jobsdb.JobStatusT
-								importingList := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: brt.maxEventsInABatch, ParameterFilters: parameterFilters})
-								if isJobTerminated(statusCode) {
-									for _, job := range importingList {
-										status := jobsdb.JobStatusT{
-											JobID:         job.JobID,
-											JobState:      jobsdb.Aborted.State,
-											ExecTime:      time.Now(),
-											RetryTime:     time.Now(),
-											ErrorCode:     "",
-											ErrorResponse: []byte(`{}`),
-											Parameters:    []byte(`{}`),
+									} else {
+										for _, job := range importingList {
+											status := jobsdb.JobStatusT{
+												JobID:         job.JobID,
+												JobState:      jobsdb.Failed.State,
+												ExecTime:      time.Now(),
+												RetryTime:     time.Now(),
+												ErrorCode:     "",
+												ErrorResponse: []byte(`{}`),
+												Parameters:    []byte(`{}`),
+											}
+											statusList = append(statusList, &status)
 										}
-										statusList = append(statusList, &status)
 									}
+									txn := brt.jobsDB.BeginGlobalTransaction()
+									brt.jobsDB.AcquireUpdateJobStatusLocks()
+									err = brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
+									if err != nil {
+										brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+										panic(err)
+									}
+									brt.jobsDB.CommitTransaction(txn)
+									brt.jobsDB.ReleaseUpdateJobStatusLocks()
 								} else {
-									for _, job := range importingList {
-										status := jobsdb.JobStatusT{
-											JobID:         job.JobID,
-											JobState:      jobsdb.Failed.State,
-											ExecTime:      time.Now(),
-											RetryTime:     time.Now(),
-											ErrorCode:     "",
-											ErrorResponse: []byte(`{}`),
-											Parameters:    []byte(`{}`),
-										}
-										statusList = append(statusList, &status)
-									}
+									continue
 								}
-								txn := brt.jobsDB.BeginGlobalTransaction()
-								brt.jobsDB.AcquireUpdateJobStatusLocks()
-								err = brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
-								if err != nil {
-									brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
-									panic(err)
-								}
-								brt.jobsDB.CommitTransaction(txn)
-								brt.jobsDB.ReleaseUpdateJobStatusLocks()
 							} else {
 								continue
 							}
-						} else {
-							continue
-						}
 
+						}
 					}
-				}
-			}
+				}*/
 			time.Sleep(brt.pollStatusLoopSleep)
 		}
 	}
@@ -624,20 +623,22 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 	}
 	keyPrefixes := []string{folderName, batchJobs.BatchDestination.Source.ID, datePrefixLayout}
 
-	_, fileName := filepath.Split(gzipFilePath)
+	//TODO fix this
+	//_, fileName := filepath.Split(gzipFilePath)
 	var (
-		opID      int64
-		opPayload json.RawMessage
+		opID int64
+		//opPayload json.RawMessage
 	)
 	if !isWarehouse {
-		opPayload, _ = json.Marshal(&ObjectStorageT{
+		//TODO fix this
+		/*opPayload, _ = json.Marshal(&ObjectStorageT{
 			Config:          batchJobs.BatchDestination.Destination.Config,
 			Key:             strings.Join(append(keyPrefixes, fileName), "/"),
 			Provider:        provider,
 			DestinationID:   batchJobs.BatchDestination.Destination.ID,
 			DestinationType: batchJobs.BatchDestination.Destination.DestinationDefinition.Name,
 		})
-		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
+		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)*/
 	}
 	uploadOutput, err := uploader.Upload(outputFile, keyPrefixes...)
 
@@ -1078,7 +1079,8 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 		}
 	}
 
-	var parameterFilters []jobsdb.ParameterFilterT
+	//TODO fix this
+	/*var parameterFilters []jobsdb.ParameterFilterT
 	if readPerDestination {
 		parameterFilters = []jobsdb.ParameterFilterT{
 			{
@@ -1097,7 +1099,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 			brt.logger.Errorf("abortedEvents: %v", abortedEvents)
 			panic(err)
 		}
-	}
+	}*/
 
 	//REPORTING - START
 	if brt.reporting != nil && brt.reportingEnabled {
@@ -1119,7 +1121,8 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 	}
 	//REPORTING - END
 
-	//Mark the status of the jobs
+	//TODO fix this
+	/*//Mark the status of the jobs
 	txn := brt.jobsDB.BeginGlobalTransaction()
 	brt.jobsDB.AcquireUpdateJobStatusLocks()
 	err = brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
@@ -1132,7 +1135,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 		brt.reporting.Report(reportMetrics, txn)
 	}
 	brt.jobsDB.CommitTransaction(txn)
-	brt.jobsDB.ReleaseUpdateJobStatusLocks()
+	brt.jobsDB.ReleaseUpdateJobStatusLocks()*/
 
 	sendDestStatusStats(batchJobs.BatchDestination, jobStateCounts, brt.destType, isWarehouse)
 }
@@ -1200,7 +1203,8 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 		return
 	}
 
-	var parameterFilters []jobsdb.ParameterFilterT
+	//TODO fix this
+	/*var parameterFilters []jobsdb.ParameterFilterT
 	if readPerDestination {
 		parameterFilters = []jobsdb.ParameterFilterT{
 			{
@@ -1221,7 +1225,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 	}
 
 	brt.jobsDB.CommitTransaction(txn)
-	brt.jobsDB.ReleaseUpdateJobStatusLocks()
+	brt.jobsDB.ReleaseUpdateJobStatusLocks()*/
 }
 
 func getBRTErrorCode(state string) int {
@@ -1352,20 +1356,21 @@ func (worker *workerT) workerProcess() {
 			parameterFilters := worker.constructParameterFilters(batchDest)
 			var combinedList []*jobsdb.JobT
 			if readPerDestination {
-				toQuery := worker.brt.jobQueryBatchSize
+				//toQuery := worker.brt.jobQueryBatchSize
 				if !brt.holdFetchingJobs(parameterFilters) {
 					brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
-					retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					//TODO fix this
+					/*retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					toQuery -= len(retryList)
 					unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					brtQueryStat.End()
 
 					combinedList = append(retryList, unprocessedList...)
 
-					brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryList), len(unprocessedList), len(combinedList))
+					brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(retryList), len(unprocessedList), len(combinedList))*/
 				}
 			} else {
 				for _, job := range batchDestData.jobs {
@@ -1441,11 +1446,12 @@ func (worker *workerT) workerProcess() {
 
 			//Mark the drainList jobs as Aborted
 			if len(drainList) > 0 {
-				err := brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
+				//TODO fix this
+				/*err := brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
 				if err != nil {
 					brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
 					panic(err)
-				}
+				}*/
 				for destID, count := range drainCountByDest {
 					brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
 						"destType": brt.destType,
@@ -1455,12 +1461,13 @@ func (worker *workerT) workerProcess() {
 					brt.drainedJobsStat.Count(count)
 				}
 			}
+			//TODO fix this
 			//Mark the jobs as executing
-			err := brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
+			/*err := brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 			if err != nil {
 				brt.logger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", brt.destType, err)
 				panic(err)
-			}
+			}*/
 			brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
 
 			var wg sync.WaitGroup
@@ -1493,9 +1500,10 @@ func (worker *workerT) workerProcess() {
 						brt.recordDeliveryStatus(*batchJobs.BatchDestination, output, false)
 						brt.setJobStatus(&batchJobs, false, output.Error, false)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
-						if output.JournalOpID > 0 {
+						//TODO fix this
+						/*if output.JournalOpID > 0 {
 							brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
-						}
+						}*/
 						if output.Error == nil {
 							brt.recordUploadStats(*batchJobs.BatchDestination, output)
 						}
@@ -1639,7 +1647,8 @@ func (brt *HandleT) uploadFrequencyExceeded(destID string) bool {
 }
 
 func (brt *HandleT) readAndProcess() {
-	brt.configSubscriberLock.RLock()
+	//TODO fix this
+	/*brt.configSubscriberLock.RLock()
 	destinationsMap := brt.destinationsMap
 	brt.configSubscriberLock.RUnlock()
 
@@ -1687,7 +1696,7 @@ func (brt *HandleT) readAndProcess() {
 
 			wg.Wait()
 		}
-	}
+	}*/
 }
 
 func (brt *HandleT) mainLoop() {
@@ -1708,7 +1717,8 @@ func (brt *HandleT) Disable() {
 }
 
 func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
-	brt.logger.Debug("BRT: Checking for incomplete journal entries to recover from...")
+	//TODO fix this
+	/*brt.logger.Debug("BRT: Checking for incomplete journal entries to recover from...")
 	entries := brt.jobsDB.GetJournalEntries(jobsdb.RawDataDestUploadOperation)
 	for _, entry := range entries {
 		var object ObjectStorageT
@@ -1783,15 +1793,16 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		}
 		reader.Close()
 		brt.jobsDB.JournalDeleteEntry(entry.OpID)
-	}
+	}*/
 }
 
 func (brt *HandleT) holdFetchingJobs(parameterFilters []jobsdb.ParameterFilterT) bool {
-	var importingList []*jobsdb.JobT
+	//TODO fix this
+	/*var importingList []*jobsdb.JobT
 	if IsAsyncDestination(brt.destType) {
 		importingList = brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: 1, ParameterFilters: parameterFilters})
 		return len(importingList) != 0
-	}
+	}*/
 	return false
 }
 
@@ -1800,7 +1811,8 @@ func IsAsyncDestination(destType string) bool {
 }
 
 func (brt *HandleT) crashRecover() {
-	brt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: -1})
+	//TODO fix this
+	//brt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: -1})
 
 	if misc.Contains(objectStorageDestinations, brt.destType) {
 		brt.dedupRawDataDestJobsOnCrash()
@@ -1916,7 +1928,7 @@ func setQueryFilters() {
 }
 
 //Setup initializes this module
-func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI) {
+func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, destType string, reporting types.ReportingI) {
 	brt.isBackendConfigInitialized = false
 	brt.backendConfigInitialized = make(chan bool)
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
@@ -1943,8 +1955,6 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	brt.destType = destType
-	brt.jobsDB = jobsDB
-	brt.errorDB = errorDB
 	brt.isEnabled = true
 	brt.asyncDestinationStruct = make(map[string]*asyncdestinationmanager.AsyncDestinationStruct)
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)

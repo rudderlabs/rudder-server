@@ -18,6 +18,7 @@ import (
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
 
+	"github.com/rudderlabs/rudder-server/distributed"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -225,6 +226,8 @@ func Run(ctx context.Context) {
 
 	//application & backend setup should be done before starting any new goroutines.
 	application.Setup()
+
+	distributed.Setup()
 
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
 	appHandler = apphandlers.GetAppHandler(application, appTypeStr, versionHandler)

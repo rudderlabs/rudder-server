@@ -59,7 +59,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(options *app.Options) {
 
 		rateLimiter.SetUp()
 		gateway.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		gateway.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, gatewayApp.VersionHandler)
+		gateway.Setup(gatewayApp.App, backendconfig.DefaultBackendConfig, &rateLimiter, gatewayApp.VersionHandler)
 		go gateway.StartAdminHandler()
 		gateway.StartWebHandler()
 	}

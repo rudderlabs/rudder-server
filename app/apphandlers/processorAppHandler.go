@@ -98,10 +98,10 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
 				clearDB := false
-				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+				StartProcessor(&clearDB, enableProcessor, reportingI)
 			}
 			startRouterFunc := func() {
-				StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+				StartRouter(enableRouter, reportingI)
 			}
 			enableRouter = false
 			enableProcessor = false
@@ -116,8 +116,8 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 		operationmanager.OperationManager.StartProcessLoop()
 	})
 
-	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
-	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+	StartProcessor(&options.ClearDB, enableProcessor, reportingI)
+	StartRouter(enableRouter, reportingI)
 
 	if processor.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
@@ -152,5 +152,5 @@ func startHealthWebHandler() {
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
-	app.HealthHandler(w, r, &gatewayDB)
+	app.HealthHandler(w, r)
 }

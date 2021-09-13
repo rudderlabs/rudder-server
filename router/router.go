@@ -55,8 +55,6 @@ type HandleT struct {
 	statusLoopResumeChannel                chan bool
 	requestQ                               chan *jobsdb.JobT
 	responseQ                              chan jobResponseT
-	jobsDB                                 jobsdb.JobsDB
-	errorDB                                jobsdb.JobsDB
 	netHandle                              NetHandleI
 	destName                               string
 	workers                                []*workerT
@@ -1242,7 +1240,9 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		sort.Slice(statusList, func(i, j int) bool {
 			return statusList[i].JobID < statusList[j].JobID
 		})
-		//Store the aborted jobs to errorDB
+
+		//TODO fix this
+		/*//Store the aborted jobs to errorDB
 		if routerAbortedJobs != nil {
 			rt.errorDB.Store(routerAbortedJobs)
 		}
@@ -1258,7 +1258,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			rt.reporting.Report(reportMetrics, txn)
 		}
 		rt.jobsDB.CommitTransaction(txn)
-		rt.jobsDB.ReleaseUpdateJobStatusLocks()
+		rt.jobsDB.ReleaseUpdateJobStatusLocks()*/
 	}
 
 	if rt.guaranteeUserEventOrder {
@@ -1472,7 +1472,8 @@ func (rt *HandleT) readAndProcess() int {
 		//End of #JobOrder
 	}
 
-	toQuery := jobQueryBatchSize
+	//TODO fix this
+	/*toQuery := jobQueryBatchSize
 	retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
 	toQuery -= len(retryList)
 	throttledList := rt.jobsDB.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
@@ -1556,9 +1557,10 @@ func (rt *HandleT) readAndProcess() int {
 			toProcess = append(toProcess, workerJobT{worker: w, job: job})
 		}
 	}
-	rt.throttledUserMap = nil
+	rt.throttledUserMap = nil*/
 
-	//Mark the jobs as executing
+	//TODO fix this
+	/*//Mark the jobs as executing
 	err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
@@ -1597,7 +1599,8 @@ func (rt *HandleT) readAndProcess() int {
 		return 0
 	}
 
-	return len(toProcess)
+	return len(toProcess)*/
+	return 0
 }
 
 func destinationID(job *jobsdb.JobT) string {
@@ -1605,7 +1608,8 @@ func destinationID(job *jobsdb.JobT) string {
 }
 
 func (rt *HandleT) crashRecover() {
-	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})
+	//TODO fix this
+	//rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})
 }
 
 func Init() {
@@ -1616,7 +1620,7 @@ func Init() {
 }
 
 //Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
+func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
 
 	rt.backendConfig = backendConfig
 	rt.generatorPauseChannel = make(chan *PauseT)
@@ -1635,8 +1639,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	}
 
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
-	rt.jobsDB = jobsDB
-	rt.errorDB = errorDB
 	rt.destName = destName
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(30, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)

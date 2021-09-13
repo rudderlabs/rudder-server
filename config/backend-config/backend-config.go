@@ -3,11 +3,12 @@ package backendconfig
 //go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
 
 import (
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"reflect"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/admin"
 
@@ -318,6 +319,11 @@ func regulationsUpdate(statConfigBackendError stats.RudderStats) {
 	}
 }
 
+//TODO fix this
+func GetCustomerFromWriteKey(writeKey string) string {
+	return "acorns"
+}
+
 func configUpdate(statConfigBackendError stats.RudderStats) {
 
 	sourceJSON, ok := backendConfig.Get()
@@ -435,6 +441,8 @@ func (bc *CommonBackendConfig) WaitForConfig() {
 func Setup(pollRegulations bool, configEnvHandler types.ConfigEnvI) {
 	if isMultiWorkspace {
 		backendConfig = new(MultiWorkspaceConfig)
+	} else if misc.IsMultiTenant() {
+		backendConfig = new(MultiTenantWorkspaceConfig)
 	} else {
 		backendConfig = new(WorkspaceConfig)
 		backendConfig.(*WorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler

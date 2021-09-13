@@ -15,6 +15,9 @@ const (
 	WAREHOUSE_REPORTING_CLIENT = "warehouse"
 
 	DEFAULT_REPORTING_ENABLED = true
+
+	SINGLE_TENANT = "single"
+	MULTI_TENANT  = "multi"
 )
 
 var (

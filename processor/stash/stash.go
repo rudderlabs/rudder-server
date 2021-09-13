@@ -46,7 +46,6 @@ type StoreErrorOutputT struct {
 }
 
 type HandleT struct {
-	errorDB         jobsdb.JobsDB
 	errProcessQ     chan []*jobsdb.JobT
 	errFileUploader filemanager.FileManager
 	stats           stats.Stats
@@ -59,9 +58,8 @@ func New() *HandleT {
 	return &HandleT{}
 }
 
-func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
+func (st *HandleT) Setup() {
 	st.logger = pkgLogger
-	st.errorDB = errorDB
 	st.stats = stats.DefaultStats
 	st.statErrDBR = st.stats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.statErrDBW = st.stats.NewStat("processor.err_db_write_time", stats.TimerType)
@@ -69,7 +67,8 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
 }
 
 func (st *HandleT) crashRecover() {
-	st.errorDB.DeleteExecuting(jobsdb.GetQueryParamsT{Count: -1})
+	//TODO fix this.
+	//st.errorDB.DeleteExecuting(jobsdb.GetQueryParamsT{Count: -1})
 }
 
 func (st *HandleT) Start() {
@@ -192,11 +191,12 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		}
 		statusList = append(statusList, &status)
 	}
-	err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
+	//TODO fix this
+	/*err := st.errorDB.UpdateJobStatus(statusList, nil, nil)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
 		panic(err)
-	}
+	}*/
 }
 
 func (st *HandleT) readErrJobsLoop() {
@@ -207,7 +207,8 @@ func (st *HandleT) readErrJobsLoop() {
 		st.statErrDBR.Start()
 
 		//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
-		toQuery := errDBReadBatchSize
+		//TODO fix this
+		/*toQuery := errDBReadBatchSize
 		retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, Count: toQuery, IgnoreCustomValFiltersInQuery: true})
 		toQuery -= len(retryList)
 		unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, Count: toQuery, IgnoreCustomValFiltersInQuery: true})
@@ -252,6 +253,6 @@ func (st *HandleT) readErrJobsLoop() {
 
 		if hasFileUploader {
 			st.errProcessQ <- combinedList
-		}
+		}*/
 	}
 }

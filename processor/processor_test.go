@@ -281,7 +281,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, &clearDB, nil)
 		})
 
 		It("should recover after crash", func() {
@@ -294,7 +294,7 @@ var _ = Describe("Processor", func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, &clearDB, nil)
 		})
 	})
 
@@ -313,7 +313,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, &clearDB, c.MockReportingI)
 
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
@@ -406,7 +406,7 @@ var _ = Describe("Processor", func() {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 1,
 					},
-					Parameters:   createBatchParameters(SourceIDEnabledNoUT),
+					Parameters: createBatchParameters(SourceIDEnabledNoUT),
 				},
 				{
 					UUID:          uuid.NewV4(),
@@ -574,7 +574,7 @@ var _ = Describe("Processor", func() {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 1,
 					},
-					Parameters:   createBatchParameters(SourceIDEnabledOnlyUT),
+					Parameters: createBatchParameters(SourceIDEnabledOnlyUT),
 				},
 				{
 					UUID:          uuid.NewV4(),
@@ -735,7 +735,7 @@ var _ = Describe("Processor", func() {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 1,
 					},
-					Parameters:   createBatchParameters(SourceIDEnabled),
+					Parameters: createBatchParameters(SourceIDEnabled),
 				},
 			}
 
@@ -1029,7 +1029,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil)
+			processor.Setup(c.mockBackendConfig, &clearDB, nil)
 
 			setProcessorPausedVariable(processor, false)
 			go processor.Pause()
@@ -1047,7 +1047,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, &clearDB, c.MockReportingI)
 
 			setProcessorPausedVariable(processor, true)
 			go processor.Pause()
@@ -1065,7 +1065,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, &clearDB, c.MockReportingI)
 
 			setProcessorPausedVariable(processor, true)
 			go processor.Resume()
@@ -1083,7 +1083,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, &clearDB, c.MockReportingI)
 
 			setProcessorPausedVariable(processor, false)
 			go processor.Resume()
@@ -1104,7 +1104,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, &clearDB, c.MockReportingI)
 			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any()).Times(1)
 
 			SetMainLoopTimeout(1 * time.Second)
@@ -1125,7 +1125,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 			SetFeaturesRetryAttempts(0)
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			processor.Setup(c.mockBackendConfig, &clearDB, c.MockReportingI)
 			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any()).Times(1)
 
 			SetMainLoopTimeout(1 * time.Second)
@@ -1584,7 +1584,7 @@ func processorSetupAndAssertJobHandling(processor *HandleT, c *context, enableDe
 func Setup(processor *HandleT, c *context, enableDedup, enableReporting bool) {
 	var clearDB = false
 	SetDisableDedupFeature(enableDedup)
-	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+	processor.Setup(c.mockBackendConfig, &clearDB, c.MockReportingI)
 	processor.reportingEnabled = enableReporting
 	// make sure the mock backend config has sent the configuration
 	testutils.RunTestWithTimeout(func() {

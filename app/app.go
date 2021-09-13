@@ -12,7 +12,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -134,13 +133,14 @@ func New(options *Options) Interface {
 }
 
 //HealthHandler is the http handler for health endpoint
-func HealthHandler(w http.ResponseWriter, r *http.Request, jobsDB jobsdb.JobsDB) {
+func HealthHandler(w http.ResponseWriter, r *http.Request) {
 	var dbService string = "UP"
 	var enabledRouter string = "TRUE"
 	var backendConfigMode string = "API"
-	if !jobsDB.CheckPGHealth() {
+	//TODO fix this
+	/*if !jobsDB.CheckPGHealth() {
 		dbService = "DOWN"
-	}
+	}*/
 	if !config.GetBool("enableRouter", true) {
 		enabledRouter = "FALSE"
 	}

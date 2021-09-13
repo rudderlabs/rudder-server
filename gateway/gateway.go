@@ -63,6 +63,7 @@ type webRequestT struct {
 	reqType        string
 	requestPayload []byte
 	writeKey       string
+	customer       string
 	ipAddr         string
 }
 
@@ -137,7 +138,6 @@ type HandleT struct {
 	application                                                app.Interface
 	userWorkerBatchRequestQ                                    chan *userWorkerBatchRequestT
 	batchUserWorkerBatchRequestQ                               chan *batchUserWorkerBatchRequestT
-	jobsDB                                                     jobsdb.JobsDB
 	ackCount                                                   uint64
 	recvCount                                                  uint64
 	backendConfig                                              backendconfig.BackendConfig
@@ -267,10 +267,14 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 			jobList = append(jobList, userWorkerBatchRequest.jobList...)
 		}
 
+		//TODO routing logic needs to change.
+		//Earlier we wait for one db write, now multiple db writes (jobList can contain jobs of different customers)
 		if gwAllowPartialWriteWithErrors {
-			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
+			//errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
+			errorMessagesMap = jobsdb.StoreWithRetryEach(jobList, "gw")
 		} else {
-			err := gateway.jobsDB.Store(jobList)
+			//err := gateway.jobsDB.Store(jobList)
+			err := jobsdb.Store(jobList, "gw")
 			if err != nil {
 				gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
 				gateway.logger.Errorf("JobList: %+v", jobList)
@@ -497,6 +501,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				Parameters:   marshalledParams,
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
+				Customer:     req.customer,
 			}
 			jobList = append(jobList, &newJob)
 
@@ -1164,7 +1169,7 @@ func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, re
 }
 
 func (gateway *HandleT) healthHandler(w http.ResponseWriter, r *http.Request) {
-	app.HealthHandler(w, r, gateway.jobsDB)
+	app.HealthHandler(w, r)
 }
 
 func reflectOrigin(origin string) bool {
@@ -1302,9 +1307,12 @@ func (gateway *HandleT) addToWebRequestQ(writer *http.ResponseWriter, req *http.
 		//If the request comes through proxy, proxy would already send this. So this shouldn't be happening in that case
 		userIDHeader = uuid.NewV4().String()
 	}
+
+	//TODO clean up
+	customer := backendconfig.GetCustomerFromWriteKey(writeKey)
 	userWebRequestWorker := gateway.findUserWebRequestWorker(userIDHeader)
 	ipAddr := misc.GetIPFromReq(req)
-	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, writeKey: writeKey, ipAddr: ipAddr}
+	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, writeKey: writeKey, ipAddr: ipAddr, customer: customer}
 	userWebRequestWorker.webRequestQ <- &webReq
 }
 
@@ -1351,7 +1359,7 @@ Setup initializes this module:
 
 This function will block until backend config is initialy received.
 */
-func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request)) {
+func (gateway *HandleT) Setup(application app.Interface, backendConfig backendconfig.BackendConfig, rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request)) {
 	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = stats.DefaultStats
@@ -1373,7 +1381,6 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.rateLimiter = rateLimiter
 	gateway.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, maxDBBatchSize)
 	gateway.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, maxDBWriterProcess)
-	gateway.jobsDB = jobsDB
 
 	gateway.versionHandler = versionHandler
 
@@ -1382,7 +1389,8 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 
 	gateway.webhookHandler = webhook.Setup(gateway)
 	gatewayAdmin := GatewayAdmin{handle: gateway}
-	gatewayRPCHandler := GatewayRPCHandler{jobsDB: gateway.jobsDB, readOnlyJobsDB: gateway.readonlyGatewayDB}
+	//TODO fix rpc handler
+	gatewayRPCHandler := GatewayRPCHandler{readOnlyJobsDB: gateway.readonlyGatewayDB}
 
 	admin.RegisterStatusHandler("Gateway", &gatewayAdmin)
 	admin.RegisterAdminHandler("Gateway", &gatewayRPCHandler)

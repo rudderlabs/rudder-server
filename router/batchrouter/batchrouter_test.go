@@ -150,7 +150,7 @@ var _ = Describe("BatchRouter", func() {
 			c.mockBatchRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{s3DestinationDefinition.Name}, Count: -1}).Times(1)
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil)
+			batchrouter.Setup(c.mockBackendConfig, s3DestinationDefinition.Name, nil)
 		})
 	})
 
@@ -164,7 +164,7 @@ var _ = Describe("BatchRouter", func() {
 		It("should send failed, unprocessed jobs to s3 destination", func() {
 			batchrouter := &HandleT{}
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil)
+			batchrouter.Setup(c.mockBackendConfig, s3DestinationDefinition.Name, nil)
 			readPerDestination = false
 			setQueryFilters()
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
