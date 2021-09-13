@@ -100,6 +100,20 @@ func (mr *MockFileManagerMockRecorder) Download(arg0, arg1 interface{}) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Download", reflect.TypeOf((*MockFileManager)(nil).Download), arg0, arg1)
 }
 
+// GetConfiguredPrefix mocks base method
+func (m *MockFileManager) GetConfiguredPrefix() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetConfiguredPrefix")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetConfiguredPrefix indicates an expected call of GetConfiguredPrefix
+func (mr *MockFileManagerMockRecorder) GetConfiguredPrefix() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetConfiguredPrefix", reflect.TypeOf((*MockFileManager)(nil).GetConfiguredPrefix))
+}
+
 // GetDownloadKeyFromFileLocation mocks base method
 func (m *MockFileManager) GetDownloadKeyFromFileLocation(arg0 string) string {
 	m.ctrl.T.Helper()
@@ -127,6 +141,21 @@ func (m *MockFileManager) GetObjectNameFromLocation(arg0 string) (string, error)
 func (mr *MockFileManagerMockRecorder) GetObjectNameFromLocation(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetObjectNameFromLocation", reflect.TypeOf((*MockFileManager)(nil).GetObjectNameFromLocation), arg0)
+}
+
+// ListFilesWithPrefix mocks base method
+func (m *MockFileManager) ListFilesWithPrefix(arg0 string, arg1 int64) ([]*filemanager.FileObject, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListFilesWithPrefix", arg0, arg1)
+	ret0, _ := ret[0].([]*filemanager.FileObject)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListFilesWithPrefix indicates an expected call of ListFilesWithPrefix
+func (mr *MockFileManagerMockRecorder) ListFilesWithPrefix(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFilesWithPrefix", reflect.TypeOf((*MockFileManager)(nil).ListFilesWithPrefix), arg0, arg1)
 }
 
 // Upload mocks base method

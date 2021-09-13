@@ -23,7 +23,6 @@ var pkgLogger logger.LoggerI
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("eventbridge")
-
 }
 
 // NewProducer creates a producer based on destination config

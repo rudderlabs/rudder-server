@@ -38,7 +38,7 @@ var statsSamplingRate float32
 // DefaultStats is a common implementation of StatsD stats managements
 var DefaultStats Stats
 
-func init() {
+func Init() {
 	config.RegisterBoolConfigVariable(true, &statsEnabled, false, "enableStats")
 	config.RegisterStringConfigVariable("influxdb", &statsTagsFormat, false, "statsTagsFormat")
 	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -69,7 +70,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 
 	enableGateway := true
 	var reportingI types.ReportingI
-	if embedded.App.Features().Reporting != nil {
+	if embedded.App.Features().Reporting != nil && config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
 		reportingI = embedded.App.Features().Reporting.GetReportingInstance()
 	}
 

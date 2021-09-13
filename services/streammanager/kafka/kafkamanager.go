@@ -64,7 +64,7 @@ const (
 	azureEventHubUser = "$ConnectionString"
 )
 
-func init() {
+func Init() {
 	loadConfig()
 	loadCertificate()
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("kafka")
