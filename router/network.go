@@ -28,6 +28,7 @@ type NetHandleT struct {
 //Network interface
 type NetHandleI interface {
 	SendPost(structData integrations.PostParametersT) (statusCode int, respBody string)
+	SendPost1(structData integrations.PostParametersT) (statusCode int, respBody string)
 }
 
 //temp solution for handling complex query params
