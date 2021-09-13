@@ -49,6 +49,13 @@ func handleQueryParam(param interface{}) string {
 	}
 }
 
+func (network *NetHandleT) SendPost1(structData integrations.PostParametersT) (statusCode int, respBody string) {
+	if disableEgress {
+		return 200, `200: outgoing disabled`
+	}
+	return 200, ""
+}
+
 //SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
 func (network *NetHandleT) SendPost(structData integrations.PostParametersT) (statusCode int, respBody string) {
