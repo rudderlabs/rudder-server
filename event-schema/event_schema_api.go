@@ -96,9 +96,15 @@ type JSPropertyT struct {
 	Property map[string]interface{} `json:"properties"`
 }
 
+type JsonSchemaT struct {
+	Schema            map[string]interface{} `json:"schema"`
+	SchemaType        string                 `json:"schemaType"`
+	SchemaTIdentifier string                 `json:"schemaIdentifier"`
+}
+
 // generateJsonSchFromEM Generates Json schemas from Event Models
 func generateJsonSchFromEM(eventModels []*EventModelT) ([]byte, error) {
-	var jsonSchemas []map[string]interface{}
+	var jsonSchemas []JsonSchemaT
 	for _, eventModel := range eventModels {
 		flattenedSch := make(map[string]interface{})
 		err := json.Unmarshal(eventModel.Schema, &flattenedSch)
@@ -131,9 +137,12 @@ func generateJsonSchFromEM(eventModels []*EventModelT) ([]byte, error) {
 		jsonSchema["$schema"] = "http://json-schema.org/draft-07/schema#"
 		jsonSchema["$id"] = "http://rudder.com/" + meta
 
-		// TODO: validate if the schema is correct.
-
-		jsonSchemas = append(jsonSchemas, jsonSchema)
+		// TODO: validate if the jsonSchema is correct.
+		jsonSchemas = append(jsonSchemas, JsonSchemaT{
+			Schema:            jsonSchema,
+			SchemaType:        eventModel.EventType,
+			SchemaTIdentifier: eventModel.EventIdentifier,
+		})
 	}
 	eventJsonSchs, err := json.Marshal(jsonSchemas)
 	if err != nil {
