@@ -359,7 +359,7 @@ func loadConfig() {
 
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("bigquery")
 }

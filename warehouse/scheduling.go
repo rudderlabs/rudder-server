@@ -20,7 +20,7 @@ var (
 	startUploadAlways   bool
 )
 
-func init() {
+func Init3() {
 	scheduledTimesCache = map[string][]int{}
 	loadConfigScheduling()
 }

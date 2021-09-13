@@ -206,7 +206,7 @@ func (proc *HandleT) Print() {
 	}
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("processor")
 }
@@ -241,7 +241,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	proc.reporting = reporting
-	config.RegisterBoolConfigVariable(true, &proc.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -1664,7 +1664,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 func (proc *HandleT) mainLoop() {
 	//waiting for reporting client setup
-	if proc.reporting != nil {
+	if proc.reporting != nil && proc.reportingEnabled {
 		proc.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
 	}
 

@@ -28,7 +28,7 @@ var (
 	archiverTickerTime          time.Duration
 )
 
-func init() {
+func Init() {
 	loadConfigArchiver()
 }
 

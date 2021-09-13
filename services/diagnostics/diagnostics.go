@@ -67,7 +67,7 @@ type diagnostics struct {
 	InstanceId string
 }
 
-func init() {
+func Init() {
 	loadConfig()
 }
 

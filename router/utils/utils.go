@@ -21,7 +21,7 @@ type BatchDestinationT struct {
 	Sources     []backendconfig.SourceT
 }
 
-func init() {
+func Init() {
 	loadConfig()
 }
 
