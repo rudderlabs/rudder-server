@@ -214,7 +214,7 @@ func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[str
 		}
 	}
 	jsProperties.Required = required
-	finalSchema["jsProperties"] = jsProperties.Property
+	finalSchema["properties"] = jsProperties.Property
 	finalSchema["required"] = required
 	finalSchema["type"] = "object"
 	return finalSchema
