@@ -109,6 +109,11 @@ func StoreWithRetryEach(jobList []*JobT, queue string) map[uuid.UUID]string {
 	return MergeMaps(maps...)
 }
 
+func UpdateJobStatus(jobStatusList []*JobStatusT, customValFilers []string, parameterFilters []ParameterFilterT, customer string, queueType string) error {
+	err := getQueueForCustomer(customer, queueType).UpdateJobStatus(jobStatusList, customValFilers, parameterFilters)
+	return err
+}
+
 func DeleteExecuting(params GetQueryParamsT, queueType string) {
 	for customer := range customerQueues {
 		getQueueForCustomer(customer, queueType).DeleteExecuting(params)
@@ -139,6 +144,14 @@ func ReleaseUpdateJobStatusLocks(customer string, queueType string) {
 
 func GetToRetry(params GetQueryParamsT, customer string, queueType string) []*JobT {
 	return getQueueForCustomer(customer, queueType).GetToRetry(params)
+}
+
+func GetThrottled(params GetQueryParamsT, customer string, queueType string) []*JobT {
+	return getQueueForCustomer(customer, queueType).GetThrottled(params)
+}
+
+func GetWaiting(params GetQueryParamsT, customer string, queueType string) []*JobT {
+	return getQueueForCustomer(customer, queueType).GetWaiting(params)
 }
 
 func GetUnprocessed(params GetQueryParamsT, customer string, queueType string) []*JobT {
