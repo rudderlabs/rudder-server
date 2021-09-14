@@ -105,10 +105,11 @@ type HandleT struct {
 }
 
 type jobResponseT struct {
-	status *jobsdb.JobStatusT
-	worker *workerT
-	userID string
-	JobT   *jobsdb.JobT
+	status      *jobsdb.JobStatusT
+	worker      *workerT
+	userID      string
+	JobT        *jobsdb.JobT
+	workspaceID string
 }
 
 //JobParametersT struct holds source id and destination id of a job
@@ -340,8 +341,9 @@ func (worker *workerT) workerProcess() {
 				CreatedAt:        job.CreatedAt.Format(misc.RFC3339Milli),
 				FirstAttemptedAt: firstAttemptedAt,
 				TransformAt:      parameters.TransformAt,
-				JobT:             job}
-
+				JobT:             job,
+			}
+			customerID := backendconfig.GetCustomerFromSourceID(parameters.SourceID)
 			worker.rt.configSubscriberLock.RLock()
 			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
 			if !ok {
@@ -355,7 +357,7 @@ func (worker *workerT) workerProcess() {
 					ErrorResponse: []byte(`{"reason": "Aborted because destination is not available in the config" }`),
 					Parameters:    []byte(`{}`),
 				}
-				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
+				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job, workspaceID: customerID}
 				continue
 			}
 			destination := batchDestination.Destination
@@ -778,12 +780,12 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	if respBody != "" {
 		status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "response", respBody)
 	}
-
+	customerID := backendconfig.GetCustomerFromSourceID(destinationJobMetadata.SourceID)
 	if isSuccessStatus(respStatusCode) {
 		atomic.AddUint64(&worker.rt.successCount, 1)
 		status.JobState = jobsdb.Succeeded.State
 		worker.rt.logger.Debugf("[%v Router] :: sending success status to response", worker.rt.destName)
-		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
+		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT, workspaceID: customerID}
 
 		if worker.rt.guaranteeUserEventOrder {
 			//Removing the user from aborted user map
@@ -879,7 +881,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			}
 		}
 		worker.rt.logger.Debugf("[%v Router] :: sending failed/aborted state as response", worker.rt.destName)
-		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
+		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT, workspaceID: customerID}
 	}
 }
 
@@ -942,6 +944,7 @@ func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMe
 
 func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters JobParametersT, userID string, previousFailedJobID int64) (markedAsWaiting bool) {
 	// job is behind in queue of failed job from same user
+	customerID := backendconfig.GetCustomerFromSourceID(parameters.SourceID)
 	if previousFailedJobID < job.JobID {
 		worker.rt.logger.Debugf("[%v Router] :: skipping processing job for userID: %v since prev failed job exists, prev id %v, current id %v", worker.rt.destName, userID, previousFailedJobID, job.JobID)
 		resp := fmt.Sprintf(`{"blocking_id":"%v", "user_id":"%s"}`, previousFailedJobID, userID)
@@ -954,7 +957,7 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 			ErrorResponse: []byte(resp), // check
 			Parameters:    []byte(`{}`),
 		}
-		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
+		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job, workspaceID: customerID}
 		return true
 	}
 	if previousFailedJobID != job.JobID {
@@ -1158,9 +1161,9 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
-
+	jobStatusMap := make(map[string][]*jobsdb.JobStatusT)
+	abortedJobStatusMap := make(map[string][]*jobsdb.JobT)
 	var statusList []*jobsdb.JobStatusT
-	var routerAbortedJobs []*jobsdb.JobT
 	for _, resp := range *responseList {
 		//Update metrics maps
 		//REPORTING - ROUTER - START
@@ -1193,11 +1196,10 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			}
 		}
 		//REPORTING - ROUTER - END
-
-		statusList = append(statusList, resp.status)
+		jobStatusMap[resp.workspaceID] = append(jobStatusMap[resp.workspaceID], resp.status)
 
 		if resp.status.JobState == jobsdb.Aborted.State {
-			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
+			abortedJobStatusMap[resp.workspaceID] = append(abortedJobStatusMap[resp.workspaceID], resp.JobT)
 		}
 
 		//tracking router errors
@@ -1242,23 +1244,27 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		})
 
 		//TODO fix this
-		/*//Store the aborted jobs to errorDB
-		if routerAbortedJobs != nil {
-			rt.errorDB.Store(routerAbortedJobs)
+		//Store the aborted jobs to errorDB
+		for customer, routerAbortedJobs := range abortedJobStatusMap {
+			if routerAbortedJobs != nil {
+				jobsdb.StoreJobsForCustomer(customer, "proc_error", routerAbortedJobs)
+			}
 		}
-		//Update the status
-		txn := rt.jobsDB.BeginGlobalTransaction()
-		rt.jobsDB.AcquireUpdateJobStatusLocks()
-		err := rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil)
-		if err != nil {
-			rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
-			panic(err)
+		for customer, statusList := range jobStatusMap {
+			//Update the status
+			txn := jobsdb.BeginGlobalTransaction(customer, "rt")
+			jobsdb.AcquireUpdateJobStatusLocks(customer, "rt")
+			err := jobsdb.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil, customer, "rt")
+			if err != nil {
+				rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
+				panic(err)
+			}
+			if rt.reporting != nil && rt.reportingEnabled {
+				rt.reporting.Report(reportMetrics, txn)
+			}
+			jobsdb.CommitTransaction(txn, customer, "rt")
+			jobsdb.ReleaseUpdateJobStatusLocks(customer, "rt")
 		}
-		if rt.reporting != nil && rt.reportingEnabled {
-			rt.reporting.Report(reportMetrics, txn)
-		}
-		rt.jobsDB.CommitTransaction(txn)
-		rt.jobsDB.ReleaseUpdateJobStatusLocks()*/
 	}
 
 	if rt.guaranteeUserEventOrder {
