@@ -86,7 +86,7 @@ func (refTokenBody RefreshTokenBody) MarshalJSON() ([]byte, error) {
 	return j, nil
 }
 
-func init() {
+func Init() {
 	configBEURL = backendconfig.GetConfigBackendURL()
 	pkgLogger = logger.NewLogger().Child("router").Child("OAuthResponseHandler")
 	loggerNm = "OAuthResponseHandler"

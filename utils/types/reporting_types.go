@@ -13,18 +13,21 @@ type Config struct {
 const (
 	CORE_REPORTING_CLIENT      = "core"
 	WAREHOUSE_REPORTING_CLIENT = "warehouse"
+
+	DEFAULT_REPORTING_ENABLED = true
 )
 
 var (
 	DiffStatus = "diff"
 
 	//Module names
-	GATEWAY          = "gateway"
-	USER_TRANSFORMER = "user_transformer"
-	DEST_TRANSFORMER = "dest_transformer"
-	ROUTER           = "router"
-	BATCH_ROUTER     = "batch_router"
-	WAREHOUSE        = "warehouse"
+	GATEWAY                = "gateway"
+	TRACKINGPLAN_VALIDATOR = "tracking_plan_validator"
+	USER_TRANSFORMER       = "user_transformer"
+	DEST_TRANSFORMER       = "dest_transformer"
+	ROUTER                 = "router"
+	BATCH_ROUTER           = "batch_router"
+	WAREHOUSE              = "warehouse"
 )
 
 type Client struct {

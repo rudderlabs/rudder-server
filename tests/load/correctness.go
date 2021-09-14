@@ -163,13 +163,13 @@ func computeTestResults(testDuration int) {
 
 func getS3DestData() {
 	// TODO: Handle Pagination for ListFilesWithPrefix
-	s3Objects, err := s3Manager.ListFilesWithPrefix(fmt.Sprintf("rudder-logs/%s", *sourceID))
+	fileObjects, err := s3Manager.ListFilesWithPrefix(fmt.Sprintf("rudder-logs/%s", *sourceID), 1000)
 	if err != nil {
 		panic(err)
 	}
 
-	sort.Slice(s3Objects, func(i, j int) bool {
-		return s3Objects[i].LastModifiedTime.Before(s3Objects[j].LastModifiedTime)
+	sort.Slice(fileObjects, func(i, j int) bool {
+		return fileObjects[i].LastModified.Before(fileObjects[j].LastModified)
 	})
 
 	redisClient := redis.NewClient(&redis.Options{
@@ -177,8 +177,8 @@ func getS3DestData() {
 	})
 	pipe := redisClient.Pipeline()
 
-	for _, s3Object := range s3Objects {
-		if s3Object.LastModifiedTime.Before(startTime) {
+	for _, s3Object := range fileObjects {
+		if s3Object.LastModified.Before(startTime) {
 			continue
 		}
 		jsonPath := "/Users/srikanth/" + "s3-correctness/" + uuid.NewV4().String()

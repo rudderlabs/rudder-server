@@ -20,7 +20,7 @@ var (
 	postParametersTFields []string
 )
 
-func init() {
+func Init() {
 	loadConfig()
 	// This is called in init and it should be a one time call. Making reflect calls during runtime is not a great idea.
 	// We unmarshal json response from transformer into PostParametersT struct.
@@ -155,4 +155,9 @@ func GetDestinationURL(destType string) string {
 //GetUserTransformURL returns the port of running user transform
 func GetUserTransformURL() string {
 	return destTransformURL + "/customTransform"
+}
+
+//GetTrackingPlanValidationURL returns the port of running tracking plan validation
+func GetTrackingPlanValidationURL() string {
+	return destTransformURL + "/v0/validate"
 }

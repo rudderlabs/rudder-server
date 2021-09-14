@@ -156,7 +156,8 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 	}
 	columnNames := []string{"merge_property_type", "merge_property_value", "rudder_id", "updated_at"}
 	for _, row := range rows {
-		eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type)
+		eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type, idr.Uploader.GetLoadFileType(), gzWriter)
+		// TODO : support add row for parquet loader
 		eventLoader.AddRow(columnNames, row)
 		data, _ := eventLoader.WriteToString()
 		gzWriter.WriteGZ(data)
@@ -319,7 +320,7 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 		columnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value"}
 		for rows.Next() {
 			var rowData []string
-			eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type)
+			eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type, idr.Uploader.GetLoadFileType(), gzWriter)
 			var prop1Val, prop2Val, prop1Type, prop2Type sql.NullString
 			err = rows.Scan(&prop1Type, &prop1Val, &prop2Type, &prop2Val)
 			if err != nil {
@@ -327,7 +328,8 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 			}
 			rowData = append(rowData, prop1Type.String, prop1Val.String, prop2Type.String, prop2Val.String)
 			for i, columnName := range columnNames {
-				eventLoader.AddColumn(columnName, rowData[i])
+				// TODO : use proper column type here
+				eventLoader.AddColumn(columnName, "", rowData[i])
 			}
 			rowString, _ := eventLoader.WriteToString()
 			gzWriter.WriteGZ(rowString)
@@ -342,29 +344,29 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 }
 
 func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations := idr.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
+	objects := idr.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	var fileNames []string
-	for _, objectLocation := range objectLocations {
-		objectName, err := warehouseutils.GetObjectName(objectLocation, idr.Warehouse.Destination.Config, warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage()))
+	for _, object := range objects {
+		objectName, err := warehouseutils.GetObjectName(object.Location, idr.Warehouse.Destination.Config, warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage()))
 		if err != nil {
-			pkgLogger.Errorf("IDR: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
+			pkgLogger.Errorf("IDR: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
 			return nil, err
 		}
 		dirName := "/rudder-warehouse-load-uploads-tmp/"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
-			pkgLogger.Errorf("IDR: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("IDR: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
 		objectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.ID, time.Now().Unix()) + objectName
 		err = os.MkdirAll(filepath.Dir(objectPath), os.ModePerm)
 		if err != nil {
-			pkgLogger.Errorf("IDR: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("IDR: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, object.Location, err)
 			return nil, err
 		}
 		objectFile, err := os.Create(objectPath)
 		if err != nil {
-			pkgLogger.Errorf("IDR: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("IDR: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
 		storageProvider := warehouseutils.ObjectStorageType(idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.Config, idr.Uploader.UseRudderStorage())
@@ -382,12 +384,12 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 		}
 		err = downloader.Download(objectFile, objectName)
 		if err != nil {
-			pkgLogger.Errorf("IDR: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("IDR: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
 		fileName := objectFile.Name()
 		if err = objectFile.Close(); err != nil {
-			pkgLogger.Errorf("IDR: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("IDR: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
 		fileNames = append(fileNames, fileName)

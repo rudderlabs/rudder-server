@@ -132,3 +132,28 @@ type MinioConfig struct {
 	SecretAccessKey string
 	UseSSL          bool
 }
+
+func (manager *MinioManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	fileObjects = make([]*FileObject, 0)
+
+	// Created minio core
+	core, err := minio.NewCore(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
+	if err != nil {
+		return
+	}
+
+	// List the Objects in the bucket
+	bucket, err := core.ListObjects(manager.Config.Bucket, prefix, prefix, "", int(maxItems))
+	if err != nil {
+		return
+	}
+
+	for _, item := range bucket.Contents {
+		fileObjects = append(fileObjects, &FileObject{item.Key, item.LastModified})
+	}
+	return
+}
+
+func (manager *MinioManager) GetConfiguredPrefix() (string) {
+	return manager.Config.Prefix
+}

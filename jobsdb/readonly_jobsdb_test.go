@@ -13,10 +13,24 @@ import (
 	"github.com/tidwall/gjson"
 
 	. "github.com/onsi/gomega"
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
+func initReadonlyJobsDB() {
+	config.Load()
+	logger.Init()
+	admin.Init()
+	Init()
+	Init2()
+	Init3()
+}
+
 var _ = Describe("readonly_jobsdb", func() {
+	initReadonlyJobsDB()
+
 	var c *context
 
 	BeforeEach(func() {
@@ -341,7 +355,7 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
 			%[1]s,
 			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing')))
+				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
 			AS job_latest_state
 		 WHERE %[1]s.job_id=job_latest_state.job_id
 		   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
@@ -354,7 +368,7 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
 			%[1]s,
 			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing')))
+				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
 			AS job_latest_state
 		 WHERE %[1]s.job_id=job_latest_state.job_id
 		   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
@@ -380,7 +394,7 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectQuery(fmt.Sprintf(`select sum(jsonb_array_length(batch)) from (SELECT %[1]s.event_payload->'batch' as batch FROM
 			%[1]s,
 			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing')))
+				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
 			AS job_latest_state
 		 WHERE %[1]s.job_id=job_latest_state.job_id
 
@@ -393,7 +407,7 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectQuery(fmt.Sprintf(`select sum(jsonb_array_length(batch)) from (SELECT %[1]s.event_payload->'batch' as batch FROM
 		  %[1]s,
 		  (SELECT job_id, retry_time FROM %[2]s WHERE id IN
-			  (SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing')))
+			  (SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
 		  AS job_latest_state
 	   WHERE %[1]s.job_id=job_latest_state.job_id
 
@@ -1521,7 +1535,7 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
 			%[1]s,
 			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing')))
+				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
 			AS job_latest_state
 		 WHERE %[1]s.job_id=job_latest_state.job_id
 		   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
@@ -1534,7 +1548,7 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
 			%[1]s,
 			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing')))
+				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
 			AS job_latest_state
 		 WHERE %[1]s.job_id=job_latest_state.job_id
 		   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
