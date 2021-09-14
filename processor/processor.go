@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/distributed"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 
@@ -927,7 +928,7 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
-func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
+func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT, customer string) {
 	proc.processJobsTime.Start()
 	proc.pStatsJobs.Start()
 
@@ -1092,6 +1093,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
+			Customer:      customer,
 		}
 		statusList = append(statusList, &newStatus)
 	}
@@ -1444,12 +1446,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 
 	//TODO fix this
-	/*proc.statDBW.Start()
+	proc.statDBW.Start()
 	proc.pStatsDBW.Start()
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-		err := proc.routerDB.Store(destJobs)
+		err := jobsdb.StoreJobsForCustomer(customer, "rt", destJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into router table failed with error: %v", err)
 			proc.logger.Errorf("destJobs: %v", destJobs)
@@ -1459,7 +1461,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
-		err := proc.batchRouterDB.Store(batchDestJobs)
+		err := jobsdb.StoreJobsForCustomer(customer, "batch_rt", batchDestJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into batch router table failed with error: %v", err)
 			proc.logger.Errorf("batchDestJobs: %v", batchDestJobs)
@@ -1473,7 +1475,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 	if len(procErrorJobs) > 0 {
 		proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobs))
-		err := proc.errorDB.Store(procErrorJobs)
+		err := jobsdb.StoreJobsForCustomer(customer, "proc_error", procErrorJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
 			proc.logger.Errorf("procErrorJobs: %v", procErrorJobs)
@@ -1481,17 +1483,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
-
-	txn := proc.gatewayDB.BeginGlobalTransaction()
-	proc.gatewayDB.AcquireUpdateJobStatusLocks()
-	err := proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{GWCustomVal}, nil)
+	txn := jobsdb.BeginGlobalTransaction(customer, "gw")
+	jobsdb.AcquireUpdateJobStatusLocks(customer, "gw")
+	err := jobsdb.UpdateJobStatusInTxn(txn, statusList, []string{GWCustomVal}, nil, customer, "gw")
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while updating gateway jobs statuses. Panicking. Err: %v", err)
 		panic(err)
 	}
-	if proc.isReportingEnabled() {
-		proc.reporting.Report(reportMetrics, txn)
-	}
+
+	//TODO : Fix Reporting Metrics for Multitenant Setup
+	// if proc.isReportingEnabled() {
+	// 	proc.reporting.Report(reportMetrics, txn)
+	// }
 
 	if enableDedup {
 		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
@@ -1503,9 +1506,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
-	proc.gatewayDB.CommitTransaction(txn)
-	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
-	proc.statDBW.End()*/
+	jobsdb.CommitTransaction(txn, customer, "gw")
+	jobsdb.ReleaseUpdateJobStatusLocks(customer, "gw")
+	proc.statDBW.End()
 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
@@ -1591,66 +1594,69 @@ func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *t
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
 // Returns true if any job is handled, otherwise returns false.
 func (proc *HandleT) handlePendingGatewayJobs() bool {
-	proc.statLoopTime.Start()
-	proc.pStatsDBR.Start()
-	proc.statDBR.Start()
+	configList := distributed.GetAllCustomersComputeConfig()
+	for customer, config := range configList {
 
-	toQuery := dbReadBatchSize
-	proc.logger.Debugf("Processor DB Read size: %v", toQuery)
-	//Should not have any failure while processing (in v0) so
-	//retryList should be empty. Remove the assert
+		proc.statLoopTime.Start()
+		proc.pStatsDBR.Start()
+		proc.statDBR.Start()
 
-	var retryList, unprocessedList []*jobsdb.JobT
-	var totalRetryEvents, totalUnprocessedEvents int
+		toQuery := dbReadBatchSize
+		proc.logger.Debugf("Processor DB Read size: %v", toQuery)
+		//Should not have any failure while processing (in v0) so
+		//retryList should be empty. Remove the assert
 
-	//TODO fix this
-	/*unTruncatedRetryList := proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: toQuery})
-	retryList, totalRetryEvents = getTruncatedEventList(unTruncatedRetryList, maxEventsToProcess)
+		var retryList, unprocessedList []*jobsdb.JobT
+		var totalRetryEvents, totalUnprocessedEvents int
+		var combinedList []*jobsdb.JobT
+		unTruncatedRetryList := jobsdb.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: int(config.ComputeShare) * toQuery}, customer, "gw")
+		retryList, totalRetryEvents = getTruncatedEventList(unTruncatedRetryList, maxEventsToProcess)
 
-	if len(unTruncatedRetryList) >= dbReadBatchSize || totalRetryEvents >= maxEventsToProcess {
-		// skip querying for unprocessed jobs if either retreived dbReadBatchSize or retreived maxEventToProcess
-	} else {
-		eventsLeftToProcess := maxEventsToProcess - totalRetryEvents
-		toQuery = misc.MinInt(eventsLeftToProcess, dbReadBatchSize)
-		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: toQuery})
-		unprocessedList, totalUnprocessedEvents = getTruncatedEventList(unTruncatedUnProcessedList, eventsLeftToProcess)
-	}*/
-
-	proc.statDBR.End()
-
-	// check if there is work to be done
-	if len(unprocessedList)+len(retryList) == 0 {
-		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
-		proc.pStatsDBR.End(0)
-		return false
-	}
-	proc.eventSchemasTime.Start()
-	if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
-		for _, unprocessedJob := range unprocessedList {
-			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
-			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
+		if len(unTruncatedRetryList) >= dbReadBatchSize || totalRetryEvents >= maxEventsToProcess {
+			// skip querying for unprocessed jobs if either retreived dbReadBatchSize or retreived maxEventToProcess
+		} else {
+			eventsLeftToProcess := maxEventsToProcess - totalRetryEvents
+			toQuery = misc.MinInt(eventsLeftToProcess, dbReadBatchSize)
+			unTruncatedUnProcessedList := jobsdb.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: int(config.ComputeShare) * toQuery}, customer, "gw")
+			unprocessedList, totalUnprocessedEvents = getTruncatedEventList(unTruncatedUnProcessedList, eventsLeftToProcess)
 		}
+		combinedList = append(unprocessedList, retryList...)
+
+		proc.statDBR.End()
+
+		// check if there is work to be done
+		if len(unprocessedList)+len(retryList) == 0 {
+			proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
+			proc.pStatsDBR.End(0)
+			return false
+		}
+		proc.eventSchemasTime.Start()
+		if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
+			for _, unprocessedJob := range unprocessedList {
+				writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
+				proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
+			}
+		}
+		proc.eventSchemasTime.End()
+		// handle pending jobs
+		proc.statListSort.Start()
+		proc.logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total_requests: %v, total_events: %d", len(retryList), len(unprocessedList), len(combinedList), totalRetryEvents+totalUnprocessedEvents)
+		proc.pStatsDBR.End(len(combinedList))
+		proc.statGatewayDBR.Count(len(combinedList))
+
+		proc.pStatsDBR.Print()
+
+		//Sort by JOBID
+		sort.Slice(combinedList, func(i, j int) bool {
+			return combinedList[i].JobID < combinedList[j].JobID
+		})
+
+		proc.statListSort.End()
+
+		proc.processJobsForDest(combinedList, nil, customer)
+
+		proc.statLoopTime.End()
 	}
-	proc.eventSchemasTime.End()
-	// handle pending jobs
-	proc.statListSort.Start()
-	combinedList := append(unprocessedList, retryList...)
-	proc.logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total_requests: %v, total_events: %d", len(retryList), len(unprocessedList), len(combinedList), totalRetryEvents+totalUnprocessedEvents)
-	proc.pStatsDBR.End(len(combinedList))
-	proc.statGatewayDBR.Count(len(combinedList))
-
-	proc.pStatsDBR.Print()
-
-	//Sort by JOBID
-	sort.Slice(combinedList, func(i, j int) bool {
-		return combinedList[i].JobID < combinedList[j].JobID
-	})
-
-	proc.statListSort.End()
-
-	proc.processJobsForDest(combinedList, nil)
-
-	proc.statLoopTime.End()
 
 	return true
 }
@@ -1693,8 +1699,7 @@ func (proc *HandleT) mainLoop() {
 }
 
 func (proc *HandleT) crashRecover() {
-	//TODO fix this
-	//proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: -1})
+	jobsdb.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: -1}, "gw")
 }
 
 func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {

@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/distributed"
@@ -42,6 +43,16 @@ func SetupCustomerQueues() {
 	}
 }
 
+func GetCustomerList(jobList []*JobT) map[string]int {
+	customerListMap := make(map[string]int)
+	for _, job := range jobList {
+		if _, ok := customerListMap[job.Customer]; !ok {
+			customerListMap[job.Customer] = 0
+		}
+	}
+	return customerListMap
+}
+
 func getQueueForCustomer(customer, queue string) JobsDB {
 	customerQueue := customerQueues[customer]
 	switch queue {
@@ -70,8 +81,13 @@ func Store(jobList []*JobT, queue string) error {
 	}
 
 	for customer, list := range customerJobListMap {
-		getQueueForCustomer(customer, queue).Store(list)
+		StoreJobsForCustomer(customer, queue, list)
 	}
+	return nil
+}
+
+func StoreJobsForCustomer(customer string, queue string, list []*JobT) error {
+	getQueueForCustomer(customer, queue).Store(list)
 	return nil
 }
 
@@ -91,6 +107,42 @@ func StoreWithRetryEach(jobList []*JobT, queue string) map[uuid.UUID]string {
 		maps = append(maps, getQueueForCustomer(customer, queue).StoreWithRetryEach(list))
 	}
 	return MergeMaps(maps...)
+}
+
+func DeleteExecuting(params GetQueryParamsT, queueType string) {
+	for customer := range customerQueues {
+		getQueueForCustomer(customer, queueType).DeleteExecuting(params)
+	}
+}
+
+func BeginGlobalTransaction(customer string, queueType string) *sql.Tx {
+	return getQueueForCustomer(customer, queueType).BeginGlobalTransaction()
+}
+
+func AcquireUpdateJobStatusLocks(customer string, queueType string) {
+	getQueueForCustomer(customer, queueType).AcquireUpdateJobStatusLocks()
+}
+
+func UpdateJobStatusInTxn(txn *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT, customer string, queueType string) error {
+	err := getQueueForCustomer(customer, queueType).UpdateJobStatusInTxn(txn, statusList, customValFilters, parameterFilters)
+	return err
+
+}
+
+func CommitTransaction(txn *sql.Tx, customer string, queueType string) {
+	getQueueForCustomer(customer, queueType).CommitTransaction(txn)
+}
+
+func ReleaseUpdateJobStatusLocks(customer string, queueType string) {
+	getQueueForCustomer(customer, queueType).ReleaseUpdateJobStatusLocks()
+}
+
+func GetToRetry(params GetQueryParamsT, customer string, queueType string) []*JobT {
+	return getQueueForCustomer(customer, queueType).GetToRetry(params)
+}
+
+func GetUnprocessed(params GetQueryParamsT, customer string, queueType string) []*JobT {
+	return getQueueForCustomer(customer, queueType).GetUnprocessed(params)
 }
 
 func MergeMaps(maps ...map[uuid.UUID]string) (result map[uuid.UUID]string) {

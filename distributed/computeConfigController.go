@@ -23,15 +23,16 @@ func GetAllCustomersComputeConfig() map[string]CustomerComputeConfig {
 
 func Setup() {
 	customerComputeConfigs = make(map[string]CustomerComputeConfig)
-	/*customers = []string{"acorns", "joybird"}
+	customers = []string{"acorns", "joybird"}
 	customerComputeConfigs["acorns"] = CustomerComputeConfig{
 		Pghost:       "127.0.0.1",
-		ComputeShare: 0.9,
+		ComputeShare: 1,
 	}
-	customerComputeConfigs["joybird"] = CustomerComputeConfig{
-		Pghost:       "127.0.0.1",
-		ComputeShare: 0.1,
-	}*/
+	/*
+		customerComputeConfigs["joybird"] = CustomerComputeConfig{
+			Pghost:       "127.0.0.1",
+			ComputeShare: 0.1,
+		}*/
 
 	customers = []string{"acorns"}
 }
