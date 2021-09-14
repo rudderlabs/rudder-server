@@ -14,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
-	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
@@ -38,7 +37,7 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	Send(transformedData integrations.PostParametersT, destName string, accessToken string) (statusCode int, respBody string)
+	Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string)
 }
 
 //NewTransformer creates a new transformer
@@ -154,12 +153,8 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) Send(transformedData integrations.PostParametersT, destName string, accessToken string) (statusCode int, respBody string) {
+func (trans *HandleT) Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string) {
 
-	// This change is used for Re-trial mechanism
-	if router_utils.IsNotEmptyString(accessToken) {
-		transformedData.AccessToken = accessToken
-	}
 	rawJSON, err := json.Marshal(transformedData)
 	if err != nil {
 		panic(err)

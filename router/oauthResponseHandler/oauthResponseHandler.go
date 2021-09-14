@@ -119,9 +119,10 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 	}
 	refreshResponse, refreshErr := authErrHandler.client.Post(refreshUrl, "application/json; charset=utf-8", bytes.NewBuffer(res))
 	if refreshErr != nil {
+		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, refreshErr)
 		return http.StatusBadRequest, refreshErr.Error()
 	}
-	statusCode, response := authErrHandler.processResponse(refreshResponse, refreshErr)
+	statusCode, response := authErrHandler.processResponse(refreshResponse)
 	authErrHandler.oauthErrHandlerReqTimerStat.End()
 	authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
 	return statusCode, response
@@ -133,6 +134,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	disableURL := fmt.Sprintf("%s/workspaces/%s/destinations/%s/disable", configBEURL, workspaceId, destinationId)
 	req, err := http.NewRequest(http.MethodDelete, disableURL, nil)
 	if err != nil {
+		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, err)
 		// Abort on receiving an error in request formation
 		return http.StatusBadRequest, err.Error()
 	}
@@ -142,22 +144,18 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
 	if doErr != nil {
 		// Abort on receiving an error
+		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, doErr)
 		return http.StatusBadRequest, err.Error()
 	}
-	statusCode, resp := authErrHandler.processResponse(res, doErr)
+	statusCode, resp := authErrHandler.processResponse(res)
 	authErrHandler.oauthErrHandlerReqTimerStat.End()
 	authErrHandler.logger.Debugf("[%s request] :: Disable Response received : %s", loggerNm)
 	return statusCode, resp
 }
 
-func (authErrHandler *OAuthErrResHandler) processResponse(resp *http.Response, err error) (statusCode int, respBody string) {
+func (authErrHandler *OAuthErrResHandler) processResponse(resp *http.Response) (statusCode int, respBody string) {
 	var respData []byte
 	var ioUtilReadErr error
-	if err != nil {
-		respData = []byte("")
-		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, err)
-		return http.StatusInternalServerError, string(respData)
-	}
 	if resp != nil && resp.Body != nil {
 		respData, ioUtilReadErr = ioutil.ReadAll(resp.Body)
 		defer resp.Body.Close()
@@ -165,14 +163,8 @@ func (authErrHandler *OAuthErrResHandler) processResponse(resp *http.Response, e
 			return http.StatusInternalServerError, ioUtilReadErr.Error()
 		}
 	}
-	var contentTypeHeader string
-	if resp != nil && resp.Header != nil {
-		contentTypeHeader = resp.Header.Get("Content-Type")
-	}
-	if contentTypeHeader == "" {
-		//Detecting content type of the respData
-		contentTypeHeader = http.DetectContentType(respData)
-	}
+	//Detecting content type of the respData
+	contentTypeHeader := http.DetectContentType(respData)
 	//If content type is not of type "*text*", overriding it with empty string
 	if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
 		strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||

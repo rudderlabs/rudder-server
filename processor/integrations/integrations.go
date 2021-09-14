@@ -56,6 +56,7 @@ type PostParametersT struct {
 	Body            map[string]interface{} `json:"body"`
 	Files           map[string]interface{} `json:"files"`
 	AccessToken     string                 `json:"accessToken"`
+	ExpirationDate  string                 `json:"expirationDate"`
 	WorkspaceId     string                 `json:"workspaceId"`
 	RudderAccountId string                 `json:"rudderAccountId"`
 }

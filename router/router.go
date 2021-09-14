@@ -568,7 +568,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							pkgLogger.Infof(`transformerProxy status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
 							if worker.rt.transformerProxy {
 								pkgLogger.Infof(`routing via transformer, proxy enabled`)
-								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(val, destinationJob, "", 0)
+								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(val, destinationJob, 0)
 							} else {
 								pkgLogger.Infof(`routing via server, proxy disabled`)
 								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
@@ -1865,11 +1865,11 @@ func (rt *HandleT) Resume() {
 
 // Currently the retry logic has been implemented for only OAuth
 func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParametersT,
-	destinationJob types.DestinationJobT, accessToken string, retryCount int) (statusCode int, response string) {
+	destinationJob types.DestinationJobT, retryCount int) (statusCode int, response string) {
 	var respStatusCode int
 	var respBodyTemp string
 
-	respStatusCode, respBodyTemp = rt.transformer.Send(val, rt.destName, accessToken)
+	respStatusCode, respBodyTemp = rt.transformer.Send(val, rt.destName)
 	if retryCount >= rt.maxFailedOAuthCountForJob {
 		// Retrial termination condition
 		return respStatusCode, respBodyTemp
@@ -1907,8 +1907,11 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 					return http.StatusInternalServerError, `Empty Token cannot be processed further`
 				}
 			}
+			// Refreshed Token is being set
+			val.AccessToken = accountSecret.AccessToken
+			val.ExpirationDate = accountSecret.ExpirationDate
 			// Retry with Refreshed Token(variable "response" - contains refreshed access token & expirationDate)
-			return rt.SendToTransformerProxyWithRetry(val, destinationJob, response, retryCount)
+			return rt.SendToTransformerProxyWithRetry(val, destinationJob, retryCount)
 		}
 	}
 
