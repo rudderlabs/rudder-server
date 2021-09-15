@@ -1,5 +1,12 @@
 package distributed
 
+import (
+	"time"
+
+	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+)
+
 func GetCustomerList() []string {
 	return customers
 }
@@ -23,10 +30,33 @@ func GetAllCustomersComputeConfig() map[string]CustomerComputeConfig {
 
 func Setup() {
 	customerComputeConfigs = make(map[string]CustomerComputeConfig)
+	rruntime.Go(func() {
+		prepareComputeConfig()
+	})
+}
 
-	customers = []string{"workspaceID"}
-	customerComputeConfigs["workspaceID"] = CustomerComputeConfig{
-		Pghost:       "127.0.0.1",
-		ComputeShare: 1,
+func prepareComputeConfig() {
+	//TODO clean up
+	time.Sleep(5 * time.Second)
+	configReceivedLock.Lock()
+	defer configReceivedLock.Unlock()
+	configReceived = true
+
+	if misc.IsMultiTenant() {
+		customers = []CustomerT{{Name: "acorns", WorkspaceID: config.GetWorkspaceID()}, {Name: "joybird", WorkspaceID: config.GetWorkspaceID()}}
+		customerComputeConfigs["acorns"] = CustomerComputeConfig{
+			Pghost:       "127.0.0.1",
+			ComputeShare: 0.9,
+		}
+		customerComputeConfigs["joybird"] = CustomerComputeConfig{
+			Pghost:       "127.0.0.1",
+			ComputeShare: 0.1,
+		}
+	} else {
+		customers = []CustomerT{{Name: "acorns", WorkspaceID: config.GetWorkspaceID()}}
+		customerComputeConfigs["1lhWcl2VbO9c47vkvXIsDYszTpy"] = CustomerComputeConfig{
+			Pghost:       "127.0.0.1",
+			ComputeShare: 1,
+		}
 	}
 }

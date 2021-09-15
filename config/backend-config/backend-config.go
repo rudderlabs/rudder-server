@@ -320,13 +320,8 @@ func regulationsUpdate(statConfigBackendError stats.RudderStats) {
 }
 
 //TODO fix this
-func GetCustomerFromWriteKey(writeKey string) string {
-	return "workspaceID"
-}
-
-//TODO fix this
 func GetCustomerFromSourceID(sourceID string) string {
-	return "workspaceID"
+	return "1lhWcl2VbO9c47vkvXIsDYszTpy"
 }
 
 func configUpdate(statConfigBackendError stats.RudderStats) {
