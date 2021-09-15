@@ -18,7 +18,7 @@ jobs:
           go-version: '^1.16.1'
       - run: go version
       - run: make mocks
-      - run: git diff --exit-code
+      - run: git diff --exit-code && exit 1
       - name: Error message
         if: ${{ failure() }}
         run: echo "::error file=Makefile,line=11,col=1::Incorrectly generated files. Ensure you have run `make mocks` and committed the files locally."
