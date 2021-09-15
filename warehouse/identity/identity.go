@@ -100,10 +100,13 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 			row2Values = fmt.Sprintf(`, (%s)`, misc.SingleQuoteLiteralJoin(row2))
 		}
 
+		// add logs
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.Warehouse))
 		pkgLogger.Debugf(`IDR: Inserting properties from merge_rule into mappings table: %v`, sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
+			pkgLogger.Error("====================\nDBG: Failed to insert into identity mappings")
+			pkgLogger.Errorf("Rule id : %d\nSQL: %s\nRudderID:%d\nUploadID: %d\n====================", ruleID, sqlStatement, rudderID, idr.UploadID)
 			pkgLogger.Errorf(`IDR: Error inserting properties from merge_rule into mappings table: %v`, err)
 			return
 		}
@@ -140,17 +143,23 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 			rows = append(rows, row)
 		}
 
+		// ADD LOGS
 		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN (%v)`, idr.mappingsTable(), newID, currentTimeString, quotedRudderIDs)
 		pkgLogger.Debugf(`IDR: Update rudder_id for all properties in mapping table with rudder_id's %v: %v`, quotedRudderIDs, sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
+			pkgLogger.Error("====================\nDBG: Failed to insert into identify mappings")
+			pkgLogger.Errorf("Rule id : %d\nSQL: %s\nRudderID:%v\nUploadID: %d\n====================", ruleID, sqlStatement, quotedRudderIDs, idr.UploadID)
 			return
 		}
 
+		// ADD LOGS
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.Warehouse))
 		pkgLogger.Debugf(`IDR: Insert new mappings into %s: %v`, idr.mappingsTable(), sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
+			pkgLogger.Error("====================\nDBG: Failed to insert into identify mappings")
+			pkgLogger.Errorf("DBG: IDR: \nRule id : %d\nSQL: %s\nRudderID:%v\nUploadID: %d\n====================", ruleID, sqlStatement, quotedRudderIDs, idr.UploadID)
 			return
 		}
 	}
