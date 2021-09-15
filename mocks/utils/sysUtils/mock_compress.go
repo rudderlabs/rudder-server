@@ -6,35 +6,36 @@ package mock_sysUtils
 
 import (
 	gzip "compress/gzip"
-	gomock "github.com/golang/mock/gomock"
 	io "io"
 	reflect "reflect"
+
+	gomock "github.com/golang/mock/gomock"
 )
 
-// MockGZipI is a mock of GZipI interface
+// MockGZipI is a mock of GZipI interface.
 type MockGZipI struct {
 	ctrl     *gomock.Controller
 	recorder *MockGZipIMockRecorder
 }
 
-// MockGZipIMockRecorder is the mock recorder for MockGZipI
+// MockGZipIMockRecorder is the mock recorder for MockGZipI.
 type MockGZipIMockRecorder struct {
 	mock *MockGZipI
 }
 
-// NewMockGZipI creates a new mock instance
+// NewMockGZipI creates a new mock instance.
 func NewMockGZipI(ctrl *gomock.Controller) *MockGZipI {
 	mock := &MockGZipI{ctrl: ctrl}
 	mock.recorder = &MockGZipIMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockGZipI) EXPECT() *MockGZipIMockRecorder {
 	return m.recorder
 }
 
-// NewReader mocks base method
+// NewReader mocks base method.
 func (m *MockGZipI) NewReader(arg0 io.Reader) (*gzip.Reader, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NewReader", arg0)
@@ -43,13 +44,13 @@ func (m *MockGZipI) NewReader(arg0 io.Reader) (*gzip.Reader, error) {
 	return ret0, ret1
 }
 
-// NewReader indicates an expected call of NewReader
+// NewReader indicates an expected call of NewReader.
 func (mr *MockGZipIMockRecorder) NewReader(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewReader", reflect.TypeOf((*MockGZipI)(nil).NewReader), arg0)
 }
 
-// NewWriter mocks base method
+// NewWriter mocks base method.
 func (m *MockGZipI) NewWriter(arg0 io.Writer) *gzip.Writer {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NewWriter", arg0)
@@ -57,7 +58,7 @@ func (m *MockGZipI) NewWriter(arg0 io.Writer) *gzip.Writer {
 	return ret0
 }
 
-// NewWriter indicates an expected call of NewWriter
+// NewWriter indicates an expected call of NewWriter.
 func (mr *MockGZipIMockRecorder) NewWriter(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewWriter", reflect.TypeOf((*MockGZipI)(nil).NewWriter), arg0)
