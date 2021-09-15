@@ -2,6 +2,7 @@ package jobsdb
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/distributed"
@@ -17,7 +18,7 @@ type CustomerQueue struct {
 
 var customerQueues map[string]*CustomerQueue
 
-func SetupCustomerQueues() {
+func SetupCustomerQueues(clearAll bool) {
 	customerQueues = make(map[string]*CustomerQueue)
 	customers := distributed.GetCustomerList()
 
@@ -28,11 +29,11 @@ func SetupCustomerQueues() {
 		var procErrorDB HandleT
 
 		//TODO: fix values passed
-		gatewayDB.Setup(ReadWrite, false, customer+"_"+"gw", time.Hour*10000, "", true, QueryFiltersT{})
+		gatewayDB.Setup(ReadWrite, clearAll, "gw", time.Hour*10000, "", true, QueryFiltersT{})
 		//setting up router, batch router, proc error DBs also irrespective of server mode
-		routerDB.Setup(ReadWrite, false, customer+"_"+"rt", time.Hour*10000, "", true, QueryFiltersT{})
-		batchRouterDB.Setup(ReadWrite, false, customer+"_"+"batch_rt", time.Hour*10000, "", true, QueryFiltersT{})
-		procErrorDB.Setup(ReadWrite, false, customer+"_"+"proc_error", time.Hour*10000, "", false, QueryFiltersT{})
+		routerDB.Setup(ReadWrite, clearAll, "rt", time.Hour*10000, "", true, QueryFiltersT{})
+		batchRouterDB.Setup(ReadWrite, clearAll, "batch_rt", time.Hour*10000, "", true, QueryFiltersT{})
+		procErrorDB.Setup(ReadWrite, clearAll, "proc_error", time.Hour*10000, "", false, QueryFiltersT{})
 
 		customerQueues[customer] = &CustomerQueue{
 			GatewayJobsdb:      &gatewayDB,
@@ -54,6 +55,8 @@ func GetCustomerList(jobList []*JobT) map[string]int {
 }
 
 func getQueueForCustomer(customer, queue string) JobsDB {
+	// pkgLogger.Info(customer, queue)
+	// pkgLogger.Info(customerQueues)
 	customerQueue := customerQueues[customer]
 	switch queue {
 	case "gw":
@@ -166,4 +169,20 @@ func MergeMaps(maps ...map[uuid.UUID]string) (result map[uuid.UUID]string) {
 		}
 	}
 	return result
+}
+
+func JournalDeleteEntry(customer, queue string, opID int64) {
+	getQueueForCustomer(customer, queue).JournalDeleteEntry(opID)
+}
+
+func JournalMarkStart(customer, queue string, operation string, opPayload json.RawMessage) int64 {
+	return getQueueForCustomer(customer, queue).JournalMarkStart(operation, opPayload)
+}
+
+func GetJournalEntries(opType, customer, queue string) (entries []JournalEntryT) {
+	return getQueueForCustomer(customer, queue).GetJournalEntries(opType)
+}
+
+func GetImportingList(params GetQueryParamsT, customer, queue string) []*JobT {
+	return getQueueForCustomer(customer, queue).GetImportingList(params)
 }
