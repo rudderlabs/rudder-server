@@ -73,3 +73,16 @@ func prepareComputeConfig() {
 		}
 	}
 }
+
+func WaitForComputeConfig() {
+	for {
+		configReceivedLock.RLock()
+		if configReceived {
+			configReceivedLock.RUnlock()
+			break
+		}
+		configReceivedLock.RUnlock()
+		pkgLogger.Info("Waiting for preparing compute config")
+		time.Sleep(time.Second * 5)
+	}
+}
