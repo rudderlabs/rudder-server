@@ -17,11 +17,8 @@ jobs:
         with:
           go-version: '^1.16.1'
       - run: go version
-      - run: go install github.com/golang/mock/mockgen@v1.6.0
-      - run: go generate ./... -mod vendor
+      - run: make mocks
       - run: git diff --exit-code
-      - run: exit 1
-
       - name: Error message
         if: ${{ failure() }}
-        run: echo "::error file=Makefile,line=11,col=1::Incorrectly generated files.\n Ensure you have run `make mocks` with mockgen@v1.6.0 installed."
+        run: echo "::error file=Makefile,line=11,col=1::Incorrectly generated files. Ensure you have run `make mocks` and committed the files locally."
