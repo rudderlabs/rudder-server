@@ -15,6 +15,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/distributed"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
@@ -105,10 +106,11 @@ type HandleT struct {
 }
 
 type jobResponseT struct {
-	status *jobsdb.JobStatusT
-	worker *workerT
-	userID string
-	JobT   *jobsdb.JobT
+	status      *jobsdb.JobStatusT
+	worker      *workerT
+	userID      string
+	JobT        *jobsdb.JobT
+	workspaceID string
 }
 
 //JobParametersT struct holds source id and destination id of a job
@@ -340,8 +342,9 @@ func (worker *workerT) workerProcess() {
 				CreatedAt:        job.CreatedAt.Format(misc.RFC3339Milli),
 				FirstAttemptedAt: firstAttemptedAt,
 				TransformAt:      parameters.TransformAt,
-				JobT:             job}
-
+				JobT:             job,
+			}
+			customerID := backendconfig.GetCustomerFromSourceID(parameters.SourceID)
 			worker.rt.configSubscriberLock.RLock()
 			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
 			if !ok {
@@ -355,7 +358,7 @@ func (worker *workerT) workerProcess() {
 					ErrorResponse: []byte(`{"reason": "Aborted because destination is not available in the config" }`),
 					Parameters:    []byte(`{}`),
 				}
-				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
+				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job, workspaceID: customerID}
 				continue
 			}
 			destination := batchDestination.Destination
@@ -778,12 +781,12 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	if respBody != "" {
 		status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "response", respBody)
 	}
-
+	customerID := backendconfig.GetCustomerFromSourceID(destinationJobMetadata.SourceID)
 	if isSuccessStatus(respStatusCode) {
 		atomic.AddUint64(&worker.rt.successCount, 1)
 		status.JobState = jobsdb.Succeeded.State
 		worker.rt.logger.Debugf("[%v Router] :: sending success status to response", worker.rt.destName)
-		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
+		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT, workspaceID: customerID}
 
 		if worker.rt.guaranteeUserEventOrder {
 			//Removing the user from aborted user map
@@ -879,7 +882,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			}
 		}
 		worker.rt.logger.Debugf("[%v Router] :: sending failed/aborted state as response", worker.rt.destName)
-		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
+		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT, workspaceID: customerID}
 	}
 }
 
@@ -942,6 +945,7 @@ func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMe
 
 func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters JobParametersT, userID string, previousFailedJobID int64) (markedAsWaiting bool) {
 	// job is behind in queue of failed job from same user
+	customerID := backendconfig.GetCustomerFromSourceID(parameters.SourceID)
 	if previousFailedJobID < job.JobID {
 		worker.rt.logger.Debugf("[%v Router] :: skipping processing job for userID: %v since prev failed job exists, prev id %v, current id %v", worker.rt.destName, userID, previousFailedJobID, job.JobID)
 		resp := fmt.Sprintf(`{"blocking_id":"%v", "user_id":"%s"}`, previousFailedJobID, userID)
@@ -954,7 +958,7 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 			ErrorResponse: []byte(resp), // check
 			Parameters:    []byte(`{}`),
 		}
-		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
+		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job, workspaceID: customerID}
 		return true
 	}
 	if previousFailedJobID != job.JobID {
@@ -1158,9 +1162,8 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
-
-	var statusList []*jobsdb.JobStatusT
-	var routerAbortedJobs []*jobsdb.JobT
+	jobStatusMap := make(map[string][]*jobsdb.JobStatusT)
+	abortedJobStatusMap := make(map[string][]*jobsdb.JobT)
 	for _, resp := range *responseList {
 		//Update metrics maps
 		//REPORTING - ROUTER - START
@@ -1193,11 +1196,10 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			}
 		}
 		//REPORTING - ROUTER - END
-
-		statusList = append(statusList, resp.status)
+		jobStatusMap[resp.workspaceID] = append(jobStatusMap[resp.workspaceID], resp.status)
 
 		if resp.status.JobState == jobsdb.Aborted.State {
-			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
+			abortedJobStatusMap[resp.workspaceID] = append(abortedJobStatusMap[resp.workspaceID], resp.JobT)
 		}
 
 		//tracking router errors
@@ -1234,31 +1236,34 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 	//REPORTING - ROUTER - END
 
-	if len(statusList) > 0 {
+	if len(jobStatusMap) > 0 {
 		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
 
-		sort.Slice(statusList, func(i, j int) bool {
-			return statusList[i].JobID < statusList[j].JobID
-		})
-
 		//TODO fix this
-		/*//Store the aborted jobs to errorDB
-		if routerAbortedJobs != nil {
-			rt.errorDB.Store(routerAbortedJobs)
+		//Store the aborted jobs to errorDB
+		for customer, routerAbortedJobs := range abortedJobStatusMap {
+			if routerAbortedJobs != nil {
+				jobsdb.StoreJobsForCustomer(customer, "proc_error", routerAbortedJobs)
+			}
 		}
-		//Update the status
-		txn := rt.jobsDB.BeginGlobalTransaction()
-		rt.jobsDB.AcquireUpdateJobStatusLocks()
-		err := rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil)
-		if err != nil {
-			rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
-			panic(err)
+		for customer, statusList := range jobStatusMap {
+			//Update the status
+			sort.Slice(statusList, func(i, j int) bool {
+				return statusList[i].JobID < statusList[j].JobID
+			})
+			txn := jobsdb.BeginGlobalTransaction(customer, "rt")
+			jobsdb.AcquireUpdateJobStatusLocks(customer, "rt")
+			err := jobsdb.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil, customer, "rt")
+			if err != nil {
+				rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
+				panic(err)
+			}
+			if rt.reporting != nil && rt.reportingEnabled {
+				rt.reporting.Report(reportMetrics, txn)
+			}
+			jobsdb.CommitTransaction(txn, customer, "rt")
+			jobsdb.ReleaseUpdateJobStatusLocks(customer, "rt")
 		}
-		if rt.reporting != nil && rt.reportingEnabled {
-			rt.reporting.Report(reportMetrics, txn)
-		}
-		rt.jobsDB.CommitTransaction(txn)
-		rt.jobsDB.ReleaseUpdateJobStatusLocks()*/
 	}
 
 	if rt.guaranteeUserEventOrder {
@@ -1456,151 +1461,155 @@ func (rt *HandleT) generatorLoop() {
 }
 
 func (rt *HandleT) readAndProcess() int {
-	if rt.guaranteeUserEventOrder {
-		//#JobOrder (See comment marked #JobOrder
-		rt.toClearFailJobIDMutex.Lock()
-		for idx := range rt.toClearFailJobIDMap {
-			wrk := rt.workers[idx]
-			wrk.failedJobIDMutex.Lock()
-			for _, userID := range rt.toClearFailJobIDMap[idx] {
-				delete(wrk.failedJobIDMap, userID)
+	configList := distributed.GetAllCustomersComputeConfig()
+	var totalJobsPicked int
+	for customer, computeConfig := range configList {
+		if rt.guaranteeUserEventOrder {
+			//#JobOrder (See comment marked #JobOrder
+			rt.toClearFailJobIDMutex.Lock()
+			for idx := range rt.toClearFailJobIDMap {
+				wrk := rt.workers[idx]
+				wrk.failedJobIDMutex.Lock()
+				for _, userID := range rt.toClearFailJobIDMap[idx] {
+					delete(wrk.failedJobIDMap, userID)
+				}
+				wrk.failedJobIDMutex.Unlock()
 			}
-			wrk.failedJobIDMutex.Unlock()
+			rt.toClearFailJobIDMap = make(map[int][]string)
+			rt.toClearFailJobIDMutex.Unlock()
+			//End of #JobOrder
 		}
-		rt.toClearFailJobIDMap = make(map[int][]string)
-		rt.toClearFailJobIDMutex.Unlock()
-		//End of #JobOrder
-	}
 
-	//TODO fix this
-	/*toQuery := jobQueryBatchSize
-	retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
-	toQuery -= len(retryList)
-	throttledList := rt.jobsDB.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
-	toQuery -= len(throttledList)
-	waitList := rt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery}) //Jobs send to waiting state
-	toQuery -= len(waitList)
-	unprocessedList := rt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
+		//TODO fix this
+		toQuery := jobQueryBatchSize
+		retryList := jobsdb.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: int(computeConfig.ComputeShare) * toQuery}, customer, "rt")
+		toQuery -= len(retryList)
+		throttledList := jobsdb.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: int(computeConfig.ComputeShare) * toQuery}, customer, "rt")
+		toQuery -= len(throttledList)
+		waitList := jobsdb.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: int(computeConfig.ComputeShare) * toQuery}, customer, "rt") //Jobs send to waiting state
+		toQuery -= len(waitList)
+		unprocessedList := jobsdb.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: int(computeConfig.ComputeShare) * toQuery}, customer, "rt")
 
-	combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
+		combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
 
-	if len(combinedList) == 0 {
-		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
-		time.Sleep(readSleep)
-		return 0
-	}
-
-	rt.logger.Debugf("RT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", rt.destName, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
-
-	sort.Slice(combinedList, func(i, j int) bool {
-		return combinedList[i].JobID < combinedList[j].JobID
-	})
-
-	if len(combinedList) > 0 {
-		rt.logger.Debugf("[%v Router] :: router is enabled", rt.destName)
-		rt.logger.Debugf("[%v Router] ===== len to be processed==== : %v", rt.destName, len(combinedList))
-	}
-
-	//List of jobs wich can be processed mapped per channel
-	type workerJobT struct {
-		worker *workerT
-		job    *jobsdb.JobT
-	}
-
-	var statusList []*jobsdb.JobStatusT
-	var drainList []*jobsdb.JobStatusT
-	var drainJobList []*jobsdb.JobT
-	drainCountByDest := make(map[string]int)
-
-	var toProcess []workerJobT
-
-	rt.throttledUserMap = make(map[string]struct{})
-	throttledAtTime := time.Now()
-	//Identify jobs which can be processed
-	for _, job := range combinedList {
-		destID := destinationID(job)
-		rt.configSubscriberLock.RLock()
-		drain, reason := router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap)
-		rt.configSubscriberLock.RUnlock()
-		if drain {
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
-				JobState:      jobsdb.Aborted.State,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				ErrorCode:     "",
-				Parameters:    []byte(`{}`),
-				ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
-			}
-			drainList = append(drainList, &status)
-			drainJobList = append(drainJobList, job)
-			if _, ok := drainCountByDest[destID]; !ok {
-				drainCountByDest[destID] = 0
-			}
-			drainCountByDest[destID] = drainCountByDest[destID] + 1
-			continue
+		if len(combinedList) == 0 {
+			rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
+			time.Sleep(readSleep)
+			return 0
 		}
-		w := rt.findWorker(job, throttledAtTime)
-		if w != nil {
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
-				JobState:      jobsdb.Executing.State,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				ErrorCode:     "",
-				ErrorResponse: []byte(`{}`), // check
-				Parameters:    []byte(`{}`),
-			}
-			statusList = append(statusList, &status)
-			toProcess = append(toProcess, workerJobT{worker: w, job: job})
-		}
-	}
-	rt.throttledUserMap = nil*/
 
-	//TODO fix this
-	/*//Mark the jobs as executing
-	err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
-	if err != nil {
-		pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
-		panic(err)
-	}
-	//Mark the jobs as aborted
-	if len(drainList) > 0 {
-		err = rt.errorDB.Store(drainJobList)
+		rt.logger.Debugf("RT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", rt.destName, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
+
+		sort.Slice(combinedList, func(i, j int) bool {
+			return combinedList[i].JobID < combinedList[j].JobID
+		})
+
+		if len(combinedList) > 0 {
+			rt.logger.Debugf("[%v Router] :: router is enabled", rt.destName)
+			rt.logger.Debugf("[%v Router] ===== len to be processed==== : %v", rt.destName, len(combinedList))
+		}
+
+		//List of jobs wich can be processed mapped per channel
+		type workerJobT struct {
+			worker *workerT
+			job    *jobsdb.JobT
+		}
+
+		var statusList []*jobsdb.JobStatusT
+		var drainList []*jobsdb.JobStatusT
+		var drainJobList []*jobsdb.JobT
+		drainCountByDest := make(map[string]int)
+
+		var toProcess []workerJobT
+
+		rt.throttledUserMap = make(map[string]struct{})
+		throttledAtTime := time.Now()
+		//Identify jobs which can be processed
+		for _, job := range combinedList {
+			destID := destinationID(job)
+			rt.configSubscriberLock.RLock()
+			drain, reason := router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap)
+			rt.configSubscriberLock.RUnlock()
+			if drain {
+				status := jobsdb.JobStatusT{
+					JobID:         job.JobID,
+					AttemptNum:    job.LastJobStatus.AttemptNum,
+					JobState:      jobsdb.Aborted.State,
+					ExecTime:      time.Now(),
+					RetryTime:     time.Now(),
+					ErrorCode:     "",
+					Parameters:    []byte(`{}`),
+					ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
+				}
+				drainList = append(drainList, &status)
+				drainJobList = append(drainJobList, job)
+				if _, ok := drainCountByDest[destID]; !ok {
+					drainCountByDest[destID] = 0
+				}
+				drainCountByDest[destID] = drainCountByDest[destID] + 1
+				continue
+			}
+			w := rt.findWorker(job, throttledAtTime)
+			if w != nil {
+				status := jobsdb.JobStatusT{
+					JobID:         job.JobID,
+					AttemptNum:    job.LastJobStatus.AttemptNum,
+					JobState:      jobsdb.Executing.State,
+					ExecTime:      time.Now(),
+					RetryTime:     time.Now(),
+					ErrorCode:     "",
+					ErrorResponse: []byte(`{}`), // check
+					Parameters:    []byte(`{}`),
+				}
+				statusList = append(statusList, &status)
+				toProcess = append(toProcess, workerJobT{worker: w, job: job})
+			}
+		}
+		rt.throttledUserMap = nil
+
+		//TODO fix this
+		//Mark the jobs as executing
+		err := jobsdb.UpdateJobStatus(statusList, []string{rt.destName}, nil, customer, "rt")
 		if err != nil {
-			pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
+			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
-		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
-		if err != nil {
-			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
-			panic(err)
+		//Mark the jobs as aborted
+		if len(drainList) > 0 {
+			err = jobsdb.StoreJobsForCustomer(customer, "proc_error", drainJobList)
+			if err != nil {
+				pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
+				panic(err)
+			}
+			err = jobsdb.UpdateJobStatus(drainList, []string{rt.destName}, nil, customer, "rt")
+			if err != nil {
+				pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
+				panic(err)
+			}
+			for destID, count := range drainCountByDest {
+				rt.drainedJobsStat = stats.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
+					"destType": rt.destName,
+					"destId":   destID,
+					"module":   "router",
+				})
+				rt.drainedJobsStat.Count(count)
+			}
 		}
-		for destID, count := range drainCountByDest {
-			rt.drainedJobsStat = stats.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
-				"destType": rt.destName,
-				"destId":   destID,
-				"module":   "router",
-			})
-			rt.drainedJobsStat.Count(count)
+
+		//Send the jobs to the jobQ
+		for _, wrkJob := range toProcess {
+			wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime}
 		}
-	}
 
-	//Send the jobs to the jobQ
-	for _, wrkJob := range toProcess {
-		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime}
-	}
+		if len(toProcess) == 0 {
+			rt.logger.Debugf("RT: No workers found for the jobs. Sleeping. Destination: %s", rt.destName)
+			time.Sleep(readSleep)
+			return 0
+		}
 
-	if len(toProcess) == 0 {
-		rt.logger.Debugf("RT: No workers found for the jobs. Sleeping. Destination: %s", rt.destName)
-		time.Sleep(readSleep)
-		return 0
+		totalJobsPicked = totalJobsPicked + len(toProcess)
 	}
-
-	return len(toProcess)*/
-	return 0
+	return totalJobsPicked
 }
 
 func destinationID(job *jobsdb.JobT) string {
@@ -1608,8 +1617,7 @@ func destinationID(job *jobsdb.JobT) string {
 }
 
 func (rt *HandleT) crashRecover() {
-	//TODO fix this
-	//rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})
+	jobsdb.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1}, "rt")
 }
 
 func Init() {

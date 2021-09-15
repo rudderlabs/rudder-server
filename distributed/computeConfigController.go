@@ -43,7 +43,6 @@ func GetAllCustomersComputeConfig() map[string]CustomerComputeConfig {
 
 func Setup() {
 	customerComputeConfigs = make(map[string]CustomerComputeConfig)
-
 	rruntime.Go(func() {
 		prepareComputeConfig()
 	})

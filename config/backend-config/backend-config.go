@@ -319,6 +319,16 @@ func regulationsUpdate(statConfigBackendError stats.RudderStats) {
 	}
 }
 
+//TODO fix this
+func GetCustomerFromWriteKey(writeKey string) string {
+	return "acorns"
+}
+
+//TODO fix this
+func GetCustomerFromSourceID(sourceID string) string {
+	return "acorns"
+}
+
 func configUpdate(statConfigBackendError stats.RudderStats) {
 
 	sourceJSON, ok := backendConfig.Get()
