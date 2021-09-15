@@ -67,7 +67,7 @@ func prepareComputeConfig() {
 		}
 	} else {
 		customers = []CustomerT{{Name: "acorns", WorkspaceID: config.GetWorkspaceID()}}
-		customerComputeConfigs["1lhWcl2VbO9c47vkvXIsDYszTpy"] = CustomerComputeConfig{
+		customerComputeConfigs["workspaceID"] = CustomerComputeConfig{
 			Pghost:       "127.0.0.1",
 			ComputeShare: 1,
 		}

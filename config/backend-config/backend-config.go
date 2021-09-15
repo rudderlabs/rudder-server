@@ -321,7 +321,7 @@ func regulationsUpdate(statConfigBackendError stats.RudderStats) {
 
 //TODO fix this
 func GetCustomerFromSourceID(sourceID string) string {
-	return "1lhWcl2VbO9c47vkvXIsDYszTpy"
+	return "workspaceID"
 }
 
 func configUpdate(statConfigBackendError stats.RudderStats) {
