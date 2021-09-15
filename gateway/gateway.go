@@ -1309,10 +1309,10 @@ func (gateway *HandleT) addToWebRequestQ(writer *http.ResponseWriter, req *http.
 	}
 
 	//TODO clean up
-	customer := backendconfig.GetCustomerFromWriteKey(writeKey)
+	customerWorkspaceID := backendconfig.GetWorkspaceIDForWriteKey(writeKey)
 	userWebRequestWorker := gateway.findUserWebRequestWorker(userIDHeader)
 	ipAddr := misc.GetIPFromReq(req)
-	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, writeKey: writeKey, ipAddr: ipAddr, customer: customer}
+	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, writeKey: writeKey, ipAddr: ipAddr, customer: customerWorkspaceID}
 	userWebRequestWorker.webRequestQ <- &webReq
 }
 
