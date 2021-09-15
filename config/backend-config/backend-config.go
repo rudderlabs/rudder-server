@@ -329,6 +329,11 @@ func GetCustomerFromSourceID(sourceID string) string {
 	return "workspaceID"
 }
 
+//TODO fix this
+func GetCustomerFromSourceID(sourceID string) string {
+	return "acorns"
+}
+
 func configUpdate(statConfigBackendError stats.RudderStats) {
 
 	sourceJSON, ok := backendConfig.Get()
