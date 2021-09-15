@@ -19,4 +19,9 @@ jobs:
       - run: go version
       - run: go install github.com/golang/mock/mockgen@v1.6.0
       - run: go generate ./... -mod vendor
-      - run: git diff --exit-code || echo "Incorrect generated files, ensure you have run mockgen@v1.6.0 locally"
+      - run: git diff --exit-code
+      - run: exit 1
+
+      - name: Error message
+        if: ${{ failure() }}
+        run: echo "::error Incorrectly generated files. Ensure you have run `make mocks` with mockgen@v1.6.0 installed."
