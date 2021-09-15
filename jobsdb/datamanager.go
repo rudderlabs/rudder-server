@@ -27,13 +27,13 @@ func SetupCustomerQueues() {
 		var procErrorDB HandleT
 
 		//TODO: fix values passed
-		gatewayDB.Setup(ReadWrite, false, customer+"_"+"gw", time.Hour*10000, "", true, QueryFiltersT{})
+		gatewayDB.Setup(ReadWrite, false, customer.Name+"_"+"gw", time.Hour*10000, "", true, QueryFiltersT{})
 		//setting up router, batch router, proc error DBs also irrespective of server mode
-		routerDB.Setup(ReadWrite, false, customer+"_"+"rt", time.Hour*10000, "", true, QueryFiltersT{})
-		batchRouterDB.Setup(ReadWrite, false, customer+"_"+"batch_rt", time.Hour*10000, "", true, QueryFiltersT{})
-		procErrorDB.Setup(ReadWrite, false, customer+"_"+"proc_error", time.Hour*10000, "", false, QueryFiltersT{})
+		routerDB.Setup(ReadWrite, false, customer.Name+"_"+"rt", time.Hour*10000, "", true, QueryFiltersT{})
+		batchRouterDB.Setup(ReadWrite, false, customer.Name+"_"+"batch_rt", time.Hour*10000, "", true, QueryFiltersT{})
+		procErrorDB.Setup(ReadWrite, false, customer.Name+"_"+"proc_error", time.Hour*10000, "", false, QueryFiltersT{})
 
-		customerQueues[customer] = &CustomerQueue{
+		customerQueues[customer.WorkspaceID] = &CustomerQueue{
 			GatewayJobsdb:      &gatewayDB,
 			RouterJobsdb:       &routerDB,
 			BatchrouterJobsddb: &batchRouterDB,
@@ -42,8 +42,8 @@ func SetupCustomerQueues() {
 	}
 }
 
-func getQueueForCustomer(customer, queue string) JobsDB {
-	customerQueue := customerQueues[customer]
+func getQueueForCustomer(customerWorkspaceID, queue string) JobsDB {
+	customerQueue := customerQueues[customerWorkspaceID]
 	switch queue {
 	case "gw":
 		return customerQueue.GatewayJobsdb

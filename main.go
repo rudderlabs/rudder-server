@@ -228,6 +228,10 @@ func Run(ctx context.Context) {
 	application.Setup()
 
 	distributed.Setup()
+	//TODO clean up
+	pkgLogger.Info("Waiting for compute config")
+	distributed.WaitForComputeConfig()
+	pkgLogger.Info("Compute config received")
 
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
 	appHandler = apphandlers.GetAppHandler(application, appTypeStr, versionHandler)

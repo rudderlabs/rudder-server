@@ -601,6 +601,10 @@ func SetString(key string, value string) {
 	viper.Set(key, value)
 }
 
+func GetWorkspaceID() string {
+	return GetEnv("WORKSPACE_ID", "")
+}
+
 //GetWorkspaceToken returns the workspace token provided in the environment variables
 //Env variable CONFIG_BACKEND_TOKEN is deprecating soon
 //WORKSPACE_TOKEN is newly introduced. This will override CONFIG_BACKEND_TOKEN
