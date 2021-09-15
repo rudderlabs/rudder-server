@@ -1,14 +1,22 @@
 package distributed
 
 import (
+	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func GetCustomerList() []string {
+func GetCustomerList() []CustomerT {
 	return customers
+}
+
+type CustomerT struct {
+	Name        string
+	WorkspaceID string
 }
 
 type CustomerComputeConfig struct {
@@ -17,7 +25,12 @@ type CustomerComputeConfig struct {
 }
 
 var customerComputeConfigs map[string]CustomerComputeConfig
-var customers []string
+var customers []CustomerT
+var (
+	configReceived     bool
+	configReceivedLock sync.RWMutex
+	pkgLogger          logger.LoggerI = logger.NewLogger().Child("compute-config")
+)
 
 func GetComputeConfig(customer string) CustomerComputeConfig {
 	return customerComputeConfigs[customer]
