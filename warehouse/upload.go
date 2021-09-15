@@ -787,6 +787,17 @@ func (tse *TableSkipError) Error() string {
 	return fmt.Sprintf("Skipping %s table because it previously failed to load in an earlier job: %d", tse.tableName, tse.previousJobID)
 }
 
+func hasOnlySkippedErrors(errList []string) (res bool) {
+	res = true
+	for _, err := range errList {
+		if !strings.HasPrefix(err, "Skipping") {
+			res = false
+			break
+		}
+	}
+	return
+}
+
 func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 	uploadSchema := job.upload.UploadSchema
 	var parallelLoads int
@@ -1307,7 +1318,8 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	// abort after configured retry attempts
 	if errorByState["attempt"].(int) > minRetryAttempts {
 		firstTiming := job.getUploadFirstAttemptTime()
-		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
+		// do not abort upload if the the error list has only skipped errors.
+		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) && !hasOnlySkippedErrors(errorByState["errors"].([]string)) {
 			state = Aborted
 		}
 	}
