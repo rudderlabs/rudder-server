@@ -42,7 +42,7 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 		reporting.AddClient(types.Config{ConnInfo: jobsdb.GetConnectionString()})
 	}
 
-	jobsdb.SetupCustomerQueues()
+	jobsdb.SetupCustomerQueues(options.ClearDB)
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
