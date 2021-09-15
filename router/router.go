@@ -1164,7 +1164,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	jobStatusMap := make(map[string][]*jobsdb.JobStatusT)
 	abortedJobStatusMap := make(map[string][]*jobsdb.JobT)
-	var statusList []*jobsdb.JobStatusT
 	for _, resp := range *responseList {
 		//Update metrics maps
 		//REPORTING - ROUTER - START
@@ -1237,12 +1236,8 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 	//REPORTING - ROUTER - END
 
-	if len(statusList) > 0 {
+	if len(jobStatusMap) > 0 {
 		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
-
-		sort.Slice(statusList, func(i, j int) bool {
-			return statusList[i].JobID < statusList[j].JobID
-		})
 
 		//TODO fix this
 		//Store the aborted jobs to errorDB
@@ -1253,6 +1248,9 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 		for customer, statusList := range jobStatusMap {
 			//Update the status
+			sort.Slice(statusList, func(i, j int) bool {
+				return statusList[i].JobID < statusList[j].JobID
+			})
 			txn := jobsdb.BeginGlobalTransaction(customer, "rt")
 			jobsdb.AcquireUpdateJobStatusLocks(customer, "rt")
 			err := jobsdb.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil, customer, "rt")
