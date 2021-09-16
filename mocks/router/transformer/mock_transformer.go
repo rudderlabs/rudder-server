@@ -35,7 +35,6 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 	return m.recorder
 }
 
-<<<<<<< HEAD
 // Send mocks base method.
 func (m *MockTransformer) Send(arg0 integrations.PostParametersT, arg1, arg2 string) (int, string) {
 	m.ctrl.T.Helper()
@@ -52,9 +51,6 @@ func (mr *MockTransformerMockRecorder) Send(arg0, arg1, arg2 interface{}) *gomoc
 }
 
 // Setup mocks base method
-=======
-// Setup mocks base method.
->>>>>>> 1209ceb13cfdbaf25e90711a24012fc36223f85b
 func (m *MockTransformer) Setup() {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Setup")
