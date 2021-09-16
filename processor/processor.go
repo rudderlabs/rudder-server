@@ -1345,8 +1345,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		// This mapping is used to map destination with it's respective account for refresh token capability
 		destToAccountIdMapping := make(map[string]string)
-		for _, eventToTransform := range eventsToTransform {
+		for eventIndex := range eventsToTransform {
 			// default value or if rudderAccountId doesn't exist or not convertible to string
+			eventToTransform := &eventsToTransform[eventIndex]
 			destToAccountIdMapping[eventToTransform.Destination.ID] = ""
 			if rudderAccountIdInterface, found := eventToTransform.Destination.Config["rudderAccountId"]; found {
 				if rudderAccountId, ok := rudderAccountIdInterface.(string); ok {

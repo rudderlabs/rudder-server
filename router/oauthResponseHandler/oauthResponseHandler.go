@@ -122,7 +122,7 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, refreshErr)
 		return http.StatusBadRequest, refreshErr.Error()
 	}
-	statusCode, response := authErrHandler.processResponse(refreshResponse)
+	statusCode, response := processResponse(refreshResponse)
 	authErrHandler.oauthErrHandlerReqTimerStat.End()
 	authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
 	return statusCode, response
@@ -147,13 +147,13 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, doErr)
 		return http.StatusBadRequest, err.Error()
 	}
-	statusCode, resp := authErrHandler.processResponse(res)
+	statusCode, resp := processResponse(res)
 	authErrHandler.oauthErrHandlerReqTimerStat.End()
 	authErrHandler.logger.Debugf("[%s request] :: Disable Response received : %s", loggerNm)
 	return statusCode, resp
 }
 
-func (authErrHandler *OAuthErrResHandler) processResponse(resp *http.Response) (statusCode int, respBody string) {
+func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	var respData []byte
 	var ioUtilReadErr error
 	if resp != nil && resp.Body != nil {
