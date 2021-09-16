@@ -34,7 +34,7 @@
     "react-router-dom": "^5.0.1",
     "react-scripts": "^3.4.0",
     "recharts": "^1.7.1",
-    "set-value": "^3.0.1",
+    "set-value": "^4.0.1",
     "sort-keys-recursive": "^2.0.1",
     "source-map-explorer": "^2.0.1",
     "styled-components": "^4.3.2",
