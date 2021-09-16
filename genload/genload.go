@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -21,11 +22,14 @@ var (
 )
 
 func main() {
+	config.Load()
+	logger.Init()
 	secret := os.Args[1]
 	reqPerSecond, _ = strconv.ParseInt(os.Args[2], 10, 0)
 	configBEUrl := os.Args[3]
 	dataplaneURL := os.Args[4]
 	loadTime, _ = strconv.ParseInt(os.Args[5], 10, 0)
+	pkgLogger = logger.NewLogger().Child("genload")
 
 	configURL := configBEUrl + `/hostedWorkspaceConfig?fetchAll=true?fetchAll=true`
 
