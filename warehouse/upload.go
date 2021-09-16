@@ -11,6 +11,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
+	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -620,13 +621,14 @@ func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 }
 
 func areAllTableSkipErrors(loadErrors []error) bool {
-	var skipErrCount int
+	res := true
 	for _, lErr := range loadErrors {
-		if _, ok := lErr.(*TableSkipError); ok {
-			skipErrCount++
+		if _, ok := lErr.(*TableSkipError); !ok {
+			res = false
+			break
 		}
 	}
-	return skipErrCount == len(loadErrors)
+	return res
 }
 
 // TableUploadStatusT captures the status of each table upload along with its parent upload_job's info like destionation_id and namespace
@@ -785,17 +787,6 @@ type TableSkipError struct {
 
 func (tse *TableSkipError) Error() string {
 	return fmt.Sprintf("Skipping %s table because it previously failed to load in an earlier job: %d", tse.tableName, tse.previousJobID)
-}
-
-func hasOnlySkippedErrors(errList []string) (res bool) {
-	res = true
-	for _, err := range errList {
-		if !strings.HasPrefix(err, "Skipping") {
-			res = false
-			break
-		}
-	}
-	return
 }
 
 func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
@@ -1309,6 +1300,12 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	} else {
 		errorByState["attempt"] = 1
 	}
+	// check if all errors in upload are skip errors
+	hasOnlySkippedErrors := false
+	if multiErr, ok := statusError.(*multierror.Error); ok {
+		errList := multierror.Split(multiErr)
+		hasOnlySkippedErrors = areAllTableSkipErrors(errList)
+	}
 	// append errors for errored stage
 	if errList, ok := errorByState["errors"]; ok {
 		errorByState["errors"] = append(errList.([]interface{}), statusError.Error())
@@ -1319,7 +1316,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	if errorByState["attempt"].(int) > minRetryAttempts {
 		firstTiming := job.getUploadFirstAttemptTime()
 		// do not abort upload if the the error list has only skipped errors.
-		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) && !hasOnlySkippedErrors(errorByState["errors"].([]string)) {
+		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) && !hasOnlySkippedErrors {
 			state = Aborted
 		}
 	}
