@@ -567,7 +567,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 						} else {
 							//for proxying through transformer
 							pkgLogger.Infof(`transformerProxy status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
-							if worker.rt.transformerProxy {
+							authType := worker.GetAuthType(destinationJob)
+							if worker.rt.transformerProxy && router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 								pkgLogger.Infof(`routing via transformer, proxy enabled`)
 								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(val, destinationJob, 0)
 							} else {
@@ -1939,4 +1940,16 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 	}
 	// By default send the status code & response from destination directly
 	return respStatusCode, respBodyTemp
+}
+
+func (worker *workerT) GetAuthType(destJob types.DestinationJobT) (authType string) {
+	destConfig := destJob.Destination.DestinationDefinition.Config
+	var lookupErr error
+	var authValue interface{}
+	if authValue, lookupErr = router_utils.NestedMapLookup(destConfig, "auth", "type"); lookupErr != nil {
+		pkgLogger.Infof(`OAuthsupport for %s not supported`, worker.rt.destName)
+		return ""
+	}
+	authType = authValue.(string)
+	return authType
 }
