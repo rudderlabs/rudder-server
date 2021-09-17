@@ -162,11 +162,11 @@ func (proc *HandleT) buildStatTags(sourceID, workspaceID string, destination bac
 	}
 }
 
-func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, destination backendconfig.DestinationT) *DestStatT {
+func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, destination backendconfig.DestinationT, userTransformation backendconfig.TransformationT) *DestStatT {
 	tags := proc.buildStatTags(sourceID, workspaceID, destination, USER_TRANSFORMATION)
 
-	tags["transformation_id"] = destination.Transformations[0].ID
-	tags["transformation_version_id"] = destination.Transformations[0].VersionID
+	tags["transformation_id"] = userTransformation.ID
+	tags["transformation_version_id"] = userTransformation.VersionID
 
 	numEvents := proc.stats.NewTaggedStat("proc_num_ut_input_events", stats.CountType, tags)
 	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_num_ut_output_success_events", stats.CountType, tags)
@@ -1051,7 +1051,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 				source, sourceError := getSourceByWriteKey(writeKey)
 				if sourceError != nil {
-					proc.logger.Error("Source not found for writeKey : ", writeKey);
+					proc.logger.Error("Source not found for writeKey : ", writeKey)
 				} else {
 					// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
 					shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
@@ -1213,11 +1213,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			DestinationType: destination.DestinationDefinition.Name,
 		}
 
-		configSubscriberLock.RLock()
-		destType := destinationIDtoTypeMap[destID]
-		transformationEnabled := destinationTransformationEnabledMap[destID]
-		configSubscriberLock.RUnlock()
-
 		trackingPlanEnabled := trackingPlanEnabledMap[SourceIDT(sourceID)]
 
 		//REPORTING - START
@@ -1239,12 +1234,21 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		//REPORTING - END
 
+		configSubscriberLock.RLock()
+		destType := destinationIDtoTypeMap[destID]
+		transformationEnabled := destinationTransformationEnabledMap[destID]
+		var userTransformation backendconfig.TransformationT
+		if transformationEnabled {
+			userTransformation = destination.Transformations[0]
+		}
+		configSubscriberLock.RUnlock()
+
 		url := integrations.GetDestinationURL(destType)
 		var response transformer.ResponseT
 		var eventsToTransform []transformer.TransformerEventT
 		// Send to custom transformer only if the destination has a transformer enabled
 		if transformationEnabled {
-			userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination)
+			userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination, userTransformation)
 			userTransformationStat.numEvents.Count(len(eventList))
 			proc.logger.Debug("Custom Transform input size", len(eventList))
 
@@ -1474,7 +1478,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
-
 
 	for _, jobs := range procErrorJobsByDestID {
 		procErrorJobs = append(procErrorJobs, jobs...)
