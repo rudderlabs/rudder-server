@@ -29,11 +29,11 @@ import (
 )
 
 var (
-	queryDebugLogs             string
-	blockSize                  string
-	poolSize                   string
-	pkgLogger                  logger.LoggerI
-	disableNullable            bool
+	queryDebugLogs                  string
+	blockSize                       string
+	poolSize                        string
+	pkgLogger                       logger.LoggerI
+	disableNullable                 bool
 	numLoadFileReadWorkers          int
 	maxLoadFileReadForkersBatchSize int
 )
@@ -573,9 +573,6 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				batchFileNames = append(batchFileNames, fileNames[idx])
 				batchCount++
 				idx++
-			}
-			if len(batchFileNames) == 0 {
-				break
 			}
 			loadFileReadJobChan <- &loadFileReadJob{fileNames: batchFileNames}
 		}
