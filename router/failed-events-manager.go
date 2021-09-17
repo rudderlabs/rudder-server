@@ -59,7 +59,6 @@ func GetFailedEventsManager() FailedEventsManagerI {
 
 func (fem *FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap map[string][]*FailedEventRowT, txn *sql.Tx) {
 	if !failedKeysEnabled {
-		pkgLogger.Info("Skipping creating failed keys table")
 		return
 	}
 	for taskRunID, failedEvents := range taskRunIDFailedEventsMap {
