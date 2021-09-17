@@ -294,7 +294,7 @@ type HandleT struct {
 	dsListLock                    sync.RWMutex
 	dsMigrationLock               sync.RWMutex
 	dsRetentionPeriod             time.Duration
-	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]cacheValue
+	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]cacheEntry
 	dsCacheLock                   sync.Mutex
 	BackupSettings                *BackupSettingsT
 	jobsFileUploader              filemanager.FileManager
@@ -599,7 +599,7 @@ func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, r
 	jd.assert(tablePrefix != "", "tablePrefix received is empty")
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
-	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]cacheValue{}
+	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]cacheEntry{}
 	if registerStatusHandler {
 		admin.RegisterStatusHandler(tablePrefix+"-jobsdb", jd)
 	}
@@ -1784,6 +1784,11 @@ const (
 	willTryToSet cacheValue = "Query in progress"
 )
 
+type cacheEntry struct {
+	value cacheValue
+	t     time.Time
+}
+
 /*
 * If a query returns empty result for a specific dataset, we cache that so that
 * future queries don't have to hit the DB.
@@ -1809,13 +1814,13 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 
 	_, ok := jd.dsEmptyResultCache[ds]
 	if !ok {
-		jd.dsEmptyResultCache[ds] = map[string]map[string]map[string]cacheValue{}
+		jd.dsEmptyResultCache[ds] = map[string]map[string]map[string]cacheEntry{}
 	}
 
 	for _, cVal := range customValFilters {
 		_, ok := jd.dsEmptyResultCache[ds][cVal]
 		if !ok {
-			jd.dsEmptyResultCache[ds][cVal] = map[string]map[string]cacheValue{}
+			jd.dsEmptyResultCache[ds][cVal] = map[string]map[string]cacheEntry{}
 		}
 
 		pVals := []string{}
@@ -1827,13 +1832,16 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 
 		_, ok = jd.dsEmptyResultCache[ds][cVal][pVal]
 		if !ok {
-			jd.dsEmptyResultCache[ds][cVal][pVal] = map[string]cacheValue{}
+			jd.dsEmptyResultCache[ds][cVal][pVal] = map[string]cacheEntry{}
 		}
 
 		for _, st := range stateFilters {
 			previous := jd.dsEmptyResultCache[ds][cVal][pVal][st]
-			if checkAndSet == nil || *checkAndSet == previous {
-				jd.dsEmptyResultCache[ds][cVal][pVal][st] = value
+			if checkAndSet == nil || *checkAndSet == previous.value {
+				jd.dsEmptyResultCache[ds][cVal][pVal][st] = cacheEntry{
+					value: value,
+					t:     time.Now(),
+				}
 			}
 		}
 	}
@@ -1877,7 +1885,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 
 		for _, st := range stateFilters {
 			mark, ok := jd.dsEmptyResultCache[ds][cVal][pVal][st]
-			if !ok || mark != noJobs {
+			if !ok || mark.value != noJobs {
 				return false
 			}
 		}
