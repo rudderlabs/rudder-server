@@ -789,12 +789,14 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		id := uuid.NewV4()
 
 		params := map[string]interface{}{
-			"source_id":         commonMetaData.SourceID,
-			"destination_id":    commonMetaData.DestinationID,
-			"source_job_run_id": failedEvent.Metadata.JobRunID,
-			"error":             failedEvent.Error,
-			"status_code":       failedEvent.StatusCode,
-			"stage":             stage,
+			"source_id":          commonMetaData.SourceID,
+			"destination_id":     commonMetaData.DestinationID,
+			"source_job_run_id":  failedEvent.Metadata.SourceJobRunID,
+			"error":              failedEvent.Error,
+			"status_code":        failedEvent.StatusCode,
+			"stage":              stage,
+			"record_id":          failedEvent.Metadata.RecordID,
+			"source_task_run_id": failedEvent.Metadata.SourceTaskRunID,
 		}
 		marshalledParams, err := json.Marshal(params)
 		if err != nil {
@@ -1180,6 +1182,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			var successCountMetadataMap map[string]MetricMetadata
 			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination)
 			failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled)
+			proc.saveFailedJobs(failedJobs)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 			}
@@ -1249,6 +1252,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		destTransformationStat.numEvents.Count(len(eventsToTransform))
 		destTransformationStat.numOutputSuccessEvents.Count(len(destTransformEventList))
 		destTransformationStat.numOutputFailedEvents.Count(len(failedJobs))
+
+		proc.saveFailedJobs(failedJobs)
 
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
 			procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
@@ -1442,6 +1447,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
+}
+
+func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
+	if len(failedJobs) > 0 {
+		txn := proc.errorDB.BeginGlobalTransaction()
+		jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
+		for _, failedJob := range failedJobs {
+			router.SaveSourceFailedEvents(failedJob.Parameters, jobRunIDAbortedEventsMap)
+		}
+		router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
+		proc.errorDB.CommitTransaction(txn)
+	}
 }
 
 func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT, filterUnsupportedMessageTypes bool) transformer.ResponseT {
