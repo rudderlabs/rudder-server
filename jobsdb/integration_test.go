@@ -164,7 +164,6 @@ func TestJobsDB(t *testing.T) {
 		CustomValFilters:              []string{customVal},
 		Count:                         1,
 		ParameterFilters:              []jobsdb.ParameterFilterT{},
-		IgnoreCustomValFiltersInQuery: true,
 	})
 
 	require.Equal(t, 0, len(unprocessedList))
@@ -176,7 +175,6 @@ func TestJobsDB(t *testing.T) {
 		CustomValFilters:              []string{customVal},
 		Count:                         1,
 		ParameterFilters:              []jobsdb.ParameterFilterT{},
-		IgnoreCustomValFiltersInQuery: true,
 	})
 	t.Log(jobDB.Status())
 	require.Equal(t, 1, len(unprocessedList))
