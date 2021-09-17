@@ -34,8 +34,8 @@ var (
 	poolSize                   string
 	pkgLogger                  logger.LoggerI
 	disableNullable            bool
-	numLoadFileReadWorkers     int
-	maxLoadFileRWFileNamesSize int
+	numLoadFileReadWorkers          int
+	maxLoadFileReadForkersBatchSize int
 )
 var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
@@ -174,7 +174,7 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("10", &poolSize, true, "Warehouse.clickhouse.poolSize")
 	config.RegisterBoolConfigVariable(false, &disableNullable, false, "Warehouse.clickhouse.disableNullable")
 	config.RegisterIntConfigVariable(1, &numLoadFileReadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileReadWorkers")
-	config.RegisterIntConfigVariable(0, &maxLoadFileRWFileNamesSize, true, 1, "Warehouse.clickhouse.maxLoadFileRWFileNamesSize")
+	config.RegisterIntConfigVariable(0, &maxLoadFileReadForkersBatchSize, true, 1, "Warehouse.clickhouse.maxLoadFileReadForkersBatchSize")
 }
 
 /*
@@ -450,12 +450,11 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	wg := sync.WaitGroup{}
 	waitCh := make(chan struct{})
-	if maxLoadFileRWFileNamesSize == 0 {
+	if maxLoadFileReadForkersBatchSize == 0 {
 		wg.Add(1)
 	} else {
-		div := float64(len(fileNames)) / float64(maxLoadFileRWFileNamesSize)
-		count := int(math.Ceil(div))
-		wg.Add(count)
+		div := float64(len(fileNames)) / float64(maxLoadFileReadForkersBatchSize)
+		wg.Add(int(math.Ceil(div)))
 	}
 
 	loadFileErrorChan := make(chan error)
@@ -559,13 +558,13 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			batchFileNames := make([]string, 0)
 
 			for {
-				if maxLoadFileRWFileNamesSize == 0 {
+				if maxLoadFileReadForkersBatchSize == 0 {
 					batchFileNames = fileNames
 					batchCount = len(batchFileNames)
 					idx = len(batchFileNames)
 					break
 				}
-				if batchCount >= maxLoadFileRWFileNamesSize && idx != 0 {
+				if batchCount >= maxLoadFileReadForkersBatchSize && idx != 0 {
 					break
 				}
 				if idx >= len(fileNames) {
