@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
@@ -9,10 +10,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go"
@@ -26,11 +29,13 @@ import (
 )
 
 var (
-	queryDebugLogs  string
-	blockSize       string
-	poolSize        string
-	pkgLogger       logger.LoggerI
-	disableNullable bool
+	queryDebugLogs             string
+	blockSize                  string
+	poolSize                   string
+	pkgLogger                  logger.LoggerI
+	disableNullable            bool
+	numLoadFileReadWorkers     int
+	maxLoadFileRWFileNamesSize int
 )
 var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
@@ -168,6 +173,8 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("1000", &blockSize, true, "Warehouse.clickhouse.blockSize")
 	config.RegisterStringConfigVariable("10", &poolSize, true, "Warehouse.clickhouse.poolSize")
 	config.RegisterBoolConfigVariable(false, &disableNullable, false, "Warehouse.clickhouse.disableNullable")
+	config.RegisterIntConfigVariable(1, &numLoadFileReadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileReadWorkers")
+	config.RegisterIntConfigVariable(0, &maxLoadFileRWFileNamesSize, true, 1, "Warehouse.clickhouse.maxLoadFileRWFileNamesSize")
 }
 
 /*
@@ -411,6 +418,10 @@ func typecastDataFromType(data string, dataType string) interface{} {
 	return dataI
 }
 
+type loadFileReadJob struct {
+	fileNames []string
+}
+
 // loadTable loads table to clickhouse from the load files
 func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
 	pkgLogger.Infof("CH: Starting load for table:%s", tableName)
@@ -437,71 +448,154 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	for _, objectFileName := range fileNames {
-		var gzipFile *os.File
-		gzipFile, err = os.Open(objectFileName)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s: %v", objectFileName, tableName, err.Error())
-			return
-		}
+	wg := sync.WaitGroup{}
+	waitCh := make(chan struct{})
+	if maxLoadFileRWFileNamesSize == 0 {
+		wg.Add(1)
+	} else {
+		div := float64(len(fileNames)) / float64(maxLoadFileRWFileNamesSize)
+		count := int(math.Ceil(div))
+		wg.Add(count)
+	}
 
-		var gzipReader *gzip.Reader
-		gzipReader, err = gzip.NewReader(gzipFile)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: %v", gzipFile.Name(), tableName, err.Error())
-			rruntime.Go(func() {
-				misc.RemoveFilePaths(objectFileName)
-			})
-			gzipFile.Close()
-			return
+	loadFileErrorChan := make(chan error)
+	loadFileReadJobChan := make(chan *loadFileReadJob)
 
-		}
-		csvReader := csv.NewReader(gzipReader)
-		var csvRowsProcessedCount int
-		for {
-			var record []string
-			record, err = csvReader.Read()
-			if err != nil {
-				if err == io.EOF {
-					pkgLogger.Debugf("CH: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFileName)
-					break
-				} else {
-					pkgLogger.Errorf("CH: Error while reading csv file %s for loading in table:%s: %v", objectFileName, tableName, err)
-					txn.Rollback()
-					return
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		for i := 0; i < numLoadFileReadWorkers; i++ {
+			go func(ctx context.Context) {
+				for readJob := range loadFileReadJobChan {
+					select {
+					case <-ctx.Done():
+						pkgLogger.Debugf("context is cancelled, stopped processing load file")
+						return
+					default:
+						for _, objectFileName := range readJob.fileNames {
+							select {
+							case <-ctx.Done():
+								pkgLogger.Debugf("context is cancelled, stopped processing load file")
+								return
+							default:
+								var gzipFile *os.File
+								gzipFile, err = os.Open(objectFileName)
+								if err != nil {
+									pkgLogger.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s: %v", objectFileName, tableName, err.Error())
+									loadFileErrorChan <- err
+									return
+								}
+
+								var gzipReader *gzip.Reader
+								gzipReader, err = gzip.NewReader(gzipFile)
+								if err != nil {
+									pkgLogger.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: %v", gzipFile.Name(), tableName, err.Error())
+									rruntime.Go(func() {
+										misc.RemoveFilePaths(objectFileName)
+									})
+									gzipFile.Close()
+									loadFileErrorChan <- err
+									return
+
+								}
+								csvReader := csv.NewReader(gzipReader)
+								var csvRowsProcessedCount int
+								for {
+									var record []string
+									record, err = csvReader.Read()
+									if err != nil {
+										if err == io.EOF {
+											pkgLogger.Debugf("CH: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFileName)
+											break
+										} else {
+											pkgLogger.Errorf("CH: Error while reading csv file %s for loading in table:%s: %v", objectFileName, tableName, err)
+											txn.Rollback()
+											loadFileErrorChan <- err
+											return
+										}
+									}
+									if len(sortedColumnKeys) != len(record) {
+										err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
+										pkgLogger.Error(err)
+										txn.Rollback()
+										loadFileErrorChan <- err
+										return
+									}
+									var recordInterface []interface{}
+									for index, value := range record {
+										columnName := sortedColumnKeys[index]
+										columnDataType := tableSchemaInUpload[columnName]
+										data := typecastDataFromType(value, columnDataType)
+										recordInterface = append(recordInterface, data)
+									}
+
+									_, err = stmt.Exec(recordInterface...)
+									if err != nil {
+										pkgLogger.Errorf("CH: Error in exec statement for loading in table:%s: %v", tableName, err)
+										txn.Rollback()
+										loadFileErrorChan <- err
+										return
+									}
+									csvRowsProcessedCount++
+								}
+								gzipReader.Close()
+								gzipFile.Close()
+							}
+						}
+						wg.Done()
+					}
 				}
-			}
-			if len(sortedColumnKeys) != len(record) {
-				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
-				pkgLogger.Error(err)
-				txn.Rollback()
-				return err
-			}
-			var recordInterface []interface{}
-			for index, value := range record {
-				columnName := sortedColumnKeys[index]
-				columnDataType := tableSchemaInUpload[columnName]
-				data := typecastDataFromType(value, columnDataType)
-				recordInterface = append(recordInterface, data)
-			}
+			}(ctx)
+		}
 
-			_, err = stmt.Exec(recordInterface...)
-			if err != nil {
-				pkgLogger.Errorf("CH: Error in exec statement for loading in table:%s: %v", tableName, err)
-				txn.Rollback()
+		wg.Wait()
+		close(waitCh)
+	}()
+
+	go func() {
+		for idx := 0; idx < len(fileNames); {
+			batchCount := 0
+			batchFileNames := make([]string, 0)
+
+			for {
+				if maxLoadFileRWFileNamesSize == 0 {
+					batchFileNames = fileNames
+					batchCount = len(batchFileNames)
+					idx = len(batchFileNames)
+					break
+				}
+				if batchCount >= maxLoadFileRWFileNamesSize && idx != 0 {
+					break
+				}
+				if idx >= len(fileNames) {
+					break
+				}
+				batchFileNames = append(batchFileNames, fileNames[idx])
+				batchCount++
+				idx++
+			}
+			if len(batchFileNames) == 0 {
+				break
+			}
+			loadFileReadJobChan <- &loadFileReadJob{fileNames: batchFileNames}
+		}
+	}()
+
+	for {
+		select {
+		case err := <-loadFileErrorChan:
+			pkgLogger.Errorf("received error while reading load files, cancelling the context: err %v", err)
+			return err
+		case <-waitCh:
+			if err = txn.Commit(); err != nil {
+				pkgLogger.Errorf("CH: Error while committing transaction as there was error while loading in table:%s: %v", tableName, err)
 				return
 			}
-			csvRowsProcessedCount++
+			pkgLogger.Infof("CH: Complete load for table:%s", tableName)
+			return
 		}
-		gzipReader.Close()
-		gzipFile.Close()
 	}
-	if err = txn.Commit(); err != nil {
-		pkgLogger.Errorf("CH: Error while committing transaction as there was error while loading in table:%s: %v", tableName, err)
-		return
-	}
-	pkgLogger.Infof("CH: Complete load for table:%s", tableName)
-	return
 }
 
 func (ch *HandleT) schemaExists(schemaname string) (exists bool, err error) {
