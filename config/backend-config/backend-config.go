@@ -3,6 +3,7 @@ package backendconfig
 //go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
 
 import (
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"reflect"
 	"sort"
 	"sync"
@@ -44,10 +45,10 @@ var (
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
-	Http                 sysUtils.HttpI           = sysUtils.NewHttp()
-	pkgLogger            logger.LoggerI           = logger.NewLogger().Child("backend-config")
-	IoUtil               sysUtils.IoUtilI         = sysUtils.NewIoUtil()
-	Diagnostics          diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Http                 sysUtils.HttpI   = sysUtils.NewHttp()
+	pkgLogger            logger.LoggerI   = logger.NewLogger().Child("backend-config")
+	IoUtil               sysUtils.IoUtilI = sysUtils.NewIoUtil()
+	Diagnostics          diagnostics.DiagnosticsI
 )
 
 var Eb utils.PublishSubscriber = new(utils.EventBus)
@@ -76,6 +77,8 @@ const (
 
 	/*RegulationSuppressAndDelete refers to Suppress and Delete Regulation */
 	RegulationSuppressAndDelete Regulation = "Suppress_With_Delete"
+
+	GlobalEventType = "global"
 )
 
 type DestinationDefinitionT struct {
@@ -103,14 +106,15 @@ type DestinationT struct {
 }
 
 type SourceT struct {
-	ID               string
-	Name             string
-	SourceDefinition SourceDefinitionT
-	Config           map[string]interface{}
-	Enabled          bool
-	WorkspaceID      string
-	Destinations     []DestinationT
-	WriteKey         string
+	ID                         string
+	Name                       string
+	SourceDefinition           SourceDefinitionT
+	Config                     map[string]interface{}
+	Enabled                    bool
+	WorkspaceID                string
+	Destinations               []DestinationT
+	WriteKey                   string
+	DgSourceTrackingPlanConfig DgSourceTrackingPlanConfigT
 }
 
 type WorkspaceRegulationT struct {
@@ -176,6 +180,39 @@ type LibraryT struct {
 
 type LibrariesT []LibraryT
 
+type DgSourceTrackingPlanConfigT struct {
+	SourceId            string                            `json:"sourceId"`
+	SourceConfigVersion int                               `json:"version"`
+	Config              map[string]map[string]interface{} `json:"config"`
+	MergedConfig        map[string]interface{}            `json:"mergedConfig"`
+	Deleted             bool                              `json:"deleted"`
+	TrackingPlan        TrackingPlanT                     `json:"trackingPlan"`
+}
+
+func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType string) map[string]interface{} {
+	if dgSourceTPConfigT.MergedConfig == nil {
+		globalConfig := dgSourceTPConfigT.fetchEventConfig(GlobalEventType)
+		eventSpecificConfig := dgSourceTPConfigT.fetchEventConfig(eventType)
+		outputConfig := misc.MergeMaps(globalConfig, eventSpecificConfig)
+		dgSourceTPConfigT.MergedConfig = outputConfig
+	}
+	return dgSourceTPConfigT.MergedConfig
+}
+
+func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) fetchEventConfig(eventType string) map[string]interface{} {
+	emptyMap := map[string]interface{}{}
+	_, eventSpecificConfigPresent := dgSourceTPConfigT.Config[eventType]
+	if !eventSpecificConfigPresent {
+		return emptyMap
+	}
+	return dgSourceTPConfigT.Config[eventType]
+}
+
+type TrackingPlanT struct {
+	Id      string `json:"id"`
+	Version int    `json:"version"`
+}
+
 type BackendConfig interface {
 	SetUp()
 	Get() (ConfigT, bool)
@@ -207,7 +244,8 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &configEnvReplacementEnabled, false, "BackendConfig.envReplacementEnabled")
 }
 
-func init() {
+func Init() {
+	Diagnostics = diagnostics.Diagnostics
 	loadConfig()
 }
 

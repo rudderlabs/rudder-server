@@ -169,7 +169,7 @@ var (
 	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout            time.Duration
 	noOfJobsToBatchInAWorker                                      int
 	pkgLogger                                                     logger.LoggerI
-	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Diagnostics                                                   diagnostics.DiagnosticsI
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
 	QueryFilters                                                  jobsdb.QueryFiltersT
@@ -1613,10 +1613,11 @@ func (rt *HandleT) crashRecover() {
 	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
 	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
+	Diagnostics = diagnostics.Diagnostics
 }
 
 //Setup initializes this module
@@ -1628,13 +1629,13 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.statusLoopPauseChannel = make(chan *PauseT)
 	rt.statusLoopResumeChannel = make(chan bool)
 	rt.reporting = reporting
-	config.RegisterBoolConfigVariable(true, &rt.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(utilTypes.DEFAULT_REPORTING_ENABLED, &rt.reportingEnabled, false, "Reporting.enabled")
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
 
 	//waiting for reporting client setup
-	if rt.reporting != nil {
+	if rt.reporting != nil && rt.reportingEnabled {
 		rt.reporting.WaitForSetup(utilTypes.CORE_REPORTING_CLIENT)
 	}
 

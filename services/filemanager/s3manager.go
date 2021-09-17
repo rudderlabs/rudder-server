@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -47,6 +46,7 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	s3manager := awsS3Manager.NewUploader(uploadSession)
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
+
 	if len(prefixes) > 0 {
 		fileName = strings.Join(prefixes[:], "/") + "/"
 	}
@@ -191,13 +191,8 @@ func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, er
 	return strings.TrimPrefix(path, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 }
 
-type S3Object struct {
-	Key              string
-	LastModifiedTime time.Time
-}
-
-func (manager *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error) {
-	s3Objects := make([]*S3Object, 0)
+func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	fileObjects = make([]*FileObject, 0)
 
 	getRegionSession := session.Must(session.NewSession())
 	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), getRegionSession, manager.Config.Bucket, manager.Config.RegionHint)
@@ -226,19 +221,19 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string) ([]*S3Object, error
 
 	// Get the list of items
 	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{
-		Bucket: aws.String(manager.Config.Bucket),
-		Prefix: aws.String(prefix),
+		Bucket:  aws.String(manager.Config.Bucket),
+		Prefix:  aws.String(prefix),
+		MaxKeys: &maxItems,
 		// Delimiter: aws.String("/"),
 	})
 	if err != nil {
-		return s3Objects, err
+		return
 	}
 
 	for _, item := range resp.Contents {
-		s3Objects = append(s3Objects, &S3Object{*item.Key, *item.LastModified})
+		fileObjects = append(fileObjects, &FileObject{*item.Key, *item.LastModified})
 	}
-
-	return s3Objects, nil
+	return
 }
 
 type S3Manager struct {
@@ -278,4 +273,8 @@ type S3Config struct {
 	AccessKey   string
 	EnableSSE   bool
 	RegionHint  string
+}
+
+func (manager *S3Manager) GetConfiguredPrefix() (string) {
+	return manager.Config.Prefix
 }

@@ -248,17 +248,28 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 	return
 }
 
-func (uploadsReq *UploadsReqT) TriggerWhUploads() (err error) {
+func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUploadsResponse, err error) {
 	err = uploadsReq.validateReq()
+	defer func() {
+		if err != nil && response != nil {
+			response = &proto.TriggerWhUploadsResponse{
+				Message:    err.Error(),
+				StatusCode: 400,
+			}
+		}
+	}()
+
 	if err != nil {
 		return
 	}
 	authorizedSourceIDs := uploadsReq.authorizedSources()
 	if len(authorizedSourceIDs) == 0 {
-		return fmt.Errorf("No authorized sourceId's")
+		err = fmt.Errorf("No authorized sourceId's")
+		return
 	}
 	if uploadsReq.DestinationID == "" {
-		return fmt.Errorf("Valid destinationId must be provided")
+		err = fmt.Errorf("Valid destinationId must be provided")
+		return
 	}
 	var pendingStagingFileCount int64
 	pendingUploadCount, err := getPendingUploadCount(uploadsReq.DestinationID, false)
@@ -272,11 +283,16 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (err error) {
 		}
 	}
 	if (pendingUploadCount + pendingStagingFileCount) == int64(0) {
-		return fmt.Errorf("No pending jobs to trigger for destination : %s", uploadsReq.DestinationID)
+		err = nil
+		response = &proto.TriggerWhUploadsResponse{
+			Message:    "No pending events to sync for this destination",
+			StatusCode: 200,
+		}
+		return
 	}
-	return TriggerUploadHandler(uploadsReq.SourceID, uploadsReq.DestinationID)
+	err = TriggerUploadHandler(uploadsReq.SourceID, uploadsReq.DestinationID)
+	return
 }
-
 
 func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	err := uploadReq.validateReq()
@@ -345,10 +361,18 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	return &upload, nil
 }
 
-func (uploadReq UploadReqT) TriggerWHUpload() error {
-	err := uploadReq.validateReq()
+func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsResponse, err error) {
+	err = uploadReq.validateReq()
+	defer func() {
+		if err != nil && response != nil {
+			response = &proto.TriggerWhUploadsResponse{
+				Message:    err.Error(),
+				StatusCode: 400,
+			}
+		}
+	}()
 	if err != nil {
-		return err
+		return
 	}
 	query := uploadReq.generateQuery(`id, source_id, destination_id, metadata`)
 	uploadReq.API.log.Debug(query)
@@ -359,19 +383,17 @@ func (uploadReq UploadReqT) TriggerWHUpload() error {
 	err = row.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.Metadata)
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
-		return err
+		return
 	}
 	if !uploadReq.authorizeSource(upload.SourceID) {
 		pkgLogger.Errorf(`Unauthorized request for upload:%d with sourceId:%s in workspaceId:%s`, uploadReq.UploadId, upload.SourceID, uploadReq.WorkspaceID)
-		return errors.New("Unauthorized request")
+		err = errors.New("Unauthorized request")
+		return
 	}
 	uploadJobT.upload = &upload
 	uploadJobT.dbHandle = uploadReq.API.dbHandle
 	err = uploadJobT.triggerUploadNow()
-	if err != nil {
-		return err
-	}
-	return nil
+	return
 }
 
 func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, error) {

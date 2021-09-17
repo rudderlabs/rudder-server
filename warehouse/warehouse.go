@@ -125,7 +125,7 @@ type ErrorResponseT struct {
 	Error string
 }
 
-func init() {
+func Init4() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse")
 }

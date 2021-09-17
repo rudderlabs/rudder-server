@@ -1,0 +1,16 @@
+name: Notion Sync
+
+on:
+  issues:
+    types: [opened, edited, milestoned, closed, reopened, assigned, unassigned]
+
+jobs:
+  request:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Github issues on Notion
+      uses: rudderlabs/github-notion-sync@0.0.5-beta
+      with:
+        notionKey: ${{ secrets.NOTION_BOT_TOKEN }}
+        notionDatabaseId: ${{ secrets.NOTION_ISSUE_DB_ID }}
+        githubKey: ${{ secrets.PAT }}

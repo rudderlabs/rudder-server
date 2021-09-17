@@ -6,9 +6,11 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	"github.com/tidwall/gjson"
 )
@@ -44,7 +46,15 @@ func (c *eventUploaderContext) Finish() {
 	c.mockCtrl.Finish()
 }
 
+func initEventUploader() {
+	config.Load()
+	logger.Init()
+	Init()
+}
+
 var _ = Describe("eventUploader", func() {
+	initEventUploader()
+
 	var (
 		c              *eventUploaderContext
 		recordingEvent string
