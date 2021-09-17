@@ -154,7 +154,7 @@ Warehouse:
     disableNullable: false
     enableArraySupport: false
     numLoadFileReadWorkers: 8
-    maxLoadFileRWFileNamesSize: 100
+    maxLoadFileReadWorkersBatchSize: 100
 Processor:
   webPort: 8086
   loopSleep: 10ms
