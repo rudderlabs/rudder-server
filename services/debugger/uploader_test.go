@@ -11,8 +11,10 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/rudderlabs/rudder-server/config"
 	mocksDebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
@@ -29,7 +31,14 @@ func (c *uploaderContext) Finish() {
 	c.mockCtrl.Finish()
 }
 
+func initUploader() {
+	config.Load()
+	logger.Init()
+}
+
 var _ = Describe("Uploader", func() {
+	initUploader()
+
 	var c *uploaderContext
 
 	BeforeEach(func() {

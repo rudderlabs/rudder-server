@@ -27,7 +27,7 @@ var (
 	pkgLogger               logger.LoggerI
 )
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("processor").Child("stash")
 }
@@ -188,6 +188,7 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 			RetryTime:     time.Now(),
 			ErrorCode:     "",
 			ErrorResponse: errorResp,
+			Parameters:    []byte(`{}`),
 		}
 		statusList = append(statusList, &status)
 	}
@@ -238,6 +239,7 @@ func (st *HandleT) readErrJobsLoop() {
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`),
+				Parameters:    []byte(`{}`),
 			}
 			statusList = append(statusList, &status)
 		}

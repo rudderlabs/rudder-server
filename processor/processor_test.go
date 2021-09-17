@@ -14,12 +14,17 @@ import (
 	. "github.com/onsi/gomega"
 	uuid "github.com/satori/go.uuid"
 
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 
@@ -83,6 +88,8 @@ const (
 	WriteKeyEnabledOnlyUT = "enabled-write-key-only-ut"
 	WorkspaceID           = "some-workspace-id"
 	SourceIDEnabled       = "enabled-source"
+	SourceIDEnabledNoUT   = "enabled-source-no-ut"
+	SourceIDEnabledOnlyUT = "enabled-source-only-ut"
 	SourceIDDisabled      = "disabled-source"
 	DestinationIDEnabledA = "enabled-destination-a" // test destination router
 	DestinationIDEnabledB = "enabled-destination-b" // test destination batch router
@@ -172,7 +179,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
-			ID:       SourceIDEnabled,
+			ID:       SourceIDEnabledNoUT,
 			WriteKey: WriteKeyEnabledNoUT,
 			Enabled:  true,
 			Destinations: []backendconfig.DestinationT{
@@ -204,7 +211,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			},
 		},
 		{
-			ID:       SourceIDEnabled,
+			ID:       SourceIDEnabledOnlyUT,
 			WriteKey: WriteKeyEnabledOnlyUT,
 			Enabled:  true,
 			Destinations: []backendconfig.DestinationT{
@@ -230,7 +237,19 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
+func initProcessor() {
+	config.Load()
+	logger.Init()
+	admin.Init()
+	dedup.Init()
+	misc.Init()
+	integrations.Init()
+	Init()
+}
+
 var _ = Describe("Processor", func() {
+	initProcessor()
+
 	var c *context
 
 	BeforeEach(func() {
@@ -362,7 +381,7 @@ var _ = Describe("Processor", func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  createBatchPayload(WriteKeyEnabledNoUT, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
 				},
 				{
 					UUID:          uuid.NewV4(),
@@ -387,7 +406,7 @@ var _ = Describe("Processor", func() {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 1,
 					},
-					Parameters: nil,
+					Parameters:   createBatchParameters(SourceIDEnabledNoUT),
 				},
 				{
 					UUID:          uuid.NewV4(),
@@ -428,7 +447,7 @@ var _ = Describe("Processor", func() {
 
 			// We expect one transform call to destination A, after callUnprocessed.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
-				DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledA, transformExpectations[DestinationIDEnabledA]))
+				DoAndReturn(assertDestinationTransform(messages, SourceIDEnabledNoUT, DestinationIDEnabledA, transformExpectations[DestinationIDEnabledA]))
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
@@ -437,7 +456,7 @@ var _ = Describe("Processor", func() {
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":""}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":""}`))
 			}
 
 			// One Store call is expected for all events
@@ -530,7 +549,7 @@ var _ = Describe("Processor", func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  createBatchPayload(WriteKeyEnabledOnlyUT, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabledOnlyUT),
 				},
 				{
 					UUID:          uuid.NewV4(),
@@ -555,7 +574,7 @@ var _ = Describe("Processor", func() {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 1,
 					},
-					Parameters: nil,
+					Parameters:   createBatchParameters(SourceIDEnabledOnlyUT),
 				},
 				{
 					UUID:          uuid.NewV4(),
@@ -614,7 +633,7 @@ var _ = Describe("Processor", func() {
 
 			// We expect one transform call to destination B, after user transform for destination B.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
+				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
@@ -624,7 +643,7 @@ var _ = Describe("Processor", func() {
 				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":""}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":""}`))
 			}
 
 			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).
@@ -701,7 +720,7 @@ var _ = Describe("Processor", func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  createBatchPayloadWithSameMessageId(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-some-id-2"], messages["message-some-id-1"]}),
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    nil,
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 			}
 
@@ -716,7 +735,7 @@ var _ = Describe("Processor", func() {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 1,
 					},
-					Parameters: nil,
+					Parameters:   createBatchParameters(SourceIDEnabled),
 				},
 			}
 
@@ -783,7 +802,7 @@ var _ = Describe("Processor", func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  createBatchPayload(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    []byte(`{"source_id": "source-from-transformer"}`),
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 			}
 
@@ -814,7 +833,7 @@ var _ = Describe("Processor", func() {
 
 				var paramsMap, expectedParamsMap map[string]interface{}
 				json.Unmarshal(job.Parameters, &paramsMap)
-				expectedStr := []byte(fmt.Sprintf(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer"}`, i+1))
+				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer"}`, SourceIDEnabled, i+1))
 				json.Unmarshal(expectedStr, &expectedParamsMap)
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 				Expect(equals).To(Equal(true))
@@ -907,7 +926,7 @@ var _ = Describe("Processor", func() {
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  createBatchPayload(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
 					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    []byte(`{"source_id": "source-from-transformer"}`),
+					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 			}
 
@@ -931,7 +950,7 @@ var _ = Describe("Processor", func() {
 
 				var paramsMap, expectedParamsMap map[string]interface{}
 				json.Unmarshal(job.Parameters, &paramsMap)
-				expectedStr := []byte(`{"source_id": "source-from-transformer", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": 400, "stage": "user_transformer"}`)
+				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": 400, "stage": "user_transformer"}`, SourceIDEnabled))
 				json.Unmarshal(expectedStr, &expectedParamsMap)
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 				Expect(equals).To(Equal(true))
@@ -1119,6 +1138,7 @@ var _ = Describe("Processor", func() {
 })
 
 var _ = Describe("Static Function Tests", func() {
+	initProcessor()
 
 	Context("TransformerFormatResponse Tests", func() {
 		It("Should match ConvertToTransformerResponse without filtering", func() {
@@ -1419,6 +1439,10 @@ func createBatchPayload(writeKey string, receivedAt string, events []mockEventDa
 	return []byte(fmt.Sprintf(`{"writeKey": "%s", "batch": [%s], "requestIP": "1.2.3.4", "receivedAt": "%s"}`, writeKey, batch, receivedAt))
 }
 
+func createBatchParameters(sourceId string) []byte {
+	return []byte(fmt.Sprintf(`{"source_id": "%s"}`, sourceId))
+}
+
 func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string, errorCode string, errorResponse string, attemptNum int) {
 	Expect(status.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
@@ -1458,7 +1482,7 @@ func assertReportMetric(expectedMetric []*types.PUReportedMetric, actualMetric [
 	}
 }
 
-func assertDestinationTransform(messages map[string]mockEventData, destinationID string, expectations transformExpectation) func(clientEvents []transformer.TransformerEventT, url string, batchSize int) transformer.ResponseT {
+func assertDestinationTransform(messages map[string]mockEventData, sourceId string, destinationID string, expectations transformExpectation) func(clientEvents []transformer.TransformerEventT, url string, batchSize int) transformer.ResponseT {
 	return func(clientEvents []transformer.TransformerEventT, url string, batchSize int) transformer.ResponseT {
 		destinationDefinitionName := expectations.destinationDefinitionName
 
@@ -1483,12 +1507,12 @@ func assertDestinationTransform(messages map[string]mockEventData, destinationID
 				Expect(event.Metadata.DestinationType).To(Equal(fmt.Sprintf("%s-definition-name", destinationID)))
 				Expect(event.Metadata.JobID).To(Equal(messages[messageID].jobid))
 				Expect(event.Metadata.MessageID).To(Equal(messageID))
-				Expect(event.Metadata.SourceID).To(Equal("")) // ???
+				Expect(event.Metadata.SourceID).To(Equal(sourceId)) // ???
 			} else {
 				// Expect(event.Metadata.DestinationType).To(Equal(""))
 				Expect(event.Metadata.JobID).To(Equal(int64(0)))
 				Expect(event.Metadata.MessageID).To(Equal(""))
-				Expect(event.Metadata.SourceID).To(Equal("")) // ???
+				Expect(event.Metadata.SourceID).To(Equal(sourceId)) // ???
 			}
 
 			// Expect timestamp fields

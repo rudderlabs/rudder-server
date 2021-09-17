@@ -10,7 +10,9 @@ service Warehouse {
   rpc GetHealth (google.protobuf.Empty) returns (google.protobuf.BoolValue);
   rpc GetWHUploads (WHUploadsRequest) returns (WHUploadsResponse);
   rpc GetWHUpload (WHUploadRequest) returns (WHUploadResponse);
-  rpc TriggerWHUpload (WHUploadRequest) returns (google.protobuf.Empty);
+  rpc TriggerWHUpload (WHUploadRequest) returns (TriggerWhUploadsResponse);
+  rpc TriggerWHUploads (WHUploadsRequest) returns (TriggerWhUploadsResponse);
+
 }
 
 message Pagination {
@@ -67,4 +69,9 @@ message WHUploadResponse {
   int32 duration = 14;
   repeated WHTable tables = 15;
   bool isArchivedUpload = 16;
+}
+
+message TriggerWhUploadsResponse {
+  string message = 1;
+  int32 status_code = 2;
 }

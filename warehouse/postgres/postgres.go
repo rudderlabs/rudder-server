@@ -108,7 +108,7 @@ func connect(cred credentialsT) (*sql.DB, error) {
 	return db, nil
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("postgres")
 }
@@ -141,7 +141,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 }
 
 func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objectLocations := pg.Uploader.GetLoadFileLocations(warehouseutils.GetLoadFileLocationsOptionsT{Table: tableName})
+	objects := pg.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
 	downloader, err := filemanager.New(&filemanager.SettingsT{
 		Provider: storageProvider,
@@ -156,37 +156,37 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		return nil, err
 	}
 	var fileNames []string
-	for _, objectLocation := range objectLocations {
-		object, err := warehouseutils.GetObjectName(objectLocation, pg.Warehouse.Destination.Config, pg.ObjectStorage)
+	for _, object := range objects {
+		objectName, err := warehouseutils.GetObjectName(object.Location, pg.Warehouse.Destination.Config, pg.ObjectStorage)
 		if err != nil {
-			pkgLogger.Errorf("PG: Error in converting object location to object key for table:%s: %s,%v", tableName, objectLocation, err)
+			pkgLogger.Errorf("PG: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
 			return nil, err
 		}
 		dirName := "/rudder-warehouse-load-uploads-tmp/"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
-			pkgLogger.Errorf("PG: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("PG: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
-		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.ID, time.Now().Unix()) + object
+		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.ID, time.Now().Unix()) + objectName
 		err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
 		if err != nil {
-			pkgLogger.Errorf("PG: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("PG: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, object.Location, err)
 			return nil, err
 		}
 		objectFile, err := os.Create(ObjectPath)
 		if err != nil {
-			pkgLogger.Errorf("PG: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("PG: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
-		err = downloader.Download(objectFile, object)
+		err = downloader.Download(objectFile, objectName)
 		if err != nil {
-			pkgLogger.Errorf("PG: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("PG: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
 		fileName := objectFile.Name()
 		if err = objectFile.Close(); err != nil {
-			pkgLogger.Errorf("PG: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, objectLocation, err)
+			pkgLogger.Errorf("PG: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
 			return nil, err
 		}
 		fileNames = append(fileNames, fileName)
@@ -317,7 +317,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	if tableName == warehouseutils.DiscardsTable {
 		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = "%[1]s"."%[2]s"."%[3]s" AND _source.%[4]s = "%[1]s"."%[2]s"."%[4]s"`, pg.Namespace, tableName, "table_name", "column_name")
 	}
-	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" USING "%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, pg.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
+	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" USING "%[1]s"."%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, pg.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
 	pkgLogger.Infof("PG: Deduplicate records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
@@ -325,7 +325,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		txn.Rollback()
 		return
 	}
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[4]s" ) AS _ where _rudder_staging_row_number = 1`, pg.Namespace, tableName, sortedColumnString, stagingTableName, partitionKey)
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, pg.Namespace, tableName, sortedColumnString, stagingTableName, partitionKey)
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 
@@ -434,7 +434,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 
 	primaryKey := "id"
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
+	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" using "%[1]s"."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
 	pkgLogger.Infof("PG: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
@@ -444,7 +444,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 

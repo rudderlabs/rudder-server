@@ -130,6 +130,7 @@ func BuildStatus(job *JobT, jobState string) *JobStatusT {
 		RetryTime:     time.Now(),
 		ErrorCode:     "200",
 		ErrorResponse: []byte(`{"success":"OK"}`),
+		Parameters:    []byte(`{}`),
 	}
 	return &newStatus
 }

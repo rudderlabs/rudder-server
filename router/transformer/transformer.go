@@ -57,7 +57,7 @@ func loadConfig() {
 
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router").Child("transformer")
 
