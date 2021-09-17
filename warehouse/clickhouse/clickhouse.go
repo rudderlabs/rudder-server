@@ -35,7 +35,7 @@ var (
 	pkgLogger                       logger.LoggerI
 	disableNullable                 bool
 	numLoadFileReadWorkers          int
-	maxLoadFileReadForkersBatchSize int
+	maxLoadFileReadWorkersBatchSize int
 )
 var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
@@ -174,7 +174,7 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("10", &poolSize, true, "Warehouse.clickhouse.poolSize")
 	config.RegisterBoolConfigVariable(false, &disableNullable, false, "Warehouse.clickhouse.disableNullable")
 	config.RegisterIntConfigVariable(1, &numLoadFileReadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileReadWorkers")
-	config.RegisterIntConfigVariable(0, &maxLoadFileReadForkersBatchSize, true, 1, "Warehouse.clickhouse.maxLoadFileReadForkersBatchSize")
+	config.RegisterIntConfigVariable(0, &maxLoadFileReadWorkersBatchSize, true, 1, "Warehouse.clickhouse.maxLoadFileReadWorkersBatchSize")
 }
 
 /*
@@ -450,11 +450,11 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	wg := sync.WaitGroup{}
 	waitCh := make(chan struct{})
-	if maxLoadFileReadForkersBatchSize == 0 {
+	if maxLoadFileReadWorkersBatchSize == 0 {
 		wg.Add(1)
 	} else {
-		div := float64(len(fileNames)) / float64(maxLoadFileReadForkersBatchSize)
-		wg.Add(int(math.Ceil(div)))
+		wgCount := float64(len(fileNames)) / float64(maxLoadFileReadWorkersBatchSize)
+		wg.Add(int(math.Ceil(wgCount)))
 	}
 
 	loadFileErrorChan := make(chan error)
@@ -558,13 +558,13 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			batchFileNames := make([]string, 0)
 
 			for {
-				if maxLoadFileReadForkersBatchSize == 0 {
+				if maxLoadFileReadWorkersBatchSize == 0 {
 					batchFileNames = fileNames
 					batchCount = len(batchFileNames)
 					idx = len(batchFileNames)
 					break
 				}
-				if batchCount >= maxLoadFileReadForkersBatchSize && idx != 0 {
+				if batchCount >= maxLoadFileReadWorkersBatchSize && idx != 0 {
 					break
 				}
 				if idx >= len(fileNames) {
