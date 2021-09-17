@@ -11,7 +11,6 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
-	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -1300,12 +1299,6 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	} else {
 		errorByState["attempt"] = 1
 	}
-	// check if all errors in upload are skip errors
-	hasOnlySkippedErrors := false
-	if multiErr, ok := statusError.(*multierror.Error); ok {
-		errList := multierror.Split(multiErr)
-		hasOnlySkippedErrors = areAllTableSkipErrors(errList)
-	}
 	// append errors for errored stage
 	if errList, ok := errorByState["errors"]; ok {
 		errorByState["errors"] = append(errList.([]interface{}), statusError.Error())
@@ -1316,7 +1309,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	if errorByState["attempt"].(int) > minRetryAttempts {
 		firstTiming := job.getUploadFirstAttemptTime()
 		// do not abort upload if the the error list has only skipped errors.
-		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) && !hasOnlySkippedErrors {
+		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) && !job.hasAllTablesSkipped {
 			state = Aborted
 		}
 	}
