@@ -34,11 +34,14 @@ var (
 
 func GetComputeConfig(customer string) CustomerComputeConfig {
 	return customerComputeConfigs[customer]
-
 }
 
 func GetAllCustomersComputeConfig() map[string]CustomerComputeConfig {
 	return customerComputeConfigs
+}
+
+func GetWorkspaceIDs() []string {
+	return make([]string, 0)
 }
 
 func Setup() {
