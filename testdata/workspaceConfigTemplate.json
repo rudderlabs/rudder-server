@@ -470,6 +470,152 @@
                     },
                     "isConnectionEnabled": true,
                     "isProcessorEnabled": true
+                },
+                {
+                    "config": {
+                        "address": "{{.address}}",
+                        "database": "",
+                        "password": "",
+                        "prefix": "",
+                        "secure": false,
+                        "skipVerify": false,
+                        "caCertificate": "",
+                        "clusterMode": false
+                    },
+                    "secretConfig": {},
+                    "id": "xxxyyyzzYjAZfPBa5yqqTvqBVqu",
+                    "name": "Des Redis Integration Test 1",
+                    "enabled": true,
+                    "workspaceId": "{{.workspaceId}}",
+                    "deleted": false,
+                    "createdAt": "2021-08-27T06:45:46.149Z",
+                    "updatedAt": "2021-08-27T06:45:46.149Z",
+                    "transformations": [],
+                    "destinationDefinition": {
+                        "config": {
+                            "destConfig": {
+                                "defaultConfig": [
+                                    "address",
+                                    "database",
+                                    "password",
+                                    "prefix",
+                                    "secure",
+                                    "skipVerify",
+                                    "caCertificate",
+                                    "clusterMode"
+                                ]
+                            },
+                            "secretKeys": [
+                                "password",
+                                "caCertificate"
+                            ],
+                            "excludeKeys": [],
+                            "includeKeys": [],
+                            "transformAt": "processor",
+                            "transformAtV1": "processor",
+                            "supportedSourceTypes": [
+                                "android",
+                                "ios",
+                                "web",
+                                "unity",
+                                "amp",
+                                "cloud",
+                                "warehouse",
+                                "reactnative",
+                                "flutter"
+                            ],
+                            "supportedMessageTypes": [
+                                "identify"
+                            ],
+                            "saveDestinationResponse": true
+                        },
+                        "configSchema": null,
+                        "responseRules": {},
+                        "id": "xxxyyyzzl28zT3nxr8SWZp6xaWT",
+                        "name": "REDIS",
+                        "displayName": "Redis",
+                        "category": null,
+                        "createdAt": "2021-02-08T15:26:17.995Z",
+                        "updatedAt": "2021-08-27T08:09:46.976Z"
+                    },
+                    "isConnectionEnabled": true,
+                    "isProcessorEnabled": true
+                },
+                {
+                    "config": {
+                        "hostName": "localhost",
+                        "port": "9092",
+                        "topic": "dev_integration_test",
+                        "sslEnabled": false,
+                        "caCertificate": "key",
+                        "useSASL": false,
+                        "saslType": "plain",
+                        "username": "",
+                        "password": ""
+                    },
+                    "secretConfig": {},
+                    "id": "xxxyyyzzhyrw8v0CrTMrDZ4ovej",
+                    "name": "Des Kafka Integration Test 1",
+                    "enabled": true,
+                    "workspaceId": "{{.workspaceId}}",
+                    "deleted": false,
+                    "createdAt": "2021-08-27T06:44:37.836Z",
+                    "updatedAt": "2021-08-27T09:09:11.873Z",
+                    "transformations": [],
+                    "destinationDefinition": {
+                        "config": {
+                            "destConfig": {
+                                "defaultConfig": [
+                                    "hostName",
+                                    "port",
+                                    "topic",
+                                    "sslEnabled",
+                                    "caCertificate",
+                                    "useSASL",
+                                    "saslType",
+                                    "username",
+                                    "password"
+                                ]
+                            },
+                            "secretKeys": [
+                                "password"
+                            ],
+                            "excludeKeys": [],
+                            "includeKeys": [],
+                            "transformAt": "processor",
+                            "transformAtV1": "processor",
+                            "supportedSourceTypes": [
+                                "android",
+                                "ios",
+                                "web",
+                                "unity",
+                                "amp",
+                                "cloud",
+                                "warehouse",
+                                "reactnative",
+                                "flutter"
+                            ],
+                            "supportedMessageTypes": [
+                                "alias",
+                                "group",
+                                "identify",
+                                "page",
+                                "screen",
+                                "track"
+                            ],
+                            "saveDestinationResponse": true
+                        },
+                        "configSchema": null,
+                        "responseRules": null,
+                        "id": "xxxyyyzzsyAyCQ2QIxrKU9X5AoR",
+                        "name": "KAFKA",
+                        "displayName": "Apache Kafka",
+                        "category": null,
+                        "createdAt": "2020-05-12T17:13:54.165Z",
+                        "updatedAt": "2021-08-27T08:09:44.485Z"
+                    },
+                    "isConnectionEnabled": true,
+                    "isProcessorEnabled": true
                 }
             ],
             "sourceDefinition":

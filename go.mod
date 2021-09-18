@@ -36,6 +36,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.11.0
 	github.com/golang/mock v1.5.0
 	github.com/golang/protobuf v1.5.0
+	github.com/gomodule/redigo v1.8.5
 	github.com/gorilla/mux v1.7.4
 	github.com/gotestyourself/gotestyourself v2.2.0+incompatible // indirect
 	github.com/hashicorp/go-retryablehttp v0.6.6
@@ -64,7 +65,7 @@ require (
 	github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c // indirect
 	github.com/segmentio/ksuid v1.0.2
 	github.com/snowflakedb/gosnowflake v1.3.4
-	github.com/spaolacci/murmur3 v1.1.0
+	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/cast v1.3.1
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect

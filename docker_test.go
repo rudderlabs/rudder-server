@@ -10,12 +10,13 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	b64 "encoding/base64"
-	"flag"
+	_ "encoding/json"
 	"fmt"
 	"html/template"
 	"io/ioutil"
 	"log"
+	b64 "encoding/base64"
+	"flag"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -29,8 +30,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Shopify/sarama"
+	"github.com/go-redis/redis"
+	redigo "github.com/gomodule/redigo/redis"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest"
+	dc "github.com/ory/dockertest/docker"
+
+	_ "github.com/lib/pq"
 	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -41,38 +48,31 @@ import (
 )
 
 var (
-	hold           bool
+	hold        bool = true
+	db          *sql.DB
+	redisClient *redis.Client
+	DB_DSN      = "root@tcp(127.0.0.1:3306)/service"
+	httpPort    string
+	httpKafkaPort string
+	dbHandle    *sql.DB
+	sourceJSON  backendconfig.ConfigT
+	webhookurl  string
+	webhook     *WebhookRecorder
+	address 	string
 	runIntegration bool
-	db             *sql.DB
-	DB_DSN         = "root@tcp(127.0.0.1:3306)/service"
-	httpPort       string
-	dbHandle       *sql.DB
-	sourceJSON     backendconfig.ConfigT
-	webhookurl     string
-	webhook        *WebhookRecorder
 	writeKey       string
 	workspaceID    string
 )
-type Event struct {
-	anonymous_id       string
-	user_id    string
-}
-
-func randString(n int) string {
-	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-
-	s := make([]rune, n)
-	for i := range s {
-		s[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(s)
-}
 
 type WebhookRecorder struct {
 	Server *httptest.Server
 
 	requestsMu   sync.RWMutex
 	requestDumps [][]byte
+}
+
+type User struct {
+	trait1 string `redis:"name"`
 }
 
 func NewWebhook() *WebhookRecorder {
@@ -108,6 +108,26 @@ func (whr *WebhookRecorder) Requests() []*http.Request {
 
 func (whr *WebhookRecorder) Close() {
 	whr.Server.Close()
+}
+func randString(n int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+	s := make([]rune, n)
+	for i := range s {
+		s[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(s)
+}
+
+type Event struct {
+	anonymous_id       string
+	user_id    string
+}
+
+
+type Author struct {
+	Name string `json:"name"`
+	Age  int    `json:"age"`
 }
 
 func getWorkspaceConfig() backendconfig.ConfigT {
@@ -191,8 +211,9 @@ func blockOnHold() {
 	<-c
 }
 
-func CreateTablePostgres() {
-	_, err := db.Exec("CREATE TABLE example ( id integer, username varchar(255) )")
+func CreateSCHEMAPostgres() {
+	// TODO: Need to configure with workspace json
+	_, err := db.Exec("CREATE SCHEMA example")
 	if err != nil {
 		panic(err)
 	}
@@ -200,7 +221,7 @@ func CreateTablePostgres() {
 
 func SendEvent() {
 	fmt.Println("Sending Track Event")
-	url := fmt.Sprintf("http://localhost:%s/v1/track", httpPort)
+	url := fmt.Sprintf("http://localhost:%s/v1/identify", httpPort)
 	method := "POST"
 
 	payload := strings.NewReader(`{
@@ -270,6 +291,64 @@ func run(m *testing.M) int {
 	if err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
+
+	// pulls an redis image, creates a container based on it and runs it
+	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
+	if err != nil {
+		log.Fatalf("Could not start resource: %s", err)
+	}
+	defer func() {
+		if err := pool.Purge(resourceRedis); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	address = fmt.Sprintf("localhost:%s", resourceRedis.GetPort("6379/tcp"))
+	if err := pool.Retry(func() error {
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:     address,
+			Password: "",
+			DB:       0,
+		})
+
+		pong, err := redisClient.Ping().Result()
+		fmt.Println(pong, err)
+		return err
+	}); err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "coolest_network_ever"})
+	fmt.Println(err)
+	z, _ := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "confluentinc/cp-zookeeper",
+		Tag:        "latest",
+		NetworkID:  network.ID,
+		Hostname:   "zookeeper",
+		PortBindings: map[dc.Port][]dc.PortBinding{
+		   "2181/tcp": {{HostIP: "zookeeper", HostPort: "2181/tcp"}},
+		},
+		Env: []string{"ZOOKEEPER_CLIENT_PORT=2181"},
+	 })
+	// Set Kafka: pulls an image, creates a container based on it and runs it
+	KAFKA_ZOOKEEPER_CONNECT:=fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
+	fmt.Println(KAFKA_ZOOKEEPER_CONNECT)
+	resourceKafka, _ := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "confluentinc/cp-kafka",
+		Tag:        "latest",
+		NetworkID:  network.ID,
+		Hostname:   "broker",
+		PortBindings: map[dc.Port][]dc.PortBinding{
+		   "29092/tcp": {{HostIP: "broker", HostPort: "29092/tcp"}},
+		   "9092/tcp":  {{HostIP: "localhost", HostPort: "9092/tcp"}},
+		},
+		Env: []string{
+		   "KAFKA_BROKER_ID=1",
+		   "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT",
+		   "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092",
+		   "KAFKA_ZOOKEEPER_CONNECT= zookeeper:2181",
+		},
+	 })
+	 fmt.Println(resourceKafka)
 
 	database := "jobsdb"
 	// pulls an image, creates a container based on it and runs it
@@ -371,6 +450,7 @@ func run(m *testing.M) int {
 			"writeKey":    writeKey,
 			"workspaceId": workspaceID,
 			"postgresPort": resourcePostgres.GetPort("5432/tcp"),
+			"address": address,
 		},
 	)
 	defer func() {
@@ -412,7 +492,7 @@ func run(m *testing.M) int {
 
 func TestWebhook(t *testing.T) {
 	//Testing postgres Client
-	CreateTablePostgres()
+	CreateSCHEMAPostgres()
 
 	//
 	var err error
@@ -443,18 +523,117 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anon-id-new")
 	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified user id")
 	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "daf823fb-e8d3-413a-8313-d34cd756f968")
-	require.Equal(t, gjson.GetBytes(body, "type").Str, "track")
-
-
-	// TODO: Verify in Live Evets API
+	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
+	
 }
 // Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
 	var myEvent Event
 	require.Eventually(t, func() bool {
-		eventSql:= "select anonymous_id, user_id from example.tracks limit 1"
+		eventSql:= "select anonymous_id, user_id from example.identifies limit 1"
 		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
 		return myEvent.anonymous_id == "anon-id-new"
 	}, time.Minute, 10*time.Millisecond)
 	require.Equal(t, "identified user id", myEvent.user_id)
+	
 	}
+// Verify Event in Redis	
+func TestRedis(t *testing.T) {
+	fmt.Println(address)
+	conn, err := redigo.Dial("tcp", address)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+	require.Eventually(t, func() bool {
+		// Similarly, get the trait1 and convert it to a string.
+		event, _ := redigo.String(conn.Do("HGET", "user:identified user id", "trait1"))
+		return event == "new-val"
+	}, time.Minute, 10*time.Millisecond)
+
+}
+func TestKafka(t *testing.T) {
+	config := sarama.NewConfig()
+	config.ClientID = "go-kafka-consumer"
+	config.Consumer.Return.Errors = true
+
+	brokers := []string{"localhost:9092"}
+
+	// Create new consumer
+	master, err := sarama.NewConsumer(brokers, config)
+	if err != nil {
+		panic(err)
+	}
+	// defer func() {
+	// 	if err := master.Close(); err != nil {
+	// 		panic(err)
+	// 	}
+	// }()
+	topics, _ := master.Topics()
+
+	consumer, errors := consume(topics, master)
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt)
+
+	// Count how many message processed
+	msgCount := 0
+	// Get signnal for finish
+	doneCh := make(chan struct{})
+	
+	go func() {for {
+		select {
+		case msg := <-consumer:
+			msgCount++
+			fmt.Println("Received messages", string(msg.Key), string(msg.Value))
+			require.Equal(t, "identified user id", string(msg.Key))
+			require.Contains(t, string(msg.Value), "new-val")
+			require.Contains(t, string(msg.Value), "identified user id")
+			master.Close()
+		case consumerError := <-errors:
+			msgCount++
+			fmt.Println("Received consumerError ", string(consumerError.Topic), string(consumerError.Partition), consumerError.Err)
+			doneCh <- struct{}{}
+		case <-signals:
+			fmt.Println("Interrupt is detected")
+			doneCh <- struct{}{}
+		}
+		
+	}}()
+	<-doneCh
+	fmt.Println("Processed", msgCount, "messages")
+
+}
+func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
+	consumers := make(chan *sarama.ConsumerMessage)
+	errors := make(chan *sarama.ConsumerError)
+	for _, topic := range topics {
+		if strings.Contains(topic, "__consumer_offsets") {
+			continue
+		}
+		partitions, _ := master.Partitions(topic)
+    // this only consumes partition no 1, you would probably want to consume all partitions
+		consumer, err := master.ConsumePartition(topic, partitions[0], sarama.OffsetOldest)
+		if nil != err {
+			fmt.Printf("Topic %v Partitions: %v", topic, partitions)
+			panic(err)
+		}
+		fmt.Println(" Start consuming topic ", topic)
+		go func(topic string, consumer sarama.PartitionConsumer) {
+			for {
+				select {
+				case consumerError := <-consumer.Errors():
+					errors <- consumerError
+					fmt.Println("consumerError: ", consumerError.Err)
+
+				case msg := <-consumer.Messages():
+					consumers <- msg
+					fmt.Println("Got message on topic ", topic, msg.Value)
+				}
+			}
+		}(topic, consumer)
+	}
+
+	return consumers, errors
+}
+// TODO: Verify in Live Evets API
