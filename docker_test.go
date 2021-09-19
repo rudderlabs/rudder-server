@@ -349,6 +349,7 @@ func run(m *testing.M) int {
 		   "KAFKA_ZOOKEEPER_CONNECT= zookeeper:2181",
 		},
 	 })
+	 fmt.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
 
 	database := "jobsdb"
 	// pulls an image, creates a container based on it and runs it
@@ -589,10 +590,9 @@ func TestKafka(t *testing.T) {
 			msgCount++
 			fmt.Println("Received consumerError ", string(consumerError.Topic), string(consumerError.Partition), consumerError.Err)
 			doneCh <- struct{}{}
-		case <-signals:
-			fmt.Println("Interrupt is detected")
-			doneCh <- struct{}{}
-		}
+		case <-time.After(time.Minute):
+			panic("timeout waiting on kafka message")
+	   }
 		
 	}}()
 	<-doneCh
