@@ -350,7 +350,6 @@ func run(m *testing.M) int {
 		   "KAFKA_ZOOKEEPER_CONNECT= zookeeper:2181",
 		},
 	 })
-	 fmt.Println(resourceKafka)
 
 	database := "jobsdb"
 	// pulls an image, creates a container based on it and runs it
