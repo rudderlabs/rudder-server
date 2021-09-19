@@ -318,7 +318,9 @@ func run(m *testing.M) int {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "coolest_network_ever"})
-	fmt.Println(err)
+    if err != nil {
+    		log.Fatalf("Could not create docker network: %s", err)
+    }
 	z, _ := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-zookeeper",
 		Tag:        "latest",
