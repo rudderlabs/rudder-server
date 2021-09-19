@@ -37,7 +37,6 @@ import (
 	"github.com/ory/dockertest"
 	dc "github.com/ory/dockertest/docker"
 
-	_ "github.com/lib/pq"
 	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
