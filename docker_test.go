@@ -564,11 +564,6 @@ func TestKafka(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	// defer func() {
-	// 	if err := master.Close(); err != nil {
-	// 		panic(err)
-	// 	}
-	// }()
 	topics, _ := master.Topics()
 
 	consumer, errors := consume(topics, master)
