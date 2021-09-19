@@ -333,7 +333,7 @@ func run(m *testing.M) int {
 	 })
 	// Set Kafka: pulls an image, creates a container based on it and runs it
 	KAFKA_ZOOKEEPER_CONNECT:=fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
-	fmt.Println(KAFKA_ZOOKEEPER_CONNECT)
+	log.Println("KAFKA_ZOOKEEPER_CONNECT:", KAFKA_ZOOKEEPER_CONNECT)
 	resourceKafka, _ := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-kafka",
 		Tag:        "latest",
