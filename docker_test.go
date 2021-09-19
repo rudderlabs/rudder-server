@@ -586,7 +586,7 @@ func TestKafka(t *testing.T) {
 		select {
 		case msg := <-consumer:
 			msgCount++
-			fmt.Println("Received messages", string(msg.Key), string(msg.Value))
+			t.Log("Received messages", string(msg.Key), string(msg.Value))
 			require.Equal(t, "identified user id", string(msg.Key))
 			require.Contains(t, string(msg.Value), "new-val")
 			require.Contains(t, string(msg.Value), "identified user id")
