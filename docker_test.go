@@ -321,7 +321,7 @@ func run(m *testing.M) int {
     if err != nil {
     		log.Fatalf("Could not create docker network: %s", err)
     }
-	z, _ := pool.RunWithOptions(&dockertest.RunOptions{
+	z, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-zookeeper",
 		Tag:        "latest",
 		NetworkID:  network.ID,
