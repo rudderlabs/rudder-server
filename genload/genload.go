@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
@@ -28,17 +27,15 @@ var (
 func main() {
 	config.Load()
 	logger.Init()
-	secret := os.Args[1]
-	reqPerSecond, _ = strconv.ParseInt(os.Args[2], 10, 0)
-	configBEUrl := os.Args[3]
-	dataplaneURL := os.Args[4]
-	loadTime, _ = strconv.ParseInt(os.Args[5], 10, 0)
+	secret := config.GetEnv("secret", "defaultSecret")
+	reqPerSecond, _ = strconv.ParseInt(config.GetEnv("reqPerSecond", "1"), 10, 0)
+	configBEURL := config.GetEnv("configBEURL", "https://api.rudderlabs.com")
+	dataplaneURL := config.GetEnv("dataplaneURL", "http://localhost:8080/v1/batch")
+	loadTime, _ = strconv.ParseInt(config.GetEnv("loadTime", "3600"), 10, 0)
 	pkgLogger = logger.NewLogger().Child("genload")
 
-	configURL := configBEUrl + `/hostedWorkspaceConfig?fetchAll=true?fetchAll=true`
-
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", configURL, nil)
+	req, err := http.NewRequest("GET", configBEURL, nil)
 	if err != nil {
 		pkgLogger.Errorf("Got error %s\n", err.Error())
 	}
@@ -80,23 +77,22 @@ func main() {
 
 func sendRequests(writeKey, dataplaneURL string) {
 	for {
-		go func() {
-			client := &http.Client{}
-			userID := ksuid.New().String()
-			payload, _ = sjson.SetBytes(payload, fmt.Sprintf(`batch.%v.anonymousId`, 0), userID)
-			req, err := http.NewRequest("POST", dataplaneURL, bytes.NewBuffer(payload))
-			if err != nil {
-				pkgLogger.Errorf("error creating request: %s", err.Error())
-			}
-			req.Header.Add("Authorization", "Basic "+basicAuth(writeKey, ""))
-			_, err = client.Do(req)
-			if err != nil {
-				pkgLogger.Info(err.Error())
-			}
+		client := &http.Client{}
+		userID := ksuid.New().String()
+		payload, _ = sjson.SetBytes(payload, fmt.Sprintf(`batch.%v.anonymousId`, 0), userID)
+		// payload, _ = sjson.SetBytes(payload, fmt.Sprintf(`batch.%v.anonymousId`, 0), userID) //change another fields - few more
+		req, err := http.NewRequest("POST", dataplaneURL, bytes.NewBuffer(payload))
+		if err != nil {
+			pkgLogger.Errorf("error creating request: %s", err.Error())
+		}
+		req.Header.Add("Authorization", "Basic "+basicAuth(writeKey, ""))
+		_, err = client.Do(req)
+		if err != nil {
+			pkgLogger.Info(err.Error())
+		}
 
-			latency := 1000 / int(reqPerSecond)
-			time.Sleep(time.Millisecond * time.Duration(latency))
-		}()
+		latency := 1000 / int(reqPerSecond)
+		time.Sleep(time.Millisecond * time.Duration(latency))
 	}
 }
 
