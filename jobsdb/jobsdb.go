@@ -505,6 +505,7 @@ var (
 	addNewDSLoopSleepDuration                    time.Duration
 	refreshDSListLoopSleepDuration               time.Duration
 	backupCheckSleepDuration                     time.Duration
+	cacheExpiration                              time.Duration
 	useJoinForUnprocessed                        bool
 	backupRowsBatchSize                          int64
 	pkgLogger                                    logger.LoggerI
@@ -550,6 +551,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
+	config.RegisterDurationConfigVariable(time.Duration(60), &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 	config.RegisterBoolConfigVariable(true, &useNewCacheBurst, true, "JobsDB.useNewCacheBurst")
 }
@@ -1847,6 +1849,12 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 	}
 }
 
+// isEmptyResult will return true if:
+// 	For all the combinations of stateFilters, customValFilters, parameterFilters.
+//  All of the condition above apply:
+// 	* There is a cache entry for this dataset, customVal, parameterFilter, stateFilter
+//  * The entry is noJobs
+//  * The entry is not expired (entry time + cache expiration > now)
 func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
 	queryStat := stats.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
@@ -1885,7 +1893,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 
 		for _, st := range stateFilters {
 			mark, ok := jd.dsEmptyResultCache[ds][cVal][pVal][st]
-			if !ok || mark.value != noJobs {
+			if !ok || mark.value != noJobs || time.Now().After(mark.t.Add(cacheExpiration)) {
 				return false
 			}
 		}
