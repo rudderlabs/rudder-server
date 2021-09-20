@@ -1,11 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"time"
 
@@ -77,15 +78,86 @@ func main() {
 func sendRequests(writeKey, dataplaneURL string) {
 	go func() {
 		for {
-			cmd := &exec.Cmd{
-				Path:   "../scripts/generate-event",
-				Args:   []string{"../scripts/generate-event", writeKey, dataplaneURL},
-				Stdout: os.Stdout,
-				Stderr: os.Stdout,
+			// cmd := &exec.Cmd{
+			// 	Path:   "../scripts/generate-event",
+			// 	Args:   []string{"../scripts/generate-event", writeKey, dataplaneURL},
+			// 	Stdout: os.Stdout,
+			// 	Stderr: os.Stdout,
+			// }
+			// cmd.Run()
+			client := &http.Client{}
+			req, err := http.NewRequest("POST", dataplaneURL, bytes.NewBuffer(payload))
+			if err != nil {
+				pkgLogger.Errorf("error creating request: %s", err.Error())
 			}
-			cmd.Run()
+			req.Header.Add("Authorization", "Basic "+basicAuth(writeKey, ""))
+			_, err = client.Do(req)
+			if err != nil {
+				pkgLogger.Info(err.Error())
+			}
+			// pkgLogger.Info(resp.Body)
 			latency := 1000 / int(reqPerSecond)
 			time.Sleep(time.Millisecond * time.Duration(latency))
 		}
 	}()
 }
+
+func basicAuth(username, password string) string {
+	auth := username + ":" + password
+	return base64.StdEncoding.EncodeToString([]byte(auth))
+}
+
+var data = `{
+	"batch": [
+	  {
+		"anonymousId": "49e4bdd1c280bc00",
+		"channel": "android-sdk",
+		"destination_props": {
+		  "AF": {
+			"af_uid": "1566363489499-3377330514807116178"
+		  }
+		},
+		"context": {
+		  "app": {
+			"build": "1",
+			"name": "RudderAndroidClient",
+			"namespace": "com.rudderlabs.android.sdk",
+			"version": "1.0"
+		  },
+		  "device": {
+			"id": "49e4bdd1c280bc00",
+			"manufacturer": "Google",
+			"model": "Android SDK built for x86",
+			"name": "generic_x86"
+		  },
+		  "locale": "en-US",
+		  "network": {
+			"carrier": "Android"
+		  },
+		  "screen": {
+			"density": 420,
+			"height": 1794,
+			"width": 1080
+		  },
+		  "traits": {
+			"anonymousId": "49e4bdd1c280bc00"
+		  },
+		  "user_agent": "Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"
+		},
+		"event": "Demo Track",
+		"integrations": {
+		  "All": true
+		},
+		"properties": {
+		  "label": "Demo Label",
+		  "category": "Demo Category",
+		  "value": 5
+		},
+		"type": "track",
+		"originalTimestamp": "2019-08-12T05:08:30.909Z",
+		"sentAt": "2019-08-12T05:08:30.909Z"
+	  }
+	]
+  }
+  `
+var payload = []byte(data)
