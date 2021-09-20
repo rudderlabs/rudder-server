@@ -9,6 +9,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"io"
 	"math"
 	"os"
@@ -73,7 +74,7 @@ var clickhouseSpecificColumnNameMappings = map[string]string{
 var datatypeDefaultValuesMap = map[string]interface{}{
 	"int":      0,
 	"float":    0.0,
-	"bool":     0,
+	"boolean":  0,
 	"datetime": clikhouseDefaultDateTime,
 }
 
@@ -120,6 +121,7 @@ type HandleT struct {
 	ObjectStorage string
 	Warehouse     warehouseutils.WarehouseT
 	Uploader      warehouseutils.UploaderI
+	stats         stats.Stats
 }
 
 type credentialsT struct {
@@ -131,6 +133,38 @@ type credentialsT struct {
 	secure        string
 	skipVerify    string
 	tlsConfigName string
+}
+
+type clickHouseStatT struct {
+	numRowsLoadFile       stats.RudderStats
+	downloadLoadFilesTime stats.RudderStats
+	syncLoadFileTime      stats.RudderStats
+	execRowTime           stats.RudderStats
+}
+
+// newClickHouseStat Creates a new clickHouseStatT instance
+func (proc *HandleT) newClickHouseStat() *clickHouseStatT {
+	warehouse := proc.Warehouse
+
+	tags := map[string]string{
+		"destination": warehouse.Destination.ID,
+		"destType":    warehouse.Type,
+		"source":      warehouse.Source.ID,
+		"namespace":   warehouse.Namespace,
+		"identifier":  warehouse.Identifier,
+	}
+
+	numRowsLoadFile := proc.stats.NewTaggedStat("warehouse.clickhouse.numRowsLoadFile", stats.CountType, tags)
+	downloadLoadFilesTime := proc.stats.NewTaggedStat("warehouse.clickhouse.downloadLoadFilesTime", stats.TimerType, tags)
+	syncLoadFileTime := proc.stats.NewTaggedStat("warehouse.clickhouse.syncLoadFileTime", stats.TimerType, tags)
+	execRowTime := proc.stats.NewTaggedStat("warehouse.clickhouse.execRowTime", stats.TimerType, tags)
+
+	return &clickHouseStatT{
+		numRowsLoadFile:       numRowsLoadFile,
+		downloadLoadFilesTime: downloadLoadFilesTime,
+		syncLoadFileTime:      syncLoadFileTime,
+		execRowTime:           execRowTime,
+	}
 }
 
 func Init() {
@@ -426,27 +460,20 @@ type loadFileReadJob struct {
 func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
 	pkgLogger.Infof("CH: Starting load for table:%s", tableName)
 
+	// Clickhouse stats
+	chStats := ch.newClickHouseStat()
+
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
+	chStats.downloadLoadFilesTime.Start()
 	fileNames, err := ch.DownloadLoadFiles(tableName)
+	chStats.downloadLoadFilesTime.End()
 	if err != nil {
 		return
 	}
 	defer misc.RemoveFilePaths(fileNames...)
-
-	txn, err := ch.Db.Begin()
-	if err != nil {
-		pkgLogger.Errorf("CH: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
-		return
-	}
-	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
-	stmt, err := txn.Prepare(sqlStatement)
-	if err != nil {
-		pkgLogger.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: query:%s error:%v", tableName, sqlStatement, err)
-		return
-	}
 
 	wg := sync.WaitGroup{}
 	waitCh := make(chan struct{})
@@ -459,6 +486,11 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	loadFileErrorChan := make(chan error)
 	loadFileReadJobChan := make(chan *loadFileReadJob)
+
+	handleError := func(err error) {
+		pkgLogger.Error(err)
+		loadFileErrorChan <- err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -478,26 +510,48 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 								pkgLogger.Debugf("context is cancelled, stopped processing load file")
 								return
 							default:
+								chStats.syncLoadFileTime.Start()
+
 								var gzipFile *os.File
 								gzipFile, err = os.Open(objectFileName)
 								if err != nil {
-									pkgLogger.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s: %v", objectFileName, tableName, err.Error())
-									loadFileErrorChan <- err
+									err = fmt.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s: %v", objectFileName, tableName, err.Error())
+									handleError(err)
 									return
 								}
 
 								var gzipReader *gzip.Reader
 								gzipReader, err = gzip.NewReader(gzipFile)
 								if err != nil {
-									pkgLogger.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: %v", gzipFile.Name(), tableName, err.Error())
 									rruntime.Go(func() {
 										misc.RemoveFilePaths(objectFileName)
 									})
 									gzipFile.Close()
-									loadFileErrorChan <- err
+									err = fmt.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: %v", gzipFile.Name(), tableName, err.Error())
+									handleError(err)
 									return
 
 								}
+
+								// Creating transaction at the file level.
+								txn, err := ch.Db.Begin()
+								if err != nil {
+									err = fmt.Errorf("CH: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
+									handleError(err)
+									return
+								}
+
+								// Creating a prepared statement at the file level
+								sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
+								chStats.execRowTime.Start()
+								stmt, err := txn.Prepare(sqlStatement)
+								chStats.execRowTime.End()
+								if err != nil {
+									err = fmt.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: query:%s error:%v", tableName, sqlStatement, err)
+									handleError(err)
+									return
+								}
+
 								csvReader := csv.NewReader(gzipReader)
 								var csvRowsProcessedCount int
 								for {
@@ -508,17 +562,14 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 											pkgLogger.Debugf("CH: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFileName)
 											break
 										} else {
-											pkgLogger.Errorf("CH: Error while reading csv file %s for loading in table:%s: %v", objectFileName, tableName, err)
-											txn.Rollback()
-											loadFileErrorChan <- err
+											err = fmt.Errorf("CH: Error while reading csv file %s for loading in table:%s: %v", objectFileName, tableName, err)
+											handleError(err)
 											return
 										}
 									}
 									if len(sortedColumnKeys) != len(record) {
 										err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
-										pkgLogger.Error(err)
-										txn.Rollback()
-										loadFileErrorChan <- err
+										handleError(err)
 										return
 									}
 									var recordInterface []interface{}
@@ -531,15 +582,26 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 									_, err = stmt.Exec(recordInterface...)
 									if err != nil {
-										pkgLogger.Errorf("CH: Error in exec statement for loading in table:%s: %v", tableName, err)
-										txn.Rollback()
-										loadFileErrorChan <- err
+										err = fmt.Errorf("CH: Error in inserting statement for loading in table:%s: %v", tableName, err)
+										handleError(err)
 										return
 									}
 									csvRowsProcessedCount++
 								}
+
+								chStats.numRowsLoadFile.Count(csvRowsProcessedCount)
+
+								// Committing the transaction
+								if err = txn.Commit(); err != nil {
+									err = fmt.Errorf("CH: Error while committing transaction as there was error while loading in table:%s: %v", tableName, err)
+									handleError(err)
+									return
+								}
+
 								gzipReader.Close()
 								gzipFile.Close()
+
+								chStats.syncLoadFileTime.End()
 							}
 						}
 						wg.Done()
@@ -584,10 +646,6 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			pkgLogger.Errorf("received error while reading load files, cancelling the context: err %v", err)
 			return err
 		case <-waitCh:
-			if err = txn.Commit(); err != nil {
-				pkgLogger.Errorf("CH: Error while committing transaction as there was error while loading in table:%s: %v", tableName, err)
-				return
-			}
 			pkgLogger.Infof("CH: Complete load for table:%s", tableName)
 			return
 		}
@@ -744,6 +802,7 @@ func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader
+	ch.stats = stats.DefaultStats
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 
 	ch.Db, err = connect(ch.getConnectionCredentials(), true)
