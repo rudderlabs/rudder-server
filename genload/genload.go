@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/segmentio/ksuid"
+	"github.com/tidwall/sjson"
 )
 
 var (
@@ -78,14 +81,9 @@ func main() {
 func sendRequests(writeKey, dataplaneURL string) {
 	for {
 		go func() {
-			// cmd := &exec.Cmd{
-			// 	Path:   "../scripts/generate-event",
-			// 	Args:   []string{"../scripts/generate-event", writeKey, dataplaneURL},
-			// 	Stdout: os.Stdout,
-			// 	Stderr: os.Stdout,
-			// }
-			// cmd.Run()
 			client := &http.Client{}
+			userID := ksuid.New().String()
+			payload, _ = sjson.SetBytes(payload, fmt.Sprintf(`batch.%v.anonymousId`, 0), userID)
 			req, err := http.NewRequest("POST", dataplaneURL, bytes.NewBuffer(payload))
 			if err != nil {
 				pkgLogger.Errorf("error creating request: %s", err.Error())
@@ -95,7 +93,7 @@ func sendRequests(writeKey, dataplaneURL string) {
 			if err != nil {
 				pkgLogger.Info(err.Error())
 			}
-			// pkgLogger.Info(resp.Body)
+
 			latency := 1000 / int(reqPerSecond)
 			time.Sleep(time.Millisecond * time.Duration(latency))
 		}()
