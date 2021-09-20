@@ -575,9 +575,8 @@ func TestKafka(t *testing.T) {
 	// Count how many message processed
 	msgCount := 0
 	// Get signnal for finish
-	doneCh := make(chan struct{})
-	
-	go func() {for {
+	out:
+	for {
 		select {
 		case msg := <-consumer:
 			msgCount++
@@ -585,17 +584,15 @@ func TestKafka(t *testing.T) {
 			require.Equal(t, "identified user id", string(msg.Key))
 			require.Contains(t, string(msg.Value), "new-val")
 			require.Contains(t, string(msg.Value), "identified user id")
-			master.Close()
+			break out
 		case consumerError := <-errors:
 			msgCount++
 			fmt.Println("Received consumerError ", string(consumerError.Topic), string(consumerError.Partition), consumerError.Err)
-			doneCh <- struct{}{}
+			// Required
 		case <-time.After(time.Minute):
 			panic("timeout waiting on kafka message")
-	   }
-		
-	}}()
-	<-doneCh
+	   }	
+	}
 	fmt.Println("Processed", msgCount, "messages")
 
 }
