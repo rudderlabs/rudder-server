@@ -76,8 +76,8 @@ func main() {
 }
 
 func sendRequests(writeKey, dataplaneURL string) {
-	go func() {
-		for {
+	for {
+		go func() {
 			// cmd := &exec.Cmd{
 			// 	Path:   "../scripts/generate-event",
 			// 	Args:   []string{"../scripts/generate-event", writeKey, dataplaneURL},
@@ -98,8 +98,8 @@ func sendRequests(writeKey, dataplaneURL string) {
 			// pkgLogger.Info(resp.Body)
 			latency := 1000 / int(reqPerSecond)
 			time.Sleep(time.Millisecond * time.Duration(latency))
-		}
-	}()
+		}()
+	}
 }
 
 func basicAuth(username, password string) string {
