@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 
@@ -89,6 +90,7 @@ var (
 	ReadHeaderTimeout         time.Duration
 	WriteTimeout              time.Duration
 	IdleTimeout               time.Duration
+	gracefulShutdownTimeout   time.Duration
 	MaxHeaderBytes            int
 )
 
@@ -102,7 +104,9 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(0), &ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(10), &WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(720), &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(15), &gracefulShutdownTimeout, false, time.Second, []string{"GracefulShutdownTimeout", "GracefulShutdownTimeoutInSec"}...)
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
+
 }
 
 func Init() {
@@ -307,6 +311,28 @@ func Run(ctx context.Context) {
 		ctxDoneTime = time.Now()
 		return nil
 	})
+
+	go func() {
+		<-ctx.Done()
+		<-time.After(gracefulShutdownTimeout)
+		// Assume graceful shutdown failed, log remain goroutines and force kill
+		pkgLogger.Errorf(
+			"Graceful termination failed after %s, goroutine dump:\n",
+			gracefulShutdownTimeout,
+		)
+
+		fmt.Print("\n\n")
+		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+		fmt.Print("\n\n")
+
+		application.Stop()
+		if logger.Log != nil {
+			logger.Log.Sync()
+		}
+		stats.StopRuntimeStats()
+
+		os.Exit(1)
+	}()
 
 	err := g.Wait()
 	if err != nil && err != context.Canceled {
