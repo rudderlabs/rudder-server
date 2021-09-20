@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -35,15 +36,24 @@ type Authorizer interface {
 	RefreshToken(workspaceId string, accountId string, accessToken string) (statusCode int, resBody string)
 }
 
+type ControlPlaneRequestT struct {
+	Body        []byte
+	ContentType string
+	Url         string
+	Method      string
+}
+
 // This function creates a new OauthErrorResponseHandler
 func NewOAuthErrorHandler() *OAuthErrResHandler {
 	return &OAuthErrResHandler{}
 }
 
 var (
-	configBEURL string
-	pkgLogger   logger.LoggerI
-	loggerNm    string
+	configBEURL      string
+	pkgLogger        logger.LoggerI
+	loggerNm         string
+	workspaceToken   string
+	isMultiWorkspace bool
 )
 
 const (
@@ -90,6 +100,11 @@ func Init() {
 	configBEURL = backendconfig.GetConfigBackendURL()
 	pkgLogger = logger.NewLogger().Child("router").Child("OAuthResponseHandler")
 	loggerNm = "OAuthResponseHandler"
+	workspaceToken = config.GetWorkspaceToken()
+	isMultiWorkspace = config.GetEnvAsBool("HOSTED_SERVICE", false)
+	if isMultiWorkspace {
+		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+	}
 }
 
 func (authErrHandler *OAuthErrResHandler) Setup() {
@@ -117,12 +132,13 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 	if err != nil {
 		panic(err)
 	}
-	refreshResponse, refreshErr := authErrHandler.client.Post(refreshUrl, "application/json; charset=utf-8", bytes.NewBuffer(res))
-	if refreshErr != nil {
-		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, refreshErr)
-		return http.StatusBadRequest, refreshErr.Error()
+	refreshCpReq := &ControlPlaneRequestT{
+		Method:      http.MethodPost,
+		Url:         refreshUrl,
+		ContentType: "application/json; charset=utf-8",
+		Body:        []byte(res),
 	}
-	statusCode, response := processResponse(refreshResponse)
+	statusCode, response := authErrHandler.cpApiCall(refreshCpReq)
 	authErrHandler.oauthErrHandlerReqTimerStat.End()
 	authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
 	return statusCode, response
@@ -132,25 +148,14 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	authErrHandler.oauthErrHandlerReqTimerStat.Start()
 	destinationId := destination.ID
 	disableURL := fmt.Sprintf("%s/workspaces/%s/destinations/%s/disable", configBEURL, workspaceId, destinationId)
-	req, err := http.NewRequest(http.MethodDelete, disableURL, nil)
-	if err != nil {
-		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, err)
-		// Abort on receiving an error in request formation
-		return http.StatusBadRequest, err.Error()
+	disableCpReq := &ControlPlaneRequestT{
+		Url:    disableURL,
+		Method: http.MethodDelete,
 	}
-	authErrHandler.logger.Debugf("[%s request] :: Disable Request sent : %s", loggerNm)
-	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
-	res, doErr := authErrHandler.client.Do(req)
-	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
-	if doErr != nil {
-		// Abort on receiving an error
-		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, doErr)
-		return http.StatusBadRequest, err.Error()
-	}
-	statusCode, resp := processResponse(res)
+	statusCode, respBody = authErrHandler.cpApiCall(disableCpReq)
 	authErrHandler.oauthErrHandlerReqTimerStat.End()
 	authErrHandler.logger.Debugf("[%s request] :: Disable Response received : %s", loggerNm)
-	return statusCode, resp
+	return statusCode, respBody
 }
 
 func processResponse(resp *http.Response) (statusCode int, respBody string) {
@@ -173,4 +178,30 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	}
 
 	return resp.StatusCode, string(respData)
+}
+
+func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
+	var reqBody *bytes.Buffer
+	if cpReq.Body != nil {
+		reqBody = bytes.NewBuffer(cpReq.Body)
+	}
+	req, err := http.NewRequest(cpReq.Method, cpReq.Url, reqBody)
+	if err != nil {
+		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, err)
+		// Abort on receiving an error in request formation
+		return http.StatusBadRequest, err.Error()
+	}
+	req.SetBasicAuth(workspaceToken, "")
+	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
+	res, doErr := authErrHandler.client.Do(req)
+	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
+	authErrHandler.logger.Debugf("[%s request] :: Disable Request sent : %s", loggerNm)
+	if doErr != nil {
+		// Abort on receiving an error
+		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, doErr)
+		return http.StatusBadRequest, err.Error()
+	}
+	defer res.Body.Close()
+	statusCode, resp := processResponse(res)
+	return statusCode, resp
 }

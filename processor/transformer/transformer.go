@@ -51,6 +51,7 @@ type MetadataT struct {
 	SourceTaskRunID     string                            `json:"sourceTaskRunId"`
 	DestinationType     string                            `json:"destinationType"`
 	MessageID           string                            `json:"messageId"`
+	CpAuthToken         string                            `json:"cpAuthToken"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
 	MessageIDs []string `json:"messageIds"`
 	RudderID   string   `json:"rudderId"`

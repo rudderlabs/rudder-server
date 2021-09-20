@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
@@ -347,6 +348,7 @@ var (
 	pollInterval                        time.Duration
 	isUnLocked                          bool
 	GWCustomVal                         string
+	workspaceToken                      string
 )
 
 func loadConfig() {
@@ -373,6 +375,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, false, time.Second, []string{"Processor.pollInterval", "Processor.pollIntervalInS"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
 	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
+	workspaceToken = router_utils.BasicAuth(router_utils.GetWorkspaceToken(), "")
 }
 
 func (proc *HandleT) getTransformerFeatureJson() {
@@ -1309,6 +1312,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		transformAtFromFeaturesFile := gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String()
 
 		destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
+		for eventInd := range eventsToTransform {
+			eventToTransform := &eventsToTransform[eventInd]
+			authType := router_utils.GetAuthType(eventToTransform.Destination)
+			if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
+				eventToTransform.Metadata.CpAuthToken = workspaceToken
+			}
+		}
 		//If transformAt is none
 		// OR
 		//router and transformer supports router transform, then no destination transformation happens.

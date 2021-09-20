@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -92,4 +93,31 @@ func NestedMapLookup(m map[string]interface{}, ks ...string) (rval interface{}, 
 	} else { // 1+ more keys
 		return NestedMapLookup(m, ks[1:]...)
 	}
+}
+
+// Gets the workspace token data for a single workspace or multi workspace case
+func GetWorkspaceToken() (workspaceToken string) {
+	workspaceToken = config.GetWorkspaceToken()
+	isMultiWorkspace := config.GetEnvAsBool("HOSTED_SERVICE", false)
+	if isMultiWorkspace {
+		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+	}
+	return workspaceToken
+}
+
+func GetAuthType(dest backendconfig.DestinationT) (authType string) {
+	destConfig := dest.DestinationDefinition.Config
+	var lookupErr error
+	var authValue interface{}
+	if authValue, lookupErr = NestedMapLookup(destConfig, "auth", "type"); lookupErr != nil {
+		// pkgLogger.Infof(`OAuthsupport for %s not supported`, dest.DestinationDefinition.Name)
+		return ""
+	}
+	authType = authValue.(string)
+	return authType
+}
+
+func BasicAuth(username, password string) string {
+	auth := username + ":" + password
+	return base64.StdEncoding.EncodeToString([]byte(auth))
 }
