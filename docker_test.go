@@ -568,6 +568,11 @@ func TestKafka(t *testing.T) {
 	topics, _ := master.Topics()
 
 	consumer, errors := consume(topics, master)
+	defer func() {
+		if err := master.Close(); err != nil {
+			panic(err)
+		}
+	}()
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
