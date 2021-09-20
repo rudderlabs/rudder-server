@@ -1,0 +1,6 @@
+FROM golang:1.13-alpine
+ENV GO111MODULE=on
+RUN mkdir /app
+ADD . /app
+WORKDIR /app
+ENTRYPOINT ["go", "run", "genload.go"]

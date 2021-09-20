@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hosted-load-deployment
+  labels:
+    app: hosted-load
+spec:
+  replicas: 50
+  selector:
+    matchLabels:
+      app: hosted-load
+  template:
+    metadata:
+      labels:
+        app: hosted-load
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: release
+                    operator: In
+                    values:
+                      - chandu2-v0 #give your release name to avoid loadgen pods getting scheduled on the same node as rudderstack
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: hosted-load
+          image: rudderstack/wrkload:spl-hosted-load #simulates load on hosted deployment.
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SECRET
+              value: "<test_secret>"
+            - name: REQUESTS_PER_SECOND
+              value: "1"
+            - name: CONFIG_BACKEND_URL
+              value: "https://api-mt.dev.rudderlabs.com/hostedWorkspaceConfig\?fetchAll\=true"
+            - name: DATAPLANE_URL
+              value: "http://localhost:8080/v1/batch"
+            - name: LOAD_RUN_TIME
+              value: "600"
