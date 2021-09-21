@@ -572,8 +572,9 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 						} else {
 							//for proxying through transformer
 							pkgLogger.Infof(`transformerProxy status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
+							// Proxying through Transformer with or without OAuth
 							authType := router_utils.GetAuthType(destinationJob.Destination)
-							if worker.rt.transformerProxy && router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
+							if worker.rt.transformerProxy || (router_utils.IsNotEmptyString(authType) && authType == "OAuth") {
 								pkgLogger.Infof(`routing via transformer, proxy enabled`)
 								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(val, destinationJob, 0)
 							} else {
