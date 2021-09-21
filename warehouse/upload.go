@@ -1738,7 +1738,6 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 
 			err := errors.New(fmt.Sprintf("[WH]: Empty load file generated"))
 			panic(err)
-			return
 		}
 		metadata := json.RawMessage(fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength))
 		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
