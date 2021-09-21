@@ -448,7 +448,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		writeKeySourceMap = map[string]backendconfig.SourceT{}
 		destinationIDtoTypeMap = make(map[string]string)
-		destinationTransformationEnabledMap = make(map[string]bool)
 		sources := config.Data.(backendconfig.ConfigT)
 		for _, source := range sources.Sources {
 			writeKeySourceMap[source.WriteKey] = source
@@ -456,7 +455,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 				writeKeyDestinationMap[source.WriteKey] = source.Destinations
 				for _, destination := range source.Destinations {
 					destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
-					destinationTransformationEnabledMap[destination.ID] = len(destination.Transformations) > 0
 				}
 			}
 		}
@@ -1220,7 +1218,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		configSubscriberLock.RLock()
 		destType := destinationIDtoTypeMap[destID]
-		transformationEnabled := destinationTransformationEnabledMap[destID]
+		transformationEnabled := len(destination.Transformations) > 0
 		configSubscriberLock.RUnlock()
 
 		trackingPlanEnabled := trackingPlanEnabledMap[SourceIDT(sourceID)]
