@@ -1651,8 +1651,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 					continue
 				}
 
-				// Checking for empty load files. When there is a mismatch between the master and the slave
-				// Then the ContentLength comes as empty if there is a version mismatch
+				// When there is a mismatch between the master and the slave
+				// Then the ContentLength comes as empty, as it is not present in old builds.
 				for idx, _ := range output {
 					if output[idx].ContentLength == 0 {
 						stats.NewTaggedStat("warehouse.empty_load_file", stats.CountType, stats.Tags{}).Count(1)
