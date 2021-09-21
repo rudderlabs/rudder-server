@@ -5,7 +5,9 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -197,10 +199,17 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 						uploadErrorChan <- err
 						return
 					}
+					contentLength := loadFileStats.Size()
+					if contentLength == 0 {
+						stats.NewTaggedStat("warehouse.empty_load_file", stats.CountType, stats.Tags{}).Count(1)
+						err := errors.New(fmt.Sprintf("[WH]: Empty load file generated in slave"))
+						pkgLogger.Error(err)
+						panic(err)
+					}
 					loadFileOutputChan <- loadFileUploadOutputT{
 						TableName:     tableName,
 						Location:      uploadOutput.Location,
-						ContentLength: loadFileStats.Size(),
+						ContentLength: contentLength,
 						TotalRows:     jobRun.tableEventCountMap[tableName],
 						StagingFileID: stagingFileId,
 					}

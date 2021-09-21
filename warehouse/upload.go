@@ -3,6 +3,7 @@ package warehouse
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -1649,6 +1650,18 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 					pkgLogger.Errorf("[WH]: No LoadFiles returned by wh worker")
 					continue
 				}
+
+				// Checking for empty load files. When there is a mismatch between the master and the slave
+				// Then the ContentLength comes as empty if there is a version mismatch
+				for idx, _ := range output {
+					if output[idx].ContentLength == 0 {
+						stats.NewTaggedStat("warehouse.empty_load_file", stats.CountType, stats.Tags{}).Count(1)
+						err := errors.New(fmt.Sprintf("[WH]: Empty load file generated."))
+						pkgLogger.Error(err)
+						panic(err)
+					}
+				}
+
 				loadFiles = append(loadFiles, output...)
 				successfulStagingFileIDs = append(successfulStagingFileIDs, resp.JobID)
 			}
