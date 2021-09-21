@@ -203,7 +203,6 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 					if contentLength == 0 {
 						stats.NewTaggedStat("warehouse.empty_load_file", stats.CountType, stats.Tags{}).Count(1)
 						err := errors.New(fmt.Sprintf("[WH]: Empty load file generated in slave"))
-						pkgLogger.Error(err)
 						panic(err)
 					}
 					loadFileOutputChan <- loadFileUploadOutputT{

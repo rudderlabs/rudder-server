@@ -1650,18 +1650,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 					pkgLogger.Errorf("[WH]: No LoadFiles returned by wh worker")
 					continue
 				}
-
-				// When there is a mismatch between the master and the slave
-				// Then the ContentLength comes as empty, as it is not present in old builds.
-				for idx, _ := range output {
-					if output[idx].ContentLength == 0 {
-						stats.NewTaggedStat("warehouse.empty_load_file", stats.CountType, stats.Tags{}).Count(1)
-						err := errors.New(fmt.Sprintf("[WH]: Empty load file generated."))
-						pkgLogger.Error(err)
-						panic(err)
-					}
-				}
-
 				loadFiles = append(loadFiles, output...)
 				successfulStagingFileIDs = append(successfulStagingFileIDs, resp.JobID)
 			}
@@ -1742,6 +1730,16 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 	defer stmt.Close()
 
 	for _, loadFile := range loadFiles {
+		// When there is a mismatch between the master and the slave
+		// Then the ContentLength comes as empty, as it is not present in old builds.
+		if loadFile.ContentLength == 0 {
+			stats.NewTaggedStat("warehouse.empty_load_file", stats.CountType, stats.Tags{}).Count(1)
+			txn.Rollback()
+
+			err := errors.New(fmt.Sprintf("[WH]: Empty load file generated"))
+			panic(err)
+			return
+		}
 		metadata := json.RawMessage(fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength))
 		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {
