@@ -199,7 +199,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 					}
 					contentLength := loadFileStats.Size()
 					if contentLength == 0 {
-						panic(fmt.Errorf("[WH]: Empty load file generated in slave for tablename: %v", uploadJob.tableName))
+						panic(fmt.Errorf("[WH]: Empty load file generated in slave jobId: %v for tablename: %v", job.UploadID, uploadJob.tableName))
 					}
 					loadFileOutputChan <- loadFileUploadOutputT{
 						TableName:     tableName,
