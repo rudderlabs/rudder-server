@@ -191,6 +191,7 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		// Abort on receiving an error in request formation
 		return http.StatusBadRequest, err.Error()
 	}
+	// Authorisation setting
 	req.SetBasicAuth(workspaceToken, "")
 	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
 	res, doErr := authErrHandler.client.Do(req)
