@@ -12,6 +12,7 @@ phases:
       golang: 1.16
   pre_build:
     commands:
+      - goenv install --list
       - env
       - docker login --username rudderlabs --password $dockerhub_passwd
       - mkdir -p ~/.ssh
