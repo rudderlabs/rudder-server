@@ -422,9 +422,6 @@ func run(m *testing.M) int {
 	webhookurl = webhook.Server.URL
 	fmt.Println("webhookurl", webhookurl)
 
-
-	fmt.Println("Setup MINIO")
-
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
 		log.Panic(err)
