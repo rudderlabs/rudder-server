@@ -1,4 +1,4 @@
-FROM golang:1.13-alpine
+FROM golang:1.16.8-alpine
 ENV GO111MODULE=on
 RUN apk add git
 RUN go get github.com/onsi/ginkgo/ginkgo

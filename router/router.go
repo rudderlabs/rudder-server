@@ -798,9 +798,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 	}
 
-	status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
+	status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
 	if respBody != "" {
-		status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "response", respBody)
+		status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "response", respBody)
 	}
 
 	if isSuccessStatus(respStatusCode) {
@@ -827,7 +827,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		//2. if router job undergoes batching or dest transform.
 		if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
 			if worker.rt.savePayloadOnError {
-				status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "payload", string(payload))
+				status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "payload", string(payload))
 			}
 		}
 		// the job failed
@@ -1609,8 +1609,10 @@ func (rt *HandleT) readAndProcess() int {
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
 				Parameters:    []byte(`{}`),
-				ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
+				ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 			}
+			//Enhancing job parameter with the drain reason.
+			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
 			if _, ok := drainCountByDest[destID]; !ok {

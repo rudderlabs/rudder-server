@@ -1415,6 +1415,7 @@ func (worker *workerT) workerProcess() {
 
 			var statusList []*jobsdb.JobStatusT
 			var drainList []*jobsdb.JobStatusT
+			var drainJobList []*jobsdb.JobT
 			drainCountByDest := make(map[string]int)
 
 			jobsBySource := make(map[string][]*jobsdb.JobT)
@@ -1430,10 +1431,13 @@ func (worker *workerT) workerProcess() {
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
 						ErrorCode:     "",
-						ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
+						ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 						Parameters:    []byte(`{}`), // check
 					}
+					//Enhancing job parameter with the drain reason.
+					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
 					drainList = append(drainList, &status)
+					drainJobList = append(drainJobList, job)
 					if _, ok := drainCountByDest[batchDest.Destination.ID]; !ok {
 						drainCountByDest[batchDest.Destination.ID] = 0
 					}
@@ -1461,7 +1465,12 @@ func (worker *workerT) workerProcess() {
 
 			//Mark the drainList jobs as Aborted
 			if len(drainList) > 0 {
-				err := brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
+				err := brt.errorDB.Store(drainJobList)
+				if err != nil {
+					brt.logger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", brt.destType, err)
+					panic(err)
+				}
+				err = brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
 				if err != nil {
 					brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
 					panic(err)
