@@ -443,8 +443,6 @@ func run(m *testing.M) int {
 	}
 
 	minioEndpoint := fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
-	// or you could use the following, because we mapped the port 9000 to the port 9000 on the host
-	// endpoint := "localhost:9000"
 
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	// the minio client does not do service discovery for you (i.e. it does not check if connection can be established), so we have to use the health check
