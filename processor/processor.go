@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"reflect"
@@ -392,7 +392,7 @@ func (proc *HandleT) getTransformerFeatureJson() {
 				continue
 			}
 			if res.StatusCode == 200 {
-				body, err := ioutil.ReadAll(res.Body)
+				body, err := io.ReadAll(res.Body)
 				if err == nil {
 					proc.transformerFeatures = json.RawMessage(body)
 					res.Body.Close()

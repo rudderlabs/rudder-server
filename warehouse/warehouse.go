@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"runtime"
@@ -1093,7 +1093,7 @@ func CheckPGHealth(dbHandle *sql.DB) bool {
 func processHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.LogRequest(r)
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error reading body: %v", err)
 		http.Error(w, "can't read body", http.StatusBadRequest)
@@ -1150,7 +1150,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.LogRequest(r)
 
 	// read body
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error reading body: %v", err)
 		http.Error(w, "can't read body", http.StatusBadRequest)
@@ -1316,7 +1316,7 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.LogRequest(r)
 
 	// read body
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error reading body: %v", err)
 		http.Error(w, "can't read body", http.StatusBadRequest)

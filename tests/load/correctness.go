@@ -14,7 +14,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"math/rand"
 	"net/http"
@@ -237,7 +237,7 @@ func generateRandomData(payload *[]byte, path string, value interface{}) ([]byte
 }
 
 func generateEvents(userID string, eventDelay int) {
-	var fileData, err = ioutil.ReadFile("batchEvent.json")
+	var fileData, err = os.ReadFile("batchEvent.json")
 	if err != nil {
 		panic(err)
 	}
@@ -283,7 +283,7 @@ func sendToRudderGateway(jsonPayload []byte) bool {
 	}
 	defer resp.Body.Close()
 
-	ioutil.ReadAll(resp.Body)
+	io.ReadAll(resp.Body)
 	if resp.StatusCode == 200 {
 		atomic.AddUint64(&successCount, 1)
 		return true
@@ -403,7 +403,7 @@ func main() {
 				fmt.Println("Invalid Sink URL")
 			}
 			defer resp.Body.Close()
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			if string(body) == "no" {
 				break
 			}
