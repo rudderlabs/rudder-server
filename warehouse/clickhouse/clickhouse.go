@@ -495,10 +495,31 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	var txns []*sql.Tx
 	go func() {
 		for i := 0; i < numLoadFileReadWorkers; i++ {
 			go func(ctx context.Context) {
+				var txn *sql.Tx
+				var stmt *sql.Stmt
+				var err error
+				var isFirstTime = true
+
 				for readJob := range loadFileReadJobChan {
+					if isFirstTime {
+						txn, err = ch.Db.Begin()
+						if err != nil {
+							pkgLogger.Errorf("CH: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
+							return
+						}
+						sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
+						stmt, err = txn.Prepare(sqlStatement)
+						if err != nil {
+							pkgLogger.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: query:%s error:%v", tableName, sqlStatement, err)
+							return
+						}
+						isFirstTime = false
+						txns = append(txns, txn)
+					}
 					select {
 					case <-ctx.Done():
 						pkgLogger.Debugf("context is cancelled, stopped processing load file")
@@ -531,25 +552,6 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 									handleError(err)
 									return
 
-								}
-
-								// Creating transaction at the file level.
-								txn, err := ch.Db.Begin()
-								if err != nil {
-									err = fmt.Errorf("CH: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
-									handleError(err)
-									return
-								}
-
-								// Creating a prepared statement at the file level
-								sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
-								chStats.execRowTime.Start()
-								stmt, err := txn.Prepare(sqlStatement)
-								chStats.execRowTime.End()
-								if err != nil {
-									err = fmt.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: query:%s error:%v", tableName, sqlStatement, err)
-									handleError(err)
-									return
 								}
 
 								csvReader := csv.NewReader(gzipReader)
@@ -590,13 +592,6 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 								}
 
 								chStats.numRowsLoadFile.Count(csvRowsProcessedCount)
-
-								// Committing the transaction
-								if err = txn.Commit(); err != nil {
-									err = fmt.Errorf("CH: Error while committing transaction as there was error while loading in table:%s: %v", tableName, err)
-									handleError(err)
-									return
-								}
 
 								gzipReader.Close()
 								gzipFile.Close()
@@ -643,9 +638,18 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	for {
 		select {
 		case err := <-loadFileErrorChan:
+			for _, txn := range txns {
+				txn.Rollback()
+			}
 			pkgLogger.Errorf("received error while reading load files, cancelling the context: err %v", err)
 			return err
 		case <-waitCh:
+			for _, txn := range txns {
+				if err = txn.Commit(); err != nil {
+					pkgLogger.Errorf("CH: Error while committing transaction as there was error while loading in table:%s: %v", tableName, err)
+					return
+				}
+			}
 			pkgLogger.Infof("CH: Complete load for table:%s", tableName)
 			return
 		}
