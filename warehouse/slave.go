@@ -135,7 +135,7 @@ func (job *PayloadT) getDiscardsTable() string {
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 	job := jobRun.job
 	randomness := uuid.NewV4().String()
-	return tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, getLoadFileFormat(job.DestinationType))
+	return tableName + fmt.Sprintf(`.%d`, job.UploadID) + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, getLoadFileFormat(job.DestinationType))
 }
 
 func (job *PayloadT) getColumnName(columnName string) string {

@@ -25,6 +25,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 // Upload Status
@@ -390,6 +391,7 @@ func (job *UploadJobT) run() (err error) {
 
 		case GeneratedLoadFiles:
 			newStatus = nextUploadState.failed
+			// TODO: uncomment when we add functionality to skip generating new load files for already processed staging files
 			// // generate load files for all staging files(including succeeded) if hasSchemaChanged or if its snowflake(to have all load files in same folder in bucket) or set via toml/env
 			// generateAll := hasSchemaChanged || misc.ContainsString(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
 
@@ -1993,6 +1995,44 @@ func (job *UploadJobT) batchStagingFiles(stagingFiles []*StagingFileT) map[time.
 	}
 
 	return batchedStagingFilesMap
+}
+
+// this function resets the uploadJob
+// it sets the staging files status to waiting and then sets the upload status to waiting
+func (job *UploadJobT) resetUploadJob() error {
+	// set staging files status to waiting
+	err := job.setStagingFilesStatus(job.stagingFiles, warehouseutils.StagingFileWaitingState)
+	if err != nil {
+		return err
+	}
+
+	job.upload.FirstAttemptAt = time.Time{}
+	job.upload.LastAttemptAt = time.Time{}
+	job.upload.Attempts = 0
+	job.upload.StartLoadFileID = 0
+	job.upload.EndLoadFileID = 0
+	job.upload.Timings = []map[string]string{}
+	job.upload.UploadSchema = nil
+	job.upload.MergedSchema = nil
+	job.upload.Metadata, err = sjson.SetBytes(job.upload.Metadata, "batch_staging_files", true)
+	if err != nil {
+		return err
+	}
+
+	// set upload to waiting
+	err = job.setUploadStatus(UploadStatusOpts{
+		Status: "waiting",
+		AdditionalFields: []UploadColumnT{
+			{Column: UploadStartLoadFileIDField, Value: 0},
+			{Column: UploadEndLoadFileIDField, Value: 0},
+			{Column: UploadTimingsField, Value: nil},
+			{Column: UploadSchemaField, Value: "{}"},
+			{Column: MergedSchemaField, Value: "{}"},
+			{Column: UploadMetadataField, Value: job.upload.Metadata},
+		},
+		SkipTimingsField: true,
+	})
+	return err
 }
 
 func splitStagingFilesIntoBatches(stagingFiles []*StagingFileT) []StagingFileBatchT {

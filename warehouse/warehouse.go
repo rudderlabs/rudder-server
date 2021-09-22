@@ -37,7 +37,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 var (
@@ -792,34 +791,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		// if batchStagingFiles is not true, set the upload state to waiting
 		// this is to ensure backward compatibility
 		if !batchStagingFiles {
-			upload.FirstAttemptAt = time.Time{}
-			upload.LastAttemptAt = time.Time{}
-			upload.Attempts = 0
-			upload.StartLoadFileID = 0
-			upload.EndLoadFileID = 0
-			upload.Timings = []map[string]string{}
-			upload.UploadSchema = nil
-			upload.MergedSchema = nil
-			upload.Metadata, err = sjson.SetBytes(upload.Metadata, "batch_staging_files", true)
-			if err != nil {
-				return nil, err
-			}
-
-			err = uploadJob.setUploadStatus(UploadStatusOpts{
-				Status: "waiting",
-				AdditionalFields: []UploadColumnT{
-					{Column: UploadStartLoadFileIDField, Value: 0},
-					{Column: UploadEndLoadFileIDField, Value: 0},
-					{Column: UploadTimingsField, Value: nil},
-					{Column: UploadSchemaField, Value: "{}"},
-					{Column: MergedSchemaField, Value: "{}"},
-					{Column: UploadMetadataField, Value: upload.Metadata},
-				},
-				SkipTimingsField: true,
-			})
-			if err != nil {
-				return nil, err
-			}
+			uploadJob.resetUploadJob()
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)
