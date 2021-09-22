@@ -293,7 +293,6 @@ func run(m *testing.M) int {
 		})
 
 		pong, err := redisClient.Ping().Result()
-		fmt.Println(pong, err)
 		return err
 	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
