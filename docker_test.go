@@ -491,13 +491,6 @@ func run(m *testing.M) int {
 	}
 	fmt.Println("Successfully created Bucket")
 
-	// 
-	// now we can use the client, for example, to list the buckets
-	buckets, err = minioClient.ListBuckets()
-	if err != nil {
-		log.Fatalf("error while listing buckets: %v", err)
-	}
-	fmt.Printf("buckets: %+v", buckets)
 
 
 
