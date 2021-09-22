@@ -287,7 +287,7 @@ func run(m *testing.M) int {
 	redisAddress = fmt.Sprintf("localhost:%s", resourceRedis.GetPort("6379/tcp"))
 	if err := pool.Retry(func() error {
 		redisClient = redis.NewClient(&redis.Options{
-			Addr:     address,
+			Addr:     redisAddress,
 			Password: "",
 			DB:       0,
 		})
