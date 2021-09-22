@@ -507,6 +507,8 @@ func run(m *testing.M) int {
 			"workspaceId": workspaceID,
 			"postgresPort": resourcePostgres.GetPort("5432/tcp"),
 			"address": address,
+			"minioPort": minioPort,
+			"minioTopic": minioTopic,
 		},
 	)
 	defer func() {
