@@ -447,7 +447,7 @@ func run(m *testing.M) int {
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	// the minio client does not do service discovery for you (i.e. it does not check if connection can be established), so we have to use the health check
 	if err := pool.Retry(func() error {
-		url := fmt.Sprintf("http://%s/minio/health/live", endpoint)
+		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
 		resp, err := http.Get(url)
 		if err != nil {
 			return err
@@ -464,7 +464,7 @@ func run(m *testing.M) int {
 	// 	Secure: false,
 	// }
 	// now we can instantiate minio client
-	minioClient, err = minio.New(endpoint,"MYACCESSKEY","MYSECRETKEY" , false)
+	minioClient, err = minio.New(minioEndpoint,"MYACCESSKEY","MYSECRETKEY" , false)
 	if err != nil {
 		log.Println("Failed to create minio client:", err)
 		panic(err)
@@ -475,18 +475,13 @@ func run(m *testing.M) int {
 
 	// Create bucket for MINIO
     // Create a bucket at region 'us-east-1' with object locking enabled.
-	mybucket := "devintegrationtest"
-	err = minioClient.MakeBucket(mybucket, "us-east-1")
+	minioBucketName := "devintegrationtest"
+	err = minioClient.MakeBucket(minioBucketName, "us-east-1")
 	if err != nil {
 		fmt.Println(err)
 		panic(err)
 	}
 	fmt.Println("Successfully created Bucket")
-
-
-
-
-
 
 	writeKey = randString(27)
 	workspaceID = randString(27)
@@ -499,8 +494,8 @@ func run(m *testing.M) int {
 			"workspaceId": workspaceID,
 			"postgresPort": resourcePostgres.GetPort("5432/tcp"),
 			"address": address,
-			"minioPort": minioPort,
-			"minioTopic": minioTopic,
+			"minioEndpoint": minioEndpoint,
+			"minioBucketName": minioBucketName,
 		},
 	)
 	defer func() {
@@ -542,7 +537,7 @@ func run(m *testing.M) int {
 
 func TestWebhook(t *testing.T) {
 	//Testing postgres Client
-	CreateSCHEMAPostgres()
+	CreateSchemaPostgres()
 
 	//
 	var err error
@@ -629,6 +624,7 @@ func TestKafka(t *testing.T) {
 	// Count how many message processed
 	msgCount := 0
 	// Get signnal for finish
+	expectedCount:=1
 	out:
 	for {
 		select {

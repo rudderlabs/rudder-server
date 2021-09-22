@@ -103,11 +103,11 @@
                         "sslMode": "disable",
                         "namespace": "",
                         "bucketProvider": "MINIO",
-                        "bucketName": "devintegrationtest",
+                        "bucketName": "{{.minioBucketName}}",
                         "accessKeyID": "MYACCESSKEY",
                         "secretAccessKey": "MYSECRETKEY",
                         "useSSL": false,
-                        "endPoint": "localhost:9000",
+                        "endPoint": "{{.minioEndpoint}}",
                         "syncFrequency": "30",
                         "useRudderStorage": false
                     },
@@ -544,8 +544,8 @@
                 {
                     "config": {
                         "hostName": "localhost",
-                        "port": "{{.minioPort}}",
-                        "topic": "{{.minioTopic}}",",
+                        "port": "9092",
+                        "topic": "dev_integration_test",
                         "sslEnabled": false,
                         "caCertificate": "key",
                         "useSASL": false,
