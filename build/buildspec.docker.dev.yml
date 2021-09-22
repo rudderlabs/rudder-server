@@ -9,7 +9,7 @@ env:
 phases:
   install:
     runtime-versions:
-      golang: 1.16
+      golang: 1.13
   pre_build:
     commands:
       - goenv install --list
