@@ -545,7 +545,7 @@
                     "config": {
                         "hostName": "localhost",
                         "port": "9092",
-                        "topic": "dev_integration_test",
+                        "topic": "{{.minioTopic}}",",
                         "sslEnabled": false,
                         "caCertificate": "key",
                         "useSASL": false,
