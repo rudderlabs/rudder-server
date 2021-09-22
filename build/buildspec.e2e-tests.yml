@@ -8,7 +8,7 @@ env:
 phases:
   install:
     runtime-versions:
-      golang: 1.13
+      golang: 1.16.8
   pre_build:
     commands:
       - mkdir -p ~/.ssh
