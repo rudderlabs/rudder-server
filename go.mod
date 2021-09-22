@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.16
+go 1.13
 
 require (
 	cloud.google.com/go/bigquery v1.8.0
@@ -64,7 +64,7 @@ require (
 	github.com/segmentio/backo-go v0.0.0-20160424052352-204274ad699c // indirect
 	github.com/segmentio/ksuid v1.0.2
 	github.com/snowflakedb/gosnowflake v1.3.4
-	github.com/spaolacci/murmur3 v1.1.0
+	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/cast v1.3.1
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
@@ -81,7 +81,7 @@ require (
 	go.uber.org/zap v1.14.0
 	golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d // indirect
 	golang.org/x/oauth2 v0.0.0-20201208152858-08078c50e5b5
-	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
+	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a // indirect
 	golang.org/x/sys v0.0.0-20210809222454-d867a43fc93e // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 	google.golang.org/api v0.39.0
