@@ -10,6 +10,9 @@ phases:
   install:
     commands:
       - goenv install --list
+      - goenv install 1.16.6
+      - goenv local 1.16.6
+      - go version
   pre_build:
     commands:
       - env
