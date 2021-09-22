@@ -73,7 +73,7 @@ var (
 var uploadEnabledTransformations map[string]bool
 var configSubscriberLock sync.RWMutex
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("debugger").Child("transformation")
 }

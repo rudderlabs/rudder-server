@@ -12,7 +12,7 @@ import (
 
 type WarehouseAdmin struct{}
 
-func init() {
+func Init5() {
 	admin.RegisterAdminHandler("Warehouse", &WarehouseAdmin{})
 }
 

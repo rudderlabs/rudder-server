@@ -147,7 +147,7 @@ func NewLogger() *LoggerT {
 }
 
 // Setup sets up the logger initially
-func init() {
+func Init() {
 	loadConfig()
 	Log = configureLogger()
 	loggerLevelsCache = make(map[string]int)

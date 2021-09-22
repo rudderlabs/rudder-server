@@ -39,7 +39,7 @@ var (
 
 var pkgLogger logger.LoggerI
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("debugger").Child("destination")
 }

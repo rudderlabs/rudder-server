@@ -206,7 +206,7 @@ func (proc *HandleT) Print() {
 	}
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("processor")
 }
@@ -241,7 +241,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	proc.reporting = reporting
-	config.RegisterBoolConfigVariable(true, &proc.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -320,31 +320,30 @@ func (proc *HandleT) Start() {
 }
 
 var (
-	loopSleep                           time.Duration
-	maxLoopSleep                        time.Duration
-	fixedLoopSleep                      time.Duration
-	maxEventsToProcess                  int
-	avgEventsInRequest                  int
-	dbReadBatchSize                     int
-	transformBatchSize                  int
-	userTransformBatchSize              int
-	writeKeyDestinationMap              map[string][]backendconfig.DestinationT
-	writeKeySourceMap                   map[string]backendconfig.SourceT
-	destinationIDtoTypeMap              map[string]string
-	destinationTransformationEnabledMap map[string]bool
-	batchDestinations                   []string
-	configSubscriberLock                sync.RWMutex
-	customDestinations                  []string
-	pkgLogger                           logger.LoggerI
-	enableEventSchemasFeature           bool
-	enableEventSchemasAPIOnly           bool
-	enableDedup                         bool
-	transformTimesPQLength              int
-	captureEventNameStats               bool
-	transformerURL                      string
-	pollInterval                        time.Duration
-	isUnLocked                          bool
-	GWCustomVal                         string
+	loopSleep                 time.Duration
+	maxLoopSleep              time.Duration
+	fixedLoopSleep            time.Duration
+	maxEventsToProcess        int
+	avgEventsInRequest        int
+	dbReadBatchSize           int
+	transformBatchSize        int
+	userTransformBatchSize    int
+	writeKeyDestinationMap    map[string][]backendconfig.DestinationT
+	writeKeySourceMap         map[string]backendconfig.SourceT
+	destinationIDtoTypeMap    map[string]string
+	batchDestinations         []string
+	configSubscriberLock      sync.RWMutex
+	customDestinations        []string
+	pkgLogger                 logger.LoggerI
+	enableEventSchemasFeature bool
+	enableEventSchemasAPIOnly bool
+	enableDedup               bool
+	transformTimesPQLength    int
+	captureEventNameStats     bool
+	transformerURL            string
+	pollInterval              time.Duration
+	isUnLocked                bool
+	GWCustomVal               string
 )
 
 func loadConfig() {
@@ -443,7 +442,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		writeKeySourceMap = map[string]backendconfig.SourceT{}
 		destinationIDtoTypeMap = make(map[string]string)
-		destinationTransformationEnabledMap = make(map[string]bool)
 		sources := config.Data.(backendconfig.ConfigT)
 		for _, source := range sources.Sources {
 			writeKeySourceMap[source.WriteKey] = source
@@ -451,7 +449,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 				writeKeyDestinationMap[source.WriteKey] = source.Destinations
 				for _, destination := range source.Destinations {
 					destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
-					destinationTransformationEnabledMap[destination.ID] = len(destination.Transformations) > 0
 				}
 			}
 		}
@@ -1051,7 +1048,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 				source, sourceError := getSourceByWriteKey(writeKey)
 				if sourceError != nil {
-					proc.logger.Error("Source not found for writeKey : ", writeKey);
+					proc.logger.Error("Source not found for writeKey : ", writeKey)
 				} else {
 					// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
 					shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
@@ -1215,7 +1212,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		configSubscriberLock.RLock()
 		destType := destinationIDtoTypeMap[destID]
-		transformationEnabled := destinationTransformationEnabledMap[destID]
+		transformationEnabled := len(destination.Transformations) > 0
 		configSubscriberLock.RUnlock()
 
 		trackingPlanEnabled := trackingPlanEnabledMap[SourceIDT(sourceID)]
@@ -1475,7 +1472,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
 
-
 	for _, jobs := range procErrorJobsByDestID {
 		procErrorJobs = append(procErrorJobs, jobs...)
 	}
@@ -1664,7 +1660,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 func (proc *HandleT) mainLoop() {
 	//waiting for reporting client setup
-	if proc.reporting != nil {
+	if proc.reporting != nil && proc.reportingEnabled {
 		proc.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
 	}
 

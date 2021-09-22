@@ -6,35 +6,36 @@ package mock_types
 
 import (
 	sql "database/sql"
+	reflect "reflect"
+
 	gomock "github.com/golang/mock/gomock"
 	types "github.com/rudderlabs/rudder-server/utils/types"
-	reflect "reflect"
 )
 
-// MockSuppressUserI is a mock of SuppressUserI interface
+// MockSuppressUserI is a mock of SuppressUserI interface.
 type MockSuppressUserI struct {
 	ctrl     *gomock.Controller
 	recorder *MockSuppressUserIMockRecorder
 }
 
-// MockSuppressUserIMockRecorder is the mock recorder for MockSuppressUserI
+// MockSuppressUserIMockRecorder is the mock recorder for MockSuppressUserI.
 type MockSuppressUserIMockRecorder struct {
 	mock *MockSuppressUserI
 }
 
-// NewMockSuppressUserI creates a new mock instance
+// NewMockSuppressUserI creates a new mock instance.
 func NewMockSuppressUserI(ctrl *gomock.Controller) *MockSuppressUserI {
 	mock := &MockSuppressUserI{ctrl: ctrl}
 	mock.recorder = &MockSuppressUserIMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockSuppressUserI) EXPECT() *MockSuppressUserIMockRecorder {
 	return m.recorder
 }
 
-// IsSuppressedUser mocks base method
+// IsSuppressedUser mocks base method.
 func (m *MockSuppressUserI) IsSuppressedUser(arg0, arg1, arg2 string) bool {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "IsSuppressedUser", arg0, arg1, arg2)
@@ -42,66 +43,66 @@ func (m *MockSuppressUserI) IsSuppressedUser(arg0, arg1, arg2 string) bool {
 	return ret0
 }
 
-// IsSuppressedUser indicates an expected call of IsSuppressedUser
+// IsSuppressedUser indicates an expected call of IsSuppressedUser.
 func (mr *MockSuppressUserIMockRecorder) IsSuppressedUser(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSuppressedUser", reflect.TypeOf((*MockSuppressUserI)(nil).IsSuppressedUser), arg0, arg1, arg2)
 }
 
-// MockReportingI is a mock of ReportingI interface
+// MockReportingI is a mock of ReportingI interface.
 type MockReportingI struct {
 	ctrl     *gomock.Controller
 	recorder *MockReportingIMockRecorder
 }
 
-// MockReportingIMockRecorder is the mock recorder for MockReportingI
+// MockReportingIMockRecorder is the mock recorder for MockReportingI.
 type MockReportingIMockRecorder struct {
 	mock *MockReportingI
 }
 
-// NewMockReportingI creates a new mock instance
+// NewMockReportingI creates a new mock instance.
 func NewMockReportingI(ctrl *gomock.Controller) *MockReportingI {
 	mock := &MockReportingI{ctrl: ctrl}
 	mock.recorder = &MockReportingIMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockReportingI) EXPECT() *MockReportingIMockRecorder {
 	return m.recorder
 }
 
-// AddClient mocks base method
+// AddClient mocks base method.
 func (m *MockReportingI) AddClient(arg0 types.Config) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "AddClient", arg0)
 }
 
-// AddClient indicates an expected call of AddClient
+// AddClient indicates an expected call of AddClient.
 func (mr *MockReportingIMockRecorder) AddClient(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddClient", reflect.TypeOf((*MockReportingI)(nil).AddClient), arg0)
 }
 
-// Report mocks base method
+// Report mocks base method.
 func (m *MockReportingI) Report(arg0 []*types.PUReportedMetric, arg1 *sql.Tx) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Report", arg0, arg1)
 }
 
-// Report indicates an expected call of Report
+// Report indicates an expected call of Report.
 func (mr *MockReportingIMockRecorder) Report(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Report", reflect.TypeOf((*MockReportingI)(nil).Report), arg0, arg1)
 }
 
-// WaitForSetup mocks base method
+// WaitForSetup mocks base method.
 func (m *MockReportingI) WaitForSetup(arg0 string) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "WaitForSetup", arg0)
 }
 
-// WaitForSetup indicates an expected call of WaitForSetup
+// WaitForSetup indicates an expected call of WaitForSetup.
 func (mr *MockReportingIMockRecorder) WaitForSetup(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForSetup", reflect.TypeOf((*MockReportingI)(nil).WaitForSetup), arg0)
