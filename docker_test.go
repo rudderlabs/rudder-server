@@ -442,7 +442,7 @@ func run(m *testing.M) int {
 		log.Fatalf("Could not start resource: %s", err)
 	}
 
-	endpoint := fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
+	minioEndpoint := fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
 	// or you could use the following, because we mapped the port 9000 to the port 9000 on the host
 	// endpoint := "localhost:9000"
 
