@@ -192,7 +192,7 @@ func blockOnHold() {
 	<-c
 }
 
-func CreateSCHEMAPostgres() {
+func CreateSchemaPostgres() {
 	// TODO: Need to configure with workspace json
 	_, err := db.Exec("CREATE SCHEMA example")
 	if err != nil {
