@@ -544,7 +544,7 @@
                 {
                     "config": {
                         "hostName": "localhost",
-                        "port": "9092",
+                        "port": "{{.minioPort}}",
                         "topic": "{{.minioTopic}}",",
                         "sslEnabled": false,
                         "caCertificate": "key",
