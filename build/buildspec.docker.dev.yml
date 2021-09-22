@@ -10,7 +10,6 @@ phases:
   install:
     runtime-versions:
       golang: 1.16
-
   pre_build:
     commands:
       - env
