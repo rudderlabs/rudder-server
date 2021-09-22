@@ -473,12 +473,6 @@ func run(m *testing.M) int {
 	}
 	log.Printf("%#v\n", minioClient) // minioClient is now set up
 
-	// now we can use the client, for example, to list the buckets
-	buckets, err := minioClient.ListBuckets()
-	if err != nil {
-		log.Fatalf("error while listing buckets: %v", err)
-	}
-	fmt.Printf("buckets: %+v", buckets)
 
 
 	// Create bucket for MINIO
