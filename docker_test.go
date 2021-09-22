@@ -10,13 +10,13 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	b64 "encoding/base64"
 	_ "encoding/json"
+	"flag"
 	"fmt"
 	"html/template"
 	"io/ioutil"
 	"log"
-	b64 "encoding/base64"
-	"flag"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +34,7 @@ import (
 	"github.com/go-redis/redis"
 	redigo "github.com/gomodule/redigo/redis"
 	_ "github.com/lib/pq"
+	"github.com/minio/minio-go"
 	"github.com/ory/dockertest"
 	dc "github.com/ory/dockertest/docker"
 
@@ -154,24 +155,6 @@ func createWorkspaceConfig(templatePath string, values map[string]string) string
 	f.Close()
 
 	return f.Name()
-}
-
-func initializeWarehouseConfig(src string, des string) map[string][]warehouseutils.WarehouseT {
-	var warehouses = make(map[string][]warehouseutils.WarehouseT)
-	for _, source := range sourceJSON.Sources {
-		if source.Name == src {
-			if len(source.Destinations) > 0 {
-				for _, destination := range source.Destinations {
-					if destination.Name == des {
-						warehouses[destination.DestinationDefinition.Name] = append(warehouses[destination.DestinationDefinition.Name],
-							warehouseutils.WarehouseT{Source: source, Destination: destination})
-						return warehouses
-					}
-				}
-			}
-		}
-	}
-	return warehouses
 }
 
 func waitUntilReady(ctx context.Context, endpoint string, atMost, interval time.Duration) {
@@ -441,6 +424,86 @@ func run(m *testing.M) int {
 	webhookurl = webhook.Server.URL
 	fmt.Println("webhookurl", webhookurl)
 
+
+	// Setup MINIO
+	var minioClient *minio.Client
+
+	options := &dockertest.RunOptions{
+		Repository: "minio/minio",
+		Tag:        "latest",
+		Cmd:        []string{"server", "/data"},
+		PortBindings: map[dc.Port][]dc.PortBinding{
+			"9000/tcp": []dc.PortBinding{{HostPort: "9000"}},
+		},
+		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
+	}
+
+	resource, err := pool.RunWithOptions(options)
+	if err != nil {
+		log.Fatalf("Could not start resource: %s", err)
+	}
+
+	endpoint := fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
+	// or you could use the following, because we mapped the port 9000 to the port 9000 on the host
+	// endpoint := "localhost:9000"
+
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	// the minio client does not do service discovery for you (i.e. it does not check if connection can be established), so we have to use the health check
+	if err := pool.Retry(func() error {
+		url := fmt.Sprintf("http://%s/minio/health/live", endpoint)
+		resp, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("status code not OK")
+		}
+		return nil
+	}); err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+	// &minio.Options{
+	// 	Creds:  credentials.NewStaticV4("MYACCESSKEY", "MYSECRETKEY", ""),
+	// 	Secure: false,
+	// }
+	// now we can instantiate minio client
+	minioClient, err = minio.New(endpoint,"MYACCESSKEY","MYSECRETKEY" , false)
+	if err != nil {
+		log.Println("Failed to create minio client:", err)
+		panic(err)
+	}
+	log.Printf("%#v\n", minioClient) // minioClient is now set up
+
+	// now we can use the client, for example, to list the buckets
+	buckets, err := minioClient.ListBuckets()
+	if err != nil {
+		log.Fatalf("error while listing buckets: %v", err)
+	}
+	fmt.Printf("buckets: %+v", buckets)
+
+
+	// Create bucket for MINIO
+    // Create a bucket at region 'us-east-1' with object locking enabled.
+	mybucket := "devintegrationtest"
+	err = minioClient.MakeBucket(mybucket, "us-east-1")
+	if err != nil {
+		fmt.Println(err)
+		panic(err)
+	}
+	fmt.Println("Successfully created Bucket")
+
+	// 
+	// now we can use the client, for example, to list the buckets
+	buckets, err = minioClient.ListBuckets()
+	if err != nil {
+		log.Fatalf("error while listing buckets: %v", err)
+	}
+	fmt.Printf("buckets: %+v", buckets)
+
+
+
+
+
 	writeKey = randString(27)
 	workspaceID = randString(27)
 
@@ -531,7 +594,7 @@ func TestWebhook(t *testing.T) {
 func TestPostgres(t *testing.T) {
 	var myEvent Event
 	require.Eventually(t, func() bool {
-		eventSql:= "select anonymous_id, user_id from example.identifies limit 1"
+		eventSql:= "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
 		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
 		return myEvent.anonymous_id == "anon-id-new"
 	}, time.Minute, 10*time.Millisecond)
