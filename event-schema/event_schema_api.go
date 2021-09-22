@@ -8,6 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-server/gateway/response"
@@ -52,6 +56,233 @@ func (manager *EventSchemaManagerT) GetEventModels(w http.ResponseWriter, r *htt
 	}
 
 	w.Write(eventTypesJSON)
+}
+
+func (manager *EventSchemaManagerT) GetJsonSchemas(w http.ResponseWriter, r *http.Request) {
+	err := handleBasicAuth(r)
+	if err != nil {
+		http.Error(w, response.MakeResponse(err.Error()), 400)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, response.MakeResponse("Only HTTP GET method is supported"), 400)
+		return
+	}
+
+	writeKeys, ok := r.URL.Query()["WriteKey"]
+	writeKey := ""
+	if ok && writeKeys[0] != "" {
+		writeKey = writeKeys[0]
+	}
+
+	eventModels := manager.fetchEventModelsByWriteKey(writeKey)
+
+	// generating json schema from eventModels
+	jsonSchemas, err := generateJsonSchFromEM(eventModels)
+	if err != nil {
+		http.Error(w, response.MakeResponse("Internal Error: Failed to Marshal event types"), 500)
+		return
+	}
+
+	w.Write(jsonSchemas)
+}
+
+type JSPropertyTypeT struct {
+	Type []string `json:"type"`
+}
+
+type JSPropertyT struct {
+	Required []string               `json:"required"`
+	Property map[string]interface{} `json:"properties"`
+}
+
+type JsonSchemaT struct {
+	Schema            map[string]interface{} `json:"schema"`
+	SchemaType        string                 `json:"schemaType"`
+	SchemaTIdentifier string                 `json:"schemaIdentifier"`
+}
+
+// generateJsonSchFromEM Generates Json schemas from Event Models
+func generateJsonSchFromEM(eventModels []*EventModelT) ([]byte, error) {
+	var jsonSchemas []JsonSchemaT
+	for _, eventModel := range eventModels {
+		flattenedSch := make(map[string]interface{})
+		err := json.Unmarshal(eventModel.Schema, &flattenedSch)
+		if err != nil {
+			pkgLogger.Errorf("Error unmarshalling eventModelSch: %v for ID: %v", err, eventModel.ID)
+			continue
+		}
+		unFlattenedSch, err := unflatten(flattenedSch)
+		if err != nil {
+			pkgLogger.Errorf("Error unflattening flattenedSch: %v for ID: %v", err, eventModel.ID)
+			continue
+		}
+		schemaProperties, err := getETSchProp(eventModel.EventType, unFlattenedSch)
+		if err != nil {
+			pkgLogger.Errorf("Error while getting schema properties: %v for ID: %v", err, eventModel.ID)
+			continue
+		}
+		if len(schemaProperties) == 0 {
+			pkgLogger.Error("Error schema properties doesn't exists for ID: %v", eventModel.ID)
+			continue
+		}
+
+		meta := eventModel.WriteKey + ":" + eventModel.EventType
+		if eventModel.EventIdentifier != "" {
+			meta = meta + ":" + eventModel.EventIdentifier
+		}
+
+		jsonSchema := generateJsonSchFromSchProp(schemaProperties)
+		jsonSchema["additionalProperties"] = true
+		jsonSchema["$schema"] = "http://json-schema.org/draft-07/schema#"
+
+		// TODO: validate if the jsonSchema is correct.
+		jsonSchemas = append(jsonSchemas, JsonSchemaT{
+			Schema:            jsonSchema,
+			SchemaType:        eventModel.EventType,
+			SchemaTIdentifier: eventModel.EventIdentifier,
+		})
+	}
+	eventJsonSchs, err := json.Marshal(jsonSchemas)
+	if err != nil {
+		return nil, err
+	}
+	return eventJsonSchs, nil
+}
+
+// getETSchProp Get Event Type schema from Event Model Schema
+func getETSchProp(eventType string, eventModelSch map[string]interface{}) (map[string]interface{}, error) {
+	switch eventType {
+	case "track", "screen", "page":
+		{
+			filtered, ok := eventModelSch["properties"].(map[string]interface{})
+			if ok {
+				return filtered, nil
+			}
+			return nil, fmt.Errorf("invalid properties")
+		}
+	case "identify", "group":
+		{
+			filtered, ok := eventModelSch["traits"].(map[string]interface{})
+			if ok {
+				return filtered, nil
+			}
+			return nil, fmt.Errorf("invalid traits")
+		}
+	}
+	return nil, fmt.Errorf("invalid eventType")
+}
+
+// generateJsonSchFromSchProp Generated Json schema from unflattened schema properties.
+func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[string]interface{} {
+	jsProperties := JSPropertyT{
+		Property: make(map[string]interface{}),
+	}
+	required := make([]string, 0)
+	finalSchema := make(map[string]interface{})
+
+	for k, v := range schemaProperties {
+		required = append(required, k)
+		switch value := v.(type) {
+		case string:
+			jsProperties.Property[k] = getPropertyTypesFromSchValue(value)
+		case map[string]interface{}:
+			{
+				//check if map is an array or map
+				if checkIfArray(value) {
+					var vType interface{}
+					for _, v := range value {
+						vt, ok := v.(string)
+						if ok {
+							vType = getPropertyTypesFromSchValue(vt)
+						} else {
+							vType = generateJsonSchFromSchProp(v.(map[string]interface{}))
+						}
+						break
+					}
+					jsProperties.Property[k] = map[string]interface{}{
+						"type":  "array",
+						"items": vType,
+					}
+					break
+				}
+				jsProperties.Property[k] = generateJsonSchFromSchProp(value)
+			}
+		default:
+			pkgLogger.Errorf("unknown type found")
+		}
+	}
+	jsProperties.Required = required
+	finalSchema["properties"] = jsProperties.Property
+	finalSchema["required"] = required
+	finalSchema["type"] = "object"
+	return finalSchema
+}
+
+func getPropertyTypesFromSchValue(schVal string) *JSPropertyTypeT {
+	types := strings.Split(schVal, ",")
+	for i, v := range types {
+		types[i] = misc.GetJsonSchemaDTFromGoDT(v)
+	}
+	return &JSPropertyTypeT{
+		Type: types,
+	}
+}
+
+//prop.myarr.0
+//will not be able to say if above is prop{myarr:[0]} or prop{myarr{"0":0}}
+func checkIfArray(value map[string]interface{}) bool {
+	if len(value) == 0 {
+		return false
+	}
+
+	for k, _ := range value {
+		_, err := strconv.Atoi(k)
+		if err != nil {
+			return false
+		}
+		// need not check the array continuity
+		//keys= append(keys,index)
+	}
+	return true
+}
+
+//https://play.golang.org/p/4juOff38ea
+//or use https://pkg.go.dev/github.com/wolfeidau/unflatten
+//or use https://github.com/nqd/flat
+func unflatten(flat map[string]interface{}) (map[string]interface{}, error) {
+	unflat := map[string]interface{}{}
+
+	for key, value := range flat {
+		keyParts := strings.Split(key, ".")
+
+		// Walk the keys until we get to a leaf node.
+		m := unflat
+		for i, k := range keyParts[:len(keyParts)-1] {
+			v, exists := m[k]
+			if !exists {
+				newMap := map[string]interface{}{}
+				m[k] = newMap
+				m = newMap
+				continue
+			}
+
+			innerMap, ok := v.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("key=%v is not an object", strings.Join(keyParts[0:i+1], "."))
+			}
+			m = innerMap
+		}
+
+		leafKey := keyParts[len(keyParts)-1]
+		if _, exists := m[leafKey]; exists {
+			return nil, fmt.Errorf("key=%v already exists", key)
+		}
+		m[keyParts[len(keyParts)-1]] = value
+	}
+
+	return unflat, nil
 }
 
 func (manager *EventSchemaManagerT) GetEventVersions(w http.ResponseWriter, r *http.Request) {
