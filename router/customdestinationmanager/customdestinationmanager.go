@@ -52,7 +52,7 @@ type CustomDestination struct {
 	Client interface{}
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router").Child("customdestinationmanager")
 }

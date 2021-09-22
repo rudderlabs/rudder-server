@@ -9,6 +9,8 @@ import (
 	. "github.com/onsi/gomega"
 	uuid "github.com/satori/go.uuid"
 
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
@@ -18,6 +20,8 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
@@ -50,6 +54,18 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
+var sampleConfigPrefix = "config_prefix"
+var sampleFileObjects = []*filemanager.FileObject{
+	{
+		Key:          fmt.Sprintf("%s/%s/%s/%s/%s", sampleConfigPrefix, SourceIDEnabled, WriteKeyEnabled, "01-02-2006", "tmp1.log"),
+		LastModified: time.Now(),
+	},
+	{
+		Key:          fmt.Sprintf("%s/%s/%s/%s/%s", sampleConfigPrefix, SourceIDEnabled, WriteKeyEnabled, "2006-01-02", "tmp2.log"),
+		LastModified: time.Now(),
+	},
+}
+
 type context struct {
 	asyncHelper       testutils.AsyncTestHelper
 	jobQueryBatchSize int
@@ -60,6 +76,8 @@ type context struct {
 	mockBackendConfig      *mocksBackendConfig.MockBackendConfig
 	mockFileManagerFactory *mocksFileManager.MockFileManagerFactory
 	mockFileManager        *mocksFileManager.MockFileManager
+	mockConfigPrefix       string
+	mockFileObjects        []*filemanager.FileObject
 }
 
 // Initiaze mocks and common expectations
@@ -82,6 +100,8 @@ func (c *context) Setup() {
 		Return().Times(1)
 
 	c.jobQueryBatchSize = 100000
+	c.mockConfigPrefix = sampleConfigPrefix
+	c.mockFileObjects = sampleFileObjects
 }
 
 func (c *context) Finish() {
@@ -94,7 +114,18 @@ var (
 	emptyJournalEntries []jobsdb.JournalEntryT
 )
 
+func initBatchRouter() {
+	config.Load()
+	admin.Init()
+	logger.Init()
+	misc.Init()
+	Init()
+	Init2()
+}
+
 var _ = Describe("BatchRouter", func() {
+	initBatchRouter()
+
 	var c *context
 
 	BeforeEach(func() {
@@ -140,6 +171,8 @@ var _ = Describe("BatchRouter", func() {
 
 			c.mockFileManagerFactory.EXPECT().New(gomock.Any()).Times(1).Return(c.mockFileManager, nil)
 			c.mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any()).Return(filemanager.UploadOutput{Location: "local", ObjectName: "file"}, nil)
+			c.mockFileManager.EXPECT().GetConfiguredPrefix().Return(c.mockConfigPrefix)
+			c.mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any()).Return(c.mockFileObjects, nil)
 
 			s3Payload := `{
 				"userId": "identified user id",

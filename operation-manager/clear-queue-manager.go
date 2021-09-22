@@ -28,7 +28,7 @@ type ClearQueueRequestPayload struct {
 	JobRunID      string `json:"job_run_id"`
 }
 
-func init() {
+func Init() {
 	loadConfig()
 }
 

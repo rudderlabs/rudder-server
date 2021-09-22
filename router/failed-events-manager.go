@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/config"
 	"time"
 
 	"github.com/lib/pq"
@@ -37,11 +36,7 @@ type FailedEventsManagerT struct {
 	dbHandle *sql.DB
 }
 
-func init() {
-	config.RegisterDurationConfigVariable(time.Duration(48), &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
-	config.RegisterDurationConfigVariable(time.Duration(24), &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
-	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
-}
+
 
 func GetFailedEventsManager() FailedEventsManagerI {
 	if failedEventsManager == nil {

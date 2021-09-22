@@ -21,7 +21,7 @@ type BatchDestinationT struct {
 	Sources     []backendconfig.SourceT
 }
 
-func init() {
+func Init() {
 	loadConfig()
 }
 
@@ -47,14 +47,16 @@ func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destina
 
 	if toAbortDestinationIDs != "" {
 		abortIDs := strings.Split(toAbortDestinationIDs, ",")
-		return misc.ContainsString(abortIDs, destID), "destination configured to abort"
+		if misc.ContainsString(abortIDs, destID) {
+			return true, "destination configured to abort"
+		}
 	}
 
 	return false, ""
 }
 
 //rawMsg passed must be a valid JSON
-func EnhanceResponse(rawMsg []byte, key, val string) []byte {
+func EnhanceJSON(rawMsg []byte, key, val string) []byte {
 	resp, err := sjson.SetBytes(rawMsg, key, val)
 	if err != nil {
 		return []byte(`{}`)

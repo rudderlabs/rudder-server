@@ -13,10 +13,24 @@ import (
 	"github.com/tidwall/gjson"
 
 	. "github.com/onsi/gomega"
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
+func initReadonlyJobsDB() {
+	config.Load()
+	logger.Init()
+	admin.Init()
+	Init()
+	Init2()
+	Init3()
+}
+
 var _ = Describe("readonly_jobsdb", func() {
+	initReadonlyJobsDB()
+
 	var c *context
 
 	BeforeEach(func() {

@@ -51,12 +51,16 @@ var (
 	warehouseServiceMaxRetryTime       time.Duration
 	asyncDestinations                  []string
 	pkgLogger                          logger.LoggerI
-	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Diagnostics                        diagnostics.DiagnosticsI
 	QueryFilters                       jobsdb.QueryFiltersT
 	readPerDestination                 bool
 	disableEgress                      bool
 	toAbortDestinationIDs              string
 	transformerURL                     string
+	datePrefixOverride                 string
+	dateFormatLayouts                  map[string]string // string -> string
+	dateFormatMap                      map[string]string // (sourceId:destinationId) -> dateFormat
+	dateFormatMapLock                  sync.RWMutex
 )
 
 const DISABLED_EGRESS = "200: outgoing disabled"
@@ -597,13 +601,30 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 	}
 
 	brt.logger.Debugf("BRT: Starting upload to %s", provider)
-
-	var keyPrefixes []string
+	folderName := ""
 	if isWarehouse {
-		keyPrefixes = []string{config.GetEnv("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+		folderName = config.GetEnv("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs")
 	} else {
-		keyPrefixes = []string{config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+		folderName = config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs")
 	}
+
+	var datePrefixLayout string
+	if datePrefixOverride != "" {
+		datePrefixLayout = datePrefixOverride
+	} else {
+		dateFormat, _ := GetStorageDateFormat(uploader, batchJobs.BatchDestination, folderName)
+		datePrefixLayout = dateFormat
+	}
+
+	brt.logger.Debugf("BRT: Date prefix layout is %s", datePrefixLayout)
+	switch datePrefixLayout {
+	case "MM-DD-YYYY": //used to be earlier default
+		datePrefixLayout = time.Now().Format("01-02-2006")
+		break
+	default:
+		datePrefixLayout = time.Now().Format("2006-01-02")
+	}
+	keyPrefixes := []string{folderName, batchJobs.BatchDestination.Source.ID, datePrefixLayout}
 
 	_, fileName := filepath.Split(gzipFilePath)
 	var (
@@ -783,6 +804,74 @@ func (brt *HandleT) asyncStructCleanUp(destinationID string) {
 	brt.asyncDestinationStruct[destinationID].Count = 0
 	brt.asyncDestinationStruct[destinationID].CanUpload = false
 	brt.asyncDestinationStruct[destinationID].URL = ""
+}
+
+func GetFullPrefix(manager filemanager.FileManager, prefix string) (fullPrefix string) {
+	fullPrefix = prefix
+	configPrefix := manager.GetConfiguredPrefix()
+
+	if configPrefix != "" {
+		if configPrefix[len(configPrefix)-1:] == "/" {
+			fullPrefix = configPrefix + prefix
+		} else {
+			fullPrefix = configPrefix + "/" + prefix
+		}
+	}
+	return
+}
+
+func isDateFormatExists(connIdentifier string) bool {
+	dateFormatMapLock.RLock()
+	defer dateFormatMapLock.RUnlock()
+	return misc.Contains(dateFormatMap, connIdentifier)
+}
+
+func GetStorageDateFormat(manager filemanager.FileManager, destination *DestinationT, folderName string) (dateFormat string, err error) {
+	connIdentifier := connectionIdentifier(DestinationT{Destination: destination.Destination, Source: destination.Source})
+	if isDateFormatExists(connIdentifier) {
+		return dateFormatMap[connIdentifier], err
+	}
+
+	defer func() {
+		if err == nil {
+			dateFormatMapLock.RLock()
+			defer dateFormatMapLock.RUnlock()
+			dateFormatMap[connIdentifier] = dateFormat
+		}
+	}()
+
+	dateFormat = "YYYY-MM-DD"
+	prefixes := []string{folderName, destination.Source.ID}
+	prefix := strings.Join(prefixes[0:2], "/")
+	fullPrefix := GetFullPrefix(manager, prefix)
+	fileObjects, err := manager.ListFilesWithPrefix(fullPrefix, 5)
+	if err != nil {
+		pkgLogger.Errorf("[BRT]: Failed to fetch fileObjects with connIdentifier: %s, prefix: %s, Err: %v", connIdentifier, fullPrefix, err)
+		// Returning the earlier default as we might not able to fetch the list.
+		// because "*:GetObject" and "*:ListBucket" permissions are not available.
+		dateFormat = "MM-DD-YYYY"
+		return
+	}
+	if len(fileObjects) == 0 {
+		return
+	}
+
+	for idx, _ := range fileObjects {
+		key := fileObjects[idx].Key
+		replacedKey := strings.Replace(key, fullPrefix, "", 1)
+		splittedKeys := strings.Split(replacedKey, "/")
+		if len(splittedKeys) >= 1 {
+			date := splittedKeys[1]
+			for layout, format := range dateFormatLayouts {
+				_, err = time.Parse(layout, date)
+				if err == nil {
+					dateFormat = format
+					return
+				}
+			}
+		}
+	}
+	return
 }
 
 func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadOutput) (err error) {
@@ -1316,6 +1405,7 @@ func (worker *workerT) workerProcess() {
 
 			var statusList []*jobsdb.JobStatusT
 			var drainList []*jobsdb.JobStatusT
+			var drainJobList []*jobsdb.JobT
 			drainCountByDest := make(map[string]int)
 
 			jobsBySource := make(map[string][]*jobsdb.JobT)
@@ -1331,10 +1421,13 @@ func (worker *workerT) workerProcess() {
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
 						ErrorCode:     "",
-						ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
+						ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 						Parameters:    []byte(`{}`), // check
 					}
+					//Enhancing job parameter with the drain reason.
+					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
 					drainList = append(drainList, &status)
+					drainJobList = append(drainJobList, job)
 					if _, ok := drainCountByDest[batchDest.Destination.ID]; !ok {
 						drainCountByDest[batchDest.Destination.ID] = 0
 					}
@@ -1362,7 +1455,12 @@ func (worker *workerT) workerProcess() {
 
 			//Mark the drainList jobs as Aborted
 			if len(drainList) > 0 {
-				err := brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
+				err := brt.errorDB.Store(drainJobList)
+				if err != nil {
+					brt.logger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", brt.destType, err)
+					panic(err)
+				}
+				err = brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
 				if err != nil {
 					brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
 					panic(err)
@@ -1811,13 +1909,21 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	config.RegisterStringConfigVariable("", &datePrefixOverride, true, "BatchRouter.datePrefixOverride")
+	dateFormatLayouts = map[string]string{
+		"01-02-2006": "MM-DD-YYYY",
+		"2006-01-02": "YYYY-MM-DD",
+		//"02-01-2006" : "DD-MM-YYYY", //adding this might match with that of MM-DD-YYYY too
+	}
+	dateFormatMap = make(map[string]string)
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("batchrouter")
 
 	setQueryFilters()
+	Diagnostics = diagnostics.Diagnostics
 }
 
 func setQueryFilters() {
@@ -1835,7 +1941,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
 	brt.backendConfig = backendConfig
 	brt.reporting = reporting
-	config.RegisterBoolConfigVariable(true, &brt.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &brt.reportingEnabled, false, "Reporting.enabled")
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
@@ -1845,7 +1951,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.pollAsyncStatusResumeChannel = make(chan bool)
 
 	//waiting for reporting client setup
-	if brt.reporting != nil {
+	if brt.reporting != nil && brt.reportingEnabled {
 		brt.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
 	}
 

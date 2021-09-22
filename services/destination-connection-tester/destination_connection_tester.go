@@ -39,7 +39,7 @@ type DestinationConnectionTesterResponse struct {
 	TestedAt      time.Time `json:"testedAt"`
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("destination-connection-tester")
 }

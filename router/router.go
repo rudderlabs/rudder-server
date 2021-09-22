@@ -169,7 +169,7 @@ var (
 	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout            time.Duration
 	noOfJobsToBatchInAWorker                                      int
 	pkgLogger                                                     logger.LoggerI
-	Diagnostics                                                   diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Diagnostics                                                   diagnostics.DiagnosticsI
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
 	QueryFilters                                                  jobsdb.QueryFiltersT
@@ -220,6 +220,10 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Router.fixedLoopSleep", "Router.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(10, &failedEventsCacheSize, false, 1, "Router.failedEventsCacheSize")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
+	// sources failed keys config
+	config.RegisterDurationConfigVariable(time.Duration(48), &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
+	config.RegisterDurationConfigVariable(time.Duration(24), &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
+	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -778,9 +782,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 	}
 
-	status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
+	status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
 	if respBody != "" {
-		status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "response", respBody)
+		status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "response", respBody)
 	}
 
 	if isSuccessStatus(respStatusCode) {
@@ -807,7 +811,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		//2. if router job undergoes batching or dest transform.
 		if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
 			if worker.rt.savePayloadOnError {
-				status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "payload", string(payload))
+				status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "payload", string(payload))
 			}
 		}
 		// the job failed
@@ -1535,8 +1539,10 @@ func (rt *HandleT) readAndProcess() int {
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
 				Parameters:    []byte(`{}`),
-				ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
+				ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 			}
+			//Enhancing job parameter with the drain reason.
+			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
 			if _, ok := drainCountByDest[destID]; !ok {
@@ -1613,10 +1619,11 @@ func (rt *HandleT) crashRecover() {
 	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
 	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
+	Diagnostics = diagnostics.Diagnostics
 }
 
 //Setup initializes this module
@@ -1628,13 +1635,13 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.statusLoopPauseChannel = make(chan *PauseT)
 	rt.statusLoopResumeChannel = make(chan bool)
 	rt.reporting = reporting
-	config.RegisterBoolConfigVariable(true, &rt.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(utilTypes.DEFAULT_REPORTING_ENABLED, &rt.reportingEnabled, false, "Reporting.enabled")
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
 
 	//waiting for reporting client setup
-	if rt.reporting != nil {
+	if rt.reporting != nil && rt.reportingEnabled {
 		rt.reporting.WaitForSetup(utilTypes.CORE_REPORTING_CLIENT)
 	}
 
