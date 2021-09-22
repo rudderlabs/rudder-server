@@ -284,7 +284,7 @@ func run(m *testing.M) int {
 		}
 	}()
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	address = fmt.Sprintf("localhost:%s", resourceRedis.GetPort("6379/tcp"))
+	redisAddress = fmt.Sprintf("localhost:%s", resourceRedis.GetPort("6379/tcp"))
 	if err := pool.Retry(func() error {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr:     address,
