@@ -424,6 +424,17 @@ func run(m *testing.M) int {
 	fmt.Println("webhookurl", webhookurl)
 
 
+	fmt.Println("Setup MINIO")
+
+	minioPortInt, err := freeport.GetFreePort()
+	if err != nil {
+		log.Panic(err)
+	}
+	minioPort := fmt.Sprintf("%s/tcp", strconv.Itoa(minioPortInt))
+	fmt.Println(minioPort)
+	
+
+
 	// Setup MINIO
 	var minioClient *minio.Client
 
@@ -432,7 +443,7 @@ func run(m *testing.M) int {
 		Tag:        "latest",
 		Cmd:        []string{"server", "/data"},
 		PortBindings: map[dc.Port][]dc.PortBinding{
-			"9000/tcp": []dc.PortBinding{{HostPort: "9000"}},
+			"9000/tcp": []dc.PortBinding{{HostPort: strconv.Itoa(minioPortInt)}},
 		},
 		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
 	}
@@ -459,10 +470,6 @@ func run(m *testing.M) int {
 	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
-	// &minio.Options{
-	// 	Creds:  credentials.NewStaticV4("MYACCESSKEY", "MYSECRETKEY", ""),
-	// 	Secure: false,
-	// }
 	// now we can instantiate minio client
 	minioClient, err = minio.New(minioEndpoint,"MYACCESSKEY","MYSECRETKEY" , false)
 	if err != nil {
