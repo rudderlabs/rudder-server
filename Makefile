@@ -23,7 +23,7 @@ build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare s
 prepare-build: build-sql-migrations enterprise-prepare-build
 
 ./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations)
-	$(GO) run -mod=vendor -tags=dev generate-sql-migrations.go
+	$(GO) run -mod=vendor -tags=dev cmd/generate-migrations/generate-sql-migrations.go
 
 build: prepare-build ## Build rudder-server binary
 	$(eval BUILD_OPTIONS = )
