@@ -427,7 +427,7 @@ func run(m *testing.M) int {
 		log.Panic(err)
 	}
 	minioPort := fmt.Sprintf("%s/tcp", strconv.Itoa(minioPortInt))
-	fmt.Println(minioPort)
+	log.Println("minioPort:", minioPort)
 	
 
 
