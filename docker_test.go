@@ -646,7 +646,9 @@ func TestKafka(t *testing.T) {
 			require.Equal(t, "identified user id", string(msg.Key))
 			require.Contains(t, string(msg.Value), "new-val")
 			require.Contains(t, string(msg.Value), "identified user id")
-			break out
+			if msgCount == expectedCount {
+			     break out
+			}
 		case consumerError := <-errors:
 			msgCount++
 			fmt.Println("Received consumerError ", string(consumerError.Topic), string(consumerError.Partition), consumerError.Err)
