@@ -8,11 +8,10 @@ env:
 
 phases:
   install:
-    runtime-versions:
-      golang: 1.13
-  pre_build:
     commands:
       - goenv install --list
+  pre_build:
+    commands:
       - env
       - docker login --username rudderlabs --password $dockerhub_passwd
       - mkdir -p ~/.ssh
