@@ -1126,7 +1126,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					}
 					sd, ok := statusDetailsMap[key]
 					if !ok {
-						sd = types.CreateStatusDetail(jobsdb.Succeeded.State, 0, 200, "", []byte(`{}`), commonMetadataFromSingularEvent.EventName, commonMetadataFromSingularEvent.EventType)
+						sd = types.CreateStatusDetail(jobsdb.Succeeded.State, 0, 200, "", []byte(`{}`), "", "")
 						statusDetailsMap[key] = sd
 					}
 					sd.Count++
