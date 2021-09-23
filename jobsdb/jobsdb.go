@@ -599,7 +599,7 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 		db, err := sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
 
-		err = jd.dbHandle.Ping()
+		err = db.Ping()
 		jd.assertError(err)
 
 		jd.dbHandle = db
