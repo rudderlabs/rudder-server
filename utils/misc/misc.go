@@ -279,21 +279,21 @@ func UnZipSingleFile(outputfile string, filename string) {
 
 // RemoveFilePaths removes filePaths as well as cleans up the empty folder structure.
 func RemoveFilePaths(filePaths ...string) {
-	for _, filepath := range filePaths {
-		err := os.Remove(filepath)
+	for _, fp := range filePaths {
+		err := os.Remove(fp)
 		if err != nil {
 			pkgLogger.Error(err)
 		}
 	}
-	removeEmptyFolderStructure(filePaths...)
+	removeEmptyFolderStructure(filePaths[0])
 }
 
 // removeEmptyFolderStructure recursively cleans up everything till it reaches the stage where the folders are not empty or parent.
-func removeEmptyFolderStructure(filepaths ...string) {
-	if len(filepaths) == 0 {
+func removeEmptyFolderStructure(fp string) {
+	if fp == "" {
 		return
 	}
-	for currDir := filepath.Dir(filepaths[0]); currDir != "/" && currDir != "."; {
+	for currDir := filepath.Dir(fp); currDir != "/" && currDir != "."; {
 		parentDir := filepath.Dir(currDir)
 		err := syscall.Rmdir(currDir)
 		if err != nil {
