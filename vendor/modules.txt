@@ -465,6 +465,12 @@ github.com/segmentio/backo-go
 # github.com/segmentio/ksuid v1.0.2
 ## explicit
 github.com/segmentio/ksuid
+# github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
+## explicit
+github.com/shurcooL/httpfs/vfsutil
+# github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
+## explicit
+github.com/shurcooL/vfsgen
 # github.com/sirupsen/logrus v1.8.1
 github.com/sirupsen/logrus
 # github.com/snowflakedb/gosnowflake v1.3.4
@@ -598,7 +604,6 @@ golang.org/x/oauth2/internal
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
 # golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
-## explicit
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
 # golang.org/x/sys v0.0.0-20210809222454-d867a43fc93e
