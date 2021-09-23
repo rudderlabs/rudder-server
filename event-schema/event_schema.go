@@ -172,10 +172,10 @@ func loadConfig() {
 	adminUser = config.GetEnv("RUDDER_ADMIN_USER", "rudder")
 	adminPassword = config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
 	noOfWorkers = config.GetInt("EventSchemas.noOfWorkers", 128)
-	config.RegisterDurationConfigVariable(time.Duration(240), &flushInterval, true, time.Second, []string{"EventSchemas.syncInterval", "EventSchemas.syncIntervalInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(120), &flushInterval, true, time.Second, []string{"EventSchemas.syncInterval", "EventSchemas.syncIntervalInS"}...)
 
 	config.RegisterIntConfigVariable(5, &reservoirSampleSize, true, 1, "EventSchemas.sampleEventsSize")
-	config.RegisterIntConfigVariable(200, &eventModelLimit, true, 1, "EventSchemas.eventModelLimit")
+	config.RegisterIntConfigVariable(2, &eventModelLimit, true, 1, "EventSchemas.eventModelLimit")
 	config.RegisterIntConfigVariable(20, &schemaVersionPerEventModelLimit, true, 1, "EventSchemas.schemaVersionPerEventModelLimit")
 	config.RegisterBoolConfigVariable(false, &shouldCaptureNilAsUnknowns, true, "EventSchemas.captureUnknowns")
 	config.RegisterDurationConfigVariable(time.Duration(60), &offloadLoopInterval, true, time.Second, []string{"EventSchemas.offloadLoopInterval"}...)
