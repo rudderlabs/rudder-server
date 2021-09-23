@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -24,28 +24,33 @@ import (
 )
 
 const (
-	UserTransformerStage = "user_transformer"
-	DestTransformerStage = "dest_transformer"
+	UserTransformerStage        = "user_transformer"
+	DestTransformerStage        = "dest_transformer"
+	TrackingPlanValidationStage = "trackingPlan_validation"
 )
 const supportedTransformerAPIVersion = 1
 
 type MetadataT struct {
-	SourceID        string `json:"sourceId"`
-	WorkspaceID     string `json:"workspaceId"`
-	Namespace       string `json:"namespace"`
-	InstanceID      string `json:"instanceId"`
-	SourceType      string `json:"sourceType"`
-	SourceCategory  string `json:"sourceCategory"`
-	DestinationID   string `json:"destinationId"`
-	JobRunID        string `json: "jobRunId"`
-	JobID           int64  `json:"jobId"`
-	SourceBatchID   string `json:"sourceBatchId"`
-	SourceJobID     string `json:"sourceJobId"`
-	SourceJobRunID  string `json:"sourceJobRunId"`
-	SourceTaskID    string `json:"sourceTaskId"`
-	SourceTaskRunID string `json:"sourceTaskRunId"`
-	DestinationType string `json:"destinationType"`
-	MessageID       string `json:"messageId"`
+	SourceID            string                            `json:"sourceId"`
+	WorkspaceID         string                            `json:"workspaceId"`
+	Namespace           string                            `json:"namespace"`
+	InstanceID          string                            `json:"instanceId"`
+	SourceType          string                            `json:"sourceType"`
+	SourceCategory      string                            `json:"sourceCategory"`
+	TrackingPlanId      string                            `json:"trackingPlanId"`
+	TrackingPlanVersion int                               `json:"trackingPlanVersion"`
+	SourceTpConfig      map[string]map[string]interface{} `json:"sourceTpConfig"`
+	MergedTpConfig      map[string]interface{}            `json:"mergedTpConfig"`
+	DestinationID       string                            `json:"destinationId"`
+	JobRunID            string                            `json:"jobRunId"`
+	JobID               int64                             `json:"jobId"`
+	SourceBatchID       string                            `json:"sourceBatchId"`
+	SourceJobID         string                            `json:"sourceJobId"`
+	SourceJobRunID      string                            `json:"sourceJobRunId"`
+	SourceTaskID        string                            `json:"sourceTaskId"`
+	SourceTaskRunID     string                            `json:"sourceTaskRunId"`
+	DestinationType     string                            `json:"destinationType"`
+	MessageID           string                            `json:"messageId"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
 	MessageIDs              []string `json:"messageIds"`
 	RudderID                string   `json:"rudderId"`
@@ -94,6 +99,7 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
+	Validate(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 }
 
 //NewTransformer creates a new transformer
@@ -107,6 +113,11 @@ var (
 	pkgLogger                                 logger.LoggerI
 )
 
+func Init() {
+	loadConfig()
+	pkgLogger = logger.NewLogger().Child("processor").Child("transformer")
+}
+
 func loadConfig() {
 	config.RegisterIntConfigVariable(2048, &maxChanSize, false, 1, "Processor.maxChanSize")
 	config.RegisterIntConfigVariable(8, &numTransformWorker, false, 1, "Processor.numTransformWorker")
@@ -114,17 +125,19 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
 }
 
-func init() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("processor").Child("transformer")
-}
-
 type TransformerResponseT struct {
 	// Not marking this Singular Event, since this not a RudderEvent
-	Output     map[string]interface{} `json:"output"`
-	Metadata   MetadataT              `json:"metadata"`
-	StatusCode int                    `json:"statusCode"`
-	Error      string                 `json:"error"`
+	Output           map[string]interface{} `json:"output"`
+	Metadata         MetadataT              `json:"metadata"`
+	StatusCode       int                    `json:"statusCode"`
+	Error            string                 `json:"error"`
+	ValidationErrors []ValidationErrorT     `json:"validationErrors"`
+}
+
+type ValidationErrorT struct {
+	Type    string            `json:"type"`
+	Message string            `json:"message"`
+	Meta    map[string]string `json:"meta"`
 }
 
 func (trans *HandleT) transformWorker() {
@@ -152,7 +165,7 @@ func (trans *HandleT) transformWorker() {
 			if err == nil {
 				//If no err returned by client.Post, reading body.
 				//If reading body fails, retrying.
-				respData, err = ioutil.ReadAll(resp.Body)
+				respData, err = io.ReadAll(resp.Body)
 			}
 
 			if err != nil {
@@ -263,7 +276,7 @@ func GetVersion() (transformerBuildVersion string) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			pkgLogger.Errorf("Unable to read response into bytes with error : %s", err.Error())
 			transformerBuildVersion = "Unable to read response from transformer."
@@ -392,4 +405,9 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 		Events:       outClientEvents,
 		FailedEvents: failedEvents,
 	}
+}
+
+func (trans *HandleT) Validate(clientEvents []TransformerEventT,
+	url string, batchSize int) ResponseT {
+	return trans.Transform(clientEvents, url, batchSize)
 }

@@ -8,7 +8,7 @@ type BatchRouterAdmin struct {
 
 var adminInstance *BatchRouterAdmin
 
-func init() {
+func Init2() {
 	adminInstance = &BatchRouterAdmin{
 		handles: make(map[string]*HandleT),
 	}

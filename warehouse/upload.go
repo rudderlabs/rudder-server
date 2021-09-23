@@ -1166,7 +1166,7 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 			return err
 		}
 
-		if application.Features().Reporting != nil {
+		if application.Features().Reporting != nil && config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
 			application.Features().Reporting.GetReportingInstance().Report([]*types.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
 		}
 		err = txn.Commit()
@@ -1398,7 +1398,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 			},
 		})
 	}
-	if application.Features().Reporting != nil {
+	if application.Features().Reporting != nil && config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
 		application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn)
 	}
 	err = txn.Commit()
@@ -1729,6 +1729,13 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 	defer stmt.Close()
 
 	for _, loadFile := range loadFiles {
+		// TODO: @chetty remove this when all the slaves have been upgraded to the version till it contains ContentLength
+		// When there is a mismatch between the master and the slave
+		// Then the ContentLength comes as empty, as it is not present in old builds.
+		if loadFile.ContentLength == 0 {
+			txn.Rollback()
+			panic(fmt.Errorf("[WH]: Empty load file generated in slave for tablename: %v", loadFile.TableName))
+		}
 		metadata := json.RawMessage(fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength))
 		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {

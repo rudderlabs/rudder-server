@@ -62,6 +62,7 @@ const (
 
 const (
 	UsersTable      = "users"
+	UsersView       = "users_view"
 	IdentifiesTable = "identifies"
 )
 
@@ -107,15 +108,18 @@ const (
 
 var pkgLogger logger.LoggerI
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("utils")
+
 }
 
 func loadConfig() {
 	IdentityEnabledWarehouses = []string{"SNOWFLAKE", "BQ"}
 	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
+	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
+
 }
 
 type WarehouseT struct {

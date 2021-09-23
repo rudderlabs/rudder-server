@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -90,7 +90,7 @@ var (
 	allowReqsWithoutUserIDAndAnonymousID                                      bool
 	gwAllowPartialWriteWithErrors                                             bool
 	pkgLogger                                                                 logger.LoggerI
-	Diagnostics                                                               diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Diagnostics                                                               diagnostics.DiagnosticsI
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -103,9 +103,10 @@ var BatchEvent = []byte(`
 	}
 `)
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("gateway")
+	Diagnostics = diagnostics.Diagnostics
 }
 
 type userWorkerBatchRequestT struct {
@@ -609,7 +610,7 @@ func (gateway *HandleT) eventSchemaWebHandler(wrappedFunc func(http.ResponseWrit
 
 func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 	if r.Body != nil {
-		payload, err := ioutil.ReadAll(r.Body)
+		payload, err := io.ReadAll(r.Body)
 		r.Body.Close()
 		return payload, err
 	}
@@ -867,7 +868,7 @@ func (gateway *HandleT) getWarehousePending(payload []byte) bool {
 	defer resp.Body.Close()
 
 	var whPendingResponse warehouseutils.PendingEventsResponseT
-	respData, err := ioutil.ReadAll(resp.Body)
+	respData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return false
 	}
@@ -1107,7 +1108,7 @@ func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType st
 		}
 	}
 	// add body to request
-	r.Body = ioutil.NopCloser(bytes.NewReader(body))
+	r.Body = io.NopCloser(bytes.NewReader(body))
 	return nil
 }
 

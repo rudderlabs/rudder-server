@@ -50,7 +50,7 @@ var (
 	warehouseServiceMaxRetryTime       time.Duration
 	asyncDestinations                  []string
 	pkgLogger                          logger.LoggerI
-	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Diagnostics                        diagnostics.DiagnosticsI
 	QueryFilters                       jobsdb.QueryFiltersT
 	readPerDestination                 bool
 	disableEgress                      bool
@@ -1400,6 +1400,7 @@ func (worker *workerT) workerProcess() {
 
 			var statusList []*jobsdb.JobStatusT
 			var drainList []*jobsdb.JobStatusT
+			var drainJobList []*jobsdb.JobT
 			drainCountByDest := make(map[string]int)
 
 			jobsBySource := make(map[string][]*jobsdb.JobT)
@@ -1415,10 +1416,13 @@ func (worker *workerT) workerProcess() {
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
 						ErrorCode:     "",
-						ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
+						ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 						Parameters:    []byte(`{}`), // check
 					}
+					//Enhancing job parameter with the drain reason.
+					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
 					drainList = append(drainList, &status)
+					drainJobList = append(drainJobList, job)
 					if _, ok := drainCountByDest[batchDest.Destination.ID]; !ok {
 						drainCountByDest[batchDest.Destination.ID] = 0
 					}
@@ -1446,7 +1450,12 @@ func (worker *workerT) workerProcess() {
 
 			//Mark the drainList jobs as Aborted
 			if len(drainList) > 0 {
-				err := brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
+				err := brt.errorDB.Store(drainJobList)
+				if err != nil {
+					brt.logger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", brt.destType, err)
+					panic(err)
+				}
+				err = brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
 				if err != nil {
 					brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
 					panic(err)
@@ -1904,11 +1913,12 @@ func loadConfig() {
 	dateFormatMap = make(map[string]string)
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("batchrouter")
 
 	setQueryFilters()
+	Diagnostics = diagnostics.Diagnostics
 }
 
 func setQueryFilters() {
@@ -1926,7 +1936,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
 	brt.backendConfig = backendConfig
 	brt.reporting = reporting
-	config.RegisterBoolConfigVariable(true, &brt.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &brt.reportingEnabled, false, "Reporting.enabled")
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
@@ -1936,7 +1946,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.pollAsyncStatusResumeChannel = make(chan bool)
 
 	//waiting for reporting client setup
-	if brt.reporting != nil {
+	if brt.reporting != nil && brt.reportingEnabled {
 		brt.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
 	}
 

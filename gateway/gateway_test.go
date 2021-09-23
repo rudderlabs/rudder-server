@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -20,7 +19,9 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
+	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -31,6 +32,7 @@ import (
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
@@ -164,7 +166,17 @@ var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 	)
 })
 
+func initGW() {
+	config.Load()
+	admin.Init()
+	logger.Init()
+	misc.Init()
+	Init()
+}
+
 var _ = Describe("Gateway Enterprise", func() {
+	initGW()
+
 	var c *context
 
 	BeforeEach(func() {
@@ -220,6 +232,8 @@ var _ = Describe("Gateway Enterprise", func() {
 })
 
 var _ = Describe("Gateway", func() {
+	initGW()
+
 	var c *context
 
 	BeforeEach(func() {
@@ -554,7 +568,7 @@ func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, response
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 
-		bodyBytes, _ := ioutil.ReadAll(rr.Body)
+		bodyBytes, _ := io.ReadAll(rr.Body)
 		body := string(bodyBytes)
 
 		Expect(rr.Result().StatusCode).To(Equal(responseStatus))

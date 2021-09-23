@@ -3,7 +3,7 @@ package alert
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -11,10 +11,6 @@ import (
 
 var pagerDutyEndPoint = "https://events.pagerduty.com/v2/enqueue"
 var pkgLogger logger.LoggerI
-
-func init() {
-	pkgLogger = logger.NewLogger().Child("alert")
-}
 
 func (ops *PagerDuty) Alert(message string) {
 
@@ -43,7 +39,7 @@ func (ops *PagerDuty) Alert(message string) {
 		pkgLogger.Errorf("Alert: Got error response %d", resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	if err != nil {
 		pkgLogger.Errorf("Alert: Failed to read response body: %s", err.Error())

@@ -9,6 +9,8 @@ import (
 	. "github.com/onsi/gomega"
 	uuid "github.com/satori/go.uuid"
 
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
@@ -18,6 +20,8 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
@@ -73,7 +77,7 @@ type context struct {
 	mockFileManagerFactory *mocksFileManager.MockFileManagerFactory
 	mockFileManager        *mocksFileManager.MockFileManager
 	mockConfigPrefix       string
-	mockFileObjects 	   []*filemanager.FileObject
+	mockFileObjects        []*filemanager.FileObject
 }
 
 // Initiaze mocks and common expectations
@@ -110,7 +114,18 @@ var (
 	emptyJournalEntries []jobsdb.JournalEntryT
 )
 
+func initBatchRouter() {
+	config.Load()
+	admin.Init()
+	logger.Init()
+	misc.Init()
+	Init()
+	Init2()
+}
+
 var _ = Describe("BatchRouter", func() {
+	initBatchRouter()
+
 	var c *context
 
 	BeforeEach(func() {

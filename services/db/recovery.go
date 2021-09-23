@@ -3,7 +3,6 @@ package db
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sort"
 	"time"
@@ -46,13 +45,13 @@ type RecoveryDataT struct {
 
 var pkgLogger logger.LoggerI
 
-func init() {
+func Init() {
 	config.RegisterStringConfigVariable("/tmp/recovery_data.json", &storagePath, false, "recovery.storagePath")
 	pkgLogger = logger.NewLogger().Child("db").Child("recovery")
 }
 
 func getRecoveryData() RecoveryDataT {
-	data, err := ioutil.ReadFile(storagePath)
+	data, err := os.ReadFile(storagePath)
 	if os.IsNotExist(err) {
 		defaultRecoveryJSON := "{\"mode\":\"" + normalMode + "\"}"
 		data = []byte(defaultRecoveryJSON)
@@ -78,7 +77,7 @@ func saveRecoveryData(recoveryData RecoveryDataT) {
 	if err != nil {
 		panic(err)
 	}
-	err = ioutil.WriteFile(storagePath, recoveryDataJSON, 0644)
+	err = os.WriteFile(storagePath, recoveryDataJSON, 0644)
 	if err != nil {
 		panic(err)
 	}

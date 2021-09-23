@@ -2,7 +2,7 @@ package router
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"github.com/golang/mock/gomock"
@@ -31,6 +31,8 @@ var _ = Describe("Network", func() {
 	var c *networkContext
 
 	BeforeEach(func() {
+		initRouter()
+
 		c = &networkContext{}
 		c.Setup()
 	})
@@ -76,7 +78,7 @@ var _ = Describe("Network", func() {
 				"full_name": "mock-repo"
    			}]`
 			//New reader with that JSON
-			r := ioutil.NopCloser(bytes.NewReader([]byte(jsonResponse)))
+			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
 			c.mockHTTPClient.EXPECT().Do(gomock.Any()).Times(1).Do(func(req *http.Request) {
 				//asserting http request
