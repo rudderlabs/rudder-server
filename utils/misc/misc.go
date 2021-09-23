@@ -284,12 +284,12 @@ func RemoveFilePaths(filePaths ...string) {
 		if err != nil {
 			pkgLogger.Error(err)
 		}
+		RemoveEmptyFolderStructureForFilePath(fp)
 	}
-	removeEmptyFolderStructure(filePaths[0])
 }
 
-// removeEmptyFolderStructure recursively cleans up everything till it reaches the stage where the folders are not empty or parent.
-func removeEmptyFolderStructure(fp string) {
+// RemoveEmptyFolderStructureForFilePath recursively cleans up everything till it reaches the stage where the folders are not empty or parent.
+func RemoveEmptyFolderStructureForFilePath(fp string) {
 	if fp == "" {
 		return
 	}
