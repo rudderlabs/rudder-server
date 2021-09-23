@@ -184,7 +184,6 @@ func startHealthWebHandler(ctx context.Context) error {
 	})
 	g.Go(func() error {
 		return srv.ListenAndServe()
-		//      pkgLogger.Fatal()
 	})
 
 	return g.Wait()

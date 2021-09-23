@@ -151,7 +151,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}
 
 	return g.Wait()
-	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
 func (embedded *EmbeddedApp) HandleRecovery(options *app.Options) {

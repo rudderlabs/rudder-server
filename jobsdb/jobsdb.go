@@ -325,7 +325,6 @@ type HandleT struct {
 	maxReaders                    int
 	maxWriters                    int
 	queryFilterKeys               QueryFiltersT
-	backgroundCtx                 context.Context
 	backgroundCancel              context.CancelFunc
 	backgroundGroup               *errgroup.Group
 
@@ -610,7 +609,6 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
-	jd.backgroundCtx = ctx
 	jd.backgroundCancel = cancel
 	jd.backgroundGroup = g
 
@@ -655,10 +653,6 @@ func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, r
 	config.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, enableWriterQueueKeys...)
 	enableReaderQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableReaderQueue", "JobsDB." + "enableReaderQueue"}
 	config.RegisterBoolConfigVariable(true, &jd.enableReaderQueue, true, enableReaderQueueKeys...)
-	// jd.storeChannel = make(chan writeJob)
-	// jd.storeWithRetryChannel = make(chan writeJob)
-	// jd.updateJobStatusChannel = make(chan writeJob)
-	// jd.deleteExecutingChannel = make(chan writeJob)
 	jd.writeChannel = make(chan writeJob)
 	jd.readChannel = make(chan readJob)
 
@@ -3173,11 +3167,6 @@ func (jd *HandleT) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
 	defer totalWriteTime.End()
 
 	if jd.enableWriterQueue {
-		if jd.backgroundCtx.Err() != nil {
-			// TODO return error
-			panic("called after teardown")
-		}
-
 		waitTimeStat := jd.storeTimerStat("store_retry_each_wait_time")
 		waitTimeStat.Start()
 		respCh := make(chan map[uuid.UUID]string)

@@ -150,8 +150,7 @@ func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB, procErrorD
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
-	// dstToWhRouter := make(map[string]*warehouse.HandleT)
-
+// 
 	cleanup := make([]func(), 0)
 
 loop:
@@ -173,7 +172,6 @@ loop:
 							var brt batchrouter.HandleT
 							brt.Setup(backendconfig.DefaultBackendConfig, batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
 							brt.Start()
-							// TODO cleanup = append(cleanup, router.Shutdown)
 							cleanup = append(cleanup, brt.Shutdown)
 							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
 						}

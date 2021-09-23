@@ -1118,7 +1118,6 @@ func WithBugsnag(fn func() error) func() error {
 					}})
 
 				RecordAppError(fmt.Errorf("%v", r))
-				// FIXME: logger.Fatal(r)
 				panic(r)
 			}
 		}()

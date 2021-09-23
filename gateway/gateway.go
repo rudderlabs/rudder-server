@@ -255,7 +255,6 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 		case userWorkerBatchRequest, hasMore := <-gateway.userWorkerBatchRequestQ:
 			if !hasMore {
 				breq := batchUserWorkerBatchRequestT{batchUserWorkerBatchRequest: userWorkerBatchRequestBuffer}
-				// TODO Should we count here: gateway.????.Count(1) ?
 				gateway.batchUserWorkerBatchRequestQ <- &breq
 				close(gateway.batchUserWorkerBatchRequestQ)
 				return
@@ -266,7 +265,7 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 				breq := batchUserWorkerBatchRequestT{batchUserWorkerBatchRequest: userWorkerBatchRequestBuffer}
 				gateway.dbWorkersBufferFullStat.Count(1)
 				gateway.batchUserWorkerBatchRequestQ <- &breq
-				userWorkerBatchRequestBuffer = nil
+				userWorkerBatchRequestBuffer = make([]*userWorkerBatchRequestT, 0)
 			}
 		case <-timeout:
 			timeout = time.After(dbBatchWriteTimeout)
@@ -274,7 +273,7 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 				breq := batchUserWorkerBatchRequestT{batchUserWorkerBatchRequest: userWorkerBatchRequestBuffer}
 				gateway.dbWorkersTimeOutStat.Count(1)
 				gateway.batchUserWorkerBatchRequestQ <- &breq
-				userWorkerBatchRequestBuffer = nil
+				userWorkerBatchRequestBuffer = make([]*userWorkerBatchRequestT, 0)
 			}
 		}
 	}
