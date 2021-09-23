@@ -291,14 +291,11 @@ func (jobRun *JobRunT) cleanup() {
 	}
 
 	if jobRun.stagingFilePath != "" {
-		err := os.Remove(jobRun.stagingFilePath)
-		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to remove staging file: %v", err)
-		}
+		misc.RemoveFilePaths(jobRun.stagingFilePath)
 	}
 	if jobRun.outputFileWritersMap != nil {
 		for _, writer := range jobRun.outputFileWritersMap {
-			os.Remove(writer.GetLoadFile().Name())
+			misc.RemoveFilePaths(writer.GetLoadFile().Name())
 		}
 	}
 }

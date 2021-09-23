@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/iancoleman/strcase"
@@ -63,7 +62,7 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 		args.uploadID,
 		timeutil.Now().Unix(),
 	)
-	defer os.Remove(path)
+	defer misc.RemoveFilePaths(path)
 
 	fManager, err := filemanager.New(&filemanager.SettingsT{
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
