@@ -323,8 +323,6 @@ func run(m *testing.M) int {
 	localhostPort = fmt.Sprintf("%s/tcp", strconv.Itoa(localhostPortInt))
 	log.Println("localhost Port:", localhostPort)
 
-	// KAFKA_ADVERTISED_LISTENERS:=fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://broker:%s,PLAINTEXT_HOST://localhost:%s", 
-	//  strconv.Itoa(brokerPortInt), strconv.Itoa(localhostPortInt))
 	KAFKA_ADVERTISED_LISTENERS:=fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%s",  strconv.Itoa(localhostPortInt))
 	KAFKA_LISTENERS := "KAFKA_LISTENERS=INTERNAL://broker:9090,EXTERNAL://:9092"
 
