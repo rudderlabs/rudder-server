@@ -40,3 +40,9 @@ spec:
               value: "http://localhost:8080/v1/batch"
             - name: LOAD_RUN_TIME
               value: "600"
+            - name: POLYNOMIAL
+              value: "4"
+            - name: ACTIVE_SOURCES
+              value: "525"
+            - name: COEFFICIENTS
+              value: "0.000000000193437906,-0.0000000496995428,-0.0000474367128,0.0360322937,0.289425464"

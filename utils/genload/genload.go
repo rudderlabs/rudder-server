@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/segmentio/ksuid"
@@ -16,9 +18,12 @@ import (
 )
 
 var (
-	writeKeys    []string
-	reqPerSecond int64
-	loadTime     int64
+	writeKeys     []string
+	reqPerSecond  int64
+	loadTime      int64
+	poly          int64
+	coefficients  []float64
+	activeSources int64
 )
 
 type ConfigT struct {
@@ -107,11 +112,20 @@ func main() {
 	configBEURL := os.Getenv("CONFIG_BACKEND_URL")
 	dataplaneURL := os.Getenv("DATAPLANE_URL")
 	loadTime, _ = strconv.ParseInt(os.Getenv("LOAD_RUN_TIME"), 10, 0)
+	activeSources, _ = strconv.ParseInt(os.Getenv("ACTIVE_SOURCES"), 10, 0)
+	poly, _ = strconv.ParseInt(os.Getenv("POLYNOMIAL"), 10, 0)
+	coeffsList := strings.Split(os.Getenv("COEFFICIENTS"), ",")
+	coefficients = make([]float64, 0)
+	for c := range coeffsList {
+		coeff, _ := strconv.ParseFloat(coeffsList[c], 64)
+		coefficients = append(coefficients, coeff)
+	}
+	fmt.Println(coefficients)
 
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", configBEURL, nil)
 	if err != nil {
-		fmt.Println("Got error %s\n", err.Error())
+		fmt.Printf("Got error %s\n", err.Error())
 	}
 
 	//getting workspaces
@@ -140,16 +154,17 @@ func main() {
 	}
 	fmt.Println("Got all the write keys")
 
-	for _, wk := range writeKeys {
-		go func(wk string) {
-			sendRequests(wk, dataplaneURL)
-		}(wk)
+	for j := 0; j < int(activeSources); j++ {
+		requestGap := time.Duration(getRequestGap(j))
+		go func(wk string, j int, deltaT time.Duration) {
+			sendRequests(wk, dataplaneURL, j, deltaT)
+		}(writeKeys[j], j, requestGap)
 	}
 	fmt.Println("started goroutines to send requests from all the sources")
 	time.Sleep(time.Duration(loadTime) * time.Second)
 }
 
-func sendRequests(writeKey, dataplaneURL string) {
+func sendRequests(writeKey, dataplaneURL string, j int, deltaT time.Duration) {
 	for {
 		client := &http.Client{}
 		userID := ksuid.New().String()
@@ -157,7 +172,7 @@ func sendRequests(writeKey, dataplaneURL string) {
 		// payload, _ = sjson.SetBytes(payload, fmt.Sprintf(`batch.%v.anonymousId`, 0), userID) //change another fields - few more
 		req, err := http.NewRequest("POST", dataplaneURL, bytes.NewBuffer(payload))
 		if err != nil {
-			fmt.Println("error creating request: %s", err.Error())
+			fmt.Printf("error creating request: %s\n", err.Error())
 		}
 		req.Header.Add("Authorization", "Basic "+basicAuth(writeKey, ""))
 		_, err = client.Do(req)
@@ -165,14 +180,22 @@ func sendRequests(writeKey, dataplaneURL string) {
 			fmt.Println(err.Error())
 		}
 
-		latency := 1000 / int(reqPerSecond)
-		time.Sleep(time.Millisecond * time.Duration(latency))
+		time.Sleep(deltaT)
 	}
 }
 
 func basicAuth(username, password string) string {
 	auth := username + ":" + password
 	return base64.StdEncoding.EncodeToString([]byte(auth))
+}
+
+func getRequestGap(j int) float64 {
+	var rps float64
+	for i := 0; i <= int(poly); i++ {
+		rps += coefficients[int(poly)-i] * math.Pow(float64(j), float64(i))
+	}
+
+	return 604800000000000 / math.Pow(math.E, rps)
 }
 
 var data = `{
