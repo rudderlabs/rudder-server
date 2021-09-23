@@ -131,7 +131,7 @@ Warehouse:
   warehouseSyncPreFetchCount: 10
   warehouseSyncFreqIgnore: false
   stagingFilesBatchSize: 960
-  enableIDResolution: false
+  enableIDResolution: true
   populateHistoricIdentities: false
   redshift:
     maxParallelLoads: 3
