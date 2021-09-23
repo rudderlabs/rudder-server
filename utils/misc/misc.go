@@ -276,12 +276,30 @@ func UnZipSingleFile(outputfile string, filename string) {
 	rc.Close()
 }
 
+// RemoveFilePaths removes filePaths as well as cleans up the empty folder structure.
 func RemoveFilePaths(filepaths ...string) {
 	for _, filepath := range filepaths {
 		err := os.Remove(filepath)
 		if err != nil {
 			pkgLogger.Error(err)
 		}
+	}
+	removeEmptyFolderStructure(filepaths...)
+}
+
+// RemoveEmptyFolderStructure recursively cleans up everything till it reaches the stage where the folders are not empty or parent.
+func removeEmptyFolderStructure(paths ...string) {
+	if len(paths) == 0 {
+		return
+	}
+	currDir := filepath.Dir(paths[0])
+	for currDir != "/" && currDir != "." {
+		parentDir := filepath.Dir(currDir)
+		err := os.Remove(currDir)
+		if err != nil {
+			break
+		}
+		currDir = parentDir
 	}
 }
 
