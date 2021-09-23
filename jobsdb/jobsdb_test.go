@@ -13,11 +13,16 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	uuid "github.com/satori/go.uuid"
 )
 
 var _ = Describe("Calculate newDSIdx for internal migrations", func() {
+	initJobsDB()
+
 	var _ = DescribeTable("newDSIdx tests",
 		func(before, after, expected string) {
 			computedIdx, err := computeInsertIdx(before, after)
@@ -65,6 +70,8 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 })
 
 var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
+	initJobsDB()
+
 	var _ = DescribeTable("newDSIdx tests",
 		func(dList []dataSetT, after dataSetT, expected string) {
 			computedIdx, err := computeIdxForClusterMigration("table_prefix", dList, after)
@@ -205,7 +212,17 @@ func (c *context) Finish() {
 	c.db.Close()
 }
 
+func initJobsDB() {
+	config.Load()
+	logger.Init()
+	admin.Init()
+	Init()
+	Init2()
+	Init3()
+}
+
 var _ = Describe("jobsdb", func() {
+	initJobsDB()
 
 	var c *context
 

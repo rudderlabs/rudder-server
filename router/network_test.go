@@ -31,6 +31,8 @@ var _ = Describe("Network", func() {
 	var c *networkContext
 
 	BeforeEach(func() {
+		initRouter()
+
 		c = &networkContext{}
 		c.Setup()
 	})

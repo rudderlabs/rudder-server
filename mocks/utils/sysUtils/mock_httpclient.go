@@ -5,35 +5,36 @@
 package mock_sysUtils
 
 import (
-	gomock "github.com/golang/mock/gomock"
 	http "net/http"
 	reflect "reflect"
+
+	gomock "github.com/golang/mock/gomock"
 )
 
-// MockHTTPClientI is a mock of HTTPClientI interface
+// MockHTTPClientI is a mock of HTTPClientI interface.
 type MockHTTPClientI struct {
 	ctrl     *gomock.Controller
 	recorder *MockHTTPClientIMockRecorder
 }
 
-// MockHTTPClientIMockRecorder is the mock recorder for MockHTTPClientI
+// MockHTTPClientIMockRecorder is the mock recorder for MockHTTPClientI.
 type MockHTTPClientIMockRecorder struct {
 	mock *MockHTTPClientI
 }
 
-// NewMockHTTPClientI creates a new mock instance
+// NewMockHTTPClientI creates a new mock instance.
 func NewMockHTTPClientI(ctrl *gomock.Controller) *MockHTTPClientI {
 	mock := &MockHTTPClientI{ctrl: ctrl}
 	mock.recorder = &MockHTTPClientIMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockHTTPClientI) EXPECT() *MockHTTPClientIMockRecorder {
 	return m.recorder
 }
 
-// Do mocks base method
+// Do mocks base method.
 func (m *MockHTTPClientI) Do(arg0 *http.Request) (*http.Response, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Do", arg0)
@@ -42,7 +43,7 @@ func (m *MockHTTPClientI) Do(arg0 *http.Request) (*http.Response, error) {
 	return ret0, ret1
 }
 
-// Do indicates an expected call of Do
+// Do indicates an expected call of Do.
 func (mr *MockHTTPClientIMockRecorder) Do(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Do", reflect.TypeOf((*MockHTTPClientI)(nil).Do), arg0)
