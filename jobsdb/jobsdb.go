@@ -328,6 +328,10 @@ type HandleT struct {
 	backgroundCtx                 context.Context
 	backgroundCancel              context.CancelFunc
 	backgroundGroup               *errgroup.Group
+
+	// skipSetupDBSetup is useful for testing as we mock the database client
+	// TODO: Remove this flag once we have test setup that uses real database
+	skipSetupDBSetup bool
 }
 
 type QueryFiltersT struct {
@@ -588,13 +592,18 @@ in the retention time
 func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
 	jd.initGlobalDBHandle()
 
-	var err error
-	psqlInfo := GetConnectionString()
-	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
-	jd.assertError(err)
+	// Initialize dbHandle if not already set
+	if jd.dbHandle == nil {
+		var err error
+		psqlInfo := GetConnectionString()
+		db, err := sql.Open("postgres", psqlInfo)
+		jd.assertError(err)
 
-	err = jd.dbHandle.Ping()
-	jd.assertError(err)
+		err = jd.dbHandle.Ping()
+		jd.assertError(err)
+
+		jd.dbHandle = db
+	}
 
 	jd.workersAndAuxSetup(ownerType, tablePrefix, retentionPeriod, migrationMode, registerStatusHandler, queryFilterKeys)
 
@@ -613,7 +622,10 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 		jd.initDBReaders(ctx)
 		return nil
 	})
-	jd.setUpForOwnerType(ctx, ownerType, clearAll)
+
+	if !jd.skipSetupDBSetup {
+		jd.setUpForOwnerType(ctx, ownerType, clearAll)
+	}
 }
 
 func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
