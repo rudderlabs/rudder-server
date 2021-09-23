@@ -172,10 +172,10 @@ func loadConfig() {
 	adminUser = config.GetEnv("RUDDER_ADMIN_USER", "rudder")
 	adminPassword = config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
 	noOfWorkers = config.GetInt("EventSchemas.noOfWorkers", 128)
-	config.RegisterDurationConfigVariable(time.Duration(120), &flushInterval, true, time.Second, []string{"EventSchemas.syncInterval", "EventSchemas.syncIntervalInS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(240), &flushInterval, true, time.Second, []string{"EventSchemas.syncInterval", "EventSchemas.syncIntervalInS"}...)
 
 	config.RegisterIntConfigVariable(5, &reservoirSampleSize, true, 1, "EventSchemas.sampleEventsSize")
-	config.RegisterIntConfigVariable(2, &eventModelLimit, true, 1, "EventSchemas.eventModelLimit")
+	config.RegisterIntConfigVariable(200, &eventModelLimit, true, 1, "EventSchemas.eventModelLimit")
 	config.RegisterIntConfigVariable(20, &schemaVersionPerEventModelLimit, true, 1, "EventSchemas.schemaVersionPerEventModelLimit")
 	config.RegisterBoolConfigVariable(false, &shouldCaptureNilAsUnknowns, true, "EventSchemas.captureUnknowns")
 	config.RegisterDurationConfigVariable(time.Duration(60), &offloadLoopInterval, true, time.Second, []string{"EventSchemas.offloadLoopInterval"}...)
@@ -351,7 +351,23 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			if totalEventModels >= eventModelLimit {
 				archiveOldestLastSeenModel()
 			}
-			manager.reloadModel(archivedModel)
+			err := manager.reloadModel(archivedModel)
+			if err != nil {
+				eventModelID := uuid.NewV4().String()
+				eventModel = &EventModelT{
+					UUID:            eventModelID,
+					WriteKey:        writeKey,
+					EventType:       eventType,
+					EventIdentifier: eventIdentifier,
+					Schema:          []byte("{}"),
+				}
+				eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, 0, 0)
+
+				if totalEventModels >= eventModelLimit {
+					archiveOldestLastSeenModel()
+				}
+				manager.updateEventModelCache(eventModel, true)
+			}
 			eventModel, ok = manager.eventModelMap[WriteKey(writeKey)][EventType(eventType)][EventIdentifier(eventIdentifier)]
 			if !ok {
 				pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, archivedModel.UUID, writeKey, eventType, eventIdentifier)
@@ -435,7 +451,16 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			if totalSchemaVersions >= schemaVersionPerEventModelLimit {
 				archiveOldestLastSeenVersion()
 			}
-			manager.reloadSchemaVersion(archivedVersion)
+			err := manager.reloadSchemaVersion(archivedVersion)
+			if err != nil {
+				versionID := uuid.NewV4().String()
+				schemaVersion = manager.NewSchemaVersion(versionID, schema, schemaHash, eventModel.UUID)
+				eventModel.mergeSchema(schemaVersion)
+
+				if totalSchemaVersions >= schemaVersionPerEventModelLimit {
+					archiveOldestLastSeenVersion()
+				}
+			}
 			schemaVersion, ok = manager.schemaVersionMap[eventModel.UUID][schemaHash]
 			if !ok {
 				pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, archivedVersion.UUID, writeKey, eventType, eventIdentifier)
@@ -746,19 +771,27 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 	}
 }
 
-func (manager *EventSchemaManagerT) reloadModel(offloadedModel *OffloadedModelT) {
+func (manager *EventSchemaManagerT) reloadModel(offloadedModel *OffloadedModelT) error {
 	pkgLogger.Infof("reloading event model from db: %s\n", offloadedModel.UUID)
-	manager.populateEventModels(offloadedModel.UUID)
+	err := manager.populateEventModels(offloadedModel.UUID)
+	if err != nil {
+		return err
+	}
 	manager.populateSchemaVersionsMinimal(offloadedModel.UUID)
 	delete(offloadedEventModels[offloadedModel.WriteKey], eventTypeIdentifier(offloadedModel.EventType, offloadedModel.EventIdentifier))
 	delete(archivedEventModels[offloadedModel.WriteKey], eventTypeIdentifier(offloadedModel.EventType, offloadedModel.EventIdentifier))
+	return nil
 }
 
-func (manager *EventSchemaManagerT) reloadSchemaVersion(offloadedVersion *OffloadedSchemaVersionT) {
+func (manager *EventSchemaManagerT) reloadSchemaVersion(offloadedVersion *OffloadedSchemaVersionT) error {
 	pkgLogger.Infof("reloading schema vesion from db: %s\n", offloadedVersion.UUID)
-	manager.populateSchemaVersion(offloadedVersion)
+	err := manager.populateSchemaVersion(offloadedVersion)
+	if err != nil {
+		return err
+	}
 	delete(offloadedSchemaVersions[offloadedVersion.EventModelID], offloadedVersion.SchemaHash)
 	delete(archivedSchemaVersions[offloadedVersion.EventModelID], offloadedVersion.SchemaHash)
+	return nil
 }
 
 // TODO: Move this into some DB manager
@@ -792,7 +825,7 @@ func assertTxnError(err error, txn *sql.Tx) {
 	}
 }
 
-func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) {
+func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) error {
 
 	var uuidFilter string
 	if len(uuidFilters) > 0 {
@@ -802,7 +835,9 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) {
 	eventModelsSelectSQL := fmt.Sprintf(`SELECT id, uuid, write_key, event_type, event_model_identifier, created_at, schema, private_data, total_count, last_seen, (metadata->>'TotalCount')::int, metadata->'SampledEvents' FROM %s %s`, EVENT_MODELS_TABLE, uuidFilter)
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
-	assertError(err)
+	if err != nil {
+		return err
+	}
 	defer rows.Close()
 
 	for rows.Next() {
@@ -838,6 +873,7 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) {
 		manager.updateEventModelCache(&eventModel, false)
 		populateFrequencyCounters(eventModel.UUID, privateData.FrequencyCounters)
 	}
+	return nil
 }
 
 func (manager *EventSchemaManagerT) populateEventModelsMinimal() {
@@ -901,7 +937,7 @@ func (manager *EventSchemaManagerT) populateSchemaVersionsMinimal(modelIDFilters
 	}
 }
 
-func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVersionT) {
+func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVersionT) error {
 	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, private_data,first_seen, last_seen, total_count, (metadata->>'TotalCount')::int, metadata->'SampledEvents' FROM %s WHERE uuid = '%s'`, SCHEMA_VERSIONS_TABLE, o.UUID)
 
 	var schemaVersion SchemaVersionT
@@ -910,7 +946,9 @@ func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVers
 	var sampleEventsRaw json.RawMessage
 
 	err := manager.dbHandle.QueryRow(schemaVersionsSelectSQL).Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash, &schemaVersion.Schema, &privateDataRaw, &schemaVersion.FirstSeen, &schemaVersion.LastSeen, &schemaVersion.TotalCount, &totalCount, &sampleEventsRaw)
-	assertError(err)
+	if err != nil {
+		return err
+	}
 
 	var privateData PrivateDataT
 	err = json.Unmarshal(privateDataRaw, &privateData)
@@ -935,6 +973,7 @@ func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVers
 	manager.updateSchemaVersionCache(&schemaVersion, false)
 
 	populateFrequencyCounters(schemaVersion.SchemaHash, privateData.FrequencyCounters)
+	return nil
 }
 
 // This should be called during the Initialize() to populate existing event Schemas
