@@ -609,6 +609,7 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.SourceDefinitionID = commonMetadata.SourceDefinitionID
 	metadata.DestinationID = destination.ID
 	metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
+	pkgLogger.Info()
 	metadata.DestinationType = destination.DestinationDefinition.Name
 	if event.SessionID != "" {
 		metadata.SessionID = event.SessionID
@@ -767,7 +768,13 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 		}
 		sd, ok := statusDetailsMap[key]
 		if !ok {
-			sd = types.CreateStatusDetail(status, 0, event.StatusCode, event.Error, payload, event.Metadata.EventName, event.Metadata.EventType)
+			var eventName string
+			var eventType string
+			if string(payload) != `{}` {
+				eventName = event.Metadata.EventName
+				eventType = event.Metadata.EventType
+			}
+			sd = types.CreateStatusDetail(status, 0, event.StatusCode, event.Error, payload, eventName, eventType)
 			statusDetailsMap[key] = sd
 		}
 		sd.Count++
@@ -1083,6 +1090,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 					cd, ok := connectionDetailsMap[key]
 					if !ok {
+						pkgLogger.Info(commonMetadataFromSingularEvent.DestinationDefinitionID)
 						cd = types.CreateConnectionDetail(commonMetadataFromSingularEvent.SourceID, "", commonMetadataFromSingularEvent.SourceBatchID, commonMetadataFromSingularEvent.SourceTaskID, commonMetadataFromSingularEvent.SourceTaskRunID, commonMetadataFromSingularEvent.SourceJobID, commonMetadataFromSingularEvent.SourceJobRunID, commonMetadataFromSingularEvent.SourceDefinitionID, commonMetadataFromSingularEvent.DestinationDefinitionID, commonMetadataFromSingularEvent.SourceCategory)
 						connectionDetailsMap[key] = cd
 					}
