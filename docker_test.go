@@ -61,6 +61,10 @@ var (
 	runIntegration bool
 	writeKey       string
 	workspaceID    string
+	redisAddress   string
+	brokerPort	string
+	localhostPort string
+	localhostPortInt int
 )
 
 type WebhookRecorder struct {
@@ -183,8 +187,8 @@ func blockOnHold() {
 		return
 	}
 
-	fmt.Println("Test on hold, before cleanup")
-	fmt.Println("Press Ctrl+C to exit")
+	log.Println("Test on hold, before cleanup")
+	log.Println("Press Ctrl+C to exit")
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -201,7 +205,7 @@ func CreateSchemaPostgres() {
 }
 
 func SendEvent() {
-	fmt.Println("Sending Track Event")
+	log.Println("Sending Track Event")
 	url := fmt.Sprintf("http://localhost:%s/v1/identify", httpPort)
 	method := "POST"
 
@@ -224,7 +228,7 @@ func SendEvent() {
 	req, err := http.NewRequest(method, url, payload)
 
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 
 	}
@@ -238,18 +242,18 @@ func SendEvent() {
 
 	res, err := client.Do(req)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 	}
 	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 	}
-	fmt.Println(string(body))
-	fmt.Println("Event Sent Successfully")
+	log.Println(string(body))
+	log.Println("Event Sent Successfully")
 }
 
 func TestMain(m *testing.M) {
@@ -258,7 +262,7 @@ func TestMain(m *testing.M) {
 	flag.Parse()
 
 	if !runIntegration {
-		fmt.Println("Skipping integration test. Use `-integration` to run them.")
+		log.Println("Skipping integration test. Use `-integration` to run them.")
 		return
 	}
 
@@ -272,6 +276,83 @@ func run(m *testing.M) int {
 	if err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
+
+	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
+    if err != nil {
+    		log.Fatalf("Could not create docker network: %s", err)
+    }
+	zookeeperPortInt, err := freeport.GetFreePort()
+	if err != nil {
+		log.Panic(err)
+	}
+	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
+	zookeeperclientPort := fmt.Sprintf("ZOOKEEPER_CLIENT_PORT=%s", strconv.Itoa(zookeeperPortInt))
+	log.Println("zookeeper Port:", zookeeperPort)
+	log.Println("zookeeper client Port :", zookeeperclientPort)
+
+
+	z, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "confluentinc/cp-zookeeper",
+		Tag:        "latest",
+		NetworkID:  network.ID,
+		Hostname:   "zookeeper",
+		PortBindings: map[dc.Port][]dc.PortBinding{
+		   "2181/tcp": {{HostIP: "zookeeper", HostPort: zookeeperPort}},
+		},
+		Env: []string{"ZOOKEEPER_CLIENT_PORT=2181"},
+	 })
+	 if err != nil {
+		log.Panic(err)
+	}
+	 
+	// Set Kafka: pulls an image, creates a container based on it and runs it
+	KAFKA_ZOOKEEPER_CONNECT:=fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
+	log.Println("KAFKA_ZOOKEEPER_CONNECT:", KAFKA_ZOOKEEPER_CONNECT)
+
+	brokerPortInt, err := freeport.GetFreePort()
+	if err != nil {
+		log.Panic(err)
+	}
+	brokerPort = fmt.Sprintf("%s/tcp", strconv.Itoa(brokerPortInt))
+	log.Println("broker Port:", brokerPort)
+
+	localhostPortInt, err = freeport.GetFreePort()
+	if err != nil {
+		log.Panic(err)
+	}
+	localhostPort = fmt.Sprintf("%s/tcp", strconv.Itoa(localhostPortInt))
+	log.Println("localhost Port:", localhostPort)
+
+	// KAFKA_ADVERTISED_LISTENERS:=fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://broker:%s,PLAINTEXT_HOST://localhost:%s", 
+	//  strconv.Itoa(brokerPortInt), strconv.Itoa(localhostPortInt))
+	KAFKA_ADVERTISED_LISTENERS:=fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%s",  strconv.Itoa(localhostPortInt))
+	KAFKA_LISTENERS := "KAFKA_LISTENERS=INTERNAL://broker:9090,EXTERNAL://:9092"
+
+	 log.Println("KAFKA_ADVERTISED_LISTENERS",KAFKA_ADVERTISED_LISTENERS)
+
+	resourceKafka, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "confluentinc/cp-kafka",
+		Tag:        "latest",
+		NetworkID:  network.ID,
+		Hostname:   "broker",
+		PortBindings: map[dc.Port][]dc.PortBinding{
+		   "29092/tcp": {{HostIP: "broker", HostPort: brokerPort}},
+		   "9092/tcp":  {{HostIP: "localhost", HostPort: localhostPort}},
+		},
+		Env: []string{
+		   "KAFKA_BROKER_ID=1",
+		   "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT",
+		   KAFKA_ADVERTISED_LISTENERS,
+		   KAFKA_LISTENERS,
+		   "KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181",
+		   "KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL",
+		},
+	 })
+	 log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
+	 if err != nil {
+		log.Panic(err)
+	}
+
 
 	// pulls an redis image, creates a container based on it and runs it
 	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
@@ -292,45 +373,12 @@ func run(m *testing.M) int {
 			DB:       0,
 		})
 
-		pong, err := redisClient.Ping().Result()
+		_, err := redisClient.Ping().Result()
 		return err
 	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
-	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "coolest_network_ever"})
-    if err != nil {
-    		log.Fatalf("Could not create docker network: %s", err)
-    }
-	z, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "confluentinc/cp-zookeeper",
-		Tag:        "latest",
-		NetworkID:  network.ID,
-		Hostname:   "zookeeper",
-		PortBindings: map[dc.Port][]dc.PortBinding{
-		   "2181/tcp": {{HostIP: "zookeeper", HostPort: "2181/tcp"}},
-		},
-		Env: []string{"ZOOKEEPER_CLIENT_PORT=2181"},
-	 })
-	// Set Kafka: pulls an image, creates a container based on it and runs it
-	KAFKA_ZOOKEEPER_CONNECT:=fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
-	log.Println("KAFKA_ZOOKEEPER_CONNECT:", KAFKA_ZOOKEEPER_CONNECT)
-	resourceKafka, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "confluentinc/cp-kafka",
-		Tag:        "latest",
-		NetworkID:  network.ID,
-		Hostname:   "broker",
-		PortBindings: map[dc.Port][]dc.PortBinding{
-		   "29092/tcp": {{HostIP: "broker", HostPort: "29092/tcp"}},
-		   "9092/tcp":  {{HostIP: "localhost", HostPort: "9092/tcp"}},
-		},
-		Env: []string{
-		   "KAFKA_BROKER_ID=1",
-		   "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT",
-		   "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092",
-		   "KAFKA_ZOOKEEPER_CONNECT= zookeeper:2181",
-		},
-	 })
-	 fmt.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
+	
 
 	database := "jobsdb"
 	// pulls an image, creates a container based on it and runs it
@@ -420,7 +468,7 @@ func run(m *testing.M) int {
 	webhook = NewWebhook()
 	defer webhook.Close()
 	webhookurl = webhook.Server.URL
-	fmt.Println("webhookurl", webhookurl)
+	log.Println("webhookurl", webhookurl)
 
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
@@ -481,10 +529,9 @@ func run(m *testing.M) int {
 	minioBucketName := "devintegrationtest"
 	err = minioClient.MakeBucket(minioBucketName, "us-east-1")
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		panic(err)
 	}
-	fmt.Println("Successfully created Bucket")
 
 	writeKey = randString(27)
 	workspaceID = randString(27)
@@ -496,23 +543,24 @@ func run(m *testing.M) int {
 			"writeKey":    writeKey,
 			"workspaceId": workspaceID,
 			"postgresPort": resourcePostgres.GetPort("5432/tcp"),
-			"address": address,
+			"address": redisAddress,
 			"minioEndpoint": minioEndpoint,
 			"minioBucketName": minioBucketName,
+			"kafkaPort":strconv.Itoa(localhostPortInt),
 		},
 	)
 	defer func() {
 		err := os.Remove(workspaceConfigPath)
-		fmt.Println(err)
+		log.Println(err)
 	}()
-	fmt.Println("workspace config path:", workspaceConfigPath)
+	log.Println("workspace config path:", workspaceConfigPath)
 	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	go main.Run(svcCtx)
 
 	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%s/health", httpPort)
-	fmt.Println("serviceHealthEndpoint", serviceHealthEndpoint)
+	log.Println("serviceHealthEndpoint", serviceHealthEndpoint)
 	waitUntilReady(
 		context.Background(),
 		serviceHealthEndpoint,
@@ -524,7 +572,7 @@ func run(m *testing.M) int {
 
 	_ = svcCancel
 	// TODO: svcCancel() - don't cancel service until graceful termination is implemented
-	fmt.Println("test done, ignore errors bellow:")
+	log.Println("test done, ignore errors bellow:")
 
 	// // wait for the service to be stopped
 	// pool.Retry(func() error {
@@ -587,8 +635,7 @@ func TestPostgres(t *testing.T) {
 	}
 // Verify Event in Redis	
 func TestRedis(t *testing.T) {
-	fmt.Println(address)
-	conn, err := redigo.Dial("tcp", address)
+	conn, err := redigo.Dial("tcp", redisAddress)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -605,7 +652,8 @@ func TestKafka(t *testing.T) {
 	config.ClientID = "go-kafka-consumer"
 	config.Consumer.Return.Errors = true
 
-	brokers := []string{"localhost:9092"}
+	kafkaEndpoint := fmt.Sprintf("localhost:%s", strconv.Itoa(localhostPortInt))
+	brokers := []string{kafkaEndpoint}
 
 	// Create new consumer
 	master, err := sarama.NewConsumer(brokers, config)
@@ -642,13 +690,13 @@ func TestKafka(t *testing.T) {
 			}
 		case consumerError := <-errors:
 			msgCount++
-			fmt.Println("Received consumerError ", string(consumerError.Topic), string(consumerError.Partition), consumerError.Err)
+			log.Println("Received consumerError ", string(consumerError.Topic), string(consumerError.Partition), consumerError.Err)
 			// Required
 		case <-time.After(time.Minute):
 			panic("timeout waiting on kafka message")
 	   }	
 	}
-	fmt.Println("Processed", msgCount, "messages")
+	log.Println("Processed", msgCount, "messages")
 
 }
 func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
@@ -662,20 +710,19 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
     // this only consumes partition no 1, you would probably want to consume all partitions
 		consumer, err := master.ConsumePartition(topic, partitions[0], sarama.OffsetOldest)
 		if nil != err {
-			fmt.Printf("Topic %v Partitions: %v", topic, partitions)
 			panic(err)
 		}
-		fmt.Println(" Start consuming topic ", topic)
+		log.Println(" Start consuming topic ", topic)
 		go func(topic string, consumer sarama.PartitionConsumer) {
 			for {
 				select {
 				case consumerError := <-consumer.Errors():
 					errors <- consumerError
-					fmt.Println("consumerError: ", consumerError.Err)
+					log.Println("consumerError: ", consumerError.Err)
 
 				case msg := <-consumer.Messages():
 					consumers <- msg
-					fmt.Println("Got message on topic ", topic, msg.Value)
+					log.Println("Got message on topic ", topic, msg.Value)
 				}
 			}
 		}(topic, consumer)

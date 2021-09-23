@@ -544,7 +544,7 @@
                 {
                     "config": {
                         "hostName": "localhost",
-                        "port": "9092",
+                        "port": "{{.kafkaPort}}",
                         "topic": "dev_integration_test",
                         "sslEnabled": false,
                         "caCertificate": "key",
