@@ -127,11 +127,6 @@ func generateJsonSchFromEM(eventModels []*EventModelT) ([]byte, error) {
 			continue
 		}
 
-		meta := eventModel.WriteKey + ":" + eventModel.EventType
-		if eventModel.EventIdentifier != "" {
-			meta = meta + ":" + eventModel.EventIdentifier
-		}
-
 		jsonSchema := generateJsonSchFromSchProp(schemaProperties)
 		jsonSchema["additionalProperties"] = true
 		jsonSchema["$schema"] = "http://json-schema.org/draft-07/schema#"
@@ -187,27 +182,25 @@ func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[str
 		case string:
 			jsProperties.Property[k] = getPropertyTypesFromSchValue(value)
 		case map[string]interface{}:
-			{
-				//check if map is an array or map
-				if checkIfArray(value) {
-					var vType interface{}
-					for _, v := range value {
-						vt, ok := v.(string)
-						if ok {
-							vType = getPropertyTypesFromSchValue(vt)
-						} else {
-							vType = generateJsonSchFromSchProp(v.(map[string]interface{}))
-						}
-						break
-					}
-					jsProperties.Property[k] = map[string]interface{}{
-						"type":  "array",
-						"items": vType,
+			//check if map is an array or map
+			if checkIfArray(value) {
+				var vType interface{}
+				for _, v := range value {
+					vt, ok := v.(string)
+					if ok {
+						vType = getPropertyTypesFromSchValue(vt)
+					} else {
+						vType = generateJsonSchFromSchProp(v.(map[string]interface{}))
 					}
 					break
 				}
-				jsProperties.Property[k] = generateJsonSchFromSchProp(value)
+				jsProperties.Property[k] = map[string]interface{}{
+					"type":  "array",
+					"items": vType,
+				}
+				break
 			}
+			jsProperties.Property[k] = generateJsonSchFromSchProp(value)
 		default:
 			pkgLogger.Errorf("unknown type found")
 		}
@@ -236,13 +229,12 @@ func checkIfArray(value map[string]interface{}) bool {
 		return false
 	}
 
-	for k, _ := range value {
+	for k := range value {
 		_, err := strconv.Atoi(k)
 		if err != nil {
 			return false
 		}
 		// need not check the array continuity
-		//keys= append(keys,index)
 	}
 	return true
 }
