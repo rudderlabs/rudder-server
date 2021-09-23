@@ -14,7 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"io/ioutil"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -123,7 +123,7 @@ func createWorkspaceConfig(templatePath string, values map[string]string) string
 		panic(err)
 	}
 
-	f, err := ioutil.TempFile("", "workspaceConfig.*.json")
+	f, err := os.CreateTemp("", "workspaceConfig.*.json")
 	if err != nil {
 		panic(err)
 	}
@@ -242,7 +242,7 @@ func SendEvent() {
 	}
 	defer res.Body.Close()
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -463,7 +463,7 @@ func TestWebhook(t *testing.T) {
 
 	req := webhook.Requests()[0]
 
-	body, err := ioutil.ReadAll(req.Body)
+	body, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
 	require.Equal(t, "POST", req.Method)
 	require.Equal(t, "/", req.URL.Path)

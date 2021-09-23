@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -174,7 +174,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(jsonByte) != 0 {
-		r.Body = ioutil.NopCloser(bytes.NewReader(jsonByte))
+		r.Body = io.NopCloser(bytes.NewReader(jsonByte))
 		r.Header.Set("Content-Type", "application/json")
 	}
 
@@ -239,7 +239,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		payloadArr := [][]byte{}
 		webRequests := []*webhookT{}
 		for _, req := range breq.batchRequest {
-			body, err := ioutil.ReadAll(req.request.Body)
+			body, err := io.ReadAll(req.request.Body)
 			req.request.Body.Close()
 
 			if err != nil {
@@ -306,11 +306,11 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 
 func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) {
 	// replace body with transformed event (it comes in a batch format)
-	req.request.Body = ioutil.NopCloser(bytes.NewReader(payload))
+	req.request.Body = io.NopCloser(bytes.NewReader(payload))
 	// set write key in basic auth header
 	req.request.SetBasicAuth(req.writeKey, "")
 	var errorMessage = ""
-	payload, err := ioutil.ReadAll(req.request.Body)
+	payload, err := io.ReadAll(req.request.Body)
 	req.request.Body.Close()
 	if err == nil {
 		errorMessage = webhook.gwHandle.ProcessWebRequest(req.writer, req.request, "batch", payload, req.writeKey)

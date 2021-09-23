@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -112,7 +112,7 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}
 				return nil, fmt.Errorf("Could not open migration template '%v': '%w'", path, err)
 			}
 
-			templateData, err := ioutil.ReadAll(file)
+			templateData, err := io.ReadAll(file)
 			if err != nil {
 				return nil, fmt.Errorf("Could not read migration template '%v': %w", name, err)
 			}

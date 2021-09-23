@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -93,7 +93,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 		if err == nil {
 			//If no err returned by client.Post, reading body.
 			//If reading body fails, retrying.
-			respData, err = ioutil.ReadAll(resp.Body)
+			respData, err = io.ReadAll(resp.Body)
 		}
 
 		if err != nil {
