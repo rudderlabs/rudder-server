@@ -14,7 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"io/ioutil"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -53,9 +53,10 @@ var (
 	writeKey       string
 	workspaceID    string
 )
+
 type Event struct {
-	anonymous_id       string
-	user_id    string
+	anonymous_id string
+	user_id      string
 }
 
 func randString(n int) string {
@@ -122,7 +123,7 @@ func createWorkspaceConfig(templatePath string, values map[string]string) string
 		panic(err)
 	}
 
-	f, err := ioutil.TempFile("", "workspaceConfig.*.json")
+	f, err := os.CreateTemp("", "workspaceConfig.*.json")
 	if err != nil {
 		panic(err)
 	}
@@ -241,7 +242,7 @@ func SendEvent() {
 	}
 	defer res.Body.Close()
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -367,9 +368,9 @@ func run(m *testing.M) int {
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":  webhookurl,
-			"writeKey":    writeKey,
-			"workspaceId": workspaceID,
+			"webhookUrl":   webhookurl,
+			"writeKey":     writeKey,
+			"workspaceId":  workspaceID,
 			"postgresPort": resourcePostgres.GetPort("5432/tcp"),
 		},
 	)
@@ -433,7 +434,7 @@ func TestWebhook(t *testing.T) {
 
 	req := webhook.Requests()[0]
 
-	body, err := ioutil.ReadAll(req.Body)
+	body, err := io.ReadAll(req.Body)
 
 	require.Equal(t, "POST", req.Method)
 	require.Equal(t, "/", req.URL.Path)
@@ -445,16 +446,16 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "daf823fb-e8d3-413a-8313-d34cd756f968")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "track")
 
-
 	// TODO: Verify in Live Evets API
 }
+
 // Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
 	var myEvent Event
 	require.Eventually(t, func() bool {
-		eventSql:= "select anonymous_id, user_id from example.tracks limit 1"
+		eventSql := "select anonymous_id, user_id from example.tracks limit 1"
 		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
 		return myEvent.anonymous_id == "anon-id-new"
 	}, time.Minute, 10*time.Millisecond)
 	require.Equal(t, "identified user id", myEvent.user_id)
-	}
+}
