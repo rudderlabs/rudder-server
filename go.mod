@@ -31,11 +31,13 @@ require (
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/fsnotify/fsnotify v1.4.7
 	github.com/garyburd/redigo v1.6.0 // indirect
+	github.com/go-ini/ini v1.63.2 // indirect
 	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/gofrs/uuid v3.2.0+incompatible // indirect
 	github.com/golang-migrate/migrate/v4 v4.11.0
 	github.com/golang/mock v1.5.0
 	github.com/golang/protobuf v1.5.0
+	github.com/gomodule/redigo v1.8.5
 	github.com/gorilla/mux v1.7.4
 	github.com/gotestyourself/gotestyourself v2.2.0+incompatible // indirect
 	github.com/hashicorp/go-retryablehttp v0.6.6
@@ -47,6 +49,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.3.0
 	github.com/mattn/go-ieproxy v0.0.0-20200203040449-2dbc853185d9 // indirect
+	github.com/minio/minio-go v6.0.14+incompatible
 	github.com/minio/minio-go/v6 v6.0.49
 	github.com/mkmik/multierror v0.3.0
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
