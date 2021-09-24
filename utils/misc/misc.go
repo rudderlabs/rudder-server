@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -73,7 +72,7 @@ func Init() {
 
 func getErrorStore() (ErrorStoreT, error) {
 	var errorStore ErrorStoreT
-	data, err := ioutil.ReadFile(errorStorePath)
+	data, err := os.ReadFile(errorStorePath)
 	if os.IsNotExist(err) {
 		defaultErrorStoreJSON := "{\"Errors\":[]}"
 		data = []byte(defaultErrorStoreJSON)
@@ -99,7 +98,7 @@ func saveErrorStore(errorStore ErrorStoreT) {
 		pkgLogger.Fatal("failed to marshal errorStore", errorStore)
 		return
 	}
-	err = ioutil.WriteFile(errorStorePath, errorStoreJSON, 0644)
+	err = os.WriteFile(errorStorePath, errorStoreJSON, 0644)
 	if err != nil {
 		pkgLogger.Fatal("failed to write to errorStore")
 	}
@@ -605,7 +604,7 @@ func MakeHTTPRequestWithTimeout(url string, payload io.Reader, timeout time.Dura
 
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
-		respBody, _ = ioutil.ReadAll(resp.Body)
+		respBody, _ = io.ReadAll(resp.Body)
 		defer resp.Body.Close()
 	}
 
@@ -977,7 +976,7 @@ func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (re
 		return nil, -1, err
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
 	pkgLogger.Debugf("Post request: Successful %s", string(body))

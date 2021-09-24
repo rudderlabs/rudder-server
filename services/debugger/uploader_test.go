@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"time"
 
@@ -84,7 +84,7 @@ var _ = Describe("Uploader", func() {
 			//Response JSON
 			jsonResponse := `OK`
 			//New reader with that JSON
-			r := ioutil.NopCloser(bytes.NewReader([]byte(jsonResponse)))
+			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				//asserting http request
@@ -121,7 +121,7 @@ var _ = Describe("Uploader", func() {
 			//Response JSON
 			jsonResponse := `OK`
 			//New reader with that JSON
-			r := ioutil.NopCloser(bytes.NewReader([]byte(jsonResponse)))
+			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				//asserting http request
@@ -204,7 +204,7 @@ var _ = Describe("Uploader", func() {
 			//Response JSON
 			jsonResponse := `OK`
 			//New reader with that JSON
-			r := ioutil.NopCloser(bytes.NewReader([]byte(jsonResponse)))
+			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
 			uploader.(*Uploader).retrySleep = time.Second
 
@@ -245,7 +245,7 @@ var _ = Describe("Uploader", func() {
 			//Response JSON
 			jsonResponse := `OK`
 			//New reader with that JSON
-			r := ioutil.NopCloser(bytes.NewReader([]byte(jsonResponse)))
+			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				//asserting http request
@@ -295,7 +295,7 @@ var _ = Describe("Uploader", func() {
 			//Response JSON
 			jsonResponse := `OK`
 			//New reader with that JSON
-			r := ioutil.NopCloser(bytes.NewReader([]byte(jsonResponse)))
+			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				//asserting http request
