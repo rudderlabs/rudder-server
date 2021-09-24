@@ -34,6 +34,8 @@ var (
 	queryDebugLogs                  string
 	blockSize                       string
 	poolSize                        string
+	readTimeout                     string
+	writeTimeout                    string
 	pkgLogger                       logger.LoggerI
 	disableNullable                 bool
 	numLoadFileReadWorkers          int
@@ -180,7 +182,7 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 		dbNameParam = fmt.Sprintf(`database=%s`, cred.dbName)
 	}
 
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s",
 		cred.host,
 		cred.port,
 		cred.user,
@@ -192,6 +194,8 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 		cred.skipVerify,
 		cred.tlsConfigName,
 		dbNameParam,
+		readTimeout,
+		writeTimeout,
 	)
 
 	var err error
@@ -204,12 +208,14 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 }
 
 func loadConfig() {
-	config.RegisterStringConfigVariable("false", &queryDebugLogs, true, "Warehouse.clickhouse.queryDebugLogs")
-	config.RegisterStringConfigVariable("1000", &blockSize, true, "Warehouse.clickhouse.blockSize")
-	config.RegisterStringConfigVariable("10", &poolSize, true, "Warehouse.clickhouse.poolSize")
+	config.RegisterStringConfigVariable("true", &queryDebugLogs, true, "Warehouse.clickhouse.queryDebugLogs")
+	config.RegisterStringConfigVariable("1000000", &blockSize, true, "Warehouse.clickhouse.blockSize")
+	config.RegisterStringConfigVariable("100", &poolSize, true, "Warehouse.clickhouse.poolSize")
 	config.RegisterBoolConfigVariable(false, &disableNullable, false, "Warehouse.clickhouse.disableNullable")
 	config.RegisterIntConfigVariable(1, &numLoadFileReadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileReadWorkers")
 	config.RegisterIntConfigVariable(0, &maxLoadFileReadWorkersBatchSize, true, 1, "Warehouse.clickhouse.maxLoadFileReadWorkersBatchSize")
+	config.RegisterStringConfigVariable("300", &readTimeout, true, "Warehouse.clickhouse.readTimeout")
+	config.RegisterStringConfigVariable("300", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
 }
 
 /*
