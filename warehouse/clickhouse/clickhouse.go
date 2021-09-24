@@ -526,7 +526,7 @@ func (ch *HandleT) createSchema() (err error) {
 		return err
 	}
 	if schemaExists {
-		pkgLogger.Infof("CH: Skipping creating database: %s since it already exists", ch.Namespace)
+		pkgLogger.Infof("CH: Skipping  creating database: %s since it already exists", ch.Namespace)
 		return
 	}
 	dbHandle, err := connect(ch.getConnectionCredentials(), false)
