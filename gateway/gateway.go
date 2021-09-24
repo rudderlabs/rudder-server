@@ -1311,7 +1311,6 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	})
 	g.Go(func() error {
 		return srv.ListenAndServe()
-		//      gateway.logger.Fatal()
 	})
 
 	return g.Wait()

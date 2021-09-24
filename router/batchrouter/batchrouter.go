@@ -1359,12 +1359,10 @@ func (worker *workerT) workerProcess() {
 			if hasMore {
 				pkgLogger.Infof("Batch Router worker %d is resumed. Dest type: %s", worker.workerID, worker.brt.destType)
 			} else {
-				// TODO: SHOULD WE CLEAN UP ?
 				return
 			}
 		case batchDestData, hasMore := <-brt.processQ:
 			if !hasMore {
-				// TODO: SHOULD WE CLEAN UP ?
 				return
 			}
 
@@ -2064,8 +2062,6 @@ func (brt *HandleT) Start() {
 
 func (brt *HandleT) Shutdown() {
 	brt.backgroundCancel()
-	// TODO, Should we pause/resume workers ?
-
 	// close paused workers
 	for _, worker := range brt.workers {
 		close(worker.resumeChannel)

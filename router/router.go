@@ -1073,7 +1073,7 @@ func (rt *HandleT) initWorkers() {
 
 func (rt *HandleT) stopWorkers() {
 	for _, worker := range rt.workers {
-		// TODO what if worker is paused?
+		// FIXME remove paused worker, use shutdown instead
 		close(worker.channel)
 	}
 }

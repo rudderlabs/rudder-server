@@ -103,12 +103,10 @@ const (
 )
 
 type HandleT struct {
-	destType   string
-	warehouses []warehouseutils.WarehouseT
-	dbHandle   *sql.DB
-	notifier   pgnotifier.PgNotifierT
-	// TODO Do we need this -> //uploadToWarehouseQ    chan []ProcessStagingFilesJobT
-	// TODO Do we need this -> //createLoadFilesQ      chan LoadFileJobT
+	destType              string
+	warehouses            []warehouseutils.WarehouseT
+	dbHandle              *sql.DB
+	notifier              pgnotifier.PgNotifierT
 	isEnabled             bool
 	configSubscriberLock  sync.RWMutex
 	workerChannelMap      map[string]chan *UploadJobT
@@ -971,8 +969,6 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	wh.destType = whType
 	wh.setInterruptedDestinations()
 	wh.Enable()
-	// TODO Do we need this -> // wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
-	// TODO Do we need this -> // wh.createLoadFilesQ = make(chan LoadFileJobT)
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
 	wh.inProgressMap = make(map[string]int64)
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
