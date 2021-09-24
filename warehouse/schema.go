@@ -23,7 +23,12 @@ type SchemaHandleT struct {
 
 func handleSchemaChange(existingDataType string, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
 	if existingDataType == "string" || existingDataType == "text" {
-		newColumnVal = fmt.Sprintf("%v", columnVal)
+		// only stringify if the previous type is non-string/text
+		if columnType != "string" && columnType != "text" {
+			newColumnVal = fmt.Sprintf("%v", columnVal)
+		} else {
+			newColumnVal = columnVal
+		}
 	} else if (columnType == "int" || columnType == "bigint") && existingDataType == "float" {
 		newColumnVal = columnVal
 	} else if columnType == "float" && (existingDataType == "int" || existingDataType == "bigint") {
