@@ -14,6 +14,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -456,6 +457,17 @@ type loadFileReadJob struct {
 	fileNames []string
 }
 
+func goid() int {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	idField := strings.Fields(strings.TrimPrefix(string(buf[:n]), "goroutine "))[0]
+	id, err := strconv.Atoi(idField)
+	if err != nil {
+		panic(fmt.Sprintf("cannot get goroutine id: %v", err))
+	}
+	return id
+}
+
 // loadTable loads table to clickhouse from the load files
 func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
 	pkgLogger.Infof("CH: Starting load for table:%s", tableName)
@@ -505,6 +517,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				var isFirstTime = true
 
 				for readJob := range loadFileReadJobChan {
+					pkgLogger.Infof("Load File Read Job Chan called for %d", goid())
 					if isFirstTime {
 						txn, err = ch.Db.Begin()
 						if err != nil {
