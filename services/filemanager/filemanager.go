@@ -4,7 +4,6 @@ package filemanager
 
 import (
 	"errors"
-	"io/ioutil"
 	"os"
 	"time"
 
@@ -27,8 +26,8 @@ type FileManagerFactory interface {
 }
 
 type FileObject struct {
-	Key              string
-	LastModified 	 time.Time
+	Key          string
+	LastModified time.Time
 }
 
 // FileManager implements all upload methods
@@ -39,7 +38,7 @@ type FileManager interface {
 	GetDownloadKeyFromFileLocation(location string) string
 	DeleteObjects(locations []string) error
 	ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error)
-	GetConfiguredPrefix() (string)
+	GetConfiguredPrefix() string
 }
 
 // SettingsT sets configuration for FileManager
@@ -98,7 +97,7 @@ func GetProviderConfigFromEnv() map[string]interface{} {
 	case "GCS":
 		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
 		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
-		credentials, err := ioutil.ReadFile(config.GetEnv("GOOGLE_APPLICATION_CREDENTIALS", ""))
+		credentials, err := os.ReadFile(config.GetEnv("GOOGLE_APPLICATION_CREDENTIALS", ""))
 		if err == nil {
 			providerConfig["credentials"] = string(credentials)
 		}

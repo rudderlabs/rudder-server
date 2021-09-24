@@ -294,7 +294,7 @@ type HandleT struct {
 	dsListLock                    sync.RWMutex
 	dsMigrationLock               sync.RWMutex
 	dsRetentionPeriod             time.Duration
-	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]cacheValue
+	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]cacheEntry
 	dsCacheLock                   sync.Mutex
 	BackupSettings                *BackupSettingsT
 	jobsFileUploader              filemanager.FileManager
@@ -505,6 +505,7 @@ var (
 	addNewDSLoopSleepDuration                    time.Duration
 	refreshDSListLoopSleepDuration               time.Duration
 	backupCheckSleepDuration                     time.Duration
+	cacheExpiration                              time.Duration
 	useJoinForUnprocessed                        bool
 	backupRowsBatchSize                          int64
 	pkgLogger                                    logger.LoggerI
@@ -550,6 +551,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &addNewDSLoopSleepDuration, true, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
+	config.RegisterDurationConfigVariable(time.Duration(60), &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 	config.RegisterBoolConfigVariable(true, &useNewCacheBurst, true, "JobsDB.useNewCacheBurst")
 }
@@ -599,7 +601,7 @@ func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, r
 	jd.assert(tablePrefix != "", "tablePrefix received is empty")
 	jd.tablePrefix = tablePrefix
 	jd.dsRetentionPeriod = retentionPeriod
-	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]cacheValue{}
+	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]cacheEntry{}
 	if registerStatusHandler {
 		admin.RegisterStatusHandler(tablePrefix+"-jobsdb", jd)
 	}
@@ -1784,6 +1786,11 @@ const (
 	willTryToSet cacheValue = "Query in progress"
 )
 
+type cacheEntry struct {
+	value cacheValue
+	t     time.Time
+}
+
 /*
 * If a query returns empty result for a specific dataset, we cache that so that
 * future queries don't have to hit the DB.
@@ -1809,13 +1816,13 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 
 	_, ok := jd.dsEmptyResultCache[ds]
 	if !ok {
-		jd.dsEmptyResultCache[ds] = map[string]map[string]map[string]cacheValue{}
+		jd.dsEmptyResultCache[ds] = map[string]map[string]map[string]cacheEntry{}
 	}
 
 	for _, cVal := range customValFilters {
 		_, ok := jd.dsEmptyResultCache[ds][cVal]
 		if !ok {
-			jd.dsEmptyResultCache[ds][cVal] = map[string]map[string]cacheValue{}
+			jd.dsEmptyResultCache[ds][cVal] = map[string]map[string]cacheEntry{}
 		}
 
 		pVals := []string{}
@@ -1827,18 +1834,27 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, stateFilters []string, cust
 
 		_, ok = jd.dsEmptyResultCache[ds][cVal][pVal]
 		if !ok {
-			jd.dsEmptyResultCache[ds][cVal][pVal] = map[string]cacheValue{}
+			jd.dsEmptyResultCache[ds][cVal][pVal] = map[string]cacheEntry{}
 		}
 
 		for _, st := range stateFilters {
 			previous := jd.dsEmptyResultCache[ds][cVal][pVal][st]
-			if checkAndSet == nil || *checkAndSet == previous {
-				jd.dsEmptyResultCache[ds][cVal][pVal][st] = value
+			if checkAndSet == nil || *checkAndSet == previous.value {
+				jd.dsEmptyResultCache[ds][cVal][pVal][st] = cacheEntry{
+					value: value,
+					t:     time.Now(),
+				}
 			}
 		}
 	}
 }
 
+// isEmptyResult will return true if:
+// 	For all the combinations of stateFilters, customValFilters, parameterFilters.
+//  All of the condition above apply:
+// 	* There is a cache entry for this dataset, customVal, parameterFilter, stateFilter
+//  * The entry is noJobs
+//  * The entry is not expired (entry time + cache expiration > now)
 func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
 	queryStat := stats.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
@@ -1877,7 +1893,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, stateFilters []string, customValFi
 
 		for _, st := range stateFilters {
 			mark, ok := jd.dsEmptyResultCache[ds][cVal][pVal][st]
-			if !ok || mark != noJobs {
+			if !ok || mark.value != noJobs || time.Now().After(mark.t.Add(cacheExpiration)) {
 				return false
 			}
 		}
