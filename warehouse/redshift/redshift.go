@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -222,7 +221,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		panic(err)
 	}
 	defer os.Remove(localManifestPath)
-	_ = ioutil.WriteFile(localManifestPath, manifestJSON, 0644)
+	_ = os.WriteFile(localManifestPath, manifestJSON, 0644)
 
 	file, err := os.Open(localManifestPath)
 	if err != nil {
