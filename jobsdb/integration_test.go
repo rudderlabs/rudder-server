@@ -1,6 +1,7 @@
 package jobsdb_test
 
 import (
+	"context"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	uuid "github.com/satori/go.uuid"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -159,11 +161,10 @@ func TestJobsDB(t *testing.T) {
 	err = jobDB.UpdateJobStatus([]*jobsdb.JobStatusT{&status}, []string{"MOCKDS2"}, []jobsdb.ParameterFilterT{})
 	require.NoError(t, err)
 
-	fmt.Println(unprocessedList)
 	unprocessedList = jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-		CustomValFilters:              []string{customVal},
-		Count:                         1,
-		ParameterFilters:              []jobsdb.ParameterFilterT{},
+		CustomValFilters: []string{customVal},
+		Count:            1,
+		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
 
 	require.Equal(t, 0, len(unprocessedList))
@@ -172,11 +173,83 @@ func TestJobsDB(t *testing.T) {
 	require.NoError(t, err)
 
 	unprocessedList = jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-		CustomValFilters:              []string{customVal},
-		Count:                         1,
-		ParameterFilters:              []jobsdb.ParameterFilterT{},
+		CustomValFilters: []string{customVal},
+		Count:            1,
+		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
 	t.Log(jobDB.Status())
 	require.Equal(t, 1, len(unprocessedList))
+
+}
+
+func BenchmarkJobsdb(b *testing.B) {
+	initJobsDB()
+	stats.Setup()
+
+	dbRetention := time.Minute * 5
+	migrationMode := ""
+	jobDB := jobsdb.HandleT{}
+	queryFilters := jobsdb.QueryFiltersT{
+		CustomVal:        true,
+		ParameterFilters: []string{"destination_id"},
+	}
+
+	fmt.Println("setup JobsDB")
+	jobDB.Setup(jobsdb.ReadWrite, false, "batch_rt", dbRetention, migrationMode, true, queryFilters)
+	// defer jobDB.TearDown()
+
+	customVal := "MOCKDS"
+
+	b.Run("store/consume", func(b *testing.B) {
+		expectedJobs := make([]jobsdb.JobT, b.N)
+		for i := range expectedJobs {
+			expectedJobs[i] = jobsdb.JobT{
+				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+				EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.NewV4(),
+				CustomVal:    customVal,
+			}
+		}
+
+		g, _ := errgroup.WithContext(context.Background())
+		g.Go(func() error {
+			for _, j := range expectedJobs {
+				err := jobDB.Store([]*jobsdb.JobT{&j})
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+
+		consumedJobs := make([]jobsdb.JobT, 0, len(expectedJobs))
+		timeout := time.After(time.Second * time.Duration(len(expectedJobs)))
+		g.Go(func() error {
+			for {
+				unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+					CustomValFilters: []string{customVal},
+					Count:            1,
+					ParameterFilters: []jobsdb.ParameterFilterT{},
+				})
+				for _, j := range unprocessedList {
+					consumedJobs = append(consumedJobs, *j)
+				}
+				select {
+				case <-timeout:
+					panic("timed out")
+				default:
+					if len(consumedJobs) == len(expectedJobs) {
+						return nil
+					}
+				}
+			}
+		})
+
+		err := g.Wait()
+		require.NoError(b, err)
+
+		require.Len(b, consumedJobs, len(expectedJobs))
+	})
 
 }

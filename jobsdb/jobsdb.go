@@ -371,7 +371,7 @@ func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
 		jd.printLists(true)
-		jd.logger.Fatal(jd.dsEmptyResultCache)
+		jd.logger.Error(jd.dsEmptyResultCache)
 		panic(err)
 	}
 }
