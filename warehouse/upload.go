@@ -252,13 +252,13 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 
 		jsonLocalSchema, err1 := json.Marshal(schemaHandle.localSchema)
 		if err1 == nil {
-			pkgLogger.Infof(`localSchema: %v`, jsonLocalSchema)
+			pkgLogger.Infof(`localSchema: %v`, string(jsonLocalSchema))
 		} else {
 			pkgLogger.Infof(`Error while Marshal localSchema with err: %v`, err1)
 		}
 		jsonWareHousechema, err2 := json.Marshal(schemaHandle.schemaInWarehouse)
 		if err2 == nil {
-			pkgLogger.Infof(`schemaInWarehouse: %v`, jsonWareHousechema)
+			pkgLogger.Infof(`schemaInWarehouse: %v`, string(jsonWareHousechema))
 		} else {
 			pkgLogger.Infof(`Error while Marshal warehouse Schema with err: %v`, err2)
 		}
