@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -163,7 +163,7 @@ func (trans *HandleT) transformWorker() {
 			if err == nil {
 				//If no err returned by client.Post, reading body.
 				//If reading body fails, retrying.
-				respData, err = ioutil.ReadAll(resp.Body)
+				respData, err = io.ReadAll(resp.Body)
 			}
 
 			if err != nil {
@@ -274,7 +274,7 @@ func GetVersion() (transformerBuildVersion string) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			pkgLogger.Errorf("Unable to read response into bytes with error : %s", err.Error())
 			transformerBuildVersion = "Unable to read response from transformer."

@@ -9,7 +9,7 @@ env:
 phases:
   install:
     runtime-versions:
-      golang: 1.13
+      golang: 1.16
   pre_build:
     commands:
       - docker login --username rudderlabs --password $dockerhub_passwd
@@ -43,7 +43,7 @@ phases:
 reports:
   GinkgoUnitTestReports:
     files:
-      - '**/junit_*.xml'
+      - "**/junit_*.xml"
 artifacts:
   files:
     - "**/*"

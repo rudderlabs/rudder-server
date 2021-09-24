@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 )
 
@@ -29,7 +29,7 @@ func (ops *VictorOps) Alert(message string) {
 		pkgLogger.Errorf("Alert: Got error response %d", resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	if err != nil {
 		pkgLogger.Errorf("Alert: Failed to read response body: %s", err.Error())

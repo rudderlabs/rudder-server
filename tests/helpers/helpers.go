@@ -5,17 +5,18 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 
+	"reflect"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	uuid "github.com/satori/go.uuid"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/sjson"
-	"reflect"
 )
 
 const (
@@ -302,7 +303,7 @@ func SendHealthRequest() []byte {
 		panic(err)
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		panic(err)
 	}
@@ -316,7 +317,7 @@ func SendVersionRequest() []byte {
 		panic(err)
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		panic(err)
 	}
