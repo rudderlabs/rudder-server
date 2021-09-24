@@ -40,7 +40,7 @@ func (jd *HandleT) setupDatabaseTables(clearAll bool) {
 	m := &migrator.Migrator{
 		Handle:                     jd.dbHandle,
 		MigrationsTable:            jd.SchemaMigrationTable(),
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", false),
+		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
 	}
 
 	// execute any necessary migrations
