@@ -15,7 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"io/ioutil"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -47,23 +47,23 @@ import (
 )
 
 var (
-	hold        bool = true
-	db          *sql.DB
-	redisClient *redis.Client
-	DB_DSN      = "root@tcp(127.0.0.1:3306)/service"
-	httpPort    string
-	httpKafkaPort string
-	dbHandle    *sql.DB
-	sourceJSON  backendconfig.ConfigT
-	webhookurl  string
-	webhook     *WebhookRecorder
-	address 	string
-	runIntegration bool
-	writeKey       string
-	workspaceID    string
-	redisAddress   string
-	brokerPort	string
-	localhostPort string
+	hold             bool = true
+	db               *sql.DB
+	redisClient      *redis.Client
+	DB_DSN           = "root@tcp(127.0.0.1:3306)/service"
+	httpPort         string
+	httpKafkaPort    string
+	dbHandle         *sql.DB
+	sourceJSON       backendconfig.ConfigT
+	webhookurl       string
+	webhook          *WebhookRecorder
+	address          string
+	runIntegration   bool
+	writeKey         string
+	workspaceID      string
+	redisAddress     string
+	brokerPort       string
+	localhostPort    string
 	localhostPortInt int
 )
 
@@ -123,10 +123,9 @@ func randString(n int) string {
 }
 
 type Event struct {
-	anonymous_id       string
-	user_id    string
+	anonymous_id string
+	user_id      string
 }
-
 
 type Author struct {
 	Name string `json:"name"`
@@ -145,7 +144,7 @@ func createWorkspaceConfig(templatePath string, values map[string]string) string
 		panic(err)
 	}
 
-	f, err := ioutil.TempFile("", "workspaceConfig.*.json")
+	f, err := os.CreateTemp("", "workspaceConfig.*.json")
 	if err != nil {
 		panic(err)
 	}
@@ -247,7 +246,7 @@ func SendEvent() {
 	}
 	defer res.Body.Close()
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		log.Println(err)
 		return
@@ -278,9 +277,9 @@ func run(m *testing.M) int {
 	}
 
 	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
-    if err != nil {
-    		log.Fatalf("Could not create docker network: %s", err)
-    }
+	if err != nil {
+		log.Fatalf("Could not create docker network: %s", err)
+	}
 	zookeeperPortInt, err := freeport.GetFreePort()
 	if err != nil {
 		log.Panic(err)
@@ -290,23 +289,22 @@ func run(m *testing.M) int {
 	log.Println("zookeeper Port:", zookeeperPort)
 	log.Println("zookeeper client Port :", zookeeperclientPort)
 
-
 	z, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-zookeeper",
 		Tag:        "latest",
 		NetworkID:  network.ID,
 		Hostname:   "zookeeper",
 		PortBindings: map[dc.Port][]dc.PortBinding{
-		   "2181/tcp": {{HostIP: "zookeeper", HostPort: zookeeperPort}},
+			"2181/tcp": {{HostIP: "zookeeper", HostPort: zookeeperPort}},
 		},
 		Env: []string{"ZOOKEEPER_CLIENT_PORT=2181"},
-	 })
-	 if err != nil {
+	})
+	if err != nil {
 		log.Panic(err)
 	}
-	 
+
 	// Set Kafka: pulls an image, creates a container based on it and runs it
-	KAFKA_ZOOKEEPER_CONNECT:=fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
+	KAFKA_ZOOKEEPER_CONNECT := fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
 	log.Println("KAFKA_ZOOKEEPER_CONNECT:", KAFKA_ZOOKEEPER_CONNECT)
 
 	brokerPortInt, err := freeport.GetFreePort()
@@ -323,10 +321,10 @@ func run(m *testing.M) int {
 	localhostPort = fmt.Sprintf("%s/tcp", strconv.Itoa(localhostPortInt))
 	log.Println("localhost Port:", localhostPort)
 
-	KAFKA_ADVERTISED_LISTENERS:=fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%s",  strconv.Itoa(localhostPortInt))
+	KAFKA_ADVERTISED_LISTENERS := fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%s", strconv.Itoa(localhostPortInt))
 	KAFKA_LISTENERS := "KAFKA_LISTENERS=INTERNAL://broker:9090,EXTERNAL://:9092"
 
-	 log.Println("KAFKA_ADVERTISED_LISTENERS",KAFKA_ADVERTISED_LISTENERS)
+	log.Println("KAFKA_ADVERTISED_LISTENERS", KAFKA_ADVERTISED_LISTENERS)
 
 	resourceKafka, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-kafka",
@@ -334,23 +332,22 @@ func run(m *testing.M) int {
 		NetworkID:  network.ID,
 		Hostname:   "broker",
 		PortBindings: map[dc.Port][]dc.PortBinding{
-		   "29092/tcp": {{HostIP: "broker", HostPort: brokerPort}},
-		   "9092/tcp":  {{HostIP: "localhost", HostPort: localhostPort}},
+			"29092/tcp": {{HostIP: "broker", HostPort: brokerPort}},
+			"9092/tcp":  {{HostIP: "localhost", HostPort: localhostPort}},
 		},
 		Env: []string{
-		   "KAFKA_BROKER_ID=1",
-		   "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT",
-		   KAFKA_ADVERTISED_LISTENERS,
-		   KAFKA_LISTENERS,
-		   "KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181",
-		   "KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL",
+			"KAFKA_BROKER_ID=1",
+			"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT",
+			KAFKA_ADVERTISED_LISTENERS,
+			KAFKA_LISTENERS,
+			"KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181",
+			"KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL",
 		},
-	 })
-	 log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
-	 if err != nil {
+	})
+	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
+	if err != nil {
 		log.Panic(err)
 	}
-
 
 	// pulls an redis image, creates a container based on it and runs it
 	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
@@ -376,7 +373,6 @@ func run(m *testing.M) int {
 	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
-	
 
 	database := "jobsdb"
 	// pulls an image, creates a container based on it and runs it
@@ -474,8 +470,6 @@ func run(m *testing.M) int {
 	}
 	minioPort := fmt.Sprintf("%s/tcp", strconv.Itoa(minioPortInt))
 	log.Println("minioPort:", minioPort)
-	
-
 
 	// Setup MINIO
 	var minioClient *minio.Client
@@ -513,17 +507,15 @@ func run(m *testing.M) int {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 	// now we can instantiate minio client
-	minioClient, err = minio.New(minioEndpoint,"MYACCESSKEY","MYSECRETKEY" , false)
+	minioClient, err = minio.New(minioEndpoint, "MYACCESSKEY", "MYSECRETKEY", false)
 	if err != nil {
 		log.Println("Failed to create minio client:", err)
 		panic(err)
 	}
 	log.Printf("%#v\n", minioClient) // minioClient is now set up
 
-
-
 	// Create bucket for MINIO
-    // Create a bucket at region 'us-east-1' with object locking enabled.
+	// Create a bucket at region 'us-east-1' with object locking enabled.
 	minioBucketName := "devintegrationtest"
 	err = minioClient.MakeBucket(minioBucketName, "us-east-1")
 	if err != nil {
@@ -537,14 +529,14 @@ func run(m *testing.M) int {
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":  webhookurl,
-			"writeKey":    writeKey,
-			"workspaceId": workspaceID,
-			"postgresPort": resourcePostgres.GetPort("5432/tcp"),
-			"address": redisAddress,
-			"minioEndpoint": minioEndpoint,
+			"webhookUrl":      webhookurl,
+			"writeKey":        writeKey,
+			"workspaceId":     workspaceID,
+			"postgresPort":    resourcePostgres.GetPort("5432/tcp"),
+			"address":         redisAddress,
+			"minioEndpoint":   minioEndpoint,
 			"minioBucketName": minioBucketName,
-			"kafkaPort":strconv.Itoa(localhostPortInt),
+			"kafkaPort":       strconv.Itoa(localhostPortInt),
 		},
 	)
 	defer func() {
@@ -607,7 +599,7 @@ func TestWebhook(t *testing.T) {
 
 	req := webhook.Requests()[0]
 
-	body, err := ioutil.ReadAll(req.Body)
+	body, err := io.ReadAll(req.Body)
 
 	require.Equal(t, "POST", req.Method)
 	require.Equal(t, "/", req.URL.Path)
@@ -618,20 +610,22 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified user id")
 	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "daf823fb-e8d3-413a-8313-d34cd756f968")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
-	
+
 }
+
 // Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
 	var myEvent Event
 	require.Eventually(t, func() bool {
-		eventSql:= "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
+		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
 		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
 		return myEvent.anonymous_id == "anon-id-new"
 	}, time.Minute, 10*time.Millisecond)
 	require.Equal(t, "identified user id", myEvent.user_id)
-	
-	}
-// Verify Event in Redis	
+
+}
+
+// Verify Event in Redis
 func TestRedis(t *testing.T) {
 	conn, err := redigo.Dial("tcp", redisAddress)
 	if err != nil {
@@ -673,8 +667,8 @@ func TestKafka(t *testing.T) {
 	// Count how many message processed
 	msgCount := 0
 	// Get signnal for finish
-	expectedCount:=1
-	out:
+	expectedCount := 1
+out:
 	for {
 		select {
 		case msg := <-consumer:
@@ -684,7 +678,7 @@ func TestKafka(t *testing.T) {
 			require.Contains(t, string(msg.Value), "new-val")
 			require.Contains(t, string(msg.Value), "identified user id")
 			if msgCount == expectedCount {
-			     break out
+				break out
 			}
 		case consumerError := <-errors:
 			msgCount++
@@ -692,7 +686,7 @@ func TestKafka(t *testing.T) {
 			// Required
 		case <-time.After(time.Minute):
 			panic("timeout waiting on kafka message")
-	   }	
+		}
 	}
 	log.Println("Processed", msgCount, "messages")
 
@@ -705,7 +699,7 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 			continue
 		}
 		partitions, _ := master.Partitions(topic)
-    // this only consumes partition no 1, you would probably want to consume all partitions
+		// this only consumes partition no 1, you would probably want to consume all partitions
 		consumer, err := master.ConsumePartition(topic, partitions[0], sarama.OffsetOldest)
 		if nil != err {
 			panic(err)
@@ -728,4 +722,5 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 
 	return consumers, errors
 }
+
 // TODO: Verify in Live Evets API

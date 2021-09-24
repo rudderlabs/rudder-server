@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -569,7 +568,7 @@ func expectHandlerResponse(handler http.HandlerFunc, req *http.Request, response
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 
-		bodyBytes, _ := ioutil.ReadAll(rr.Body)
+		bodyBytes, _ := io.ReadAll(rr.Body)
 		body := string(bodyBytes)
 
 		Expect(rr.Result().StatusCode).To(Equal(responseStatus))

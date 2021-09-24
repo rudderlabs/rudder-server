@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -140,7 +139,7 @@ func (network *NetHandleT) SendPost(structData integrations.PostParametersT) (st
 		var respBody []byte
 
 		if resp != nil && resp.Body != nil {
-			respBody, _ = ioutil.ReadAll(resp.Body)
+			respBody, _ = io.ReadAll(resp.Body)
 			network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 			defer resp.Body.Close()
 		}
