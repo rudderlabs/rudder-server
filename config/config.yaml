@@ -3,7 +3,7 @@ gwDBRetention: 0h
 routerDBRetention: 0h
 enableProcessor: true
 enableRouter: true
-enableStats: true
+enableStats: false
 statsTagsFormat: influxdb
 Http:
   ReadTimeout: 0s

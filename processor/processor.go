@@ -323,7 +323,9 @@ func (proc *HandleT) Start(ctx context.Context) {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(misc.WithBugsnag(func() error {
-		proc.backendConfig.WaitForConfig()
+		if err := proc.backendConfig.WaitForConfig(ctx); err != nil {
+			return err
+		}
 		proc.mainLoop(ctx)
 		return nil
 	}))

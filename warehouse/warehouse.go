@@ -1523,7 +1523,9 @@ func startWebHandler(ctx context.Context) error {
 		mux.HandleFunc("/health", healthHandler)
 	}
 	if isMaster() {
-		backendconfig.WaitForConfig()
+		if err := backendconfig.WaitForConfig(ctx); err != nil {
+			return err
+		}
 		mux.HandleFunc("/v1/process", processHandler)
 		// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
 		mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)

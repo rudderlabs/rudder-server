@@ -1215,8 +1215,9 @@ Supports CORS from all origins.
 This function will block.
 */
 func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
-
-	gateway.backendConfig.WaitForConfig()
+	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
+		return err
+	}
 
 	gateway.logger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
@@ -1279,7 +1280,6 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	})
 	g.Go(func() error {
 		return gateway.httpWebServer.ListenAndServe()
-		//      gateway.logger.Fatal()
 	})
 
 	return g.Wait()
@@ -1288,7 +1288,9 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 //AdminHandler for Admin Operations
 func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 
-	gateway.backendConfig.WaitForConfig()
+	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
+		return err
+	}
 
 	gateway.logger.Infof("Starting AdminHandler in %d", adminWebPort)
 	srvMux := mux.NewRouter()
@@ -1464,12 +1466,15 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 		gateway.backendConfigSubscriber()
 	})
 
-	gateway.backendConfig.WaitForConfig()
-
-	gateway.initUserWebRequestWorkers()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
+
+	if err := gateway.backendConfig.WaitForConfig(ctx); err != nil {
+		cancel()
+		return
+	}
+
+	gateway.initUserWebRequestWorkers()
 
 	gateway.backgroundCancel = cancel
 	gateway.backgroundWait = g.Wait
