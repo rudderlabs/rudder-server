@@ -248,7 +248,20 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 		if err != nil {
 			return false, err
 		}
-		schemaHandle.localSchema = schemaHandle.schemaInWarehouse
+		pkgLogger.Infof(`Schema changed for uploadId: %v\n`, job.upload.ID)
+
+		jsonLocalSchema, err1 := json.Marshal(schemaHandle.localSchema)
+		if err1 == nil {
+			pkgLogger.Infof(`localSchema: %v`, jsonLocalSchema)
+		} else {
+			pkgLogger.Infof(`Error while Marshal localSchema with err: %v`, err1)
+		}
+		jsonWareHousechema, err2 := json.Marshal(schemaHandle.schemaInWarehouse)
+		if err2 == nil {
+			pkgLogger.Infof(`schemaInWarehouse: %v`, jsonWareHousechema)
+		} else {
+			pkgLogger.Infof(`Error while Marshal warehouse Schema with err: %v`, err2)
+		}
 	}
 
 	return hasSchemaChanged, nil
@@ -348,9 +361,10 @@ func (job *UploadJobT) run() (err error) {
 	var newStatus string
 	var nextUploadState *uploadStateT
 	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
-	if !hasSchemaChanged {
-		nextUploadState = getNextUploadState(job.upload.Status)
-	}
+	// TOOO: Undo this later.
+	//if !hasSchemaChanged {
+	nextUploadState = getNextUploadState(job.upload.Status)
+	//}
 	if nextUploadState == nil {
 		nextUploadState = stateTransitions[GeneratedUploadSchema]
 	}
