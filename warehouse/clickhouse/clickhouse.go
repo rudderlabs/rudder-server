@@ -300,50 +300,50 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			if goIdErr != nil {
 				goId = rand.Intn(10000)
 			}
-			pkgLogger.Infof("Generated Go Id for download load file table:%s workerIdx:%d goId:%d", tableName, workerIdx, goId)
+			pkgLogger.Infof("Generated Go Id for download load file table:%s, namespace:%s, workerIdx:%d, goId:%d", tableName, ch.Namespace, workerIdx, goId)
 
 			go func(ctx context.Context) {
 				for object := range loadFileDownloadJobChan {
 					select {
 					case <-ctx.Done():
-						pkgLogger.Infof("context is cancelled, stopped processing download load file for workerIdx:%d goId:%d", workerIdx, goId)
+						pkgLogger.Infof("context is cancelled, stopped processing download load file for table:%s, namespace:%s, workerIdx:%d, goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						return
 					default:
 						objectName, err := warehouseutils.GetObjectName(object.Location, ch.Warehouse.Destination.Config, ch.ObjectStorage)
 						if err != nil {
-							err = fmt.Errorf("CH: Error in converting object location to object key for table:%s: %s,%v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							err = fmt.Errorf("CH: Error in converting object location to object key for table:%s, location:%s, error:%v, namespace:%s, workerIdx:%d goId:%d", tableName, object.Location, err, ch.Namespace, workerIdx, goId)
 							onError(err)
 							return
 						}
 						dirName := "/rudder-warehouse-load-uploads-tmp/"
 						tmpDirPath, err := misc.CreateTMPDIR()
 						if err != nil {
-							err = fmt.Errorf("CH: Error in getting tmp directory for downloading load file for table:%s: %s, %v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							err = fmt.Errorf("CH: Error in getting tmp directory for downloading load file for table:%s, location:%s, error:%v, namespace:%s, workerIdx:%d goId:%d", tableName, object.Location, err, ch.Namespace, workerIdx, goId)
 							onError(err)
 							return
 						}
 						ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
 						err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
 						if err != nil {
-							err = fmt.Errorf("CH: Error in making tmp directory for downloading load file for table:%s: %s, %v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							err = fmt.Errorf("CH: Error in making tmp directory for downloading load file for table:%s, location:%s, error:%v, namespace:%s, workerIdx:%d goId:%d", tableName, object.Location, err, ch.Namespace, workerIdx, goId)
 							onError(err)
 							return
 						}
 						objectFile, err := os.Create(ObjectPath)
 						if err != nil {
-							err = fmt.Errorf("CH: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							err = fmt.Errorf("CH: Error in converting object location to object key for table:%s, location:%s, error:%v, namespace:%s, workerIdx:%d goId:%d", tableName, object.Location, err, ch.Namespace, workerIdx, goId)
 							onError(err)
 							return
 						}
 						err = downloader.Download(objectFile, objectName)
 						if err != nil {
-							err = fmt.Errorf("CH: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							err = fmt.Errorf("CH: Error in downloading file in tmp directory for table:%s, location:%s, error:%v, namespace:%s, workerIdx:%d goId:%d", tableName, object.Location, err, ch.Namespace, workerIdx, goId)
 							onError(err)
 							return
 						}
 						fileName := objectFile.Name()
 						if err = objectFile.Close(); err != nil {
-							err = fmt.Errorf("CH: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							err = fmt.Errorf("CH: Error in closing downloaded file in tmp directory for table:%s, location:%s, error:%v, namespace:%s, workerIdx:%d goId:%d", tableName, object.Location, err, ch.Namespace, workerIdx, goId)
 							onError(err)
 							return
 						}
@@ -368,10 +368,10 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	for {
 		select {
 		case err := <-loadFileErrorChan:
-			pkgLogger.Errorf("Received error while downloading load files, cancelling the context: err %v", err)
+			pkgLogger.Errorf("Received error while downloading load files for table:%s, namespace:%s, cancelling the context: err %v", tableName, ch.Namespace, err)
 			return nil, err
 		case <-waitCh:
-			pkgLogger.Infof("CH: Complete download load files for table:%s", tableName)
+			pkgLogger.Infof("CH: Complete download load files for table:%s, namespace:%s", tableName, ch.Namespace)
 			return fileNames, nil
 		}
 	}
