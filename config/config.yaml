@@ -149,13 +149,8 @@ Warehouse:
   clickhouse:
     maxParallelLoads: 3
     queryDebugLogs: false
-    blockSize: 1000000
-    poolSize: 100
     disableNullable: false
     enableArraySupport: false
-    numLoadFileReadWorkers: 1
-    maxLoadFileReadWorkersBatchSize: 0
-    numLoadFileDownloadWorkers: 8
 Processor:
   webPort: 8086
   loopSleep: 10ms
