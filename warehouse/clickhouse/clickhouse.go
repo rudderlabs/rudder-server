@@ -606,7 +606,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 									_, err = stmt.Exec(recordInterface...)
 									pkgLogger.Infof("CH: Completed Prepared statement exec table:%s workerIdx:%d goId:%d", tableName, workerIdx, goId)
 									if err != nil {
-										err = fmt.Errorf("CH: Error in inserting statement for loading in table:%s: error:%v goId:%d", tableName, err, workerIdx, goId)
+										err = fmt.Errorf("CH: Error in inserting statement for loading in table:%s: error:%v workerIdx:%d goId:%d", tableName, err, workerIdx, goId)
 										handleError(err)
 										return
 									}
