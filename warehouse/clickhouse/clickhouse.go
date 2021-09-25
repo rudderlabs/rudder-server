@@ -542,13 +542,13 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					}
 					select {
 					case <-ctx.Done():
-						pkgLogger.Debugf("context is cancelled, stopped processing load file for workerIdx:%d goId:%d", workerIdx, goId)
+						pkgLogger.Infof("context is cancelled, stopped processing load file for workerIdx:%d goId:%d", workerIdx, goId)
 						return
 					default:
 						for _, objectFileName := range readJob.fileNames {
 							select {
 							case <-ctx.Done():
-								pkgLogger.Debugf("context is cancelled, stopped processing load file for workerIdx:%d goId:%d", workerIdx, goId)
+								pkgLogger.Infof("context is cancelled, stopped processing load file for workerIdx:%d goId:%d", workerIdx, goId)
 								return
 							default:
 								chStats.syncLoadFileTime.Start()
@@ -661,17 +661,20 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		select {
 		case err := <-loadFileErrorChan:
 			for workerIdx, txn := range txns {
+				pkgLogger.Infof("Rollback started for table:%s workerIdx:%d", tableName, workerIdx)
 				txn.Rollback()
-				pkgLogger.Errorf("Rollback for table:%s workerIdx:%d", tableName, workerIdx)
+				pkgLogger.Infof("Rollback completed for table:%s workerIdx:%d", tableName, workerIdx)
 			}
 			pkgLogger.Errorf("received error while reading load files, cancelling the context: err %v", err)
 			return err
 		case <-waitCh:
 			for workerIdx, txn := range txns {
+				pkgLogger.Infof("Committing transaction for table:%s workerIdx:%d", tableName, workerIdx)
 				if err = txn.Commit(); err != nil {
 					pkgLogger.Errorf("CH: Error while committing transaction as there was error while loading in table:%s: error:%v, workerIdx:%d", tableName, err, workerIdx)
 					return
 				}
+				pkgLogger.Infof("Committed transaction for table:%s workerIdx:%d", tableName, workerIdx)
 			}
 			pkgLogger.Infof("CH: Complete load for table:%s", tableName)
 			return
