@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
@@ -9,10 +10,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go"
@@ -26,11 +29,12 @@ import (
 )
 
 var (
-	queryDebugLogs  string
-	blockSize       string
-	poolSize        string
-	pkgLogger       logger.LoggerI
-	disableNullable bool
+	queryDebugLogs             string
+	blockSize                  string
+	poolSize                   string
+	pkgLogger                  logger.LoggerI
+	disableNullable            bool
+	numLoadFileDownloadWorkers int
 )
 var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
@@ -168,6 +172,7 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("1000", &blockSize, true, "Warehouse.clickhouse.blockSize")
 	config.RegisterStringConfigVariable("10", &poolSize, true, "Warehouse.clickhouse.poolSize")
 	config.RegisterBoolConfigVariable(false, &disableNullable, false, "Warehouse.clickhouse.disableNullable")
+	config.RegisterIntConfigVariable(1, &numLoadFileDownloadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileDownloadWorkers")
 }
 
 /*
@@ -270,45 +275,108 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		pkgLogger.Errorf("CH: Error in setting up a downloader for destionationID : %s Error : %v", ch.Warehouse.Destination.ID, err)
 		return nil, err
 	}
-	var fileNames []string
-	for _, object := range objects {
-		objectName, err := warehouseutils.GetObjectName(object.Location, ch.Warehouse.Destination.Config, ch.ObjectStorage)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
-			return nil, err
-		}
-		dirName := "/rudder-warehouse-load-uploads-tmp/"
-		tmpDirPath, err := misc.CreateTMPDIR()
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in getting tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
-		err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, object.Location, err)
-			return nil, err
-		}
-		objectFile, err := os.Create(ObjectPath)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		err = downloader.Download(objectFile, objectName)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		fileName := objectFile.Name()
-		if err = objectFile.Close(); err != nil {
-			pkgLogger.Errorf("CH: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		fileNames = append(fileNames, fileName)
-	}
-	return fileNames, nil
 
+	wg := sync.WaitGroup{}
+	waitCh := make(chan struct{})
+	wg.Add(len(objects))
+
+	loadFileErrorChan := make(chan error)
+	loadFileDownloadJobChan := make(chan warehouseutils.LoadFileT)
+
+	onError := func(err error) {
+		pkgLogger.Error(err)
+		loadFileErrorChan <- err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var fileNames []string
+
+	go func() {
+		for i := 0; i < numLoadFileDownloadWorkers; i++ {
+			workerIdx := i
+			var goId, goIdErr = misc.GetGoID()
+			if goIdErr != nil {
+				goId = rand.Intn(10000)
+			}
+			pkgLogger.Infof("Generated Go Id for download load file table:%s workerIdx:%d goId:%d", tableName, workerIdx, goId)
+
+			go func(ctx context.Context) {
+				for object := range loadFileDownloadJobChan {
+					select {
+					case <-ctx.Done():
+						pkgLogger.Infof("context is cancelled, stopped processing download load file for workerIdx:%d goId:%d", workerIdx, goId)
+						return
+					default:
+						objectName, err := warehouseutils.GetObjectName(object.Location, ch.Warehouse.Destination.Config, ch.ObjectStorage)
+						if err != nil {
+							err = fmt.Errorf("CH: Error in converting object location to object key for table:%s: %s,%v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							onError(err)
+							return
+						}
+						dirName := "/rudder-warehouse-load-uploads-tmp/"
+						tmpDirPath, err := misc.CreateTMPDIR()
+						if err != nil {
+							err = fmt.Errorf("CH: Error in getting tmp directory for downloading load file for table:%s: %s, %v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							onError(err)
+							return
+						}
+						ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
+						err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
+						if err != nil {
+							err = fmt.Errorf("CH: Error in making tmp directory for downloading load file for table:%s: %s, %s %v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							onError(err)
+							return
+						}
+						objectFile, err := os.Create(ObjectPath)
+						if err != nil {
+							err = fmt.Errorf("CH: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							onError(err)
+							return
+						}
+						err = downloader.Download(objectFile, objectName)
+						if err != nil {
+							err = fmt.Errorf("CH: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							onError(err)
+							return
+						}
+						fileName := objectFile.Name()
+						if err = objectFile.Close(); err != nil {
+							err = fmt.Errorf("CH: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							onError(err)
+							return
+						}
+						fileNames = append(fileNames, fileName)
+
+						wg.Done()
+					}
+				}
+			}(ctx)
+		}
+
+		wg.Wait()
+		close(waitCh)
+	}()
+
+	go func() {
+		for idx := 0; idx < len(objects); idx++ {
+			loadFileDownloadJobChan <- objects[idx]
+		}
+	}()
+
+	for {
+		select {
+		case err := <-loadFileErrorChan:
+			pkgLogger.Errorf("Received error while downloading load files, cancelling the context: err %v", err)
+			return nil, err
+		case <-waitCh:
+			pkgLogger.Infof("CH: Complete download load files for table:%s", tableName)
+			return fileNames, nil
+		}
+	}
 }
+
 func generateArgumentString(arg string, length int) string {
 	var args []string
 	for i := 0; i < length; i++ {

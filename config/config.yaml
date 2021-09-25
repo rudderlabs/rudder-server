@@ -153,6 +153,7 @@ Warehouse:
     poolSize: 10
     disableNullable: false
     enableArraySupport: false
+    numLoadFileDownloadWorkers: 8
 Processor:
   webPort: 8086
   loopSleep: 10ms
