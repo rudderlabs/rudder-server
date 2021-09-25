@@ -370,7 +370,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 						ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
 						err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
 						if err != nil {
-							err = fmt.Errorf("CH: Error in making tmp directory for downloading load file for table:%s: %s, %s %v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
+							err = fmt.Errorf("CH: Error in making tmp directory for downloading load file for table:%s: %s, %v, workerIdx:%d goId:%d", tableName, object.Location, err, workerIdx, goId)
 							onError(err)
 							return
 						}
