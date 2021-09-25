@@ -155,6 +155,7 @@ Warehouse:
     enableArraySupport: false
     numLoadFileReadWorkers: 1
     maxLoadFileReadWorkersBatchSize: 0
+    numLoadFileDownloadWorkers: 8
 Processor:
   webPort: 8086
   loopSleep: 10ms
