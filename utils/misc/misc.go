@@ -1131,7 +1131,7 @@ func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
 	return result
 }
 
-// Generated Goroutine ID
+// GetGoID Generates Goroutine ID
 func GetGoID() (int, error) {
 	var buf [64]byte
 	n := runtime.Stack(buf[:], false)
