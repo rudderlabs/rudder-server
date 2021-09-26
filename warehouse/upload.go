@@ -349,9 +349,9 @@ func (job *UploadJobT) run() (err error) {
 		job.setUploadError(err, FetchingRemoteSchemaFailed)
 		return err
 	}
-	if hasSchemaChanged {
+	//if hasSchemaChanged {
 		pkgLogger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
-	}
+	//}
 	schemaHandle := job.schemaHandle
 	schemaHandle.uploadSchema = job.upload.UploadSchema
 
