@@ -362,9 +362,9 @@ func (job *UploadJobT) run() (err error) {
 	var nextUploadState *uploadStateT
 	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
 	// TOOO: Undo this later.
-	//if !hasSchemaChanged {
+	if !hasSchemaChanged {
 	nextUploadState = getNextUploadState(job.upload.Status)
-	//}
+	}
 	if nextUploadState == nil {
 		nextUploadState = stateTransitions[GeneratedUploadSchema]
 	}
