@@ -105,6 +105,7 @@ func (ch *clickhouse) Begin() (driver.Tx, error) {
 }
 
 func (ch *clickhouse) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	ch.logf("[starting transaction]")
 	return ch.beginTx(ctx, txOptions{
 		Isolation: int(opts.Isolation),
 		ReadOnly:  opts.ReadOnly,
@@ -251,6 +252,7 @@ func (ch *clickhouse) CheckNamedValue(nv *driver.NamedValue) error {
 }
 
 func (ch *clickhouse) Close() error {
+	ch.logf("[close]")
 	ch.block = nil
 	return ch.conn.Close()
 }
