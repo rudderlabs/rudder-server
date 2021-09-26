@@ -147,7 +147,7 @@ type clickHouseStatT struct {
 }
 
 // newClickHouseStat Creates a new clickHouseStatT instance
-func (proc *HandleT) newClickHouseStat() *clickHouseStatT {
+func (proc *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
 	warehouse := proc.Warehouse
 
 	tags := map[string]string{
@@ -156,6 +156,7 @@ func (proc *HandleT) newClickHouseStat() *clickHouseStatT {
 		"source":      warehouse.Source.ID,
 		"namespace":   warehouse.Namespace,
 		"identifier":  warehouse.Identifier,
+		"tableName":   tableName,
 	}
 
 	numRowsLoadFile := proc.stats.NewTaggedStat("warehouse.clickhouse.numRowsLoadFile", stats.CountType, tags)
@@ -533,7 +534,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	pkgLogger.Infof("CH: Starting load for table:%s", tableName)
 
 	// Clickhouse stats
-	chStats := ch.newClickHouseStat()
+	chStats := ch.newClickHouseStat(tableName)
 
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
