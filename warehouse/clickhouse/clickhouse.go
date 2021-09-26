@@ -31,15 +31,15 @@ import (
 )
 
 var (
-	queryDebugLogs                  string
-	blockSize                       string
-	poolSize                        string
-	readTimeout                     string
-	writeTimeout                    string
-	pkgLogger                       logger.LoggerI
-	disableNullable                 bool
-	numLoadFileReadWorkers          int
-	numLoadFileDownloadWorkers      int
+	queryDebugLogs             string
+	blockSize                  string
+	poolSize                   string
+	readTimeout                string
+	writeTimeout               string
+	pkgLogger                  logger.LoggerI
+	disableNullable            bool
+	numLoadFileReadWorkers     int
+	numLoadFileDownloadWorkers int
 )
 var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
@@ -642,7 +642,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 								}
 							}
 							if len(sortedColumnKeys) != len(record) {
-								err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. namespace:%s: Processed rows in csv file until mismatch: %d for workerIdx:%d goId:%d`, len(record), tableName, ch.Namespace, len(sortedColumnKeys), csvRowsProcessedCount, workerIdx, goId)
+								err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. namespace:%s: Processed rows in csv file until mismatch: %d for workerIdx:%d goId:%d`, len(record), tableName, len(sortedColumnKeys), ch.Namespace, csvRowsProcessedCount, workerIdx, goId)
 								handleError(err)
 								return
 							}
