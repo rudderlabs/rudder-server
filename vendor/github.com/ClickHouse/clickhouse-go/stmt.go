@@ -48,13 +48,20 @@ func (stmt *stmt) execContext(ctx context.Context, args []driver.Value) (driver.
 			return nil, err
 		}
 		if (stmt.counter % stmt.ch.blockSize) == 0 {
-			stmt.ch.logf("[exec] flush block")
+			stmt.ch.logf("[exec][started][flush block]")
+			stmt.ch.logf("[exec][started][write block]")
 			if err := stmt.ch.writeBlock(stmt.ch.block); err != nil {
+				stmt.ch.logf("[exec][error][write block] %v", err)
 				return nil, err
 			}
+			stmt.ch.logf("[exec][completed][write block]")
+			stmt.ch.logf("[exec][started][encoder flush]")
 			if err := stmt.ch.encoder.Flush(); err != nil {
+				stmt.ch.logf("[exec][error][encoder flush] %v", err)
 				return nil, err
 			}
+			stmt.ch.logf("[exec][completed][encoder flush]")
+			stmt.ch.logf("[exec][completed][flush block]")
 		}
 		return emptyResult, nil
 	}

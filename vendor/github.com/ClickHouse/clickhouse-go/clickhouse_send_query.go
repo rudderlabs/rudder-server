@@ -6,7 +6,8 @@ import (
 )
 
 func (ch *clickhouse) sendQuery(query string) error {
-	ch.logf("[send query] %s", query)
+	ch.logf("[send query][started] %s", query)
+	defer ch.logf("[send query][completed]")
 	if err := ch.encoder.Uvarint(protocol.ClientQuery); err != nil {
 		return err
 	}
