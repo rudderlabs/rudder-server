@@ -9,7 +9,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"io"
 	"math"
 	"math/rand"
@@ -19,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/stats"
 
 	"github.com/ClickHouse/clickhouse-go"
 	"github.com/rudderlabs/rudder-server/config"
@@ -217,8 +218,8 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(1, &numLoadFileReadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileReadWorkers")
 	config.RegisterIntConfigVariable(0, &maxLoadFileReadWorkersBatchSize, true, 1, "Warehouse.clickhouse.maxLoadFileReadWorkersBatchSize")
 	config.RegisterStringConfigVariable("300", &readTimeout, true, "Warehouse.clickhouse.readTimeout")
-	config.RegisterStringConfigVariable("300", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
-	config.RegisterIntConfigVariable(1, &numLoadFileDownloadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileDownloadWorkers")
+	config.RegisterStringConfigVariable("1800", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
+	config.RegisterIntConfigVariable(64, &numLoadFileDownloadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileDownloadWorkers")
 }
 
 /*
