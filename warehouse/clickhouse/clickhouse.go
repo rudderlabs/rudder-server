@@ -668,7 +668,9 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 									}
 
 									pkgLogger.Infof("CH: Starting Prepared statement exec table:%s workerIdx:%d goId:%d", tableName, workerIdx, goId)
+									chStats.execRowTime.Start()
 									_, err = stmt.Exec(recordInterface...)
+									chStats.execRowTime.End()
 									pkgLogger.Infof("CH: Completed Prepared statement exec table:%s workerIdx:%d goId:%d", tableName, workerIdx, goId)
 									if err != nil {
 										err = fmt.Errorf("CH: Error in inserting statement for loading in table:%s: error:%v workerIdx:%d goId:%d", tableName, err, workerIdx, goId)
