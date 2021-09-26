@@ -9,7 +9,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"io"
 	"math"
 	"math/rand"
@@ -19,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/stats"
 
 	"github.com/ClickHouse/clickhouse-go"
 	"github.com/rudderlabs/rudder-server/config"
@@ -217,8 +218,8 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(1, &numLoadFileReadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileReadWorkers")
 	config.RegisterIntConfigVariable(0, &maxLoadFileReadWorkersBatchSize, true, 1, "Warehouse.clickhouse.maxLoadFileReadWorkersBatchSize")
 	config.RegisterStringConfigVariable("300", &readTimeout, true, "Warehouse.clickhouse.readTimeout")
-	config.RegisterStringConfigVariable("300", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
-	config.RegisterIntConfigVariable(1, &numLoadFileDownloadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileDownloadWorkers")
+	config.RegisterStringConfigVariable("1800", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
+	config.RegisterIntConfigVariable(64, &numLoadFileDownloadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileDownloadWorkers")
 }
 
 /*
@@ -575,6 +576,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		for i := 0; i < numLoadFileReadWorkers; i++ {
 			workerIdx := i
 			go func(ctx context.Context) {
+				defer wg.Done()
 				var txn *sql.Tx
 				var stmt *sql.Stmt
 				var err error
@@ -591,6 +593,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 						txn, err = ch.Db.Begin()
 						if err != nil {
 							pkgLogger.Errorf("CH: Error while beginning a transaction in db for loading in table:%s: error:%v workerIdx:%d goId:%d", tableName, err, workerIdx, goId)
+							handleError(err)
 							return
 						}
 						pkgLogger.Infof("CH: Completed a transaction in db for loading in table:%s  workerIdx:%d goId:%d", tableName, workerIdx, goId)
@@ -600,6 +603,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 						stmt, err = txn.Prepare(sqlStatement)
 						if err != nil {
 							pkgLogger.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: query:%s error:%v workerIdx:%d goId:%d", tableName, sqlStatement, err, workerIdx, goId)
+							handleError(err)
 							return
 						}
 						pkgLogger.Infof("CH: Prepared statement exec in db for loading in table:%s: workerIdx:%d goId:%d", tableName, workerIdx, goId)
@@ -689,7 +693,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 								chStats.syncLoadFileTime.End()
 							}
 						}
-						wg.Done()
+						// wg.Done()
 					}
 				}
 			}(ctx)
