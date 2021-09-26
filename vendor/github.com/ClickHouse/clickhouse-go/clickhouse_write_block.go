@@ -6,6 +6,8 @@ import (
 )
 
 func (ch *clickhouse) writeBlock(block *data.Block) error {
+	ch.logf("[writeBlock][started]")
+	defer ch.logf("[writeBlock][completed]")
 	ch.Lock()
 	defer ch.Unlock()
 	if err := ch.encoder.Uvarint(protocol.ClientData); err != nil {

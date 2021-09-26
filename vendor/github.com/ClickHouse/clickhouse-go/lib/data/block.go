@@ -185,6 +185,8 @@ func (block *Block) Reset() {
 }
 
 func (block *Block) Write(serverInfo *ServerInfo, encoder *binary.Encoder) error {
+	fmt.Println("[Write][started]")
+	defer fmt.Println("[Write][Completed]")
 	if err := block.info.write(encoder); err != nil {
 		return err
 	}
@@ -196,6 +198,7 @@ func (block *Block) Write(serverInfo *ServerInfo, encoder *binary.Encoder) error
 			block.offsets[i] = offset{}
 		}
 	}()
+	fmt.Println("[WriteTo][block.Columns][started]")
 	for i, column := range block.Columns {
 		encoder.String(column.Name())
 		encoder.String(column.CHType())
@@ -212,6 +215,7 @@ func (block *Block) Write(serverInfo *ServerInfo, encoder *binary.Encoder) error
 			}
 		}
 	}
+	fmt.Println("[WriteTo][block.Columns][started]")
 	return nil
 }
 
