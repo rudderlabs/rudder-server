@@ -427,6 +427,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	go func() {
 		for idx := 0; idx < len(objects); idx++ {
 			loadFileDownloadJobChan <- objects[idx]
+			pkgLogger.Infof("Consumed objects[%d] for table:%s, namespace:%s", idx, tableName, ch.Namespace)
 		}
 	}()
 
