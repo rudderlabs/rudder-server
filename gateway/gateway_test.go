@@ -94,7 +94,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 // 	},
 // }
 
-type context struct {
+type testContext struct {
 	asyncHelper testutils.AsyncTestHelper
 
 	mockCtrl          *gomock.Controller
@@ -110,11 +110,11 @@ type context struct {
 	mockSuppressUserFeature *mocksApp.MockSuppressUserFeature
 }
 
-func (c *context) initializeAppFeatures() {
+func (c *testContext) initializeAppFeatures() {
 	c.mockApp.EXPECT().Features().Return(&app.Features{}).AnyTimes()
 }
 
-func (c *context) initializeEnterprizeAppFeatures() {
+func (c *testContext) initializeEnterprizeAppFeatures() {
 	enterpriseFeatures := &app.Features{
 		SuppressUser: c.mockSuppressUserFeature,
 	}
@@ -122,7 +122,7 @@ func (c *context) initializeEnterprizeAppFeatures() {
 }
 
 // Initiaze mocks and common expectations
-func (c *context) Setup() {
+func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
@@ -131,7 +131,7 @@ func (c *context) Setup() {
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
 
 	// During Setup, gateway subscribes to backend config and waits until it is received.
-	c.mockBackendConfig.EXPECT().WaitForConfig().Return().Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("wait_for_config"))
+	c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Return(nil).Times(1).Do(c.asyncHelper.ExpectAndNotifyCallbackWithName("wait_for_config"))
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 			// on Subscribe, emulate a backend configuration event
@@ -142,7 +142,7 @@ func (c *context) Setup() {
 	c.mockVersionHandler = func(w http.ResponseWriter, r *http.Request) {}
 }
 
-func (c *context) Finish() {
+func (c *testContext) Finish() {
 	c.asyncHelper.WaitWithTimeout(testTimeout)
 	c.mockCtrl.Finish()
 }
@@ -177,10 +177,10 @@ func initGW() {
 var _ = Describe("Gateway Enterprise", func() {
 	initGW()
 
-	var c *context
+	var c *testContext
 
 	BeforeEach(func() {
-		c = &context{}
+		c = &testContext{}
 		c.Setup()
 
 		c.mockSuppressUser = mocksTypes.NewMockSuppressUserI(c.mockCtrl)
@@ -234,10 +234,10 @@ var _ = Describe("Gateway Enterprise", func() {
 var _ = Describe("Gateway", func() {
 	initGW()
 
-	var c *context
+	var c *testContext
 
 	BeforeEach(func() {
-		c = &context{}
+		c = &testContext{}
 		c.Setup()
 		c.initializeAppFeatures()
 

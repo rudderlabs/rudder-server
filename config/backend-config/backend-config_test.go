@@ -1,6 +1,7 @@
 package backendconfig
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 
@@ -204,7 +205,7 @@ var _ = Describe("BackendConfig", func() {
 			initialized = true
 			waitForRegulations = false
 			mockLogger.EXPECT().Info("Waiting for initializing backend config").Times(0)
-			backendConfig.WaitForConfig()
+			backendConfig.WaitForConfig(context.TODO())
 		})
 		It("Should wait until initialized", func() {
 			initialized = false
@@ -218,7 +219,7 @@ var _ = Describe("BackendConfig", func() {
 					waitForRegulations = false
 				}
 			}).Times(5)
-			backendConfig.WaitForConfig()
+			backendConfig.WaitForConfig(context.TODO())
 		})
 	})
 })

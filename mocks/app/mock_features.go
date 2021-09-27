@@ -5,6 +5,7 @@
 package mock_app
 
 import (
+	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -48,16 +49,16 @@ func (mr *MockMigratorFeatureMockRecorder) PrepareJobsdbsForImport(arg0, arg1, a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PrepareJobsdbsForImport", reflect.TypeOf((*MockMigratorFeature)(nil).PrepareJobsdbsForImport), arg0, arg1, arg2)
 }
 
-// Setup mocks base method.
-func (m *MockMigratorFeature) Setup(arg0, arg1, arg2 *jobsdb.HandleT, arg3, arg4 func()) {
+// Run mocks base method.
+func (m *MockMigratorFeature) Run(arg0 context.Context, arg1, arg2, arg3 *jobsdb.HandleT, arg4, arg5 func(context.Context)) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Setup", arg0, arg1, arg2, arg3, arg4)
+	m.ctrl.Call(m, "Run", arg0, arg1, arg2, arg3, arg4, arg5)
 }
 
-// Setup indicates an expected call of Setup.
-func (mr *MockMigratorFeatureMockRecorder) Setup(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
+// Run indicates an expected call of Run.
+func (mr *MockMigratorFeatureMockRecorder) Run(arg0, arg1, arg2, arg3, arg4, arg5 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockMigratorFeature)(nil).Setup), arg0, arg1, arg2, arg3, arg4)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockMigratorFeature)(nil).Run), arg0, arg1, arg2, arg3, arg4, arg5)
 }
 
 // MockSuppressUserFeature is a mock of SuppressUserFeature interface.
