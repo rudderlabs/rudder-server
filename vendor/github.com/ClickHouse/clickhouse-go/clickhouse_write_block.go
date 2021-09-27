@@ -41,7 +41,7 @@ func (ch *clickhouse) writeBlock(block *data.Block, tableName string) error {
 	ch.encoder.SelectCompress(ch.compress)
 	ch.logf("[writeBlock][selected_compress]")
 	ch.logf("[writeBlock][block.Write]")
-	err := block.Write(ch, &ch.ServerInfo, ch.encoder)
+	err := block.Write(&ch.ServerInfo, ch.encoder)
 	ch.logf("[writeBlock][block.Write][complete]")
 	ch.encoder.SelectCompress(false)
 	ch.logf("[writeBlock][selected_compress_false]")
