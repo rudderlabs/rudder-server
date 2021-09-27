@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 
@@ -17,6 +18,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
@@ -88,6 +90,7 @@ var (
 	ReadHeaderTimeout         time.Duration
 	WriteTimeout              time.Duration
 	IdleTimeout               time.Duration
+	gracefulShutdownTimeout   time.Duration
 	MaxHeaderBytes            int
 )
 
@@ -101,9 +104,11 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(0), &ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(10), &WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(720), &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(15), &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
-}
 
+}
+  
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("main")
@@ -125,8 +130,8 @@ func printVersion() {
 	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
-func startWarehouseService(application app.Interface) {
-	warehouse.Start(application)
+func startWarehouseService(ctx context.Context, application app.Interface) error {
+	return warehouse.Start(ctx, application)
 }
 
 func canStartServer() bool {
@@ -202,9 +207,8 @@ func runAllInit() {
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		c := make(chan os.Signal, 1) // we need to reserve to buffer size 1, so the notifier are not blocked
+		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
 		<-c
 		cancel()
 	}()
@@ -273,44 +277,83 @@ func Run(ctx context.Context) {
 
 	backendconfig.Setup(pollRegulations, configEnvHandler)
 
-	go func() {
-		<-ctx.Done()
-		application.Stop()
-		// clearing zap Log buffer to std output
-		if logger.Log != nil {
-			logger.Log.Sync()
-		}
-		stats.StopRuntimeStats()
-		os.Exit(1)
-	}()
-
-	rruntime.Go(admin.StartServer)
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return admin.StartServer(ctx)
+	})
 
 	misc.AppStartTime = time.Now().Unix()
 	//If the server is standby mode, then no major services (gateway, processor, routers...) run
 	if options.StandByMode {
 		appHandler.HandleRecovery(options)
-		startStandbyWebHandler()
+		g.Go(func() error {
+			return startStandbyWebHandler(ctx)
+		})
 	} else {
 		if canStartServer() {
 			appHandler.HandleRecovery(options)
-			rruntime.Go(func() {
-				appHandler.StartRudderCore(options)
-			})
+			g.Go(misc.WithBugsnag(func() error {
+				return appHandler.StartRudderCore(ctx, options)
+			}))
 		}
 
 		// initialize warehouse service after core to handle non-normal recovery modes
 		if appTypeStr != app.GATEWAY && canStartWarehouse() {
-			rruntime.Go(func() {
-				startWarehouseService(application)
-			})
+			g.Go(misc.WithBugsnag(func() error {
+				return startWarehouseService(ctx, application)
+			}))
 		}
-
-		misc.KeepProcessAlive()
 	}
+
+	var ctxDoneTime time.Time
+	g.Go(func() error {
+		<-ctx.Done()
+		ctxDoneTime = time.Now()
+		return nil
+	})
+
+	go func() {
+		<-ctx.Done()
+		<-time.After(gracefulShutdownTimeout)
+		// Assume graceful shutdown failed, log remain goroutines and force kill
+		pkgLogger.Errorf(
+			"Graceful termination failed after %s, goroutine dump:\n",
+			gracefulShutdownTimeout,
+		)
+
+		fmt.Print("\n\n")
+		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+		fmt.Print("\n\n")
+
+		application.Stop()
+		if logger.Log != nil {
+			logger.Log.Sync()
+		}
+		stats.StopRuntimeStats()
+
+		os.Exit(1)
+	}()
+
+	err := g.Wait()
+	if err != nil && err != context.Canceled {
+		pkgLogger.Error(err)
+	}
+
+	application.Stop()
+
+	pkgLogger.Infof(
+		"Graceful terminal after %s, with %d go-routines",
+		time.Since(ctxDoneTime),
+		runtime.NumGoroutine(),
+	)
+	// clearing zap Log buffer to std output
+	if logger.Log != nil {
+		logger.Log.Sync()
+	}
+	stats.StopRuntimeStats()
 }
 
-func startStandbyWebHandler() {
+func startStandbyWebHandler(ctx context.Context) error {
 	webPort := getWebPort()
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/health", standbyHealthHandler)
@@ -329,7 +372,15 @@ func startStandbyWebHandler() {
 		IdleTimeout:       IdleTimeout,
 		MaxHeaderBytes:    MaxHeaderBytes,
 	}
-	pkgLogger.Fatal(srv.ListenAndServe())
+	func() {
+		<-ctx.Done()
+		srv.Shutdown(context.Background())
+	}()
+
+	if err := srv.ListenAndServe(); err != nil {
+		return fmt.Errorf("web server: %w", err)
+	}
+	return nil
 }
 
 func getWebPort() int {
