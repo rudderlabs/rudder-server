@@ -599,7 +599,6 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		for i := 0; i < numLoadFileReadWorkers; i++ {
 			workerIdx := i
 			go func(ctx context.Context) {
-				defer wg.Done()
 				var txn *sql.Tx
 				var stmt *sql.Stmt
 				var err error
