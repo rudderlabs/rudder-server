@@ -2,10 +2,11 @@ package processor
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"reflect"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -93,6 +95,9 @@ type HandleT struct {
 	reporting                      types.ReportingI
 	reportingEnabled               bool
 	transformerFeatures            json.RawMessage
+
+	backgroundWait   func() error
+	backgroundCancel context.CancelFunc
 }
 
 var defaultTransformerFeatures = `{
@@ -295,13 +300,21 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	if enableDedup {
 		proc.dedupHandler = dedup.GetInstance(clearDB)
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	proc.backgroundWait = g.Wait
+	proc.backgroundCancel = cancel
+
 	rruntime.Go(func() {
 		proc.backendConfigSubscriber()
 	})
 
-	rruntime.Go(func() {
-		proc.getTransformerFeatureJson()
-	})
+	g.Go(misc.WithBugsnag(func() error {
+		proc.getTransformerFeatureJson(ctx)
+		return nil
+	}))
 
 	proc.transformer.Setup()
 
@@ -309,17 +322,33 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 }
 
 // Start starts this processor's main loops.
-func (proc *HandleT) Start() {
-	rruntime.Go(func() {
-		//waiting till the backend config is received
-		proc.backendConfig.WaitForConfig()
-		proc.mainLoop()
-	})
-	rruntime.Go(func() {
+func (proc *HandleT) Start(ctx context.Context) {
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(misc.WithBugsnag(func() error {
+		if err := proc.backendConfig.WaitForConfig(ctx); err != nil {
+			return err
+		}
+		proc.mainLoop(ctx)
+		return nil
+	}))
+	g.Go(misc.WithBugsnag(func() error {
 		st := stash.New()
 		st.Setup(proc.errorDB)
-		st.Start()
-	})
+		st.Start(ctx)
+		return nil
+	}))
+
+	g.Wait()
+}
+
+func (proc *HandleT) Shutdown() {
+	proc.backgroundCancel()
+	proc.backgroundWait()
+
+	// It is important to make sure everything has stopped,
+	//	 before we shutdown the transformer
+	proc.transformer.Shutdown()
 }
 
 var (
@@ -378,9 +407,13 @@ func loadConfig() {
 	workspaceToken = router_utils.BasicAuth(router_utils.GetWorkspaceToken(), "")
 }
 
-func (proc *HandleT) getTransformerFeatureJson() {
+func (proc *HandleT) getTransformerFeatureJson(ctx context.Context) {
 	for {
 		for i := 0; i < featuresRetryMaxAttempts; i++ {
+			if ctx.Err() != nil {
+				return
+			}
+
 			url := transformerURL + "/features"
 			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
 			if err != nil {
@@ -398,7 +431,7 @@ func (proc *HandleT) getTransformerFeatureJson() {
 				continue
 			}
 			if res.StatusCode == 200 {
-				body, err := ioutil.ReadAll(res.Body)
+				body, err := io.ReadAll(res.Body)
 				if err == nil {
 					proc.transformerFeatures = json.RawMessage(body)
 					res.Body.Close()
@@ -416,7 +449,12 @@ func (proc *HandleT) getTransformerFeatureJson() {
 		if proc.transformerFeatures != nil && !isUnLocked {
 			isUnLocked = true
 		}
-		time.Sleep(pollInterval)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pollInterval):
+		}
 	}
 }
 
@@ -1689,25 +1727,25 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	return true
 }
 
-func (proc *HandleT) mainLoop() {
+func (proc *HandleT) mainLoop(ctx context.Context) {
 	//waiting for reporting client setup
 	if proc.reporting != nil && proc.reportingEnabled {
-		proc.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
+		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
 	}
 
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
-	timeout := time.After(mainLoopTimeout)
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case pause := <-proc.pauseChannel:
 			pkgLogger.Info("Processor is paused.")
 			proc.paused = true
 			pause.respChannel <- true
 			<-proc.resumeChannel
-		case <-timeout:
+		case <-time.After(mainLoopTimeout):
 			proc.paused = false
-			timeout = time.After(mainLoopTimeout)
 			if isUnLocked {
 				if proc.handlePendingGatewayJobs() {
 					currLoopSleep = time.Duration(0)

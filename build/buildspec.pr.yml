@@ -8,9 +8,9 @@ env:
 phases:
   install:
     runtime-versions:
-      golang: 1.13
+      golang: 1.16
     commands:
-      - apt-get install jq 
+      - apt-get install jq
   pre_build:
     commands:
       - env
@@ -21,7 +21,7 @@ phases:
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
       - (cd && go get github.com/onsi/ginkgo/ginkgo)
-      - (cd && go get github.com/golang/mock/mockgen)        
+      - (cd && go get github.com/golang/mock/mockgen)
   build:
     commands:
       - export GO111MODULE=on

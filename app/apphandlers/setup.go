@@ -1,11 +1,11 @@
 package apphandlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"runtime"
-	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/app"
@@ -20,6 +20,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	utilsync "github.com/rudderlabs/rudder-server/utils/sync"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -30,9 +33,8 @@ var (
 	objectStorageDestinations                                  []string
 	asyncDestinations                                          []string
 	warehouseDestinations                                      []string
-	moduleLoadLock                                             sync.Mutex
-	routerLoaded                                               bool
-	processorLoaded                                            bool
+	routerLoaded                                               utilsync.First
+	processorLoaded                                            utilsync.First
 	pkgLogger                                                  logger.LoggerI
 	Diagnostics                                                diagnostics.DiagnosticsI
 	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyHandleT
@@ -43,7 +45,7 @@ var (
 type AppHandler interface {
 	GetAppType() string
 	HandleRecovery(*app.Options)
-	StartRudderCore(*app.Options)
+	StartRudderCore(context.Context, *app.Options) error
 }
 
 func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {
@@ -109,87 +111,103 @@ func rudderCoreBaseSetup() {
 }
 
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
-	moduleLoadLock.Lock()
-	defer moduleLoadLock.Unlock()
-
-	if processorLoaded {
+func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+	if !enableProcessor {
 		return
 	}
 
-	if enableProcessor {
-		var processorInstance = processor.NewProcessor()
-		processor.ProcessorManagerSetup(processorInstance)
-		processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting)
-		processorInstance.Start()
-
-		processorLoaded = true
+	if !processorLoaded.First() {
+		pkgLogger.Debug("processor started by an other go routine")
+		return
 	}
+
+	var processorInstance = processor.NewProcessor()
+	processor.ProcessorManagerSetup(processorInstance)
+	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting)
+	defer processorInstance.Shutdown()
+	processorInstance.Start(ctx)
 }
 
 //StartRouter atomically starts router process if not already started
-func StartRouter(enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
-	moduleLoadLock.Lock()
-	defer moduleLoadLock.Unlock()
-
-	if routerLoaded {
+func StartRouter(ctx context.Context, enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+	if !enableRouter {
 		return
 	}
 
-	if enableRouter {
-		router.RoutersManagerSetup()
-		batchrouter.BatchRoutersManagerSetup()
-		go monitorDestRouters(routerDB, batchRouterDB, procErrorDB, reporting)
-		routerLoaded = true
+	if !routerLoaded.First() {
+		pkgLogger.Debug("processor started by an other go routine")
+		return
 	}
+
+	router.RoutersManagerSetup()
+	batchrouter.BatchRoutersManagerSetup()
+	monitorDestRouters(ctx, routerDB, batchRouterDB, procErrorDB, reporting)
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
-	// dstToWhRouter := make(map[string]*warehouse.HandleT)
+// 
+	cleanup := make([]func(), 0)
 
+loop:
 	for {
-		config := <-ch
-		sources := config.Data.(backendconfig.ConfigT)
-		enabledDestinations := make(map[string]bool)
-		for _, source := range sources.Sources {
-			for _, destination := range source.Destinations {
-				enabledDestinations[destination.DestinationDefinition.Name] = true
-				//For batch router destinations
-				if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) || misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
-					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
-					if !ok {
-						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
-						var brt batchrouter.HandleT
-						brt.Setup(backendconfig.DefaultBackendConfig, batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
-						brt.Start()
-						dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
-					}
-				} else {
-					_, ok := dstToRouter[destination.DestinationDefinition.Name]
-					if !ok {
-						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
-						var router router.HandleT
-						router.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition, reporting)
-						router.Start()
-						dstToRouter[destination.DestinationDefinition.Name] = &router
+		select {
+		case <-ctx.Done():
+			break loop
+		case config := <-ch:
+			sources := config.Data.(backendconfig.ConfigT)
+			enabledDestinations := make(map[string]bool)
+			for _, source := range sources.Sources {
+				for _, destination := range source.Destinations {
+					enabledDestinations[destination.DestinationDefinition.Name] = true
+					//For batch router destinations
+					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) || misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
+						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
+							var brt batchrouter.HandleT
+							brt.Setup(backendconfig.DefaultBackendConfig, batchRouterDB, procErrorDB, destination.DestinationDefinition.Name, reporting)
+							brt.Start()
+							cleanup = append(cleanup, brt.Shutdown)
+							dstToBatchRouter[destination.DestinationDefinition.Name] = &brt
+						}
+					} else {
+						_, ok := dstToRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
+							var router router.HandleT
+							router.Setup(backendconfig.DefaultBackendConfig, routerDB, procErrorDB, destination.DestinationDefinition, reporting)
+							router.Start()
+							cleanup = append(cleanup, router.Shutdown)
+							dstToRouter[destination.DestinationDefinition.Name] = &router
+						}
 					}
 				}
 			}
-		}
 
-		rm, err := router.GetRoutersManager()
-		if rm != nil && err == nil {
-			rm.SetRoutersReady()
-		}
+			rm, err := router.GetRoutersManager()
+			if rm != nil && err == nil {
+				rm.SetRoutersReady()
+			}
 
-		brm, err := batchrouter.GetBatchRoutersManager()
-		if brm != nil && err == nil {
-			brm.SetBatchRoutersReady()
+			brm, err := batchrouter.GetBatchRoutersManager()
+			if brm != nil && err == nil {
+				brm.SetBatchRoutersReady()
+			}
 		}
 	}
+
+	g, _ := errgroup.WithContext(context.Background())
+	for _, f := range cleanup {
+		f := f
+		g.Go(func() error {
+			f()
+			return nil
+		})
+	}
+	g.Wait()
 }
