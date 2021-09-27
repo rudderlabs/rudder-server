@@ -19,6 +19,15 @@ type stmt struct {
 
 var emptyResult = &result{}
 
+type key string
+
+var queryIDKey key
+
+//Put query ID into context and use it in ExecContext or QueryContext
+func WithQueryID(ctx context.Context, queryID string) context.Context {
+	return context.WithValue(ctx, queryIDKey, queryID)
+}
+
 func (stmt *stmt) NumInput() int {
 	switch {
 	case stmt.ch.block != nil:
@@ -50,7 +59,7 @@ func (stmt *stmt) execContext(ctx context.Context, args []driver.Value) (driver.
 		if (stmt.counter % stmt.ch.blockSize) == 0 {
 			stmt.ch.logf("[exec][started][flush block]")
 			stmt.ch.logf("[exec][started][write block]")
-			if err := stmt.ch.writeBlock(stmt.ch.block); err != nil {
+			if err := stmt.ch.writeBlock(stmt.ch.block, ""); err != nil {
 				stmt.ch.logf("[exec][error][write block] %v", err)
 				return nil, err
 			}
@@ -65,7 +74,8 @@ func (stmt *stmt) execContext(ctx context.Context, args []driver.Value) (driver.
 		}
 		return emptyResult, nil
 	}
-	if err := stmt.ch.sendQuery(stmt.bind(convertOldArgs(args))); err != nil {
+	query, externalTables := stmt.bind(convertOldArgs(args))
+	if err := stmt.ch.sendQuery(ctx, query, externalTables); err != nil {
 		return nil, err
 	}
 	if err := stmt.ch.process(); err != nil {
@@ -84,7 +94,8 @@ func (stmt *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (d
 
 func (stmt *stmt) queryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
 	finish := stmt.ch.watchCancel(ctx)
-	if err := stmt.ch.sendQuery(stmt.bind(args)); err != nil {
+	query, externalTables := stmt.bind(args)
+	if err := stmt.ch.sendQuery(ctx, query, externalTables); err != nil {
 		finish()
 		return nil, err
 	}
@@ -109,16 +120,21 @@ func (stmt *stmt) Close() error {
 	return nil
 }
 
-func (stmt *stmt) bind(args []driver.NamedValue) string {
+func (stmt *stmt) bind(args []driver.NamedValue) (string, []ExternalTable) {
 	var (
-		buf       bytes.Buffer
-		index     int
-		keyword   bool
-		inBetween bool
-		like      = newMatcher("like")
-		limit     = newMatcher("limit")
-		between   = newMatcher("between")
-		and       = newMatcher("and")
+		buf            bytes.Buffer
+		index          int
+		keyword        bool
+		inBetween      bool
+		like           = newMatcher("like")
+		limit          = newMatcher("limit")
+		offset         = newMatcher("offset")
+		between        = newMatcher("between")
+		and            = newMatcher("and")
+		in             = newMatcher("in")
+		from           = newMatcher("from")
+		join           = newMatcher("join")
+		externalTables = make([]ExternalTable, 0)
 	)
 	switch {
 	case stmt.NumInput() != 0:
@@ -130,13 +146,25 @@ func (stmt *stmt) bind(args []driver.NamedValue) string {
 					if param := paramParser(reader); len(param) != 0 {
 						for _, v := range args {
 							if len(v.Name) != 0 && v.Name == param {
-								buf.WriteString(quote(v.Value))
+								switch v := v.Value.(type) {
+								case ExternalTable:
+									buf.WriteString(v.Name)
+									externalTables = append(externalTables, v)
+								default:
+									buf.WriteString(quote(v))
+								}
 							}
 						}
 					}
 				case '?':
 					if keyword && index < len(args) && len(args[index].Name) == 0 {
-						buf.WriteString(quote(args[index].Value))
+						switch v := args[index].Value.(type) {
+						case ExternalTable:
+							buf.WriteString(v.Name)
+							externalTables = append(externalTables, v)
+						default:
+							buf.WriteString(quote(v))
+						}
 						index++
 					} else {
 						buf.WriteRune(char)
@@ -156,7 +184,8 @@ func (stmt *stmt) bind(args []driver.NamedValue) string {
 						char == '[':
 						keyword = true
 					default:
-						if limit.matchRune(char) || like.matchRune(char) {
+						if limit.matchRune(char) || offset.matchRune(char) || like.matchRune(char) ||
+							in.matchRune(char) || from.matchRune(char) || join.matchRune(char) {
 							keyword = true
 						} else if between.matchRune(char) {
 							keyword = true
@@ -177,7 +206,7 @@ func (stmt *stmt) bind(args []driver.NamedValue) string {
 	default:
 		buf.WriteString(stmt.query)
 	}
-	return buf.String()
+	return buf.String(), externalTables
 }
 
 func convertOldArgs(args []driver.Value) []driver.NamedValue {

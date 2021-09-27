@@ -26,6 +26,12 @@ type (
 	UUID     = types.UUID
 )
 
+type ExternalTable struct {
+	Name    string
+	Values  [][]driver.Value
+	Columns []column.Column
+}
+
 var (
 	ErrInsertInNotBatchMode = errors.New("insert statement supported only in the batch mode (use begin/commit)")
 	ErrLimitDataRequestInTx = errors.New("data request has already been prepared in transaction")
@@ -76,7 +82,7 @@ func (ch *clickhouse) prepareContext(ctx context.Context, query string) (driver.
 			ch.logf("[prepare][error] %v", ErrInsertInNotBatchMode)
 			return nil, ErrInsertInNotBatchMode
 		}
-		return ch.insert(query)
+		return ch.insert(ctx, query)
 	}
 	return &stmt{
 		ch:       ch,
@@ -85,10 +91,10 @@ func (ch *clickhouse) prepareContext(ctx context.Context, query string) (driver.
 	}, nil
 }
 
-func (ch *clickhouse) insert(query string) (_ driver.Stmt, err error) {
+func (ch *clickhouse) insert(ctx context.Context, query string) (_ driver.Stmt, err error) {
 	ch.logf("[insert][started] query:%s", query)
 	defer ch.logf("[insert][completed]")
-	if err := ch.sendQuery(splitInsertRe.Split(query, -1)[0] + " VALUES "); err != nil {
+	if err := ch.sendQuery(ctx, splitInsertRe.Split(query, -1)[0]+" VALUES ", nil); err != nil {
 		return nil, err
 	}
 	if ch.block, err = ch.readMeta(); err != nil {
@@ -156,13 +162,13 @@ func (ch *clickhouse) Commit() error {
 	}
 	if ch.block != nil {
 		ch.logf("[commit][writeBlock][started]")
-		if err := ch.writeBlock(ch.block); err != nil {
+		if err := ch.writeBlock(ch.block, ""); err != nil {
 			ch.logf("[commit][writeBlock][error] %v", err)
 			return err
 		}
 		ch.logf("[commit][writeBlock][completed]")
 		// Send empty block as marker of end of data.
-		if err := ch.writeBlock(&data.Block{}); err != nil {
+		if err := ch.writeBlock(&data.Block{}, ""); err != nil {
 			return err
 		}
 		ch.logf("[commit][encoder flush][started]")
@@ -195,7 +201,7 @@ func (ch *clickhouse) Rollback() error {
 
 func (ch *clickhouse) CheckNamedValue(nv *driver.NamedValue) error {
 	switch nv.Value.(type) {
-	case column.IP, column.UUID:
+	case ExternalTable, column.IP, column.UUID:
 		return nil
 	case nil, []byte, int8, int16, int32, int64, uint8, uint16, uint32, uint64, float32, float64, string, time.Time:
 		return nil

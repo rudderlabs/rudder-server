@@ -5,7 +5,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/lib/protocol"
 )
 
-func (ch *clickhouse) writeBlock(block *data.Block) error {
+func (ch *clickhouse) writeBlock(block *data.Block, tableName string) error {
 	ch.logf("[writeBlock][started]")
 	defer ch.logf("[writeBlock][completed]")
 	ch.Lock()
@@ -16,7 +16,7 @@ func (ch *clickhouse) writeBlock(block *data.Block) error {
 	}
 	ch.logf("[writeBlock][encoder_Uvarint]")
 
-	if err := ch.encoder.String(""); err != nil { // temporary table
+	if err := ch.encoder.String(tableName); err != nil { // temporary table
 		return err
 	}
 	ch.logf("[writeBlock][encoder_String]")

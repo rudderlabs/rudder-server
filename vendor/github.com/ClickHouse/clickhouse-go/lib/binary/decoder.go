@@ -159,6 +159,12 @@ func (decoder *Decoder) String() (string, error) {
 	return string(str), nil
 }
 
+func (decoder *Decoder) Decimal128() ([]byte, error) {
+	bytes := make([]byte, 16)
+	_, err := decoder.Get().Read(bytes)
+	return bytes, err
+}
+
 func (decoder *Decoder) ReadByte() (byte, error) {
 	if _, err := decoder.Get().Read(decoder.scratch[:1]); err != nil {
 		return 0x0, err

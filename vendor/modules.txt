@@ -34,18 +34,16 @@ github.com/Azure/go-ansiterm/winterm
 # github.com/BurntSushi/toml v0.3.1
 ## explicit
 github.com/BurntSushi/toml
-# github.com/ClickHouse/clickhouse-go v1.4.1
+# github.com/ClickHouse/clickhouse-go v1.4.8
 ## explicit
 github.com/ClickHouse/clickhouse-go
 github.com/ClickHouse/clickhouse-go/lib/binary
 github.com/ClickHouse/clickhouse-go/lib/cityhash102
 github.com/ClickHouse/clickhouse-go/lib/column
 github.com/ClickHouse/clickhouse-go/lib/data
-github.com/ClickHouse/clickhouse-go/lib/leakypool
 github.com/ClickHouse/clickhouse-go/lib/lz4
 github.com/ClickHouse/clickhouse-go/lib/protocol
 github.com/ClickHouse/clickhouse-go/lib/types
-github.com/ClickHouse/clickhouse-go/lib/writebuffer
 # github.com/DATA-DOG/go-sqlmock v1.5.0
 ## explicit
 github.com/DATA-DOG/go-sqlmock
