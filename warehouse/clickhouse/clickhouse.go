@@ -551,7 +551,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	waitCh := make(chan struct{})
 	wg.Add(len(fileNames))
 
-	pkgLogger.Infof("wg for DownloadLoadFiles table:%s, namespace:%s, len(fileNames):%d", tableName, ch.Namespace, len(fileNames))
+	pkgLogger.Infof("wg for loadTable table:%s, namespace:%s, len(fileNames):%d", tableName, ch.Namespace, len(fileNames))
 
 	loadFileErrorChan := make(chan error)
 	loadFileReadJobChan := make(chan string)
