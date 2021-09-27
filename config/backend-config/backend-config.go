@@ -28,6 +28,7 @@ var (
 	backendConfig                         BackendConfig
 	isMultiWorkspace                      bool
 	multiWorkspaceSecret                  string
+	multitenantWorkspaceSecret            string
 	configBackendURL, workspaceToken      string
 	pollInterval, regulationsPollInterval time.Duration
 	configFromFile                        bool
@@ -232,6 +233,7 @@ func loadConfig() {
 	isMultiWorkspace = config.GetEnvAsBool("HOSTED_SERVICE", false)
 	// Secret to be sent in basic auth for supporting multiple workspaces. password by default
 	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+	multitenantWorkspaceSecret = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
 
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	workspaceToken = config.GetWorkspaceToken()
