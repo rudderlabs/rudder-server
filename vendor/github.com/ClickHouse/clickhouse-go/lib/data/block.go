@@ -199,14 +199,22 @@ func (block *Block) Reset() {
 }
 
 func (block *Block) Write(serverInfo *ServerInfo, encoder *binary.Encoder) error {
+	fmt.Println("[clickhouse][Write][started]")
+	defer fmt.Println("[clickhouse][Write][completed]")
 	if serverInfo.Revision > 0 {
+		fmt.Println("[clickhouse][block.info.write][started]")
 		if err := block.info.write(encoder); err != nil {
+			fmt.Println("[clickhouse][block.info.write][error]")
 			return err
 		}
+		fmt.Println("[clickhouse][block.info.write][completed]")
 	}
+	fmt.Println("[clickhouse][encoder.Uvarint][started]")
 	if err := encoder.Uvarint(block.NumColumns); err != nil {
+		fmt.Println("[clickhouse][encoder.Uvarint][error]")
 		return err
 	}
+	fmt.Println("[clickhouse][encoder.Uvarint][completed]")
 	encoder.Uvarint(block.NumRows)
 	defer func() {
 		block.NumRows = 0
@@ -214,6 +222,7 @@ func (block *Block) Write(serverInfo *ServerInfo, encoder *binary.Encoder) error
 			block.offsets[i] = offset{}
 		}
 	}()
+	fmt.Println("[clickhouse][block.Columns][started]")
 	for i, column := range block.Columns {
 		encoder.String(column.Name())
 		encoder.String(column.CHType())
@@ -225,11 +234,15 @@ func (block *Block) Write(serverInfo *ServerInfo, encoder *binary.Encoder) error
 					}
 				}
 			}
+			fmt.Println("[clickhouse][block.buffers[i].WriteTo][started]")
 			if _, err := block.buffers[i].WriteTo(encoder); err != nil {
+				fmt.Println("[clickhouse][block.buffers[i].WriteTo][error]")
 				return err
 			}
+			fmt.Println("[clickhouse][block.buffers[i].WriteTo][completed]")
 		}
 	}
+	fmt.Println("[clickhouse][block.Columns][completed]")
 	return nil
 }
 
