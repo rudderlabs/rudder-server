@@ -11,7 +11,7 @@ require (
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/Azure/go-autorest/autorest/adal v0.8.1 // indirect
 	github.com/BurntSushi/toml v0.3.1
-	github.com/ClickHouse/clickhouse-go v1.4.8
+	github.com/ClickHouse/clickhouse-go v1.4.8 // indirect
 	github.com/DATA-DOG/go-sqlmock v1.5.0
 	github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d // indirect
 	github.com/EagleChen/restrictor v0.0.0-20180420073700-9b81bbf8df1d
@@ -49,7 +49,7 @@ require (
 	github.com/joho/godotenv v1.3.0
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.3.0
-	github.com/mailru/go-clickhouse v1.7.0 // indirect
+	github.com/mailru/go-clickhouse v1.7.0
 	github.com/mattn/go-ieproxy v0.0.0-20200203040449-2dbc853185d9 // indirect
 	github.com/minio/minio-go v6.0.14+incompatible
 	github.com/minio/minio-go/v6 v6.0.49
