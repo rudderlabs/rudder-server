@@ -332,6 +332,9 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	loadFileErrorChan := make(chan error)
 	loadFileDownloadJobChan := make(chan warehouseutils.LoadFileT, len(objects))
 
+	defer close(loadFileErrorChan)
+	defer close(loadFileDownloadJobChan)
+
 	onError := func(err error) {
 		pkgLogger.Infof("onError for DownloadLoadFiles table:%s, namespace:%s", tableName, ch.Namespace)
 		pkgLogger.Error(err)
@@ -575,6 +578,9 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	loadFileErrorChan := make(chan error)
 	loadFileReadJobChan := make(chan string, len(fileNames))
+
+	defer close(loadFileErrorChan)
+	defer close(loadFileReadJobChan)
 
 	handleError := func(err error) {
 		pkgLogger.Infof("onError for loadTable table:%s, namespace:%s", tableName, ch.Namespace)
