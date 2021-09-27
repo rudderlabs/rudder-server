@@ -329,16 +329,19 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 
 	pkgLogger.Infof("wg for DownloadLoadFiles table:%s, namespace:%s, len(objects):%d", tableName, ch.Namespace, len(objects))
 
-	loadFileErrorChan := make(chan error)
+	//loadFileErrorChan := make(chan error)
 	loadFileDownloadJobChan := make(chan warehouseutils.LoadFileT, len(objects))
 
-	defer close(loadFileErrorChan)
+	//defer close(loadFileErrorChan)
 	defer close(loadFileDownloadJobChan)
+
+	var downloadError error;
 
 	onError := func(err error) {
 		pkgLogger.Infof("onError for DownloadLoadFiles table:%s, namespace:%s", tableName, ch.Namespace)
 		pkgLogger.Error(err)
-		loadFileErrorChan <- err
+		downloadError = err
+		wg.Done()
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -436,12 +439,12 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 
 	for {
 		select {
-		case err := <-loadFileErrorChan:
-			pkgLogger.Errorf("Received error while downloading load files for table:%s, namespace:%s, cancelling the context: err %v", tableName, ch.Namespace, err)
-			return nil, err
+		//case err := <-loadFileErrorChan:
+		//	pkgLogger.Errorf("Received error while downloading load files for table:%s, namespace:%s, cancelling the context: err %v", tableName, ch.Namespace, err)
+		//	return nil, err
 		case <-waitCh:
 			pkgLogger.Infof("CH: Complete download load files for table:%s, namespace:%s", tableName, ch.Namespace)
-			return fileNames, nil
+			return fileNames, downloadError
 		}
 	}
 }
