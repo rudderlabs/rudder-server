@@ -9,14 +9,17 @@ func (ch *clickhouse) writeBlock(block *data.Block) error {
 	ch.logf("[writeBlock][started]")
 	defer ch.logf("[writeBlock][completed]")
 	ch.Lock()
+	ch.logf("[writeBlock][obtained_lock]")
 	defer ch.Unlock()
 	if err := ch.encoder.Uvarint(protocol.ClientData); err != nil {
 		return err
 	}
+	ch.logf("[writeBlock][encoder_Uvarint]")
 
 	if err := ch.encoder.String(""); err != nil { // temporary table
 		return err
 	}
+	ch.logf("[writeBlock][encoder_String]")
 
 	// implement CityHash v 1.0.2 and add LZ4 compression
 	/*
@@ -36,7 +39,11 @@ func (ch *clickhouse) writeBlock(block *data.Block) error {
 		utils/compressor, TCPHandler.
 	*/
 	ch.encoder.SelectCompress(ch.compress)
+	ch.logf("[writeBlock][selected_compress]")
+	ch.logf("[writeBlock][block.Write]")
 	err := block.Write(&ch.ServerInfo, ch.encoder)
+	ch.logf("[writeBlock][block.Write][complete]")
 	ch.encoder.SelectCompress(false)
+	ch.logf("[writeBlock][selected_compress_false]")
 	return err
 }
