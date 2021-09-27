@@ -384,7 +384,7 @@ func (jd *HandleT) getBackUpSettings() *BackupSettingsT {
 func (jd *HandleT) assertError(err error) {
 	if err != nil {
 		jd.printLists(true)
-		jd.logger.Error(jd.dsEmptyResultCache)
+		jd.logger.Fatal(jd.dsEmptyResultCache)
 		panic(err)
 	}
 }
@@ -1659,28 +1659,6 @@ func (jd *HandleT) postMigrateHandleDS(migrateFrom []dataSetT) error {
 	return nil
 }
 
-func (jd *HandleT) inTxn(fn func(t transactionHandler) error) error {
-	txn, err := jd.dbHandle.Begin()
-	if err != nil {
-		return err
-	}
-
-	err = fn(txn)
-	if err != nil {
-		if rollbackErr := txn.Rollback(); rollbackErr != nil {
-			return fmt.Errorf("error: %s, while rolling back from: %w", rollbackErr, err)
-		}
-		return err
-	}
-
-	err = txn.Commit()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 /*
 Next set of functions are for reading/writing jobs and job_status for
 a given dataset. The names should be self explainatory
@@ -1690,57 +1668,23 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 	queryStat.Start()
 	defer queryStat.End()
 
-	err := jd.inTxn(func(txHandler transactionHandler) error {
-		var stmt *sql.Stmt
-		var err error
-
-		if copyID {
-			stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
-				"event_payload", "created_at", "expire_at"))
-		} else {
-			stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload"))
-		}
-		if err != nil {
-			return err
-		}
-		defer stmt.Close()
-
-		for _, job := range jobList {
-			if copyID {
-				_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
-					string(job.EventPayload), job.CreatedAt, job.ExpireAt)
-			} else {
-				_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
-			}
-			if err != nil {
-				return err
-			}
-		}
-		_, err = stmt.Exec()
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-
-	// Always clear cache even in case of an error,
-	// since we are not sure about the state of the db
-	{
-		// Cache invalidation:
-
-		customValParamMap := make(map[string]map[string]struct{})
-		for _, job := range jobList {
-			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters)
-		}
-
-		if useNewCacheBurst {
-			jd.clearCache(ds, customValParamMap)
-		} else {
-			jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
-		}
+	txn, err := jd.dbHandle.Begin()
+	if err != nil {
+		return err
 	}
 
-	return err
+	err = jd.storeJobsDSInTxn(txn, ds, copyID, jobList)
+	if err != nil {
+		txn.Rollback()
+		return err
+	}
+
+	err = txn.Commit()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
@@ -1764,6 +1708,7 @@ func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []
 
 	return
 }
+
 // Creates a map of customVal:Params(Dest_type: []Dest_ids for brt and Dest_type: [] for rt)
 //and then loop over them to selectively clear cache instead of clearing the cache for the entire dataset
 func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]struct{}, customVal string, params []byte) {
@@ -1813,7 +1758,7 @@ func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]struct{}
 	}
 }
 
-func (jd *HandleT) storeJobsDSInTxn(txHandler *sql.Tx, ds dataSetT, copyID bool, jobList []*JobT) error {
+func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, copyID bool, jobList []*JobT) error {
 	var stmt *sql.Stmt
 	var err error
 
@@ -1844,21 +1789,12 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler *sql.Tx, ds dataSetT, copyID bool,
 
 		jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters)
 	}
-	_, err = stmt.Exec()
-	if err != nil {
-		return err
-	}
-
-	err = txHandler.Commit()
-	if err != nil {
-		return err
-	}
-
 	if useNewCacheBurst {
 		jd.clearCache(ds, customValParamMap)
 	} else {
 		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
 	}
+	_, err = stmt.Exec()
 
 	return err
 }
@@ -2229,7 +2165,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	dsList := jd.getDSList(false)
 	//if jobsdb owner is a reader and if ds is the right most one, ignoring setting result as noJobs
 	if len(jobList) == 0 && (jd.ownerType != Read || ds.Index != dsList[len(dsList)-1].Index) {
-		jd.logger.Infof("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+		jd.logger.Debugf("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		result = noJobs
 	}
 	_willTryToSet := willTryToSet

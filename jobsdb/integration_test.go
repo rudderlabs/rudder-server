@@ -191,7 +191,7 @@ func BenchmarkJobsdb(b *testing.B) {
 	}
 
 	jobDB.Setup(jobsdb.ReadWrite, false, "batch_rt", dbRetention, migrationMode, true, queryFilters)
-	// defer jobDB.TearDown()
+	defer jobDB.TearDown()
 
 	customVal := "MOCKDS"
 
