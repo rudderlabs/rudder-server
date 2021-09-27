@@ -187,7 +187,7 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 		cred.user,
 		cred.password,
 		cred.host,
-		"8443",
+		cred.port,
 		cred.dbName,
 		//readTimeout,
 		//writeTimeout,
