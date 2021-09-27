@@ -453,13 +453,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			}
 			err := manager.reloadSchemaVersion(archivedVersion)
 			if err != nil {
-				versionID := uuid.NewV4().String()
-				schemaVersion = manager.NewSchemaVersion(versionID, schema, schemaHash, eventModel.UUID)
-				eventModel.mergeSchema(schemaVersion)
-
-				if totalSchemaVersions >= schemaVersionPerEventModelLimit {
-					archiveOldestLastSeenVersion()
-				}
+				manager.createSchema(schema, schemaHash, eventModel, totalSchemaVersions, archiveOldestLastSeenVersion)
 			}
 			schemaVersion, ok = manager.schemaVersionMap[eventModel.UUID][schemaHash]
 			if !ok {
@@ -468,14 +462,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			}
 			stats.NewTaggedStat("reload_archived_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 		} else {
-			versionID := uuid.NewV4().String()
-			schemaVersion = manager.NewSchemaVersion(versionID, schema, schemaHash, eventModel.UUID)
-			eventModel.mergeSchema(schemaVersion)
-
-			if totalSchemaVersions >= schemaVersionPerEventModelLimit {
-				archiveOldestLastSeenVersion()
-			}
-			stats.NewTaggedStat("record_new_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
+			manager.createSchema(schema, schemaHash, eventModel, totalSchemaVersions, archiveOldestLastSeenVersion)
 		}
 	}
 	schemaVersion.LastSeen = timeutil.Now()
@@ -484,6 +471,17 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	eventModel.reservoirSample.add(event, true)
 	schemaVersion.reservoirSample.add(event, true)
 	updatedEventModels[eventModel.UUID] = eventModel
+}
+
+func (manager *EventSchemaManagerT) createSchema(schema map[string]string, schemaHash string, eventModel *EventModelT, totalSchemaVersions int, archiveOldestLastSeenVersion func()) {
+	versionID := uuid.NewV4().String()
+	schemaVersion := manager.NewSchemaVersion(versionID, schema, schemaHash, eventModel.UUID)
+	eventModel.mergeSchema(schemaVersion)
+
+	if totalSchemaVersions >= schemaVersionPerEventModelLimit {
+		archiveOldestLastSeenVersion()
+	}
+	stats.NewTaggedStat("record_new_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 }
 
 func (manager *EventSchemaManagerT) oldestSeenModel(writeKey string) *EventModelT {
@@ -835,8 +833,10 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) e
 	eventModelsSelectSQL := fmt.Sprintf(`SELECT id, uuid, write_key, event_type, event_model_identifier, created_at, schema, private_data, total_count, last_seen, (metadata->>'TotalCount')::int, metadata->'SampledEvents' FROM %s %s`, EVENT_MODELS_TABLE, uuidFilter)
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
-	if err != nil {
+	if err == sql.ErrNoRows {
 		return err
+	} else {
+		assertError(err)
 	}
 	defer rows.Close()
 
@@ -946,8 +946,10 @@ func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVers
 	var sampleEventsRaw json.RawMessage
 
 	err := manager.dbHandle.QueryRow(schemaVersionsSelectSQL).Scan(&schemaVersion.ID, &schemaVersion.UUID, &schemaVersion.EventModelID, &schemaVersion.SchemaHash, &schemaVersion.Schema, &privateDataRaw, &schemaVersion.FirstSeen, &schemaVersion.LastSeen, &schemaVersion.TotalCount, &totalCount, &sampleEventsRaw)
-	if err != nil {
+	if err == sql.ErrNoRows {
 		return err
+	} else {
+		assertError(err)
 	}
 
 	var privateData PrivateDataT
