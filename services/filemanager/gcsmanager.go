@@ -105,6 +105,8 @@ func (manager *GCSManager) getClient() (*storage.Client, error) {
 }
 
 func (manager *GCSManager) Download(output *os.File, key string) error {
+	pkgLogger.Infof("Started Downloading for objectFile:%v objectName:%v", output.Name(), key)
+	defer pkgLogger.Infof("Completed Downloading for objectFile:%v objectName:%v", output.Name(), key)
 	ctx := context.Background()
 
 	client, err := manager.getClient()
@@ -170,6 +172,6 @@ func (manager *GCSManager) DeleteObjects(locations []string) (err error) {
 	return
 }
 
-func (manager *GCSManager) GetConfiguredPrefix() (string) {
+func (manager *GCSManager) GetConfiguredPrefix() string {
 	return manager.Config.Prefix
 }
