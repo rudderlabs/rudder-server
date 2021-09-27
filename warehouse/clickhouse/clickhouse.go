@@ -216,7 +216,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(1, &numLoadFileReadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileReadWorkers")
 	config.RegisterStringConfigVariable("300", &readTimeout, true, "Warehouse.clickhouse.readTimeout")
 	config.RegisterStringConfigVariable("1800", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
-	config.RegisterIntConfigVariable(64, &numLoadFileDownloadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileDownloadWorkers")
+	config.RegisterIntConfigVariable(1, &numLoadFileDownloadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileDownloadWorkers")
 }
 
 /*
