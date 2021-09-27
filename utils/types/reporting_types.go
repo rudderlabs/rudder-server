@@ -41,6 +41,8 @@ type StatusDetail struct {
 	StatusCode     int             `json:"statusCode"`
 	SampleResponse string          `json:"sampleResponse"`
 	SampleEvent    json.RawMessage `json:"sampleEvent"`
+	EventName      string          `json:"eventName"`
+	EventType      string          `json:"eventType"`
 }
 
 type ReportByStatus struct {
@@ -70,13 +72,16 @@ type Metric struct {
 }
 
 type ConnectionDetails struct {
-	SourceID        string `json:"sourceId"`
-	DestinationID   string `json:"destinationId"`
-	SourceBatchID   string `json:"sourceBatchId"`
-	SourceTaskID    string `json:"sourceTaskId"`
-	SourceTaskRunID string `json:"sourceTaskRunId"`
-	SourceJobID     string `json:"sourceJobId"`
-	SourceJobRunID  string `json:"sourceJobRunId"`
+	SourceID                string `json:"sourceId"`
+	DestinationID           string `json:"destinationId"`
+	SourceBatchID           string `json:"sourceBatchId"`
+	SourceTaskID            string `json:"sourceTaskId"`
+	SourceTaskRunID         string `json:"sourceTaskRunId"`
+	SourceJobID             string `json:"sourceJobId"`
+	SourceJobRunID          string `json:"sourceJobRunId"`
+	SourceDefinitionId      string `json:"sourceDefinitionId"`
+	DestinationDefinitionId string `string:"destinationDefinitionId"`
+	SourceCategory          string `json:"sourceCategory"`
 }
 type PUDetails struct {
 	InPU       string `json:"inReportedBy"`
@@ -91,23 +96,30 @@ type PUReportedMetric struct {
 	StatusDetail *StatusDetail
 }
 
-func CreateConnectionDetail(sid, did, sbid, stid, strid, sjid, sjrid string) *ConnectionDetails {
+func CreateConnectionDetail(sid, did, sbid, stid, strid, sjid, sjrid, sdid, ddid, sc string) *ConnectionDetails {
 	return &ConnectionDetails{SourceID: sid,
-		DestinationID:   did,
-		SourceBatchID:   sbid,
-		SourceTaskID:    stid,
-		SourceTaskRunID: strid,
-		SourceJobID:     sjid,
-		SourceJobRunID:  sjrid}
+		DestinationID:           did,
+		SourceBatchID:           sbid,
+		SourceTaskID:            stid,
+		SourceTaskRunID:         strid,
+		SourceJobID:             sjid,
+		SourceJobRunID:          sjrid,
+		SourceDefinitionId:      sdid,
+		DestinationDefinitionId: ddid,
+		SourceCategory:          sc,
+	}
 }
 
-func CreateStatusDetail(status string, count int64, code int, resp string, event json.RawMessage) *StatusDetail {
+func CreateStatusDetail(status string, count int64, code int, resp string, event json.RawMessage, eventName, eventType string) *StatusDetail {
 	return &StatusDetail{
 		Status:         status,
 		Count:          count,
 		StatusCode:     code,
 		SampleResponse: resp,
-		SampleEvent:    event}
+		SampleEvent:    event,
+		EventName:      eventName,
+		EventType:      eventType,
+	}
 }
 
 func CreatePUDetails(inPU, pu string, terminalPU, initialPU bool) *PUDetails {
