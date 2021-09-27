@@ -2,6 +2,7 @@ package router
 
 import (
 	"container/list"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -28,6 +29,7 @@ import (
 	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -104,6 +106,11 @@ type HandleT struct {
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
 	savePayloadOnError                     bool
+
+	backgroundGroup  *errgroup.Group
+	backgroundCtx    context.Context
+	backgroundCancel context.CancelFunc
+	backgroundWait   func() error
 }
 
 type jobResponseT struct {
@@ -297,7 +304,22 @@ func (worker *workerT) workerProcess() {
 				<-worker.resumeChannel
 				pkgLogger.Infof("Router worker %d is resumed. Dest type: %s", worker.workerID, worker.rt.destName)
 			}
-		case message := <-worker.channel:
+		case message, hasMore := <-worker.channel:
+			if !hasMore {
+				if len(worker.routerJobs) == 0 {
+					return
+				}
+
+				if worker.rt.enableBatching {
+					worker.destinationJobs = worker.batch(worker.routerJobs)
+				} else {
+					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
+				}
+				worker.processDestinationJobs()
+
+				return
+			}
+
 			if worker.rt.pausingWorkers {
 				continue
 			}
@@ -1013,6 +1035,8 @@ func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
 
 func (rt *HandleT) initWorkers() {
 	rt.workers = make([]*workerT, rt.noOfWorkers)
+
+	g, _ := errgroup.WithContext(context.Background())
 	for i := 0; i < rt.noOfWorkers; i++ {
 		worker := &workerT{
 			pauseChannel:           make(chan *PauseT),
@@ -1032,13 +1056,35 @@ func (rt *HandleT) initWorkers() {
 			jobCountsByDestAndUser: make(map[string]*destJobCountsT),
 		}
 		rt.workers[i] = worker
-		rruntime.Go(func() {
+
+		g.Go(misc.WithBugsnag(func() error {
 			worker.workerProcess()
-		})
+			return nil
+		}))
+	}
+
+	rt.backgroundGroup.Go(func() error {
+		err := g.Wait()
+
+		// clean up channels workers are publishing to:
+		close(rt.responseQ)
+		close(rt.failedEventsChan)
+
+		return err
+	})
+}
+
+func (rt *HandleT) stopWorkers() {
+	for _, worker := range rt.workers {
+		// FIXME remove paused worker, use shutdown instead
+		close(worker.channel)
 	}
 }
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSendWorker *workerT) {
+	if rt.backgroundCtx.Err() != nil {
+		return nil
+	}
 
 	if !rt.guaranteeUserEventOrder {
 		//if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
@@ -1292,6 +1338,8 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 }
 
+// statusInsertLoop will run in a separate goroutine
+// Blocking method, returns when rt.responseQ channel is closed.
 func (rt *HandleT) statusInsertLoop() {
 
 	var responseList []jobResponseT
@@ -1302,6 +1350,7 @@ func (rt *HandleT) statusInsertLoop() {
 	statusStat := stats.NewTaggedStat("router_status_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
 	countStat := stats.NewTaggedStat("router_status_events", stats.CountType, stats.Tags{"destType": rt.destName})
 	timeout := time.After(maxStatusUpdateWait)
+
 	for {
 		rt.perfStats.Start()
 		select {
@@ -1318,9 +1367,28 @@ func (rt *HandleT) statusInsertLoop() {
 			pause.respChannel <- true
 			<-rt.statusLoopResumeChannel
 			pkgLogger.Infof("statusInsertLoop loop is resumed. Dest type: %s", rt.destName)
-		case jobStatus := <-rt.responseQ:
-			rt.logger.Debugf("[%v Router] :: Got back status error %v and state %v for job %v", rt.destName, jobStatus.status.ErrorCode,
-				jobStatus.status.JobState, jobStatus.status.JobID)
+		case jobStatus, hasMore := <-rt.responseQ:
+			if !hasMore {
+				if len(responseList) == 0 {
+					return
+				}
+
+				statusStat.Start()
+				rt.commitStatusList(&responseList)
+				responseList = nil // FIXME: is this a bug ? count len after responseList
+				countStat.Count(len(responseList))
+				statusStat.End()
+
+				rt.perfStats.End(0)
+				return
+			}
+			rt.logger.Debugf(
+				"[%v Router] :: Got back status error %v and state %v for job %v",
+				rt.destName,
+				jobStatus.status.ErrorCode,
+				jobStatus.status.JobState,
+				jobStatus.status.JobID,
+			)
 			responseList = append(responseList, jobStatus)
 			rt.perfStats.End(1)
 		case <-timeout:
@@ -1334,70 +1402,79 @@ func (rt *HandleT) statusInsertLoop() {
 			rt.commitStatusList(&responseList)
 			responseList = nil
 			lastUpdate = time.Now()
-			countStat.Count(len(responseList))
+			countStat.Count(len(responseList)) // FIXME: is this a bug ? count len after responseList
 			statusStat.End()
 		}
 	}
 
 }
 
-func (rt *HandleT) collectMetrics() {
-	if diagnostics.EnableRouterMetric {
-		for range rt.diagnosisTicker.C {
-			rt.requestsMetricLock.RLock()
-			var diagnosisProperties map[string]interface{}
-			retries := 0
-			aborted := 0
-			success := 0
-			var compTime time.Duration
-			for _, reqMetric := range rt.requestsMetric {
-				retries = retries + reqMetric.RequestRetries
-				aborted = aborted + reqMetric.RequestAborted
-				success = success + reqMetric.RequestSuccess
-				compTime = compTime + reqMetric.RequestCompletedTime
-			}
-			if len(rt.requestsMetric) > 0 {
-				diagnosisProperties = map[string]interface{}{
-					rt.destName: map[string]interface{}{
-						diagnostics.RouterAborted:       aborted,
-						diagnostics.RouterRetries:       retries,
-						diagnostics.RouterSuccess:       success,
-						diagnostics.RouterCompletedTime: (compTime / time.Duration(len(rt.requestsMetric))) / time.Millisecond,
-					},
-				}
-
-				Diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
-			}
-
-			rt.requestsMetric = nil
-			rt.requestsMetricLock.RUnlock()
-
-			//This lock will ensure we dont send out Track Request while filling up the
-			//failureMetric struct
-			rt.failureMetricLock.RLock()
-			for key, values := range rt.failuresMetric {
-				var stringValue string
-				var err error
-				errorMap := make(map[string]int)
-				for _, value := range values {
-					errorMap[string(value.ErrorResponse)] = errorMap[string(value.ErrorResponse)] + 1
-				}
-				for k, v := range errorMap {
-					stringValue, err = sjson.Set(stringValue, k, v)
-					if err != nil {
-						stringValue = ""
-					}
-				}
-				Diagnostics.Track(key, map[string]interface{}{
-					diagnostics.RouterDestination: rt.destName,
-					diagnostics.Count:             len(values),
-					diagnostics.ErrorCountMap:     stringValue,
-				})
-			}
-			rt.failuresMetric = make(map[string][]failureMetric)
-			rt.failureMetricLock.RUnlock()
-		}
+func (rt *HandleT) collectMetrics(ctx context.Context) {
+	if !diagnostics.EnableRouterMetric {
+		return
 	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-rt.diagnosisTicker.C:
+
+		}
+		rt.requestsMetricLock.RLock()
+		var diagnosisProperties map[string]interface{}
+		retries := 0
+		aborted := 0
+		success := 0
+		var compTime time.Duration
+		for _, reqMetric := range rt.requestsMetric {
+			retries = retries + reqMetric.RequestRetries
+			aborted = aborted + reqMetric.RequestAborted
+			success = success + reqMetric.RequestSuccess
+			compTime = compTime + reqMetric.RequestCompletedTime
+		}
+		if len(rt.requestsMetric) > 0 {
+			diagnosisProperties = map[string]interface{}{
+				rt.destName: map[string]interface{}{
+					diagnostics.RouterAborted:       aborted,
+					diagnostics.RouterRetries:       retries,
+					diagnostics.RouterSuccess:       success,
+					diagnostics.RouterCompletedTime: (compTime / time.Duration(len(rt.requestsMetric))) / time.Millisecond,
+				},
+			}
+
+			Diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
+		}
+
+		rt.requestsMetric = nil
+		rt.requestsMetricLock.RUnlock()
+
+		//This lock will ensure we dont send out Track Request while filling up the
+		//failureMetric struct
+		rt.failureMetricLock.RLock()
+		for key, values := range rt.failuresMetric {
+			var stringValue string
+			var err error
+			errorMap := make(map[string]int)
+			for _, value := range values {
+				errorMap[string(value.ErrorResponse)] = errorMap[string(value.ErrorResponse)] + 1
+			}
+			for k, v := range errorMap {
+				stringValue, err = sjson.Set(stringValue, k, v)
+				if err != nil {
+					stringValue = ""
+				}
+			}
+			Diagnostics.Track(key, map[string]interface{}{
+				diagnostics.RouterDestination: rt.destName,
+				diagnostics.Count:             len(values),
+				diagnostics.ErrorCountMap:     stringValue,
+			})
+		}
+		rt.failuresMetric = make(map[string][]failureMetric)
+		rt.failureMetricLock.RUnlock()
+	}
+
 }
 
 //#JobOrder (see other #JobOrder comment)
@@ -1428,7 +1505,7 @@ func (rt *HandleT) collectMetrics() {
 //    that responseQ and statusInsertLoop Buffer are empty for that userID.
 // C. Finally, we want for generatorLoop buffer to be fully processed.
 
-func (rt *HandleT) generatorLoop() {
+func (rt *HandleT) generatorLoop(ctx context.Context) {
 
 	rt.logger.Info("Generator started")
 
@@ -1438,6 +1515,8 @@ func (rt *HandleT) generatorLoop() {
 	timeout := time.After(10 * time.Millisecond)
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case pause := <-rt.generatorPauseChannel:
 			pkgLogger.Infof("Generator loop is paused. Dest type: %s", rt.destName)
 			pause.respChannel <- true
@@ -1638,7 +1717,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 
 	//waiting for reporting client setup
 	if rt.reporting != nil && rt.reportingEnabled {
-		rt.reporting.WaitForSetup(utilTypes.CORE_REPORTING_CLIENT)
+		rt.reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)
 	}
 
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
@@ -1707,16 +1786,28 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.isBackendConfigInitialized = false
 	rt.backendConfigInitialized = make(chan bool)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	rt.backgroundCtx = ctx
+	rt.backgroundGroup = g
+	rt.backgroundCancel = cancel
+	rt.backgroundWait = g.Wait
+
 	rt.initWorkers()
-	rruntime.Go(func() {
-		rt.collectMetrics()
-	})
-	rruntime.Go(func() {
+	g.Go(misc.WithBugsnag(func() error {
+		rt.collectMetrics(ctx)
+		return nil
+	}))
+	g.Go(misc.WithBugsnag(func() error {
 		rt.readFailedJobStatusChan()
-	})
-	rruntime.Go(func() {
+		return nil
+	}))
+	g.Go(misc.WithBugsnag(func() error {
 		rt.statusInsertLoop()
-	})
+		return nil
+	}))
+
 	rruntime.Go(func() {
 		rt.backendConfigSubscriber()
 	})
@@ -1724,9 +1815,11 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 }
 
 func (rt *HandleT) Start() {
-	rruntime.Go(func() {
+	ctx := rt.backgroundCtx
+	rt.backgroundGroup.Go(func() error {
 		<-rt.backendConfigInitialized
-		rt.generatorLoop()
+		rt.generatorLoop(ctx)
+		return nil
 	})
 
 	rm, err := GetRoutersManager()
@@ -1734,6 +1827,13 @@ func (rt *HandleT) Start() {
 		panic("Routers manager is nil. Shouldn't happen. Go Debug")
 	}
 	rm.AddRouter(rt)
+}
+
+func (rt *HandleT) Shutdown() {
+	rt.backgroundCancel()
+	rt.stopWorkers()
+
+	rt.backgroundWait()
 }
 
 func (rt *HandleT) backendConfigSubscriber() {
