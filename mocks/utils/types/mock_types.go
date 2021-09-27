@@ -5,6 +5,7 @@
 package mock_types
 
 import (
+	context "context"
 	sql "database/sql"
 	reflect "reflect"
 
@@ -73,15 +74,15 @@ func (m *MockReportingI) EXPECT() *MockReportingIMockRecorder {
 }
 
 // AddClient mocks base method.
-func (m *MockReportingI) AddClient(arg0 types.Config) {
+func (m *MockReportingI) AddClient(arg0 context.Context, arg1 types.Config) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "AddClient", arg0)
+	m.ctrl.Call(m, "AddClient", arg0, arg1)
 }
 
 // AddClient indicates an expected call of AddClient.
-func (mr *MockReportingIMockRecorder) AddClient(arg0 interface{}) *gomock.Call {
+func (mr *MockReportingIMockRecorder) AddClient(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddClient", reflect.TypeOf((*MockReportingI)(nil).AddClient), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddClient", reflect.TypeOf((*MockReportingI)(nil).AddClient), arg0, arg1)
 }
 
 // Report mocks base method.
@@ -97,13 +98,13 @@ func (mr *MockReportingIMockRecorder) Report(arg0, arg1 interface{}) *gomock.Cal
 }
 
 // WaitForSetup mocks base method.
-func (m *MockReportingI) WaitForSetup(arg0 string) {
+func (m *MockReportingI) WaitForSetup(arg0 context.Context, arg1 string) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "WaitForSetup", arg0)
+	m.ctrl.Call(m, "WaitForSetup", arg0, arg1)
 }
 
 // WaitForSetup indicates an expected call of WaitForSetup.
-func (mr *MockReportingIMockRecorder) WaitForSetup(arg0 interface{}) *gomock.Call {
+func (mr *MockReportingIMockRecorder) WaitForSetup(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForSetup", reflect.TypeOf((*MockReportingI)(nil).WaitForSetup), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForSetup", reflect.TypeOf((*MockReportingI)(nil).WaitForSetup), arg0, arg1)
 }

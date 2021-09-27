@@ -1,12 +1,12 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"runtime"
 	"sort"
@@ -37,6 +37,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -106,8 +107,6 @@ type HandleT struct {
 	warehouses            []warehouseutils.WarehouseT
 	dbHandle              *sql.DB
 	notifier              pgnotifier.PgNotifierT
-	uploadToWarehouseQ    chan []ProcessStagingFilesJobT
-	createLoadFilesQ      chan LoadFileJobT
 	isEnabled             bool
 	configSubscriberLock  sync.RWMutex
 	workerChannelMap      map[string]chan *UploadJobT
@@ -119,6 +118,10 @@ type HandleT struct {
 	noOfWorkers           int
 	activeWorkerCount     int
 	activeWorkerCountLock sync.RWMutex
+
+	backgroundCancel context.CancelFunc
+	backgroundGroup  errgroup.Group
+	backgroundWait   func() error
 }
 
 type ErrorResponseT struct {
@@ -197,9 +200,8 @@ func (wh *HandleT) incrementActiveWorkers() {
 
 func (wh *HandleT) initWorker() chan *UploadJobT {
 	workerChan := make(chan *UploadJobT, 1000)
-	rruntime.Go(func() {
-		for {
-			uploadJob := <-workerChan
+	wh.backgroundGroup.Go(func() error {
+		for uploadJob := range workerChan {
 			wh.incrementActiveWorkers()
 			err := wh.handleUploadJob(uploadJob)
 			if err != nil {
@@ -208,6 +210,7 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 			wh.removeDestInProgress(uploadJob.warehouse)
 			wh.decrementActiveWorkers()
 		}
+		return nil
 	})
 	return workerChan
 }
@@ -642,11 +645,16 @@ func (wh *HandleT) sortWarehousesByOldestUnSyncedEventAt() (err error) {
 	return
 }
 
-func (wh *HandleT) mainLoop() {
+func (wh *HandleT) mainLoop(ctx context.Context) {
 	for {
 		wh.configSubscriberLock.RLock()
 		if !wh.isEnabled {
-			time.Sleep(mainLoopSleep)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(mainLoopSleep):
+			}
+
 			wh.configSubscriberLock.RUnlock()
 			continue
 		}
@@ -664,7 +672,13 @@ func (wh *HandleT) mainLoop() {
 				pkgLogger.Errorf("[WH] Failed to process warehouse Jobs: %v", err)
 			}
 		}
-		time.Sleep(mainLoopSleep)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(mainLoopSleep):
+		}
+
 	}
 }
 
@@ -797,16 +811,25 @@ func (wh *HandleT) getInProgressNamespaces() (identifiers []string) {
 	return misc.StringKeys(wh.inProgressMap)
 }
 
-func (wh *HandleT) runUploadJobAllocator() {
+func (wh *HandleT) runUploadJobAllocator(ctx context.Context) {
+loop:
 	for {
 		if !wh.initialConfigFetched {
-			time.Sleep(waitForConfig)
+			select {
+			case <-ctx.Done():
+				break loop
+			case <-time.After(waitForConfig):
+			}
 			continue
 		}
 
 		availableWorkers := wh.noOfWorkers - wh.getActiveWorkerCount()
 		if availableWorkers < 1 {
-			time.Sleep(waitForWorkerSleep)
+			select {
+			case <-ctx.Done():
+				break loop
+			case <-time.After(waitForWorkerSleep):
+			}
 			continue
 		}
 
@@ -833,11 +856,21 @@ func (wh *HandleT) runUploadJobAllocator() {
 			wh.workerChannelMapLock.Unlock()
 		}
 
-		time.Sleep(uploadAllocatorSleep)
+		select {
+		case <-ctx.Done():
+			break loop
+		case <-time.After(uploadAllocatorSleep):
+		}
 	}
+
+	wh.workerChannelMapLock.Lock()
+	for _, workerChannel := range wh.workerChannelMap {
+		close(workerChannel)
+	}
+	wh.workerChannelMapLock.Unlock()
 }
 
-func (wh *HandleT) uploadStatusTrack() {
+func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 	for {
 		for _, warehouse := range wh.warehouses {
 			source := warehouse.Source
@@ -886,7 +919,11 @@ func (wh *HandleT) uploadStatusTrack() {
 
 			getUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name).Count(uploaded)
 		}
-		time.Sleep(uploadStatusTrackFrequency)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(uploadStatusTrackFrequency):
+		}
 	}
 }
 
@@ -932,27 +969,39 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	wh.destType = whType
 	wh.setInterruptedDestinations()
 	wh.Enable()
-	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
-	wh.createLoadFilesQ = make(chan LoadFileJobT)
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
 	wh.inProgressMap = make(map[string]int64)
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	wh.backgroundCancel = cancel
+	wh.backgroundWait = g.Wait
+
 	rruntime.Go(func() {
 		wh.backendConfigSubscriber()
 	})
-	rruntime.Go(func() {
-		wh.runUploadJobAllocator()
-	})
-	rruntime.Go(func() {
-		wh.mainLoop()
-	})
+
+	g.Go(misc.WithBugsnag(func() error {
+		wh.runUploadJobAllocator(ctx)
+		return nil
+	}))
+	g.Go(misc.WithBugsnag(func() error {
+		wh.mainLoop(ctx)
+		return nil
+	}))
+
+	g.Go(misc.WithBugsnag(func() error {
+		pkgLogger.Infof("WH: Warehouse Idle upload tracker started")
+		wh.uploadStatusTrack(ctx)
+		return nil
+	}))
 }
 
-func (wh *HandleT) monitorUploadStatus() {
-	pkgLogger.Infof("WH: Warehouse Idle upload tracker started")
-	rruntime.Go(func() {
-		wh.uploadStatusTrack()
-	})
+func (wh *HandleT) Shutdown() {
+	wh.backgroundCancel()
+	wh.backgroundWait()
 }
 
 func getLoadFileFormat(whType string) string {
@@ -1017,51 +1066,71 @@ func minimalConfigSubscriber() {
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters() {
+func monitorDestRouters(ctx context.Context) {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
 
+loop:
 	for {
-		config := <-ch
-		pkgLogger.Debug("Got config from config-backend", config)
-		sources := config.Data.(backendconfig.ConfigT)
-		enabledDestinations := make(map[string]bool)
-		for _, source := range sources.Sources {
-			for _, destination := range source.Destinations {
-				enabledDestinations[destination.DestinationDefinition.Name] = true
-				if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
-					wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-					if !ok {
-						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-						wh = &HandleT{}
-						wh.configSubscriberLock.Lock()
-						wh.Setup(destination.DestinationDefinition.Name, destination.DestinationDefinition.DisplayName)
-						wh.configSubscriberLock.Unlock()
-						dstToWhRouter[destination.DestinationDefinition.Name] = wh
-						wh.monitorUploadStatus()
-					} else {
-						pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-						wh.configSubscriberLock.Lock()
-						wh.Enable()
-						wh.configSubscriberLock.Unlock()
-					}
-				}
-			}
+		select {
+		case <-ctx.Done():
+			break loop
+		case config := <-ch:
+			onConfigDataEvent(config, dstToWhRouter)
 		}
+	}
 
-		keys := misc.StringKeys(dstToWhRouter)
-		for _, key := range keys {
-			if _, ok := enabledDestinations[key]; !ok {
-				if wh, ok := dstToWhRouter[key]; ok {
-					pkgLogger.Info("Disabling a existing warehouse destination: ", key)
+	g, _ := errgroup.WithContext(context.Background())
+	for _, wh := range dstToWhRouter {
+		wh := wh
+		g.Go(func() error {
+			wh.Shutdown()
+			return nil
+		})
+	}
+	g.Wait()
+
+}
+
+func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT) {
+	pkgLogger.Debug("Got config from config-backend", config)
+	sources := config.Data.(backendconfig.ConfigT)
+	enabledDestinations := make(map[string]bool)
+	for _, source := range sources.Sources {
+		for _, destination := range source.Destinations {
+			enabledDestinations[destination.DestinationDefinition.Name] = true
+			if misc.Contains(WarehouseDestinations, destination.DestinationDefinition.Name) {
+				wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
+				if !ok {
+					pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+					wh = &HandleT{}
 					wh.configSubscriberLock.Lock()
-					wh.Disable()
+					wh.Setup(destination.DestinationDefinition.Name, destination.DestinationDefinition.DisplayName)
+					wh.configSubscriberLock.Unlock()
+					dstToWhRouter[destination.DestinationDefinition.Name] = wh
+				} else {
+					pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+					wh.configSubscriberLock.Lock()
+					wh.Enable()
 					wh.configSubscriberLock.Unlock()
 				}
 			}
 		}
 	}
+
+	keys := misc.StringKeys(dstToWhRouter)
+	for _, key := range keys {
+		if _, ok := enabledDestinations[key]; !ok {
+			if wh, ok := dstToWhRouter[key]; ok {
+				pkgLogger.Info("Disabling a existing warehouse destination: ", key)
+				wh.configSubscriberLock.Lock()
+				wh.Disable()
+				wh.configSubscriberLock.Unlock()
+			}
+		}
+	}
+
 }
 
 func setupTables(dbHandle *sql.DB) {
@@ -1442,23 +1511,42 @@ func getConnectionString() string {
 		host, port, user, password, dbname, sslmode)
 }
 
-func startWebHandler() {
+func startWebHandler(ctx context.Context) error {
+	mux := http.NewServeMux()
+
 	// do not register same endpoint when running embedded in rudder backend
 	if isStandAlone() {
-		http.HandleFunc("/health", healthHandler)
+		mux.HandleFunc("/health", healthHandler)
 	}
 	if isMaster() {
-		backendconfig.WaitForConfig()
-		http.HandleFunc("/v1/process", processHandler)
+		if err := backendconfig.WaitForConfig(ctx); err != nil {
+			return err
+		}
+		mux.HandleFunc("/v1/process", processHandler)
 		// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
-		http.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
+		mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
 		// triggers uploads for a source
-		http.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
+		mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
 		pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 	} else {
 		pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
 	}
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(webPort), bugsnag.Handler(nil)))
+
+	srv := http.Server{
+		Addr:    fmt.Sprintf(":%d", webPort),
+		Handler: bugsnag.Handler(mux),
+	}
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return srv.ListenAndServe()
+	})
+	g.Go(func() error {
+		<-ctx.Done()
+		return srv.Shutdown(context.Background())
+	})
+
+	return g.Wait()
 }
 
 // CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present
@@ -1513,13 +1601,13 @@ func setupDB(connInfo string) {
 	setupTables(dbHandle)
 }
 
-func Start(app app.Interface) {
+func Start(ctx context.Context, app app.Interface) error {
 	application = app
 	time.Sleep(1 * time.Second)
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
 	if !isStandAlone() && !db.IsNormalMode() {
 		pkgLogger.Infof("Skipping start of warehouse service...")
-		return
+		return nil
 	}
 
 	pkgLogger.Infof("WH: Starting Warehouse service...")
@@ -1531,7 +1619,6 @@ func Start(app app.Interface) {
 			pkgLogger.Fatal(r)
 			panic(r)
 		}
-		startWebHandler()
 	}()
 
 	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
@@ -1543,7 +1630,7 @@ func Start(app app.Interface) {
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 		}
-		return
+		return nil
 	}
 	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
@@ -1552,12 +1639,18 @@ func Start(app app.Interface) {
 		panic(err)
 	}
 
+	g, ctx := errgroup.WithContext(ctx)
+
 	//Setting up reporting client
 	// only if standalone or embeded connecting to diff DB for warehouse
 	if (isStandAlone() && isMaster()) || (jobsdb.GetConnectionString() != psqlInfo) {
 		if application.Features().Reporting != nil {
 			reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
-			reporting.AddClient(types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
+
+			g.Go(misc.WithBugsnag(func() error {
+				reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
+				return nil
+			}))
 		}
 	}
 
@@ -1572,18 +1665,26 @@ func Start(app app.Interface) {
 
 	if isMaster() {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")
-		err = notifier.AddTopic(StagingFilesPGNotifierChannel)
-		if err != nil {
-			panic(err)
-		}
-		rruntime.Go(func() {
-			monitorDestRouters()
-		})
-		rruntime.Go(func() {
-			runArchiver(dbHandle)
-		})
+
+		g.Go(misc.WithBugsnag(func() error {
+			return notifier.AddTopic(ctx, StagingFilesPGNotifierChannel)
+		}))
+		g.Go(misc.WithBugsnag(func() error {
+			monitorDestRouters(ctx)
+			return nil
+		}))
+		g.Go(misc.WithBugsnag(func() error {
+			runArchiver(ctx, dbHandle)
+			return nil
+		}))
 		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 	}
+
+	g.Go(func() error {
+		return startWebHandler(ctx)
+	})
+
+	return g.Wait()
 }
 
 func getLoadFileType(wh string) string {
