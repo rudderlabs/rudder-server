@@ -359,18 +359,18 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 						pkgLogger.Infof("context is cancelled, stopped processing download load file for table:%s, namespace:%s, workerIdx:%d, goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						return
 					default:
-						pkgLogger.Infof("DownloadLoadFiles GetObjectName started table:%s, namespace:%s", tableName, ch.Namespace)
+						pkgLogger.Infof("DownloadLoadFiles GetObjectName started table:%s, namespace:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						objectName, err := warehouseutils.GetObjectName(object.Location, ch.Warehouse.Destination.Config, ch.ObjectStorage)
-						pkgLogger.Infof("DownloadLoadFiles GetObjectName completed table:%s, namespace:%s", tableName, ch.Namespace)
+						pkgLogger.Infof("DownloadLoadFiles GetObjectName completed table:%s, namespace:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						if err != nil {
 							err = fmt.Errorf("CH: Error in converting object location to object key for table:%s, location:%s, error:%v, namespace:%s, workerIdx:%d goId:%d", tableName, object.Location, err, ch.Namespace, workerIdx, goId)
 							onError(err)
 							return
 						}
 						dirName := "/rudder-warehouse-load-uploads-tmp/"
-						pkgLogger.Infof("DownloadLoadFiles CreateTMPDIR started table:%s, namespace:%s", tableName, ch.Namespace)
+						pkgLogger.Infof("DownloadLoadFiles CreateTMPDIR started table:%s, namespace:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						tmpDirPath, err := misc.CreateTMPDIR()
-						pkgLogger.Infof("DownloadLoadFiles CreateTMPDIR completed table:%s, namespace:%s", tableName, ch.Namespace)
+						pkgLogger.Infof("DownloadLoadFiles CreateTMPDIR completed table:%s, namespace:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
 
 						if err != nil {
 							err = fmt.Errorf("CH: Error in getting tmp directory for downloading load file for table:%s, location:%s, error:%v, namespace:%s, workerIdx:%d goId:%d", tableName, object.Location, err, ch.Namespace, workerIdx, goId)
@@ -378,43 +378,43 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 							return
 						}
 						ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
-						pkgLogger.Infof("DownloadLoadFiles MkdirAll started table:%s, namespace:%s", tableName, ch.Namespace)
+						pkgLogger.Infof("DownloadLoadFiles MkdirAll started table:%s, namespace:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
-						pkgLogger.Infof("DownloadLoadFiles MkdirAll completed table:%s, namespace:%s", tableName, ch.Namespace)
+						pkgLogger.Infof("DownloadLoadFiles MkdirAll completed table:%s, namespace:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						if err != nil {
 							err = fmt.Errorf("CH: Error in making tmp directory for downloading load file for table:%s, location:%s, error:%v, namespace:%s, workerIdx:%d goId:%d", tableName, object.Location, err, ch.Namespace, workerIdx, goId)
 							onError(err)
 							return
 						}
-						pkgLogger.Infof("DownloadLoadFiles Create started table:%s, namespace:%s", tableName, ch.Namespace)
+						pkgLogger.Infof("DownloadLoadFiles Create started table:%s, namespace:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						objectFile, err := os.Create(ObjectPath)
-						pkgLogger.Infof("DownloadLoadFiles Create completed table:%s, namespace:%s", tableName, ch.Namespace)
+						pkgLogger.Infof("DownloadLoadFiles Create completed table:%s, namespace:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						if err != nil {
 							err = fmt.Errorf("CH: Error in converting object location to object key for table:%s, location:%s, error:%v, namespace:%s, workerIdx:%d goId:%d", tableName, object.Location, err, ch.Namespace, workerIdx, goId)
 							onError(err)
 							return
 						}
-						pkgLogger.Infof("DownloadLoadFiles Download started table:%s, namespace:%s", tableName, ch.Namespace)
+						pkgLogger.Infof("DownloadLoadFiles Download started table:%s, namespace:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						err = downloader.Download(objectFile, objectName)
-						pkgLogger.Infof("DownloadLoadFiles Download completed table:%s, namespace:%s", tableName, ch.Namespace)
+						pkgLogger.Infof("DownloadLoadFiles Download completed table:%s, namespace:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						if err != nil {
 							err = fmt.Errorf("CH: Error in downloading file in tmp directory for table:%s, location:%s, error:%v, namespace:%s, workerIdx:%d goId:%d", tableName, object.Location, err, ch.Namespace, workerIdx, goId)
 							onError(err)
 							return
 						}
 						fileName := objectFile.Name()
-						pkgLogger.Infof("DownloadLoadFiles Close started table:%s, namespace:%s", tableName, ch.Namespace)
+						pkgLogger.Infof("DownloadLoadFiles Close started table:%s, namespace:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						if err = objectFile.Close(); err != nil {
 							err = fmt.Errorf("CH: Error in closing downloaded file in tmp directory for table:%s, location:%s, error:%v, namespace:%s, workerIdx:%d goId:%d", tableName, object.Location, err, ch.Namespace, workerIdx, goId)
 							onError(err)
 							return
 						}
-						pkgLogger.Infof("DownloadLoadFiles Close completed table:%s, namespace:%s", tableName, ch.Namespace)
+						pkgLogger.Infof("DownloadLoadFiles Close completed table:%s, namespace:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
 						fileNames = append(fileNames, fileName)
 
 						wg.Done()
 
-						pkgLogger.Infof("Downloaded Files for table:%s, namespace:%s, location:%s", tableName, ch.Namespace, fileName)
+						pkgLogger.Infof("Downloaded Files for table:%s, namespace:%s, location:%s, workerIdx:%d goId:%d", tableName, ch.Namespace, fileName, workerIdx, goId)
 					}
 				}
 			}(ctx)
