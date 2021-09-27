@@ -36,6 +36,7 @@ var (
 	poolSize                   string
 	readTimeout                string
 	writeTimeout               string
+	compress                   bool
 	pkgLogger                  logger.LoggerI
 	disableNullable            bool
 	numLoadFileReadWorkers     int
@@ -183,7 +184,7 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 		dbNameParam = fmt.Sprintf(`database=%s`, cred.dbName)
 	}
 
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%s",
 		cred.host,
 		cred.port,
 		cred.user,
@@ -197,6 +198,7 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 		dbNameParam,
 		readTimeout,
 		writeTimeout,
+		compress,
 	)
 
 	var err error
@@ -216,6 +218,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(1, &numLoadFileReadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileReadWorkers")
 	config.RegisterStringConfigVariable("300", &readTimeout, true, "Warehouse.clickhouse.readTimeout")
 	config.RegisterStringConfigVariable("1800", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
+	config.RegisterBoolConfigVariable(false, &compress, true, "Warehouse.clickhouse.compress")
 	config.RegisterIntConfigVariable(1, &numLoadFileDownloadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileDownloadWorkers")
 }
 
