@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/onsi/ginkgo/config"
 	"github.com/onsi/ginkgo/ginkgo/interrupthandler"
 	"github.com/onsi/ginkgo/ginkgo/testrunner"
+	colorable "github.com/onsi/ginkgo/reporters/stenographer/support/go-colorable"
 	"github.com/onsi/ginkgo/types"
 )
 
@@ -52,6 +54,28 @@ type SpecRunner struct {
 func (r *SpecRunner) RunSpecs(args []string, additionalArgs []string) {
 	r.commandFlags.computeNodes()
 	r.notifier.VerifyNotificationsAreAvailable()
+
+	deprecationTracker := types.NewDeprecationTracker()
+
+	if r.commandFlags.ParallelStream && (runtime.GOOS != "windows") {
+		deprecationTracker.TrackDeprecation(types.Deprecation{
+			Message: "--stream is deprecated and will be removed in Ginkgo 2.0",
+			DocLink: "removed--stream",
+			Version: "1.16.0",
+		})
+	}
+
+	if r.commandFlags.Notify {
+		deprecationTracker.TrackDeprecation(types.Deprecation{
+			Message: "--notify is deprecated and will be removed in Ginkgo 2.0",
+			DocLink: "removed--notify",
+			Version: "1.16.0",
+		})
+	}
+
+	if deprecationTracker.DidTrackDeprecations() {
+		fmt.Fprintln(colorable.NewColorableStderr(), deprecationTracker.DeprecationsReport())
+	}
 
 	suites, skippedPackages := findSuites(args, r.commandFlags.Recurse, r.commandFlags.SkipPackage, true)
 	if len(skippedPackages) > 0 {
@@ -179,18 +203,23 @@ func (r *SpecRunner) combineCoverprofiles(runners []*testrunner.TestRunner) erro
 	for index, runner := range runners {
 		contents, err := ioutil.ReadFile(runner.CoverageFile)
 
+		if err != nil {
+			fmt.Printf("Unable to read coverage file %s to combine, %v\n", runner.CoverageFile, err)
+			return nil // non-fatal error
+		}
+
 		// remove the cover mode line from every file
 		// except the first one
 		if index > 0 {
 			contents = modeRegex.ReplaceAll(contents, []byte{})
 		}
 
-		if err != nil {
-			fmt.Printf("Unable to read coverage file %s to combine, %v\n", runner.CoverageFile, err)
-			return nil // non-fatal error
-		}
-
 		_, err = combined.Write(contents)
+
+		// Add a newline to the end of every file if missing.
+		if err == nil && len(contents) > 0 && contents[len(contents)-1] != '\n' {
+			_, err = combined.Write([]byte("\n"))
+		}
 
 		if err != nil {
 			fmt.Printf("Unable to append to coverprofile, %v\n", err)
