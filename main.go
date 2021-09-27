@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 
@@ -17,8 +18,27 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
+	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-server/gateway"
+	"github.com/rudderlabs/rudder-server/gateway/webhook"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
+	"github.com/rudderlabs/rudder-server/processor"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+
+	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
+
+	"github.com/rudderlabs/rudder-server/router"
+	"github.com/rudderlabs/rudder-server/router/batchrouter"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
+	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
+	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
+	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
+
+	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
@@ -26,12 +46,35 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/alert"
+	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/db"
+
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+
+	"github.com/rudderlabs/rudder-server/services/dedup"
+	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
+
+	destination_connection_tester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/services/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
 	"github.com/rudderlabs/rudder-server/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 
 	// This is necessary for compatibility with enterprise features
 	_ "github.com/rudderlabs/rudder-server/imports"
@@ -47,6 +90,7 @@ var (
 	ReadHeaderTimeout         time.Duration
 	WriteTimeout              time.Duration
 	IdleTimeout               time.Duration
+	gracefulShutdownTimeout   time.Duration
 	MaxHeaderBytes            int
 )
 
@@ -60,10 +104,12 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(0), &ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(10), &WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(720), &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(time.Duration(15), &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
-}
 
-func init() {
+}
+  
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("main")
 }
@@ -84,8 +130,8 @@ func printVersion() {
 	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
-func startWarehouseService(application app.Interface) {
-	warehouse.Start(application)
+func startWarehouseService(ctx context.Context, application app.Interface) error {
+	return warehouse.Start(ctx, application)
 }
 
 func canStartServer() bool {
@@ -97,7 +143,82 @@ func canStartWarehouse() bool {
 	return warehouseMode != config.OffMode
 }
 
+func runAllInit() {
+	config.Load()
+	admin.Init()
+	app.Init()
+	logger.Init()
+	misc.Init()
+	stats.Init()
+	db.Init()
+	diagnostics.Init()
+	backendconfig.Init()
+	warehouseutils.Init()
+	bigquery.Init()
+	clickhouse.Init()
+	archiver.Init()
+	destinationdebugger.Init()
+	pgnotifier.Init()
+	jobsdb.Init()
+	jobsdb.Init2()
+	jobsdb.Init3()
+	destination_connection_tester.Init()
+	warehouse.Init()
+	warehouse.Init2()
+	warehouse.Init3()
+	warehouse.Init4()
+	warehouse.Init5()
+	azuresynapse.Init()
+	mssql.Init()
+	postgres.Init()
+	redshift.Init()
+	snowflake.Init()
+	transformer.Init()
+	webhook.Init()
+	batchrouter.Init()
+	batchrouter.Init2()
+	asyncdestinationmanager.Init()
+	batchrouterutils.Init()
+	dedup.Init()
+	event_schema.Init()
+	event_schema.Init2()
+	stash.Init()
+	transformationdebugger.Init()
+	processor.Init()
+	kafka.Init()
+	customdestinationmanager.Init()
+	routertransformer.Init()
+	router.Init()
+	router.Init2()
+	operationmanager.Init()
+	operationmanager.Init2()
+	ratelimiter.Init()
+	sourcedebugger.Init()
+	gateway.Init()
+	apphandlers.Init()
+	apphandlers.Init2()
+	rruntime.Init()
+	integrations.Init()
+	alert.Init()
+	Init()
+
+}
+
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		<-c
+		cancel()
+	}()
+
+	Run(ctx)
+}
+
+func Run(ctx context.Context) {
+	runAllInit()
+
 	options := app.LoadOptions()
 	if options.VersionFlag {
 		printVersion()
@@ -123,7 +244,7 @@ func main() {
 		AppVersion:   version["Version"].(string),
 		PanicHandler: func() {},
 	})
-	ctx := bugsnag.StartSession(context.Background())
+	ctx = bugsnag.StartSession(ctx)
 	defer func() {
 		if r := recover(); r != nil {
 			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
@@ -156,46 +277,83 @@ func main() {
 
 	backendconfig.Setup(pollRegulations, configEnvHandler)
 
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		application.Stop()
-		// clearing zap Log buffer to std output
-		if logger.Log != nil {
-			logger.Log.Sync()
-		}
-		stats.StopRuntimeStats()
-		os.Exit(1)
-	}()
-
-	rruntime.Go(admin.StartServer)
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return admin.StartServer(ctx)
+	})
 
 	misc.AppStartTime = time.Now().Unix()
 	//If the server is standby mode, then no major services (gateway, processor, routers...) run
 	if options.StandByMode {
 		appHandler.HandleRecovery(options)
-		startStandbyWebHandler()
+		g.Go(func() error {
+			return startStandbyWebHandler(ctx)
+		})
 	} else {
 		if canStartServer() {
 			appHandler.HandleRecovery(options)
-			rruntime.Go(func() {
-				appHandler.StartRudderCore(options)
-			})
+			g.Go(misc.WithBugsnag(func() error {
+				return appHandler.StartRudderCore(ctx, options)
+			}))
 		}
 
 		// initialize warehouse service after core to handle non-normal recovery modes
 		if appTypeStr != app.GATEWAY && canStartWarehouse() {
-			rruntime.Go(func() {
-				startWarehouseService(application)
-			})
+			g.Go(misc.WithBugsnag(func() error {
+				return startWarehouseService(ctx, application)
+			}))
 		}
-
-		misc.KeepProcessAlive()
 	}
+
+	var ctxDoneTime time.Time
+	g.Go(func() error {
+		<-ctx.Done()
+		ctxDoneTime = time.Now()
+		return nil
+	})
+
+	go func() {
+		<-ctx.Done()
+		<-time.After(gracefulShutdownTimeout)
+		// Assume graceful shutdown failed, log remain goroutines and force kill
+		pkgLogger.Errorf(
+			"Graceful termination failed after %s, goroutine dump:\n",
+			gracefulShutdownTimeout,
+		)
+
+		fmt.Print("\n\n")
+		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+		fmt.Print("\n\n")
+
+		application.Stop()
+		if logger.Log != nil {
+			logger.Log.Sync()
+		}
+		stats.StopRuntimeStats()
+
+		os.Exit(1)
+	}()
+
+	err := g.Wait()
+	if err != nil && err != context.Canceled {
+		pkgLogger.Error(err)
+	}
+
+	application.Stop()
+
+	pkgLogger.Infof(
+		"Graceful terminal after %s, with %d go-routines",
+		time.Since(ctxDoneTime),
+		runtime.NumGoroutine(),
+	)
+	// clearing zap Log buffer to std output
+	if logger.Log != nil {
+		logger.Log.Sync()
+	}
+	stats.StopRuntimeStats()
 }
 
-func startStandbyWebHandler() {
+func startStandbyWebHandler(ctx context.Context) error {
 	webPort := getWebPort()
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/health", standbyHealthHandler)
@@ -214,7 +372,15 @@ func startStandbyWebHandler() {
 		IdleTimeout:       IdleTimeout,
 		MaxHeaderBytes:    MaxHeaderBytes,
 	}
-	pkgLogger.Fatal(srv.ListenAndServe())
+	func() {
+		<-ctx.Done()
+		srv.Shutdown(context.Background())
+	}()
+
+	if err := srv.ListenAndServe(); err != nil {
+		return fmt.Errorf("web server: %w", err)
+	}
+	return nil
 }
 
 func getWebPort() int {

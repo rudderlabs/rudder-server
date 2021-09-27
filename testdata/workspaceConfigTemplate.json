@@ -1,0 +1,643 @@
+{
+    "enableMetrics": false,
+    "workspaceId": "{{.workspaceId}}",
+    "sources":
+    [
+        {
+            "config":
+            {},
+            "id": "xxxyyyzzEaEurW247ad9WYZLUyk",
+            "name": "Dev Integration Test 1",
+            "writeKey": "{{.writeKey}}",
+            "enabled": true,
+            "sourceDefinitionId": "xxxyyyzzpWDzNxgGUYzq9sZdZZB",
+            "createdBy": "xxxyyyzzueyoBz4jb7bRdOzDxai",
+            "workspaceId": "{{.workspaceId}}",
+            "deleted": false,
+            "createdAt": "2021-08-27T06:33:00.305Z",
+            "updatedAt": "2021-08-27T06:33:00.305Z",
+            "destinations":
+            [
+                {
+                    "config":
+                    {
+                        "webhookUrl": "{{.webhookUrl}}",
+                        "webhookMethod": "POST"
+                    },
+                    "secretConfig":
+                    {},
+                    "id": "xxxyyyzzP9kQfzOoKd1tuxchYAG",
+                    "name": "Des WebHook Integration Test 1",
+                    "enabled": true,
+                    "workspaceId": "{{.workspaceId}}",
+                    "deleted": false,
+                    "createdAt": "2021-08-27T06:49:38.546Z",
+                    "updatedAt": "2021-08-27T06:49:38.546Z",
+                    "transformations":
+                    [],
+                    "destinationDefinition":
+                    {
+                        "config":
+                        {
+                            "destConfig":
+                            {
+                                "defaultConfig":
+                                [
+                                    "webhookUrl",
+                                    "webhookMethod",
+                                    "headers"
+                                ]
+                            },
+                            "secretKeys":
+                            [
+                                "headers.to"
+                            ],
+                            "excludeKeys":
+                            [],
+                            "includeKeys":
+                            [],
+                            "transformAt": "processor",
+                            "transformAtV1": "processor",
+                            "supportedSourceTypes":
+                            [
+                                "android",
+                                "ios",
+                                "web",
+                                "unity",
+                                "amp",
+                                "cloud",
+                                "warehouse",
+                                "reactnative",
+                                "flutter"
+                            ],
+                            "supportedMessageTypes":
+                            [
+                                "alias",
+                                "group",
+                                "identify",
+                                "page",
+                                "screen",
+                                "track"
+                            ],
+                            "saveDestinationResponse": false
+                        },
+                        "configSchema": null,
+                        "responseRules": null,
+                        "id": "xxxyyyzzSOU9pLRavMf0GuVnWV3",
+                        "name": "WEBHOOK",
+                        "displayName": "Webhook",
+                        "category": null,
+                        "createdAt": "2020-03-16T19:25:28.141Z",
+                        "updatedAt": "2021-08-26T07:06:01.445Z"
+                    },
+                    "isConnectionEnabled": true,
+                    "isProcessorEnabled": true
+                },
+                {
+                    "config": {
+                        "host": "localhost",
+                        "database": "jobsdb",
+                        "user": "rudder",
+                        "password": "password",
+                        "port": "{{.postgresPort}}",
+                        "sslMode": "disable",
+                        "namespace": "",
+                        "bucketProvider": "MINIO",
+                        "bucketName": "{{.minioBucketName}}",
+                        "accessKeyID": "MYACCESSKEY",
+                        "secretAccessKey": "MYSECRETKEY",
+                        "useSSL": false,
+                        "endPoint": "{{.minioEndpoint}}",
+                        "syncFrequency": "30",
+                        "useRudderStorage": false
+                    },
+                    "secretConfig": {},
+                    "id": "xxxyyyzzonKs9Y3mJ4ImT1NCMFs",
+                    "name": "Des Postgres Integration Test 1",
+                    "enabled": true,
+                    "workspaceId": "{{.workspaceId}}",
+                    "deleted": false,
+                    "createdAt": "2021-08-27T06:48:12.946Z",
+                    "updatedAt": "2021-08-27T06:48:12.946Z",
+                    "transformations": [],
+                    "destinationDefinition": {
+                        "config": {
+                            "destConfig": {
+                                "defaultConfig": [
+                                    "host",
+                                    "database",
+                                    "user",
+                                    "password",
+                                    "port",
+                                    "sslMode",
+                                    "namespace",
+                                    "bucketProvider",
+                                    "bucketName",
+                                    "accessKeyID",
+                                    "accessKey",
+                                    "accountName",
+                                    "accountKey",
+                                    "credentials",
+                                    "secretAccessKey",
+                                    "useSSL",
+                                    "containerName",
+                                    "endPoint",
+                                    "syncFrequency",
+                                    "syncStartAt",
+                                    "excludeWindow",
+                                    "useRudderStorage"
+                                ]
+                            },
+                            "secretKeys": [
+                                "password",
+                                "accessKeyID",
+                                "accessKey",
+                                "accountKey",
+                                "secretAccessKey",
+                                "credentials"
+                            ],
+                            "excludeKeys": [],
+                            "includeKeys": [],
+                            "transformAt": "processor",
+                            "transformAtV1": "processor",
+                            "supportedSourceTypes": [
+                                "android",
+                                "ios",
+                                "web",
+                                "unity",
+                                "amp",
+                                "cloud",
+                                "reactnative",
+                                "cloudSource",
+                                "flutter",
+                                "warehouse"
+                            ],
+                            "saveDestinationResponse": true
+                        },
+                        "configSchema": {
+                            "type": "object",
+                            "allOf": [
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "S3"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "bucketName"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "GCS"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "bucketName"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "AZURE_BLOB"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "containerName"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "MINIO"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "bucketName"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "S3"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "accessKeyID"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "S3"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "accessKey"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "AZURE_BLOB"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "accountName"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "AZURE_BLOB"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "accountKey"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "GCS"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "credentials"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "MINIO"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "endPoint"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "MINIO"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "accessKeyID"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "MINIO"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "secretAccessKey"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "if": {
+                                        "properties": {
+                                            "bucketProvider": {
+                                                "const": "MINIO"
+                                            }
+                                        }
+                                    },
+                                    "then": {
+                                        "required": [
+                                            "useSSL"
+                                        ]
+                                    }
+                                }
+                            ],
+                            "$schema": "http://json-schema.org/draft-07/schema",
+                            "required": [
+                                "host",
+                                "database",
+                                "user",
+                                "password",
+                                "port",
+                                "sslMode",
+                                "syncFrequency",
+                                "useRudderStorage",
+                                "bucketProvider"
+                            ],
+                            "properties": {
+                                "host": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "port": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "user": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "useSSL": {
+                                    "type": "boolean"
+                                },
+                                "sslMode": {
+                                    "type": "string",
+                                    "pattern": "^(disable|require)$"
+                                },
+                                "database": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "endPoint": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "password": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|.*"
+                                },
+                                "accessKey": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "namespace": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(?!pg_|PG_|pG_|Pg_).*"
+                                },
+                                "accountKey": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "bucketName": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "accessKeyID": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "accountName": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "credentials": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|.*"
+                                },
+                                "syncStartAt": {
+                                    "type": "string"
+                                },
+                                "containerName": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "excludeWindow": {
+                                    "type": "string"
+                                },
+                                "syncFrequency": {
+                                    "type": "string",
+                                    "pattern": "^(30|60|180|360|720|1440)$"
+                                },
+                                "bucketProvider": {
+                                    "type": "string",
+                                    "pattern": "^(S3|GCS|AZURE_BLOB|MINIO)$"
+                                },
+                                "secretAccessKey": {
+                                    "type": "string",
+                                    "pattern": "(^env[.].*)|^(.{0,100})$"
+                                },
+                                "useRudderStorage": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "additionalProperties": true
+                        },
+                        "responseRules": null,
+                        "id": "xxxyyyzzNdkvBTzotNh0zta5jDm",
+                        "name": "POSTGRES",
+                        "displayName": "Postgres",
+                        "category": "warehouse",
+                        "createdAt": "2020-05-01T12:41:47.463Z",
+                        "updatedAt": "2021-08-27T08:09:46.928Z"
+                    },
+                    "isConnectionEnabled": true,
+                    "isProcessorEnabled": true
+                },
+                {
+                    "config": {
+                        "address": "{{.address}}",
+                        "database": "",
+                        "password": "",
+                        "prefix": "",
+                        "secure": false,
+                        "skipVerify": false,
+                        "caCertificate": "",
+                        "clusterMode": false
+                    },
+                    "secretConfig": {},
+                    "id": "xxxyyyzzYjAZfPBa5yqqTvqBVqu",
+                    "name": "Des Redis Integration Test 1",
+                    "enabled": true,
+                    "workspaceId": "{{.workspaceId}}",
+                    "deleted": false,
+                    "createdAt": "2021-08-27T06:45:46.149Z",
+                    "updatedAt": "2021-08-27T06:45:46.149Z",
+                    "transformations": [],
+                    "destinationDefinition": {
+                        "config": {
+                            "destConfig": {
+                                "defaultConfig": [
+                                    "address",
+                                    "database",
+                                    "password",
+                                    "prefix",
+                                    "secure",
+                                    "skipVerify",
+                                    "caCertificate",
+                                    "clusterMode"
+                                ]
+                            },
+                            "secretKeys": [
+                                "password",
+                                "caCertificate"
+                            ],
+                            "excludeKeys": [],
+                            "includeKeys": [],
+                            "transformAt": "processor",
+                            "transformAtV1": "processor",
+                            "supportedSourceTypes": [
+                                "android",
+                                "ios",
+                                "web",
+                                "unity",
+                                "amp",
+                                "cloud",
+                                "warehouse",
+                                "reactnative",
+                                "flutter"
+                            ],
+                            "supportedMessageTypes": [
+                                "identify"
+                            ],
+                            "saveDestinationResponse": true
+                        },
+                        "configSchema": null,
+                        "responseRules": {},
+                        "id": "xxxyyyzzl28zT3nxr8SWZp6xaWT",
+                        "name": "REDIS",
+                        "displayName": "Redis",
+                        "category": null,
+                        "createdAt": "2021-02-08T15:26:17.995Z",
+                        "updatedAt": "2021-08-27T08:09:46.976Z"
+                    },
+                    "isConnectionEnabled": true,
+                    "isProcessorEnabled": true
+                },
+                {
+                    "config": {
+                        "hostName": "localhost",
+                        "port": "{{.kafkaPort}}",
+                        "topic": "dev_integration_test",
+                        "sslEnabled": false,
+                        "caCertificate": "key",
+                        "useSASL": false,
+                        "saslType": "plain",
+                        "username": "",
+                        "password": ""
+                    },
+                    "secretConfig": {},
+                    "id": "xxxyyyzzhyrw8v0CrTMrDZ4ovej",
+                    "name": "Des Kafka Integration Test 1",
+                    "enabled": true,
+                    "workspaceId": "{{.workspaceId}}",
+                    "deleted": false,
+                    "createdAt": "2021-08-27T06:44:37.836Z",
+                    "updatedAt": "2021-08-27T09:09:11.873Z",
+                    "transformations": [],
+                    "destinationDefinition": {
+                        "config": {
+                            "destConfig": {
+                                "defaultConfig": [
+                                    "hostName",
+                                    "port",
+                                    "topic",
+                                    "sslEnabled",
+                                    "caCertificate",
+                                    "useSASL",
+                                    "saslType",
+                                    "username",
+                                    "password"
+                                ]
+                            },
+                            "secretKeys": [
+                                "password"
+                            ],
+                            "excludeKeys": [],
+                            "includeKeys": [],
+                            "transformAt": "processor",
+                            "transformAtV1": "processor",
+                            "supportedSourceTypes": [
+                                "android",
+                                "ios",
+                                "web",
+                                "unity",
+                                "amp",
+                                "cloud",
+                                "warehouse",
+                                "reactnative",
+                                "flutter"
+                            ],
+                            "supportedMessageTypes": [
+                                "alias",
+                                "group",
+                                "identify",
+                                "page",
+                                "screen",
+                                "track"
+                            ],
+                            "saveDestinationResponse": true
+                        },
+                        "configSchema": null,
+                        "responseRules": null,
+                        "id": "xxxyyyzzsyAyCQ2QIxrKU9X5AoR",
+                        "name": "KAFKA",
+                        "displayName": "Apache Kafka",
+                        "category": null,
+                        "createdAt": "2020-05-12T17:13:54.165Z",
+                        "updatedAt": "2021-08-27T08:09:44.485Z"
+                    },
+                    "isConnectionEnabled": true,
+                    "isProcessorEnabled": true
+                }
+            ],
+            "sourceDefinition":
+            {
+                "id": "xxxyyyzzpWDzNxgGUYzq9sZdZZB",
+                "name": "HTTP",
+                "options": null,
+                "displayName": "HTTP",
+                "category": "",
+                "createdAt": "2020-06-12T06:35:35.962Z",
+                "updatedAt": "2020-06-12T06:35:35.962Z"
+            },
+            "dgSourceTrackingPlanConfig": null
+        }
+    ],
+    "libraries":
+    [
+        {
+            "versionId": "def"
+        },
+        {
+            "versionId": "ghi"
+        }
+    ]
+}

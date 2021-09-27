@@ -5,34 +5,35 @@
 package mock_debugger
 
 import (
-	gomock "github.com/golang/mock/gomock"
 	reflect "reflect"
+
+	gomock "github.com/golang/mock/gomock"
 )
 
-// MockTransformer is a mock of Transformer interface
+// MockTransformer is a mock of Transformer interface.
 type MockTransformer struct {
 	ctrl     *gomock.Controller
 	recorder *MockTransformerMockRecorder
 }
 
-// MockTransformerMockRecorder is the mock recorder for MockTransformer
+// MockTransformerMockRecorder is the mock recorder for MockTransformer.
 type MockTransformerMockRecorder struct {
 	mock *MockTransformer
 }
 
-// NewMockTransformer creates a new mock instance
+// NewMockTransformer creates a new mock instance.
 func NewMockTransformer(ctrl *gomock.Controller) *MockTransformer {
 	mock := &MockTransformer{ctrl: ctrl}
 	mock.recorder = &MockTransformerMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 	return m.recorder
 }
 
-// Transform mocks base method
+// Transform mocks base method.
 func (m *MockTransformer) Transform(arg0 interface{}) ([]byte, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Transform", arg0)
@@ -41,36 +42,36 @@ func (m *MockTransformer) Transform(arg0 interface{}) ([]byte, error) {
 	return ret0, ret1
 }
 
-// Transform indicates an expected call of Transform
+// Transform indicates an expected call of Transform.
 func (mr *MockTransformerMockRecorder) Transform(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0)
 }
 
-// MockUploaderI is a mock of UploaderI interface
+// MockUploaderI is a mock of UploaderI interface.
 type MockUploaderI struct {
 	ctrl     *gomock.Controller
 	recorder *MockUploaderIMockRecorder
 }
 
-// MockUploaderIMockRecorder is the mock recorder for MockUploaderI
+// MockUploaderIMockRecorder is the mock recorder for MockUploaderI.
 type MockUploaderIMockRecorder struct {
 	mock *MockUploaderI
 }
 
-// NewMockUploaderI creates a new mock instance
+// NewMockUploaderI creates a new mock instance.
 func NewMockUploaderI(ctrl *gomock.Controller) *MockUploaderI {
 	mock := &MockUploaderI{ctrl: ctrl}
 	mock.recorder = &MockUploaderIMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockUploaderI) EXPECT() *MockUploaderIMockRecorder {
 	return m.recorder
 }
 
-// RecordEvent mocks base method
+// RecordEvent mocks base method.
 func (m *MockUploaderI) RecordEvent(arg0 interface{}) bool {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RecordEvent", arg0)
@@ -78,19 +79,19 @@ func (m *MockUploaderI) RecordEvent(arg0 interface{}) bool {
 	return ret0
 }
 
-// RecordEvent indicates an expected call of RecordEvent
+// RecordEvent indicates an expected call of RecordEvent.
 func (mr *MockUploaderIMockRecorder) RecordEvent(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordEvent", reflect.TypeOf((*MockUploaderI)(nil).RecordEvent), arg0)
 }
 
-// Start mocks base method
+// Start mocks base method.
 func (m *MockUploaderI) Start() {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Start")
 }
 
-// Start indicates an expected call of Start
+// Start indicates an expected call of Start.
 func (mr *MockUploaderIMockRecorder) Start() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockUploaderI)(nil).Start))

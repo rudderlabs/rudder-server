@@ -3,10 +3,13 @@ package backendconfig
 //go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
 
 import (
+	"context"
 	"reflect"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/admin"
 
@@ -44,10 +47,10 @@ var (
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
-	Http                 sysUtils.HttpI           = sysUtils.NewHttp()
-	pkgLogger            logger.LoggerI           = logger.NewLogger().Child("backend-config")
-	IoUtil               sysUtils.IoUtilI         = sysUtils.NewIoUtil()
-	Diagnostics          diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Http                 sysUtils.HttpI   = sysUtils.NewHttp()
+	pkgLogger            logger.LoggerI   = logger.NewLogger().Child("backend-config")
+	IoUtil               sysUtils.IoUtilI = sysUtils.NewIoUtil()
+	Diagnostics          diagnostics.DiagnosticsI
 )
 
 var Eb utils.PublishSubscriber = new(utils.EventBus)
@@ -76,6 +79,8 @@ const (
 
 	/*RegulationSuppressAndDelete refers to Suppress and Delete Regulation */
 	RegulationSuppressAndDelete Regulation = "Suppress_With_Delete"
+
+	GlobalEventType = "global"
 )
 
 type DestinationDefinitionT struct {
@@ -103,14 +108,15 @@ type DestinationT struct {
 }
 
 type SourceT struct {
-	ID               string
-	Name             string
-	SourceDefinition SourceDefinitionT
-	Config           map[string]interface{}
-	Enabled          bool
-	WorkspaceID      string
-	Destinations     []DestinationT
-	WriteKey         string
+	ID                         string
+	Name                       string
+	SourceDefinition           SourceDefinitionT
+	Config                     map[string]interface{}
+	Enabled                    bool
+	WorkspaceID                string
+	Destinations               []DestinationT
+	WriteKey                   string
+	DgSourceTrackingPlanConfig DgSourceTrackingPlanConfigT
 }
 
 type WorkspaceRegulationT struct {
@@ -176,13 +182,46 @@ type LibraryT struct {
 
 type LibrariesT []LibraryT
 
+type DgSourceTrackingPlanConfigT struct {
+	SourceId            string                            `json:"sourceId"`
+	SourceConfigVersion int                               `json:"version"`
+	Config              map[string]map[string]interface{} `json:"config"`
+	MergedConfig        map[string]interface{}            `json:"mergedConfig"`
+	Deleted             bool                              `json:"deleted"`
+	TrackingPlan        TrackingPlanT                     `json:"trackingPlan"`
+}
+
+func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType string) map[string]interface{} {
+	if dgSourceTPConfigT.MergedConfig == nil {
+		globalConfig := dgSourceTPConfigT.fetchEventConfig(GlobalEventType)
+		eventSpecificConfig := dgSourceTPConfigT.fetchEventConfig(eventType)
+		outputConfig := misc.MergeMaps(globalConfig, eventSpecificConfig)
+		dgSourceTPConfigT.MergedConfig = outputConfig
+	}
+	return dgSourceTPConfigT.MergedConfig
+}
+
+func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) fetchEventConfig(eventType string) map[string]interface{} {
+	emptyMap := map[string]interface{}{}
+	_, eventSpecificConfigPresent := dgSourceTPConfigT.Config[eventType]
+	if !eventSpecificConfigPresent {
+		return emptyMap
+	}
+	return dgSourceTPConfigT.Config[eventType]
+}
+
+type TrackingPlanT struct {
+	Id      string `json:"id"`
+	Version int    `json:"version"`
+}
+
 type BackendConfig interface {
 	SetUp()
 	Get() (ConfigT, bool)
 	GetRegulations() (RegulationsT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
-	WaitForConfig()
+	WaitForConfig(ctx context.Context) error
 	Subscribe(channel chan utils.DataEvent, topic Topic)
 }
 type CommonBackendConfig struct {
@@ -207,7 +246,8 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &configEnvReplacementEnabled, false, "BackendConfig.envReplacementEnabled")
 }
 
-func init() {
+func Init() {
+	Diagnostics = diagnostics.Diagnostics
 	loadConfig()
 }
 
@@ -373,14 +413,14 @@ func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic Top
 WaitForConfig waits until backend config has been initialized
 Deprecated: Use an instance of BackendConfig instead of static function
 */
-func WaitForConfig() {
-	backendConfig.WaitForConfig()
+func WaitForConfig(ctx context.Context) error {
+	return backendConfig.WaitForConfig(ctx)
 }
 
 /*
 WaitForConfig waits until backend config has been initialized
 */
-func (bc *CommonBackendConfig) WaitForConfig() {
+func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 	for {
 		initializedLock.RLock()
 		if initialized && !waitForRegulations {
@@ -389,8 +429,13 @@ func (bc *CommonBackendConfig) WaitForConfig() {
 		}
 		initializedLock.RUnlock()
 		pkgLogger.Info("Waiting for initializing backend config")
-		time.Sleep(time.Duration(pollInterval))
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(pollInterval)):
+		}
 	}
+	return nil
 }
 
 // Setup backend config

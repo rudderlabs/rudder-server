@@ -14,7 +14,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"math/rand"
 	"net/http"
@@ -163,13 +163,13 @@ func computeTestResults(testDuration int) {
 
 func getS3DestData() {
 	// TODO: Handle Pagination for ListFilesWithPrefix
-	s3Objects, err := s3Manager.ListFilesWithPrefix(fmt.Sprintf("rudder-logs/%s", *sourceID))
+	fileObjects, err := s3Manager.ListFilesWithPrefix(fmt.Sprintf("rudder-logs/%s", *sourceID), 1000)
 	if err != nil {
 		panic(err)
 	}
 
-	sort.Slice(s3Objects, func(i, j int) bool {
-		return s3Objects[i].LastModifiedTime.Before(s3Objects[j].LastModifiedTime)
+	sort.Slice(fileObjects, func(i, j int) bool {
+		return fileObjects[i].LastModified.Before(fileObjects[j].LastModified)
 	})
 
 	redisClient := redis.NewClient(&redis.Options{
@@ -177,8 +177,8 @@ func getS3DestData() {
 	})
 	pipe := redisClient.Pipeline()
 
-	for _, s3Object := range s3Objects {
-		if s3Object.LastModifiedTime.Before(startTime) {
+	for _, s3Object := range fileObjects {
+		if s3Object.LastModified.Before(startTime) {
 			continue
 		}
 		jsonPath := "/Users/srikanth/" + "s3-correctness/" + uuid.NewV4().String()
@@ -237,7 +237,7 @@ func generateRandomData(payload *[]byte, path string, value interface{}) ([]byte
 }
 
 func generateEvents(userID string, eventDelay int) {
-	var fileData, err = ioutil.ReadFile("batchEvent.json")
+	var fileData, err = os.ReadFile("batchEvent.json")
 	if err != nil {
 		panic(err)
 	}
@@ -283,7 +283,7 @@ func sendToRudderGateway(jsonPayload []byte) bool {
 	}
 	defer resp.Body.Close()
 
-	ioutil.ReadAll(resp.Body)
+	io.ReadAll(resp.Body)
 	if resp.StatusCode == 200 {
 		atomic.AddUint64(&successCount, 1)
 		return true
@@ -403,7 +403,7 @@ func main() {
 				fmt.Println("Invalid Sink URL")
 			}
 			defer resp.Body.Close()
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			if string(body) == "no" {
 				break
 			}

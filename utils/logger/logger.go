@@ -22,7 +22,7 @@ package logger
 import (
 	"bytes"
 	"errors"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"runtime"
 	"strings"
@@ -147,7 +147,7 @@ func NewLogger() *LoggerT {
 }
 
 // Setup sets up the logger initially
-func init() {
+func Init() {
 	loadConfig()
 	Log = configureLogger()
 	loggerLevelsCache = make(map[string]int)
@@ -324,9 +324,9 @@ func (l *LoggerT) Fatalf(format string, args ...interface{}) {
 func (l *LoggerT) LogRequest(req *http.Request) {
 	if levelEvent >= l.getLoggingLevel() {
 		defer req.Body.Close()
-		bodyBytes, _ := ioutil.ReadAll(req.Body)
+		bodyBytes, _ := io.ReadAll(req.Body)
 		bodyString := string(bodyBytes)
-		req.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
+		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		//print raw request body for debugging purposes
 		Log.Debug("Request Body: ", bodyString)
 	}

@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
@@ -128,6 +129,11 @@ type credentialsT struct {
 	tlsConfigName string
 }
 
+func Init() {
+	loadConfig()
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
+}
+
 // connect connects to warehouse with provided credentials
 func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 	var dbNameParam string
@@ -156,11 +162,6 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 		return nil, fmt.Errorf("clickhouse connection error : (%v)", err)
 	}
 	return db, nil
-}
-
-func init() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
 }
 
 func loadConfig() {
@@ -637,17 +638,22 @@ func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 		return
 	}
 	defer ch.Db.Close()
-	pingResultChannel := make(chan error, 1)
-	rruntime.Go(func() {
-		pingResultChannel <- ch.Db.Ping()
-	})
-	var timeOut time.Duration = 5
-	select {
-	case err = <-pingResultChannel:
-	case <-time.After(timeOut * time.Second):
-		err = fmt.Errorf("connection testing timed out after %d sec", timeOut)
+
+	timeOut := 5 * time.Second
+
+	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	defer cancel()
+
+	err = ch.Db.PingContext(ctx)
+	if err == context.DeadlineExceeded {
+		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
 	}
-	return
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
 func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {

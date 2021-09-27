@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -50,12 +52,16 @@ var (
 	warehouseServiceMaxRetryTime       time.Duration
 	asyncDestinations                  []string
 	pkgLogger                          logger.LoggerI
-	Diagnostics                        diagnostics.DiagnosticsI = diagnostics.Diagnostics
+	Diagnostics                        diagnostics.DiagnosticsI
 	QueryFilters                       jobsdb.QueryFiltersT
 	readPerDestination                 bool
 	disableEgress                      bool
 	toAbortDestinationIDs              string
 	transformerURL                     string
+	datePrefixOverride                 string
+	dateFormatLayouts                  map[string]string // string -> string
+	dateFormatMap                      map[string]string // (sourceId:destinationId) -> dateFormat
+	dateFormatMapLock                  sync.RWMutex
 )
 
 const DISABLED_EGRESS = "200: outgoing disabled"
@@ -86,6 +92,7 @@ type HandleT struct {
 	drainedJobsStat                stats.RudderStats
 	backendConfig                  backendconfig.BackendConfig
 	fileManagerFactory             filemanager.FileManagerFactory
+	maxFileUploadSize              int
 	inProgressMap                  map[string]bool
 	inProgressMapLock              sync.RWMutex
 	lastExecMap                    map[string]int64
@@ -103,6 +110,11 @@ type HandleT struct {
 	asyncUploadWorkerResumeChannel chan bool
 	pollAsyncStatusPauseChannel    chan *PauseT
 	pollAsyncStatusResumeChannel   chan bool
+
+	backgroundGroup  *errgroup.Group
+	backgroundCtx    context.Context
+	backgroundCancel context.CancelFunc
+	backgroundWait   func() error
 }
 
 type BatchDestinationDataT struct {
@@ -196,6 +208,7 @@ type batchRequestMetric struct {
 type StorageUploadOutput struct {
 	Config           map[string]interface{}
 	Key              string
+	FileLocation     string
 	LocalFilePaths   []string
 	JournalOpID      int64
 	Error            error
@@ -245,18 +258,21 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[stri
 	}
 }
 
-func (brt *HandleT) pollAsyncStatus() {
-	timeout := time.After(10 * time.Millisecond)
+func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case pause := <-brt.pollAsyncStatusPauseChannel:
 			pkgLogger.Infof("pollAsyncStatus is paused. Dest type: %s", brt.destType)
 			pause.respChannel <- true
-			<-brt.pollAsyncStatusResumeChannel
-			pkgLogger.Infof("pollAsyncStatus is resumed. Dest type: %s", brt.destType)
-
-		case <-timeout:
-			timeout = time.After(10 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				return
+			case <-brt.pollAsyncStatusResumeChannel:
+				pkgLogger.Infof("pollAsyncStatus is resumed. Dest type: %s", brt.destType)
+			}
+		case <-time.After(brt.pollStatusLoopSleep):
 			brt.configSubscriberLock.RLock()
 			destinationsMap := brt.destinationsMap
 			brt.configSubscriberLock.RUnlock()
@@ -469,7 +485,6 @@ func (brt *HandleT) pollAsyncStatus() {
 					}
 				}
 			}
-			time.Sleep(brt.pollStatusLoopSleep)
 		}
 	}
 }
@@ -594,13 +609,30 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 	}
 
 	brt.logger.Debugf("BRT: Starting upload to %s", provider)
-
-	var keyPrefixes []string
+	folderName := ""
 	if isWarehouse {
-		keyPrefixes = []string{config.GetEnv("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+		folderName = config.GetEnv("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs")
 	} else {
-		keyPrefixes = []string{config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs"), batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006")}
+		folderName = config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs")
 	}
+
+	var datePrefixLayout string
+	if datePrefixOverride != "" {
+		datePrefixLayout = datePrefixOverride
+	} else {
+		dateFormat, _ := GetStorageDateFormat(uploader, batchJobs.BatchDestination, folderName)
+		datePrefixLayout = dateFormat
+	}
+
+	brt.logger.Debugf("BRT: Date prefix layout is %s", datePrefixLayout)
+	switch datePrefixLayout {
+	case "MM-DD-YYYY": //used to be earlier default
+		datePrefixLayout = time.Now().Format("01-02-2006")
+		break
+	default:
+		datePrefixLayout = time.Now().Format("2006-01-02")
+	}
+	keyPrefixes := []string{folderName, batchJobs.BatchDestination.Source.ID, datePrefixLayout}
 
 	_, fileName := filepath.Split(gzipFilePath)
 	var (
@@ -631,6 +663,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 	return StorageUploadOutput{
 		Config:           batchJobs.BatchDestination.Destination.Config,
 		Key:              uploadOutput.ObjectName,
+		FileLocation:     uploadOutput.Location,
 		LocalFilePaths:   []string{gzipFilePath},
 		JournalOpID:      opID,
 		FirstEventAt:     firstEventAt,
@@ -707,28 +740,31 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 	}
 }
 
-func (brt *HandleT) asyncUploadWorker() {
+func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 	if !IsAsyncDestination(brt.destType) {
 		return
 	}
 
-	timeout := time.After(10 * time.Millisecond)
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case pause := <-brt.asyncUploadWorkerPauseChannel:
 			pkgLogger.Infof("asyncUploadWorker is paused. Dest type: %s", brt.destType)
 			pause.respChannel <- true
-			<-brt.asyncUploadWorkerResumeChannel
-			pkgLogger.Infof("asyncUploadWorker is resumed. Dest type: %s", brt.destType)
-
-		case <-timeout:
-			timeout = time.After(10 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				return
+			case <-brt.asyncUploadWorkerResumeChannel:
+				pkgLogger.Infof("asyncUploadWorker is resumed. Dest type: %s", brt.destType)
+			}
+		case <-time.After(10 * time.Millisecond):
 			brt.configSubscriberLock.RLock()
 			destinationsMap := brt.destinationsMap
 			brt.configSubscriberLock.RUnlock()
 
 			for destinationID := range destinationsMap {
-				if IsAsyncDestination(brt.destType) {
+				if IsAsyncDestination(brt.destType) { // FIXEME: Why we do this ?
 					_, ok := brt.asyncDestinationStruct[destinationID]
 					if !ok {
 						continue
@@ -745,13 +781,11 @@ func (brt *HandleT) asyncUploadWorker() {
 					brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
 				}
 			}
-
-			time.Sleep(mainLoopSleep)
 		}
 	}
 }
 
-func (brt *HandleT) asyncStructSetup(sourceID string, destinationID string) {
+func (brt *HandleT) asyncStructSetup(sourceID, destinationID string) {
 	localTmpDirName := "/rudder-async-destination-logs/"
 	uuid := uuid.NewV4()
 
@@ -779,6 +813,74 @@ func (brt *HandleT) asyncStructCleanUp(destinationID string) {
 	brt.asyncDestinationStruct[destinationID].Count = 0
 	brt.asyncDestinationStruct[destinationID].CanUpload = false
 	brt.asyncDestinationStruct[destinationID].URL = ""
+}
+
+func GetFullPrefix(manager filemanager.FileManager, prefix string) (fullPrefix string) {
+	fullPrefix = prefix
+	configPrefix := manager.GetConfiguredPrefix()
+
+	if configPrefix != "" {
+		if configPrefix[len(configPrefix)-1:] == "/" {
+			fullPrefix = configPrefix + prefix
+		} else {
+			fullPrefix = configPrefix + "/" + prefix
+		}
+	}
+	return
+}
+
+func isDateFormatExists(connIdentifier string) bool {
+	dateFormatMapLock.RLock()
+	defer dateFormatMapLock.RUnlock()
+	return misc.Contains(dateFormatMap, connIdentifier)
+}
+
+func GetStorageDateFormat(manager filemanager.FileManager, destination *DestinationT, folderName string) (dateFormat string, err error) {
+	connIdentifier := connectionIdentifier(DestinationT{Destination: destination.Destination, Source: destination.Source})
+	if isDateFormatExists(connIdentifier) {
+		return dateFormatMap[connIdentifier], err
+	}
+
+	defer func() {
+		if err == nil {
+			dateFormatMapLock.RLock()
+			defer dateFormatMapLock.RUnlock()
+			dateFormatMap[connIdentifier] = dateFormat
+		}
+	}()
+
+	dateFormat = "YYYY-MM-DD"
+	prefixes := []string{folderName, destination.Source.ID}
+	prefix := strings.Join(prefixes[0:2], "/")
+	fullPrefix := GetFullPrefix(manager, prefix)
+	fileObjects, err := manager.ListFilesWithPrefix(fullPrefix, 5)
+	if err != nil {
+		pkgLogger.Errorf("[BRT]: Failed to fetch fileObjects with connIdentifier: %s, prefix: %s, Err: %v", connIdentifier, fullPrefix, err)
+		// Returning the earlier default as we might not able to fetch the list.
+		// because "*:GetObject" and "*:ListBucket" permissions are not available.
+		dateFormat = "MM-DD-YYYY"
+		return
+	}
+	if len(fileObjects) == 0 {
+		return
+	}
+
+	for idx, _ := range fileObjects {
+		key := fileObjects[idx].Key
+		replacedKey := strings.Replace(key, fullPrefix, "", 1)
+		splittedKeys := strings.Split(replacedKey, "/")
+		if len(splittedKeys) >= 1 {
+			date := splittedKeys[1]
+			for layout, format := range dateFormatLayouts {
+				_, err = time.Parse(layout, date)
+				if err == nil {
+					dateFormat = format
+					return
+				}
+			}
+		}
+	}
+	return
 }
 
 func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadOutput) (err error) {
@@ -1154,23 +1256,27 @@ func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) 
 	}
 }
 
-func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err error, isWarehouse bool) {
+func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output StorageUploadOutput, isWarehouse bool) {
 	if !destinationdebugger.HasUploadEnabled(batchDestination.Destination.ID) {
 		return
 	}
 	var (
+		errorCode string
 		jobState  string
 		errorResp []byte
 	)
 
+	err := output.Error
 	if err != nil {
 		jobState = jobsdb.Failed.State
+		errorCode = "500"
 		if isWarehouse {
 			jobState = warehouse.GeneratingStagingFileFailedState
 		}
 		errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
 	} else {
 		jobState = jobsdb.Succeeded.State
+		errorCode = "200"
 		if isWarehouse {
 			jobState = warehouse.GeneratedStagingFileState
 		}
@@ -1179,13 +1285,20 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, err erro
 
 	//Payload and AttemptNum don't make sense in recording batch router delivery status,
 	//So they are set to default values.
+	payload, err := sjson.SetBytes([]byte(`{}`), "location", output.FileLocation)
+	if err != nil {
+		payload = []byte(`{}`)
+	}
 	deliveryStatus := destinationdebugger.DeliveryStatusT{
+		EventName:     fmt.Sprint(output.TotalEvents) + " events",
+		EventType:     "",
+		SentAt:        time.Now().Format(misc.RFC3339Milli),
 		DestinationID: batchDestination.Destination.ID,
 		SourceID:      batchDestination.Source.ID,
-		Payload:       []byte(`{}`),
+		Payload:       payload,
 		AttemptNum:    1,
 		JobState:      jobState,
-		ErrorCode:     "",
+		ErrorCode:     errorCode,
 		ErrorResponse: errorResp,
 	}
 	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
@@ -1242,10 +1355,17 @@ func (worker *workerT) workerProcess() {
 			pkgLogger.Infof("Batch Router worker %d is paused. Dest type: %s", worker.workerID, worker.brt.destType)
 			pause.wg.Done()
 			pause.respChannel <- true
-			<-worker.resumeChannel
-			pkgLogger.Infof("Batch Router worker %d is resumed. Dest type: %s", worker.workerID, worker.brt.destType)
+			_, hasMore := <-worker.resumeChannel
+			if hasMore {
+				pkgLogger.Infof("Batch Router worker %d is resumed. Dest type: %s", worker.workerID, worker.brt.destType)
+			} else {
+				return
+			}
+		case batchDestData, hasMore := <-brt.processQ:
+			if !hasMore {
+				return
+			}
 
-		case batchDestData := <-brt.processQ:
 			batchDest := batchDestData.batchDestination
 			parameterFilters := worker.constructParameterFilters(batchDest)
 			var combinedList []*jobsdb.JobT
@@ -1293,6 +1413,7 @@ func (worker *workerT) workerProcess() {
 
 			var statusList []*jobsdb.JobStatusT
 			var drainList []*jobsdb.JobStatusT
+			var drainJobList []*jobsdb.JobT
 			drainCountByDest := make(map[string]int)
 
 			jobsBySource := make(map[string][]*jobsdb.JobT)
@@ -1308,10 +1429,13 @@ func (worker *workerT) workerProcess() {
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
 						ErrorCode:     "",
-						ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
+						ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 						Parameters:    []byte(`{}`), // check
 					}
+					//Enhancing job parameter with the drain reason.
+					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
 					drainList = append(drainList, &status)
+					drainJobList = append(drainJobList, job)
 					if _, ok := drainCountByDest[batchDest.Destination.ID]; !ok {
 						drainCountByDest[batchDest.Destination.ID] = 0
 					}
@@ -1339,7 +1463,12 @@ func (worker *workerT) workerProcess() {
 
 			//Mark the drainList jobs as Aborted
 			if len(drainList) > 0 {
-				err := brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
+				err := brt.errorDB.Store(drainJobList)
+				if err != nil {
+					brt.logger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", brt.destType, err)
+					panic(err)
+				}
+				err = brt.jobsDB.UpdateJobStatus(drainList, []string{brt.destType}, parameterFilters)
 				if err != nil {
 					brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
 					panic(err)
@@ -1388,7 +1517,7 @@ func (worker *workerT) workerProcess() {
 						destUploadStat := stats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 						destUploadStat.Start()
 						output := brt.copyJobsToStorage(brt.destType, &batchJobs, true, false)
-						brt.recordDeliveryStatus(*batchJobs.BatchDestination, output.Error, false)
+						brt.recordDeliveryStatus(*batchJobs.BatchDestination, output, false)
 						brt.setJobStatus(&batchJobs, false, output.Error, false)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 						if output.JournalOpID > 0 {
@@ -1416,7 +1545,7 @@ func (worker *workerT) workerProcess() {
 								warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJob.BatchDestination.Destination.ID).Count(1)
 								warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJob.BatchDestination.Destination.ID).Count(len(batchJob.Jobs))
 							}
-							brt.recordDeliveryStatus(*batchJob.BatchDestination, output.Error, true)
+							brt.recordDeliveryStatus(*batchJob.BatchDestination, output, true)
 							brt.setJobStatus(batchJob, true, output.Error, postToWarehouseErr)
 							misc.RemoveFilePaths(output.LocalFilePaths...)
 						}
@@ -1443,6 +1572,9 @@ func (worker *workerT) workerProcess() {
 
 func (brt *HandleT) initWorkers() {
 	brt.workers = make([]*workerT, brt.noOfWorkers)
+
+	g, _ := errgroup.WithContext(brt.backgroundCtx)
+
 	for i := 0; i < brt.noOfWorkers; i++ {
 		worker := &workerT{
 			pauseChannel:  make(chan *PauseT),
@@ -1451,10 +1583,13 @@ func (brt *HandleT) initWorkers() {
 			brt:           brt,
 		}
 		brt.workers[i] = worker
-		rruntime.Go(func() {
+		g.Go(misc.WithBugsnag(func() error {
 			worker.workerProcess()
-		})
+			return nil
+		}))
 	}
+
+	g.Wait()
 }
 
 type PauseT struct {
@@ -1588,11 +1723,20 @@ func (brt *HandleT) readAndProcess() {
 	}
 }
 
-func (brt *HandleT) mainLoop() {
+func (brt *HandleT) mainLoop(ctx context.Context) {
+loop:
 	for {
-		time.Sleep(mainLoopSleep)
-		brt.readAndProcess()
+		select {
+		case <-ctx.Done():
+			break loop
+		case <-time.After(mainLoopSleep):
+			brt.readAndProcess()
+		}
 	}
+
+	// Closing channels mainLoop was publishing to:
+	close(brt.processQ)
+
 }
 
 //Enable enables a router :)
@@ -1746,30 +1890,38 @@ func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Ti
 	return splitBatches
 }
 
-func (brt *HandleT) collectMetrics() {
-	if diagnostics.EnableBatchRouterMetric {
-		for range brt.diagnosisTicker.C {
-			brt.batchRequestsMetricLock.RLock()
-			var diagnosisProperties map[string]interface{}
-			success := 0
-			failed := 0
-			for _, batchReqMetric := range brt.batchRequestsMetric {
-				success = success + batchReqMetric.batchRequestSuccess
-				failed = failed + batchReqMetric.batchRequestFailed
-			}
-			if len(brt.batchRequestsMetric) > 0 {
-				diagnosisProperties = map[string]interface{}{
-					brt.destType: map[string]interface{}{
-						diagnostics.BatchRouterSuccess: success,
-						diagnostics.BatchRouterFailed:  failed,
-					},
-				}
+func (brt *HandleT) collectMetrics(ctx context.Context) {
+	if !diagnostics.EnableBatchRouterMetric {
+		return
+	}
 
-				Diagnostics.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
+	for {
+		brt.batchRequestsMetricLock.RLock()
+		var diagnosisProperties map[string]interface{}
+		success := 0
+		failed := 0
+		for _, batchReqMetric := range brt.batchRequestsMetric {
+			success = success + batchReqMetric.batchRequestSuccess
+			failed = failed + batchReqMetric.batchRequestFailed
+		}
+		if len(brt.batchRequestsMetric) > 0 {
+			diagnosisProperties = map[string]interface{}{
+				brt.destType: map[string]interface{}{
+					diagnostics.BatchRouterSuccess: success,
+					diagnostics.BatchRouterFailed:  failed,
+				},
 			}
 
-			brt.batchRequestsMetric = nil
-			brt.batchRequestsMetricLock.RUnlock()
+			Diagnostics.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
+		}
+
+		brt.batchRequestsMetric = nil
+		brt.batchRequestsMetricLock.RUnlock()
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-brt.diagnosisTicker.C:
 		}
 	}
 }
@@ -1788,13 +1940,21 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	config.RegisterStringConfigVariable("", &datePrefixOverride, true, "BatchRouter.datePrefixOverride")
+	dateFormatLayouts = map[string]string{
+		"01-02-2006": "MM-DD-YYYY",
+		"2006-01-02": "YYYY-MM-DD",
+		//"02-01-2006" : "DD-MM-YYYY", //adding this might match with that of MM-DD-YYYY too
+	}
+	dateFormatMap = make(map[string]string)
 }
 
-func init() {
+func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("batchrouter")
 
 	setQueryFilters()
+	Diagnostics = diagnostics.Diagnostics
 }
 
 func setQueryFilters() {
@@ -1812,7 +1972,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
 	brt.backendConfig = backendConfig
 	brt.reporting = reporting
-	config.RegisterBoolConfigVariable(true, &brt.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &brt.reportingEnabled, false, "Reporting.enabled")
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
@@ -1822,8 +1982,8 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.pollAsyncStatusResumeChannel = make(chan bool)
 
 	//waiting for reporting client setup
-	if brt.reporting != nil {
-		brt.reporting.WaitForSetup(types.CORE_REPORTING_CLIENT)
+	if brt.reporting != nil && brt.reportingEnabled {
+		brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
 	}
 
 	brt.inProgressMap = map[string]bool{}
@@ -1851,20 +2011,32 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.processQ = make(chan *BatchDestinationDataT)
 	brt.crashRecover()
 
-	rruntime.Go(func() {
-		brt.collectMetrics()
-	})
-	rruntime.Go(func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	brt.backgroundCtx = ctx
+	brt.backgroundGroup = g
+	brt.backgroundCancel = cancel
+	brt.backgroundWait = g.Wait
+
+	g.Go(misc.WithBugsnag(func() error {
+		brt.collectMetrics(ctx)
+		return nil
+	}))
+	g.Go(misc.WithBugsnag(func() error {
 		brt.initWorkers()
-	})
+		return nil
+	}))
 
-	rruntime.Go(func() {
-		brt.pollAsyncStatus()
-	})
+	g.Go(misc.WithBugsnag(func() error {
+		brt.pollAsyncStatus(ctx)
+		return nil
+	}))
 
-	rruntime.Go(func() {
-		brt.asyncUploadWorker()
-	})
+	g.Go(misc.WithBugsnag(func() error {
+		brt.asyncUploadWorker(ctx)
+		return nil
+	}))
 
 	rruntime.Go(func() {
 		brt.backendConfigSubscriber()
@@ -1873,16 +2045,28 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 }
 
 func (brt *HandleT) Start() {
-	rruntime.Go(func() {
+	ctx := brt.backgroundCtx
+	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		<-brt.backendConfigInitialized
-		brt.mainLoop()
-	})
+		brt.mainLoop(ctx)
+
+		return nil
+	}))
 
 	brm, err := GetBatchRoutersManager()
 	if err != nil {
 		panic("Batch Routers manager is nil. Shouldn't happen. Go Debug")
 	}
 	brm.AddBatchRouter(brt)
+}
+
+func (brt *HandleT) Shutdown() {
+	brt.backgroundCancel()
+	// close paused workers
+	for _, worker := range brt.workers {
+		close(worker.resumeChannel)
+	}
+	brt.backgroundWait()
 }
 
 //

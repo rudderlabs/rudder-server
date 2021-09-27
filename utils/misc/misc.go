@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -12,7 +13,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -28,6 +28,7 @@ import (
 	"unicode"
 
 	"github.com/araddon/dateparse"
+	"github.com/bugsnag/bugsnag-go"
 	"github.com/cenkalti/backoff"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
@@ -66,14 +67,14 @@ type RudderError struct {
 
 var pkgLogger logger.LoggerI
 
-func init() {
+func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
 	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
 }
 
 func getErrorStore() (ErrorStoreT, error) {
 	var errorStore ErrorStoreT
-	data, err := ioutil.ReadFile(errorStorePath)
+	data, err := os.ReadFile(errorStorePath)
 	if os.IsNotExist(err) {
 		defaultErrorStoreJSON := "{\"Errors\":[]}"
 		data = []byte(defaultErrorStoreJSON)
@@ -99,7 +100,7 @@ func saveErrorStore(errorStore ErrorStoreT) {
 		pkgLogger.Fatal("failed to marshal errorStore", errorStore)
 		return
 	}
-	err = ioutil.WriteFile(errorStorePath, errorStoreJSON, 0644)
+	err = os.WriteFile(errorStorePath, errorStoreJSON, 0644)
 	if err != nil {
 		pkgLogger.Fatal("failed to write to errorStore")
 	}
@@ -605,7 +606,7 @@ func MakeHTTPRequestWithTimeout(url string, payload io.Reader, timeout time.Dura
 
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
-		respBody, _ = ioutil.ReadAll(resp.Body)
+		respBody, _ = io.ReadAll(resp.Body)
 		defer resp.Body.Close()
 	}
 
@@ -977,7 +978,7 @@ func MakeRetryablePostRequest(url string, endpoint string, data interface{}) (re
 		return nil, -1, err
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
 	pkgLogger.Debugf("Post request: Successful %s", string(body))
@@ -1103,4 +1104,49 @@ func GetWarehouseURL() (url string) {
 		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
 	}
 	return
+}
+
+func WithBugsnag(fn func() error) func() error {
+	return func() error {
+		ctx := bugsnag.StartSession(context.Background())
+		defer func() {
+			if r := recover(); r != nil {
+				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+					"GoRoutines": {
+						"Number": runtime.NumGoroutine(),
+					}})
+
+				RecordAppError(fmt.Errorf("%v", r))
+				panic(r)
+			}
+		}()
+		return fn()
+	}
+}
+
+func GetStringifiedData(data interface{}) string {
+	if data == nil {
+		return ""
+	}
+	switch d := data.(type) {
+	case string:
+		return d
+	default:
+		dataBytes, err := json.Marshal(d)
+		if err != nil {
+			return fmt.Sprint(d)
+		}
+		return string(dataBytes)
+	}
+}
+
+// MergeMaps merging with one level of nesting.
+func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+	for _, m := range maps {
+		for k, v := range m {
+			result[k] = v
+		}
+	}
+	return result
 }

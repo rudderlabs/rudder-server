@@ -10,6 +10,8 @@ import (
 	. "github.com/onsi/gomega"
 	uuid "github.com/satori/go.uuid"
 
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
@@ -20,6 +22,7 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
@@ -52,7 +55,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
-type context struct {
+type testContext struct {
 	asyncHelper     testutils.AsyncTestHelper
 	dbReadBatchSize int
 
@@ -63,7 +66,7 @@ type context struct {
 }
 
 // Initiaze mocks and common expectations
-func (c *context) Setup() {
+func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
@@ -82,7 +85,7 @@ func (c *context) Setup() {
 	c.dbReadBatchSize = 10000
 }
 
-func (c *context) Finish() {
+func (c *testContext) Finish() {
 	c.asyncHelper.WaitWithTimeout(testTimeout)
 	c.mockCtrl.Finish()
 }
@@ -92,12 +95,22 @@ var (
 	emptyJobsList []*jobsdb.JobT
 )
 
+func initRouter() {
+	config.Load()
+	admin.Init()
+	logger.Init()
+	Init()
+	Init2()
+}
+
 var _ = Describe("Router", func() {
-	var c *context
+	initRouter()
+
+	var c *testContext
 
 	BeforeEach(func() {
 		router_utils.JobRetention = time.Duration(175200) * time.Hour //20 Years(20*365*24)
-		c = &context{}
+		c = &testContext{}
 		c.Setup()
 
 		// setup static requirements of dependencies

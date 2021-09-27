@@ -1,6 +1,7 @@
 package operationmanager
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -27,7 +28,7 @@ type OperationtT struct {
 
 type OperationManagerI interface {
 	InsertOperation(payload []byte) (int64, error)
-	StartProcessLoop()
+	StartProcessLoop(ctx context.Context) error
 	GetOperationStatus(opID int64) (bool, string)
 }
 type OperationManagerT struct {
@@ -41,7 +42,7 @@ type OperationHandlerI interface {
 	Exec(payload []byte) error
 }
 
-func init() {
+func Init2() {
 	pkgLogger = logger.NewLogger().Child("operationmanager")
 	config.RegisterBoolConfigVariable(true, &enableOperationsManager, false, "Operations.enabled")
 }
@@ -141,15 +142,19 @@ func (om *OperationManagerT) GetOperationStatus(opID int64) (bool, string) {
 	return done, status
 }
 
-func (om *OperationManagerT) StartProcessLoop() {
+func (om *OperationManagerT) StartProcessLoop(ctx context.Context) error {
 	if !enableOperationsManager {
 		pkgLogger.Infof("operation manager is disabled. Not starting process loop.")
-		return
+		return nil
 	}
 
 	for {
-		om.processOperation()
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(time.Second * 5):
+			om.processOperation()
+		}
 	}
 }
 

@@ -1,10 +1,12 @@
 package apphandlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -12,12 +14,13 @@ import (
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-server/utils/types"
 
 	// This is necessary for compatibility with enterprise features
@@ -34,7 +37,7 @@ func (embedded *EmbeddedApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.EMBEDDED)
 }
 
-func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
+func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	pkgLogger.Info("Main starting")
 
 	rudderCoreDBValidator()
@@ -42,10 +45,16 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	rudderCoreWorkSpaceTableSetup()
 	rudderCoreBaseSetup()
 
+	g, ctx := errgroup.WithContext(ctx)
+
 	//Setting up reporting client
 	if embedded.App.Features().Reporting != nil {
 		reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
-		reporting.AddClient(types.Config{ConnInfo: jobsdb.GetConnectionString()})
+
+		g.Go(func() error {
+			reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+			return nil
+		})
 	}
 
 	var gatewayDB jobsdb.HandleT
@@ -56,55 +65,74 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
 	transformationdebugger.Setup()
-	destinationdebugger.Setup()
-	sourcedebugger.Setup()
+	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
+	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
 	migrationMode := embedded.App.Options().MigrationMode
 
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+	defer gatewayDB.TearDown()
+
 	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
 		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
+		defer routerDB.TearDown()
+
 		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
+		defer batchRouterDB.TearDown()
+
 		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
+		defer procErrorDB.TearDown()
 	}
 
 	enableGateway := true
 	var reportingI types.ReportingI
-	if embedded.App.Features().Reporting != nil {
+	if embedded.App.Features().Reporting != nil && config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
 		reportingI = embedded.App.Features().Reporting.GetReportingInstance()
 	}
 
-	if embedded.App.Features().Migrator != nil {
+	if embedded.App.Features().Migrator != nil && config.GetBool("Migrator.enabled", false) {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startProcessorFunc := func() {
+			startProcessorFunc := func(ctx context.Context) {
 				clearDB := false
-				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+				StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 			}
-			startRouterFunc := func() {
-				StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+			startRouterFunc := func(ctx context.Context) {
+				StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 			}
 			enableRouter = false
 			enableProcessor = false
 			enableGateway = (migrationMode != db.EXPORT)
 
 			embedded.App.Features().Migrator.PrepareJobsdbsForImport(&gatewayDB, &routerDB, &batchRouterDB)
-			embedded.App.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+
+			g.Go(func() error {
+				embedded.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+				return nil
+			})
 		}
 	}
 
 	operationmanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
-	rruntime.Go(func() {
-		operationmanager.OperationManager.StartProcessLoop()
-	})
 
-	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
-	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+	g.Go(misc.WithBugsnag(func() error {
+		return operationmanager.OperationManager.StartProcessLoop(ctx)
+	}))
+
+	g.Go(func() error {
+		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+		return nil
+	})
+	g.Go(func() error {
+		StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+		return nil
+	})
 
 	if embedded.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+		defer replayDB.TearDown()
 		embedded.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB)
 	}
 
@@ -115,10 +143,17 @@ func (embedded *EmbeddedApp) StartRudderCore(options *app.Options) {
 		rateLimiter.SetUp()
 		gateway.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
 		gateway.Setup(embedded.App, backendconfig.DefaultBackendConfig, &gatewayDB, &rateLimiter, embedded.VersionHandler)
-		go gateway.StartAdminHandler()
-		gateway.StartWebHandler()
+		defer gateway.Shutdown()
+
+		g.Go(func() error {
+			return gateway.StartAdminHandler(ctx)
+		})
+		g.Go(func() error {
+			return gateway.StartWebHandler(ctx)
+		})
 	}
-	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+
+	return g.Wait()
 }
 
 func (embedded *EmbeddedApp) HandleRecovery(options *app.Options) {

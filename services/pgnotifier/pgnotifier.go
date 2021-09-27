@@ -1,6 +1,7 @@
 package pgnotifier
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -39,7 +40,7 @@ const (
 	AbortedState   = "aborted"
 )
 
-func init() {
+func Init() {
 	loadPGNotifierConfig()
 	queueName = "pg_notifier_queue"
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("pgnotifier")
@@ -123,7 +124,7 @@ func (notifier PgNotifierT) GetDBHandle() *sql.DB {
 	return notifier.dbHandle
 }
 
-func (notifier PgNotifierT) AddTopic(topic string) (err error) {
+func (notifier PgNotifierT) AddTopic(ctx context.Context, topic string) (err error) {
 
 	// clean up all jobs in pgnotifier for same workspace
 	// additional safety check to not delete all jobs with empty workspaceIdentifier
@@ -139,9 +140,8 @@ func (notifier PgNotifierT) AddTopic(topic string) (err error) {
 	if err != nil {
 		return
 	}
-	rruntime.Go(func() {
-		notifier.triggerPending(topic)
-	})
+
+	notifier.triggerPending(ctx, topic)
 	return
 }
 
@@ -162,9 +162,14 @@ func GetPGNotifierConnectionString() string {
 		pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode)
 }
 
-func (notifier *PgNotifierT) triggerPending(topic string) {
+func (notifier *PgNotifierT) triggerPending(ctx context.Context, topic string) {
 	for {
-		time.Sleep(retriggerInterval)
+		select {
+		case <-time.After(retriggerInterval):
+		case <-ctx.Done():
+			return
+		}
+
 		stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[3]s',
 								updated_at = '%[2]s'
 								WHERE id IN (
