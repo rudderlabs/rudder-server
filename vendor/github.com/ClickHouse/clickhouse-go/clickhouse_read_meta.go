@@ -8,8 +8,6 @@ import (
 )
 
 func (ch *clickhouse) readMeta() (*data.Block, error) {
-	ch.logf("[read meta][started]")
-	defer ch.logf("[read meta][completed]")
 	for {
 		packet, err := ch.decoder.Uvarint()
 		if err != nil {

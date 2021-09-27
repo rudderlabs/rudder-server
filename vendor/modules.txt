@@ -254,7 +254,8 @@ github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
 github.com/google/go-cmp/cmp/internal/function
 github.com/google/go-cmp/cmp/internal/value
-# github.com/google/uuid v1.1.2
+# github.com/google/uuid v1.3.0
+## explicit
 github.com/google/uuid
 # github.com/googleapis/gax-go/v2 v2.0.5
 github.com/googleapis/gax-go/v2
@@ -334,6 +335,8 @@ github.com/lib/pq/oid
 github.com/lib/pq/scram
 # github.com/magiconair/properties v1.8.1
 github.com/magiconair/properties
+# github.com/mailru/go-clickhouse v1.7.0
+## explicit
 # github.com/mattn/go-ieproxy v0.0.0-20200203040449-2dbc853185d9
 ## explicit
 github.com/mattn/go-ieproxy

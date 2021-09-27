@@ -38,6 +38,7 @@ require (
 	github.com/golang/mock v1.5.0
 	github.com/golang/protobuf v1.5.0
 	github.com/gomodule/redigo v1.8.5
+	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/mux v1.7.4
 	github.com/gotestyourself/gotestyourself v2.2.0+incompatible // indirect
 	github.com/hashicorp/go-retryablehttp v0.6.6
@@ -48,6 +49,7 @@ require (
 	github.com/joho/godotenv v1.3.0
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.3.0
+	github.com/mailru/go-clickhouse v1.7.0 // indirect
 	github.com/mattn/go-ieproxy v0.0.0-20200203040449-2dbc853185d9 // indirect
 	github.com/minio/minio-go v6.0.14+incompatible
 	github.com/minio/minio-go/v6 v6.0.49
