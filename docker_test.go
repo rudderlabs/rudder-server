@@ -33,6 +33,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis"
 	redigo "github.com/gomodule/redigo/redis"
+	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"github.com/minio/minio-go"
 	"github.com/ory/dockertest"
@@ -49,6 +50,7 @@ import (
 var (
 	hold             bool = true
 	db               *sql.DB
+	kafkaClient      sarama.Client
 	redisClient      *redis.Client
 	DB_DSN           = "root@tcp(127.0.0.1:3306)/service"
 	httpPort         string
@@ -349,6 +351,31 @@ func run(m *testing.M) int {
 		log.Panic(err)
 	}
 
+	if err := pool.Retry(func() error {
+		config := sarama.NewConfig()
+		config.ClientID = uuid.New().String()
+		config.Consumer.Return.Errors = true
+
+		kafkaEndpoint := fmt.Sprintf("localhost:%s", strconv.Itoa(localhostPortInt))
+		brokers := []string{kafkaEndpoint}
+
+		kafkaClient, err = sarama.NewClient(brokers, config)
+		if err != nil {
+			return err
+		}
+
+		_, err = kafkaClient.Topics()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+	defer kafkaClient.Close()
+
+
 	// pulls an redis image, creates a container based on it and runs it
 	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
 	if err != nil {
@@ -640,29 +667,23 @@ func TestRedis(t *testing.T) {
 
 }
 func TestKafka(t *testing.T) {
-	config := sarama.NewConfig()
-	config.ClientID = "go-kafka-consumer"
-	config.Consumer.Return.Errors = true
-
-	kafkaEndpoint := fmt.Sprintf("localhost:%s", strconv.Itoa(localhostPortInt))
-	brokers := []string{kafkaEndpoint}
 
 	// Create new consumer
-	master, err := sarama.NewConsumer(brokers, config)
-	if err != nil {
-		panic(err)
-	}
-	topics, _ := master.Topics()
+	c, err := sarama.NewConsumerGroupFromClient(uuid.New().String(), kafkaClient)
+	require.NoError(t, err)
 
-	consumer, errors := consume(topics, master)
+	
+	err = c.Consume([]string{"dev_integration_test_1"}, &sarama.ConsumerGroupHandler{})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	consumer, errors := consume(ctx, topics, master)
 	defer func() {
 		if err := master.Close(); err != nil {
 			panic(err)
 		}
 	}()
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt)
 
 	// Count how many message processed
 	msgCount := 0
@@ -691,9 +712,9 @@ out:
 	log.Println("Processed", msgCount, "messages")
 
 }
-func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
-	consumers := make(chan *sarama.ConsumerMessage)
-	errors := make(chan *sarama.ConsumerError)
+func consume(ctx context.Context, topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
+	consumers := make(chan *sarama.ConsumerMessage, 1)
+	errors := make(chan *sarama.ConsumerError, 1)
 	for _, topic := range topics {
 		if strings.Contains(topic, "__consumer_offsets") {
 			continue
@@ -715,6 +736,9 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 				case msg := <-consumer.Messages():
 					consumers <- msg
 					log.Println("Got message on topic ", topic, msg.Value)
+				case <-ctx.Done():
+					consumer.Close()
+					return
 				}
 			}
 		}(topic, consumer)
