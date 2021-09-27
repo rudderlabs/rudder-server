@@ -9,6 +9,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"github.com/mailru/go-clickhouse"
 	"io"
 	"math/rand"
 	"os"
@@ -20,7 +21,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 
-	"github.com/ClickHouse/clickhouse-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -178,26 +178,40 @@ func Init() {
 
 // connect connects to warehouse with provided credentials
 func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
-	var dbNameParam string
-	if includeDBInConn {
-		dbNameParam = fmt.Sprintf(`database=%s`, cred.dbName)
-	}
+	//var dbNameParam string
+	//if includeDBInConn {
+	//	dbNameParam = fmt.Sprintf(`database=%s`, cred.dbName)
+	//}
 
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s",
-		cred.host,
-		cred.port,
+	url := fmt.Sprintf("http://%s:%s@%s:%s/%s?debug=%s&tls_config=%s",
 		cred.user,
 		cred.password,
-		blockSize,
-		poolSize,
+		cred.host,
+		"8443",
+		cred.dbName,
+		//readTimeout,
+		//writeTimeout,
 		queryDebugLogs,
-		cred.secure,
-		cred.skipVerify,
+		//cred.secure,
+		//cred.skipVerify,
 		cred.tlsConfigName,
-		dbNameParam,
-		readTimeout,
-		writeTimeout,
 	)
+
+	//url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%ss&write_timeout=%ss",
+	//	//cred.host,
+	//	//cred.port,
+	//	//cred.user,
+	//	//cred.password,
+	//	//blockSize,
+	//	//poolSize,
+	//	//queryDebugLogs,
+	//	//cred.secure,
+	//	//cred.skipVerify,
+	//	//cred.tlsConfigName,
+	//	//dbNameParam,
+	//	//readTimeout,
+	//	//writeTimeout,
+	//)
 
 	var err error
 	var db *sql.DB
@@ -808,7 +822,7 @@ func (ch *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT 1`)
 	_, err = ch.Db.Exec(sqlStatement)
 	if err != nil {
-		if exception, ok := err.(*clickhouse.Exception); ok && exception.Code == 81 {
+		if exception, ok := err.(*clickhouse.Error); ok && exception.Code == 81 {
 			pkgLogger.Debugf("CH: No database found while checking for schema: %s from  destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
 			return false, nil
 		}
@@ -982,7 +996,7 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		if exception, ok := err.(*clickhouse.Exception); ok && exception.Code == 81 {
+		if exception, ok := err.(*clickhouse.Error); ok && exception.Code == 81 {
 			pkgLogger.Infof("CH: No database found while fetching schema: %s from  destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
 			return schema, nil
 		}
