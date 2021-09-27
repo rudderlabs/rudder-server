@@ -2,7 +2,6 @@ package clickhouse
 
 import (
 	"compress/gzip"
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
@@ -10,12 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -632,179 +629,113 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	defer misc.RemoveFilePaths(fileNames...)
 
-	wg := sync.WaitGroup{}
-	waitCh := make(chan struct{})
-	wg.Add(len(fileNames))
-
-	pkgLogger.Infof("wg for loadTable table:%s, namespace:%s, len(fileNames):%d", tableName, ch.Namespace, len(fileNames))
-
-	loadFileErrorChan := make(chan error)
-	loadFileReadJobChan := make(chan string, len(fileNames))
-
-	defer close(loadFileErrorChan)
-	defer close(loadFileReadJobChan)
-
 	handleError := func(err error) {
 		pkgLogger.Infof("onError for loadTable table:%s, namespace:%s", tableName, ch.Namespace)
 		pkgLogger.Error(err)
-		loadFileErrorChan <- err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	pkgLogger.Infof("CH: Beginning a transaction in db for loading in table:%s namespace:%s", tableName, ch.Namespace)
+	txn, err := ch.Db.Begin()
+	if err != nil {
+		err = fmt.Errorf("CH: Error while beginning a transaction in db for loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
+		handleError(err)
+		return
+	}
+	pkgLogger.Infof("CH: Completed a transaction in db for loading in table:%s namespace:%s", tableName, ch.Namespace)
 
-	var txns []*sql.Tx
-	go func() {
-		for i := 0; i < numLoadFileReadWorkers; i++ {
-			workerIdx := i
-			go func(ctx context.Context) {
-				var txn *sql.Tx
-				var stmt *sql.Stmt
-				var err error
-				var isFirstTime = true
-				var goId, goIdErr = misc.GetGoID()
-				if goIdErr != nil {
-					goId = rand.Intn(10000)
-				}
-				pkgLogger.Infof("Generated Go Id for table:%s namespace:%s workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
+	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
+	pkgLogger.Infof("CH: Preparing statement exec in db for loading in table:%s namespace:%s query:%s", tableName, ch.Namespace, sqlStatement)
+	stmt, err := txn.Prepare(sqlStatement)
+	if err != nil {
+		err = fmt.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s namespace:%s: query:%s error:%v", tableName, ch.Namespace, sqlStatement, err)
+		handleError(err)
+		return
+	}
+	pkgLogger.Infof("CH: Prepared statement exec in db for loading in table:%s namespace:%s", tableName, ch.Namespace)
 
-				for objectFileName := range loadFileReadJobChan {
-					if isFirstTime {
-						pkgLogger.Infof("CH: Beginning a transaction in db for loading in table:%s namespace:%s workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
-						txn, err = ch.Db.Begin()
-						if err != nil {
-							err = fmt.Errorf("CH: Error while beginning a transaction in db for loading in table:%s namespace:%s: error:%v workerIdx:%d goId:%d", tableName, ch.Namespace, err, workerIdx, goId)
-							handleError(err)
-							return
-						}
-						pkgLogger.Infof("CH: Completed a transaction in db for loading in table:%s namespace:%s  workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
+	for _, objectFileName := range fileNames {
+		chStats.syncLoadFileTime.Start()
+		pkgLogger.Infof("CH: range fileNames started table:%s namespace:%s fileName:%s", tableName, ch.Namespace, objectFileName)
 
-						sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
-						pkgLogger.Infof("CH: Preparing statement exec in db for loading in table:%s namespace:%s query:%s  workerIdx:%d goId:%d", tableName, ch.Namespace, sqlStatement, workerIdx, goId)
-						stmt, err = txn.Prepare(sqlStatement)
-						if err != nil {
-							err = fmt.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s namespace:%s: query:%s error:%v workerIdx:%d goId:%d", tableName, ch.Namespace, sqlStatement, err, workerIdx, goId)
-							handleError(err)
-							return
-						}
-						pkgLogger.Infof("CH: Prepared statement exec in db for loading in table:%s namespace:%s: workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
-						isFirstTime = false
-						txns = append(txns, txn)
-					}
-					select {
-					case <-ctx.Done():
-						pkgLogger.Infof("context is cancelled, stopped processing load file for workerIdx:%d goId:%d", workerIdx, goId)
-						return
-					default:
-						chStats.syncLoadFileTime.Start()
-
-						var gzipFile *os.File
-						gzipFile, err = os.Open(objectFileName)
-						if err != nil {
-							err = fmt.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s  namespace:%s: error:%v workerIdx:%d goId:%d", objectFileName, tableName, ch.Namespace, err.Error(), workerIdx, goId)
-							handleError(err)
-							return
-						}
-
-						var gzipReader *gzip.Reader
-						gzipReader, err = gzip.NewReader(gzipFile)
-						if err != nil {
-							rruntime.Go(func() {
-								misc.RemoveFilePaths(objectFileName)
-							})
-							gzipFile.Close()
-							err = fmt.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: namespace:%s: error:%v workerIdx:%d goId:%d", gzipFile.Name(), tableName, ch.Namespace, err.Error(), workerIdx, goId)
-							handleError(err)
-							return
-
-						}
-
-						csvReader := csv.NewReader(gzipReader)
-						var csvRowsProcessedCount int
-						for {
-							var record []string
-							record, err = csvReader.Read()
-							if err != nil {
-								if err == io.EOF {
-									pkgLogger.Infof("CH: File reading completed while reading csv file for loading in table:%s namespace:%s: objectFileName:%s workerIdx:%d goId:%d", tableName, ch.Namespace, objectFileName, workerIdx, goId)
-									break
-								} else {
-									err = fmt.Errorf("CH: Error while reading csv file %s for loading in table:%s namespace:%s: error:%v workerIdx:%d goId:%d", objectFileName, tableName, ch.Namespace, err, workerIdx, goId)
-									handleError(err)
-									return
-								}
-							}
-							if len(sortedColumnKeys) != len(record) {
-								err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. namespace:%s: Processed rows in csv file until mismatch: %d for workerIdx:%d goId:%d`, len(record), tableName, len(sortedColumnKeys), ch.Namespace, csvRowsProcessedCount, workerIdx, goId)
-								handleError(err)
-								return
-							}
-							var recordInterface []interface{}
-							for index, value := range record {
-								columnName := sortedColumnKeys[index]
-								columnDataType := tableSchemaInUpload[columnName]
-								data := typecastDataFromType(value, columnDataType)
-								recordInterface = append(recordInterface, data)
-							}
-
-							pkgLogger.Infof("CH: Starting Prepared statement exec table:%s namespace:%s workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
-							chStats.execRowTime.Start()
-							_, err = stmt.Exec(recordInterface...)
-							chStats.execRowTime.End()
-							pkgLogger.Infof("CH: Completed Prepared statement exec table:%s namespace:%s workerIdx:%d goId:%d", tableName, ch.Namespace, workerIdx, goId)
-							if err != nil {
-								err = fmt.Errorf("CH: Error in inserting statement for loading in table:%s namespace:%s: error:%v workerIdx:%d goId:%d", tableName, ch.Namespace, err, workerIdx, goId)
-								handleError(err)
-								return
-							}
-							csvRowsProcessedCount++
-						}
-
-						chStats.numRowsLoadFile.Count(csvRowsProcessedCount)
-
-						gzipReader.Close()
-						gzipFile.Close()
-
-						chStats.syncLoadFileTime.End()
-						wg.Done()
-					}
-				}
-			}(ctx)
-		}
-
-		wg.Wait()
-		close(waitCh)
-	}()
-
-	go func() {
-		for idx := 0; idx < len(fileNames); idx++ {
-			loadFileReadJobChan <- fileNames[idx]
-		}
-	}()
-
-	for {
-		select {
-		case err := <-loadFileErrorChan:
-			for workerIdx, txn := range txns {
-				pkgLogger.Infof("Rollback started for table:%s namespace:%s workerIdx:%d", tableName, ch.Namespace, workerIdx)
-				txn.Rollback()
-				pkgLogger.Infof("Rollback completed for table:%s namespace:%s workerIdx:%d", tableName, ch.Namespace, workerIdx)
-			}
-			pkgLogger.Errorf("received error while reading load files, cancelling the context: err %v", err)
-			return err
-		case <-waitCh:
-			for workerIdx, txn := range txns {
-				pkgLogger.Infof("Committing transaction for table:%s namespace:%s workerIdx:%d", tableName, ch.Namespace, workerIdx)
-				if err = txn.Commit(); err != nil {
-					pkgLogger.Errorf("CH: Error while committing transaction as there was error while loading in table:%s namespace:%s: error:%v, workerIdx:%d", tableName, ch.Namespace, err, workerIdx)
-					return
-				}
-				pkgLogger.Infof("Committed transaction for table:%s namespace:%s workerIdx:%d", tableName, ch.Namespace, workerIdx)
-			}
-			pkgLogger.Infof("CH: Complete load for table:%s namespace:%s", tableName, ch.Namespace)
+		var gzipFile *os.File
+		gzipFile, err = os.Open(objectFileName)
+		if err != nil {
+			err = fmt.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s  namespace:%s: error:%v", objectFileName, tableName, ch.Namespace, err.Error())
+			handleError(err)
 			return
 		}
+
+		var gzipReader *gzip.Reader
+		gzipReader, err = gzip.NewReader(gzipFile)
+		if err != nil {
+			rruntime.Go(func() {
+				misc.RemoveFilePaths(objectFileName)
+			})
+			gzipFile.Close()
+			err = fmt.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: namespace:%s: error:%v", gzipFile.Name(), tableName, ch.Namespace, err.Error())
+			handleError(err)
+			return
+
+		}
+
+		csvReader := csv.NewReader(gzipReader)
+		var csvRowsProcessedCount int
+		for {
+			var record []string
+			record, err = csvReader.Read()
+			if err != nil {
+				if err == io.EOF {
+					pkgLogger.Infof("CH: File reading completed while reading csv file for loading in table:%s namespace:%s: objectFileName:%s", tableName, ch.Namespace, objectFileName)
+					break
+				} else {
+					err = fmt.Errorf("CH: Error while reading csv file %s for loading in table:%s namespace:%s: error:%v", objectFileName, tableName, ch.Namespace, err)
+					handleError(err)
+					return
+				}
+			}
+			if len(sortedColumnKeys) != len(record) {
+				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. namespace:%s: Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), ch.Namespace, csvRowsProcessedCount)
+				handleError(err)
+				return
+			}
+			var recordInterface []interface{}
+			for index, value := range record {
+				columnName := sortedColumnKeys[index]
+				columnDataType := tableSchemaInUpload[columnName]
+				data := typecastDataFromType(value, columnDataType)
+				recordInterface = append(recordInterface, data)
+			}
+
+			pkgLogger.Infof("CH: Starting Prepared statement exec table:%s namespace:%s", tableName, ch.Namespace)
+			chStats.execRowTime.Start()
+			_, err = stmt.Exec(recordInterface...)
+			chStats.execRowTime.End()
+			pkgLogger.Infof("CH: Completed Prepared statement exec table:%s namespace:%s ", tableName, ch.Namespace)
+			if err != nil {
+				err = fmt.Errorf("CH: Error in inserting statement for loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
+				handleError(err)
+				return
+			}
+			csvRowsProcessedCount++
+		}
+
+		chStats.numRowsLoadFile.Count(csvRowsProcessedCount)
+
+		gzipReader.Close()
+		gzipFile.Close()
+
+		chStats.syncLoadFileTime.End()
+		pkgLogger.Infof("CH: range fileNames completed table:%s namespace:%s fileName:%s", tableName, ch.Namespace, objectFileName)
 	}
+
+	pkgLogger.Infof("Committing transaction for table:%s namespace:%s", tableName, ch.Namespace)
+	if err = txn.Commit(); err != nil {
+		pkgLogger.Errorf("CH: Error while committing transaction as there was error while loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
+		return
+	}
+	pkgLogger.Infof("Committed transaction for table:%s namespace:%s", tableName, ch.Namespace)
+	pkgLogger.Infof("CH: Complete load for table:%s namespace:%s", tableName, ch.Namespace)
+	return
 }
 
 func (ch *HandleT) schemaExists(schemaname string) (exists bool, err error) {
