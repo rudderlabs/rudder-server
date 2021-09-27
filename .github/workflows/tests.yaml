@@ -1,4 +1,4 @@
-name: Service Integration Test
+name: Tests
 on:
   push:
     branches:
@@ -27,4 +27,5 @@ jobs:
       with:
         go-version: '^1.16.4'
     - run: go version
+    - run: go get -u github.com/onsi/ginkgo/ginkgo
     - run: make test
