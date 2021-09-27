@@ -121,8 +121,7 @@ func TestJobsDB(t *testing.T) {
 	migrationMode := ""
 	jobDB := jobsdb.HandleT{}
 	queryFilters := jobsdb.QueryFiltersT{
-		CustomVal:        true,
-		ParameterFilters: []string{"destination_id"},
+		CustomVal: true,
 	}
 
 	jobDB.Setup(jobsdb.ReadWrite, false, "batch_rt", dbRetention, migrationMode, true, queryFilters)
@@ -137,16 +136,24 @@ func TestJobsDB(t *testing.T) {
 		CustomVal:    customVal,
 	}
 
+	unprocessedListEmpty := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		CustomValFilters: []string{customVal},
+		Count:            1,
+		ParameterFilters: []jobsdb.ParameterFilterT{},
+	})
+
+	require.Equal(t, 0, len(unprocessedListEmpty))
 	err := jobDB.Store([]*jobsdb.JobT{&sampleTestJob})
 	require.NoError(t, err)
 
 	unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-		CustomValFilters:              []string{customVal},
-		Count:                         1,
-		ParameterFilters:              []jobsdb.ParameterFilterT{},
-		IgnoreCustomValFiltersInQuery: true,
+		CustomValFilters: []string{customVal},
+		Count:            1,
+		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
 	require.Equal(t, 1, len(unprocessedList))
+
+	t.Log(jobDB.Status())
 
 	status := jobsdb.JobStatusT{
 		JobID:         unprocessedList[0].JobID,
@@ -158,7 +165,9 @@ func TestJobsDB(t *testing.T) {
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
 	}
-	err = jobDB.UpdateJobStatus([]*jobsdb.JobStatusT{&status}, []string{"MOCKDS2"}, []jobsdb.ParameterFilterT{})
+	t.Log(jobDB.Status())
+
+	err = jobDB.UpdateJobStatus([]*jobsdb.JobStatusT{&status}, []string{customVal}, []jobsdb.ParameterFilterT{})
 	require.NoError(t, err)
 
 	unprocessedList = jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
@@ -168,18 +177,6 @@ func TestJobsDB(t *testing.T) {
 	})
 
 	require.Equal(t, 0, len(unprocessedList))
-
-	err = jobDB.Store([]*jobsdb.JobT{&sampleTestJob})
-	require.NoError(t, err)
-
-	unprocessedList = jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-		CustomValFilters: []string{customVal},
-		Count:            1,
-		ParameterFilters: []jobsdb.ParameterFilterT{},
-	})
-	t.Log(jobDB.Status())
-	require.Equal(t, 1, len(unprocessedList))
-
 }
 
 func BenchmarkJobsdb(b *testing.B) {
@@ -190,17 +187,15 @@ func BenchmarkJobsdb(b *testing.B) {
 	migrationMode := ""
 	jobDB := jobsdb.HandleT{}
 	queryFilters := jobsdb.QueryFiltersT{
-		CustomVal:        true,
-		ParameterFilters: []string{"destination_id"},
+		CustomVal: true,
 	}
 
-	fmt.Println("setup JobsDB")
 	jobDB.Setup(jobsdb.ReadWrite, false, "batch_rt", dbRetention, migrationMode, true, queryFilters)
 	// defer jobDB.TearDown()
 
 	customVal := "MOCKDS"
 
-	b.Run("store/consume", func(b *testing.B) {
+	b.Run("store and consume", func(b *testing.B) {
 		expectedJobs := make([]jobsdb.JobT, b.N)
 		for i := range expectedJobs {
 			expectedJobs[i] = jobsdb.JobT{
@@ -224,32 +219,47 @@ func BenchmarkJobsdb(b *testing.B) {
 		})
 
 		consumedJobs := make([]jobsdb.JobT, 0, len(expectedJobs))
-		timeout := time.After(time.Second * time.Duration(len(expectedJobs)))
+		timeout := time.After(10 * time.Second * time.Duration(len(expectedJobs)))
 		g.Go(func() error {
 			for {
 				unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 					CustomValFilters: []string{customVal},
 					Count:            1,
-					ParameterFilters: []jobsdb.ParameterFilterT{},
 				})
+
+				status := make([]*jobsdb.JobStatusT, len(unprocessedList))
+				for i, j := range unprocessedList {
+					status[i] = &jobsdb.JobStatusT{
+						JobID:         j.JobID,
+						JobState:      "succeeded",
+						AttemptNum:    1,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     "202",
+						ErrorResponse: []byte(`{"success":"OK"}`),
+						Parameters:    []byte(`{}`),
+					}
+				}
+
+				err := jobDB.UpdateJobStatus(status, []string{customVal}, []jobsdb.ParameterFilterT{})
+				require.NoError(b, err)
+
 				for _, j := range unprocessedList {
 					consumedJobs = append(consumedJobs, *j)
 				}
 				select {
-				case <-timeout:
-					panic("timed out")
-				default:
-					if len(consumedJobs) == len(expectedJobs) {
+				case <-time.After(1 * time.Millisecond):
+					if len(consumedJobs) >= len(expectedJobs) {
 						return nil
 					}
+				case <-timeout:
+					return nil
 				}
 			}
 		})
 
 		err := g.Wait()
 		require.NoError(b, err)
-
 		require.Len(b, consumedJobs, len(expectedJobs))
 	})
-
 }
