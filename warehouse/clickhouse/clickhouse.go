@@ -534,6 +534,7 @@ func typecastDataFromType(data string, dataType string) interface{} {
 // loadTable loads table to clickhouse from the load files
 func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
 	pkgLogger.Infof("CH: Starting load for table:%s namespace:%s", tableName, ch.Namespace)
+	defer pkgLogger.Infof("CH: Completed load for table:%s namespace:%s", tableName, ch.Namespace)
 
 	// Clickhouse stats
 	chStats := ch.newClickHouseStat(tableName)
