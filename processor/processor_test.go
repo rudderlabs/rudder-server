@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -37,7 +38,7 @@ import (
 
 var testTimeout = 5 * time.Second
 
-type context struct {
+type testContext struct {
 	asyncHelper       testutils.AsyncTestHelper
 	configInitialised bool
 	dbReadBatchSize   int
@@ -52,7 +53,7 @@ type context struct {
 	MockDedup             *mockDedup.MockDedupI
 }
 
-func (c *context) Setup() {
+func (c *testContext) Setup() {
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockGatewayJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
@@ -77,7 +78,7 @@ func (c *context) Setup() {
 	c.MockDedup = mockDedup.NewMockDedupI(c.mockCtrl)
 }
 
-func (c *context) Finish() {
+func (c *testContext) Finish() {
 	c.asyncHelper.WaitWithTimeout(testTimeout)
 	c.mockCtrl.Finish()
 }
@@ -250,12 +251,12 @@ func initProcessor() {
 var _ = Describe("Processor", func() {
 	initProcessor()
 
-	var c *context
+	var c *testContext
 
 	BeforeEach(func() {
 		transformerURL = "http://test"
 
-		c = &context{}
+		c = &testContext{}
 		c.Setup()
 
 		// setup static requirements of dependencies
@@ -1113,11 +1114,11 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
-			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any()).Times(1)
+			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 
 			SetMainLoopTimeout(1 * time.Second)
 			go pauseMainLoop(processor)
-			go processor.mainLoop()
+			go processor.mainLoop(context.Background())
 			time.Sleep(1 * time.Second)
 			Expect(processor.paused).To(BeTrue())
 		})
@@ -1134,10 +1135,10 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, Count: -1}).Times(1)
 			SetFeaturesRetryAttempts(0)
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
-			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any()).Times(1)
+			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 
 			SetMainLoopTimeout(1 * time.Second)
-			go processor.mainLoop()
+			go processor.mainLoop(context.Background())
 			time.Sleep(3 * time.Second)
 			Expect(isUnLocked).To(BeFalse())
 		})
@@ -1584,12 +1585,12 @@ func assertDestinationTransform(messages map[string]mockEventData, sourceId stri
 	}
 }
 
-func processorSetupAndAssertJobHandling(processor *HandleT, c *context, enableDedup, enableReporting bool) {
+func processorSetupAndAssertJobHandling(processor *HandleT, c *testContext, enableDedup, enableReporting bool) {
 	Setup(processor, c, enableDedup, enableReporting)
 	handlePendingGatewayJobs(processor)
 }
 
-func Setup(processor *HandleT, c *context, enableDedup, enableReporting bool) {
+func Setup(processor *HandleT, c *testContext, enableDedup, enableReporting bool) {
 	var clearDB = false
 	SetDisableDedupFeature(enableDedup)
 	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)

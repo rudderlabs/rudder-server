@@ -11,7 +11,7 @@ const LOADED_AT_COLUMN = "loaded_at"
 type JsonLoader struct {
 	destType   string
 	columnData map[string]interface{}
-	fileWriter     LoadFileWriterI
+	fileWriter LoadFileWriterI
 }
 
 func NewJSONLoader(destType string, writer LoadFileWriterI) *JsonLoader {

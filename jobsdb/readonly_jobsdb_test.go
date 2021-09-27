@@ -29,12 +29,11 @@ func initReadonlyJobsDB() {
 }
 
 var _ = Describe("readonly_jobsdb", func() {
+	var c *tContext
 	initReadonlyJobsDB()
 
-	var c *context
-
 	BeforeEach(func() {
-		c = &context{}
+		c = &tContext{}
 		c.Setup()
 		stats.Setup()
 	})

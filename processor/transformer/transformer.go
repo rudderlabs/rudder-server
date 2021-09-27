@@ -4,6 +4,7 @@ package transformer
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,11 +17,11 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -92,12 +93,16 @@ type HandleT struct {
 	failedStat         stats.RudderStats
 	transformTimerStat stats.RudderStats
 	logger             logger.LoggerI
+
+	backgroundWait   func() error
+	backgroundCancel context.CancelFunc
 }
 
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
 	Transform(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
+	Shutdown()
 	Validate(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 }
 
@@ -232,6 +237,7 @@ func (trans *HandleT) transformWorker() {
 
 		trans.responseQ <- &transformedMessageT{data: transformerResponses, index: job.index}
 	}
+
 }
 
 //Setup initializes this class
@@ -245,12 +251,33 @@ func (trans *HandleT) Setup() {
 	trans.transformTimerStat = stats.NewStat("processor.transformation_time", stats.TimerType)
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	g, _ := errgroup.WithContext(ctx)
+
+	trans.backgroundCancel = cancel
+	trans.backgroundWait = g.Wait
+
 	for i := 0; i < numTransformWorker; i++ {
 		trans.logger.Info("Starting transformer worker", i)
-		rruntime.Go(func() {
+		g.Go(misc.WithBugsnag(func() error {
 			trans.transformWorker()
-		})
+			return nil
+		}))
 	}
+
+}
+
+// Shutdown stops transform workers gracefully and waits for them to stop
+// WARNING: No Transform() call should be running or called when and after
+func (trans *HandleT) Shutdown() {
+	trans.backgroundCancel()
+	// Closing requestQ will cause workers to stop.
+	close(trans.requestQ)
+	trans.backgroundWait()
+
+	// After workers have stop, is safe to close responseQ.
+	close(trans.responseQ)
 }
 
 //ResponseT represents a Transformer response

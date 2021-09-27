@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -27,6 +28,7 @@ import (
 	"unicode"
 
 	"github.com/araddon/dateparse"
+	"github.com/bugsnag/bugsnag-go"
 	"github.com/cenkalti/backoff"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
@@ -1102,6 +1104,24 @@ func GetWarehouseURL() (url string) {
 		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
 	}
 	return
+}
+
+func WithBugsnag(fn func() error) func() error {
+	return func() error {
+		ctx := bugsnag.StartSession(context.Background())
+		defer func() {
+			if r := recover(); r != nil {
+				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
+					"GoRoutines": {
+						"Number": runtime.NumGoroutine(),
+					}})
+
+				RecordAppError(fmt.Errorf("%v", r))
+				panic(r)
+			}
+		}()
+		return fn()
+	}
 }
 
 func GetStringifiedData(data interface{}) string {
