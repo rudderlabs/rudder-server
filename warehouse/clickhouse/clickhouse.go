@@ -504,13 +504,18 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
+	var txn *sql.Tx
+
 	onError := func(err error) {
+		if txn != nil {
+			txn.Rollback()
+		}
 		pkgLogger.Infof("onError for loadTable table:%s, namespace:%s", tableName, ch.Namespace)
 		pkgLogger.Error(err)
 	}
 
 	pkgLogger.Infof("CH: Beginning a transaction in db for loading in table:%s namespace:%s", tableName, ch.Namespace)
-	txn, err := ch.Db.Begin()
+	txn, err = ch.Db.Begin()
 	if err != nil {
 		err = fmt.Errorf("CH: Error while beginning a transaction in db for loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
 		onError(err)
@@ -562,16 +567,12 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 					pkgLogger.Infof("CH: File reading completed while reading csv file for loading in table:%s namespace:%s: objectFileName:%s", tableName, ch.Namespace, objectFileName)
 					break
 				} else {
-					txn.Rollback()
-
 					err = fmt.Errorf("CH: Error while reading csv file %s for loading in table:%s namespace:%s: error:%v", objectFileName, tableName, ch.Namespace, err)
 					onError(err)
 					return
 				}
 			}
 			if len(sortedColumnKeys) != len(record) {
-				txn.Rollback()
-
 				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. namespace:%s: Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), ch.Namespace, csvRowsProcessedCount)
 				onError(err)
 				return
@@ -596,8 +597,6 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 			}, execTimeOutInSeconds)
 
 			if err != nil {
-				txn.Rollback()
-
 				err = fmt.Errorf("CH: Error in inserting statement for loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
 				onError(err)
 				return
@@ -616,7 +615,8 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 
 	pkgLogger.Infof("Committing transaction for table:%s namespace:%s", tableName, ch.Namespace)
 	if err = txn.Commit(); err != nil {
-		pkgLogger.Errorf("CH: Error while committing transaction as there was error while loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
+		err = fmt.Errorf("CH: Error while committing transaction as there was error while loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
+		onError(err)
 		return
 	}
 	pkgLogger.Infof("Committed transaction for table:%s namespace:%s", tableName, ch.Namespace)
