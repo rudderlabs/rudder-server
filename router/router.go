@@ -344,7 +344,7 @@ func (worker *workerT) workerProcess() {
 				TransformAt:      parameters.TransformAt,
 				JobT:             job,
 			}
-			customerID := backendconfig.GetCustomerFromSourceID(parameters.SourceID)
+			customerID := backendconfig.GetWorkspaceIDForSource(parameters.SourceID)
 			worker.rt.configSubscriberLock.RLock()
 			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
 			if !ok {
@@ -781,7 +781,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	if respBody != "" {
 		status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "response", respBody)
 	}
-	customerID := backendconfig.GetCustomerFromSourceID(destinationJobMetadata.SourceID)
+	customerID := backendconfig.GetWorkspaceIDForSource(destinationJobMetadata.SourceID)
 	if isSuccessStatus(respStatusCode) {
 		atomic.AddUint64(&worker.rt.successCount, 1)
 		status.JobState = jobsdb.Succeeded.State
@@ -945,7 +945,7 @@ func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMe
 
 func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters JobParametersT, userID string, previousFailedJobID int64) (markedAsWaiting bool) {
 	// job is behind in queue of failed job from same user
-	customerID := backendconfig.GetCustomerFromSourceID(parameters.SourceID)
+	customerID := backendconfig.GetWorkspaceIDForSource(parameters.SourceID)
 	if previousFailedJobID < job.JobID {
 		worker.rt.logger.Debugf("[%v Router] :: skipping processing job for userID: %v since prev failed job exists, prev id %v, current id %v", worker.rt.destName, userID, previousFailedJobID, job.JobID)
 		resp := fmt.Sprintf(`{"blocking_id":"%v", "user_id":"%s"}`, previousFailedJobID, userID)

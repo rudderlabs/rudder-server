@@ -16,6 +16,7 @@ import (
 type MultiTenantWorkspaceConfig struct {
 	CommonBackendConfig
 	writeKeyToWorkspaceIDMap  map[string]string
+	sourceToWorkspaceIDMap    map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	workspaceWriteKeysMapLock sync.RWMutex
 }
@@ -29,6 +30,18 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) GetWorkspaceIDForWriteKey(wri
 	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
 
 	if workspaceID, ok := workspaceConfig.writeKeyToWorkspaceIDMap[writeKey]; ok {
+		return workspaceID
+	}
+
+	return ""
+}
+
+func (workspaceConfig *MultiTenantWorkspaceConfig) GetWorkspaceIDForSource(source string) string {
+	//TODO use another map later
+	workspaceConfig.workspaceWriteKeysMapLock.RLock()
+	defer workspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+
+	if workspaceID, ok := workspaceConfig.sourceToWorkspaceIDMap[source]; ok {
 		return workspaceID
 	}
 
@@ -117,18 +130,21 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI() (ConfigT, bool) 
 		return ConfigT{}, false
 	}
 	writeKeyToWorkspaceIDMap := make(map[string]string)
+	sourceToWorkspaceIDMap := make(map[string]string)
 	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
 	sourcesJSON := ConfigT{}
 	sourcesJSON.Sources = make([]SourceT, 0)
 	for workspaceID, workspaceConfig := range workspaces.WorkspaceSourcesMap {
 		for _, source := range workspaceConfig.Sources {
 			writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID
+			sourceToWorkspaceIDMap[source.ID] = workspaceID
 			workspaceIDToLibrariesMap[workspaceID] = workspaceConfig.Libraries
 		}
 		sourcesJSON.Sources = append(sourcesJSON.Sources, workspaceConfig.Sources...)
 	}
 	workspaceConfig.workspaceWriteKeysMapLock.Lock()
 	workspaceConfig.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
+	workspaceConfig.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
 	workspaceConfig.workspaceIDToLibrariesMap = make(map[string]LibrariesT)
 	workspaceConfig.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
 	workspaceConfig.workspaceWriteKeysMapLock.Unlock()

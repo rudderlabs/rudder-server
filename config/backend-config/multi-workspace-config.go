@@ -17,6 +17,7 @@ import (
 type MultiWorkspaceConfig struct {
 	CommonBackendConfig
 	writeKeyToWorkspaceIDMap  map[string]string
+	sourceToWorkspaceIDMap    map[string]string
 	workspaceIDToLibrariesMap map[string]LibrariesT
 	workspaceWriteKeysMapLock sync.RWMutex
 }
@@ -49,6 +50,19 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForWriteKey(writ
 	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
 
 	if workspaceID, ok := multiWorkspaceConfig.writeKeyToWorkspaceIDMap[writeKey]; ok {
+		return workspaceID
+	}
+
+	return ""
+}
+
+//GetWorkspaceIDForSource returns workspaceID for the given writeKey
+func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForSource(source string) string {
+	//TODO use another map later
+	multiWorkspaceConfig.workspaceWriteKeysMapLock.RLock()
+	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
+
+	if workspaceID, ok := multiWorkspaceConfig.sourceToWorkspaceIDMap[source]; ok {
 		return workspaceID
 	}
 

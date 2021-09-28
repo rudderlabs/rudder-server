@@ -676,7 +676,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 			out.SucceededJobIDs = append(out.SucceededJobIDs, job.JobID)
 			out.SuccessResponse = fmt.Sprintf(`{"error":"%s"`, DISABLED_EGRESS)
 		}
-		brt.setMultipleJobStatus(out, "workspaceID")
+		brt.setMultipleJobStatus(out, batchJobs.BatchDestination.Source.WorkspaceID)
 		return
 	}
 
@@ -692,7 +692,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 				out.FailedJobIDs = append(out.FailedJobIDs, job.JobID)
 				out.FailedReason = `{"error":"Jobs flowed over the prescribed limit"}`
 			}
-			brt.setMultipleJobStatus(out, "workspaceID")
+			brt.setMultipleJobStatus(out, batchJobs.BatchDestination.Source.WorkspaceID)
 			return
 		}
 	}
@@ -769,7 +769,7 @@ func (brt *HandleT) asyncUploadWorker() {
 						brt.asyncDestinationStruct[destinationID].CanUpload = true
 						uploadResponse := asyncdestinationmanager.Upload(transformerURL+brt.asyncDestinationStruct[destinationID].URL, brt.asyncDestinationStruct[destinationID].FileName, brt.destinationsMap[destinationID].Destination.Config, brt.destType, brt.asyncDestinationStruct[destinationID].FailedJobIDs, brt.asyncDestinationStruct[destinationID].ImportingJobIDs, destinationID)
 						brt.asyncStructCleanUp(destinationID)
-						brt.setMultipleJobStatus(uploadResponse, "workspaceID")
+						brt.setMultipleJobStatus(uploadResponse, brt.destinationsMap[destinationID].Sources[0].WorkspaceID)
 					}
 					brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
 				}

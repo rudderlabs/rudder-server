@@ -220,6 +220,7 @@ type BackendConfig interface {
 	Get() (ConfigT, bool)
 	GetRegulations() (RegulationsT, bool)
 	GetWorkspaceIDForWriteKey(string) string
+	GetWorkspaceIDForSource(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	WaitForConfig()
 	Subscribe(channel chan utils.DataEvent, topic Topic)
@@ -321,11 +322,6 @@ func regulationsUpdate(statConfigBackendError stats.RudderStats) {
 	}
 }
 
-//TODO fix this
-func GetCustomerFromSourceID(sourceID string) string {
-	return "workspaceID"
-}
-
 func configUpdate(statConfigBackendError stats.RudderStats) {
 
 	sourceJSON, ok := backendConfig.Get()
@@ -377,6 +373,10 @@ func GetConfig() ConfigT {
 
 func GetWorkspaceIDForWriteKey(writeKey string) string {
 	return backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+}
+
+func GetWorkspaceIDForSource(source string) string {
+	return backendConfig.GetWorkspaceIDForSource(source)
 }
 
 func GetWorkspaceLibrariesForWorkspaceID(workspaceId string) LibrariesT {
