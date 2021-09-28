@@ -2,19 +2,21 @@ package clickhouse
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"github.com/cenkalti/backoff/v4"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 
@@ -591,13 +593,17 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 				recordInterface = append(recordInterface, data)
 			}
 
+			stmtCtx, stmtCancel := context.WithCancel(context.Background())
 			misc.RunWithTimeout(func() {
 				pkgLogger.Infof("CH: Starting Prepared statement exec table:%s namespace:%s", tableName, ch.Namespace)
 				chStats.execRowTime.Start()
-				_, err = stmt.Exec(recordInterface...)
+				_, err = stmt.ExecContext(stmtCtx, recordInterface...)
 				chStats.execRowTime.End()
 				pkgLogger.Infof("CH: Completed Prepared statement exec table:%s namespace:%s ", tableName, ch.Namespace)
 			}, func() {
+				pkgLogger.Infof("CH: Cancelling and closing statment table:%s namespace:%s", tableName, ch.Namespace)
+				stmtCancel()
+				stmt.Close()
 				err = fmt.Errorf("CH: Timed out exec table:%s namespace:%s objectFileName: %s", tableName, ch.Namespace, objectFileName)
 				pkgLogger.Info(err)
 				chStats.execTimeouts.Count(1)
