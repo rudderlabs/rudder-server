@@ -688,12 +688,16 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					pkgLogger.Infof("CH: File reading completed while reading csv file for loading in table:%s namespace:%s: objectFileName:%s", tableName, ch.Namespace, objectFileName)
 					break
 				} else {
+					txn.Rollback()
+
 					err = fmt.Errorf("CH: Error while reading csv file %s for loading in table:%s namespace:%s: error:%v", objectFileName, tableName, ch.Namespace, err)
 					handleError(err)
 					return
 				}
 			}
 			if len(sortedColumnKeys) != len(record) {
+				txn.Rollback()
+
 				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. namespace:%s: Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), ch.Namespace, csvRowsProcessedCount)
 				handleError(err)
 				return
@@ -712,6 +716,8 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			chStats.execRowTime.End()
 			pkgLogger.Infof("CH: Completed Prepared statement exec table:%s namespace:%s ", tableName, ch.Namespace)
 			if err != nil {
+				txn.Rollback()
+
 				err = fmt.Errorf("CH: Error in inserting statement for loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
 				handleError(err)
 				return
