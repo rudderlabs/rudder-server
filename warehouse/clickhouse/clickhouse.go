@@ -224,7 +224,7 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("300", &readTimeout, true, "Warehouse.clickhouse.readTimeout")
 	config.RegisterStringConfigVariable("1800", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
 	config.RegisterBoolConfigVariable(false, &compress, true, "Warehouse.clickhouse.compress")
-	config.RegisterDurationConfigVariable(time.Duration(120), &execTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
+	config.RegisterDurationConfigVariable(time.Duration(10), &execTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 }
 
@@ -489,7 +489,11 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	defer misc.RemoveFilePaths(fileNames...)
 
 	operation := func() error {
-		return ch.loadTablesFromFilesNamesWithRetry(tableName, tableSchemaInUpload, fileNames, chStats)
+		tableError := ch.loadTablesFromFilesNamesWithRetry(tableName, tableSchemaInUpload, fileNames, chStats)
+		if !tableError.enableRetry {
+			return nil
+		}
+		return tableError.err
 	}
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), uint64(loadTableFailureRetries))
@@ -501,14 +505,22 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	return
 }
 
-func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, fileNames []string, chStats *clickHouseStatT) (err error) {
+type tableError struct {
+	enableRetry bool
+	err         error
+}
+
+func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, fileNames []string, chStats *clickHouseStatT) (terr tableError) {
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
 	var txn *sql.Tx
+	var err error
 
 	onError := func(err error) {
+		terr.err = err
+
 		pkgLogger.Infof("onError called for table:%s, namespace:%s", tableName, ch.Namespace)
 		if txn != nil {
 			go func() {
@@ -610,6 +622,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 				stmtCancel()
 				// stmt.Close()
 				err = fmt.Errorf("CH: Timed out exec table:%s namespace:%s objectFileName: %s", tableName, ch.Namespace, objectFileName)
+				terr.enableRetry = true
 				pkgLogger.Info(err)
 				chStats.execTimeouts.Count(1)
 			}, execTimeOutInSeconds)
