@@ -509,6 +509,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 	var txn *sql.Tx
 
 	onError := func(err error) {
+		pkgLogger.Infof("onError called for table:%s, namespace:%s", tableName, ch.Namespace)
 		if txn != nil {
 			pkgLogger.Infof("txn.Rollback started for table:%s, namespace:%s", tableName, ch.Namespace)
 			txn.Rollback()
