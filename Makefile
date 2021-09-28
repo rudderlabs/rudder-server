@@ -23,7 +23,7 @@ build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare s
 prepare-build: build-sql-migrations enterprise-prepare-build
 
 ./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations)
-	$(GO) run -mod=vendor -tags=dev cmd/generate-migrations/generate-sql-migrations.go
+	$(GO) run -tags=dev cmd/generate-migrations/generate-sql-migrations.go
 
 build: prepare-build ## Build rudder-server binary
 	$(eval BUILD_OPTIONS = )
@@ -34,10 +34,10 @@ endif
 	$(GO) build -o build/wait-for-go/wait-for-go build/wait-for-go/wait-for.go
 
 run: prepare-build ## Run rudder-server using go run
-	$(GO) run -mod=vendor main.go
+	$(GO) run main.go
 
 run-dev: prepare-build ## Run rudder-server using go run with 'dev' build tag
-	$(GO) run -mod=vendor -tags=dev main.go
+	$(GO) run -tags=dev main.go
 
 help: ## Show the available commands
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' ./Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
