@@ -1690,7 +1690,7 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 
 	err = jd.storeJobsDSInTxn(txn, ds, copyID, jobList)
 	if err != nil {
-		if rollbackErr := txn.Rollback(); err != nil {
+		if rollbackErr := txn.Rollback(); rollbackErr != nil {
 			return fmt.Errorf("%w; %s", err, rollbackErr)
 		}
 		return err
