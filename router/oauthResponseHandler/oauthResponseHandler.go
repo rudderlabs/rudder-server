@@ -29,8 +29,8 @@ type OAuthErrResHandler struct {
 	oauthErrHandlerReqTimerStat    stats.RudderStats
 	oauthErrHandlerNetReqTimerStat stats.RudderStats
 	logger                         logger.LoggerI
-	destLockMap                    map[string]sync.RWMutex // This mutex map is used for disable destination locking
-	accountLockMap                 map[string]sync.RWMutex // This mutex map is used for refresh token locking
+	destLockMap                    map[string]*sync.RWMutex // This mutex map is used for disable destination locking
+	accountLockMap                 map[string]*sync.RWMutex // This mutex map is used for refresh token locking
 }
 
 type Authorizer interface {
@@ -117,8 +117,8 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.client = &http.Client{Transport: authErrHandler.tr, Timeout: 5 * time.Minute}
 	authErrHandler.oauthErrHandlerReqTimerStat = stats.NewStat("router.processor.oauthErrorHandler_request_time", stats.TimerType)
 	authErrHandler.oauthErrHandlerNetReqTimerStat = stats.NewStat("router.oauthErrorHandler_network_request_time", stats.TimerType)
-	authErrHandler.destLockMap = make(map[string]sync.RWMutex)
-	authErrHandler.accountLockMap = make(map[string]sync.RWMutex)
+	authErrHandler.destLockMap = make(map[string]*sync.RWMutex)
+	authErrHandler.accountLockMap = make(map[string]*sync.RWMutex)
 }
 
 func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accountId string, accessToken string) (statusCode int, respBody string) {
@@ -231,21 +231,20 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 }
 
 func (resHandler *OAuthErrResHandler) NewMutex(id string, errCategory string) (*sync.RWMutex, error) {
-	var mutexMap *map[string]sync.RWMutex
+	var mutexMap map[string]*sync.RWMutex
 	switch errCategory {
 	case DISABLE_DEST:
-		mutexMap = &resHandler.destLockMap
+		mutexMap = resHandler.destLockMap
 	case REFRESH_TOKEN:
-		mutexMap = &resHandler.accountLockMap
+		mutexMap = resHandler.accountLockMap
 	}
 	if mutexMap != nil {
-		if _, ok := (*mutexMap)[id]; !ok {
+		if _, ok := mutexMap[id]; !ok {
 			resHandler.logger.Infof("[%s request] :: Creating new mutex for %s", loggerNm, id)
-			(*mutexMap)[id] = sync.RWMutex{}
+			mutexMap[id] = &sync.RWMutex{}
 		}
 		resHandler.logger.Infof("[%s request] :: Already created mutex for %s", loggerNm, id)
-		retMutex := (*mutexMap)[id]
-		return &retMutex, nil
+		return mutexMap[id], nil
 	}
 	return nil, fmt.Errorf(`except %v, %v error category is not supported`, DISABLE_DEST, REFRESH_TOKEN)
 }
