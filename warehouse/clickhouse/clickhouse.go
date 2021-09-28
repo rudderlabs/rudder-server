@@ -675,6 +675,9 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 			}, func() {
 				pkgLogger.Infof("CH: Cancelling and closing statment table:%s namespace:%s", tableName, ch.Namespace)
 				stmtCancel()
+				go func() {
+					stmt.Close()
+				}()
 				// stmt.Close()
 				err = fmt.Errorf("CH: Timed out exec table:%s namespace:%s objectFileName: %s", tableName, ch.Namespace, objectFileName)
 				terr.enableRetry = true
