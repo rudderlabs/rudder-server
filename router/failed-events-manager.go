@@ -73,6 +73,7 @@ func (fem *FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap ma
 		createdAt := time.Now()
 		for _, failedEvent := range failedEvents {
 			pkgLogger.Infof("recordId: %s, destinationID: %s, createdAt: %s", failedEvent.RecordID, failedEvent.DestinationID, createdAt)
+			
 			_, err = stmt.Exec(failedEvent.DestinationID, failedEvent.RecordID, createdAt)
 			if err != nil {
 				panic(err)
