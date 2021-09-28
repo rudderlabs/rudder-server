@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -31,16 +32,17 @@ import (
 )
 
 var (
-	queryDebugLogs          string
-	blockSize               string
-	poolSize                string
-	readTimeout             string
-	writeTimeout            string
-	compress                bool
-	pkgLogger               logger.LoggerI
-	disableNullable         bool
-	execTimeOutInSeconds    time.Duration
-	loadTableFailureRetries int
+	queryDebugLogs              string
+	blockSize                   string
+	poolSize                    string
+	readTimeout                 string
+	writeTimeout                string
+	compress                    bool
+	pkgLogger                   logger.LoggerI
+	disableNullable             bool
+	execTimeOutInSeconds        time.Duration
+	loadTableFailureRetries     int
+	numWorkersDownloadLoadFiles int
 )
 var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
@@ -226,6 +228,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &compress, true, "Warehouse.clickhouse.compress")
 	config.RegisterDurationConfigVariable(time.Duration(10), &execTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
+	config.RegisterIntConfigVariable(128, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
 }
 
 /*
@@ -314,6 +317,9 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnName string
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
+	pkgLogger.Infof("CH: DownloadLoadFiles for table:%s namespace:%s", tableName, ch.Namespace)
+	defer pkgLogger.Infof("CH: DownloadLoadFiles for table:%s namespace:%s", tableName, ch.Namespace)
+
 	objects := ch.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 	downloader, err := filemanager.New(&filemanager.SettingsT{
@@ -329,43 +335,92 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		return nil, err
 	}
 	var fileNames []string
-	for _, object := range objects {
-		objectName, err := warehouseutils.GetObjectName(object.Location, ch.Warehouse.Destination.Config, ch.ObjectStorage)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
-			return nil, err
-		}
-		dirName := "/rudder-warehouse-load-uploads-tmp/"
-		tmpDirPath, err := misc.CreateTMPDIR()
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in getting tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
-		err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, object.Location, err)
-			return nil, err
-		}
-		objectFile, err := os.Create(ObjectPath)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		err = downloader.Download(objectFile, objectName)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		fileName := objectFile.Name()
-		if err = objectFile.Close(); err != nil {
-			pkgLogger.Errorf("CH: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		fileNames = append(fileNames, fileName)
-	}
-	return fileNames, nil
+	var wg sync.WaitGroup
+	var dErr error
+	var fileNamesLock sync.RWMutex
 
+	downloadChan := make(chan struct{}, numWorkersDownloadLoadFiles)
+	for _, object := range objects {
+		pkgLogger.Infof("CH: range objects for table:%s namespace:%s location:%s", tableName, ch.Namespace, object.Location)
+		wg.Add(1)
+		pkgLogger.Infof("CH: waiting started for channel for table:%s namespace:%s", tableName, ch.Namespace)
+		downloadChan <- struct{}{}
+		pkgLogger.Infof("CH: waiting completed for channel for table:%s namespace:%s", tableName, ch.Namespace)
+		object := object
+		go func() {
+			pkgLogger.Infof("CH: ch.downloadLoadFile started for table:%s namespace:%s", tableName, ch.Namespace)
+			fileName, err := ch.downloadLoadFile(&wg, downloadChan, &object, tableName, downloader)
+			pkgLogger.Infof("CH: ch.downloadLoadFile completed for table:%s namespace:%s", tableName, ch.Namespace)
+			if err != nil {
+				dErr = err
+				return
+			}
+			fileNamesLock.Lock()
+			fileNames = append(fileNames, fileName)
+			fileNamesLock.Unlock()
+		}()
+	}
+	wg.Wait()
+	return fileNames, dErr
+}
+
+func (ch *HandleT) downloadLoadFile(wg *sync.WaitGroup, downloadChan chan struct{}, object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager) (fileName string, err error) {
+	pkgLogger.Infof("CH: downloadLoadFile for table:%s namespace:%s", tableName, ch.Namespace)
+	defer pkgLogger.Infof("CH: downloadLoadFile for table:%s namespace:%s", tableName, ch.Namespace)
+
+	defer func() {
+		<-downloadChan
+		wg.Done()
+	}()
+
+	pkgLogger.Infof("CH: warehouseutils.GetObjectName started for table:%s namespace:%s", tableName, ch.Namespace)
+	objectName, err := warehouseutils.GetObjectName(object.Location, ch.Warehouse.Destination.Config, ch.ObjectStorage)
+	if err != nil {
+		pkgLogger.Errorf("CH: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
+		return
+	}
+	pkgLogger.Infof("CH: warehouseutils.GetObjectName completed for table:%s namespace:%s", tableName, ch.Namespace)
+
+	pkgLogger.Infof("CH: misc.CreateTMPDIR started for table:%s namespace:%s", tableName, ch.Namespace)
+	dirName := "/rudder-warehouse-load-uploads-tmp/"
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		pkgLogger.Errorf("CH: Error in getting tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
+		return
+	}
+	pkgLogger.Infof("CH: misc.CreateTMPDIR completed for table:%s namespace:%s", tableName, ch.Namespace)
+
+	pkgLogger.Infof("CH: os.MkdirAll stated for table:%s namespace:%s", tableName, ch.Namespace)
+	ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
+	err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
+	if err != nil {
+		pkgLogger.Errorf("CH: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, object.Location, err)
+		return
+	}
+	pkgLogger.Infof("CH: os.MkdirAll completed for table:%s namespace:%s", tableName, ch.Namespace)
+
+	pkgLogger.Infof("CH: os.Create started for table:%s namespace:%s", tableName, ch.Namespace)
+	objectFile, err := os.Create(ObjectPath)
+	if err != nil {
+		pkgLogger.Errorf("CH: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
+		return
+	}
+	pkgLogger.Infof("CH: os.Create completed for table:%s namespace:%s", tableName, ch.Namespace)
+
+	pkgLogger.Infof("CH: downloader.Download stated for table:%s namespace:%s", tableName, ch.Namespace)
+	err = downloader.Download(objectFile, objectName)
+	if err != nil {
+		pkgLogger.Errorf("CH: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
+		return
+	}
+	pkgLogger.Infof("CH: downloader.Download completed for table:%s namespace:%s", tableName, ch.Namespace)
+	fileName = objectFile.Name()
+	if err = objectFile.Close(); err != nil {
+		pkgLogger.Errorf("CH: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
+		return
+	}
+	pkgLogger.Infof("CH: downloadLoadFile completed for table:%s namespace:%s", tableName, ch.Namespace)
+	return fileName, err
 }
 
 func generateArgumentString(arg string, length int) string {
