@@ -1,4 +1,4 @@
-name: Service Integration Test
+name: Tests
 on:
   push:
     branches:
@@ -6,8 +6,8 @@ on:
       - main
   pull_request:
 jobs:
-  test:
-    name: tests
+  integration:
+    name: Service Integration
     runs-on: 'ubuntu-18.04'
 
     steps:
@@ -17,4 +17,15 @@ jobs:
         go-version: '^1.16.4'
     - run: go version
     - run: go test -v ./docker_test.go -integration -count 1
+  unit:
+    name: Unit & Component Integration
+    runs-on: 'ubuntu-18.04'
 
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-go@v2
+      with:
+        go-version: '^1.16.4'
+    - run: go version
+    - run: go get -u github.com/onsi/ginkgo/ginkgo@v1.16.4
+    - run: make test
