@@ -41,6 +41,7 @@ var (
 	pkgLogger                   logger.LoggerI
 	disableNullable             bool
 	execTimeOutInSeconds        time.Duration
+	commitTimeOutInSeconds      time.Duration
 	loadTableFailureRetries     int
 	numWorkersDownloadLoadFiles int
 )
@@ -146,8 +147,10 @@ type clickHouseStatT struct {
 	downloadLoadFilesTime stats.RudderStats
 	syncLoadFileTime      stats.RudderStats
 	execRowTime           stats.RudderStats
+	commitTime            stats.RudderStats
 	failRetries           stats.RudderStats
 	execTimeouts          stats.RudderStats
+	commitTimeouts        stats.RudderStats
 }
 
 // newClickHouseStat Creates a new clickHouseStatT instance
@@ -167,16 +170,20 @@ func (proc *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
 	downloadLoadFilesTime := proc.stats.NewTaggedStat("warehouse.clickhouse.downloadLoadFilesTime", stats.TimerType, tags)
 	syncLoadFileTime := proc.stats.NewTaggedStat("warehouse.clickhouse.syncLoadFileTime", stats.TimerType, tags)
 	execRowTime := proc.stats.NewTaggedStat("warehouse.clickhouse.execRowTime", stats.TimerType, tags)
+	commitTime := proc.stats.NewTaggedStat("warehouse.clickhouse.commitTime", stats.TimerType, tags)
 	failRetries := proc.stats.NewTaggedStat("warehouse.clickhouse.failedRetries", stats.CountType, tags)
 	execTimeouts := proc.stats.NewTaggedStat("warehouse.clickhouse.execTimeouts", stats.CountType, tags)
+	commitTimeouts := proc.stats.NewTaggedStat("warehouse.clickhouse.commitTimeouts", stats.CountType, tags)
 
 	return &clickHouseStatT{
 		numRowsLoadFile:       numRowsLoadFile,
 		downloadLoadFilesTime: downloadLoadFilesTime,
 		syncLoadFileTime:      syncLoadFileTime,
 		execRowTime:           execRowTime,
+		commitTime:            commitTime,
 		failRetries:           failRetries,
 		execTimeouts:          execTimeouts,
+		commitTimeouts:        commitTimeouts,
 	}
 }
 
@@ -226,7 +233,8 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("300", &readTimeout, true, "Warehouse.clickhouse.readTimeout")
 	config.RegisterStringConfigVariable("1800", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
 	config.RegisterBoolConfigVariable(false, &compress, true, "Warehouse.clickhouse.compress")
-	config.RegisterDurationConfigVariable(time.Duration(10), &execTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
+	config.RegisterDurationConfigVariable(time.Duration(120), &execTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
+	config.RegisterDurationConfigVariable(time.Duration(240), &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 	config.RegisterIntConfigVariable(128, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
 }
@@ -705,9 +713,25 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 		pkgLogger.Infof("CH: range fileNames completed table:%s namespace:%s fileName:%s", tableName, ch.Namespace, objectFileName)
 	}
 
-	pkgLogger.Infof("Committing transaction for table:%s namespace:%s", tableName, ch.Namespace)
-	if err = txn.Commit(); err != nil {
-		err = fmt.Errorf("CH: Error while committing transaction as there was error while loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
+	misc.RunWithTimeout(func() {
+		chStats.commitTime.Start()
+		defer chStats.commitTime.End()
+
+		pkgLogger.Infof("Committing transaction for table:%s namespace:%s", tableName, ch.Namespace)
+		if err = txn.Commit(); err != nil {
+			err = fmt.Errorf("CH: Error while committing transaction as there was error while loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
+			pkgLogger.Info(err)
+			return
+		}
+	}, func() {
+		err = fmt.Errorf("CH: Timed out commit table:%s namespace:%s", tableName, ch.Namespace)
+		terr.enableRetry = true
+		pkgLogger.Info(err)
+		chStats.commitTimeouts.Count(1)
+	}, commitTimeOutInSeconds)
+
+	if err != nil {
+		err = fmt.Errorf("CH: Error occurred table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
 		pkgLogger.Info(err)
 		onError(err)
 		return
