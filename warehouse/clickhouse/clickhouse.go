@@ -8,6 +8,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"github.com/cenkalti/backoff/v4"
 	"io"
 	"os"
 	"path/filepath"
@@ -28,16 +29,16 @@ import (
 )
 
 var (
-	queryDebugLogs             string
-	blockSize                  string
-	poolSize                   string
-	readTimeout                string
-	writeTimeout               string
-	compress                   bool
-	pkgLogger                  logger.LoggerI
-	disableNullable            bool
-	numLoadFileReadWorkers     int
-	numLoadFileDownloadWorkers int
+	queryDebugLogs          string
+	blockSize               string
+	poolSize                string
+	readTimeout             string
+	writeTimeout            string
+	compress                bool
+	pkgLogger               logger.LoggerI
+	disableNullable         bool
+	execTimeOutInSeconds    time.Duration
+	loadTableFailureRetries int
 )
 var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
@@ -141,6 +142,8 @@ type clickHouseStatT struct {
 	downloadLoadFilesTime stats.RudderStats
 	syncLoadFileTime      stats.RudderStats
 	execRowTime           stats.RudderStats
+	failRetries           stats.RudderStats
+	execTimeouts          stats.RudderStats
 }
 
 // newClickHouseStat Creates a new clickHouseStatT instance
@@ -160,12 +163,16 @@ func (proc *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
 	downloadLoadFilesTime := proc.stats.NewTaggedStat("warehouse.clickhouse.downloadLoadFilesTime", stats.TimerType, tags)
 	syncLoadFileTime := proc.stats.NewTaggedStat("warehouse.clickhouse.syncLoadFileTime", stats.TimerType, tags)
 	execRowTime := proc.stats.NewTaggedStat("warehouse.clickhouse.execRowTime", stats.TimerType, tags)
+	failRetries := proc.stats.NewTaggedStat("warehouse.clickhouse.failedRetries", stats.CountType, tags)
+	execTimeouts := proc.stats.NewTaggedStat("warehouse.clickhouse.execTimeouts", stats.CountType, tags)
 
 	return &clickHouseStatT{
 		numRowsLoadFile:       numRowsLoadFile,
 		downloadLoadFilesTime: downloadLoadFilesTime,
 		syncLoadFileTime:      syncLoadFileTime,
 		execRowTime:           execRowTime,
+		failRetries:           failRetries,
+		execTimeouts:          execTimeouts,
 	}
 }
 
@@ -212,11 +219,11 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("1000000", &blockSize, true, "Warehouse.clickhouse.blockSize")
 	config.RegisterStringConfigVariable("100", &poolSize, true, "Warehouse.clickhouse.poolSize")
 	config.RegisterBoolConfigVariable(false, &disableNullable, false, "Warehouse.clickhouse.disableNullable")
-	config.RegisterIntConfigVariable(1, &numLoadFileReadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileReadWorkers")
 	config.RegisterStringConfigVariable("300", &readTimeout, true, "Warehouse.clickhouse.readTimeout")
 	config.RegisterStringConfigVariable("1800", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
 	config.RegisterBoolConfigVariable(false, &compress, true, "Warehouse.clickhouse.compress")
-	config.RegisterIntConfigVariable(1, &numLoadFileDownloadWorkers, true, 1, "Warehouse.clickhouse.numLoadFileDownloadWorkers")
+	config.RegisterDurationConfigVariable(time.Duration(120), &execTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
+	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 }
 
 /*
@@ -615,10 +622,6 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	// Clickhouse stats
 	chStats := ch.newClickHouseStat(tableName)
 
-	// sort column names
-	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
-	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
-
 	pkgLogger.Infof("CH: Started downloading load for table:%s namespace:%s", tableName, ch.Namespace)
 	chStats.downloadLoadFilesTime.Start()
 	fileNames, err := ch.DownloadLoadFiles(tableName)
@@ -628,6 +631,24 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 	defer misc.RemoveFilePaths(fileNames...)
+
+	operation := func() error {
+		return ch.loadTablesFromFilesNamesWithRetry(tableName, tableSchemaInUpload, fileNames, chStats)
+	}
+
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), uint64(loadTableFailureRetries))
+	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(error error, t time.Duration) {
+		err = fmt.Errorf("CH: Error occurred for table:%s namespace:%s error: %v", tableName, ch.Namespace, error)
+		pkgLogger.Error(err)
+		chStats.failRetries.Count(1)
+	})
+	return
+}
+
+func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, fileNames []string, chStats *clickHouseStatT) (err error) {
+	// sort column names
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
+	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
 	onError := func(err error) {
 		pkgLogger.Infof("onError for loadTable table:%s, namespace:%s", tableName, ch.Namespace)
@@ -675,7 +696,6 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			err = fmt.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: namespace:%s: error:%v", gzipFile.Name(), tableName, ch.Namespace, err.Error())
 			onError(err)
 			return
-
 		}
 
 		csvReader := csv.NewReader(gzipReader)
@@ -710,11 +730,17 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				recordInterface = append(recordInterface, data)
 			}
 
-			pkgLogger.Infof("CH: Starting Prepared statement exec table:%s namespace:%s", tableName, ch.Namespace)
-			chStats.execRowTime.Start()
-			_, err = stmt.Exec(recordInterface...)
-			chStats.execRowTime.End()
-			pkgLogger.Infof("CH: Completed Prepared statement exec table:%s namespace:%s ", tableName, ch.Namespace)
+			misc.RunWithTimeout(func() {
+				pkgLogger.Infof("CH: Starting Prepared statement exec table:%s namespace:%s", tableName, ch.Namespace)
+				chStats.execRowTime.Start()
+				_, err = stmt.Exec(recordInterface...)
+				chStats.execRowTime.End()
+				pkgLogger.Infof("CH: Completed Prepared statement exec table:%s namespace:%s ", tableName, ch.Namespace)
+			}, func() {
+				err = fmt.Errorf("CH: Timed out exec table:%s namespace:%s objectFileName: %s", tableName, ch.Namespace, objectFileName)
+				chStats.execTimeouts.Count(1)
+			}, execTimeOutInSeconds)
+
 			if err != nil {
 				txn.Rollback()
 
