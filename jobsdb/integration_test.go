@@ -153,8 +153,6 @@ func TestJobsDB(t *testing.T) {
 	})
 	require.Equal(t, 1, len(unprocessedList))
 
-	t.Log(jobDB.Status())
-
 	status := jobsdb.JobStatusT{
 		JobID:         unprocessedList[0].JobID,
 		JobState:      "succeeded",
@@ -165,7 +163,6 @@ func TestJobsDB(t *testing.T) {
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
 	}
-	t.Log(jobDB.Status())
 
 	err = jobDB.UpdateJobStatus([]*jobsdb.JobStatusT{&status}, []string{customVal}, []jobsdb.ParameterFilterT{})
 	require.NoError(t, err)
@@ -219,7 +216,7 @@ func BenchmarkJobsdb(b *testing.B) {
 		})
 
 		consumedJobs := make([]jobsdb.JobT, 0, len(expectedJobs))
-		timeout := time.After(10 * time.Second * time.Duration(len(expectedJobs)))
+		timeout := time.After(time.Second * time.Duration(len(expectedJobs)))
 		g.Go(func() error {
 			for {
 				unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
@@ -248,7 +245,7 @@ func BenchmarkJobsdb(b *testing.B) {
 					consumedJobs = append(consumedJobs, *j)
 				}
 				select {
-				case <-time.After(1 * time.Millisecond):
+				case <-time.After(5 * time.Millisecond):
 					if len(consumedJobs) >= len(expectedJobs) {
 						return nil
 					}
@@ -261,5 +258,13 @@ func BenchmarkJobsdb(b *testing.B) {
 		err := g.Wait()
 		require.NoError(b, err)
 		require.Len(b, consumedJobs, len(expectedJobs))
+		for i, actualJob := range consumedJobs {
+			expectedJob := expectedJobs[i]
+			require.Equal(b, expectedJob.UUID, actualJob.UUID)
+			require.Equal(b, expectedJob.UserID, actualJob.UserID)
+			require.Equal(b, expectedJob.CustomVal, actualJob.CustomVal)
+			require.JSONEq(b, string(expectedJob.Parameters), string(actualJob.Parameters))
+			require.JSONEq(b, string(expectedJob.EventPayload), string(actualJob.EventPayload))
+		}
 	})
 }
