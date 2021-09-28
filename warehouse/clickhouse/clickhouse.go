@@ -518,6 +518,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 	txn, err = ch.Db.Begin()
 	if err != nil {
 		err = fmt.Errorf("CH: Error while beginning a transaction in db for loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
+		pkgLogger.Info(err)
 		onError(err)
 		return
 	}
@@ -528,6 +529,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
 		err = fmt.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s namespace:%s: query:%s error:%v", tableName, ch.Namespace, sqlStatement, err)
+		pkgLogger.Info(err)
 		onError(err)
 		return
 	}
@@ -541,6 +543,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			err = fmt.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s  namespace:%s: error:%v", objectFileName, tableName, ch.Namespace, err.Error())
+			pkgLogger.Info(err)
 			onError(err)
 			return
 		}
@@ -553,6 +556,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 			})
 			gzipFile.Close()
 			err = fmt.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: namespace:%s: error:%v", gzipFile.Name(), tableName, ch.Namespace, err.Error())
+			pkgLogger.Info(err)
 			onError(err)
 			return
 		}
@@ -568,12 +572,14 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 					break
 				} else {
 					err = fmt.Errorf("CH: Error while reading csv file %s for loading in table:%s namespace:%s: error:%v", objectFileName, tableName, ch.Namespace, err)
+					pkgLogger.Info(err)
 					onError(err)
 					return
 				}
 			}
 			if len(sortedColumnKeys) != len(record) {
 				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. namespace:%s: Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), ch.Namespace, csvRowsProcessedCount)
+				pkgLogger.Info(err)
 				onError(err)
 				return
 			}
@@ -593,15 +599,19 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 				pkgLogger.Infof("CH: Completed Prepared statement exec table:%s namespace:%s ", tableName, ch.Namespace)
 			}, func() {
 				err = fmt.Errorf("CH: Timed out exec table:%s namespace:%s objectFileName: %s", tableName, ch.Namespace, objectFileName)
+				pkgLogger.Info(err)
 				chStats.execTimeouts.Count(1)
 			}, execTimeOutInSeconds)
 
 			if err != nil {
 				err = fmt.Errorf("CH: Error in inserting statement for loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
+				pkgLogger.Info(err)
 				onError(err)
 				return
 			}
 			csvRowsProcessedCount++
+
+			pkgLogger.Infof("CH: csvRowsProcessedCount table:%s namespace:%s fileName:%s count: %d", tableName, ch.Namespace, objectFileName, csvRowsProcessedCount)
 		}
 
 		chStats.numRowsLoadFile.Count(csvRowsProcessedCount)
@@ -616,6 +626,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 	pkgLogger.Infof("Committing transaction for table:%s namespace:%s", tableName, ch.Namespace)
 	if err = txn.Commit(); err != nil {
 		err = fmt.Errorf("CH: Error while committing transaction as there was error while loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
+		pkgLogger.Info(err)
 		onError(err)
 		return
 	}
