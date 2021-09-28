@@ -87,7 +87,7 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI() (ConfigT, bool) 
 	workspaceIDs := distributed.GetWorkspaceIDs()
 	workspacesString := strings.Join(workspaceIDs[:], ",")
 	url = url + workspacesString
-
+	// fmt.Println(url)
 	var respBody []byte
 	var statusCode int
 
@@ -110,7 +110,6 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI() (ConfigT, bool) 
 	if configEnvReplacementEnabled && configEnvHandler != nil {
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
-
 	var workspaces WorkspacesT
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
@@ -148,7 +147,7 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) getRegulationsFromAPI() (Regu
 	regulationsJSON := RegulationsT{}
 	regulationsJSON.SourceRegulations = make([]SourceRegulationT, 0)
 	regulationsJSON.WorkspaceRegulations = make([]WorkspaceRegulationT, 0)
-	for _, workspace := range distributed.GetWorkspaceIDs() {
+	for _, workspace := range distributed.GetWorkspaceIDs()[0:1] {
 		wregulations, status := workspaceConfig.getWorkspaceRegulationsFromAPI(workspace)
 		if !status {
 			return RegulationsT{}, false

@@ -445,6 +445,7 @@ func Setup(pollRegulations bool, configEnvHandler types.ConfigEnvI) {
 		backendConfig = new(MultiWorkspaceConfig)
 	} else if misc.IsMultiTenant() {
 		backendConfig = new(MultiTenantWorkspaceConfig)
+		backendConfig.(*MultiTenantWorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
 	} else {
 		backendConfig = new(WorkspaceConfig)
 		backendConfig.(*WorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler

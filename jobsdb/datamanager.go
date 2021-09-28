@@ -21,6 +21,12 @@ var customerQueues map[string]*CustomerQueue
 func SetupCustomerQueues(clearAll bool) {
 	customerQueues = make(map[string]*CustomerQueue)
 	customers := distributed.GetCustomerList()
+	psqlInfo := GetConnectionString()
+	dbHandle, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	dbHandle.SetMaxOpenConns(512)
 
 	for _, customer := range customers {
 		var gatewayDB HandleT
@@ -29,11 +35,11 @@ func SetupCustomerQueues(clearAll bool) {
 		var procErrorDB HandleT
 
 		//TODO: fix values passed
-		gatewayDB.Setup(ReadWrite, clearAll, customer.Name+"_"+"gw", time.Hour*10000, "", true, QueryFiltersT{})
+		gatewayDB.Setup(dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"gw", time.Hour*10000, "", true, QueryFiltersT{})
 		//setting up router, batch router, proc error DBs also irrespective of server mode
-		routerDB.Setup(ReadWrite, clearAll, customer.Name+"_"+"rt", time.Hour*10000, "", true, QueryFiltersT{})
-		batchRouterDB.Setup(ReadWrite, clearAll, customer.Name+"_"+"batch_rt", time.Hour*10000, "", true, QueryFiltersT{})
-		procErrorDB.Setup(ReadWrite, clearAll, customer.Name+"_"+"proc_error", time.Hour*10000, "", false, QueryFiltersT{})
+		routerDB.Setup(dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"rt", time.Hour*10000, "", true, QueryFiltersT{})
+		batchRouterDB.Setup(dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"batch_rt", time.Hour*10000, "", true, QueryFiltersT{})
+		procErrorDB.Setup(dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"proc_error", time.Hour*10000, "", false, QueryFiltersT{})
 
 		customerQueues[customer.WorkspaceID] = &CustomerQueue{
 			GatewayJobsdb:      &gatewayDB,

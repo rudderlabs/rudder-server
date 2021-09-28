@@ -1,6 +1,7 @@
 package apphandlers
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 
@@ -38,8 +39,14 @@ func (gatewayApp *GatewayApp) StartRudderCore(options *app.Options) {
 
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
+	psqlInfo := jobsdb.GetConnectionString()
+	dbHandle, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+
 	migrationMode := gatewayApp.App.Options().MigrationMode
-	gatewayDB.Setup(jobsdb.Write, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+	gatewayDB.Setup(dbHandle, dbHandle, jobsdb.Write, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 
 	operationmanager.Setup(&gatewayDB, nil, nil)
 

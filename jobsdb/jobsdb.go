@@ -127,18 +127,11 @@ var masterBackupEnabled, instanceBackupEnabled, instanceBackupFailedAndAborted b
 var pathPrefix string
 
 //initGlobalDBHandle inits a sql.DB handle to be used across jobsdb instances
-func (jd *HandleT) initGlobalDBHandle() {
+func (jd *HandleT) initGlobalDBHandle(globalDB *sql.DB) {
 	if globalDBHandle != nil {
 		return
 	}
-
-	psqlInfo := GetConnectionString()
-
-	var err error
-	globalDBHandle, err = sql.Open("postgres", psqlInfo)
-	if err != nil {
-		panic(err)
-	}
+	globalDBHandle = globalDB
 }
 
 //BeginGlobalTransaction starts a transaction on the globalDBHandle to be used across jobsdb instances
@@ -576,12 +569,11 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
-	jd.initGlobalDBHandle()
+func (jd *HandleT) Setup(dbHandle *sql.DB, globalDBHandle *sql.DB, ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+	jd.initGlobalDBHandle(globalDBHandle)
 
 	var err error
-	psqlInfo := GetConnectionString()
-	jd.dbHandle, err = sql.Open("postgres", psqlInfo)
+	jd.dbHandle = dbHandle
 	jd.assertError(err)
 
 	err = jd.dbHandle.Ping()
