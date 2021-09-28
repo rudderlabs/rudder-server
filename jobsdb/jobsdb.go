@@ -1673,9 +1673,26 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 		return err
 	}
 
+	// Always clear cache even in case of an error,
+	// since we are not sure about the state of the db
+	defer func() {
+		customValParamMap := make(map[string]map[string]struct{})
+		for _, job := range jobList {
+			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters)
+		}
+
+		if useNewCacheBurst {
+			jd.clearCache(ds, customValParamMap)
+		} else {
+			jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
+		}
+	}()
+
 	err = jd.storeJobsDSInTxn(txn, ds, copyID, jobList)
 	if err != nil {
-		txn.Rollback()
+		if rollbackErr := txn.Rollback(); rollbackErr != nil {
+			return fmt.Errorf("%w; %s", err, rollbackErr)
+		}
 		return err
 	}
 
