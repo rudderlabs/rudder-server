@@ -629,7 +629,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	defer misc.RemoveFilePaths(fileNames...)
 
-	handleError := func(err error) {
+	onError := func(err error) {
 		pkgLogger.Infof("onError for loadTable table:%s, namespace:%s", tableName, ch.Namespace)
 		pkgLogger.Error(err)
 	}
@@ -638,7 +638,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	txn, err := ch.Db.Begin()
 	if err != nil {
 		err = fmt.Errorf("CH: Error while beginning a transaction in db for loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
-		handleError(err)
+		onError(err)
 		return
 	}
 	pkgLogger.Infof("CH: Completed a transaction in db for loading in table:%s namespace:%s", tableName, ch.Namespace)
@@ -648,7 +648,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
 		err = fmt.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s namespace:%s: query:%s error:%v", tableName, ch.Namespace, sqlStatement, err)
-		handleError(err)
+		onError(err)
 		return
 	}
 	pkgLogger.Infof("CH: Prepared statement exec in db for loading in table:%s namespace:%s", tableName, ch.Namespace)
@@ -661,7 +661,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			err = fmt.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s  namespace:%s: error:%v", objectFileName, tableName, ch.Namespace, err.Error())
-			handleError(err)
+			onError(err)
 			return
 		}
 
@@ -673,7 +673,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			})
 			gzipFile.Close()
 			err = fmt.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: namespace:%s: error:%v", gzipFile.Name(), tableName, ch.Namespace, err.Error())
-			handleError(err)
+			onError(err)
 			return
 
 		}
@@ -691,7 +691,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					txn.Rollback()
 
 					err = fmt.Errorf("CH: Error while reading csv file %s for loading in table:%s namespace:%s: error:%v", objectFileName, tableName, ch.Namespace, err)
-					handleError(err)
+					onError(err)
 					return
 				}
 			}
@@ -699,7 +699,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				txn.Rollback()
 
 				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. namespace:%s: Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), ch.Namespace, csvRowsProcessedCount)
-				handleError(err)
+				onError(err)
 				return
 			}
 			var recordInterface []interface{}
@@ -719,7 +719,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				txn.Rollback()
 
 				err = fmt.Errorf("CH: Error in inserting statement for loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
-				handleError(err)
+				onError(err)
 				return
 			}
 			csvRowsProcessedCount++
