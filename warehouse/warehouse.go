@@ -563,7 +563,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	}
 
 	wh.areBeingEnqueuedLock.Lock()
-	_, _, priority := wh.getLatestUploadStatus(warehouse)
+	//_, _, priority := wh.getLatestUploadStatus(warehouse)
 	//if uploadStatus == Waiting {
 	//	identifier := workerIdentifier(warehouse)
 	//	if uID, ok := wh.inProgressMap[identifier]; ok && (uID == uploadID) {
@@ -585,7 +585,8 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 		return nil
 	}
 
-	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority)
+	// Cuttent we are not deleting, so setting the priority as 100.
+	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, 100)
 	setLastProcessedMarker(warehouse)
 	return nil
 }
