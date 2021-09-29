@@ -86,12 +86,12 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 		panic(err)
 	}
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
-	gatewayDB.Setup(dbHandle, dbHandle, jobsdb.Read, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+	gatewayDB.Setup(dbHandle, dbHandle, dbHandle, jobsdb.Read, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
-		routerDB.Setup(dbHandle, dbHandle, jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
-		batchRouterDB.Setup(dbHandle, dbHandle, jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
-		procErrorDB.Setup(dbHandle, dbHandle, jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
+		routerDB.Setup(dbHandle, dbHandle, dbHandle, jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
+		batchRouterDB.Setup(dbHandle, dbHandle, dbHandle, jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
+		procErrorDB.Setup(dbHandle, dbHandle, dbHandle, jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
 	}
 
 	var reportingI types.ReportingI
@@ -126,7 +126,7 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 
 	if processor.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
-		replayDB.Setup(dbHandle, dbHandle, jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+		replayDB.Setup(dbHandle, dbHandle, dbHandle, jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 		processor.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB)
 	}
 

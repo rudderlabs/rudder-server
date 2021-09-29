@@ -3,6 +3,7 @@ package jobsdb
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/distributed"
@@ -26,20 +27,32 @@ func SetupCustomerQueues(clearAll bool) {
 	if err != nil {
 		panic(err)
 	}
-	dbHandle.SetMaxOpenConns(512)
+	dbHandle.SetMaxOpenConns(64)
 
-	for _, customer := range customers {
+	for i, customer := range customers {
 		var gatewayDB HandleT
 		var routerDB HandleT
 		var batchRouterDB HandleT
 		var procErrorDB HandleT
 
+		migrateDBHandle, err := sql.Open("postgres", psqlInfo)
+		if err != nil {
+			panic(err)
+		}
+		migrateDBHandle.SetMaxOpenConns(1)
+		migrateDBHandle.SetMaxIdleConns(0)
+
 		//TODO: fix values passed
-		gatewayDB.Setup(dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"gw", time.Hour*10000, "", true, QueryFiltersT{})
+		gatewayDB.Setup(migrateDBHandle, dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"gw", time.Hour*10000, "", true, QueryFiltersT{})
 		//setting up router, batch router, proc error DBs also irrespective of server mode
-		routerDB.Setup(dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"rt", time.Hour*10000, "", true, QueryFiltersT{})
-		batchRouterDB.Setup(dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"batch_rt", time.Hour*10000, "", true, QueryFiltersT{})
-		procErrorDB.Setup(dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"proc_error", time.Hour*10000, "", false, QueryFiltersT{})
+		routerDB.Setup(migrateDBHandle, dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"rt", time.Hour*10000, "", true, QueryFiltersT{})
+		batchRouterDB.Setup(migrateDBHandle, dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"batch_rt", time.Hour*10000, "", true, QueryFiltersT{})
+		procErrorDB.Setup(migrateDBHandle, dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"proc_error", time.Hour*10000, "", false, QueryFiltersT{})
+
+		err = migrateDBHandle.Close()
+		if err != nil {
+			fmt.Println("closing db handle failed with error ", err.Error())
+		}
 
 		customerQueues[customer.WorkspaceID] = &CustomerQueue{
 			GatewayJobsdb:      &gatewayDB,

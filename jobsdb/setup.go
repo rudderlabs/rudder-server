@@ -38,7 +38,7 @@ func (jd *HandleT) setupDatabaseTables(clearAll bool) {
 
 	// setup migrator with appropriate schema migrations table
 	m := &migrator.Migrator{
-		Handle:                     jd.dbHandle,
+		Handle:                     jd.migrateDBHandle,
 		MigrationsTable:            jd.SchemaMigrationTable(),
 		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", false),
 	}

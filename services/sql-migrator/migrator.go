@@ -164,6 +164,7 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}
 		return fmt.Errorf("Could not run migration from template directory '%v', %w", templatesDir, err)
 	}
 
+	migration.Close()
 	return nil
 }
 

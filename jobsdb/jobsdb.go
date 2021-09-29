@@ -282,6 +282,7 @@ jobs. The caller must call the SetUp function on a HandleT object
 */
 type HandleT struct {
 	dbHandle                      *sql.DB
+	migrateDBHandle               *sql.DB
 	tablePrefix                   string
 	datasetList                   []dataSetT
 	datasetRangeList              []dataSetRangeT
@@ -569,11 +570,12 @@ multiple users of JobsDB
 dsRetentionPeriod = A DS is not deleted if it has some activity
 in the retention time
 */
-func (jd *HandleT) Setup(dbHandle *sql.DB, globalDBHandle *sql.DB, ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
+func (jd *HandleT) Setup(migrateHandle, dbHandle *sql.DB, globalDBHandle *sql.DB, ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
 	jd.initGlobalDBHandle(globalDBHandle)
 
 	var err error
 	jd.dbHandle = dbHandle
+	jd.migrateDBHandle = migrateHandle
 	jd.assertError(err)
 
 	err = jd.dbHandle.Ping()
