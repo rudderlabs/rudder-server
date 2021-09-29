@@ -996,7 +996,6 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
 	if err != nil {
-		err = fmt.Errorf("getPayloadAndWriteKey: %w", err)
 		errorMessage = err.Error()
 		return
 	}
