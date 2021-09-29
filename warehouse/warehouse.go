@@ -199,18 +199,20 @@ func (wh *HandleT) incrementActiveWorkers() {
 
 func (wh *HandleT) initWorker() chan *UploadJobT {
 	workerChan := make(chan *UploadJobT, 1000)
-	rruntime.Go(func() {
-		for {
-			uploadJob := <-workerChan
-			wh.incrementActiveWorkers()
-			err := wh.handleUploadJob(uploadJob)
-			if err != nil {
-				pkgLogger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
+	for i := 0; i < maxConcurrentUploadJObs; i++ {
+		rruntime.Go(func() {
+			for {
+				uploadJob := <-workerChan
+				wh.incrementActiveWorkers()
+				err := wh.handleUploadJob(uploadJob)
+				if err != nil {
+					pkgLogger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
+				}
+				wh.removeDestInProgress(uploadJob.warehouse)
+				wh.decrementActiveWorkers()
 			}
-			wh.removeDestInProgress(uploadJob.warehouse)
-			wh.decrementActiveWorkers()
-		}
-	})
+		})
+	}
 	return workerChan
 }
 
@@ -965,7 +967,7 @@ func (wh *HandleT) monitorUploadStatus() {
 }
 
 func (wh *HandleT) resetInProgressJobs() {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET in_progress=%t WHERE destination_type='%s'`, warehouseutils.WarehouseUploadsTable)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET in_progress=%t WHERE destination_type='%s'`, warehouseutils.WarehouseUploadsTable, false, wh.destType)
 	_, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
