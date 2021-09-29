@@ -539,7 +539,6 @@ func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
 	}
 }
 
-
 func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	whManager, err := manager.New(wh.destType)
 	if err != nil {
@@ -965,7 +964,7 @@ func (wh *HandleT) monitorUploadStatus() {
 }
 
 func (wh *HandleT) resetInProgressJobs() {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET in_progress=%t WHERE destination_type='%s'`, warehouseutils.WarehouseUploadsTable, false, wh.destType)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET in_progress=%t WHERE destination_type='%s' and in_progress=%t and (status!='%s' OR status!='%s')`, warehouseutils.WarehouseUploadsTable, false, wh.destType, true, ExportedData, Aborted)
 	_, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
