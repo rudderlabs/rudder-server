@@ -149,6 +149,7 @@ type HandleT struct {
 	requestSizeStat                                            stats.RudderStats
 	dbWritesStat                                               stats.RudderStats
 	dbWorkersBufferFullStat, dbWorkersTimeOutStat              stats.RudderStats
+	bodyReadTimeStat                                           stats.RudderStats
 	trackSuccessCount                                          int
 	trackFailureCount                                          int
 	requestMetricLock                                          sync.RWMutex
@@ -422,7 +423,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				continue
 			}
-			gateway.requestSizeStat.SendTiming(time.Duration(len(body)))
+			gateway.requestSizeStat.SendTiming(time.Duration(len(body)) * time.Millisecond)
 			if req.reqType != "batch" {
 				body, _ = sjson.SetBytes(body, "type", req.reqType)
 				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
@@ -646,9 +647,20 @@ func (gateway *HandleT) eventSchemaWebHandler(wrappedFunc func(http.ResponseWrit
 
 func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 	if r.Body != nil {
+		start := time.Now()
+		defer gateway.bodyReadTimeStat.SendTiming(time.Since(start))
+
 		payload, err := io.ReadAll(r.Body)
 		r.Body.Close()
-		return payload, err
+		if err != nil {
+			gateway.logger.Errorf(
+				"Error reading request body, 'Content-Length': %s, partial payload:\n\t%s\n",
+				r.Header.Get("Content-Length"),
+				string(payload),
+			)
+			return payload, fmt.Errorf("read all request body: %w", err)
+		}
+		return payload, nil
 	}
 	return []byte{}, errors.New(response.RequestBodyNil)
 }
@@ -958,7 +970,8 @@ func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Req
 		sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
-		return []byte{}, writeKey, err
+
+		return []byte{}, writeKey, fmt.Errorf("payload from request: %w", err)
 	}
 	return payload, writeKey, err
 }
@@ -983,6 +996,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
 	if err != nil {
+		err = fmt.Errorf("getPayloadAndWriteKey: %w", err)
 		errorMessage = err.Error()
 		return
 	}
@@ -1434,6 +1448,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.dbWritesStat = gateway.stats.NewStat("gateway.db_writes", stats.CountType)
 	gateway.dbWorkersBufferFullStat = gateway.stats.NewStat("gateway.db_workers_buffer_full", stats.CountType)
 	gateway.dbWorkersTimeOutStat = gateway.stats.NewStat("gateway.db_workers_time_out", stats.CountType)
+	gateway.bodyReadTimeStat = gateway.stats.NewStat("gateway.batch_size", stats.TimerType)
 
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
