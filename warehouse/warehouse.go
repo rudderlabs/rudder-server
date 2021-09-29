@@ -964,7 +964,7 @@ func (wh *HandleT) monitorUploadStatus() {
 }
 
 func (wh *HandleT) resetInProgressJobs() {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET in_progress=%t WHERE destination_type='%s' and in_progress=%t and status!='%s' and status!='%s'`, warehouseutils.WarehouseUploadsTable, false, wh.destType, true, ExportedData, Aborted)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET in_progress=%t WHERE destination_type='%s'`, warehouseutils.WarehouseUploadsTable)
 	_, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))

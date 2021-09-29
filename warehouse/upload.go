@@ -304,6 +304,8 @@ func (job *UploadJobT) run() (err error) {
 	timerStat.Start()
 	ch := job.trackLongRunningUpload()
 	defer func() {
+		job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadInProgress, Value: false}}})
+
 		timerStat.End()
 		ch <- struct{}{}
 	}()
