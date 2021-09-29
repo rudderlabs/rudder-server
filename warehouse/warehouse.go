@@ -563,16 +563,16 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	}
 
 	wh.areBeingEnqueuedLock.Lock()
-	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(warehouse)
-	if uploadStatus == Waiting {
-		identifier := workerIdentifier(warehouse)
-		if uID, ok := wh.inProgressMap[identifier]; ok && (uID == uploadID) {
-			// do nothing
-		} else {
-			// delete it
-			wh.deleteWaitingUploadJob(uploadID)
-		}
-	}
+	_, _, priority := wh.getLatestUploadStatus(warehouse)
+	//if uploadStatus == Waiting {
+	//	identifier := workerIdentifier(warehouse)
+	//	if uID, ok := wh.inProgressMap[identifier]; ok && (uID == uploadID) {
+	//		// do nothing
+	//	} else {
+	//		// delete it
+	//		wh.deleteWaitingUploadJob(uploadID)
+	//	}
+	//}
 	wh.areBeingEnqueuedLock.Unlock()
 
 	stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
