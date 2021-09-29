@@ -31,6 +31,7 @@ type OAuthErrResHandler struct {
 	logger                         logger.LoggerI
 	destLockMap                    map[string]*sync.RWMutex // This mutex map is used for disable destination locking
 	accountLockMap                 map[string]*sync.RWMutex // This mutex map is used for refresh token locking
+	lockMapWMutex                  sync.RWMutex             // This mutex is used to prevent concurrent writes in lockMap(s) mentioned in the struct
 }
 
 type Authorizer interface {
@@ -119,6 +120,7 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.oauthErrHandlerNetReqTimerStat = stats.NewStat("router.oauthErrorHandler_network_request_time", stats.TimerType)
 	authErrHandler.destLockMap = make(map[string]*sync.RWMutex)
 	authErrHandler.accountLockMap = make(map[string]*sync.RWMutex)
+	authErrHandler.lockMapWMutex = sync.RWMutex{}
 }
 
 func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accountId string, accessToken string) (statusCode int, respBody string) {
@@ -126,7 +128,7 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 	if !router_utils.IsNotEmptyString(accessToken) {
 		return http.StatusBadRequest, `Cannot proceed with refresh token request as accessToken is empty`
 	}
-	accountLevelMutex, resMgrErr := authErrHandler.NewMutex(accountId, REFRESH_TOKEN)
+	resMgrErr := authErrHandler.NewMutex(accountId, REFRESH_TOKEN)
 	if resMgrErr != nil {
 		panic(resMgrErr)
 	}
@@ -147,9 +149,11 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 		ContentType: "application/json; charset=utf-8",
 		Body:        []byte(res),
 	}
-	accountLevelMutex.Lock()
+
+	authErrHandler.accountLockMap[accountId].Lock()
 	statusCode, response := authErrHandler.cpApiCall(refreshCpReq)
-	accountLevelMutex.Unlock()
+	authErrHandler.accountLockMap[accountId].Unlock()
+
 	authErrHandler.oauthErrHandlerReqTimerStat.End()
 	authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
 	return statusCode, response
@@ -158,20 +162,22 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backendconfig.DestinationT, workspaceId string) (statusCode int, respBody string) {
 	authErrHandler.oauthErrHandlerReqTimerStat.Start()
 	destinationId := destination.ID
-	destLevelMutex, resMgrErr := authErrHandler.NewMutex(destinationId, DISABLE_DEST)
+	resMgrErr := authErrHandler.NewMutex(destinationId, DISABLE_DEST)
 	if resMgrErr != nil {
 		panic(resMgrErr)
 	}
-	destLevelMutex.Lock()
 	disableURL := fmt.Sprintf("%s/workspaces/%s/destinations/%s/disable", configBEURL, workspaceId, destinationId)
 	disableCpReq := &ControlPlaneRequestT{
 		Url:    disableURL,
 		Method: http.MethodDelete,
 	}
+
+	authErrHandler.destLockMap[destinationId].Lock()
 	statusCode, respBody = authErrHandler.cpApiCall(disableCpReq)
-	destLevelMutex.Unlock()
+	authErrHandler.destLockMap[destinationId].Unlock()
+
 	authErrHandler.oauthErrHandlerReqTimerStat.End()
-	authErrHandler.logger.Debugf("[%s request] :: Disable Response received : %s", loggerNm)
+	authErrHandler.logger.Infof("[%s request] :: Disable Response received : %s\n", loggerNm)
 	return statusCode, respBody
 }
 
@@ -208,7 +214,7 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		req, err = http.NewRequest(cpReq.Method, cpReq.Url, nil)
 	}
 	if err != nil {
-		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, err)
+		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, err)
 		// Abort on receiving an error in request formation
 		return http.StatusBadRequest, err.Error()
 	}
@@ -217,11 +223,11 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
 	res, doErr := authErrHandler.client.Do(req)
 	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
-	authErrHandler.logger.Debugf("[%s request] :: Disable Request sent : %s", loggerNm)
+	authErrHandler.logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
 	if doErr != nil {
 		// Abort on receiving an error
-		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v", loggerNm, doErr)
-		return http.StatusBadRequest, err.Error()
+		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, doErr)
+		return http.StatusBadRequest, doErr.Error()
 	}
 	if res.Body != nil {
 		defer res.Body.Close()
@@ -230,7 +236,7 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 	return statusCode, resp
 }
 
-func (resHandler *OAuthErrResHandler) NewMutex(id string, errCategory string) (*sync.RWMutex, error) {
+func (resHandler *OAuthErrResHandler) NewMutex(id string, errCategory string) error {
 	var mutexMap map[string]*sync.RWMutex
 	switch errCategory {
 	case DISABLE_DEST:
@@ -238,13 +244,16 @@ func (resHandler *OAuthErrResHandler) NewMutex(id string, errCategory string) (*
 	case REFRESH_TOKEN:
 		mutexMap = resHandler.accountLockMap
 	}
+	(&resHandler.lockMapWMutex).Lock()
+	defer (&resHandler.lockMapWMutex).Unlock()
 	if mutexMap != nil {
 		if _, ok := mutexMap[id]; !ok {
-			resHandler.logger.Infof("[%s request] :: Creating new mutex for %s", loggerNm, id)
+			resHandler.logger.Infof("[%s request] :: Creating new mutex for %s\n", loggerNm, id)
 			mutexMap[id] = &sync.RWMutex{}
 		}
-		resHandler.logger.Infof("[%s request] :: Already created mutex for %s", loggerNm, id)
-		return mutexMap[id], nil
+		resHandler.logger.Infof("[%s request] :: Already created mutex for %s\n", loggerNm, id)
+		return nil
 	}
-	return nil, fmt.Errorf(`except %v, %v error category is not supported`, DISABLE_DEST, REFRESH_TOKEN)
+	resHandler.logger.Infof("[%s request] :: Case missing for mutex for %s\n", loggerNm, id)
+	return fmt.Errorf(`except %v, %v error category is not supported`, DISABLE_DEST, REFRESH_TOKEN)
 }
