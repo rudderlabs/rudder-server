@@ -1414,7 +1414,11 @@ func (worker *workerT) workerProcess() {
 			var statusList []*jobsdb.JobStatusT
 			var drainList []*jobsdb.JobStatusT
 			var drainJobList []*jobsdb.JobT
-			drainCountByDest := make(map[string]int)
+			type drainStats struct {
+				count   int
+				reasons []string
+			}
+			drainStatsbyDest := make(map[string]*drainStats)
 
 			jobsBySource := make(map[string][]*jobsdb.JobT)
 			for _, job := range combinedList {
@@ -1436,10 +1440,16 @@ func (worker *workerT) workerProcess() {
 					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
 					drainList = append(drainList, &status)
 					drainJobList = append(drainJobList, job)
-					if _, ok := drainCountByDest[batchDest.Destination.ID]; !ok {
-						drainCountByDest[batchDest.Destination.ID] = 0
+					if _, ok := drainStatsbyDest[batchDest.Destination.ID]; !ok {
+						drainStatsbyDest[batchDest.Destination.ID] = &drainStats{
+							count:   0,
+							reasons: []string{},
+						}
 					}
-					drainCountByDest[batchDest.Destination.ID] = drainCountByDest[batchDest.Destination.ID] + 1
+					drainStatsbyDest[batchDest.Destination.ID].count = drainStatsbyDest[batchDest.Destination.ID].count + 1
+					if !misc.Contains(drainStatsbyDest[batchDest.Destination.ID].reasons, reason) {
+						drainStatsbyDest[batchDest.Destination.ID].reasons = append(drainStatsbyDest[batchDest.Destination.ID].reasons, reason)
+					}
 				} else {
 					sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
 					if _, ok := jobsBySource[sourceID]; !ok {
@@ -1473,13 +1483,14 @@ func (worker *workerT) workerProcess() {
 					brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
 					panic(err)
 				}
-				for destID, count := range drainCountByDest {
+				for destID, destDrainStat := range drainStatsbyDest {
 					brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
 						"destType": brt.destType,
 						"destId":   destID,
 						"module":   "batchrouter",
+						"reason":   strings.Join(destDrainStat.reasons, ", "),
 					})
-					brt.drainedJobsStat.Count(count)
+					brt.drainedJobsStat.Count(destDrainStat.count)
 				}
 			}
 			//Mark the jobs as executing
