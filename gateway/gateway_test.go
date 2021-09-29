@@ -494,7 +494,7 @@ var _ = Describe("Gateway", func() {
 			})
 
 			It("should reject requests without request body", func() {
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), 400, response.RequestBodyNil+"\n")
+				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), 400, fmt.Sprintf("payload from request: %s\n", response.RequestBodyNil))
 			})
 
 			It("should reject requests without valid json in request body", func() {
