@@ -646,23 +646,24 @@ func (gateway *HandleT) eventSchemaWebHandler(wrappedFunc func(http.ResponseWrit
 }
 
 func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
-	if r.Body != nil {
-		start := time.Now()
-		defer gateway.bodyReadTimeStat.SendTiming(time.Since(start))
-
-		payload, err := io.ReadAll(r.Body)
-		r.Body.Close()
-		if err != nil {
-			gateway.logger.Errorf(
-				"Error reading request body, 'Content-Length': %s, partial payload:\n\t%s\n",
-				r.Header.Get("Content-Length"),
-				string(payload),
-			)
-			return payload, fmt.Errorf("read all request body: %w", err)
-		}
-		return payload, nil
+	if r.Body == nil {
+		return []byte{}, errors.New(response.RequestBodyNil)
 	}
-	return []byte{}, errors.New(response.RequestBodyNil)
+
+	start := time.Now()
+	defer gateway.bodyReadTimeStat.SendTiming(time.Since(start))
+
+	payload, err := io.ReadAll(r.Body)
+	r.Body.Close()
+	if err != nil {
+		gateway.logger.Errorf(
+			"Error reading request body, 'Content-Length': %s, partial payload:\n\t%s\n",
+			r.Header.Get("Content-Length"),
+			string(payload),
+		)
+		return payload, fmt.Errorf("read all request body: %w", err)
+	}
+	return payload, nil
 }
 
 func (gateway *HandleT) webImportHandler(w http.ResponseWriter, r *http.Request) {
