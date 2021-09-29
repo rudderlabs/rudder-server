@@ -45,7 +45,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	bt.stats.transformTimerStat.End()
 	if err != nil {
 		err := fmt.Errorf("JS HTTP connection error to source transformer: URL: %v Error: %+v", url, err)
-		panic(err)
+		return transformerBatchResponseT{batchError: err}
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
