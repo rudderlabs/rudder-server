@@ -29,7 +29,7 @@ func SetupCustomerQueues(clearAll bool) {
 	}
 	dbHandle.SetMaxOpenConns(64)
 
-	for i, customer := range customers {
+	for _, customer := range customers {
 		var gatewayDB HandleT
 		var routerDB HandleT
 		var batchRouterDB HandleT
