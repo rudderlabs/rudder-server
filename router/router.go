@@ -1588,11 +1588,7 @@ func (rt *HandleT) readAndProcess() int {
 	var statusList []*jobsdb.JobStatusT
 	var drainList []*jobsdb.JobStatusT
 	var drainJobList []*jobsdb.JobT
-	type drainStats struct {
-		count   int
-		reasons []string
-	}
-	drainStatsbyDest := make(map[string]*drainStats)
+	drainStatsbyDest := make(map[string]*router_utils.DrainStats)
 
 	var toProcess []workerJobT
 
@@ -1620,14 +1616,14 @@ func (rt *HandleT) readAndProcess() int {
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
 			if _, ok := drainStatsbyDest[destID]; !ok {
-				drainStatsbyDest[destID] = &drainStats{
-					count:   0,
-					reasons: []string{},
+				drainStatsbyDest[destID] = &router_utils.DrainStats{
+					Count:   0,
+					Reasons: []string{},
 				}
 			}
-			drainStatsbyDest[destID].count = drainStatsbyDest[destID].count + 1
-			if !misc.Contains(drainStatsbyDest[destID].reasons, reason) {
-				drainStatsbyDest[destID].reasons = append(drainStatsbyDest[destID].reasons, reason)
+			drainStatsbyDest[destID].Count = drainStatsbyDest[destID].Count + 1
+			if !misc.Contains(drainStatsbyDest[destID].Reasons, reason) {
+				drainStatsbyDest[destID].Reasons = append(drainStatsbyDest[destID].Reasons, reason)
 			}
 			continue
 		}
@@ -1672,9 +1668,9 @@ func (rt *HandleT) readAndProcess() int {
 				"destType": rt.destName,
 				"destId":   destID,
 				"module":   "router",
-				"reason":   strings.Join(destDrainStat.reasons, ", "),
+				"reasons":  strings.Join(destDrainStat.Reasons, ", "),
 			})
-			rt.drainedJobsStat.Count(destDrainStat.count)
+			rt.drainedJobsStat.Count(destDrainStat.Count)
 		}
 	}
 

@@ -1414,11 +1414,7 @@ func (worker *workerT) workerProcess() {
 			var statusList []*jobsdb.JobStatusT
 			var drainList []*jobsdb.JobStatusT
 			var drainJobList []*jobsdb.JobT
-			type drainStats struct {
-				count   int
-				reasons []string
-			}
-			drainStatsbyDest := make(map[string]*drainStats)
+			drainStatsbyDest := make(map[string]*router_utils.DrainStats)
 
 			jobsBySource := make(map[string][]*jobsdb.JobT)
 			for _, job := range combinedList {
@@ -1441,14 +1437,14 @@ func (worker *workerT) workerProcess() {
 					drainList = append(drainList, &status)
 					drainJobList = append(drainJobList, job)
 					if _, ok := drainStatsbyDest[batchDest.Destination.ID]; !ok {
-						drainStatsbyDest[batchDest.Destination.ID] = &drainStats{
-							count:   0,
-							reasons: []string{},
+						drainStatsbyDest[batchDest.Destination.ID] = &router_utils.DrainStats{
+							Count:   0,
+							Reasons: []string{},
 						}
 					}
-					drainStatsbyDest[batchDest.Destination.ID].count = drainStatsbyDest[batchDest.Destination.ID].count + 1
-					if !misc.Contains(drainStatsbyDest[batchDest.Destination.ID].reasons, reason) {
-						drainStatsbyDest[batchDest.Destination.ID].reasons = append(drainStatsbyDest[batchDest.Destination.ID].reasons, reason)
+					drainStatsbyDest[batchDest.Destination.ID].Count = drainStatsbyDest[batchDest.Destination.ID].Count + 1
+					if !misc.Contains(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason) {
+						drainStatsbyDest[batchDest.Destination.ID].Reasons = append(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason)
 					}
 				} else {
 					sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
@@ -1488,9 +1484,9 @@ func (worker *workerT) workerProcess() {
 						"destType": brt.destType,
 						"destId":   destID,
 						"module":   "batchrouter",
-						"reason":   strings.Join(destDrainStat.reasons, ", "),
+						"reasons":  strings.Join(destDrainStat.Reasons, ", "),
 					})
-					brt.drainedJobsStat.Count(destDrainStat.count)
+					brt.drainedJobsStat.Count(destDrainStat.Count)
 				}
 			}
 			//Mark the jobs as executing
