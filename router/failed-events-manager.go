@@ -72,7 +72,7 @@ func (fem *FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap ma
 		}
 		createdAt := time.Now()
 		for _, failedEvent := range failedEvents {
-			pkgLogger.Infof("recordId: %s,  destinationID: %s, createdAt: %s, validJSON: %s", failedEvent.RecordID, failedEvent.DestinationID, createdAt, json.Valid(failedEvent.RecordID))
+			pkgLogger.Infof("recordId: %s, destinationID: %s, createdAt: %s, validJSON: %s", failedEvent.RecordID, failedEvent.DestinationID, createdAt, json.Valid(failedEvent.RecordID))
 			if json.Valid(failedEvent.RecordID) || len(failedEvent.RecordID) == 0 {
 				pkgLogger.Infof("skipped adding to failed keys for invalid recordID: %v", failedEvent)
 				continue
