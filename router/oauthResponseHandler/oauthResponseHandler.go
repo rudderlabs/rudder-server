@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,25 @@ type AccountSecret struct {
 	AccessToken    string `json:"accessToken"`
 	ExpirationDate string `json:"expirationDate"`
 }
+type RefreshSecret struct {
+	Account AccountSecret
+	Err     string
+}
+
+type OAuthStats struct {
+	id              string
+	workspaceId     string
+	errorMessage    string
+	rudderCategory  string
+	eventName       string
+	isCallToCpApi   bool
+	authErrCategory string
+}
+
+type DisableDestinationResponse struct {
+	Enabled       bool   `json:"enabled"`
+	DestinationId string `json:"id"`
+}
 
 // OAuthErrResHandler is the handle for this class
 type OAuthErrResHandler struct {
@@ -32,12 +52,14 @@ type OAuthErrResHandler struct {
 	destLockMap                    map[string]*sync.RWMutex // This mutex map is used for disable destination locking
 	accountLockMap                 map[string]*sync.RWMutex // This mutex map is used for refresh token locking
 	lockMapWMutex                  sync.RWMutex             // This mutex is used to prevent concurrent writes in lockMap(s) mentioned in the struct
+	refreshTokenMap                map[string]*RefreshSecret
+	disableDestMap                 map[string]bool // Used to see if a destination is disabled or not
 }
 
 type Authorizer interface {
 	Setup()
 	DisableDestination(destination backendconfig.DestinationT, workspaceId string) (statusCode int, resBody string)
-	RefreshToken(workspaceId string, accountId string, accessToken string) (statusCode int, resBody string)
+	RefreshToken(workspaceId string, accountId string, accessToken string) (int, *RefreshSecret)
 }
 
 type ControlPlaneRequestT struct {
@@ -121,20 +143,56 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.destLockMap = make(map[string]*sync.RWMutex)
 	authErrHandler.accountLockMap = make(map[string]*sync.RWMutex)
 	authErrHandler.lockMapWMutex = sync.RWMutex{}
+	authErrHandler.refreshTokenMap = make(map[string]*RefreshSecret)
+	authErrHandler.disableDestMap = make(map[string]bool)
 }
 
-func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accountId string, accessToken string) (statusCode int, respBody string) {
-	authErrHandler.oauthErrHandlerReqTimerStat.Start()
-	if !router_utils.IsNotEmptyString(accessToken) {
-		return http.StatusBadRequest, `Cannot proceed with refresh token request as accessToken is empty`
-	}
+func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accountId string, accessToken string) (int, *RefreshSecret) {
 	resMgrErr := authErrHandler.NewMutex(accountId, REFRESH_TOKEN)
 	if resMgrErr != nil {
 		panic(resMgrErr)
 	}
-	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
+
+	refTokenStats := &OAuthStats{
+		id:              accountId,
+		workspaceId:     workspaceId,
+		rudderCategory:  "destination",
+		eventName:       "",
+		isCallToCpApi:   false,
+		authErrCategory: REFRESH_TOKEN,
+		errorMessage:    "",
+	}
+	authErrHandler.accountLockMap[accountId].RLock()
+	refMap := authErrHandler.refreshTokenMap
+	if refVal, ok := refMap[accountId]; ok {
+		if router_utils.IsNotEmptyString(refVal.Account.AccessToken) && refVal.Account.AccessToken != accessToken {
+			authErrHandler.accountLockMap[accountId].RUnlock()
+			refTokenStats.eventName = "refresh_token_success"
+			refTokenStats.errorMessage = ""
+			refTokenStats.SendCountStat()
+			authErrHandler.logger.Infof("[%s request] :: (Read) Refresh token response received : %s\n", loggerNm, refVal.Account.AccessToken)
+			return http.StatusOK, refVal
+		}
+	}
+	authErrHandler.accountLockMap[accountId].RUnlock()
+
+	// Refresh Token from the endpoint in Cp
+	authErrHandler.accountLockMap[accountId].Lock()
+	defer authErrHandler.accountLockMap[accountId].Unlock()
+
+	authErrHandler.oauthErrHandlerReqTimerStat.Start()
+	defer authErrHandler.oauthErrHandlerReqTimerStat.End()
+
+	if !router_utils.IsNotEmptyString(accessToken) {
+		authErrHandler.refreshTokenMap[accountId] = &RefreshSecret{
+			Err: `Cannot proceed with refresh token request as accessToken is empty`,
+		}
+		refTokenStats.eventName = "refresh_token_failure"
+		refTokenStats.errorMessage = `Cannot proceed with refresh token request as accessToken is empty`
+		refTokenStats.SendCountStat()
+		return http.StatusBadRequest, authErrHandler.refreshTokenMap[accountId]
+	}
 	refreshUrl := fmt.Sprintf("%s/dest/workspaces/%s/accounts/%s/token", configBEURL, workspaceId, accountId)
-	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
 	refTokenBody := RefreshTokenBody{
 		hasExpired:   true,
 		expiredToken: accessToken,
@@ -149,14 +207,71 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 		ContentType: "application/json; charset=utf-8",
 		Body:        []byte(res),
 	}
+	var accountSecret AccountSecret
+	// Stat for counting number of Refresh Token endpoint calls
+	refTokenStats.eventName = "refresh_token_request_sent"
+	refTokenStats.isCallToCpApi = true
+	refTokenStats.errorMessage = ""
+	refTokenStats.SendCountStat()
 
-	authErrHandler.accountLockMap[accountId].Lock()
+	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
 	statusCode, response := authErrHandler.cpApiCall(refreshCpReq)
-	authErrHandler.accountLockMap[accountId].Unlock()
+	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
 
-	authErrHandler.oauthErrHandlerReqTimerStat.End()
-	authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
-	return statusCode, response
+	// Empty Refresh token response
+	if !router_utils.IsNotEmptyString(response) {
+		refTokenStats.eventName = "refresh_token_failure"
+		refTokenStats.errorMessage = "Empty Response"
+		refTokenStats.SendCountStat()
+		authErrHandler.logger.Infof("[%s request] :: Empty Refresh token response received : %s\n", loggerNm, response)
+		// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
+		return statusCode, authErrHandler.refreshTokenMap[accountId]
+	}
+
+	if refErrMsg := IsRefreshErrorResponse(response, &accountSecret); router_utils.IsNotEmptyString(refErrMsg) {
+		if _, ok := authErrHandler.refreshTokenMap[accountId]; !ok {
+			authErrHandler.refreshTokenMap[accountId] = &RefreshSecret{
+				Err: refErrMsg,
+			}
+		} else {
+			authErrHandler.refreshTokenMap[accountId].Err = refErrMsg
+		}
+		refTokenStats.eventName = "refresh_token_failure"
+		refTokenStats.errorMessage = refErrMsg
+		refTokenStats.SendCountStat()
+		return http.StatusInternalServerError, authErrHandler.refreshTokenMap[accountId]
+	}
+	authErrHandler.refreshTokenMap[accountId] = &RefreshSecret{
+		Account: accountSecret,
+	}
+	refTokenStats.eventName = "refresh_token_success"
+	refTokenStats.errorMessage = ""
+	refTokenStats.SendCountStat()
+	authErrHandler.logger.Infof("[%s request] :: (Write) Refresh token response received : %s\n", loggerNm, response)
+	// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
+	return statusCode, authErrHandler.refreshTokenMap[accountId]
+}
+
+func IsRefreshErrorResponse(response string, accountSecret *AccountSecret) (message string) {
+	if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
+		// Some problem with AccountSecret unmarshalling
+		message = err.Error()
+	} else if !router_utils.IsNotEmptyString(accountSecret.AccessToken) {
+		// Status is 200, but no accesstoken is sent
+		message = `Empty Token cannot be processed further`
+	}
+	return message
+}
+
+func (refStats *OAuthStats) SendCountStat() {
+	stats.NewTaggedStat(refStats.eventName, stats.CountType, stats.Tags{
+		"accountId":       refStats.id,
+		"workspaceId":     refStats.workspaceId,
+		"rudderCategory":  refStats.rudderCategory,
+		"errorMessage":    refStats.errorMessage,
+		"isCallToCpApi":   strconv.FormatBool(refStats.isCallToCpApi),
+		"authErrCategory": refStats.authErrCategory,
+	}).Increment()
 }
 
 func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backendconfig.DestinationT, workspaceId string) (statusCode int, respBody string) {
@@ -166,6 +281,27 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	if resMgrErr != nil {
 		panic(resMgrErr)
 	}
+
+	disableDestStats := &OAuthStats{
+		id:              destinationId,
+		workspaceId:     workspaceId,
+		rudderCategory:  "destination",
+		eventName:       "",
+		isCallToCpApi:   false,
+		authErrCategory: DISABLE_DEST,
+		errorMessage:    "",
+	}
+
+	authErrHandler.destLockMap[destinationId].RLock()
+	if isDisabled, ok := authErrHandler.disableDestMap[destinationId]; ok && isDisabled {
+		authErrHandler.destLockMap[destinationId].RUnlock()
+		disableDestStats.eventName = "disable_destination_success"
+		disableDestStats.errorMessage = ""
+		disableDestStats.SendCountStat()
+		authErrHandler.logger.Infof("[%s request] :: (Read) Disable Response received : %s\n", loggerNm, strconv.FormatBool(isDisabled))
+		return http.StatusOK, "Successfully disabled"
+	}
+	authErrHandler.destLockMap[destinationId].RUnlock()
 	disableURL := fmt.Sprintf("%s/workspaces/%s/destinations/%s/disable", configBEURL, workspaceId, destinationId)
 	disableCpReq := &ControlPlaneRequestT{
 		Url:    disableURL,
@@ -173,12 +309,37 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	}
 
 	authErrHandler.destLockMap[destinationId].Lock()
+	defer authErrHandler.destLockMap[destinationId].Unlock()
+
+	disableDestStats.eventName = "disable_destination_request_sent"
+	disableDestStats.isCallToCpApi = true
+	disableDestStats.SendCountStat()
+
+	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
 	statusCode, respBody = authErrHandler.cpApiCall(disableCpReq)
-	authErrHandler.destLockMap[destinationId].Unlock()
+	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
+
+	var disableDestRes *DisableDestinationResponse
+	if disableErr := json.Unmarshal([]byte(respBody), &disableDestRes); disableErr != nil || !router_utils.IsNotEmptyString(disableDestRes.DestinationId) {
+		var msg string
+		if disableErr != nil {
+			msg = disableErr.Error()
+		} else {
+			msg = "Could not disable the destination"
+		}
+		disableDestStats.eventName = "disable_destination_failure"
+		disableDestStats.errorMessage = msg
+		disableDestStats.SendCountStat()
+		return http.StatusBadRequest, msg
+	}
+	authErrHandler.disableDestMap[destinationId] = !disableDestRes.Enabled
 
 	authErrHandler.oauthErrHandlerReqTimerStat.End()
-	authErrHandler.logger.Infof("[%s request] :: Disable Response received : %s\n", loggerNm)
-	return statusCode, respBody
+	authErrHandler.logger.Infof("[%s request] :: (Write) Disable Response received : %s\n", loggerNm, respBody)
+	disableDestStats.eventName = "disable_destination_success"
+	disableDestStats.errorMessage = ""
+	disableDestStats.SendCountStat()
+	return statusCode, "Successfully disabled"
 }
 
 func processResponse(resp *http.Response) (statusCode int, respBody string) {

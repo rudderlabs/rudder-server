@@ -2016,26 +2016,19 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 		}
 	} else if errOutput.Output.AuthErrorCategory == oauth.REFRESH_TOKEN {
 		rudderAccountId := destinationJob.JobMetadataArray[0].RudderAccountId
-		statusCode, response = rt.oauth.RefreshToken(workspaceId, rudderAccountId, errOutput.Output.AccessToken)
-		if statusCode == 200 && router_utils.IsNotEmptyString(response) {
+		var refSecret *oauth.RefreshSecret
+		statusCode, refSecret = rt.oauth.RefreshToken(workspaceId, rudderAccountId, errOutput.Output.AccessToken)
+		refSec := *refSecret
+		if statusCode == 200 && router_utils.IsNotEmptyString(refSec.Account.AccessToken) {
 			retryCount += 1
-			// Setting these values since we would need to update the cache using these values
 			val.WorkspaceId = workspaceId
 			val.RudderAccountId = rudderAccountId
-			var accountSecret oauth.AccountSecret
-
-			if router_utils.IsNotEmptyString(response) {
-				if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
-					// Some problem with AccountSecret unmarshalling
-					return http.StatusInternalServerError, err.Error()
-				} else if !router_utils.IsNotEmptyString(accountSecret.AccessToken) {
-					// Status is 200, but no accesstoken is sent
-					return http.StatusInternalServerError, `Empty Token cannot be processed further`
-				}
+			if router_utils.IsNotEmptyString(refSec.Err) {
+				return statusCode, refSec.Err
 			}
 			// Refreshed Token is being set
-			val.AccessToken = accountSecret.AccessToken
-			val.ExpirationDate = accountSecret.ExpirationDate
+			val.AccessToken = refSec.Account.AccessToken
+			val.ExpirationDate = refSec.Account.ExpirationDate
 			// Retry with Refreshed Token(variable "response" - contains refreshed access token & expirationDate)
 			return rt.SendToTransformerProxyWithRetry(val, destinationJob, retryCount)
 		}
