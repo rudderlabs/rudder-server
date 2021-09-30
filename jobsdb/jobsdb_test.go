@@ -639,7 +639,7 @@ var _ = Describe("jobsdb", func() {
 		It("should return unprocessed jobs with customval", func() {
 			var customValQuery, sourceQuery, limitQuery, orderQuery string
 			customValQuery = " AND ((tt_jobs_1.custom_val='MOCKDS'))"
-			limitQuery = " LIMIT 2 "
+			limitQuery = " LIMIT $1 "
 			orderQuery = " ORDER BY tt_jobs_1.job_id"
 			timeNow := time.Now()
 
@@ -648,16 +648,16 @@ var _ = Describe("jobsdb", func() {
 			}
 
 			ds := dsListInMemory[0]
-			stmt := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id WHERE %[2]s.job_id is NULL`,
+			stmt := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at, sum(%[1]s.event_count) over (order by %[1]s.job_id asc) as running_event_counts FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id WHERE %[2]s.job_id is NULL`,
 				ds.JobTable, ds.JobStatusTable)
 			stmt = stmt + customValQuery + sourceQuery + orderQuery + limitQuery
 			c.mock.ExpectQuery(stmt).WillReturnRows(mockUnprocessedJobs(ds, 1))
 
 			customValQuery = " AND ((tt_jobs_2.custom_val='MOCKDS'))"
-			limitQuery = " LIMIT 1 "
+			limitQuery = " LIMIT $1 "
 			orderQuery = " ORDER BY tt_jobs_2.job_id"
 			ds = dsListInMemory[1]
-			stmt = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id WHERE %[2]s.job_id is NULL`,
+			stmt = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at, sum(%[1]s.event_count) over (order by %[1]s.job_id asc) as running_event_counts FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id WHERE %[2]s.job_id is NULL`,
 				ds.JobTable, ds.JobStatusTable)
 			stmt = stmt + customValQuery + sourceQuery + orderQuery + limitQuery
 			c.mock.ExpectQuery(stmt).WillReturnRows(mockUnprocessedJobs(ds, 1))
@@ -677,7 +677,7 @@ var _ = Describe("jobsdb", func() {
 			var customValQuery, sourceQuery, limitQuery, orderQuery string
 			customValQuery = " AND ((tt_jobs_1.custom_val='MOCKDS'))"
 			sourceQuery = fmt.Sprintf(` AND (tt_jobs_1.parameters @> '{"destination_id":"%s"}' )`, destinationID)
-			limitQuery = " LIMIT 2 "
+			limitQuery = " LIMIT $1"
 			orderQuery = " ORDER BY tt_jobs_1.job_id"
 			timeNow := time.Now()
 
@@ -686,17 +686,17 @@ var _ = Describe("jobsdb", func() {
 			}
 
 			ds := dsListInMemory[0]
-			stmt := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id WHERE %[2]s.job_id is NULL`,
+			stmt := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at, sum(%[1]s.event_count) over (order by %[1]s.job_id asc) as running_event_counts FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id WHERE %[2]s.job_id is NULL`,
 				ds.JobTable, ds.JobStatusTable)
 			stmt = stmt + customValQuery + sourceQuery + orderQuery + limitQuery
 			c.mock.ExpectQuery(stmt).WillReturnRows(mockUnprocessedJobs(ds, 1))
 
 			customValQuery = " AND ((tt_jobs_2.custom_val='MOCKDS'))"
 			sourceQuery = fmt.Sprintf(` AND (tt_jobs_2.parameters @> '{"destination_id":"%s"}' )`, destinationID)
-			limitQuery = " LIMIT 1 "
+			limitQuery = " LIMIT $1"
 			orderQuery = " ORDER BY tt_jobs_2.job_id"
 			ds = dsListInMemory[1]
-			stmt = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id WHERE %[2]s.job_id is NULL`,
+			stmt = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at, sum(%[1]s.event_count) over (order by %[1]s.job_id asc) as running_event_counts FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id WHERE %[2]s.job_id is NULL`,
 				ds.JobTable, ds.JobStatusTable)
 			stmt = stmt + customValQuery + sourceQuery + orderQuery + limitQuery
 			c.mock.ExpectQuery(stmt).WillReturnRows(mockUnprocessedJobs(ds, 1))
@@ -1001,6 +1001,7 @@ var mockUnprocessedJobs = func(ds dataSetT, count int) *sqlmock.Rows {
 		fmt.Sprintf("%s.event_payload", ds.JobTable),
 		fmt.Sprintf("%s.created_at", ds.JobTable),
 		fmt.Sprintf("%s.expire_at", ds.JobTable),
+		fmt.Sprintf("%s.running_event_counts", ds.JobTable),
 	})
 
 	for i, job := range mockJobs {
@@ -1008,7 +1009,7 @@ var mockUnprocessedJobs = func(ds dataSetT, count int) *sqlmock.Rows {
 			break
 		}
 		sqlMockRows.AddRow(job.JobID, job.UUID, job.UserID, job.Parameters, job.CustomVal,
-			job.EventPayload, job.CreatedAt, job.ExpireAt)
+			job.EventPayload, job.CreatedAt, job.ExpireAt, i)
 	}
 	return sqlMockRows
 }
