@@ -305,7 +305,7 @@ var _ = Describe("jobsdb", func() {
 			jd.enableWriterQueue = true
 
 			c.mock.ExpectBegin()
-			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`COPY "%s" ("uuid", "user_id", "custom_val", "parameters", "event_payload") FROM STDIN`, ds.JobTable))
+			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`COPY "%s" ("uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count") FROM STDIN`, ds.JobTable))
 			for _, job := range mockedStoreJobs {
 				stmt.ExpectExec().WithArgs(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload)).WillReturnResult(sqlmock.NewResult(0, 1))
 			}
@@ -322,7 +322,7 @@ var _ = Describe("jobsdb", func() {
 		})
 		It("should store jobs to db directly and not through workers", func() {
 			c.mock.ExpectBegin()
-			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`COPY "%s" ("uuid", "user_id", "custom_val", "parameters", "event_payload") FROM STDIN`, ds.JobTable))
+			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`COPY "%s" ("uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count") FROM STDIN`, ds.JobTable))
 			for _, job := range mockedStoreJobs {
 				stmt.ExpectExec().WithArgs(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload)).WillReturnResult(sqlmock.NewResult(0, 1))
 			}
@@ -371,7 +371,7 @@ var _ = Describe("jobsdb", func() {
 
 		It("should store jobs to db with storeJobsDS", func() {
 			c.mock.ExpectBegin()
-			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`COPY "%s" ("uuid", "user_id", "custom_val", "parameters", "event_payload") FROM STDIN`, ds.JobTable))
+			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`COPY "%s" ("uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count") FROM STDIN`, ds.JobTable))
 			for _, job := range mockedStoreJobs {
 				stmt.ExpectExec().WithArgs(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload)).WillReturnResult(sqlmock.NewResult(0, 1))
 			}
