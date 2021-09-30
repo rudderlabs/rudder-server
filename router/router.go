@@ -326,7 +326,7 @@ func (worker *workerT) workerProcess() {
 
 			job := message.job
 			worker.throttledAtTime = message.throttledAtTime
-			worker.rt.logger.Debugf("[%v Router] :: performing checks to send payload to %s. Payload: ", worker.rt.destName, job.EventPayload)
+			worker.rt.logger.Debugf("[%v Router] :: performing checks to send payload.", worker.rt.destName)
 
 			userID := job.UserID
 
