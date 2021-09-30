@@ -1463,7 +1463,7 @@ func (rt *HandleT) generatorLoop() {
 func (rt *HandleT) readAndProcess() int {
 	configList := distributed.GetAllCustomersComputeConfig()
 	var totalJobsPicked int
-	for customer, computeConfig := range configList {
+	for customer, config := range configList {
 		if rt.guaranteeUserEventOrder {
 			//#JobOrder (See comment marked #JobOrder
 			rt.toClearFailJobIDMutex.Lock()
@@ -1482,13 +1482,13 @@ func (rt *HandleT) readAndProcess() int {
 
 		//TODO fix this
 		toQuery := jobQueryBatchSize
-		retryList := jobsdb.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: int(computeConfig.ComputeShare) * toQuery}, customer, "rt")
+		retryList := jobsdb.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: int(config.ComputeShare * float32(toQuery))}, customer, "rt")
 		toQuery -= len(retryList)
-		throttledList := jobsdb.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: int(computeConfig.ComputeShare) * toQuery}, customer, "rt")
+		throttledList := jobsdb.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: int(config.ComputeShare * float32(toQuery))}, customer, "rt")
 		toQuery -= len(throttledList)
-		waitList := jobsdb.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: int(computeConfig.ComputeShare) * toQuery}, customer, "rt") //Jobs send to waiting state
+		waitList := jobsdb.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: int(config.ComputeShare * float32(toQuery))}, customer, "rt") //Jobs send to waiting state
 		toQuery -= len(waitList)
-		unprocessedList := jobsdb.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: int(computeConfig.ComputeShare) * toQuery}, customer, "rt")
+		unprocessedList := jobsdb.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: int(config.ComputeShare * float32(toQuery))}, customer, "rt")
 
 		combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
 

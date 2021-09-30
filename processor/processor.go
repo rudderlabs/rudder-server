@@ -1608,7 +1608,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		var retryList, unprocessedList []*jobsdb.JobT
 		var totalRetryEvents, totalUnprocessedEvents int
 		var combinedList []*jobsdb.JobT
-		unTruncatedRetryList := jobsdb.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: int(config.ComputeShare) * toQuery}, customer, "gw")
+		unTruncatedRetryList := jobsdb.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: int(config.ComputeShare * float32(toQuery))}, customer, "gw")
 		retryList, totalRetryEvents = getTruncatedEventList(unTruncatedRetryList, maxEventsToProcess)
 
 		if len(unTruncatedRetryList) >= dbReadBatchSize || totalRetryEvents >= maxEventsToProcess {
@@ -1616,7 +1616,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		} else {
 			eventsLeftToProcess := maxEventsToProcess - totalRetryEvents
 			toQuery = misc.MinInt(eventsLeftToProcess, dbReadBatchSize)
-			unTruncatedUnProcessedList := jobsdb.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: int(config.ComputeShare) * toQuery}, customer, "gw")
+			unTruncatedUnProcessedList := jobsdb.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: int(config.ComputeShare * float32(toQuery))}, customer, "gw")
 			unprocessedList, totalUnprocessedEvents = getTruncatedEventList(unTruncatedUnProcessedList, eventsLeftToProcess)
 		}
 		combinedList = append(unprocessedList, retryList...)
