@@ -527,6 +527,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				Parameters:   marshalledParams,
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
+				EventCount:   totalEventsInReq,
 			}
 			jobList = append(jobList, &newJob)
 

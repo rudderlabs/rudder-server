@@ -66,6 +66,7 @@ type GetQueryParamsT struct {
 	ParameterFilters              []ParameterFilterT
 	StateFilters                  []string
 	Count                         int
+	EventCount                    int
 	IgnoreCustomValFiltersInQuery bool
 	UseTimeFilter                 bool
 	Before                        time.Time
@@ -246,13 +247,14 @@ type JobT struct {
 	CreatedAt     time.Time       `json:"CreatedAt"`
 	ExpireAt      time.Time       `json:"ExpireAt"`
 	CustomVal     string          `json:"CustomVal"`
+	EventCount    int             `json:"EventCount"`
 	EventPayload  json.RawMessage `json:"EventPayload"`
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
 }
 
 func (job *JobT) String() string {
-	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload))
+	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v EventCount=%d", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount)
 }
 
 //The struct fields need to be exposed to JSON package
@@ -1338,6 +1340,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 									  parameters JSONB NOT NULL,
                                       custom_val VARCHAR(64) NOT NULL,
                                       event_payload JSONB NOT NULL,
+									  event_count INTEGER NOT NULL DEFAULT 1,
                                       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
                                       expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, newDS.JobTable)
 
@@ -1781,9 +1784,9 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 
 	if copyID {
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
-			"event_payload", "created_at", "expire_at"))
+			"event_payload", "event_count", "created_at", "expire_at"))
 	} else {
-		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload"))
+		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count"))
 	}
 
 	if err != nil {
@@ -1794,11 +1797,15 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 
 	customValParamMap := make(map[string]map[string]struct{})
 	for _, job := range jobList {
+		if job.EventCount == 0 {
+			job.EventCount = 1
+		}
+
 		if copyID {
 			_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
-				string(job.EventPayload), job.CreatedAt, job.ExpireAt)
+				string(job.EventPayload), job.EventCount, job.CreatedAt, job.ExpireAt)
 		} else {
-			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
+			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount)
 		}
 		if err != nil {
 			return err
@@ -2120,19 +2127,23 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 
 	var rows *sql.Rows
 	var err error
+	var args []interface{}
 
 	var sqlStatement string
 
 	if useJoinForUnprocessed {
+		// event_count default 1, number of items in payload
 		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
-                                               %[1]s.expire_at
+                                               %[1]s.expire_at,
+                                               sum(%[1]s.event_count) over (order by %[1]s.job_id asc) as running_event_counts
                                              FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
                                              WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable)
 	} else {
 		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val,
                                                %[1]s.event_payload, %[1]s.created_at,
-                                               %[1]s.expire_at
+                                               %[1]s.expire_at,
+											   sum(%[1]s.event_count) over (order by %[1]s.job_id asc) as running_event_counts
                                              FROM %[1]s WHERE %[1]s.job_id NOT IN (SELECT DISTINCT(%[2]s.job_id)
                                              FROM %[2]s)`, ds.JobTable, ds.JobStatusTable)
 	}
@@ -2147,24 +2158,31 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	}
 
 	if params.UseTimeFilter {
-		sqlStatement += " AND created_at < $1"
+		sqlStatement += fmt.Sprintf(" AND created_at < $%d", len(args)+1)
+		args = append(args, params.Before)
 	}
 
 	if order {
 		sqlStatement += fmt.Sprintf(" ORDER BY %s.job_id", ds.JobTable)
 	}
 	if count > 0 {
-		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
+		sqlStatement += fmt.Sprintf(" LIMIT $%d", len(args)+1)
+		args = append(args, count)
+	}
+
+	if params.EventCount > 0 {
+		sqlStatement = fmt.Sprintf(`SELECT * FROM (`+sqlStatement+`) AS subquery WHERE running_event_counts <= $%d;`, len(args)+1)
+		args = append(args, params.EventCount)
 	}
 
 	if params.UseTimeFilter {
 		stmt, err := jd.dbHandle.Prepare(sqlStatement)
 		jd.assertError(err)
 		defer stmt.Close()
-		rows, err = stmt.Query(params.Before)
+		rows, err = stmt.Query(args...)
 		jd.assertError(err)
 	} else {
-		rows, err = jd.dbHandle.Query(sqlStatement)
+		rows, err = jd.dbHandle.Query(sqlStatement, args...)
 		jd.assertError(err)
 	}
 	defer rows.Close()
@@ -2172,8 +2190,9 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
+		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.CreatedAt, &job.ExpireAt)
+			&job.EventPayload, &job.CreatedAt, &job.ExpireAt, &_null)
 		jd.assertError(err)
 		jobList = append(jobList, &job)
 	}
