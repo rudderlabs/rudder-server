@@ -188,7 +188,7 @@ func InitializeEnv() {
 	if err != nil {
 		panic(fmt.Errorf("Could not run node migrations: %w", err))
 	}
-
+	dbHandle = createDBConnection()
 	//create workspace table and insert token
 	createWorkspaceTable(dbHandle)
 	insertTokenIfNotExists(dbHandle)

@@ -3,7 +3,6 @@ package jobsdb
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/distributed"
@@ -39,20 +38,24 @@ func SetupCustomerQueues(clearAll bool) {
 		if err != nil {
 			panic(err)
 		}
-		migrateDBHandle.SetMaxOpenConns(1)
-		migrateDBHandle.SetMaxIdleConns(0)
-
 		//TODO: fix values passed
 		gatewayDB.Setup(migrateDBHandle, dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"gw", time.Hour*10000, "", true, QueryFiltersT{})
 		//setting up router, batch router, proc error DBs also irrespective of server mode
-		routerDB.Setup(migrateDBHandle, dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"rt", time.Hour*10000, "", true, QueryFiltersT{})
-		batchRouterDB.Setup(migrateDBHandle, dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"batch_rt", time.Hour*10000, "", true, QueryFiltersT{})
-		procErrorDB.Setup(migrateDBHandle, dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"proc_error", time.Hour*10000, "", false, QueryFiltersT{})
-
-		err = migrateDBHandle.Close()
+		migrateDBHandle, err = sql.Open("postgres", psqlInfo)
 		if err != nil {
-			fmt.Println("closing db handle failed with error ", err.Error())
+			panic(err)
 		}
+		routerDB.Setup(migrateDBHandle, dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"rt", time.Hour*10000, "", true, QueryFiltersT{})
+		migrateDBHandle, err = sql.Open("postgres", psqlInfo)
+		if err != nil {
+			panic(err)
+		}
+		batchRouterDB.Setup(migrateDBHandle, dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"batch_rt", time.Hour*10000, "", true, QueryFiltersT{})
+		migrateDBHandle, err = sql.Open("postgres", psqlInfo)
+		if err != nil {
+			panic(err)
+		}
+		procErrorDB.Setup(migrateDBHandle, dbHandle, dbHandle, ReadWrite, clearAll, customer.Name+"_"+"proc_error", time.Hour*10000, "", false, QueryFiltersT{})
 
 		customerQueues[customer.WorkspaceID] = &CustomerQueue{
 			GatewayJobsdb:      &gatewayDB,

@@ -100,7 +100,7 @@ func (workspaceConfig *MultiTenantWorkspaceConfig) getFromAPI() (ConfigT, bool) 
 	workspaceIDs := distributed.GetWorkspaceIDs()
 	workspacesString := strings.Join(workspaceIDs[:], ",")
 	url = url + workspacesString
-	// fmt.Println(url)
+	fmt.Println(url)
 	var respBody []byte
 	var statusCode int
 
