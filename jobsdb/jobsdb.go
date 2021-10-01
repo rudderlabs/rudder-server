@@ -2133,28 +2133,28 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 
 	if useJoinForUnprocessed {
 		// event_count default 1, number of items in payload
-		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val,
-                                               %[1]s.event_payload, %[1]s.created_at,
-                                               %[1]s.expire_at,
-                                               sum(%[1]s.event_count) over (order by %[1]s.job_id asc) as running_event_counts
-                                             FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
-                                             WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable)
+		sqlStatement = fmt.Sprintf(
+			`SELECT J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.created_at, J.expire_at,`+
+				`	sum(J.event_count) over (order by J.job_id asc) as running_event_counts `+
+				`FROM %[1]s J `+
+				`LEFT JOIN %[2]s S ON J.job_id=S.job_id `+
+				`WHERE S.job_id is NULL `,
+			ds.JobTable, ds.JobStatusTable)
 	} else {
-		sqlStatement = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val,
-                                               %[1]s.event_payload, %[1]s.created_at,
-                                               %[1]s.expire_at,
-											   sum(%[1]s.event_count) over (order by %[1]s.job_id asc) as running_event_counts
-                                             FROM %[1]s WHERE %[1]s.job_id NOT IN (SELECT DISTINCT(%[2]s.job_id)
-                                             FROM %[2]s)`, ds.JobTable, ds.JobStatusTable)
+		sqlStatement = fmt.Sprintf(
+			`SELECT J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.created_at, J.expire_at,`+
+				`	sum(J.event_count) over (order by J.job_id asc) as running_event_counts `+
+				` FROM J `+
+				`WHERE J.job_id NOT IN (SELECT DISTINCT(S.job_id) FROM %[2]s S)`,
+			ds.JobTable, ds.JobStatusTable)
 	}
 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
-		sqlStatement += " AND " + constructQuery(jd, fmt.Sprintf("%s.custom_val", ds.JobTable),
-			customValFilters, "OR")
+		sqlStatement += " AND " + constructQuery(jd, "J.custom_val", customValFilters, "OR")
 	}
 
 	if len(parameterFilters) > 0 {
-		sqlStatement += " AND " + constructParameterJSONQuery(jd, ds.JobTable, parameterFilters)
+		sqlStatement += " AND " + constructParameterJSONQuery(jd, "J", parameterFilters)
 	}
 
 	if params.UseTimeFilter {
@@ -2163,7 +2163,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	}
 
 	if order {
-		sqlStatement += fmt.Sprintf(" ORDER BY %s.job_id", ds.JobTable)
+		sqlStatement += " ORDER BY J.job_id"
 	}
 	if count > 0 {
 		sqlStatement += fmt.Sprintf(" LIMIT $%d", len(args)+1)
