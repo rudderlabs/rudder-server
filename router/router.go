@@ -2017,7 +2017,13 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 	} else if errOutput.Output.AuthErrorCategory == oauth.REFRESH_TOKEN {
 		rudderAccountId := destinationJob.JobMetadataArray[0].RudderAccountId
 		var refSecret *oauth.RefreshSecret
-		statusCode, refSecret = rt.oauth.RefreshToken(workspaceId, rudderAccountId, errOutput.Output.AccessToken)
+		refTokenParams := &oauth.RefreshTokenParams{
+			AccessToken: errOutput.Output.AccessToken,
+			WorkspaceId: workspaceId,
+			AccountId:   rudderAccountId,
+			DestDefName: destinationJob.Destination.DestinationDefinition.Name,
+		}
+		statusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
 		refSec := *refSecret
 		if statusCode == 200 && router_utils.IsNotEmptyString(refSec.Account.AccessToken) {
 			retryCount += 1

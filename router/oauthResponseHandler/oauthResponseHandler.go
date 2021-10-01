@@ -35,11 +35,19 @@ type OAuthStats struct {
 	eventName       string
 	isCallToCpApi   bool
 	authErrCategory string
+	destDefName     string
 }
 
 type DisableDestinationResponse struct {
 	Enabled       bool   `json:"enabled"`
 	DestinationId string `json:"id"`
+}
+
+type RefreshTokenParams struct {
+	AccountId   string
+	WorkspaceId string
+	AccessToken string
+	DestDefName string
 }
 
 // OAuthErrResHandler is the handle for this class
@@ -59,7 +67,7 @@ type OAuthErrResHandler struct {
 type Authorizer interface {
 	Setup()
 	DisableDestination(destination backendconfig.DestinationT, workspaceId string) (statusCode int, resBody string)
-	RefreshToken(workspaceId string, accountId string, accessToken string) (int, *RefreshSecret)
+	RefreshToken(refTokenParams *RefreshTokenParams) (int, *RefreshSecret)
 }
 
 type ControlPlaneRequestT struct {
@@ -147,26 +155,28 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.disableDestMap = make(map[string]bool)
 }
 
-func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accountId string, accessToken string) (int, *RefreshSecret) {
-	resMgrErr := authErrHandler.NewMutex(accountId, REFRESH_TOKEN)
+func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *RefreshSecret) {
+
+	resMgrErr := authErrHandler.NewMutex(refTokenParams.AccountId, REFRESH_TOKEN)
 	if resMgrErr != nil {
 		panic(resMgrErr)
 	}
 
 	refTokenStats := &OAuthStats{
-		id:              accountId,
-		workspaceId:     workspaceId,
+		id:              refTokenParams.AccountId,
+		workspaceId:     refTokenParams.WorkspaceId,
 		rudderCategory:  "destination",
 		eventName:       "",
 		isCallToCpApi:   false,
 		authErrCategory: REFRESH_TOKEN,
 		errorMessage:    "",
+		destDefName:     refTokenParams.DestDefName,
 	}
-	authErrHandler.accountLockMap[accountId].RLock()
+	authErrHandler.accountLockMap[refTokenParams.AccountId].RLock()
 	refMap := authErrHandler.refreshTokenMap
-	if refVal, ok := refMap[accountId]; ok {
-		if router_utils.IsNotEmptyString(refVal.Account.AccessToken) && refVal.Account.AccessToken != accessToken {
-			authErrHandler.accountLockMap[accountId].RUnlock()
+	if refVal, ok := refMap[refTokenParams.AccountId]; ok {
+		if router_utils.IsNotEmptyString(refVal.Account.AccessToken) && refVal.Account.AccessToken != refTokenParams.AccessToken {
+			authErrHandler.accountLockMap[refTokenParams.AccountId].RUnlock()
 			refTokenStats.eventName = "refresh_token_success"
 			refTokenStats.errorMessage = ""
 			refTokenStats.SendCountStat()
@@ -174,28 +184,28 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 			return http.StatusOK, refVal
 		}
 	}
-	authErrHandler.accountLockMap[accountId].RUnlock()
+	authErrHandler.accountLockMap[refTokenParams.AccountId].RUnlock()
 
 	// Refresh Token from the endpoint in Cp
-	authErrHandler.accountLockMap[accountId].Lock()
-	defer authErrHandler.accountLockMap[accountId].Unlock()
+	authErrHandler.accountLockMap[refTokenParams.AccountId].Lock()
+	defer authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
 
 	authErrHandler.oauthErrHandlerReqTimerStat.Start()
 	defer authErrHandler.oauthErrHandlerReqTimerStat.End()
 
-	if !router_utils.IsNotEmptyString(accessToken) {
-		authErrHandler.refreshTokenMap[accountId] = &RefreshSecret{
+	if !router_utils.IsNotEmptyString(refTokenParams.AccessToken) {
+		authErrHandler.refreshTokenMap[refTokenParams.AccountId] = &RefreshSecret{
 			Err: `Cannot proceed with refresh token request as accessToken is empty`,
 		}
 		refTokenStats.eventName = "refresh_token_failure"
 		refTokenStats.errorMessage = `Cannot proceed with refresh token request as accessToken is empty`
 		refTokenStats.SendCountStat()
-		return http.StatusBadRequest, authErrHandler.refreshTokenMap[accountId]
+		return http.StatusBadRequest, authErrHandler.refreshTokenMap[refTokenParams.AccountId]
 	}
-	refreshUrl := fmt.Sprintf("%s/dest/workspaces/%s/accounts/%s/token", configBEURL, workspaceId, accountId)
+	refreshUrl := fmt.Sprintf("%s/dest/workspaces/%s/accounts/%s/token", configBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
 	refTokenBody := RefreshTokenBody{
 		hasExpired:   true,
-		expiredToken: accessToken,
+		expiredToken: refTokenParams.AccessToken,
 	}
 	res, err := json.Marshal(refTokenBody)
 	if err != nil {
@@ -225,23 +235,23 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 		refTokenStats.SendCountStat()
 		authErrHandler.logger.Infof("[%s request] :: Empty Refresh token response received : %s\n", loggerNm, response)
 		// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
-		return statusCode, authErrHandler.refreshTokenMap[accountId]
+		return statusCode, authErrHandler.refreshTokenMap[refTokenParams.AccountId]
 	}
 
-	if refErrMsg := IsRefreshErrorResponse(response, &accountSecret); router_utils.IsNotEmptyString(refErrMsg) {
-		if _, ok := authErrHandler.refreshTokenMap[accountId]; !ok {
-			authErrHandler.refreshTokenMap[accountId] = &RefreshSecret{
+	if refErrMsg := getRefreshTokenErrResp(response, &accountSecret); router_utils.IsNotEmptyString(refErrMsg) {
+		if _, ok := authErrHandler.refreshTokenMap[refTokenParams.AccountId]; !ok {
+			authErrHandler.refreshTokenMap[refTokenParams.AccountId] = &RefreshSecret{
 				Err: refErrMsg,
 			}
 		} else {
-			authErrHandler.refreshTokenMap[accountId].Err = refErrMsg
+			authErrHandler.refreshTokenMap[refTokenParams.AccountId].Err = refErrMsg
 		}
 		refTokenStats.eventName = "refresh_token_failure"
 		refTokenStats.errorMessage = refErrMsg
 		refTokenStats.SendCountStat()
-		return http.StatusInternalServerError, authErrHandler.refreshTokenMap[accountId]
+		return http.StatusInternalServerError, authErrHandler.refreshTokenMap[refTokenParams.AccountId]
 	}
-	authErrHandler.refreshTokenMap[accountId] = &RefreshSecret{
+	authErrHandler.refreshTokenMap[refTokenParams.AccountId] = &RefreshSecret{
 		Account: accountSecret,
 	}
 	refTokenStats.eventName = "refresh_token_success"
@@ -249,10 +259,10 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(workspaceId string, accou
 	refTokenStats.SendCountStat()
 	authErrHandler.logger.Infof("[%s request] :: (Write) Refresh token response received : %s\n", loggerNm, response)
 	// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
-	return statusCode, authErrHandler.refreshTokenMap[accountId]
+	return statusCode, authErrHandler.refreshTokenMap[refTokenParams.AccountId]
 }
 
-func IsRefreshErrorResponse(response string, accountSecret *AccountSecret) (message string) {
+func getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (message string) {
 	if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
 		// Some problem with AccountSecret unmarshalling
 		message = err.Error()
@@ -263,6 +273,7 @@ func IsRefreshErrorResponse(response string, accountSecret *AccountSecret) (mess
 	return message
 }
 
+// Send count type stats related to OAuth(Destination)
 func (refStats *OAuthStats) SendCountStat() {
 	stats.NewTaggedStat(refStats.eventName, stats.CountType, stats.Tags{
 		"accountId":       refStats.id,
@@ -271,6 +282,7 @@ func (refStats *OAuthStats) SendCountStat() {
 		"errorMessage":    refStats.errorMessage,
 		"isCallToCpApi":   strconv.FormatBool(refStats.isCallToCpApi),
 		"authErrCategory": refStats.authErrCategory,
+		"destDefName":     refStats.destDefName,
 	}).Increment()
 }
 
@@ -290,6 +302,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 		isCallToCpApi:   false,
 		authErrCategory: DISABLE_DEST,
 		errorMessage:    "",
+		destDefName:     destination.DestinationDefinition.Name,
 	}
 
 	authErrHandler.destLockMap[destinationId].RLock()
