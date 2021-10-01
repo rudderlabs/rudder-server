@@ -109,7 +109,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 		}
 	} else {
 		// generate new one and update all
-		newID := uuid.NewV4().String()
+		newID := rudderIDs[0]
 		row1 := []string{prop1Type.String, prop1Val.String, newID, currentTimeString}
 		rows = append(rows, row1)
 		row1Values := misc.SingleQuoteLiteralJoin(row1)
@@ -140,12 +140,15 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 			rows = append(rows, row)
 		}
 
-		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN (%v)`, idr.mappingsTable(), newID, currentTimeString, quotedRudderIDs)
-		pkgLogger.Debugf(`IDR: Update rudder_id for all properties in mapping table with rudder_id's %v: %v`, quotedRudderIDs, sqlStatement)
-		_, err = txn.Exec(sqlStatement)
+		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN (%v)`, idr.mappingsTable(), newID, currentTimeString, misc.SingleQuoteLiteralJoin(rudderIDs[1:]))
+		var res sql.Result
+		pkgLogger.Debugf(`IDR: Updating rudder_id for all properties in mapping table with rudder_id's %v: %v`, misc.SingleQuoteLiteralJoin(rudderIDs[1:]), sqlStatement)
+		res, err = txn.Exec(sqlStatement)
 		if err != nil {
 			return
 		}
+		affectedRowCount, _ := res.RowsAffected()
+		pkgLogger.Debugf(`IDR: Updated rudder_id for all properties in mapping table with rudder_id's %v: %v Updated %v rows`, misc.SingleQuoteLiteralJoin(rudderIDs[1:]), sqlStatement, affectedRowCount)
 
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.Warehouse))
 		pkgLogger.Debugf(`IDR: Insert new mappings into %s: %v`, idr.mappingsTable(), sqlStatement)
