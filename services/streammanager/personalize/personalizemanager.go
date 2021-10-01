@@ -110,7 +110,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		statusCode := 500
 		// fetching status code from response
 		if reqErr, ok := err.(awserr.RequestFailure); ok {
-			errorMessage := fmt.Sprintf(reqErr.Error())
+			errorMessage := reqErr.Error()
 			if strings.Contains(errorMessage, "Throttling") {
 				// aws returns  "ThrottlingException"
 				// for throttling requests server will retry
