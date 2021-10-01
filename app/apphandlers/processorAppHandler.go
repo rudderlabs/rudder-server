@@ -142,7 +142,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		return nil
 	})
 
-	if processor.App.Features().Replay != nil {
+	if enableReplay && processor.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 		defer replayDB.TearDown()
