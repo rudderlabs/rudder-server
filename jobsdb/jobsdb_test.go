@@ -505,7 +505,7 @@ var _ = Describe("jobsdb", func() {
 		})
 	})
 
-	Context("GetProcesed", func() {
+	Context("GetProcessed", func() {
 		var jd *HandleT
 
 		BeforeEach(func() {
@@ -527,7 +527,7 @@ var _ = Describe("jobsdb", func() {
 			It("should return jobs with non terminal last state when queried with customval", func() {
 				var stateQuery, customValQuery, sourceQuery, limitQuery string
 				stateQuery = " AND ((job_state='failed'))"
-				customValQuery = " AND ((tt_jobs_1.custom_val='MOCKDS'))"
+				customValQuery = " AND ((J.custom_val='MOCKDS'))"
 				limitQuery = " LIMIT 2 "
 				timeNow := time.Now()
 
@@ -536,15 +536,15 @@ var _ = Describe("jobsdb", func() {
 				}
 
 				ds := dsListInMemory[0]
-				stmt := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at, job_latest_state.job_state, job_latest_state.attempt, job_latest_state.exec_time, job_latest_state.retry_time, job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters FROM %[1]s, (SELECT job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters FROM %[2]s WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s) AS job_latest_state WHERE %[1]s.job_id=job_latest_state.job_id %[4]s %[5]s AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[6]s`,
+				stmt := fmt.Sprintf(`SELECT J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.created_at, J.expire_at, sum(J.event_count) over (order by J.job_id asc) as running_event_counts, job_latest_state.job_state, job_latest_state.attempt, job_latest_state.exec_time, job_latest_state.retry_time, job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters FROM %[1]s J, (SELECT job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters FROM %[2]s WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s) AS job_latest_state WHERE J.job_id=job_latest_state.job_id %[4]s %[5]s AND job_latest_state.retry_time < $1 ORDER BY J.job_id %[6]s`,
 					ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
 				c.mock.ExpectPrepare(stmt).
 					ExpectQuery().WithArgs(timeNow).WillReturnRows(mockJobsForState(ds, state, 1))
 
-				customValQuery = " AND ((tt_jobs_2.custom_val='MOCKDS'))"
+				customValQuery = " AND ((J.custom_val='MOCKDS'))"
 				limitQuery = " LIMIT 1 "
 				ds = dsListInMemory[1]
-				stmt = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at, job_latest_state.job_state, job_latest_state.attempt, job_latest_state.exec_time, job_latest_state.retry_time, job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters FROM %[1]s, (SELECT job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters FROM %[2]s WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s) AS job_latest_state WHERE %[1]s.job_id=job_latest_state.job_id %[4]s %[5]s AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[6]s`,
+				stmt = fmt.Sprintf(`SELECT J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.created_at, J.expire_at, sum(J.event_count) over (order by J.job_id asc) as running_event_counts, job_latest_state.job_state, job_latest_state.attempt, job_latest_state.exec_time, job_latest_state.retry_time, job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters FROM %[1]s J, (SELECT job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters FROM %[2]s WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s) AS job_latest_state WHERE J.job_id=job_latest_state.job_id %[4]s %[5]s AND job_latest_state.retry_time < $1 ORDER BY J.job_id %[6]s`,
 					ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
 				c.mock.ExpectPrepare(stmt).
 					ExpectQuery().WithArgs(timeNow).WillReturnRows(mockJobsForState(ds, state, 1))
@@ -570,9 +570,9 @@ var _ = Describe("jobsdb", func() {
 				destinationID := "someDestID"
 				var stateQuery, customValQuery, sourceQuery, limitQuery string
 				stateQuery = " AND ((job_state='failed'))"
-				customValQuery = " AND ((tt_jobs_1.custom_val='MOCKDS'))"
+				customValQuery = " AND ((J.custom_val='MOCKDS'))"
 				limitQuery = " LIMIT 2 "
-				sourceQuery = fmt.Sprintf(` AND (tt_jobs_1.parameters @> '{"destination_id":"%s"}' )`, destinationID)
+				sourceQuery = fmt.Sprintf(` AND (J.parameters @> '{"destination_id":"%s"}' )`, destinationID)
 				timeNow := time.Now()
 
 				getTimeNowFunc = func() time.Time {
@@ -580,16 +580,16 @@ var _ = Describe("jobsdb", func() {
 				}
 
 				ds := dsListInMemory[0]
-				stmt := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at, job_latest_state.job_state, job_latest_state.attempt, job_latest_state.exec_time, job_latest_state.retry_time, job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters FROM %[1]s, (SELECT job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters FROM %[2]s WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s) AS job_latest_state WHERE %[1]s.job_id=job_latest_state.job_id %[4]s %[5]s AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[6]s`,
+				stmt := fmt.Sprintf(`SELECT J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.created_at, J.expire_at, sum(J.event_count) over (order by J.job_id asc) as running_event_counts, job_latest_state.job_state, job_latest_state.attempt, job_latest_state.exec_time, job_latest_state.retry_time, job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters FROM %[1]s J, (SELECT job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters FROM %[2]s WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s) AS job_latest_state WHERE J.job_id=job_latest_state.job_id %[4]s %[5]s AND job_latest_state.retry_time < $1 ORDER BY J.job_id %[6]s`,
 					ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
 				c.mock.ExpectPrepare(stmt).
 					ExpectQuery().WithArgs(timeNow).WillReturnRows(mockJobsForState(ds, state, 1))
 
-				customValQuery = " AND ((tt_jobs_2.custom_val='MOCKDS'))"
+				customValQuery = " AND ((J.custom_val='MOCKDS'))"
 				limitQuery = " LIMIT 1 "
-				sourceQuery = fmt.Sprintf(` AND (tt_jobs_2.parameters @> '{"destination_id":"%s"}' )`, destinationID)
+				sourceQuery = fmt.Sprintf(` AND (J.parameters @> '{"destination_id":"%s"}' )`, destinationID)
 				ds = dsListInMemory[1]
-				stmt = fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at, job_latest_state.job_state, job_latest_state.attempt, job_latest_state.exec_time, job_latest_state.retry_time, job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters FROM %[1]s, (SELECT job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters FROM %[2]s WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s) AS job_latest_state WHERE %[1]s.job_id=job_latest_state.job_id %[4]s %[5]s AND job_latest_state.retry_time < $1 ORDER BY %[1]s.job_id %[6]s`,
+				stmt = fmt.Sprintf(`SELECT J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.created_at, J.expire_at, sum(J.event_count) over (order by J.job_id asc) as running_event_counts, job_latest_state.job_state, job_latest_state.attempt, job_latest_state.exec_time, job_latest_state.retry_time, job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters FROM %[1]s J, (SELECT job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters FROM %[2]s WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s) AS job_latest_state WHERE J.job_id=job_latest_state.job_id %[4]s %[5]s AND job_latest_state.retry_time < $1 ORDER BY J.job_id %[6]s`,
 					ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
 				c.mock.ExpectPrepare(stmt).
 					ExpectQuery().WithArgs(timeNow).WillReturnRows(mockJobsForState(ds, state, 1))
@@ -993,15 +993,16 @@ func getJobsWithLastState(state string) []*JobT {
 }
 
 var mockUnprocessedJobs = func(ds dataSetT, count int) *sqlmock.Rows {
-	sqlMockRows := sqlmock.NewRows([]string{fmt.Sprintf("%s.job_id", ds.JobTable),
-		fmt.Sprintf("%s.uuid", ds.JobTable),
-		fmt.Sprintf("%s.user_id", ds.JobTable),
-		fmt.Sprintf("%s.parameters", ds.JobTable),
-		fmt.Sprintf("%s.custom_val", ds.JobTable),
-		fmt.Sprintf("%s.event_payload", ds.JobTable),
-		fmt.Sprintf("%s.created_at", ds.JobTable),
-		fmt.Sprintf("%s.expire_at", ds.JobTable),
-		fmt.Sprintf("%s.running_event_counts", ds.JobTable),
+	sqlMockRows := sqlmock.NewRows([]string{
+		"J.job_id",
+		"J.uuid",
+		"J.user_id",
+		"J.parameters",
+		"J.custom_val",
+		"J.event_payload",
+		"J.created_at",
+		"J.expire_at",
+		"running_event_counts",
 	})
 
 	for i, job := range mockJobs {
@@ -1015,14 +1016,16 @@ var mockUnprocessedJobs = func(ds dataSetT, count int) *sqlmock.Rows {
 }
 
 var mockJobsForState = func(ds dataSetT, state string, count int) *sqlmock.Rows {
-	sqlMockRows := sqlmock.NewRows([]string{fmt.Sprintf("%s.job_id", ds.JobTable),
-		fmt.Sprintf("%s.uuid", ds.JobTable),
-		fmt.Sprintf("%s.user_id", ds.JobTable),
-		fmt.Sprintf("%s.parameters", ds.JobTable),
-		fmt.Sprintf("%s.custom_val", ds.JobTable),
-		fmt.Sprintf("%s.event_payload", ds.JobTable),
-		fmt.Sprintf("%s.created_at", ds.JobTable),
-		fmt.Sprintf("%s.expire_at", ds.JobTable),
+	sqlMockRows := sqlmock.NewRows([]string{
+		"J.job_id",
+		"J.uuid",
+		"J.user_id",
+		"J.parameters",
+		"J.custom_val",
+		"J.event_payload",
+		"J.created_at",
+		"J.expire_at",
+		"running_event_counts",
 		"job_latest_state.job_state",
 		"job_latest_state.attempt",
 		"job_latest_state.exec_time",
@@ -1037,7 +1040,7 @@ var mockJobsForState = func(ds dataSetT, state string, count int) *sqlmock.Rows 
 			break
 		}
 		sqlMockRows.AddRow(job.JobID, job.UUID, job.UserID, job.Parameters, job.CustomVal,
-			job.EventPayload, job.CreatedAt, job.ExpireAt, job.LastJobStatus.JobState, job.LastJobStatus.AttemptNum,
+			job.EventPayload, job.CreatedAt, job.ExpireAt, job.EventCount, job.LastJobStatus.JobState, job.LastJobStatus.AttemptNum,
 			job.LastJobStatus.ExecTime, job.LastJobStatus.RetryTime, job.LastJobStatus.ErrorCode, job.LastJobStatus.ErrorResponse, job.LastJobStatus.Parameters)
 	}
 	return sqlMockRows
