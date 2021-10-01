@@ -75,7 +75,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(0), &gwDBRetention, false, time.Hour, []string{"gwDBRetention", "gwDBRetentionInHr"}...)
 	config.RegisterDurationConfigVariable(time.Duration(0), &routerDBRetention, false, time.Hour, "routerDBRetention")
 	config.RegisterBoolConfigVariable(true, &enableProcessor, false, "enableProcessor")
-	config.RegisterBoolConfigVariable(false, &enableReplay, false, "Replay.enabled")
+	config.RegisterBoolConfigVariable(types.DEFAULT_REPLAY_ENABLED, &enableReplay, false, "Replay.enabled")
 	config.RegisterBoolConfigVariable(true, &enableRouter, false, "enableRouter")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
@@ -150,7 +150,7 @@ func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB, procErrorD
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
 	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
-// 
+
 	cleanup := make([]func(), 0)
 
 loop:
