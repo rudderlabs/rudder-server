@@ -1588,7 +1588,7 @@ func (rt *HandleT) readAndProcess() int {
 	var statusList []*jobsdb.JobStatusT
 	var drainList []*jobsdb.JobStatusT
 	var drainJobList []*jobsdb.JobT
-	drainCountByDest := make(map[string]int)
+	drainStatsbyDest := make(map[string]*router_utils.DrainStats)
 
 	var toProcess []workerJobT
 
@@ -1615,10 +1615,16 @@ func (rt *HandleT) readAndProcess() int {
 			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
-			if _, ok := drainCountByDest[destID]; !ok {
-				drainCountByDest[destID] = 0
+			if _, ok := drainStatsbyDest[destID]; !ok {
+				drainStatsbyDest[destID] = &router_utils.DrainStats{
+					Count:   0,
+					Reasons: []string{},
+				}
 			}
-			drainCountByDest[destID] = drainCountByDest[destID] + 1
+			drainStatsbyDest[destID].Count = drainStatsbyDest[destID].Count + 1
+			if !misc.Contains(drainStatsbyDest[destID].Reasons, reason) {
+				drainStatsbyDest[destID].Reasons = append(drainStatsbyDest[destID].Reasons, reason)
+			}
 			continue
 		}
 		w := rt.findWorker(job, throttledAtTime)
@@ -1657,13 +1663,14 @@ func (rt *HandleT) readAndProcess() int {
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
-		for destID, count := range drainCountByDest {
+		for destID, destDrainStat := range drainStatsbyDest {
 			rt.drainedJobsStat = stats.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 				"destType": rt.destName,
 				"destId":   destID,
 				"module":   "router",
+				"reasons":  strings.Join(destDrainStat.Reasons, ", "),
 			})
-			rt.drainedJobsStat.Count(count)
+			rt.drainedJobsStat.Count(destDrainStat.Count)
 		}
 	}
 
