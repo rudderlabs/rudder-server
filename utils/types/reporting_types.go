@@ -15,6 +15,7 @@ const (
 	WAREHOUSE_REPORTING_CLIENT = "warehouse"
 
 	DEFAULT_REPORTING_ENABLED = true
+	DEFAULT_REPLAY_ENABLED    = false
 )
 
 var (
