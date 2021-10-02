@@ -261,14 +261,19 @@ func unflatten(flat map[string]interface{}) (map[string]interface{}, error) {
 
 			innerMap, ok := v.(map[string]interface{})
 			if !ok {
-				return nil, fmt.Errorf("key=%v is not an object", strings.Join(keyParts[0:i+1], "."))
+				fmt.Printf("key=%v is not an object\n", strings.Join(keyParts[0:i+1], "."))
+				newMap := map[string]interface{}{}
+				m[k] = newMap
+				m = newMap
+				continue
 			}
 			m = innerMap
 		}
 
 		leafKey := keyParts[len(keyParts)-1]
 		if _, exists := m[leafKey]; exists {
-			return nil, fmt.Errorf("key=%v already exists", key)
+			fmt.Printf("key=%v already exists", key)
+			continue;
 		}
 		m[keyParts[len(keyParts)-1]] = value
 	}
