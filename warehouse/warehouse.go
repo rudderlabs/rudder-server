@@ -103,6 +103,9 @@ const (
 	triggerUploadQPName           = "triggerUpload"
 )
 
+type WorkerIdentifierT string
+type JobIDT int64
+
 type HandleT struct {
 	destType              string
 	warehouses            []warehouseutils.WarehouseT
@@ -113,7 +116,7 @@ type HandleT struct {
 	workerChannelMap      map[string]chan *UploadJobT
 	workerChannelMapLock  sync.RWMutex
 	initialConfigFetched  bool
-	inProgressMap         map[string]int64
+	inProgressMap         map[WorkerIdentifierT]int64
 	inProgressMapLock     sync.RWMutex
 	areBeingEnqueuedLock  sync.RWMutex
 	noOfWorkers           int
@@ -461,14 +464,14 @@ func (wh *HandleT) setDestInProgress(warehouse warehouseutils.WarehouseT, jobID 
 	identifier := workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	wh.inProgressMap[identifier]++
+	wh.inProgressMap[WorkerIdentifierT(identifier)]++
 }
 
 func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.WarehouseT) {
 	identifier := workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	wh.inProgressMap[identifier]--
+	wh.inProgressMap[WorkerIdentifierT(identifier)]--
 }
 
 func getUploadFreqInS(syncFrequency string) int64 {
@@ -815,7 +818,7 @@ func (wh *HandleT) getInProgressNamespaces() (identifiers []string) {
 	defer wh.inProgressMapLock.Unlock()
 	for k, v := range wh.inProgressMap {
 		if v >= int64(maxConcurrentUploadJObs) {
-			identifiers = append(identifiers, k)
+			identifiers = append(identifiers, string(k))
 		}
 	}
 	return
@@ -981,7 +984,7 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	wh.resetInProgressJobs()
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
-	wh.inProgressMap = make(map[string]int64)
+	wh.inProgressMap = make(map[WorkerIdentifierT]int64)
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 
 	ctx, cancel := context.WithCancel(context.Background())
