@@ -141,6 +141,7 @@ const (
 	UploadSchemaField          = "schema"
 	MergedSchemaField          = "mergedschema"
 	UploadLastExecAtField      = "last_exec_at"
+	UploadInProgress           = "in_progress"
 )
 
 var (
@@ -303,6 +304,8 @@ func (job *UploadJobT) run() (err error) {
 	timerStat.Start()
 	ch := job.trackLongRunningUpload()
 	defer func() {
+		job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadInProgress, Value: false}}})
+
 		timerStat.End()
 		ch <- struct{}{}
 	}()
@@ -314,7 +317,7 @@ func (job *UploadJobT) run() (err error) {
 	// )
 	job.uploadLock.Lock()
 	defer job.uploadLock.Unlock()
-	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}}})
+	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}, UploadColumnT{Column: UploadInProgress, Value: true}}})
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
@@ -336,7 +339,7 @@ func (job *UploadJobT) run() (err error) {
 		return err
 	}
 	//if hasSchemaChanged {
-		pkgLogger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
+	pkgLogger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
 	//}
 	schemaHandle := job.schemaHandle
 	schemaHandle.uploadSchema = job.upload.UploadSchema
@@ -349,7 +352,7 @@ func (job *UploadJobT) run() (err error) {
 	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
 	// TOOO: Undo this later.
 	if !hasSchemaChanged {
-	nextUploadState = getNextUploadState(job.upload.Status)
+		nextUploadState = getNextUploadState(job.upload.Status)
 	}
 	if nextUploadState == nil {
 		nextUploadState = stateTransitions[GeneratedUploadSchema]

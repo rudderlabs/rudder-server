@@ -70,6 +70,7 @@ var (
 	longRunningUploadStatThresholdInMin time.Duration
 	pkgLogger                           logger.LoggerI
 	numLoadFileUploadWorkers            int
+	maxConcurrentUploadJObs             int
 	slaveUploadTimeout                  time.Duration
 	runningMode                         string
 	uploadStatusTrackFrequency          time.Duration
@@ -168,11 +169,12 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(false, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
 	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
+	config.RegisterIntConfigVariable(1, &maxConcurrentUploadJObs, true, 1, "Warehouse.maxConcurrentUploadJObs")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
 func workerIdentifier(warehouse warehouseutils.WarehouseT) string {
-	return fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
+	return fmt.Sprintf(`%s_%s_%s`, warehouse.Source.ID, warehouse.Destination.ID, warehouse.Namespace)
 }
 
 func (wh *HandleT) getActiveWorkerCount() int {
@@ -197,18 +199,20 @@ func (wh *HandleT) incrementActiveWorkers() {
 
 func (wh *HandleT) initWorker() chan *UploadJobT {
 	workerChan := make(chan *UploadJobT, 1000)
-	rruntime.Go(func() {
-		for {
-			uploadJob := <-workerChan
-			wh.incrementActiveWorkers()
-			err := wh.handleUploadJob(uploadJob)
-			if err != nil {
-				pkgLogger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
+	for i := 0; i < maxConcurrentUploadJObs; i++ {
+		rruntime.Go(func() {
+			for {
+				uploadJob := <-workerChan
+				wh.incrementActiveWorkers()
+				err := wh.handleUploadJob(uploadJob)
+				if err != nil {
+					pkgLogger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
+				}
+				wh.removeDestInProgress(uploadJob.warehouse)
+				wh.decrementActiveWorkers()
 			}
-			wh.removeDestInProgress(uploadJob.warehouse)
-			wh.decrementActiveWorkers()
-		}
-	})
+		})
+	}
 	return workerChan
 }
 
@@ -454,14 +458,14 @@ func (wh *HandleT) setDestInProgress(warehouse warehouseutils.WarehouseT, jobID 
 	identifier := workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	wh.inProgressMap[identifier] = jobID
+	wh.inProgressMap[identifier]++
 }
 
 func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.WarehouseT) {
 	identifier := workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	delete(wh.inProgressMap, identifier)
+	wh.inProgressMap[identifier]--
 }
 
 func getUploadFreqInS(syncFrequency string) int64 {
@@ -561,16 +565,16 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	}
 
 	wh.areBeingEnqueuedLock.Lock()
-	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(warehouse)
-	if uploadStatus == Waiting {
-		identifier := workerIdentifier(warehouse)
-		if uID, ok := wh.inProgressMap[identifier]; ok && (uID == uploadID) {
-			// do nothing
-		} else {
-			// delete it
-			wh.deleteWaitingUploadJob(uploadID)
-		}
-	}
+	//_, _, priority := wh.getLatestUploadStatus(warehouse)
+	//if uploadStatus == Waiting {
+	//	identifier := workerIdentifier(warehouse)
+	//	if uID, ok := wh.inProgressMap[identifier]; ok && (uID == uploadID) {
+	//		// do nothing
+	//	} else {
+	//		// delete it
+	//		wh.deleteWaitingUploadJob(uploadID)
+	//	}
+	//}
 	wh.areBeingEnqueuedLock.Unlock()
 
 	stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
@@ -583,7 +587,8 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 		return nil
 	}
 
-	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority)
+	// Cuttent we are not deleting, so setting the priority as 100.
+	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, 100)
 	setLastProcessedMarker(warehouse)
 	return nil
 }
@@ -672,7 +677,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 	var skipIdentifiersSQL string
 	if len(skipIdentifiers) > 0 {
-		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
+		skipIdentifiersSQL = `and ((source_id || '_' || destination_id || '_' || namespace)) != ALL($1)`
 	}
 
 	sqlStatement := fmt.Sprintf(`
@@ -680,12 +685,12 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 					id, status, schema, mergedSchema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming, metadata->>'use_rudder_storage', timings, COALESCE(metadata->>'priority', '100')::int
 				FROM (
 					SELECT
-						ROW_NUMBER() OVER (PARTITION BY destination_id, namespace ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
+						ROW_NUMBER() OVER (PARTITION BY source_id, destination_id, namespace ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
 						t.*
 					FROM
 						%s t
 					WHERE
-						t.destination_type = '%s' and t.status != '%s' and t.status != '%s' %s and COALESCE(metadata->>'nextRetryTime', now()::text)::timestamptz <= now()
+						t.destination_type = '%s' and t.in_progress=%t and t.status != '%s' and t.status != '%s' %s and COALESCE(metadata->>'nextRetryTime', now()::text)::timestamptz <= now()
 				) grouped_uplaods
 				WHERE
 					grouped_uplaods.row_number = 1
@@ -693,7 +698,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 					COALESCE(metadata->>'priority', '100')::int ASC, id ASC
 				LIMIT %d;
 
-		`, warehouseutils.WarehouseUploadsTable, wh.destType, ExportedData, Aborted, skipIdentifiersSQL, availableWorkers)
+		`, warehouseutils.WarehouseUploadsTable, wh.destType, false, ExportedData, Aborted, skipIdentifiersSQL, availableWorkers)
 
 	var rows *sql.Rows
 	var err error
@@ -794,7 +799,12 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 func (wh *HandleT) getInProgressNamespaces() (identifiers []string) {
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	return misc.StringKeys(wh.inProgressMap)
+	for k, v := range wh.inProgressMap {
+		if v >= int64(maxConcurrentUploadJObs) {
+			identifiers = append(identifiers, k)
+		}
+	}
+	return
 }
 
 func (wh *HandleT) runUploadJobAllocator() {
@@ -908,7 +918,7 @@ func (wh *HandleT) setInterruptedDestinations() {
 	if !misc.Contains(crashRecoverWarehouses, wh.destType) {
 		return
 	}
-	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s')`, warehouseutils.WarehouseUploadsTable, wh.destType, getInProgressState(ExportedData), getFailedState(ExportedData))
+	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s') and in_progress=%t`, warehouseutils.WarehouseUploadsTable, wh.destType, getInProgressState(ExportedData), getFailedState(ExportedData), true)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
@@ -931,6 +941,7 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	wh.notifier = notifier
 	wh.destType = whType
 	wh.setInterruptedDestinations()
+	wh.resetInProgressJobs()
 	wh.Enable()
 	wh.uploadToWarehouseQ = make(chan []ProcessStagingFilesJobT)
 	wh.createLoadFilesQ = make(chan LoadFileJobT)
@@ -953,6 +964,14 @@ func (wh *HandleT) monitorUploadStatus() {
 	rruntime.Go(func() {
 		wh.uploadStatusTrack()
 	})
+}
+
+func (wh *HandleT) resetInProgressJobs() {
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET in_progress=%t WHERE destination_type='%s'`, warehouseutils.WarehouseUploadsTable, false, wh.destType)
+	_, err := wh.dbHandle.Query(sqlStatement)
+	if err != nil {
+		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
+	}
 }
 
 func getLoadFileFormat(whType string) string {
