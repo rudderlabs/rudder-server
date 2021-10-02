@@ -46,6 +46,18 @@ func (mr *MockTransformerMockRecorder) Setup() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockTransformer)(nil).Setup))
 }
 
+// Shutdown mocks base method.
+func (m *MockTransformer) Shutdown() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Shutdown")
+}
+
+// Shutdown indicates an expected call of Shutdown.
+func (mr *MockTransformerMockRecorder) Shutdown() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Shutdown", reflect.TypeOf((*MockTransformer)(nil).Shutdown))
+}
+
 // Transform mocks base method.
 func (m *MockTransformer) Transform(arg0 []transformer.TransformerEventT, arg1 string, arg2 int) transformer.ResponseT {
 	m.ctrl.T.Helper()

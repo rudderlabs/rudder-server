@@ -68,18 +68,14 @@ func (ch *clickhouse) PrepareContext(ctx context.Context, query string) (driver.
 }
 
 func (ch *clickhouse) prepareContext(ctx context.Context, query string) (driver.Stmt, error) {
-	ch.logf("[prepare][started] %s", query)
-	defer ch.logf("[prepare][completed]")
+	ch.logf("[prepare] %s", query)
 	switch {
 	case ch.conn.closed:
-		ch.logf("[prepare][error] %v", driver.ErrBadConn)
 		return nil, driver.ErrBadConn
 	case ch.block != nil:
-		ch.logf("[prepare][error] %v", ErrLimitDataRequestInTx)
 		return nil, ErrLimitDataRequestInTx
 	case isInsert(query):
 		if !ch.inTransaction {
-			ch.logf("[prepare][error] %v", ErrInsertInNotBatchMode)
 			return nil, ErrInsertInNotBatchMode
 		}
 		return ch.insert(ctx, query)
@@ -92,8 +88,6 @@ func (ch *clickhouse) prepareContext(ctx context.Context, query string) (driver.
 }
 
 func (ch *clickhouse) insert(ctx context.Context, query string) (_ driver.Stmt, err error) {
-	ch.logf("[insert][started] query:%s", query)
-	defer ch.logf("[insert][completed]")
 	if err := ch.sendQuery(ctx, splitInsertRe.Split(query, -1)[0]+" VALUES ", nil); err != nil {
 		return nil, err
 	}
@@ -111,7 +105,6 @@ func (ch *clickhouse) Begin() (driver.Tx, error) {
 }
 
 func (ch *clickhouse) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
-	ch.logf("[starting transaction]")
 	return ch.beginTx(ctx, txOptions{
 		Isolation: int(opts.Isolation),
 		ReadOnly:  opts.ReadOnly,
@@ -124,14 +117,11 @@ type txOptions struct {
 }
 
 func (ch *clickhouse) beginTx(ctx context.Context, opts txOptions) (*clickhouse, error) {
-	ch.logf("[begin][started] tx=%t, data=%t", ch.inTransaction, ch.block != nil)
-	defer ch.logf("[begin][completed]")
+	ch.logf("[begin] tx=%t, data=%t", ch.inTransaction, ch.block != nil)
 	switch {
 	case ch.inTransaction:
-		ch.logf("[begin][error] %v", sql.ErrTxDone)
 		return nil, sql.ErrTxDone
 	case ch.conn.closed:
-		ch.logf("[begin][error] %v", driver.ErrBadConn)
 		return nil, driver.ErrBadConn
 	}
 	if finish := ch.watchCancel(ctx); finish != nil {
@@ -143,8 +133,7 @@ func (ch *clickhouse) beginTx(ctx context.Context, opts txOptions) (*clickhouse,
 }
 
 func (ch *clickhouse) Commit() error {
-	ch.logf("[commit][started] tx=%t, data=%t", ch.inTransaction, ch.block != nil)
-	defer ch.logf("[commit][completed]")
+	ch.logf("[commit] tx=%t, data=%t", ch.inTransaction, ch.block != nil)
 	defer func() {
 		if ch.block != nil {
 			ch.block.Reset()
@@ -154,43 +143,32 @@ func (ch *clickhouse) Commit() error {
 	}()
 	switch {
 	case !ch.inTransaction:
-		ch.logf("[commit][error] %v", sql.ErrTxDone)
 		return sql.ErrTxDone
 	case ch.conn.closed:
-		ch.logf("[commit][error] %v", driver.ErrBadConn)
 		return driver.ErrBadConn
 	}
 	if ch.block != nil {
-		ch.logf("[commit][writeBlock][started]")
 		if err := ch.writeBlock(ch.block, ""); err != nil {
-			ch.logf("[commit][writeBlock][error] %v", err)
 			return err
 		}
-		ch.logf("[commit][writeBlock][completed]")
 		// Send empty block as marker of end of data.
 		if err := ch.writeBlock(&data.Block{}, ""); err != nil {
 			return err
 		}
-		ch.logf("[commit][encoder flush][started]")
 		if err := ch.encoder.Flush(); err != nil {
-			ch.logf("[commit][encoder flush][error] %v", err)
 			return err
 		}
-		ch.logf("[commit][encoder flush][completed]")
 		return ch.process()
 	}
 	return nil
 }
 
 func (ch *clickhouse) Rollback() error {
-	ch.logf("[rollback][started] tx=%t, data=%t", ch.inTransaction, ch.block != nil)
-	defer ch.logf("[rollback][completed]")
+	ch.logf("[rollback] tx=%t, data=%t", ch.inTransaction, ch.block != nil)
 	if !ch.inTransaction {
-		ch.logf("[rollback][error] %v", sql.ErrTxDone)
 		return sql.ErrTxDone
 	}
 	if ch.block != nil {
-		ch.logf("[rollback][error] ch.block != nil")
 		ch.block.Reset()
 	}
 	ch.block = nil
@@ -258,14 +236,11 @@ func (ch *clickhouse) CheckNamedValue(nv *driver.NamedValue) error {
 }
 
 func (ch *clickhouse) Close() error {
-	ch.logf("[close]")
 	ch.block = nil
 	return ch.conn.Close()
 }
 
 func (ch *clickhouse) process() error {
-	ch.logf("[process][started]")
-	defer ch.logf("[process][completed]")
 	packet, err := ch.decoder.Uvarint()
 	if err != nil {
 		return err

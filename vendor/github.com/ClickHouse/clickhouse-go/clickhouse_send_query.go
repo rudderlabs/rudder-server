@@ -7,8 +7,7 @@ import (
 )
 
 func (ch *clickhouse) sendQuery(ctx context.Context, query string, externalTables []ExternalTable) error {
-	ch.logf("[send query][started] %s", query)
-	defer ch.logf("[send query][completed]")
+	ch.logf("[send query] %s", query)
 	if err := ch.encoder.Uvarint(protocol.ClientQuery); err != nil {
 		return err
 	}

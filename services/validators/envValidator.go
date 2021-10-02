@@ -182,7 +182,7 @@ func InitializeEnv() {
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
 		MigrationsTable:            "node_migrations",
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", false),
+		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
 	}
 	err := m.Migrate("node")
 	if err != nil {

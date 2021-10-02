@@ -3,6 +3,7 @@ package personalize
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -24,7 +25,6 @@ var pkgLogger logger.LoggerI
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("personalize")
 }
-
 func NewProducer(destinationConfig interface{}) (personalizeevents.PersonalizeEvents, error) {
 	var config Config
 	jsonConfig, err := json.Marshal(destinationConfig) // produces json
@@ -110,8 +110,17 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		statusCode := 500
 		// fetching status code from response
 		if reqErr, ok := err.(awserr.RequestFailure); ok {
-			statusCode = reqErr.StatusCode()
+			errorMessage := reqErr.Error()
+			if strings.Contains(errorMessage, "Throttling") {
+				// aws returns  "ThrottlingException"
+				// for throttling requests server will retry
+				statusCode = 429
+			} else {
+				// otherwise the original status code is returned
+				statusCode = reqErr.StatusCode()
+			}
 		}
+
 		return statusCode, err.Error(), err.Error()
 	} else {
 		if resEvent != nil {
