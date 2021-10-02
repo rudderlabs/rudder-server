@@ -338,9 +338,9 @@ func (job *UploadJobT) run() (err error) {
 		job.setUploadError(err, FetchingRemoteSchemaFailed)
 		return err
 	}
-	//if hasSchemaChanged {
-	pkgLogger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
-	//}
+	if hasSchemaChanged {
+		pkgLogger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
+	}
 	schemaHandle := job.schemaHandle
 	schemaHandle.uploadSchema = job.upload.UploadSchema
 
@@ -350,7 +350,6 @@ func (job *UploadJobT) run() (err error) {
 	var newStatus string
 	var nextUploadState *uploadStateT
 	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
-	// TOOO: Undo this later.
 	if !hasSchemaChanged {
 		nextUploadState = getNextUploadState(job.upload.Status)
 	}
