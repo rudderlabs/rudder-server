@@ -2077,7 +2077,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 
 		args := []interface{}{getTimeNowFunc()}
 		if params.EventCount > 0 {
-			sqlStatement = fmt.Sprintf(`SELECT * FROM (`+sqlStatement+`) WHERE running_event_counts <= $%d;`, len(args)+1)
+			sqlStatement = fmt.Sprintf(`SELECT * FROM (`+sqlStatement+`) t WHERE running_event_counts <= $%d;`, len(args)+1)
 			args = append(args, params.EventCount)
 		}
 

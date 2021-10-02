@@ -1648,7 +1648,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	unTruncatedRetryList := proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{GWCustomVal},
 		Count:            toQuery,
-		EventCount:       maxEventsToProcess, // TODO: Implement this
+		EventCount:       maxEventsToProcess,
 	})
 	retryList, totalRetryEvents = getTruncatedEventList(unTruncatedRetryList, maxEventsToProcess)
 
