@@ -600,6 +600,10 @@ func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string,
 		db, err := sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
 
+		db.SetMaxOpenConns(4)
+		db.SetMaxIdleConns(4)
+		db.SetConnMaxLifetime(time.Hour)
+
 		err = db.Ping()
 		jd.assertError(err)
 
@@ -652,9 +656,9 @@ func (jd *HandleT) workersAndAuxSetup(ownerType OwnerType, tablePrefix string, r
 	jd.statDropDSPeriod = stats.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 
 	enableWriterQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableWriterQueue", "JobsDB." + "enableWriterQueue"}
-	config.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, enableWriterQueueKeys...)
+	config.RegisterBoolConfigVariable(false, &jd.enableWriterQueue, true, enableWriterQueueKeys...)
 	enableReaderQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableReaderQueue", "JobsDB." + "enableReaderQueue"}
-	config.RegisterBoolConfigVariable(true, &jd.enableReaderQueue, true, enableReaderQueueKeys...)
+	config.RegisterBoolConfigVariable(false, &jd.enableReaderQueue, true, enableReaderQueueKeys...)
 	jd.writeChannel = make(chan writeJob)
 	jd.readChannel = make(chan readJob)
 

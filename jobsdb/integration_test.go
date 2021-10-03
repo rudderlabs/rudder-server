@@ -47,7 +47,7 @@ func run(m *testing.M) int {
 
 	database := "jobsdb"
 	// pulls an image, creates a container based on it and runs it
-	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
+	resourcePostgres, err := pool.Run("postgres", "14-alpine", []string{
 		"POSTGRES_PASSWORD=password",
 		"POSTGRES_DB=" + database,
 		"POSTGRES_USER=rudder",
