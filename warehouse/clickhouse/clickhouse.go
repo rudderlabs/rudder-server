@@ -91,15 +91,20 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"Int32":                            "int",
 	"Int64":                            "int",
 	"Array(Int64)":                     "array(int)",
+	"Array(Nullable(Int64))":           "array(int)",
 	"Float32":                          "float",
 	"Float64":                          "float",
 	"Array(Float64)":                   "array(float)",
+	"Array(Nullable(Float64))":         "array(float)",
 	"String":                           "string",
 	"Array(String)":                    "array(string)",
+	"Array(Nullable(String))":          "array(string)",
 	"DateTime":                         "datetime",
 	"Array(DateTime)":                  "array(datetime)",
+	"Array(Nullable(DateTime))":        "array(datetime)",
 	"UInt8":                            "boolean",
 	"Array(UInt8)":                     "array(boolean)",
+	"Array(Nullable(UInt8))":           "array(boolean)",
 	"LowCardinality(String)":           "string",
 	"LowCardinality(Nullable(String))": "string",
 	"Nullable(Int8)":                   "int",
@@ -236,7 +241,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(120), &execTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
 	config.RegisterDurationConfigVariable(time.Duration(240), &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
-	config.RegisterIntConfigVariable(128, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
+	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
 }
 
 /*

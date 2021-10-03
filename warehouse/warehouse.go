@@ -71,7 +71,7 @@ var (
 	longRunningUploadStatThresholdInMin time.Duration
 	pkgLogger                           logger.LoggerI
 	numLoadFileUploadWorkers            int
-	maxConcurrentUploadJObs             int
+	maxConcurrentUploadJobs             int
 	slaveUploadTimeout                  time.Duration
 	runningMode                         string
 	uploadStatusTrackFrequency          time.Duration
@@ -116,7 +116,7 @@ type HandleT struct {
 	workerChannelMap      map[string]chan *UploadJobT
 	workerChannelMapLock  sync.RWMutex
 	initialConfigFetched  bool
-	inProgressMap         map[WorkerIdentifierT]int64
+	inProgressMap         map[WorkerIdentifierT]map[JobIDT]bool
 	inProgressMapLock     sync.RWMutex
 	areBeingEnqueuedLock  sync.RWMutex
 	noOfWorkers           int
@@ -175,12 +175,12 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
 	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
-	config.RegisterIntConfigVariable(1, &maxConcurrentUploadJObs, true, 1, "Warehouse.maxConcurrentUploadJObs")
+	config.RegisterIntConfigVariable(1, &maxConcurrentUploadJobs, false, 1, "Warehouse.maxConcurrentUploadJobs")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
 func workerIdentifier(warehouse warehouseutils.WarehouseT) string {
-	return fmt.Sprintf(`%s_%s_%s`, warehouse.Source.ID, warehouse.Destination.ID, warehouse.Namespace)
+	return fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
 }
 
 func (wh *HandleT) getActiveWorkerCount() int {
@@ -205,7 +205,7 @@ func (wh *HandleT) incrementActiveWorkers() {
 
 func (wh *HandleT) initWorker() chan *UploadJobT {
 	workerChan := make(chan *UploadJobT, 1000)
-	for i := 0; i < maxConcurrentUploadJObs; i++ {
+	for i := 0; i < maxConcurrentUploadJobs; i++ {
 		wh.backgroundGroup.Go(func() error {
 			for uploadJob := range workerChan {
 				wh.incrementActiveWorkers()
@@ -213,7 +213,7 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 				if err != nil {
 					pkgLogger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
 				}
-				wh.removeDestInProgress(uploadJob.warehouse)
+				wh.removeDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
 				wh.decrementActiveWorkers()
 			}
 			return nil
@@ -464,14 +464,22 @@ func (wh *HandleT) setDestInProgress(warehouse warehouseutils.WarehouseT, jobID 
 	identifier := workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	wh.inProgressMap[WorkerIdentifierT(identifier)]++
+	if _, ok := wh.inProgressMap[WorkerIdentifierT(identifier)]; !ok {
+		wh.inProgressMap[WorkerIdentifierT(identifier)] = make(map[JobIDT]bool)
+	}
+	wh.inProgressMap[WorkerIdentifierT(identifier)][JobIDT(jobID)] = true
 }
 
-func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.WarehouseT) {
+func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.WarehouseT, jobID int64) {
 	identifier := workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	wh.inProgressMap[WorkerIdentifierT(identifier)]--
+	if _, ok := wh.inProgressMap[WorkerIdentifierT(identifier)]; ok {
+		delete(wh.inProgressMap[WorkerIdentifierT(identifier)], JobIDT(jobID))
+		if len(wh.inProgressMap[WorkerIdentifierT(identifier)]) == 0 {
+			delete(wh.inProgressMap, WorkerIdentifierT(identifier))
+		}
+	}
 }
 
 func getUploadFreqInS(syncFrequency string) int64 {
@@ -571,16 +579,21 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	}
 
 	wh.areBeingEnqueuedLock.Lock()
-	//_, _, priority := wh.getLatestUploadStatus(warehouse)
-	//if uploadStatus == Waiting {
-	//	identifier := workerIdentifier(warehouse)
-	//	if uID, ok := wh.inProgressMap[identifier]; ok && (uID == uploadID) {
-	//		// do nothing
-	//	} else {
-	//		// delete it
-	//		wh.deleteWaitingUploadJob(uploadID)
-	//	}
-	//}
+	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(warehouse)
+	if uploadStatus == Waiting {
+		identifier := workerIdentifier(warehouse)
+		if _, ok := wh.inProgressMap[WorkerIdentifierT(identifier)]; ok {
+			if _, ok := wh.inProgressMap[WorkerIdentifierT(identifier)][JobIDT(uploadID)]; ok {
+				// do nothing
+			} else {
+				// delete it
+				wh.deleteWaitingUploadJob(uploadID)
+			}
+		} else {
+			// delete it
+			wh.deleteWaitingUploadJob(uploadID)
+		}
+	}
 	wh.areBeingEnqueuedLock.Unlock()
 
 	stagingFilesList, err := wh.getPendingStagingFiles(warehouse)
@@ -593,8 +606,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 		return nil
 	}
 
-	// Cuttent we are not deleting, so setting the priority as 100.
-	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, 100)
+	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority)
 	setLastProcessedMarker(warehouse)
 	return nil
 }
@@ -694,7 +706,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 	var skipIdentifiersSQL string
 	if len(skipIdentifiers) > 0 {
-		skipIdentifiersSQL = `and ((source_id || '_' || destination_id || '_' || namespace)) != ALL($1)`
+		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
 	}
 
 	sqlStatement := fmt.Sprintf(`
@@ -702,7 +714,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 					id, status, schema, mergedSchema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming, metadata->>'use_rudder_storage', timings, COALESCE(metadata->>'priority', '100')::int
 				FROM (
 					SELECT
-						ROW_NUMBER() OVER (PARTITION BY source_id, destination_id, namespace ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
+						ROW_NUMBER() OVER (PARTITION BY destination_id, namespace ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
 						t.*
 					FROM
 						%s t
@@ -817,7 +829,7 @@ func (wh *HandleT) getInProgressNamespaces() (identifiers []string) {
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
 	for k, v := range wh.inProgressMap {
-		if v >= int64(maxConcurrentUploadJObs) {
+		if len(v) >= maxConcurrentUploadJobs {
 			identifiers = append(identifiers, string(k))
 		}
 	}
@@ -984,7 +996,7 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	wh.resetInProgressJobs()
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
-	wh.inProgressMap = make(map[WorkerIdentifierT]int64)
+	wh.inProgressMap = make(map[WorkerIdentifierT]map[JobIDT]bool)
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 
 	ctx, cancel := context.WithCancel(context.Background())
