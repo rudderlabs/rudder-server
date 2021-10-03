@@ -402,12 +402,19 @@ func loadConfig() {
 }
 
 func (proc *HandleT) getTransformerFeatureJson(ctx context.Context) {
+	client := &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:        1,
+			MaxConnsPerHost:     1,
+			MaxIdleConnsPerHost: 1,
+		},
+	}
+
 	for {
 		for i := 0; i < featuresRetryMaxAttempts; i++ {
 			if ctx.Err() != nil {
 				return
 			}
-
 			url := transformerURL + "/features"
 			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
 			if err != nil {
@@ -415,8 +422,6 @@ func (proc *HandleT) getTransformerFeatureJson(ctx context.Context) {
 				time.Sleep(200 * time.Millisecond)
 				continue
 			}
-			tr := &http.Transport{}
-			client := &http.Client{Transport: tr}
 			res, err := client.Do(req)
 
 			if err != nil {

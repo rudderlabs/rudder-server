@@ -95,6 +95,8 @@ type HandleT struct {
 
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
+
+	client *http.Client
 }
 
 //Transformer provides methods to transform events
@@ -107,7 +109,15 @@ type Transformer interface {
 
 //NewTransformer creates a new transformer
 func NewTransformer() *HandleT {
-	return &HandleT{}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.MaxIdleConns = 10
+	tr.MaxConnsPerHost = 10
+	tr.MaxIdleConnsPerHost = 10
+	return &HandleT{
+		client: &http.Client{
+			Transport: tr,
+		},
+	}
 }
 
 var (
@@ -144,8 +154,6 @@ type ValidationErrorT struct {
 }
 
 func (trans *HandleT) transformWorker() {
-	tr := &http.Transport{}
-	client := &http.Client{Transport: tr}
 	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
 
 	for job := range trans.requestQ {
@@ -162,7 +170,7 @@ func (trans *HandleT) transformWorker() {
 
 		for {
 			transformRequestTimerStat.Start()
-			resp, err = client.Post(job.url, "application/json; charset=utf-8",
+			resp, err = trans.client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
 
 			if err == nil {
