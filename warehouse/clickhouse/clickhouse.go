@@ -325,9 +325,8 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnName string
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	pkgLogger.Infof("CH: DownloadLoadFiles for table:%s namespace:%s", tableName, ch.Namespace)
-	defer pkgLogger.Infof("CH: DownloadLoadFiles for table:%s namespace:%s", tableName, ch.Namespace)
-
+	pkgLogger.Infof("%s DownloadLoadFiles Started", ch.GetLogIdentifier(tableName))
+	defer pkgLogger.Infof("%s DownloadLoadFiles Completed", ch.GetLogIdentifier(tableName))
 	objects := ch.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 	downloader, err := filemanager.New(&filemanager.SettingsT{
@@ -339,95 +338,77 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		}),
 	})
 	if err != nil {
-		pkgLogger.Errorf("CH: Error in setting up a downloader for destionationID : %s Error : %v", ch.Warehouse.Destination.ID, err)
+		pkgLogger.Errorf("%s Error in setting up a downloader with Error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), err)
 		return nil, err
 	}
 	var fileNames []string
-	var wg sync.WaitGroup
 	var dErr error
 	var fileNamesLock sync.RWMutex
 
-	downloadChan := make(chan struct{}, numWorkersDownloadLoadFiles)
+	var jobs = make([]misc.RWCJob, 0)
 	for _, object := range objects {
-		pkgLogger.Infof("CH: range objects for table:%s namespace:%s location:%s", tableName, ch.Namespace, object.Location)
-		wg.Add(1)
-		pkgLogger.Infof("CH: waiting started for channel for table:%s namespace:%s", tableName, ch.Namespace)
-		downloadChan <- struct{}{}
-		pkgLogger.Infof("CH: waiting completed for channel for table:%s namespace:%s", tableName, ch.Namespace)
-		object := object
-		go func() {
-			pkgLogger.Infof("CH: ch.downloadLoadFile started for table:%s namespace:%s", tableName, ch.Namespace)
-			fileName, err := ch.downloadLoadFile(&wg, downloadChan, &object, tableName, downloader)
-			pkgLogger.Infof("CH: ch.downloadLoadFile completed for table:%s namespace:%s", tableName, ch.Namespace)
+		jobs = append(jobs, object)
+	}
+
+	misc.RunWithConcurrency(&misc.RWCConfig{
+		Factor: numWorkersDownloadLoadFiles,
+		Jobs:   &jobs,
+		Run: func(job interface{}) {
+			loadFile := job.(warehouseutils.LoadFileT)
+			fileName, err := ch.downloadLoadFile(&loadFile, tableName, downloader)
 			if err != nil {
+				pkgLogger.Errorf("%s Error occurred while downloading fileName: %s, Error: %v", ch.GetLogIdentifier(tableName), fileName, err)
 				dErr = err
 				return
 			}
 			fileNamesLock.Lock()
 			fileNames = append(fileNames, fileName)
 			fileNamesLock.Unlock()
-		}()
-	}
-	wg.Wait()
+		},
+	})
 	return fileNames, dErr
 }
 
-func (ch *HandleT) downloadLoadFile(wg *sync.WaitGroup, downloadChan chan struct{}, object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager) (fileName string, err error) {
-	pkgLogger.Infof("CH: downloadLoadFile for table:%s namespace:%s", tableName, ch.Namespace)
-	defer pkgLogger.Infof("CH: downloadLoadFile for table:%s namespace:%s", tableName, ch.Namespace)
+func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager) (fileName string, err error) {
+	pkgLogger.Debugf("%s DownloadLoadFile Started", ch.GetLogIdentifier(tableName, downloader.GetProvider()))
+	defer pkgLogger.Debugf("%s DownloadLoadFile Completed", ch.GetLogIdentifier(tableName, downloader.GetProvider()))
 
-	defer func() {
-		<-downloadChan
-		wg.Done()
-	}()
-
-	pkgLogger.Infof("CH: warehouseutils.GetObjectName started for table:%s namespace:%s", tableName, ch.Namespace)
 	objectName, err := warehouseutils.GetObjectName(object.Location, ch.Warehouse.Destination.Config, ch.ObjectStorage)
 	if err != nil {
-		pkgLogger.Errorf("CH: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
+		pkgLogger.Errorf("%s Error in converting object location to object key for location: %s, error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), object.Location, err)
 		return
 	}
-	pkgLogger.Infof("CH: warehouseutils.GetObjectName completed for table:%s namespace:%s", tableName, ch.Namespace)
 
-	pkgLogger.Infof("CH: misc.CreateTMPDIR started for table:%s namespace:%s", tableName, ch.Namespace)
 	dirName := "/rudder-warehouse-load-uploads-tmp/"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		pkgLogger.Errorf("CH: Error in getting tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
+		pkgLogger.Errorf("%s Error in getting tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), object.Location, err)
 		return
 	}
-	pkgLogger.Infof("CH: misc.CreateTMPDIR completed for table:%s namespace:%s", tableName, ch.Namespace)
 
-	pkgLogger.Infof("CH: os.MkdirAll stated for table:%s namespace:%s", tableName, ch.Namespace)
 	ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
 	err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
 	if err != nil {
-		pkgLogger.Errorf("CH: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, object.Location, err)
+		pkgLogger.Errorf("%s Error in making tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), object.Location, err)
 		return
 	}
-	pkgLogger.Infof("CH: os.MkdirAll completed for table:%s namespace:%s", tableName, ch.Namespace)
 
-	pkgLogger.Infof("CH: os.Create started for table:%s namespace:%s", tableName, ch.Namespace)
 	objectFile, err := os.Create(ObjectPath)
 	if err != nil {
-		pkgLogger.Errorf("CH: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
+		pkgLogger.Errorf("%s Error in creating file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), tableName, object.Location, err)
 		return
 	}
-	pkgLogger.Infof("CH: os.Create completed for table:%s namespace:%s", tableName, ch.Namespace)
 
-	pkgLogger.Infof("CH: downloader.Download stated for table:%s namespace:%s", tableName, ch.Namespace)
 	err = downloader.Download(objectFile, objectName)
 	if err != nil {
-		pkgLogger.Errorf("CH: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
+		pkgLogger.Errorf("%s Error in downloading file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), tableName, object.Location, err)
 		return
 	}
-	pkgLogger.Infof("CH: downloader.Download completed for table:%s namespace:%s", tableName, ch.Namespace)
 	fileName = objectFile.Name()
 	if err = objectFile.Close(); err != nil {
-		pkgLogger.Errorf("CH: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
+		pkgLogger.Errorf("%s Error in closing downloaded file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), tableName, object.Location, err)
 		return
 	}
-	pkgLogger.Infof("CH: downloadLoadFile completed for table:%s namespace:%s", tableName, ch.Namespace)
 	return fileName, err
 }
 
@@ -535,16 +516,14 @@ func typecastDataFromType(data string, dataType string) interface{} {
 
 // loadTable loads table to clickhouse from the load files
 func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
-	pkgLogger.Infof("CH: Starting load for table:%s namespace:%s", tableName, ch.Namespace)
-	defer pkgLogger.Infof("CH: Completed load for table:%s namespace:%s", tableName, ch.Namespace)
+	pkgLogger.Infof("%s LoadTable Started", ch.GetLogIdentifier(tableName))
+	defer pkgLogger.Infof("%s LoadTable Completed", ch.GetLogIdentifier(tableName))
 
 	// Clickhouse stats
 	chStats := ch.newClickHouseStat(tableName)
 
-	pkgLogger.Infof("CH: Started downloading load for table:%s namespace:%s", tableName, ch.Namespace)
 	chStats.downloadLoadFilesTime.Start()
 	fileNames, err := ch.DownloadLoadFiles(tableName)
-	pkgLogger.Infof("CH: Completed downloading load for table:%s namespace:%s", tableName, ch.Namespace)
 	chStats.downloadLoadFilesTime.End()
 	if err != nil {
 		return
@@ -561,7 +540,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), uint64(loadTableFailureRetries))
 	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(error error, t time.Duration) {
-		err = fmt.Errorf("CH: Error occurred for table:%s namespace:%s error: %v", tableName, ch.Namespace, error)
+		err = fmt.Errorf("%s Error occurred while retrying for load tables with error: %v", ch.GetLogIdentifier(tableName), error)
 		pkgLogger.Error(err)
 		chStats.failRetries.Count(1)
 	})
@@ -574,58 +553,54 @@ type tableError struct {
 }
 
 func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, fileNames []string, chStats *clickHouseStatT) (terr tableError) {
-	// sort column names
-	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
-	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
+	pkgLogger.Debugf("%s LoadTablesFromFilesNamesWithRetry Started", ch.GetLogIdentifier(tableName))
+	defer pkgLogger.Debugf("%s LoadTablesFromFilesNamesWithRetry Completed", ch.GetLogIdentifier(tableName))
 
 	var txn *sql.Tx
 	var err error
 
 	onError := func(err error) {
-		terr.err = err
-
-		pkgLogger.Infof("onError called for table:%s, namespace:%s", tableName, ch.Namespace)
 		if txn != nil {
 			go func() {
-				pkgLogger.Infof("txn.Rollback started for table:%s, namespace:%s", tableName, ch.Namespace)
+				pkgLogger.Debugf("%s Rollback Started for loading in table", ch.GetLogIdentifier(tableName))
 				txn.Rollback()
-				pkgLogger.Infof("txn.Rollback completed table:%s, namespace:%s", tableName, ch.Namespace)
+				pkgLogger.Debugf("%s Rollback Completed for loading in table", ch.GetLogIdentifier(tableName))
 			}()
 		}
-		pkgLogger.Infof("onError for loadTable table:%s, namespace:%s", tableName, ch.Namespace)
-		pkgLogger.Error(err)
+		terr.err = err
+		pkgLogger.Errorf("%s OnError for loading in table with error: %v", ch.GetLogIdentifier(tableName), err)
 	}
 
-	pkgLogger.Infof("CH: Beginning a transaction in db for loading in table:%s namespace:%s", tableName, ch.Namespace)
+	pkgLogger.Debugf("%s Beginning a transaction in db for loading in table", ch.GetLogIdentifier(tableName))
 	txn, err = ch.Db.Begin()
 	if err != nil {
-		err = fmt.Errorf("CH: Error while beginning a transaction in db for loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
-		pkgLogger.Info(err)
+		err = fmt.Errorf("%s Error while beginning a transaction in db for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
 		onError(err)
 		return
 	}
-	pkgLogger.Infof("CH: Completed a transaction in db for loading in table:%s namespace:%s", tableName, ch.Namespace)
+	pkgLogger.Debugf("%s Completed a transaction in db for loading in table", ch.GetLogIdentifier(tableName))
+
+	// sort column names
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
+	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
-	pkgLogger.Infof("CH: Preparing statement exec in db for loading in table:%s namespace:%s query:%s", tableName, ch.Namespace, sqlStatement)
+	pkgLogger.Debugf("%s Preparing statement exec in db for loading in table for query:%s", ch.GetLogIdentifier(tableName), sqlStatement)
 	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
-		err = fmt.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s namespace:%s: query:%s error:%v", tableName, ch.Namespace, sqlStatement, err)
-		pkgLogger.Info(err)
+		err = fmt.Errorf("%s Error while preparing statement for transaction in db for loading in table for query:%s error:%v", ch.GetLogIdentifier(tableName), sqlStatement, err)
 		onError(err)
 		return
 	}
-	pkgLogger.Infof("CH: Prepared statement exec in db for loading in table:%s namespace:%s", tableName, ch.Namespace)
+	pkgLogger.Debugf("%s Prepared statement exec in db for loading in table", ch.GetLogIdentifier(tableName))
 
 	for _, objectFileName := range fileNames {
 		chStats.syncLoadFileTime.Start()
-		pkgLogger.Infof("CH: range fileNames started table:%s namespace:%s fileName:%s", tableName, ch.Namespace, objectFileName)
 
 		var gzipFile *os.File
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
-			err = fmt.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s  namespace:%s: error:%v", objectFileName, tableName, ch.Namespace, err.Error())
-			pkgLogger.Info(err)
+			err = fmt.Errorf("%s Error opening file using os.Open for file:%s while loading to table with error:%v", ch.GetLogIdentifier(tableName), objectFileName, err.Error())
 			onError(err)
 			return
 		}
@@ -637,8 +612,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 				misc.RemoveFilePaths(objectFileName)
 			})
 			gzipFile.Close()
-			err = fmt.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: namespace:%s: error:%v", gzipFile.Name(), tableName, ch.Namespace, err.Error())
-			pkgLogger.Info(err)
+			err = fmt.Errorf("%s Error reading file using gzip.NewReader for file:%s while loading to table with error:%v", ch.GetLogIdentifier(tableName), gzipFile.Name(), err.Error())
 			onError(err)
 			return
 		}
@@ -650,18 +624,16 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 			record, err = csvReader.Read()
 			if err != nil {
 				if err == io.EOF {
-					pkgLogger.Infof("CH: File reading completed while reading csv file for loading in table:%s namespace:%s: objectFileName:%s", tableName, ch.Namespace, objectFileName)
+					pkgLogger.Debugf("%s File reading completed while reading csv file for loading in table for objectFileName:%s", ch.GetLogIdentifier(tableName), objectFileName)
 					break
 				} else {
-					err = fmt.Errorf("CH: Error while reading csv file %s for loading in table:%s namespace:%s: error:%v", objectFileName, tableName, ch.Namespace, err)
-					pkgLogger.Info(err)
+					err = fmt.Errorf("%s Error while reading csv file %s for loading in table with error:%v", ch.GetLogIdentifier(tableName), objectFileName, err)
 					onError(err)
 					return
 				}
 			}
 			if len(sortedColumnKeys) != len(record) {
-				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. namespace:%s: Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), ch.Namespace, csvRowsProcessedCount)
-				pkgLogger.Info(err)
+				err = fmt.Errorf(`%s Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table with sortedColumnKeys: %d. Processed rows in csv file until mismatch: %d`, ch.GetLogIdentifier(tableName), len(record), len(sortedColumnKeys), csvRowsProcessedCount)
 				onError(err)
 				return
 			}
@@ -675,33 +647,28 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 
 			stmtCtx, stmtCancel := context.WithCancel(context.Background())
 			misc.RunWithTimeout(func() {
-				pkgLogger.Infof("CH: Starting Prepared statement exec table:%s namespace:%s", tableName, ch.Namespace)
+				pkgLogger.Debugf("%s Starting Prepared statement exec", ch.GetLogIdentifier(tableName))
 				chStats.execRowTime.Start()
 				_, err = stmt.ExecContext(stmtCtx, recordInterface...)
 				chStats.execRowTime.End()
-				pkgLogger.Infof("CH: Completed Prepared statement exec table:%s namespace:%s ", tableName, ch.Namespace)
+				pkgLogger.Debugf("%s Completed Prepared statement exec", ch.GetLogIdentifier(tableName))
 			}, func() {
-				pkgLogger.Infof("CH: Cancelling and closing statment table:%s namespace:%s", tableName, ch.Namespace)
+				pkgLogger.Debugf("%s Cancelling and closing statement", ch.GetLogIdentifier(tableName))
 				stmtCancel()
 				go func() {
 					stmt.Close()
 				}()
-				// stmt.Close()
-				err = fmt.Errorf("CH: Timed out exec table:%s namespace:%s objectFileName: %s", tableName, ch.Namespace, objectFileName)
+				err = fmt.Errorf("%s Timed out exec table for objectFileName: %s", ch.GetLogIdentifier(tableName), objectFileName)
 				terr.enableRetry = true
-				pkgLogger.Info(err)
 				chStats.execTimeouts.Count(1)
 			}, execTimeOutInSeconds)
 
 			if err != nil {
-				err = fmt.Errorf("CH: Error in inserting statement for loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
-				pkgLogger.Info(err)
+				err = fmt.Errorf("%s Error in inserting statement for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
 				onError(err)
 				return
 			}
 			csvRowsProcessedCount++
-
-			pkgLogger.Infof("CH: csvRowsProcessedCount table:%s namespace:%s fileName:%s count: %d", tableName, ch.Namespace, objectFileName, csvRowsProcessedCount)
 		}
 
 		chStats.numRowsLoadFile.Count(csvRowsProcessedCount)
@@ -710,34 +677,30 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 		gzipFile.Close()
 
 		chStats.syncLoadFileTime.End()
-		pkgLogger.Infof("CH: range fileNames completed table:%s namespace:%s fileName:%s", tableName, ch.Namespace, objectFileName)
 	}
 
 	misc.RunWithTimeout(func() {
 		chStats.commitTime.Start()
 		defer chStats.commitTime.End()
 
-		pkgLogger.Infof("Committing transaction for table:%s namespace:%s", tableName, ch.Namespace)
+		pkgLogger.Debugf("%s Committing transaction", ch.GetLogIdentifier(tableName))
 		if err = txn.Commit(); err != nil {
-			err = fmt.Errorf("CH: Error while committing transaction as there was error while loading in table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
-			pkgLogger.Info(err)
+			err = fmt.Errorf("%s Error while committing transaction as there was error while loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
 			return
 		}
+		pkgLogger.Debugf("%v Committed transaction", ch.GetLogIdentifier(tableName))
 	}, func() {
-		err = fmt.Errorf("CH: Timed out commit table:%s namespace:%s", tableName, ch.Namespace)
+		err = fmt.Errorf("%s Timed out while committing", ch.GetLogIdentifier(tableName))
 		terr.enableRetry = true
-		pkgLogger.Info(err)
 		chStats.commitTimeouts.Count(1)
 	}, commitTimeOutInSeconds)
 
 	if err != nil {
-		err = fmt.Errorf("CH: Error occurred table:%s namespace:%s: error:%v", tableName, ch.Namespace, err)
-		pkgLogger.Info(err)
+		err = fmt.Errorf("%s Error occurred while committing with error:%v", ch.GetLogIdentifier(tableName), err)
 		onError(err)
 		return
 	}
-	pkgLogger.Infof("Committed transaction for table:%s namespace:%s", tableName, ch.Namespace)
-	pkgLogger.Infof("CH: Complete load for table:%s namespace:%s", tableName, ch.Namespace)
+	pkgLogger.Infof("%s Completed loading the table", ch.GetLogIdentifier(tableName))
 	return
 }
 
@@ -1018,4 +981,11 @@ func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	}
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+}
+
+func (ch *HandleT) GetLogIdentifier(args ...string) string {
+	if len(args) == 0 {
+		return fmt.Sprintf("[%s][%s]", ch.Warehouse.Identifier, ch.Warehouse.Namespace)
+	}
+	return fmt.Sprintf("[%s][%s][%s]", ch.Warehouse.Identifier, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }

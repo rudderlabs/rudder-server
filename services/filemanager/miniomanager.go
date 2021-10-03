@@ -124,6 +124,10 @@ type MinioManager struct {
 	Config *MinioConfig
 }
 
+func (manager *MinioManager) GetProvider() string {
+	return "MINIO"
+}
+
 type MinioConfig struct {
 	Bucket          string
 	Prefix          string
@@ -154,6 +158,6 @@ func (manager *MinioManager) ListFilesWithPrefix(prefix string, maxItems int64) 
 	return
 }
 
-func (manager *MinioManager) GetConfiguredPrefix() (string) {
+func (manager *MinioManager) GetConfiguredPrefix() string {
 	return manager.Config.Prefix
 }

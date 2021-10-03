@@ -192,6 +192,10 @@ type AzureBlobStorageManager struct {
 	Config *AzureBlobStorageConfig
 }
 
+func (manager *AzureBlobStorageManager) GetProvider() string {
+	return "AZURE_BLOB"
+}
+
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
 	var containerName, accountName, accountKey, prefix string
 	if config["containerName"] != nil {

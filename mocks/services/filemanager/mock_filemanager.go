@@ -144,6 +144,20 @@ func (mr *MockFileManagerMockRecorder) GetObjectNameFromLocation(arg0 interface{
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetObjectNameFromLocation", reflect.TypeOf((*MockFileManager)(nil).GetObjectNameFromLocation), arg0)
 }
 
+// GetProvider mocks base method.
+func (m *MockFileManager) GetProvider() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProvider")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetProvider indicates an expected call of GetProvider.
+func (mr *MockFileManagerMockRecorder) GetProvider() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProvider", reflect.TypeOf((*MockFileManager)(nil).GetProvider))
+}
+
 // ListFilesWithPrefix mocks base method.
 func (m *MockFileManager) ListFilesWithPrefix(arg0 string, arg1 int64) ([]*filemanager.FileObject, error) {
 	m.ctrl.T.Helper()
