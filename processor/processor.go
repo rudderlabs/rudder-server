@@ -1198,6 +1198,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					shallowEventCopy.Metadata.DestinationID = destination.ID
 					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
 
+					enhanceContextWithSourceDestInfo(&shallowEventCopy)
+
 					//TODO: Test for multiple workspaces ex: hosted data plane
 					/* Stream destinations does not need config in transformer. As the Kafka destination config
 					holds the ca-certificate and it depends on user input, it may happen that they provide entire
@@ -1563,6 +1565,17 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
 	proc.processJobsTime.End()
+}
+
+// enhanceContextWithSourceDestInfo enhances source and destination specific information into the context.
+func enhanceContextWithSourceDestInfo(event *transformer.TransformerEventT) {
+	eventContext, castOk := event.Message["context"].(map[string]interface{})
+	if castOk {
+		eventContext["sourceId"] = event.Metadata.SourceID
+		eventContext["sourceType"] = event.Metadata.SourceType
+		eventContext["destinationId"] = event.Metadata.DestinationID
+		eventContext["destinationType"] = event.Metadata.DestinationType
+	}
 }
 
 func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT, filterUnsupportedMessageTypes bool) transformer.ResponseT {
