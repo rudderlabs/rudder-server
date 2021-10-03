@@ -2040,7 +2040,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		sqlStatement := fmt.Sprintf(`SELECT
                                   J.job_id, J.uuid, J.user_id, J.parameters,  J.custom_val, J.event_payload,
                                   J.created_at, J.expire_at,
-								  sum(J.event_count) over (order by J.job_id asc) as running_event_counts
+								  sum(J.event_count) over (order by J.job_id asc) as running_event_counts,
                                   job_latest_state.job_state, job_latest_state.attempt,
                                   job_latest_state.exec_time, job_latest_state.retry_time,
                                   job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
