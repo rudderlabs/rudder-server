@@ -204,7 +204,7 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 		dbNameParam = fmt.Sprintf(`database=%s`, cred.dbName)
 	}
 
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%s",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t",
 		cred.host,
 		cred.port,
 		cred.user,
