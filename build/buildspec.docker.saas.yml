@@ -17,6 +17,7 @@ phases:
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
+      - time go mod download
   build:
     commands:
       - export GO111MODULE=on
@@ -37,3 +38,8 @@ phases:
 artifacts:
   files:
     - "**/*"
+
+cache:
+  paths: |
+    ~/.cache/go-build
+    ~/go/pkg/mod
