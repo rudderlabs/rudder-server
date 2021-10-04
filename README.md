@@ -114,6 +114,8 @@ Read about RudderStack's architecture in our [wiki](https://github.com/rudderlab
 
 RudderStack server is released under the [AGPLv3 License][agplv3_license].
 
+> Read [**our blog**](https://rudderstack.com/blog/rudderstacks-licensing-explained) to know more about how our software is licensed.
+
 ## Contribute
 
 We would love to see you contribute to RudderStack. Get more information on how to contribute [here](CONTRIBUTING.md).

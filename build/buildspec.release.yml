@@ -8,7 +8,7 @@ env:
 phases:
   install:
     runtime-versions:
-      golang: 1.16.8
+      golang: 1.16
   pre_build:
     commands:
       - docker login --username rudderlabs --password $dockerhub_passwd
@@ -23,7 +23,7 @@ phases:
       - DATE=$(date "+%F,%T")
       - echo date.. $DATE
       - TAG=$CODEBUILD_WEBHOOK_TRIGGER
-      - echo tag.. $TAG 
+      - echo tag.. $TAG
       - VERSION=$(echo $TAG | cut -d "/" -f 2)
       - echo version.. $VERSION
       # Build Open source version

@@ -4,9 +4,10 @@ package transformer
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -16,11 +17,11 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -53,12 +54,14 @@ type MetadataT struct {
 	DestinationType     string                            `json:"destinationType"`
 	MessageID           string                            `json:"messageId"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
-	MessageIDs []string `json:"messageIds"`
-	RudderID   string   `json:"rudderId"`
-	SessionID  string   `json:"sessionId,omitempty"`
-	ReceivedAt string   `json:"receivedAt"`
-	EventName  string   `json:"eventName"`
-	EventType  string   `json:"eventType"`
+	MessageIDs              []string `json:"messageIds"`
+	RudderID                string   `json:"rudderId"`
+	SessionID               string   `json:"sessionId,omitempty"`
+	ReceivedAt              string   `json:"receivedAt"`
+	EventName               string   `json:"eventName"`
+	EventType               string   `json:"eventType"`
+	SourceDefinitionID      string   `json:"sourceDefinitionId"`
+	DestinationDefinitionID string   `json:"destinationDefinitionId"`
 }
 
 type TransformerEventT struct {
@@ -92,12 +95,16 @@ type HandleT struct {
 	failedStat         stats.RudderStats
 	transformTimerStat stats.RudderStats
 	logger             logger.LoggerI
+
+	backgroundWait   func() error
+	backgroundCancel context.CancelFunc
 }
 
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
 	Transform(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
+	Shutdown()
 	Validate(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 }
 
@@ -164,7 +171,7 @@ func (trans *HandleT) transformWorker() {
 			if err == nil {
 				//If no err returned by client.Post, reading body.
 				//If reading body fails, retrying.
-				respData, err = ioutil.ReadAll(resp.Body)
+				respData, err = io.ReadAll(resp.Body)
 			}
 
 			if err != nil {
@@ -232,6 +239,7 @@ func (trans *HandleT) transformWorker() {
 
 		trans.responseQ <- &transformedMessageT{data: transformerResponses, index: job.index}
 	}
+
 }
 
 //Setup initializes this class
@@ -245,12 +253,33 @@ func (trans *HandleT) Setup() {
 	trans.transformTimerStat = stats.NewStat("processor.transformation_time", stats.TimerType)
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	g, _ := errgroup.WithContext(ctx)
+
+	trans.backgroundCancel = cancel
+	trans.backgroundWait = g.Wait
+
 	for i := 0; i < numTransformWorker; i++ {
 		trans.logger.Info("Starting transformer worker", i)
-		rruntime.Go(func() {
+		g.Go(misc.WithBugsnag(func() error {
 			trans.transformWorker()
-		})
+			return nil
+		}))
 	}
+
+}
+
+// Shutdown stops transform workers gracefully and waits for them to stop
+// WARNING: No Transform() call should be running or called when and after
+func (trans *HandleT) Shutdown() {
+	trans.backgroundCancel()
+	// Closing requestQ will cause workers to stop.
+	close(trans.requestQ)
+	trans.backgroundWait()
+
+	// After workers have stop, is safe to close responseQ.
+	close(trans.responseQ)
 }
 
 //ResponseT represents a Transformer response
@@ -275,7 +304,7 @@ func GetVersion() (transformerBuildVersion string) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			pkgLogger.Errorf("Unable to read response into bytes with error : %s", err.Error())
 			transformerBuildVersion = "Unable to read response from transformer."

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 
@@ -45,10 +45,10 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	bt.stats.transformTimerStat.End()
 	if err != nil {
 		err := fmt.Errorf("JS HTTP connection error to source transformer: URL: %v Error: %+v", url, err)
-		panic(err)
+		return transformerBatchResponseT{batchError: err}
 	}
 
-	respBody, err := ioutil.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 
 	if err != nil {

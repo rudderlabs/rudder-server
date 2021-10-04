@@ -9,7 +9,7 @@ env:
 phases:
   install:
     runtime-versions:
-      golang: 1.16.8
+      golang: 1.16
   pre_build:
     commands:
       - env
@@ -21,6 +21,8 @@ phases:
       - ssh-add ~/.ssh/ssh_key
       - (cd && go get github.com/onsi/ginkgo/ginkgo)
       - (cd && go get github.com/golang/mock/mockgen)
+      - docker pull postgres:11-alpine
+
   build:
     commands:
       - export GO111MODULE=on
