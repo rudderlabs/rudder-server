@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
@@ -66,25 +65,21 @@ func (fem *FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap ma
 		if err != nil {
 			panic(err)
 		}
-		stmt, err := txn.Prepare(pq.CopyIn(table, "destination_id", "record_id", "created_at"))
+		insertQuery := fmt.Sprintf(`INSERT INTO %s VALUES($1, $2, $3);`, table)
+		stmt, err := txn.Prepare(insertQuery)
 		if err != nil {
 			panic(err)
 		}
 		createdAt := time.Now()
 		for _, failedEvent := range failedEvents {
-			pkgLogger.Infof("recordId: %s, destinationID: %s, createdAt: %s", failedEvent.RecordID, failedEvent.DestinationID, createdAt)
-			if len(failedEvent.RecordID) == 0 {
-				pkgLogger.Infof("skipped adding to failed keys for empty event payload: %v", failedEvent)
+			if len(failedEvent.RecordID) == 0 || !json.Valid(failedEvent.RecordID) {
+				pkgLogger.Infof("skipped adding invalid recordId: %s, to failed keys table: %s", failedEvent.RecordID, table)
 				continue
 			}
 			_, err = stmt.Exec(failedEvent.DestinationID, failedEvent.RecordID, createdAt)
 			if err != nil {
 				panic(err)
 			}
-		}
-		_, err = stmt.Exec()
-		if err != nil {
-			panic(err)
 		}
 		stmt.Close()
 	}
