@@ -1823,5 +1823,6 @@ func (proc *HandleT) Resume() {
 }
 
 func (proc *HandleT) isReportingEnabled() bool {
+	proc.logger.Infof("reporting enabled: %s in processor", proc.reporting != nil && proc.reportingEnabled)
 	return proc.reporting != nil && proc.reportingEnabled
 }
