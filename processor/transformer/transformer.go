@@ -4,6 +4,7 @@ package transformer
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,6 +13,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"golang.org/x/net/http2"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -139,7 +142,13 @@ type ValidationErrorT struct {
 }
 
 func (trans *HandleT) transformWorker() {
-	tr := &http.Transport{}
+	// tr := &http.Transport{}
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+	tr := &http2.Transport{
+		TLSClientConfig: tlsConfig,
+	}
 	client := &http.Client{Transport: tr}
 	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
 

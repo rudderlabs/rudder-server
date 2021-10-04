@@ -99,7 +99,7 @@ Router:
   allowAbortedUserJobsCountForProcessing: 1
   maxFailedCountForJob: 3
   retryTimeWindow: 180m
-  transformerProxy: false
+  transformerProxy: true
   MARKETO:
     noOfWorkers: 4
   throttler:

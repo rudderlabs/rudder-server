@@ -4,6 +4,7 @@ package transformer
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -17,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/gjson"
+	"golang.org/x/net/http2"
 )
 
 const (
@@ -26,7 +28,7 @@ const (
 
 //HandleT is the handle for this class
 type HandleT struct {
-	tr                                 *http.Transport
+	tr                                 *http2.Transport
 	client                             *http.Client
 	transformRequestTimerStat          stats.RudderStats
 	transformerNetworkRequestTimerStat stats.RudderStats
@@ -197,7 +199,12 @@ func (trans *HandleT) Send(transformedData integrations.PostParametersT, destNam
 //is it ok to use same client for network and transformer calls? need to understand timeout setup in router
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
-	trans.tr = &http.Transport{}
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+	trans.tr = &http2.Transport{
+		TLSClientConfig: tlsConfig,
+	}
 	trans.client = &http.Client{Transport: trans.tr, Timeout: 10 * time.Minute}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
