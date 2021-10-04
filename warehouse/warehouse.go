@@ -116,7 +116,7 @@ type HandleT struct {
 	workerChannelMap      map[string]chan *UploadJobT
 	workerChannelMapLock  sync.RWMutex
 	initialConfigFetched  bool
-	inProgressMap         map[WorkerIdentifierT]map[JobIDT]bool
+	inProgressMap         map[WorkerIdentifierT][]JobIDT
 	inProgressMapLock     sync.RWMutex
 	areBeingEnqueuedLock  sync.RWMutex
 	noOfWorkers           int
@@ -464,20 +464,17 @@ func (wh *HandleT) setDestInProgress(warehouse warehouseutils.WarehouseT, jobID 
 	identifier := workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	if _, ok := wh.inProgressMap[WorkerIdentifierT(identifier)]; !ok {
-		wh.inProgressMap[WorkerIdentifierT(identifier)] = make(map[JobIDT]bool)
-	}
-	wh.inProgressMap[WorkerIdentifierT(identifier)][JobIDT(jobID)] = true
+	wh.inProgressMap[WorkerIdentifierT(identifier)] = append(wh.inProgressMap[WorkerIdentifierT(identifier)], JobIDT(jobID))
 }
 
 func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.WarehouseT, jobID int64) {
 	identifier := workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	if _, ok := wh.inProgressMap[WorkerIdentifierT(identifier)]; ok {
-		delete(wh.inProgressMap[WorkerIdentifierT(identifier)], JobIDT(jobID))
-		if len(wh.inProgressMap[WorkerIdentifierT(identifier)]) == 0 {
-			delete(wh.inProgressMap, WorkerIdentifierT(identifier))
+	for idx, id := range wh.inProgressMap[WorkerIdentifierT(identifier)] {
+		if jobID == int64(id) {
+			wh.inProgressMap[WorkerIdentifierT(identifier)] = append(wh.inProgressMap[WorkerIdentifierT(identifier)][:idx], wh.inProgressMap[WorkerIdentifierT(identifier)][idx+1:]...)
+			break
 		}
 	}
 }
@@ -582,13 +579,15 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(warehouse)
 	if uploadStatus == Waiting {
 		identifier := workerIdentifier(warehouse)
-		if _, ok := wh.inProgressMap[WorkerIdentifierT(identifier)]; ok {
-			if _, ok := wh.inProgressMap[WorkerIdentifierT(identifier)][JobIDT(uploadID)]; ok {
-				// do nothing
-			} else {
-				// delete it
-				wh.deleteWaitingUploadJob(uploadID)
+		inProgress := false
+		for _, id := range wh.inProgressMap[WorkerIdentifierT(identifier)] {
+			if uploadID == int64(id) {
+				inProgress = true
+				break
 			}
+		}
+		if inProgress {
+			// do nothing
 		} else {
 			// delete it
 			wh.deleteWaitingUploadJob(uploadID)
@@ -996,7 +995,7 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	wh.resetInProgressJobs()
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
-	wh.inProgressMap = make(map[WorkerIdentifierT]map[JobIDT]bool)
+	wh.inProgressMap = make(map[WorkerIdentifierT][]JobIDT)
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 
 	ctx, cancel := context.WithCancel(context.Background())
