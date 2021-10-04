@@ -1602,7 +1602,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.processJobsTime.End()
 }
 
-
 func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 	if len(failedJobs) > 0 {
 		txn := proc.errorDB.BeginGlobalTransaction()
