@@ -990,7 +990,7 @@ func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 
 func (ch *HandleT) GetLogIdentifier(args ...string) string {
 	if len(args) == 0 {
-		return fmt.Sprintf("[%s][%s]", ch.Warehouse.Identifier, ch.Warehouse.Namespace)
+		return fmt.Sprintf("[%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace)
 	}
-	return fmt.Sprintf("[%s][%s][%s]", ch.Warehouse.Identifier, ch.Warehouse.Namespace, strings.Join(args, "]["))
+	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
