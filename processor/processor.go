@@ -1604,11 +1604,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 	if len(failedJobs) > 0 {
-		txn := proc.errorDB.BeginGlobalTransaction()
 		jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
 		for _, failedJob := range failedJobs {
 			router.PrepareJobRunIdAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
 		}
+		txn := proc.errorDB.BeginGlobalTransaction()
 		router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
 		proc.errorDB.CommitTransaction(txn)
 	}
