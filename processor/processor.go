@@ -119,23 +119,23 @@ type DestStatT struct {
 }
 
 type ParametersT struct {
-	SourceID        string      `json:"source_id"`
-	DestinationID   string      `json:"destination_id"`
-	ReceivedAt      string      `json:"received_at"`
-	TransformAt     string      `json:"transform_at"`
-	MessageID       string      `json:"message_id"`
-	GatewayJobID    int64       `json:"gateway_job_id"`
-	SourceBatchID   string      `json:"source_batch_id"`
-	SourceTaskID    string      `json:"source_task_id"`
-	SourceTaskRunID string      `json:"source_task_run_id"`
-	SourceJobID     string      `json:"source_job_id"`
-	SourceJobRunID  string      `json:"source_job_run_id"`
-	EventName       string      `json:"event_name"`
-	EventType       string      `json:"event_type"`
-	SourceDefinitionID      string `json:"source_definition_id"`
-	DestinationDefinitionID string `json:"destination_definition_id"`
-	SourceCategory          string `json:"source_category"`
-	RecordID        interface{} `json:"record_id"`
+	SourceID                string      `json:"source_id"`
+	DestinationID           string      `json:"destination_id"`
+	ReceivedAt              string      `json:"received_at"`
+	TransformAt             string      `json:"transform_at"`
+	MessageID               string      `json:"message_id"`
+	GatewayJobID            int64       `json:"gateway_job_id"`
+	SourceBatchID           string      `json:"source_batch_id"`
+	SourceTaskID            string      `json:"source_task_id"`
+	SourceTaskRunID         string      `json:"source_task_run_id"`
+	SourceJobID             string      `json:"source_job_id"`
+	SourceJobRunID          string      `json:"source_job_run_id"`
+	EventName               string      `json:"event_name"`
+	EventType               string      `json:"event_type"`
+	SourceDefinitionID      string      `json:"source_definition_id"`
+	DestinationDefinitionID string      `json:"destination_definition_id"`
+	SourceCategory          string      `json:"source_category"`
+	RecordID                interface{} `json:"record_id"`
 }
 
 type MetricMetadata struct {
@@ -1445,23 +1445,23 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			}
 
 			params := ParametersT{
-				SourceID:        sourceID,
-				DestinationID:   destID,
-				ReceivedAt:      receivedAt,
-				TransformAt:     transformAt,
-				MessageID:       messageId,
-				GatewayJobID:    jobId,
-				SourceBatchID:   sourceBatchId,
-				SourceTaskID:    sourceTaskId,
-				SourceTaskRunID: sourceTaskRunId,
-				SourceJobID:     sourceJobId,
-				SourceJobRunID:  sourceJobRunId,
-				EventName:       eventName,
-				EventType:       eventType,
+				SourceID:                sourceID,
+				DestinationID:           destID,
+				ReceivedAt:              receivedAt,
+				TransformAt:             transformAt,
+				MessageID:               messageId,
+				GatewayJobID:            jobId,
+				SourceBatchID:           sourceBatchId,
+				SourceTaskID:            sourceTaskId,
+				SourceTaskRunID:         sourceTaskRunId,
+				SourceJobID:             sourceJobId,
+				SourceJobRunID:          sourceJobRunId,
+				EventName:               eventName,
+				EventType:               eventType,
 				SourceCategory:          sourceCategory,
 				SourceDefinitionID:      sourceDefID,
 				DestinationDefinitionID: destDefID,
-				RecordID:        recordId,
+				RecordID:                recordId,
 			}
 			marshalledParams, err := json.Marshal(params)
 			if err != nil {

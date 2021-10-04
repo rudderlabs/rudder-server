@@ -139,21 +139,21 @@ type ObjectStorageT struct {
 
 //JobParametersT struct holds source id and destination id of a job
 type JobParametersT struct {
-	SourceID        string `json:"source_id"`
-	DestinationID   string `json:"destination_id"`
-	ReceivedAt      string `json:"received_at"`
-	TransformAt     string `json:"transform_at"`
-	SourceBatchID   string `json:"source_batch_id"`
-	SourceTaskID    string `json:"source_task_id"`
-	SourceTaskRunID string `json:"source_task_run_id"`
-	SourceJobID     string `json:"source_job_id"`
-	SourceJobRunID  string `json:"source_job_run_id"`
+	SourceID                string `json:"source_id"`
+	DestinationID           string `json:"destination_id"`
+	ReceivedAt              string `json:"received_at"`
+	TransformAt             string `json:"transform_at"`
+	SourceBatchID           string `json:"source_batch_id"`
+	SourceTaskID            string `json:"source_task_id"`
+	SourceTaskRunID         string `json:"source_task_run_id"`
+	SourceJobID             string `json:"source_job_id"`
+	SourceJobRunID          string `json:"source_job_run_id"`
 	SourceDefinitionID      string `json:"source_definition_id"`
 	DestinationDefinitionID string `json:"destination_definition_id"`
 	SourceCategory          string `json:"source_category"`
 	EventName               string `json:"event_name"`
 	EventType               string `json:"event_type"`
-	MessageID       string `json:"message_id"`
+	MessageID               string `json:"message_id"`
 }
 
 func (brt *HandleT) backendConfigSubscriber() {
@@ -872,7 +872,7 @@ func GetStorageDateFormat(manager filemanager.FileManager, destination *Destinat
 		return
 	}
 
-	for idx, _ := range fileObjects {
+	for idx := range fileObjects {
 		key := fileObjects[idx].Key
 		replacedKey := strings.Replace(key, fullPrefix, "", 1)
 		splittedKeys := strings.Split(replacedKey, "/")
