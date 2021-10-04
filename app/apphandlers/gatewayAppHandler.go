@@ -33,6 +33,8 @@ func (gatewayApp *GatewayApp) GetAppType() string {
 func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	pkgLogger.Info("Gateway starting")
 
+	rudderCoreDBValidator()
+	rudderCoreWorkSpaceTableSetup()
 	rudderCoreBaseSetup()
 
 	var gatewayDB jobsdb.HandleT
