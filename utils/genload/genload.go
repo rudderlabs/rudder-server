@@ -144,6 +144,7 @@ func main() {
 	err = json.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
 	if err != nil {
 		fmt.Println("Error while parsing request", err)
+		// fmt.Println(string(respBody))
 	}
 	fmt.Println("done parsing the config")
 	writeKeys = make([]string, 0)
@@ -154,8 +155,9 @@ func main() {
 	}
 	fmt.Println("Got all the write keys")
 
+	xShift, _ := strconv.ParseInt(os.Getenv("XSHIFT"), 10, 0)
 	for j := 0; j < int(activeSources); j++ {
-		requestGap := time.Duration(getRequestGap(j))
+		requestGap := time.Duration(getRequestGap(j + int(xShift)))
 		go func(wk string, j int, deltaT time.Duration) {
 			sendRequests(wk, dataplaneURL, j, deltaT)
 		}(writeKeys[j], j, requestGap)

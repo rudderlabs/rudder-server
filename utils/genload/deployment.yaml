@@ -5,7 +5,7 @@ metadata:
   labels:
     app: hosted-load
 spec:
-  replicas: 50
+  replicas: 1
   selector:
     matchLabels:
       app: hosted-load
@@ -35,9 +35,9 @@ spec:
             - name: REQUESTS_PER_SECOND
               value: "1"
             - name: CONFIG_BACKEND_URL
-              value: "https://api-mt.dev.rudderlabs.com/hostedWorkspaceConfig\?fetchAll\=true"
+              value: "https://api-mt.dev.rudderlabs.com/hostedWorkspaceConfig?fetchAll=true"
             - name: DATAPLANE_URL
-              value: "http://localhost:8080/v1/batch"
+              value: "https://siddarth-dataplane.dev-rudder.rudderlabs.com/v1/batch"
             - name: LOAD_RUN_TIME
               value: "600"
             - name: POLYNOMIAL
@@ -46,3 +46,5 @@ spec:
               value: "525"
             - name: COEFFICIENTS
               value: "0.000000000193437906,-0.0000000496995428,-0.0000474367128,0.0360322937,0.289425464"
+            - name: XSHIFT
+              value: 450
