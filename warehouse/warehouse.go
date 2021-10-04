@@ -436,9 +436,10 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	if isUploadTriggered {
 		// set priority to 50 if the upload was manually triggered
 		metadataMap["priority"] = 50
-	}
-	if priority != 0 {
-		metadataMap["priority"] = priority
+	} else {
+		if priority != 0 {
+			metadataMap["priority"] = priority
+		}
 	}
 	metadata, err := json.Marshal(metadataMap)
 	if err != nil {
