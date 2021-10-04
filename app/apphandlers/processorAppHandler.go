@@ -66,6 +66,9 @@ func loadConfigHandler() {
 func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	pkgLogger.Info("Processor starting")
 
+	rudderCoreDBValidator()
+	rudderCoreNodeSetup()
+	rudderCoreWorkSpaceTableSetup()
 	rudderCoreBaseSetup()
 	g, ctx := errgroup.WithContext(ctx)
 
