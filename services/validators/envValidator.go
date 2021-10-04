@@ -3,6 +3,7 @@ package validators
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -161,23 +162,24 @@ func IsPostgresCompatible(db *sql.DB) (bool, error) {
 }
 
 //ValidateEnv validates the current environment available for the server
-func ValidateEnv() bool {
+func ValidateEnv() {
 	dbHandle := createDBConnection()
 	defer closeDBConnection(dbHandle)
+
 	isDBCompatible, err := IsPostgresCompatible(dbHandle)
 	if err != nil {
 		panic(err)
 	}
 	if !isDBCompatible {
 		pkgLogger.Errorf("Rudder server needs postgres version >= 10. Exiting.")
-		return false
+		panic(errors.New("Failed to start rudder-server"))
 	}
-	return true
 }
 
 //InitializeEnv initializes the environment for the server
-func InitializeEnv() {
+func InitializeNodeMigrations() {
 	dbHandle := createDBConnection()
+	defer closeDBConnection(dbHandle)
 
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
@@ -189,7 +191,12 @@ func InitializeEnv() {
 		panic(fmt.Errorf("Could not run node migrations: %w", err))
 	}
 
-	//create workspace table and insert token
+}
+
+func CheckAndValidateWorkspaceToken() {
+	dbHandle := createDBConnection()
+	defer closeDBConnection(dbHandle)
+
 	createWorkspaceTable(dbHandle)
 	insertTokenIfNotExists(dbHandle)
 	setWHSchemaVersionIfNotExists(dbHandle)
@@ -200,6 +207,7 @@ func InitializeEnv() {
 	}
 
 	//db connection should be closed. Else alter db fails.
+	//A new connection will be created again below, which will be closed on returning of this function (due to defer statement).
 	closeDBConnection(dbHandle)
 
 	pkgLogger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
@@ -213,6 +221,4 @@ func InitializeEnv() {
 	createWorkspaceTable(dbHandle)
 	insertTokenIfNotExists(dbHandle)
 	setWHSchemaVersionIfNotExists(dbHandle)
-
-	closeDBConnection(dbHandle)
 }
