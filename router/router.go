@@ -1256,7 +1256,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		statusList = append(statusList, resp.status)
 		if resp.status.JobState == jobsdb.Aborted.State {
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
-			SaveSourceFailedEvents(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
+			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
 		}
 
 		//tracking router errors
@@ -1980,7 +1980,7 @@ func (rt *HandleT) Resume() {
 	rt.paused = false
 }
 
-func SaveSourceFailedEvents(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
+func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
 	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").Str
 	destinationID := gjson.GetBytes(parameters, "destination_id").Str
 	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").Raw)
