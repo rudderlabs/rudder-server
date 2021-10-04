@@ -231,7 +231,7 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 }
 
 func loadConfig() {
-	config.RegisterStringConfigVariable("true", &queryDebugLogs, true, "Warehouse.clickhouse.queryDebugLogs")
+	config.RegisterStringConfigVariable("false", &queryDebugLogs, true, "Warehouse.clickhouse.queryDebugLogs")
 	config.RegisterStringConfigVariable("1000000", &blockSize, true, "Warehouse.clickhouse.blockSize")
 	config.RegisterStringConfigVariable("100", &poolSize, true, "Warehouse.clickhouse.poolSize")
 	config.RegisterBoolConfigVariable(false, &disableNullable, false, "Warehouse.clickhouse.disableNullable")
