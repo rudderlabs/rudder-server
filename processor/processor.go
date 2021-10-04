@@ -1594,9 +1594,9 @@ func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *t
 // Returns true if any job is handled, otherwise returns false.
 func (proc *HandleT) handlePendingGatewayJobs() bool {
 	configList := distributed.GetAllCustomersComputeConfig()
+	proc.statLoopTime.Start()
 	for customer, config := range configList {
 
-		proc.statLoopTime.Start()
 		proc.pStatsDBR.Start()
 		proc.statDBR.Start()
 
@@ -1654,8 +1654,8 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 		proc.processJobsForDest(combinedList, nil, customer)
 
-		proc.statLoopTime.End()
 	}
+	proc.statLoopTime.End()
 
 	return true
 }
