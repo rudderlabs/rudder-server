@@ -1,10 +1,9 @@
 FROM frolvlad/alpine-glibc
 RUN apk add --no-cache ca-certificates postgresql-client curl
 ADD rudder-server /
-ADD rudder-server-with-race /
 ADD ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
 ADD build/wait-for /
 ADD build/wait-for-go/wait-for-go /
 ADD build/docker-entrypoint.sh /
 ENTRYPOINT ["/docker-entrypoint.sh"]
-CMD ["/rudder-server-with-race"]
+CMD ["/rudder-server"]
