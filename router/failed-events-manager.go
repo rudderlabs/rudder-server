@@ -81,6 +81,7 @@ func (fem *FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap ma
 				panic(err)
 			}
 		}
+
 		stmt.Close()
 	}
 }
