@@ -2,6 +2,7 @@ package processor
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	"golang.org/x/net/http2"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -383,7 +385,13 @@ func (proc *HandleT) getTransformerFeatureJson() {
 				time.Sleep(200 * time.Millisecond)
 				continue
 			}
-			tr := &http.Transport{}
+			// tr := &http.Transport{}
+			tlsConfig := &tls.Config{
+				InsecureSkipVerify: true,
+			}
+			tr := &http2.Transport{
+				TLSClientConfig: tlsConfig,
+			}
 			client := &http.Client{Transport: tr}
 			res, err := client.Do(req)
 
@@ -1051,7 +1059,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 				source, sourceError := getSourceByWriteKey(writeKey)
 				if sourceError != nil {
-					proc.logger.Error("Source not found for writeKey : ", writeKey);
+					proc.logger.Error("Source not found for writeKey : ", writeKey)
 				} else {
 					// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
 					shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
@@ -1474,7 +1482,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
-
 
 	for _, jobs := range procErrorJobsByDestID {
 		procErrorJobs = append(procErrorJobs, jobs...)
