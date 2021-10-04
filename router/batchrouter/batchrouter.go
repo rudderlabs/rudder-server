@@ -139,16 +139,21 @@ type ObjectStorageT struct {
 
 //JobParametersT struct holds source id and destination id of a job
 type JobParametersT struct {
-	SourceID        string `json:"source_id"`
-	DestinationID   string `json:"destination_id"`
-	ReceivedAt      string `json:"received_at"`
-	TransformAt     string `json:"transform_at"`
-	SourceBatchID   string `json:"source_batch_id"`
-	SourceTaskID    string `json:"source_task_id"`
-	SourceTaskRunID string `json:"source_task_run_id"`
-	SourceJobID     string `json:"source_job_id"`
-	SourceJobRunID  string `json:"source_job_run_id"`
-	MessageID       string `json:"message_id"`
+	SourceID                string `json:"source_id"`
+	DestinationID           string `json:"destination_id"`
+	ReceivedAt              string `json:"received_at"`
+	TransformAt             string `json:"transform_at"`
+	SourceBatchID           string `json:"source_batch_id"`
+	SourceTaskID            string `json:"source_task_id"`
+	SourceTaskRunID         string `json:"source_task_run_id"`
+	SourceJobID             string `json:"source_job_id"`
+	SourceJobRunID          string `json:"source_job_run_id"`
+	SourceDefinitionID      string `json:"source_definition_id"`
+	DestinationDefinitionID string `json:"destination_definition_id"`
+	SourceCategory          string `json:"source_category"`
+	EventName               string `json:"event_name"`
+	EventType               string `json:"event_type"`
+	MessageID               string `json:"message_id"`
 }
 
 func (brt *HandleT) backendConfigSubscriber() {
@@ -867,7 +872,7 @@ func GetStorageDateFormat(manager filemanager.FileManager, destination *Destinat
 		return
 	}
 
-	for idx, _ := range fileObjects {
+	for idx := range fileObjects {
 		key := fileObjects[idx].Key
 		replacedKey := strings.Replace(key, fullPrefix, "", 1)
 		splittedKeys := strings.Split(replacedKey, "/")
@@ -1067,12 +1072,12 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode))
 			cd, ok := connectionDetailsMap[key]
 			if !ok {
-				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
+				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 				connectionDetailsMap[key] = cd
 			}
 			sd, ok := statusDetailsMap[key]
 			if !ok {
-				sd = types.CreateStatusDetail(jobState, 0, errorCode, string(errorResp), job.EventPayload)
+				sd = types.CreateStatusDetail(jobState, 0, errorCode, string(errorResp), job.EventPayload, parameters.EventName, parameters.EventType)
 				statusDetailsMap[key] = sd
 			}
 			if status.JobState == jobsdb.Failed.State && status.AttemptNum == 1 {
@@ -1424,7 +1429,7 @@ func (worker *workerT) workerProcess() {
 			var statusList []*jobsdb.JobStatusT
 			var drainList []*jobsdb.JobStatusT
 			var drainJobList []*jobsdb.JobT
-			drainCountByDest := make(map[string]int)
+			drainStatsbyDest := make(map[string]*router_utils.DrainStats)
 
 			jobsBySource := make(map[string][]*jobsdb.JobT)
 			for _, job := range combinedList {
@@ -1446,10 +1451,16 @@ func (worker *workerT) workerProcess() {
 					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
 					drainList = append(drainList, &status)
 					drainJobList = append(drainJobList, job)
-					if _, ok := drainCountByDest[batchDest.Destination.ID]; !ok {
-						drainCountByDest[batchDest.Destination.ID] = 0
+					if _, ok := drainStatsbyDest[batchDest.Destination.ID]; !ok {
+						drainStatsbyDest[batchDest.Destination.ID] = &router_utils.DrainStats{
+							Count:   0,
+							Reasons: []string{},
+						}
 					}
-					drainCountByDest[batchDest.Destination.ID] = drainCountByDest[batchDest.Destination.ID] + 1
+					drainStatsbyDest[batchDest.Destination.ID].Count = drainStatsbyDest[batchDest.Destination.ID].Count + 1
+					if !misc.Contains(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason) {
+						drainStatsbyDest[batchDest.Destination.ID].Reasons = append(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason)
+					}
 				} else {
 					sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
 					if _, ok := jobsBySource[sourceID]; !ok {
@@ -1483,13 +1494,14 @@ func (worker *workerT) workerProcess() {
 					brt.logger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", brt.destType, parameterFilters)
 					panic(err)
 				}
-				for destID, count := range drainCountByDest {
+				for destID, destDrainStat := range drainStatsbyDest {
 					brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
 						"destType": brt.destType,
 						"destId":   destID,
 						"module":   "batchrouter",
+						"reasons":  strings.Join(destDrainStat.Reasons, ", "),
 					})
-					brt.drainedJobsStat.Count(count)
+					brt.drainedJobsStat.Count(destDrainStat.Count)
 				}
 			}
 			//Mark the jobs as executing
