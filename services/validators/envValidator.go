@@ -165,6 +165,7 @@ func IsPostgresCompatible(db *sql.DB) (bool, error) {
 func ValidateEnv() {
 	dbHandle := createDBConnection()
 	defer closeDBConnection(dbHandle)
+
 	isDBCompatible, err := IsPostgresCompatible(dbHandle)
 	if err != nil {
 		panic(err)
@@ -178,6 +179,7 @@ func ValidateEnv() {
 //InitializeEnv initializes the environment for the server
 func InitializeNodeMigrations() {
 	dbHandle := createDBConnection()
+	defer closeDBConnection(dbHandle)
 
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
@@ -189,11 +191,11 @@ func InitializeNodeMigrations() {
 		panic(fmt.Errorf("Could not run node migrations: %w", err))
 	}
 
-	closeDBConnection(dbHandle)
 }
 
 func CheckAndValidateWorkspaceToken() {
 	dbHandle := createDBConnection()
+	defer closeDBConnection(dbHandle)
 
 	createWorkspaceTable(dbHandle)
 	insertTokenIfNotExists(dbHandle)
@@ -205,6 +207,7 @@ func CheckAndValidateWorkspaceToken() {
 	}
 
 	//db connection should be closed. Else alter db fails.
+	//A new connection will be created again below, which will be closed on returning of this function (due to defer statement).
 	closeDBConnection(dbHandle)
 
 	pkgLogger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
@@ -218,6 +221,4 @@ func CheckAndValidateWorkspaceToken() {
 	createWorkspaceTable(dbHandle)
 	insertTokenIfNotExists(dbHandle)
 	setWHSchemaVersionIfNotExists(dbHandle)
-
-	closeDBConnection(dbHandle)
 }
