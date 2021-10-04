@@ -122,15 +122,18 @@ type jobResponseT struct {
 
 //JobParametersT struct holds source id and destination id of a job
 type JobParametersT struct {
-	SourceID        string `json:"source_id"`
-	DestinationID   string `json:"destination_id"`
-	ReceivedAt      string `json:"received_at"`
-	TransformAt     string `json:"transform_at"`
-	SourceBatchID   string `json:"source_batch_id"`
-	SourceTaskID    string `json:"source_task_id"`
-	SourceTaskRunID string `json:"source_task_run_id"`
-	SourceJobID     string `json:"source_job_id"`
-	SourceJobRunID  string `json:"source_job_run_id"`
+	SourceID                string `json:"source_id"`
+	DestinationID           string `json:"destination_id"`
+	ReceivedAt              string `json:"received_at"`
+	TransformAt             string `json:"transform_at"`
+	SourceBatchID           string `json:"source_batch_id"`
+	SourceTaskID            string `json:"source_task_id"`
+	SourceTaskRunID         string `json:"source_task_run_id"`
+	SourceJobID             string `json:"source_job_id"`
+	SourceJobRunID          string `json:"source_job_run_id"`
+	SourceDefinitionID      string `json:"source_definition_id"`
+	DestinationDefinitionID string `json:"destination_definition_id"`
+	SourceCategory          string `json:"source_category"`
 }
 
 type workerMessageT struct {
@@ -323,7 +326,7 @@ func (worker *workerT) workerProcess() {
 
 			job := message.job
 			worker.throttledAtTime = message.throttledAtTime
-			worker.rt.logger.Debugf("[%v Router] :: performing checks to send payload to %s. Payload: ", worker.rt.destName, job.EventPayload)
+			worker.rt.logger.Debugf("[%v Router] :: performing checks to send payload.", worker.rt.destName)
 
 			userID := job.UserID
 
@@ -1221,7 +1224,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
 			cd, ok := connectionDetailsMap[key]
 			if !ok {
-				cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
+				cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 				connectionDetailsMap[key] = cd
 			}
 			sd, ok := statusDetailsMap[key]
@@ -1230,7 +1233,9 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				if err != nil {
 					errorCode = 200 //TODO handle properly
 				}
-				sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload)
+				eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
+				eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
+				sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload, eventName, eventType)
 				statusDetailsMap[key] = sd
 			}
 			if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 {
