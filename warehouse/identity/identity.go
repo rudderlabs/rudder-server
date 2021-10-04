@@ -142,13 +142,12 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 
 		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN (%v)`, idr.mappingsTable(), newID, currentTimeString, misc.SingleQuoteLiteralJoin(rudderIDs[1:]))
 		var res sql.Result
-		pkgLogger.Debugf(`IDR: Updating rudder_id for all properties in mapping table with rudder_id's %v: %v`, misc.SingleQuoteLiteralJoin(rudderIDs[1:]), sqlStatement)
 		res, err = txn.Exec(sqlStatement)
 		if err != nil {
 			return
 		}
 		affectedRowCount, _ := res.RowsAffected()
-		pkgLogger.Debugf(`IDR: Updated rudder_id for all properties in mapping table with rudder_id's %v: %v Updated %v rows`, misc.SingleQuoteLiteralJoin(rudderIDs[1:]), sqlStatement, affectedRowCount)
+		pkgLogger.Debugf(`IDR: Updated rudder_id for all properties in mapping table. Updated %v rows: %v `, affectedRowCount, sqlStatement)
 
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.Warehouse))
 		pkgLogger.Debugf(`IDR: Insert new mappings into %s: %v`, idr.mappingsTable(), sqlStatement)
@@ -185,7 +184,6 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		pkgLogger.Errorf(`IDR: Error creating temp table %s in postgres: %v`, mergeRulesStagingTable, err)
 		return
 	}
-	pkgLogger.Debugf(`IDR: Created temp table for merge rules %v ::uploadId-%v`, mergeRulesStagingTable, idr.UploadID)
 
 	sortedColumnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value", "id"}
 	stmt, err := txn.Prepare(pq.CopyIn(mergeRulesStagingTable, sortedColumnNames...))
@@ -195,7 +193,6 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 	}
 
 	var rowID int
-	var mergeRuleCount int
 
 	for _, loadFileName := range loadFileNames {
 		var gzipFile *os.File
@@ -237,7 +234,6 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			rowID++
 			recordInterface[4] = rowID
 			_, err = stmt.Exec(recordInterface[:]...)
-			mergeRuleCount++
 			if err != nil {
 				pkgLogger.Errorf("IDR: Error while adding rowID to merge_rules table: %v", err)
 				return
@@ -247,10 +243,9 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 
 	_, err = stmt.Exec()
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error bulk copy using CopyIn: %v; mergeRuleCount: %v ::uploadId-%v`, err, mergeRuleCount, idr.UploadID)
+		pkgLogger.Errorf(`IDR: Error bulk copy using CopyIn: %v for uploadID: %v`, err, idr.UploadID)
 		return
 	}
-	pkgLogger.Debugf(`IDR: Inserting merge rules into merge temp table %v ::uploadId-%v`, mergeRuleCount, idr.UploadID)
 
 	sqlStatement = fmt.Sprintf(`DELETE FROM %s AS staging
 					USING %s original
@@ -269,7 +264,6 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		pkgLogger.Errorf(`IDR: Error deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), err)
 		return
 	}
-	pkgLogger.Debugf(`IDR: Delete existing merge rules from temp table %v ::uploadId-%v`, mergeRulesStagingTable, idr.UploadID)
 
 	// write merge rules to file to be uploaded to warehouse in later steps
 	err = idr.writeTableToFile(mergeRulesStagingTable, txn, gzWriter)
@@ -277,7 +271,6 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		pkgLogger.Errorf(`IDR: Error writing staging table %s to file: %v`, mergeRulesStagingTable, err)
 		return
 	}
-	pkgLogger.Debugf(`IDR: Dumping temp merge rule table to file ::uploadId-%v`, idr.UploadID)
 
 	// select and insert distinct combination of merge rules and sort them by order in which they were added
 	sqlStatement = fmt.Sprintf(`INSERT INTO %s
@@ -296,7 +289,6 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		pkgLogger.Errorf(`IDR: Error inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, err)
 		return
 	}
-	pkgLogger.Debugf(`IDR: Inserting temp merge rule table into main merge table ::uploadId-%v`, idr.UploadID)
 	for rows.Next() {
 		var id int64
 		err = rows.Scan(&id)
@@ -306,7 +298,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		}
 		ids = append(ids, id)
 	}
-	pkgLogger.Debugf(`IDR: Number of merge rules inserted %v ::uploadId-%v`, len(ids), idr.UploadID)
+	pkgLogger.Debugf(`IDR: Number of merge rules inserted for uploadID %v : %v`, idr.UploadID, len(ids))
 	return ids, nil
 }
 
@@ -466,7 +458,6 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 	}
 
 	// START: Add new merge rules to local pg table and also to file
-	pkgLogger.Debugf(`Load file name count %d ::uploadId-%v`, len(fileNames), idr.UploadID)
 	mergeRulesFileGzWriter, mergeRulesFilePath := idr.createTempGzFile(`/rudder-identity-merge-rules-tmp/`)
 	defer os.Remove(mergeRulesFilePath)
 
@@ -490,7 +481,6 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 			pkgLogger.Errorf(`IDR: Error applying rule %d in %s: %v`, ruleID, idr.mergeRulesTable(), err)
 			return
 		}
-		pkgLogger.Debugf(`IDR: Applied Rules Id: %v count: %v ::uploadId-%v`, ruleID, count, idr.UploadID)
 		totalMappingRecords += count
 		if idx%1000 == 0 {
 			pkgLogger.Infof(`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namepsace: %s, Destination: %s:%s`, idx+1, len(ruleIDs), totalMappingRecords, idr.Warehouse.Namespace, idr.Warehouse.Type, idr.Warehouse.Destination.ID)
