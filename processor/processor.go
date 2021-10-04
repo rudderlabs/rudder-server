@@ -322,9 +322,11 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 		return nil
 	}))
 
-	rruntime.Go(func() {
-		router.CleanFailedRecordsTableProcess()
-	})
+	g.Go(misc.WithBugsnag(func() error {
+		router.CleanFailedRecordsTableProcess(ctx)
+		return nil
+	}))
+
 	proc.transformer.Setup()
 
 	proc.crashRecover()
@@ -341,6 +343,7 @@ func (proc *HandleT) Start(ctx context.Context) {
 		proc.mainLoop(ctx)
 		return nil
 	}))
+
 	g.Go(misc.WithBugsnag(func() error {
 		st := stash.New()
 		st.Setup(proc.errorDB)

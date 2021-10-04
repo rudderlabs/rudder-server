@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -35,8 +36,6 @@ type FailedEventsManagerT struct {
 	dbHandle *sql.DB
 }
 
-
-
 func GetFailedEventsManager() FailedEventsManagerI {
 	if failedEventsManager == nil {
 		fem := new(FailedEventsManagerT)
@@ -55,6 +54,7 @@ func (fem *FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap ma
 	if !failedKeysEnabled {
 		return
 	}
+
 	for taskRunID, failedEvents := range taskRunIDFailedEventsMap {
 		table := fmt.Sprintf(`%s_%s`, failedKeysTablePrefix, taskRunID)
 		sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -90,6 +90,7 @@ func (fem *FailedEventsManagerT) DropFailedRecordIDs(taskRunID string) {
 	if !failedKeysEnabled {
 		return
 	}
+
 	//Drop table
 	table := fmt.Sprintf(`%s_%s`, failedKeysTablePrefix, taskRunID)
 	sqlStatement := fmt.Sprintf(`DROP TABLE IF EXISTS %s`, table)
@@ -103,6 +104,7 @@ func (fem *FailedEventsManagerT) FetchFailedRecordIDs(taskRunID string) []*Faile
 	if !failedKeysEnabled {
 		return []*FailedEventRowT{}
 	}
+
 	failedEvents := make([]*FailedEventRowT, 0)
 
 	var rows *sql.Rows
@@ -129,49 +131,54 @@ func (fem *FailedEventsManagerT) FetchFailedRecordIDs(taskRunID string) []*Faile
 	return failedEvents
 }
 
-func CleanFailedRecordsTableProcess() {
+func CleanFailedRecordsTableProcess(ctx context.Context) {
 	if !failedKeysEnabled {
 		return
 	}
+
 	for {
-		dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
-		if err != nil {
-			panic(err)
-		}
-		failedKeysLike := failedKeysTablePrefix + "%"
-		failedKeysTableQuery := fmt.Sprintf(`SELECT table_name
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(failedKeysCleanUpSleep):
+			dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
+			if err != nil {
+				panic(err)
+			}
+			failedKeysLike := failedKeysTablePrefix + "%"
+			failedKeysTableQuery := fmt.Sprintf(`SELECT table_name
 													FROM information_schema.tables
 													WHERE table_schema='public' AND table_type='BASE TABLE' AND table_name ilike '%s'`, failedKeysLike)
-		rows, err := dbHandle.Query(failedKeysTableQuery)
-		if err != nil {
-			panic(err)
-		}
-		for rows.Next() {
-			var table string
-			err = rows.Scan(&table)
+			rows, err := dbHandle.Query(failedKeysTableQuery)
 			if err != nil {
-				pkgLogger.Errorf("Failed to scan failed keys table %s with error: %v", table, err)
-				return
+				panic(err)
 			}
-			latestCreatedAtQuery := fmt.Sprintf(`SELECT created_at from %s order by created_at desc limit 1`, table)
-			row := dbHandle.QueryRow(latestCreatedAtQuery)
-			var latestCreatedAt time.Time
-			err = row.Scan(&latestCreatedAt)
-			if err != nil && err != sql.ErrNoRows {
-				pkgLogger.Errorf("Failed to fetch records from failed keys table %s with error: %v", table, err)
-				continue
-			}
-			currentTime := time.Now()
-			diff := currentTime.Sub(latestCreatedAt)
-			if diff > failedKeysExpire {
-				dropQuery := fmt.Sprintf(`DROP TABLE IF EXISTS %s`, table)
-				rows, err = dbHandle.Query(dropQuery)
+			for rows.Next() {
+				var table string
+				err = rows.Scan(&table)
 				if err != nil {
-					pkgLogger.Errorf("Failed to drop table %s with error: %v", table, err)
+					pkgLogger.Errorf("Failed to scan failed keys table %s with error: %v", table, err)
+					return
+				}
+				latestCreatedAtQuery := fmt.Sprintf(`SELECT created_at from %s order by created_at desc limit 1`, table)
+				row := dbHandle.QueryRow(latestCreatedAtQuery)
+				var latestCreatedAt time.Time
+				err = row.Scan(&latestCreatedAt)
+				if err != nil && err != sql.ErrNoRows {
+					pkgLogger.Errorf("Failed to fetch records from failed keys table %s with error: %v", table, err)
+					continue
+				}
+				currentTime := time.Now()
+				diff := currentTime.Sub(latestCreatedAt)
+				if diff > failedKeysExpire {
+					dropQuery := fmt.Sprintf(`DROP TABLE IF EXISTS %s`, table)
+					rows, err = dbHandle.Query(dropQuery)
+					if err != nil {
+						pkgLogger.Errorf("Failed to drop table %s with error: %v", table, err)
+					}
 				}
 			}
+			dbHandle.Close()
 		}
-		dbHandle.Close()
-		time.Sleep(failedKeysCleanUpSleep)
 	}
 }

@@ -1253,7 +1253,9 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			}
 		}
 		//REPORTING - ROUTER - END
+
 		statusList = append(statusList, resp.status)
+
 		if resp.status.JobState == jobsdb.Aborted.State {
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
 			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
@@ -1321,6 +1323,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		rt.jobsDB.CommitTransaction(txn)
 		rt.jobsDB.ReleaseUpdateJobStatusLocks()
 	}
+
 	if rt.guaranteeUserEventOrder {
 		//#JobOrder (see other #JobOrder comment)
 		for _, resp := range *responseList {
@@ -1981,9 +1984,9 @@ func (rt *HandleT) Resume() {
 }
 
 func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
-	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").Str
-	destinationID := gjson.GetBytes(parameters, "destination_id").Str
-	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").Raw)
+	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").String()
+	destinationID := gjson.GetBytes(parameters, "destination_id").String()
+	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").String())
 	if taskRunID == "" {
 		return
 	}
