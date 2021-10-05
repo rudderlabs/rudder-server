@@ -140,8 +140,8 @@ type JobParametersT struct {
 	SourceCategory          string      `json:"source_category"`
 	RecordID                interface{} `json:"record_id"`
 	MessageID               string      `json:"message_id"`
-	WorkspaceId     string `json:"workspaceId"`
-	RudderAccountId string `json:"rudderAccountId"`
+	WorkspaceId             string      `json:"workspaceId"`
+	RudderAccountId         string      `json:"rudderAccountId"`
 }
 
 type workerMessageT struct {
@@ -187,7 +187,7 @@ var (
 	pkgLogger                                                     logger.LoggerI
 	Diagnostics                                                   diagnostics.DiagnosticsI
 	fixedLoopSleep                                                time.Duration
-	toAbortDestinationIDs                         string
+	toAbortDestinationIDs                                         string
 	QueryFilters                                                  jobsdb.QueryFiltersT
 	disableEgress                                                 bool
 )
@@ -2080,6 +2080,8 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 	}
 	// By default send the status code & response from destination directly
 	return respStatusCode, respBodyTemp
+}
+
 func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
 	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").String()
 	destinationID := gjson.GetBytes(parameters, "destination_id").String()
