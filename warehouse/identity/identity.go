@@ -456,7 +456,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 
 	// START: Add new merge rules to local pg table and also to file
 	mergeRulesFileGzWriter, mergeRulesFilePath := idr.createTempGzFile(`/rudder-identity-merge-rules-tmp/`)
-	defer os.Remove(mergeRulesFilePath)
+	defer misc.RemoveFilePaths(mergeRulesFilePath)
 
 	ruleIDs, err := idr.addRules(txn, fileNames, &mergeRulesFileGzWriter)
 	if err != nil {
@@ -469,7 +469,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 
 	// START: Add new/changed identity mappings to local pg table and also to file
 	mappingsFileGzWriter, mappingsFilePath := idr.createTempGzFile(`/rudder-identity-mappings-tmp/`)
-	defer os.Remove(mappingsFilePath)
+	defer misc.RemoveFilePaths(mappingsFilePath)
 	var totalMappingRecords int
 	for idx, ruleID := range ruleIDs {
 		var count int
