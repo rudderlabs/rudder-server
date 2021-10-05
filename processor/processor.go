@@ -130,7 +130,6 @@ type ParametersT struct {
 	SourceJobID     string `json:"source_job_id"`
 	SourceJobRunID  string `json:"source_job_run_id"`
 	WorkspaceId     string `json:"workspaceId"`
-	RudderAccountId string `json:"rudderAccountId"`
 	EventName       string `json:"event_name"`
 	EventType       string `json:"event_type"`
 }
@@ -1348,13 +1347,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		transformAtFromFeaturesFile := gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String()
 
 		destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
-		for eventInd := range eventsToTransform {
-			eventToTransform := &eventsToTransform[eventInd]
-			authType := router_utils.GetAuthType(eventToTransform.Destination)
-			if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
-				eventToTransform.Metadata.CpAuthToken = workspaceToken
-			}
-		}
 		//If transformAt is none
 		// OR
 		//router and transformer supports router transform, then no destination transformation happens.
@@ -1389,19 +1381,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		statusDetailsMap := make(map[string]*types.StatusDetail)
 		successCountMap := make(map[string]int64)
 
-		// This mapping is used to map destination with it's respective account for refresh token capability
-		destToAccountIdMapping := make(map[string]string)
-		for eventIndex := range eventsToTransform {
-			// default value or if rudderAccountId doesn't exist or not convertible to string
-			eventToTransform := &eventsToTransform[eventIndex]
-			destToAccountIdMapping[eventToTransform.Destination.ID] = ""
-			if rudderAccountIdInterface, found := eventToTransform.Destination.Config["rudderAccountId"]; found {
-				if rudderAccountId, ok := rudderAccountIdInterface.(string); ok {
-					destToAccountIdMapping[eventToTransform.Destination.ID] = rudderAccountId
-				}
-			}
-		}
-
 		//Save the JSON in DB. This is what the router uses
 		for _, destEvent := range destTransformEventList {
 			//Update metrics maps
@@ -1431,7 +1410,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			sourceJobId := destEvent.Metadata.SourceJobID
 			sourceJobRunId := destEvent.Metadata.SourceJobRunID
 			workspaceId := destEvent.Metadata.WorkspaceID
-			rudderAccountId := destToAccountIdMapping[destID]
 			eventName := destEvent.Metadata.EventName
 			eventType := destEvent.Metadata.EventType
 			//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
@@ -1453,7 +1431,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				SourceJobID:     sourceJobId,
 				SourceJobRunID:  sourceJobRunId,
 				WorkspaceId:     workspaceId,
-				RudderAccountId: rudderAccountId,
 				EventName:       eventName,
 				EventType:       eventType,
 			}

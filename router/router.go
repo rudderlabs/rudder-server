@@ -371,7 +371,6 @@ func (worker *workerT) workerProcess() {
 				CreatedAt:        job.CreatedAt.Format(misc.RFC3339Milli),
 				FirstAttemptedAt: firstAttemptedAt,
 				TransformAt:      parameters.TransformAt,
-				RudderAccountId:  parameters.RudderAccountId,
 				WorkspaceId:      parameters.WorkspaceId,
 				JobT:             job}
 
@@ -392,9 +391,20 @@ func (worker *workerT) workerProcess() {
 				continue
 			}
 			destination := batchDestination.Destination
-			authType := router_utils.GetAuthType(destination)
-			if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
-				jobMetadata.CpAuthToken = workspaceToken
+			if authType := router_utils.GetAuthType(destination); router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
+				rudderAccountId := router_utils.GetRudderAccountId(&destination)
+				if router_utils.IsNotEmptyString(rudderAccountId) {
+					// Get Access Token Information to send it as part of the event
+					tokenStatusCode, accountSecretInfo := worker.rt.oauth.FetchToken(&oauth.RefreshTokenParams{
+						AccountId:       rudderAccountId,
+						WorkspaceId:     jobMetadata.WorkspaceId,
+						DestDefName:     destination.DestinationDefinition.Name,
+						EventNamePrefix: "fetch_token",
+					})
+					if tokenStatusCode == http.StatusOK {
+						jobMetadata.OAuthAccessToken = accountSecretInfo.Account.AccessToken
+					}
+				}
 			}
 			worker.rt.configSubscriberLock.RUnlock()
 
@@ -2015,20 +2025,21 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 			return http.StatusBadRequest, response
 		}
 	} else if errOutput.Output.AuthErrorCategory == oauth.REFRESH_TOKEN {
-		rudderAccountId := destinationJob.JobMetadataArray[0].RudderAccountId
-		var refSecret *oauth.RefreshSecret
+		rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
+		var refSecret *oauth.AuthResponse
 		refTokenParams := &oauth.RefreshTokenParams{
-			AccessToken: errOutput.Output.AccessToken,
-			WorkspaceId: workspaceId,
-			AccountId:   rudderAccountId,
-			DestDefName: destinationJob.Destination.DestinationDefinition.Name,
+			AccessToken:     errOutput.Output.AccessToken,
+			WorkspaceId:     workspaceId,
+			AccountId:       rudderAccountId,
+			DestDefName:     destinationJob.Destination.DestinationDefinition.Name,
+			EventNamePrefix: "refresh_token",
 		}
 		statusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
 		refSec := *refSecret
 		if statusCode == 200 && router_utils.IsNotEmptyString(refSec.Account.AccessToken) {
 			retryCount += 1
-			val.WorkspaceId = workspaceId
-			val.RudderAccountId = rudderAccountId
+			// val.WorkspaceId = workspaceId
+			// val.RudderAccountId = rudderAccountId
 			if router_utils.IsNotEmptyString(refSec.Err) {
 				return statusCode, refSec.Err
 			}

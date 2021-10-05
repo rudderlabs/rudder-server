@@ -123,3 +123,12 @@ func BasicAuth(username, password string) string {
 	auth := username + ":" + password
 	return base64.StdEncoding.EncodeToString([]byte(auth))
 }
+
+func GetRudderAccountId(destination *backendconfig.DestinationT) string {
+	if rudderAccountIdInterface, found := destination.Config["rudderAccountId"]; found {
+		if rudderAccountId, ok := rudderAccountIdInterface.(string); ok {
+			return rudderAccountId
+		}
+	}
+	return ""
+}

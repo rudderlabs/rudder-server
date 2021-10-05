@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -22,7 +21,7 @@ type AccountSecret struct {
 	AccessToken    string `json:"accessToken"`
 	ExpirationDate string `json:"expirationDate"`
 }
-type RefreshSecret struct {
+type AuthResponse struct {
 	Account AccountSecret
 	Err     string
 }
@@ -36,6 +35,7 @@ type OAuthStats struct {
 	isCallToCpApi   bool
 	authErrCategory string
 	destDefName     string
+	isFromProc      bool // This stats field is used to identify if a request to get token is arising from processor
 }
 
 type DisableDestinationResponse struct {
@@ -44,10 +44,12 @@ type DisableDestinationResponse struct {
 }
 
 type RefreshTokenParams struct {
-	AccountId   string
-	WorkspaceId string
-	AccessToken string
-	DestDefName string
+	AccountId       string
+	WorkspaceId     string
+	AccessToken     string
+	DestDefName     string
+	EventNamePrefix string
+	Worker          string // Only for testing
 }
 
 // OAuthErrResHandler is the handle for this class
@@ -59,19 +61,21 @@ type OAuthErrResHandler struct {
 	logger                         logger.LoggerI
 	destLockMap                    map[string]*sync.RWMutex // This mutex map is used for disable destination locking
 	accountLockMap                 map[string]*sync.RWMutex // This mutex map is used for refresh token locking
-	lockMapWMutex                  sync.RWMutex             // This mutex is used to prevent concurrent writes in lockMap(s) mentioned in the struct
-	refreshTokenMap                map[string]*RefreshSecret
+	lockMapWMutex                  *sync.RWMutex            // This mutex is used to prevent concurrent writes in lockMap(s) mentioned in the struct
+	destAuthInfoMap                map[string]*AuthResponse
 	disableDestMap                 map[string]bool // Used to see if a destination is disabled or not
 }
 
 type Authorizer interface {
 	Setup()
 	DisableDestination(destination backendconfig.DestinationT, workspaceId string) (statusCode int, resBody string)
-	RefreshToken(refTokenParams *RefreshTokenParams) (int, *RefreshSecret)
+	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse)
+	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse)
+	CpApiCall(cpReq *ControlPlaneRequestT) (int, string)
 }
 
 type ControlPlaneRequestT struct {
-	Body        []byte
+	Body        string
 	ContentType string
 	Url         string
 	Method      string
@@ -88,6 +92,11 @@ var (
 	loggerNm         string
 	workspaceToken   string
 	isMultiWorkspace bool
+	destAuthInfoMap  map[string]*AuthResponse // Stores information about account after refresh token/fetch token
+	accountLockMap   map[string]*sync.RWMutex // Lock used at account level to handle multiple refresh/fetch token requests
+	destLockMap      map[string]*sync.RWMutex // Lock used at destination level to handle multiple disable destination requests
+	lockMapMutex     *sync.RWMutex            // Lock used at destination level to handle multiple disable destination requests
+	disableDestMap   map[string]bool          // Stores information about destination if it has been disabled
 )
 
 const (
@@ -110,24 +119,9 @@ type ErrorResponse struct {
 	AccessToken       string                 `json:"accessToken"`
 }
 
-type RefreshTokenBody struct {
-	hasExpired   bool
-	expiredToken string
-}
-
-// Custom Marshalling for RefreshTokenBody struct
-func (refTokenBody RefreshTokenBody) MarshalJSON() ([]byte, error) {
-	j, err := json.Marshal(struct {
-		HasExpired   bool
-		ExpiredToken string
-	}{
-		HasExpired:   refTokenBody.hasExpired,
-		ExpiredToken: refTokenBody.expiredToken,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return j, nil
+type RefreshTokenBodyParams struct {
+	HasExpired   bool   `json:"hasExpired"`
+	ExpiredToken string `json:"expiredToken"`
 }
 
 func Init() {
@@ -139,30 +133,29 @@ func Init() {
 	if isMultiWorkspace {
 		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
 	}
+	destAuthInfoMap = make(map[string]*AuthResponse)
+	accountLockMap = make(map[string]*sync.RWMutex)
+	destLockMap = make(map[string]*sync.RWMutex)
+	disableDestMap = make(map[string]bool)
+	lockMapMutex = &sync.RWMutex{}
 }
 
 func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.logger = pkgLogger
 	authErrHandler.tr = &http.Transport{}
 	//This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
-	authErrHandler.client = &http.Client{Transport: authErrHandler.tr, Timeout: 5 * time.Minute}
+	authErrHandler.client = &http.Client{}
 	authErrHandler.oauthErrHandlerReqTimerStat = stats.NewStat("router.processor.oauthErrorHandler_request_time", stats.TimerType)
 	authErrHandler.oauthErrHandlerNetReqTimerStat = stats.NewStat("router.oauthErrorHandler_network_request_time", stats.TimerType)
-	authErrHandler.destLockMap = make(map[string]*sync.RWMutex)
-	authErrHandler.accountLockMap = make(map[string]*sync.RWMutex)
-	authErrHandler.lockMapWMutex = sync.RWMutex{}
-	authErrHandler.refreshTokenMap = make(map[string]*RefreshSecret)
-	authErrHandler.disableDestMap = make(map[string]bool)
+	authErrHandler.destLockMap = destLockMap
+	authErrHandler.accountLockMap = accountLockMap
+	authErrHandler.lockMapWMutex = lockMapMutex
+	authErrHandler.destAuthInfoMap = destAuthInfoMap
+	authErrHandler.disableDestMap = disableDestMap
 }
 
-func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *RefreshSecret) {
-
-	resMgrErr := authErrHandler.NewMutex(refTokenParams.AccountId, REFRESH_TOKEN)
-	if resMgrErr != nil {
-		panic(resMgrErr)
-	}
-
-	refTokenStats := &OAuthStats{
+func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse) {
+	authStats := &OAuthStats{
 		id:              refTokenParams.AccountId,
 		workspaceId:     refTokenParams.WorkspaceId,
 		rudderCategory:  "destination",
@@ -172,41 +165,70 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTo
 		errorMessage:    "",
 		destDefName:     refTokenParams.DestDefName,
 	}
+	return authErrHandler.GetTokenInfo(refTokenParams, "Refresh token", authStats)
+}
+
+func (authErrHandler *OAuthErrResHandler) FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse) {
+	authStats := &OAuthStats{
+		id:              fetchTokenParams.AccountId,
+		workspaceId:     fetchTokenParams.WorkspaceId,
+		rudderCategory:  "destination",
+		eventName:       "",
+		isCallToCpApi:   false,
+		authErrCategory: "",
+		errorMessage:    "",
+		destDefName:     fetchTokenParams.DestDefName,
+		isFromProc:      true,
+	}
+	return authErrHandler.GetTokenInfo(fetchTokenParams, "Fetch token", authStats)
+}
+
+func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse) {
+
+	resMgrErr := authErrHandler.NewMutex(refTokenParams.AccountId, REFRESH_TOKEN)
+	if resMgrErr != nil {
+		panic(resMgrErr)
+	}
+
+	refTokenBody := RefreshTokenBodyParams{}
+	if router_utils.IsNotEmptyString(refTokenParams.AccessToken) {
+		refTokenBody = RefreshTokenBodyParams{
+			HasExpired:   true,
+			ExpiredToken: refTokenParams.AccessToken,
+		}
+	}
 	authErrHandler.accountLockMap[refTokenParams.AccountId].RLock()
-	refMap := authErrHandler.refreshTokenMap
-	if refVal, ok := refMap[refTokenParams.AccountId]; ok {
+	authMap := authErrHandler.destAuthInfoMap
+	if refVal, ok := authMap[refTokenParams.AccountId]; ok {
 		if router_utils.IsNotEmptyString(refVal.Account.AccessToken) && refVal.Account.AccessToken != refTokenParams.AccessToken {
 			authErrHandler.accountLockMap[refTokenParams.AccountId].RUnlock()
-			refTokenStats.eventName = "refresh_token_success"
-			refTokenStats.errorMessage = ""
-			refTokenStats.SendCountStat()
-			authErrHandler.logger.Infof("[%s request] :: (Read) Refresh token response received : %s\n", loggerNm, refVal.Account.AccessToken)
+			authStats.eventName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
+			authStats.errorMessage = ""
+			authStats.SendCountStat()
+			authErrHandler.logger.Infof("[%s request] :: (Read) %s response received : %s\n", loggerNm, logTypeName, refVal.Account.AccessToken)
 			return http.StatusOK, refVal
 		}
 	}
 	authErrHandler.accountLockMap[refTokenParams.AccountId].RUnlock()
 
-	// Refresh Token from the endpoint in Cp
 	authErrHandler.accountLockMap[refTokenParams.AccountId].Lock()
 	defer authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
+
+	authErrHandler.logger.Infof("[%s] Refresh Lock Acquired by %s\n", loggerNm, refTokenParams.Worker)
 
 	authErrHandler.oauthErrHandlerReqTimerStat.Start()
 	defer authErrHandler.oauthErrHandlerReqTimerStat.End()
 
-	if !router_utils.IsNotEmptyString(refTokenParams.AccessToken) {
-		authErrHandler.refreshTokenMap[refTokenParams.AccountId] = &RefreshSecret{
-			Err: `Cannot proceed with refresh token request as accessToken is empty`,
-		}
-		refTokenStats.eventName = "refresh_token_failure"
-		refTokenStats.errorMessage = `Cannot proceed with refresh token request as accessToken is empty`
-		refTokenStats.SendCountStat()
-		return http.StatusBadRequest, authErrHandler.refreshTokenMap[refTokenParams.AccountId]
-	}
+	statusCode := authErrHandler.fetchAccountInfoFromCp(refTokenParams, refTokenBody, authStats, logTypeName)
+	// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
+	return statusCode, authErrHandler.destAuthInfoMap[refTokenParams.AccountId]
+}
+
+// This method hits the Control Plane to get the account information
+// As well update the account information into the destAuthInfoMap(which acts as an in-memory cache)
+func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams, refTokenBody RefreshTokenBodyParams,
+	authStats *OAuthStats, logTypeName string) (statusCode int) {
 	refreshUrl := fmt.Sprintf("%s/dest/workspaces/%s/accounts/%s/token", configBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
-	refTokenBody := RefreshTokenBody{
-		hasExpired:   true,
-		expiredToken: refTokenParams.AccessToken,
-	}
 	res, err := json.Marshal(refTokenBody)
 	if err != nil {
 		panic(err)
@@ -215,51 +237,56 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTo
 		Method:      http.MethodPost,
 		Url:         refreshUrl,
 		ContentType: "application/json; charset=utf-8",
-		Body:        []byte(res),
+		Body:        string(res),
 	}
 	var accountSecret AccountSecret
 	// Stat for counting number of Refresh Token endpoint calls
-	refTokenStats.eventName = "refresh_token_request_sent"
-	refTokenStats.isCallToCpApi = true
-	refTokenStats.errorMessage = ""
-	refTokenStats.SendCountStat()
+	authStats.isCallToCpApi = true
+	authStats.errorMessage = ""
+	authStats.SendCountStat()
 
 	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
 	statusCode, response := authErrHandler.cpApiCall(refreshCpReq)
 	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
 
+	authErrHandler.logger.Infof("[%s] Got the response from Control-Plane: %s\n", loggerNm, refTokenParams.Worker)
+
 	// Empty Refresh token response
 	if !router_utils.IsNotEmptyString(response) {
-		refTokenStats.eventName = "refresh_token_failure"
-		refTokenStats.errorMessage = "Empty Response"
-		refTokenStats.SendCountStat()
-		authErrHandler.logger.Infof("[%s request] :: Empty Refresh token response received : %s\n", loggerNm, response)
+		authStats.eventName = fmt.Sprintf("%s_failure", refTokenParams.EventNamePrefix)
+		authStats.errorMessage = "Empty Response"
+		authStats.SendCountStat()
+		// Setting empty accessToken value into in-memory auth info map(cache)
+		authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
+			Account: AccountSecret{},
+		}
+		authErrHandler.logger.Infof("[%s request] :: Empty %s response received : %s\n", loggerNm, logTypeName, response)
 		// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
-		return statusCode, authErrHandler.refreshTokenMap[refTokenParams.AccountId]
+		return statusCode
 	}
 
 	if refErrMsg := getRefreshTokenErrResp(response, &accountSecret); router_utils.IsNotEmptyString(refErrMsg) {
-		if _, ok := authErrHandler.refreshTokenMap[refTokenParams.AccountId]; !ok {
-			authErrHandler.refreshTokenMap[refTokenParams.AccountId] = &RefreshSecret{
+		if _, ok := authErrHandler.destAuthInfoMap[refTokenParams.AccountId]; !ok {
+			authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
 				Err: refErrMsg,
 			}
 		} else {
-			authErrHandler.refreshTokenMap[refTokenParams.AccountId].Err = refErrMsg
+			authErrHandler.destAuthInfoMap[refTokenParams.AccountId].Err = refErrMsg
 		}
-		refTokenStats.eventName = "refresh_token_failure"
-		refTokenStats.errorMessage = refErrMsg
-		refTokenStats.SendCountStat()
-		return http.StatusInternalServerError, authErrHandler.refreshTokenMap[refTokenParams.AccountId]
+		authStats.eventName = fmt.Sprintf("%s_failure", refTokenParams.EventNamePrefix)
+		authStats.errorMessage = refErrMsg
+		authStats.SendCountStat()
+		return http.StatusInternalServerError
 	}
-	authErrHandler.refreshTokenMap[refTokenParams.AccountId] = &RefreshSecret{
+	// Update the refreshed account information into in-memory map(cache)
+	authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
 		Account: accountSecret,
 	}
-	refTokenStats.eventName = "refresh_token_success"
-	refTokenStats.errorMessage = ""
-	refTokenStats.SendCountStat()
-	authErrHandler.logger.Infof("[%s request] :: (Write) Refresh token response received : %s\n", loggerNm, response)
-	// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
-	return statusCode, authErrHandler.refreshTokenMap[refTokenParams.AccountId]
+	authStats.eventName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
+	authStats.errorMessage = ""
+	authStats.SendCountStat()
+	authErrHandler.logger.Infof("[%s request] :: (Write) %s response received : %s\n", loggerNm, logTypeName, response)
+	return http.StatusOK
 }
 
 func getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (message string) {
@@ -283,6 +310,7 @@ func (refStats *OAuthStats) SendCountStat() {
 		"isCallToCpApi":   strconv.FormatBool(refStats.isCallToCpApi),
 		"authErrCategory": refStats.authErrCategory,
 		"destDefName":     refStats.destDefName,
+		"isFromProc":      strconv.FormatBool(refStats.isFromProc),
 	}).Increment()
 }
 
@@ -377,12 +405,17 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	return resp.StatusCode, string(respData)
 }
 
+// Check for unit-testing, don't commit
+func (authErrHandler *OAuthErrResHandler) CpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
+	return authErrHandler.cpApiCall(cpReq)
+}
+
 func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
 	var reqBody *bytes.Buffer
 	var req *http.Request
 	var err error
-	if cpReq.Body != nil {
-		reqBody = bytes.NewBuffer(cpReq.Body)
+	if router_utils.IsNotEmptyString(cpReq.Body) {
+		reqBody = bytes.NewBufferString(cpReq.Body)
 		req, err = http.NewRequest(cpReq.Method, cpReq.Url, reqBody)
 	} else {
 		req, err = http.NewRequest(cpReq.Method, cpReq.Url, nil)
@@ -394,6 +427,12 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 	}
 	// Authorisation setting
 	req.SetBasicAuth(workspaceToken, "")
+
+	// Set content-type in order to send the body in request correctly
+	if router_utils.IsNotEmptyString(cpReq.ContentType) {
+		req.Header.Set("Content-Type", cpReq.ContentType)
+	}
+
 	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
 	res, doErr := authErrHandler.client.Do(req)
 	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
@@ -418,8 +457,8 @@ func (resHandler *OAuthErrResHandler) NewMutex(id string, errCategory string) er
 	case REFRESH_TOKEN:
 		mutexMap = resHandler.accountLockMap
 	}
-	(&resHandler.lockMapWMutex).Lock()
-	defer (&resHandler.lockMapWMutex).Unlock()
+	resHandler.lockMapWMutex.Lock()
+	defer resHandler.lockMapWMutex.Unlock()
 	if mutexMap != nil {
 		if _, ok := mutexMap[id]; !ok {
 			resHandler.logger.Infof("[%s request] :: Creating new mutex for %s\n", loggerNm, id)
