@@ -145,7 +145,6 @@ func CleanFailedRecordsTableProcess(ctx context.Context) {
 			if err != nil {
 				panic(err)
 			}
-
 			failedKeysLike := failedKeysTablePrefix + "%"
 			failedKeysTableQuery := fmt.Sprintf(`SELECT table_name
 													FROM information_schema.tables
