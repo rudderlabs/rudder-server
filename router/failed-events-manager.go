@@ -22,7 +22,7 @@ type FailedEventRowT struct {
 var (
 	failedKeysTablePrefix  = "failed_keys"
 	failedKeysExpire       = 48 * time.Hour
-	failedKeysCleanUpSleep = 10 * time.Second
+	failedKeysCleanUpSleep = 24 * time.Hour
 	failedKeysEnabled      = false
 )
 
@@ -133,20 +133,14 @@ func (fem *FailedEventsManagerT) FetchFailedRecordIDs(taskRunID string) []*Faile
 
 func CleanFailedRecordsTableProcess(ctx context.Context) {
 	if !failedKeysEnabled {
-		pkgLogger.Info("Not cleaning up failed keys")
 		return
 	}
 
 	for {
-		if ctx.Err() != nil {
-			pkgLogger.Info("something wrong with context", ctx.Err())
-		}
 		select {
 		case <-ctx.Done():
-			pkgLogger.Info("Done with failed keys routine")
 			return
 		case <-time.After(failedKeysCleanUpSleep):
-			pkgLogger.Info("Entering failed keys")
 			dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
 			if err != nil {
 				panic(err)
