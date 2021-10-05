@@ -353,7 +353,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			}
 			err := manager.reloadModel(archivedModel)
 			if err != nil {
-				manager.createModel(writeKey, eventType, eventIdentifier, eventModel, totalEventModels, archiveOldestLastSeenModel)
+				eventModel = manager.createModel(writeKey, eventType, eventIdentifier, eventModel, totalEventModels, archiveOldestLastSeenModel)
 			}
 			eventModel, ok = manager.eventModelMap[WriteKey(writeKey)][EventType(eventType)][EventIdentifier(eventIdentifier)]
 			if !ok {
@@ -362,7 +362,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			}
 			stats.NewTaggedStat("reload_archived_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 		} else {
-			manager.createModel(writeKey, eventType, eventIdentifier, eventModel, totalEventModels, archiveOldestLastSeenModel)
+			eventModel = manager.createModel(writeKey, eventType, eventIdentifier, eventModel, totalEventModels, archiveOldestLastSeenModel)
 		}
 	}
 	eventModel.LastSeen = timeutil.Now()
@@ -426,7 +426,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			}
 			err := manager.reloadSchemaVersion(archivedVersion)
 			if err != nil {
-				manager.createSchema(schema, schemaHash, eventModel, totalSchemaVersions, archiveOldestLastSeenVersion)
+				schemaVersion = manager.createSchema(schema, schemaHash, eventModel, totalSchemaVersions, archiveOldestLastSeenVersion)
 			}
 			schemaVersion, ok = manager.schemaVersionMap[eventModel.UUID][schemaHash]
 			if !ok {
@@ -435,7 +435,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			}
 			stats.NewTaggedStat("reload_archived_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 		} else {
-			manager.createSchema(schema, schemaHash, eventModel, totalSchemaVersions, archiveOldestLastSeenVersion)
+			schemaVersion = manager.createSchema(schema, schemaHash, eventModel, totalSchemaVersions, archiveOldestLastSeenVersion)
 		}
 	}
 	schemaVersion.LastSeen = timeutil.Now()
@@ -446,7 +446,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	updatedEventModels[eventModel.UUID] = eventModel
 }
 
-func (manager *EventSchemaManagerT) createModel(writeKey string, eventType string, eventIdentifier string, eventModel *EventModelT, totalEventModels int, archiveOldestLastSeenModel func()) {
+func (manager *EventSchemaManagerT) createModel(writeKey string, eventType string, eventIdentifier string, eventModel *EventModelT, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
 	eventModelID := uuid.NewV4().String()
 	eventModel = &EventModelT{
 		UUID:            eventModelID,
@@ -462,9 +462,10 @@ func (manager *EventSchemaManagerT) createModel(writeKey string, eventType strin
 	}
 	manager.updateEventModelCache(eventModel, true)
 	stats.NewTaggedStat("record_new_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
+	return eventModel
 }
 
-func (manager *EventSchemaManagerT) createSchema(schema map[string]string, schemaHash string, eventModel *EventModelT, totalSchemaVersions int, archiveOldestLastSeenVersion func()) {
+func (manager *EventSchemaManagerT) createSchema(schema map[string]string, schemaHash string, eventModel *EventModelT, totalSchemaVersions int, archiveOldestLastSeenVersion func()) *SchemaVersionT {
 	versionID := uuid.NewV4().String()
 	schemaVersion := manager.NewSchemaVersion(versionID, schema, schemaHash, eventModel.UUID)
 	eventModel.mergeSchema(schemaVersion)
@@ -473,6 +474,7 @@ func (manager *EventSchemaManagerT) createSchema(schema map[string]string, schem
 		archiveOldestLastSeenVersion()
 	}
 	stats.NewTaggedStat("record_new_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
+	return schemaVersion
 }
 
 func (manager *EventSchemaManagerT) oldestSeenModel(writeKey string) *EventModelT {
