@@ -101,6 +101,7 @@ Router:
   maxFailedOAuthCountForJob: 2
   retryTimeWindow: 180m
   transformerProxy: false
+  failedKeysEnabled: false
   MARKETO:
     noOfWorkers: 4
   throttler:

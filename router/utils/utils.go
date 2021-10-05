@@ -23,6 +23,11 @@ type BatchDestinationT struct {
 	Sources     []backendconfig.SourceT
 }
 
+type DrainStats struct {
+	Count   int
+	Reasons []string
+}
+
 func Init() {
 	loadConfig()
 }

@@ -457,7 +457,7 @@ var _ = Describe("Processor", func() {
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":""}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null}`))
 			}
 
 			// One Store call is expected for all events
@@ -644,7 +644,7 @@ var _ = Describe("Processor", func() {
 				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":"%s"}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":""}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null}`))
 			}
 
 			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().Store(gomock.Any()).Times(1).
@@ -834,7 +834,7 @@ var _ = Describe("Processor", func() {
 
 				var paramsMap, expectedParamsMap map[string]interface{}
 				json.Unmarshal(job.Parameters, &paramsMap)
-				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer"}`, SourceIDEnabled, i+1))
+				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer", "source_task_run_id": "", "record_id": null}`, SourceIDEnabled, i+1))
 				json.Unmarshal(expectedStr, &expectedParamsMap)
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 				Expect(equals).To(Equal(true))
@@ -875,6 +875,10 @@ var _ = Describe("Processor", func() {
 				})
 			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
+
+			// will be used to save failed events to failed keys table
+			c.mockProcErrorsDB.EXPECT().BeginGlobalTransaction().Times(1)
+			c.mockProcErrorsDB.EXPECT().CommitTransaction(nil).Times(1)
 
 			// One Store call is expected for all events
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
@@ -951,7 +955,7 @@ var _ = Describe("Processor", func() {
 
 				var paramsMap, expectedParamsMap map[string]interface{}
 				json.Unmarshal(job.Parameters, &paramsMap)
-				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": 400, "stage": "user_transformer"}`, SourceIDEnabled))
+				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": 400, "stage": "user_transformer", "source_task_run_id":"", "record_id": null}`, SourceIDEnabled))
 				json.Unmarshal(expectedStr, &expectedParamsMap)
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 				Expect(equals).To(Equal(true))
@@ -997,6 +1001,9 @@ var _ = Describe("Processor", func() {
 				})
 			c.mockGatewayJobsDB.EXPECT().CommitTransaction(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1)
+
+			c.mockProcErrorsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
+			c.mockProcErrorsDB.EXPECT().CommitTransaction(nil).Times(1)
 
 			// One Store call is expected for all events
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
