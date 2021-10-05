@@ -1,6 +1,7 @@
 package apphandlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -15,12 +16,12 @@ import (
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"golang.org/x/sync/errgroup"
 
 	// This is necessary for compatibility with enterprise features
 	_ "github.com/rudderlabs/rudder-server/imports"
@@ -62,15 +63,23 @@ func loadConfigHandler() {
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 }
 
-func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
+func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	pkgLogger.Info("Processor starting")
 
+	rudderCoreDBValidator()
+	rudderCoreNodeSetup()
+	rudderCoreWorkSpaceTableSetup()
 	rudderCoreBaseSetup()
+	g, ctx := errgroup.WithContext(ctx)
 
 	//Setting up reporting client
 	if processor.App.Features().Reporting != nil {
 		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
-		reporting.AddClient(types.Config{ConnInfo: jobsdb.GetConnectionString()})
+
+		g.Go(misc.WithBugsnag(func() error {
+			reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+			return nil
+		}))
 	}
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
@@ -82,11 +91,18 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gatewayDB.Setup(jobsdb.Read, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+	defer gatewayDB.TearDown()
+
 	if enableProcessor || enableReplay {
 		//setting up router, batch router, proc error DBs only if processor is enabled.
 		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
+		defer routerDB.TearDown()
+
 		batchRouterDB.Setup(jobsdb.ReadWrite, options.ClearDB, "batch_rt", routerDBRetention, migrationMode, true, batchrouter.QueryFilters)
+		defer batchRouterDB.TearDown()
+
 		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
+		defer procErrorDB.TearDown()
 	}
 
 	var reportingI types.ReportingI
@@ -96,36 +112,52 @@ func (processor *ProcessorApp) StartRudderCore(options *app.Options) {
 
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startProcessorFunc := func() {
+			startProcessorFunc := func(ctx context.Context) {
 				clearDB := false
-				StartProcessor(&clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+				StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 			}
-			startRouterFunc := func() {
-				StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+			startRouterFunc := func(ctx context.Context) {
+				StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 			}
 			enableRouter = false
 			enableProcessor = false
 
 			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
-			processor.App.Features().Migrator.Setup(&gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+			g.Go(func() error {
+				processor.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+				return nil
+			})
 		}
 	}
 
 	operationmanager.Setup(&gatewayDB, &routerDB, &batchRouterDB)
-	rruntime.Go(func() {
-		operationmanager.OperationManager.StartProcessLoop()
+
+	g.Go(misc.WithBugsnag(func() error {
+		return operationmanager.OperationManager.StartProcessLoop(ctx)
+	}))
+
+	g.Go(func() error {
+		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+		return nil
+	})
+	g.Go(func() error {
+		StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+		return nil
 	})
 
-	StartProcessor(&options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
-	StartRouter(enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
-
-	if processor.App.Features().Replay != nil {
+	if enableReplay && processor.App.Features().Replay != nil {
 		var replayDB jobsdb.HandleT
 		replayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "replay", routerDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
+		defer replayDB.TearDown()
 		processor.App.Features().Replay.Setup(&replayDB, &gatewayDB, &routerDB)
 	}
 
-	startHealthWebHandler()
+	g.Go(func() error {
+		return startHealthWebHandler(ctx)
+	})
+	err := g.Wait()
+
+	return err
 	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
@@ -133,7 +165,7 @@ func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
 	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.StandByMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
 }
 
-func startHealthWebHandler() {
+func startHealthWebHandler(ctx context.Context) error {
 	//Port where Processor health handler is running
 	pkgLogger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
@@ -148,7 +180,16 @@ func startHealthWebHandler() {
 		IdleTimeout:       IdleTimeout,
 		MaxHeaderBytes:    MaxHeaderBytes,
 	}
-	pkgLogger.Fatal(srv.ListenAndServe())
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		<-ctx.Done()
+		return srv.Shutdown(context.Background())
+	})
+	g.Go(func() error {
+		return srv.ListenAndServe()
+	})
+
+	return g.Wait()
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
