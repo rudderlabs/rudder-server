@@ -797,6 +797,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	return err
 }
 
+
 //TableSkipError is a custom error type to capture if a table load is skipped because of a previously failed table load
 type TableSkipError struct {
 	tableName        string
