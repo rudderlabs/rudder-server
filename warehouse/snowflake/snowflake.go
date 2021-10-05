@@ -2,6 +2,7 @@ package snowflake
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"fmt"
@@ -14,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -802,17 +802,20 @@ func (sf *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 		return
 	}
 	defer sf.Db.Close()
-	pingResultChannel := make(chan error, 1)
-	rruntime.Go(func() {
-		pingResultChannel <- sf.Db.Ping()
-	})
-	var timeOut time.Duration = 5
-	select {
-	case err = <-pingResultChannel:
-	case <-time.After(5 * time.Second):
-		err = fmt.Errorf("connection testing timed out after %d sec", timeOut)
+	timeOut := 5 * time.Second
+
+	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	defer cancel()
+
+	err = sf.Db.PingContext(ctx)
+	if err == context.DeadlineExceeded {
+		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
 	}
-	return
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // FetchSchema queries snowflake and returns the schema assoiciated with provided namespace

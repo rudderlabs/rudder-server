@@ -1,12 +1,12 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/iancoleman/strcase"
@@ -63,7 +63,7 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 		args.uploadID,
 		timeutil.Now().Unix(),
 	)
-	defer os.Remove(path)
+	defer misc.RemoveFilePaths(path)
 
 	fManager, err := filemanager.New(&filemanager.SettingsT{
 		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
@@ -294,11 +294,15 @@ func archiveUploads(dbHandle *sql.DB) {
 	pkgLogger.Infof(`Successfully archived %d uploads`, archivedUploads)
 }
 
-func runArchiver(dbHandle *sql.DB) {
+func runArchiver(ctx context.Context, dbHandle *sql.DB) {
 	for {
-		if archiveUploadRelatedRecords {
-			archiveUploads(dbHandle)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(archiverTickerTime):
+			if archiveUploadRelatedRecords {
+				archiveUploads(dbHandle)
+			}
 		}
-		time.Sleep(archiverTickerTime)
 	}
 }

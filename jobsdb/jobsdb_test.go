@@ -196,19 +196,19 @@ var sampleTestJob = JobT{
 	CustomVal:    "MOCKDS",
 }
 
-type context struct {
+type tContext struct {
 	mock       sqlmock.Sqlmock
 	db         *sql.DB
 	globalMock sqlmock.Sqlmock
 	globalDB   *sql.DB
 }
 
-func (c *context) Setup() {
+func (c *tContext) Setup() {
 	c.db, c.mock, _ = sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
 	c.globalDB, c.globalMock, _ = sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
 }
 
-func (c *context) Finish() {
+func (c *tContext) Finish() {
 	c.db.Close()
 }
 
@@ -224,10 +224,10 @@ func initJobsDB() {
 var _ = Describe("jobsdb", func() {
 	initJobsDB()
 
-	var c *context
+	var c *tContext
 
 	BeforeEach(func() {
-		c = &context{}
+		c = &tContext{}
 		c.Setup()
 
 		// setup static requirements of dependencies
@@ -247,7 +247,12 @@ var _ = Describe("jobsdb", func() {
 			jd = &HandleT{}
 			jd.dbHandle = c.db
 
-			jd.workersAndAuxSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+			jd.skipSetupDBSetup = true
+			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+		})
+
+		AfterEach(func() {
+			jd.TearDown()
 		})
 
 		It("doesn't make db calls if !refreshFromDB", func() {
@@ -286,9 +291,14 @@ var _ = Describe("jobsdb", func() {
 			jd.dbHandle = c.db
 			jd.datasetList = dsListInMemory
 			jd.enableWriterQueue = false
-			jd.workersAndAuxSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
-
 			ds = jd.datasetList[len(jd.datasetList)-1]
+
+			jd.skipSetupDBSetup = true
+			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+		})
+
+		AfterEach(func() {
+			jd.TearDown()
 		})
 
 		It("should store jobs to db through workers", func() {
@@ -349,9 +359,14 @@ var _ = Describe("jobsdb", func() {
 			jd.dbHandle = c.db
 			jd.datasetList = dsListInMemory
 			jd.enableWriterQueue = true
-			jd.workersAndAuxSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
-
 			ds = jd.datasetList[len(jd.datasetList)-1]
+
+			jd.skipSetupDBSetup = true
+			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+		})
+
+		AfterEach(func() {
+			jd.TearDown()
 		})
 
 		It("should store jobs to db with storeJobsDS", func() {
@@ -420,7 +435,13 @@ var _ = Describe("jobsdb", func() {
 			jd.datasetList = dsListInMemory
 			jd.datasetRangeList = dsRangeList
 			jd.enableWriterQueue = true
-			jd.workersAndAuxSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+
+			jd.skipSetupDBSetup = true
+			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+		})
+
+		AfterEach(func() {
+			jd.TearDown()
 		})
 
 		It("should update job statuses to db", func() {
@@ -493,7 +514,13 @@ var _ = Describe("jobsdb", func() {
 			jd.datasetList = dsListInMemory
 			jd.datasetRangeList = dsRangeList
 			jd.enableWriterQueue = true
-			jd.workersAndAuxSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+
+			jd.skipSetupDBSetup = true
+			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+		})
+
+		AfterEach(func() {
+			jd.TearDown()
 		})
 
 		assertGetProcessedJobsWithCustomVal := func(state string) {
@@ -600,7 +627,13 @@ var _ = Describe("jobsdb", func() {
 			jd.datasetList = dsListInMemory
 			jd.datasetRangeList = dsRangeList
 			jd.enableWriterQueue = true
-			jd.workersAndAuxSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+
+			jd.skipSetupDBSetup = true
+			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+		})
+
+		AfterEach(func() {
+			jd.TearDown()
 		})
 
 		It("should return unprocessed jobs with customval", func() {
@@ -696,7 +729,13 @@ var _ = Describe("jobsdb", func() {
 			jd.datasetList = dsListInMemory
 			jd.datasetRangeList = dsRangeList
 			jd.enableWriterQueue = true
-			jd.workersAndAuxSetup(ReadWrite, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+
+			jd.skipSetupDBSetup = true
+			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{})
+		})
+
+		AfterEach(func() {
+			jd.TearDown()
 		})
 
 		It("should delete only one executing with simple customVal", func() {
