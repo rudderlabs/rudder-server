@@ -269,6 +269,7 @@ func (job *UploadJobT) getTotalRowsInStagingFiles() int64 {
 
 func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
 	var total sql.NullInt64
+	
 	sqlStatement := fmt.Sprintf(`
 		WITH row_numbered_load_files as (
 			SELECT
