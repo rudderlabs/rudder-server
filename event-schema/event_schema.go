@@ -354,13 +354,14 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			err := manager.reloadModel(archivedModel)
 			if err != nil {
 				eventModel = manager.createModel(writeKey, eventType, eventIdentifier, eventModel, totalEventModels, archiveOldestLastSeenModel)
+			} else {
+				eventModel, ok = manager.eventModelMap[WriteKey(writeKey)][EventType(eventType)][EventIdentifier(eventIdentifier)]
+				if !ok {
+					pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, archivedModel.UUID, writeKey, eventType, eventIdentifier)
+					return
+				}
+				stats.NewTaggedStat("reload_archived_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 			}
-			eventModel, ok = manager.eventModelMap[WriteKey(writeKey)][EventType(eventType)][EventIdentifier(eventIdentifier)]
-			if !ok {
-				pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, archivedModel.UUID, writeKey, eventType, eventIdentifier)
-				return
-			}
-			stats.NewTaggedStat("reload_archived_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 		} else {
 			eventModel = manager.createModel(writeKey, eventType, eventIdentifier, eventModel, totalEventModels, archiveOldestLastSeenModel)
 		}
@@ -427,13 +428,14 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 			err := manager.reloadSchemaVersion(archivedVersion)
 			if err != nil {
 				schemaVersion = manager.createSchema(schema, schemaHash, eventModel, totalSchemaVersions, archiveOldestLastSeenVersion)
+			} else {
+				schemaVersion, ok = manager.schemaVersionMap[eventModel.UUID][schemaHash]
+				if !ok {
+					pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, archivedVersion.UUID, writeKey, eventType, eventIdentifier)
+					return
+				}
+				stats.NewTaggedStat("reload_archived_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 			}
-			schemaVersion, ok = manager.schemaVersionMap[eventModel.UUID][schemaHash]
-			if !ok {
-				pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, archivedVersion.UUID, writeKey, eventType, eventIdentifier)
-				return
-			}
-			stats.NewTaggedStat("reload_archived_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 		} else {
 			schemaVersion = manager.createSchema(schema, schemaHash, eventModel, totalSchemaVersions, archiveOldestLastSeenVersion)
 		}
