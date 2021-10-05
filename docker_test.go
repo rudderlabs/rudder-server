@@ -125,6 +125,7 @@ func randString(n int) string {
 type Event struct {
 	anonymous_id string
 	user_id      string
+	count string
 }
 
 type Author struct {
@@ -211,6 +212,7 @@ func SendEvent() {
 	payload := strings.NewReader(`{
 	"userId": "identified user id",
 	"anonymousId":"anon-id-new",
+	"messageId":"xxyyzz",
 	"context": {
 	  "traits": {
 		 "trait1": "new-val"
@@ -599,6 +601,10 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("WAREHOUSE_URL", "http://localhost:8082")
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
 
+	// os.Setenv("RSERVER_DEDUP_ENABLE_DEDUP", "true")
+	// os.Setenv("RSERVER_DEDUP_DEDUP_WINDOW", "10s")
+	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_UPLOAD_FREQ", "10s")
+
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := make(chan struct{})
 	go func() {
@@ -641,10 +647,9 @@ func TestWebhook(t *testing.T) {
 
 	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
 	SendEvent()
-
-	require.Eventually(t, func() bool {
-		return 1 <= len(webhook.Requests())
-	}, time.Minute, 10*time.Millisecond)
+	SendEvent() //sending duplicate event to check dedup
+	time.Sleep(60 * time.Second)
+	require.Equal(t, 2, len(webhook.Requests()))
 
 	req := webhook.Requests()[0]
 
@@ -664,15 +669,16 @@ func TestWebhook(t *testing.T) {
 
 // Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
-	t.Skip("Skipping Postgres test")
+	// t.Skip("Skipping Postgres test")
 	var myEvent Event
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
 		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
 		return myEvent.anonymous_id == "anon-id-new"
 	}, time.Minute, 10*time.Millisecond)
-	require.Equal(t, "identified user id", myEvent.user_id)
-
+	eventSql := "select count(*) from dev_integration_test_1.identifies"
+	db.QueryRow(eventSql).Scan(&myEvent.count)
+	require.Equal(t, myEvent.count , "1")
 }
 
 // Verify Event in Redis
