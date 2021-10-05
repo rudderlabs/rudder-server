@@ -639,12 +639,12 @@ type TableUploadStatusT struct {
 	error         string
 }
 
-type TableUploadStatusErrorT struct {
+type TableUploadStatusInfoT struct {
 	status string
 	error  string
 }
 
-type TableUploadIDErrorT struct {
+type TableUploadIDInfoT struct {
 	uploadID int64
 	error    string
 }
@@ -708,13 +708,13 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 	return tableUploadStatuses
 }
 
-func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int64]map[string]*TableUploadStatusErrorT {
-	tableUploadStatus := make(map[int64]map[string]*TableUploadStatusErrorT)
+func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int64]map[string]*TableUploadStatusInfoT {
+	tableUploadStatus := make(map[int64]map[string]*TableUploadStatusInfoT)
 	for _, tUploadStatus := range tableUploadStatuses {
 		if _, ok := tableUploadStatus[tUploadStatus.uploadID]; !ok {
-			tableUploadStatus[tUploadStatus.uploadID] = make(map[string]*TableUploadStatusErrorT)
+			tableUploadStatus[tUploadStatus.uploadID] = make(map[string]*TableUploadStatusInfoT)
 		}
-		tableUploadStatus[tUploadStatus.uploadID][tUploadStatus.tableName] = &TableUploadStatusErrorT{
+		tableUploadStatus[tUploadStatus.uploadID][tUploadStatus.tableName] = &TableUploadStatusInfoT{
 			status: tUploadStatus.status,
 			error:  tUploadStatus.error,
 		}
@@ -722,10 +722,10 @@ func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int6
 	return tableUploadStatus
 }
 
-func (job *UploadJobT) getTablesToSkip() (map[string]*TableUploadIDErrorT, map[string]bool) {
+func (job *UploadJobT) getTablesToSkip() (map[string]*TableUploadIDInfoT, map[string]bool) {
 	tableUploadStatuses := job.fetchPendingUploadTableStatus()
 	tableUploadStatus := getTableUploadStatusMap(tableUploadStatuses)
-	previouslyFailedTableMap := make(map[string]*TableUploadIDErrorT)
+	previouslyFailedTableMap := make(map[string]*TableUploadIDInfoT)
 	currentlySucceededTableMap := make(map[string]bool)
 	for uploadID, tableStatusMap := range tableUploadStatus {
 		for tableName, tableStatus := range tableStatusMap {
@@ -733,7 +733,7 @@ func (job *UploadJobT) getTablesToSkip() (map[string]*TableUploadIDErrorT, map[s
 			if uploadID < job.upload.ID && (status == TableUploadExportingFailed ||
 				status == UserTableUploadExportingFailed ||
 				status == IdentityTableUploadExportingFailed) { //Previous upload and table upload failed
-				previouslyFailedTableMap[tableName] = &TableUploadIDErrorT{
+				previouslyFailedTableMap[tableName] = &TableUploadIDInfoT{
 					uploadID: uploadID,
 					error:    tableStatus.error,
 				}
