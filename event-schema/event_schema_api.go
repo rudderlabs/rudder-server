@@ -7,14 +7,13 @@ package event_schema
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/mux"
+	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	uuid "github.com/satori/go.uuid"
 	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/gorilla/mux"
-	"github.com/rudderlabs/rudder-server/gateway/response"
-	uuid "github.com/satori/go.uuid"
 )
 
 func handleBasicAuth(r *http.Request) error {
@@ -273,7 +272,7 @@ func unflatten(flat map[string]interface{}) (map[string]interface{}, error) {
 		leafKey := keyParts[len(keyParts)-1]
 		if _, exists := m[leafKey]; exists {
 			fmt.Printf("key=%v already exists", key)
-			continue;
+			continue
 		}
 		m[keyParts[len(keyParts)-1]] = value
 	}
