@@ -96,10 +96,16 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func(ctx context.Context) {
 				clearDB := false
-				StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+				g.Go(misc.WithBugsnag(func() error {
+					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+					return nil
+				}))
 			}
 			startRouterFunc := func(ctx context.Context) {
-				StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+				g.Go(misc.WithBugsnag(func() error {
+					StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+					return nil
+				}))
 			}
 			enableRouter = false
 			enableProcessor = false
