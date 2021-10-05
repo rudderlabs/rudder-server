@@ -1986,7 +1986,7 @@ func (rt *HandleT) Resume() {
 func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
 	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").String()
 	destinationID := gjson.GetBytes(parameters, "destination_id").String()
-	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").String())
+	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").Raw)
 	if taskRunID == "" {
 		return
 	}
