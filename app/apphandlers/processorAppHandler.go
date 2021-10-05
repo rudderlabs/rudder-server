@@ -112,7 +112,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startProcessorFunc := func(ctx context.Context) {
+			startProcessorFunc := func() {
 				g.Go(func() error {
 					clearDB := false
 					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
@@ -120,7 +120,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 					return nil
 				})
 			}
-			startRouterFunc := func(ctx context.Context) {
+			startRouterFunc := func() {
 				g.Go(func() error {
 					StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
 					return nil

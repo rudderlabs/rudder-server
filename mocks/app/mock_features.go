@@ -50,7 +50,7 @@ func (mr *MockMigratorFeatureMockRecorder) PrepareJobsdbsForImport(arg0, arg1, a
 }
 
 // Run mocks base method.
-func (m *MockMigratorFeature) Run(arg0 context.Context, arg1, arg2, arg3 *jobsdb.HandleT, arg4, arg5 func(context.Context)) {
+func (m *MockMigratorFeature) Run(arg0 context.Context, arg1, arg2, arg3 *jobsdb.HandleT, arg4, arg5 func()) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Run", arg0, arg1, arg2, arg3, arg4, arg5)
 }
