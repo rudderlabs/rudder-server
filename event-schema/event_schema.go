@@ -179,6 +179,7 @@ type GatewayEventBatchT struct {
 //EventT : Generic type for singular event
 type EventT map[string]interface{}
 
+
 //EventPayloadT : Generic type for gateway event payload
 type EventPayloadT struct {
 	WriteKey   string
