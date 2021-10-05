@@ -147,6 +147,7 @@ var (
 	schemaVersionPerEventModelLimit int
 	offloadLoopInterval             time.Duration
 	offloadThreshold                time.Duration
+	areEventSchemasPopulated		bool
 )
 
 const EVENT_MODELS_TABLE = "event_models"
@@ -558,7 +559,9 @@ func (manager *EventSchemaManagerT) NewSchemaVersion(versionID string, schema ma
 
 func (manager *EventSchemaManagerT) recordEvents() {
 	for gatewayEventBatch := range eventSchemaChannel {
-
+		if !areEventSchemasPopulated {
+			continue
+		}
 		var eventPayload EventPayloadT
 		err := json.Unmarshal([]byte(gatewayEventBatch.eventBatch), &eventPayload)
 		assertError(err)
@@ -598,6 +601,9 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 	// Otherwise the ticker won't be GC'ed
 	ticker := time.Tick(flushInterval)
 	for range ticker {
+		if !areEventSchemasPopulated {
+			continue
+		}
 
 		// If needed, copy the maps and release the lock immediately
 		manager.eventModelLock.Lock()
@@ -710,6 +716,11 @@ func eventTypeIdentifier(eventType, eventIdentifier string) string {
 
 func (manager *EventSchemaManagerT) offloadEventSchemas() {
 	for {
+		if !areEventSchemasPopulated {
+			time.Sleep(time.Duration(10))
+			continue
+		}
+
 		time.Sleep(offloadLoopInterval)
 		manager.eventModelLock.Lock()
 		manager.schemaVersionLock.Lock()
@@ -939,9 +950,14 @@ func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVers
 
 // This should be called during the Initialize() to populate existing event Schemas
 func (manager *EventSchemaManagerT) populateEventSchemas() {
+	defer setEventSchemasPopulated(true)
 	pkgLogger.Infof(`Populating event models and their schema versions into in-memory`)
 	manager.populateEventModelsMinimal()
 	manager.populateSchemaVersionsMinimal()
+}
+
+func setEventSchemasPopulated(status bool)  {
+	areEventSchemasPopulated = status
 }
 
 func getSchema(flattenedEvent map[string]interface{}) map[string]string {
@@ -1005,7 +1021,9 @@ func (manager *EventSchemaManagerT) Setup() {
 	archivedSchemaVersions = make(map[string]map[string]*OffloadedSchemaVersionT)
 
 	if !manager.disableInMemoryCache {
-		manager.populateEventSchemas()
+		rruntime.Go(func() {
+			manager.populateEventSchemas()
+		})
 	}
 	eventSchemaChannel = make(chan *GatewayEventBatchT, 10000)
 
