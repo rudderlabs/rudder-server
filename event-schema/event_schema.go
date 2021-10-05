@@ -621,7 +621,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 		manager.eventModelLock.Lock()
 		manager.schemaVersionLock.Lock()
 
-		for writeKey, _ := range manager.eventSchemaHandleByWriteKey {
+		for writeKey := range manager.eventSchemaHandleByWriteKey {
 			esHandleT := manager.GetEventSchemaHandle(WriteKey(writeKey))
 
 			schemaVersionsInCache := make([]*SchemaVersionT, 0)
