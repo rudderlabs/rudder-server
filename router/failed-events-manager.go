@@ -138,7 +138,6 @@ func CleanFailedRecordsTableProcess(ctx context.Context) {
 	}
 
 	for {
-		pkgLogger.Info("running routine")
 		if ctx.Err() != nil {
 			pkgLogger.Info("something wrong with context", ctx.Err())
 		}
