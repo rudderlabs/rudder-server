@@ -122,18 +122,20 @@ type jobResponseT struct {
 
 //JobParametersT struct holds source id and destination id of a job
 type JobParametersT struct {
-	SourceID                string `json:"source_id"`
-	DestinationID           string `json:"destination_id"`
-	ReceivedAt              string `json:"received_at"`
-	TransformAt             string `json:"transform_at"`
-	SourceBatchID           string `json:"source_batch_id"`
-	SourceTaskID            string `json:"source_task_id"`
-	SourceTaskRunID         string `json:"source_task_run_id"`
-	SourceJobID             string `json:"source_job_id"`
-	SourceJobRunID          string `json:"source_job_run_id"`
-	SourceDefinitionID      string `json:"source_definition_id"`
-	DestinationDefinitionID string `json:"destination_definition_id"`
-	SourceCategory          string `json:"source_category"`
+	SourceID                string      `json:"source_id"`
+	DestinationID           string      `json:"destination_id"`
+	ReceivedAt              string      `json:"received_at"`
+	TransformAt             string      `json:"transform_at"`
+	SourceBatchID           string      `json:"source_batch_id"`
+	SourceTaskID            string      `json:"source_task_id"`
+	SourceTaskRunID         string      `json:"source_task_run_id"`
+	SourceJobID             string      `json:"source_job_id"`
+	SourceJobRunID          string      `json:"source_job_run_id"`
+	SourceDefinitionID      string      `json:"source_definition_id"`
+	DestinationDefinitionID string      `json:"destination_definition_id"`
+	SourceCategory          string      `json:"source_category"`
+	RecordID                interface{} `json:"record_id"`
+	MessageID               string      `json:"message_id"`
 }
 
 type workerMessageT struct {
@@ -228,6 +230,10 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Router.fixedLoopSleep", "Router.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(10, &failedEventsCacheSize, false, 1, "Router.failedEventsCacheSize")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
+	// sources failed keys config
+	config.RegisterDurationConfigVariable(time.Duration(48), &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
+	config.RegisterDurationConfigVariable(time.Duration(24), &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
+	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -1210,17 +1216,18 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 
+	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
 	for _, resp := range *responseList {
+		var parameters JobParametersT
+		err := json.Unmarshal(resp.JobT.Parameters, &parameters)
+		if err != nil {
+			rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
+		}
 		//Update metrics maps
 		//REPORTING - ROUTER - START
 		if rt.reporting != nil && rt.reportingEnabled {
-			var parameters JobParametersT
-			err := json.Unmarshal(resp.JobT.Parameters, &parameters)
-			if err != nil {
-				rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
-			}
 			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
 			cd, ok := connectionDetailsMap[key]
 			if !ok {
@@ -1251,6 +1258,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 		if resp.status.JobState == jobsdb.Aborted.State {
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
+			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
 		}
 
 		//tracking router errors
@@ -1304,6 +1312,10 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		if err != nil {
 			rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
 			panic(err)
+		}
+		//Save msgids of aborted jobs
+		if len(jobRunIDAbortedEventsMap) > 0 {
+			GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
 		}
 		if rt.reporting != nil && rt.reportingEnabled {
 			rt.reporting.Report(reportMetrics, txn)
@@ -1969,4 +1981,17 @@ func (rt *HandleT) Resume() {
 	rt.generatorResumeChannel <- true
 
 	rt.paused = false
+}
+
+func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
+	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").String()
+	destinationID := gjson.GetBytes(parameters, "destination_id").String()
+	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").String())
+	if taskRunID == "" {
+		return
+	}
+	if _, ok := jobRunIDAbortedEventsMap[taskRunID]; !ok {
+		jobRunIDAbortedEventsMap[taskRunID] = []*FailedEventRowT{}
+	}
+	jobRunIDAbortedEventsMap[taskRunID] = append(jobRunIDAbortedEventsMap[taskRunID], &FailedEventRowT{DestinationID: destinationID, RecordID: recordID})
 }

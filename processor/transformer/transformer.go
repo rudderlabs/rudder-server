@@ -50,6 +50,7 @@ type MetadataT struct {
 	SourceJobRunID      string                            `json:"sourceJobRunId"`
 	SourceTaskID        string                            `json:"sourceTaskId"`
 	SourceTaskRunID     string                            `json:"sourceTaskRunId"`
+	RecordID            interface{}                       `json:"recordId"`
 	DestinationType     string                            `json:"destinationType"`
 	MessageID           string                            `json:"messageId"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs

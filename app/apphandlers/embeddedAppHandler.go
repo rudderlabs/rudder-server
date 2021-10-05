@@ -40,6 +40,9 @@ func (embedded *EmbeddedApp) GetAppType() string {
 func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	pkgLogger.Info("Main starting")
 
+	rudderCoreDBValidator()
+	rudderCoreNodeSetup()
+	rudderCoreWorkSpaceTableSetup()
 	rudderCoreBaseSetup()
 
 	g, ctx := errgroup.WithContext(ctx)
