@@ -141,7 +141,9 @@ func CleanFailedRecordsTableProcess(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(failedKeysCleanUpSleep):
-			dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
+			dbHandle, err := sql.Open("postgres", jobsdb.
+			GetConnectionString())
+			
 			if err != nil {
 				panic(err)
 			}
