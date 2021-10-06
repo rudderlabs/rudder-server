@@ -283,10 +283,10 @@ func compareSchema(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
 	// Iterating through all tableName in the localSchema
 	for tableName := range localSchema {
 		localColumns := localSchema[tableName]
-		warehouseColumns := schemaInWarehouse[tableName]
+		warehouseColumns, whColumnsExist := schemaInWarehouse[tableName]
 
 		// If warehouse does not contain the specified table return true.
-		if warehouseColumns == nil {
+		if !whColumnsExist {
 			return true
 		}
 		for columnName := range localColumns {
