@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"reflect"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
@@ -276,9 +274,33 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 	return consolidatedSchema
 }
 
-func compareSchema(sch1, sch2 map[string]map[string]string) bool {
-	eq := reflect.DeepEqual(sch1, sch2)
-	return eq
+/*
+For Samples:
+WarehouseSchema: https://jsonformatter.org/ca43d2
+LocalSchema: https://jsonformatter.org/1c2dd2
+*/
+func compareSchema(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
+	// Iterating through all tableName in the localSchema
+	for tableName := range localSchema {
+		localColumns := localSchema[tableName]
+		warehouseColumns := schemaInWarehouse[tableName]
+
+		// If warehouse does not contain the specified table return true.
+		if warehouseColumns == nil {
+			return true
+		}
+		for columnName := range localColumns {
+			localColumn := localColumns[columnName]
+			warehouseColumn := warehouseColumns[columnName]
+
+			// If warehouse does not contain the specified column return true.
+			// If warehouse column does not match with the local one return true
+			if localColumn != warehouseColumn {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
