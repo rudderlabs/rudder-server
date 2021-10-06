@@ -2024,62 +2024,64 @@ func (rt *HandleT) Resume() {
 
 // Currently the retry logic has been implemented for only OAuth
 func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParametersT,
-	destinationJob types.DestinationJobT, retryCount int) (statusCode int, response string) {
-	var respStatusCode int
-	var respBodyTemp string
+	destinationJob types.DestinationJobT, retryCount int) (int, string) {
+	var proxyStatusCode int
+	var proxyResBody string
 
-	respStatusCode, respBodyTemp = rt.transformer.Send(val, rt.destName)
+	proxyStatusCode, proxyResBody = rt.transformer.Send(val, rt.destName)
 	if retryCount >= rt.maxFailedOAuthCountForJob {
 		// Retrial termination condition
-		return respStatusCode, respBodyTemp
+		return proxyStatusCode, proxyResBody
 	}
-	var errOutput oauth.ErrorOutput
-	if err := json.Unmarshal([]byte(respBodyTemp), &errOutput); err != nil {
-		// If respBodyTemp comes out with a plain string, then this will occur
-		return http.StatusInternalServerError, err.Error()
+	var proxyErrOutput oauth.ErrorOutput
+	if proxyError := json.Unmarshal([]byte(proxyResBody), &proxyErrOutput); proxyError != nil {
+		// If proxyResBody comes out with a plain string, then this will occur
+		return http.StatusInternalServerError, proxyError.Error()
 	}
 	workspaceId := destinationJob.JobMetadataArray[0].WorkspaceId
+	var errCatStatusCode int
+	var errCatResponse string
 	// Check the category
 	// Trigger the refresh endpoint/disable endpoint
-	if errOutput.Output.AuthErrorCategory == oauth.DISABLE_DEST {
-		statusCode, response = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
-		if statusCode == 200 {
+	if proxyErrOutput.Output.AuthErrorCategory == oauth.DISABLE_DEST {
+		errCatStatusCode, errCatResponse = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
+		if errCatStatusCode == 200 {
 			// Abort the jobs as the destination is disable
-			return http.StatusBadRequest, response
+			return http.StatusBadRequest, errCatResponse
 		}
-	} else if errOutput.Output.AuthErrorCategory == oauth.REFRESH_TOKEN {
+	} else if proxyErrOutput.Output.AuthErrorCategory == oauth.REFRESH_TOKEN {
 		rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
 		var refSecret *oauth.AuthResponse
 		refTokenParams := &oauth.RefreshTokenParams{
-			AccessToken:     errOutput.Output.AccessToken,
+			AccessToken:     proxyErrOutput.Output.AccessToken,
 			WorkspaceId:     workspaceId,
 			AccountId:       rudderAccountId,
 			DestDefName:     destinationJob.Destination.DestinationDefinition.Name,
 			EventNamePrefix: "refresh_token",
 		}
-		statusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
+		errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
 		refSec := *refSecret
-		if statusCode == 200 && router_utils.IsNotEmptyString(refSec.Account.AccessToken) {
+		if errCatStatusCode == 200 && router_utils.IsNotEmptyString(refSec.Account.AccessToken) {
 			retryCount += 1
 			// val.WorkspaceId = workspaceId
 			// val.RudderAccountId = rudderAccountId
 			if router_utils.IsNotEmptyString(refSec.Err) {
-				return statusCode, refSec.Err
+				return errCatStatusCode, refSec.Err
 			}
 			// Refreshed Token is being set
 			val.AccessToken = refSec.Account.AccessToken
 			val.ExpirationDate = refSec.Account.ExpirationDate
-			// Retry with Refreshed Token(variable "response" - contains refreshed access token & expirationDate)
+			// Retry with Refreshed Token(variable "errCatResponse" - contains refreshed access token & expirationDate)
 			return rt.SendToTransformerProxyWithRetry(val, destinationJob, retryCount)
 		}
 	}
 
-	if statusCode >= 400 && statusCode < 600 {
+	if errCatStatusCode >= 400 && errCatStatusCode < 600 {
 		// Client errors and Server errors
-		return statusCode, response
+		return errCatStatusCode, errCatResponse
 	}
-	// By default send the status code & response from destination directly
-	return respStatusCode, respBodyTemp
+	// By default send the status code & errCatResponse from destination directly
+	return proxyStatusCode, proxyResBody
 }
 
 func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
