@@ -158,6 +158,7 @@ var (
 	offloadThreshold                time.Duration
 )
 
+// EventSchemaHandleT is a struct that represents event models and schema versions for a particular Write Key.
 type EventSchemaHandleT struct {
 	updatedEventModels       map[string]*EventModelT
 	updatedSchemaVersions    map[string]*SchemaVersionT
@@ -165,6 +166,7 @@ type EventSchemaHandleT struct {
 	toDeleteSchemaVersionIDs []string
 }
 
+//EventSchemaHandleByWriteKey : <writeKey> to EventSchemaHandleT Mapping
 type EventSchemaHandleByWriteKey map[WriteKey]*EventSchemaHandleT
 
 const EVENT_MODELS_TABLE = "event_models"
