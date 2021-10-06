@@ -525,6 +525,16 @@ func getPrivateDataJSON(schemaHash string) []byte {
 }
 
 func (manager *EventSchemaManagerT) flushEventSchemas() {
+	var flushDBHandle *sql.DB
+	defer func() {
+		if r := recover(); r != nil {
+			// If some of the panicking happens while doing the flushing of events, then we need to close the connection.
+			if flushDBHandle != nil {
+				flushDBHandle.Close()
+			}
+		}
+	}()
+
 	// This will run forever. If you want to quit in between, change it to ticker and call stop()
 	// Otherwise the ticker won't be GC'ed
 	ticker := time.Tick(flushInterval)
@@ -545,7 +555,9 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 			continue
 		}
 
-		txn, err := manager.dbHandle.Begin()
+		flushDBHandle = createDBConnection()
+
+		txn, err := flushDBHandle.Begin()
 		assertError(err)
 
 		// Handle Event Models
@@ -618,6 +630,8 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 
 		err = txn.Commit()
 		assertTxnError(err, txn)
+
+		flushDBHandle.Close()
 
 		updatedEventModels = make(map[string]*EventModelT)
 		updatedSchemaVersions = make(map[string]*SchemaVersionT)
