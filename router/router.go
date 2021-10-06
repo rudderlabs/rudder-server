@@ -438,7 +438,7 @@ func (worker *workerT) workerProcess() {
 }
 
 func (worker *workerT) processDestinationJobs() {
-	worker.handleWorkerDestinationJobs()
+	worker.handleWorkerDestinationJobs(context.TODO())
 	//routerJobs/destinationJobs are processed. Clearing the queues.
 	worker.routerJobs = make([]types.RouterJobT, 0)
 	worker.destinationJobs = make([]types.DestinationJobT, 0)
@@ -495,7 +495,7 @@ func getIterableStruct(payload []byte, transformAt string) []integrations.PostPa
 	return responseArray
 }
 
-func (worker *workerT) handleWorkerDestinationJobs() {
+func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	worker.batchTimeStat.Start()
 
 	var respStatusCode, prevRespStatusCode int
@@ -568,6 +568,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				})
 				deliveryLatencyStat.Start()
 
+				// TODO: remove trackStuckDelivery once we verify it is not needed,
+				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := worker.trackStuckDelivery()
 				if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
@@ -587,7 +589,10 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
-							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
+							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
+							defer cancel()
+
+							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
