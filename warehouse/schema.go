@@ -274,28 +274,33 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 	return consolidatedSchema
 }
 
+/*
+For Samples:
+WarehouseSchema: https://jsonformatter.org/ca43d2
+LocalSchema: https://jsonformatter.org/1c2dd2
+*/
 func compareSchema(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
 	// Iterating through all tableName in the localSchema
 	for tableName := range localSchema {
 		localColumns := localSchema[tableName]
 		warehouseColumns := schemaInWarehouse[tableName]
 
-		// If warehouse does not contain the specified table return false.
+		// If warehouse does not contain the specified table return true.
 		if warehouseColumns == nil {
-			return false
+			return true
 		}
 		for columnName := range localColumns {
 			localColumn := localColumns[columnName]
 			warehouseColumn := warehouseColumns[columnName]
 
-			// If warehouse does not contain the specified column return false.
-			// If warehouse column does not match with the local one return false
+			// If warehouse does not contain the specified column return true.
+			// If warehouse column does not match with the local one return true
 			if localColumn != warehouseColumn {
-				return false
+				return true
 			}
 		}
 	}
-	return true
+	return false
 }
 
 func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
