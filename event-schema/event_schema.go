@@ -956,6 +956,7 @@ func (manager *EventSchemaManagerT) populateEventSchemas() {
 	manager.populateSchemaVersionsMinimal()
 }
 
+
 func setEventSchemasPopulated(status bool)  {
 	areEventSchemasPopulated = status
 }
