@@ -115,6 +115,7 @@ func main() {
 	activeSources, _ = strconv.ParseInt(os.Getenv("ACTIVE_SOURCES"), 10, 0)
 	poly, _ = strconv.ParseInt(os.Getenv("POLYNOMIAL"), 10, 0)
 	coeffsList := strings.Split(os.Getenv("COEFFICIENTS"), ",")
+	skip, _ := strconv.ParseInt(os.Getenv("POLYNOMIAL"), 10, 0)
 	coefficients = make([]float64, 0)
 	for c := range coeffsList {
 		coeff, _ := strconv.ParseFloat(coeffsList[c], 64)
@@ -156,17 +157,17 @@ func main() {
 	fmt.Println("Got all the write keys")
 
 	xShift, _ := strconv.ParseInt(os.Getenv("XSHIFT"), 10, 0)
-	for j := 0; j < int(activeSources); j++ {
-		requestGap := time.Duration(getRequestGap(j + int(xShift)))
-		go func(wk string, j int, deltaT time.Duration) {
-			sendRequests(wk, dataplaneURL, j, deltaT)
-		}(writeKeys[j], j, requestGap)
+	for j := 0; j < len(writeKeys); j++ {
+		requestGap := time.Duration(getRequestGap((j * int(skip)) + int(xShift)))
+		go func(wk string, deltaT time.Duration) {
+			sendRequests(wk, dataplaneURL, deltaT)
+		}(writeKeys[j], requestGap)
 	}
 	fmt.Println("started goroutines to send requests from all the sources")
 	time.Sleep(time.Duration(loadTime) * time.Second)
 }
 
-func sendRequests(writeKey, dataplaneURL string, j int, deltaT time.Duration) {
+func sendRequests(writeKey, dataplaneURL string, deltaT time.Duration) {
 	for {
 		client := &http.Client{}
 		userID := ksuid.New().String()
