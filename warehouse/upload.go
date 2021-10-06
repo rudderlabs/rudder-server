@@ -269,7 +269,7 @@ func (job *UploadJobT) getTotalRowsInStagingFiles() int64 {
 
 func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
 	var total sql.NullInt64
-	
+
 	sqlStatement := fmt.Sprintf(`
 		WITH row_numbered_load_files as (
 			SELECT
@@ -640,11 +640,13 @@ type TableUploadStatusT struct {
 	error         string
 }
 
+// TableUploadStatusInfoT captures the status and error for [uploadID][tableName]
 type TableUploadStatusInfoT struct {
 	status string
 	error  string
 }
 
+// TableUploadIDInfoT captures the uploadID and error for [uploadID][tableName]
 type TableUploadIDInfoT struct {
 	uploadID int64
 	error    string
