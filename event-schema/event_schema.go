@@ -182,7 +182,6 @@ type GatewayEventBatchT struct {
 //EventT : Generic type for singular event
 type EventT map[string]interface{}
 
-
 //EventPayloadT : Generic type for gateway event payload
 type EventPayloadT struct {
 	WriteKey   string
@@ -631,6 +630,16 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 		manager.eventModelLock.Lock()
 		manager.schemaVersionLock.Lock()
 
+		flushDBHandle := createDBConnection()
+		defer func() {
+			if r := recover(); r != nil {
+				// If some of the panicking happens while doing the flushing of events, then we need to close the connection.
+				flushDBHandle.Close()
+				return
+			}
+			flushDBHandle.Close()
+		}()
+
 		for writeKey := range manager.eventSchemaHandleByWriteKey {
 			esHandleT := manager.GetEventSchemaHandle(WriteKey(writeKey))
 
@@ -643,7 +652,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 				continue
 			}
 
-			txn, err := manager.dbHandle.Begin()
+			txn, err := flushDBHandle.Begin()
 			assertError(err)
 
 			// Handle Event Models
