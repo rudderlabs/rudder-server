@@ -94,10 +94,11 @@ func (tableUpload *TableUploadT) setStatus(status string) (err error) {
 	return err
 }
 
-func (tableUpload *TableUploadT) getTotalEvents() (total int64, err error) {
+func (tableUpload *TableUploadT) getTotalEvents() (int64, error) {
 	sqlStatement := fmt.Sprintf(`SELECT total_events FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, tableUpload.uploadID, tableUpload.tableName)
-	err = dbHandle.QueryRow(sqlStatement).Scan(&total)
-	return total, err
+	var total sql.NullInt64
+	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
+	return total.Int64, err
 }
 
 func (tableUpload *TableUploadT) setError(status string, statusError error) (err error) {
