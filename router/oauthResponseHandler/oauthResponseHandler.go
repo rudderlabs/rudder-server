@@ -49,7 +49,7 @@ type RefreshTokenParams struct {
 	AccessToken     string
 	DestDefName     string
 	EventNamePrefix string
-	Worker          string // Only for testing
+	WorkerId        int
 }
 
 // OAuthErrResHandler is the handle for this class
@@ -205,7 +205,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 			authStats.eventName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
 			authStats.errorMessage = ""
 			authStats.SendCountStat()
-			authErrHandler.logger.Infof("[%s request] :: (Read) %s response received : %s\n", loggerNm, logTypeName, refVal.Account.AccessToken)
+			authErrHandler.logger.Infof("[%s request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.AccessToken)
 			return http.StatusOK, refVal
 		}
 	}
@@ -214,7 +214,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	authErrHandler.accountLockMap[refTokenParams.AccountId].Lock()
 	defer authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
 
-	authErrHandler.logger.Infof("[%s] Refresh Lock Acquired by %s\n", loggerNm, refTokenParams.Worker)
+	authErrHandler.logger.Infof("[%s] Refresh Lock Acquired by rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
 
 	authErrHandler.oauthErrHandlerReqTimerStat.Start()
 	defer authErrHandler.oauthErrHandlerReqTimerStat.End()
@@ -249,7 +249,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	statusCode, response := authErrHandler.cpApiCall(refreshCpReq)
 	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
 
-	authErrHandler.logger.Infof("[%s] Got the response from Control-Plane: %s\n", loggerNm, refTokenParams.Worker)
+	authErrHandler.logger.Infof("[%s] Got the response from Control-Plane: rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
 
 	// Empty Refresh token response
 	if !router_utils.IsNotEmptyString(response) {
@@ -260,7 +260,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 		authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
 			Account: AccountSecret{},
 		}
-		authErrHandler.logger.Infof("[%s request] :: Empty %s response received : %s\n", loggerNm, logTypeName, response)
+		authErrHandler.logger.Infof("[%s request] :: Empty %s response received(rt-worker-%d) : %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
 		// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
 		return statusCode
 	}
@@ -285,7 +285,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	authStats.eventName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
-	authErrHandler.logger.Infof("[%s request] :: (Write) %s response received : %s\n", loggerNm, logTypeName, response)
+	authErrHandler.logger.Infof("[%s request] :: (Write) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
 	return http.StatusOK
 }
 

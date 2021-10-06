@@ -615,7 +615,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							authType := router_utils.GetAuthType(destinationJob.Destination)
 							if worker.rt.transformerProxy || (router_utils.IsNotEmptyString(authType) && authType == "OAuth") {
 								pkgLogger.Infof(`routing via transformer, proxy enabled`)
-								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(val, destinationJob, 0)
+								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(val, destinationJob, 0, worker.workerID)
 							} else {
 								pkgLogger.Infof(`routing via server, proxy disabled`)
 								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
@@ -2024,7 +2024,7 @@ func (rt *HandleT) Resume() {
 
 // Currently the retry logic has been implemented for only OAuth
 func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParametersT,
-	destinationJob types.DestinationJobT, retryCount int) (int, string) {
+	destinationJob types.DestinationJobT, retryCount int, workerId int) (int, string) {
 	var proxyStatusCode int
 	var proxyResBody string
 
@@ -2058,13 +2058,12 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 			AccountId:       rudderAccountId,
 			DestDefName:     destinationJob.Destination.DestinationDefinition.Name,
 			EventNamePrefix: "refresh_token",
+			WorkerId:        workerId,
 		}
 		errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
 		refSec := *refSecret
 		if errCatStatusCode == 200 && router_utils.IsNotEmptyString(refSec.Account.AccessToken) {
 			retryCount += 1
-			// val.WorkspaceId = workspaceId
-			// val.RudderAccountId = rudderAccountId
 			if router_utils.IsNotEmptyString(refSec.Err) {
 				return errCatStatusCode, refSec.Err
 			}
@@ -2072,7 +2071,7 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 			val.AccessToken = refSec.Account.AccessToken
 			val.ExpirationDate = refSec.Account.ExpirationDate
 			// Retry with Refreshed Token(variable "errCatResponse" - contains refreshed access token & expirationDate)
-			return rt.SendToTransformerProxyWithRetry(val, destinationJob, retryCount)
+			return rt.SendToTransformerProxyWithRetry(val, destinationJob, retryCount, workerId)
 		}
 	}
 
