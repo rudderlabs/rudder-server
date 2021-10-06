@@ -157,11 +157,11 @@ func main() {
 	fmt.Println("Got all the write keys")
 
 	xShift, _ := strconv.ParseInt(os.Getenv("XSHIFT"), 10, 0)
-	for j := 0; j < len(writeKeys); j++ {
+	for j, writeKey := range writeKeys {
 		requestGap := time.Duration(getRequestGap((j * int(skip)) + int(xShift)))
 		go func(wk string, deltaT time.Duration) {
 			sendRequests(wk, dataplaneURL, deltaT)
-		}(writeKeys[j], requestGap)
+		}(writeKey, requestGap)
 	}
 	fmt.Println("started goroutines to send requests from all the sources")
 	time.Sleep(time.Duration(loadTime) * time.Second)
