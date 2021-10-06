@@ -147,7 +147,7 @@ var (
 	schemaVersionPerEventModelLimit int
 	offloadLoopInterval             time.Duration
 	offloadThreshold                time.Duration
-	areEventSchemasPopulated		bool
+	areEventSchemasPopulated        bool
 )
 
 const EVENT_MODELS_TABLE = "event_models"
@@ -717,7 +717,7 @@ func eventTypeIdentifier(eventType, eventIdentifier string) string {
 func (manager *EventSchemaManagerT) offloadEventSchemas() {
 	for {
 		if !areEventSchemasPopulated {
-			time.Sleep(time.Duration(10))
+			time.Sleep(time.Second * 10)
 			continue
 		}
 
@@ -950,14 +950,12 @@ func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVers
 
 // This should be called during the Initialize() to populate existing event Schemas
 func (manager *EventSchemaManagerT) populateEventSchemas() {
-	defer setEventSchemasPopulated(true)
 	pkgLogger.Infof(`Populating event models and their schema versions into in-memory`)
 	manager.populateEventModelsMinimal()
 	manager.populateSchemaVersionsMinimal()
 }
 
-
-func setEventSchemasPopulated(status bool)  {
+func setEventSchemasPopulated(status bool) {
 	areEventSchemasPopulated = status
 }
 
@@ -1023,6 +1021,12 @@ func (manager *EventSchemaManagerT) Setup() {
 
 	if !manager.disableInMemoryCache {
 		rruntime.Go(func() {
+			defer setEventSchemasPopulated(true)
+
+			populateESTimer := stats.NewTaggedStat("populate_event_schemas", stats.TimerType, stats.Tags{"module": "event_schemas"})
+			populateESTimer.Start()
+			defer populateESTimer.End()
+
 			manager.populateEventSchemas()
 		})
 	}
