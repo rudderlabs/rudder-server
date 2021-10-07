@@ -473,10 +473,14 @@ func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.WarehouseT, job
 	defer wh.inProgressMapLock.Unlock()
 	for idx, id := range wh.inProgressMap[WorkerIdentifierT(identifier)] {
 		if jobID == int64(id) {
-			wh.inProgressMap[WorkerIdentifierT(identifier)] = append(wh.inProgressMap[WorkerIdentifierT(identifier)][:idx], wh.inProgressMap[WorkerIdentifierT(identifier)][idx+1:]...)
+			wh.inProgressMap[WorkerIdentifierT(identifier)] = remove(wh.inProgressMap[WorkerIdentifierT(identifier)], idx)
 			break
 		}
 	}
+}
+
+func remove(slice []JobIDT, idx int) []JobIDT {
+	return append(slice[:idx], slice[idx+1:]...)
 }
 
 func getUploadFreqInS(syncFrequency string) int64 {
