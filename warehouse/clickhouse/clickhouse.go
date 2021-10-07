@@ -235,8 +235,8 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("300", &readTimeout, true, "Warehouse.clickhouse.readTimeout")
 	config.RegisterStringConfigVariable("1800", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
 	config.RegisterBoolConfigVariable(false, &compress, true, "Warehouse.clickhouse.compress")
-	config.RegisterDurationConfigVariable(time.Duration(120), &execTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
-	config.RegisterDurationConfigVariable(time.Duration(240), &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
+	config.RegisterDurationConfigVariable(time.Duration(600), &execTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
+	config.RegisterDurationConfigVariable(time.Duration(600), &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
 }
