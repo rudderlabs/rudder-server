@@ -115,7 +115,7 @@ func main() {
 	activeSources, _ = strconv.ParseInt(os.Getenv("ACTIVE_SOURCES"), 10, 0)
 	poly, _ = strconv.ParseInt(os.Getenv("POLYNOMIAL"), 10, 0)
 	coeffsList := strings.Split(os.Getenv("COEFFICIENTS"), ",")
-	skip, _ := strconv.ParseInt(os.Getenv("POLYNOMIAL"), 10, 0)
+	skip, _ := strconv.ParseInt(os.Getenv("SKIP"), 10, 0)
 	coefficients = make([]float64, 0)
 	for c := range coeffsList {
 		coeff, _ := strconv.ParseFloat(coeffsList[c], 64)
@@ -169,21 +169,26 @@ func main() {
 
 func sendRequests(writeKey, dataplaneURL string, deltaT time.Duration) {
 	for {
-		client := &http.Client{}
-		userID := ksuid.New().String()
-		payload, _ = sjson.SetBytes(payload, fmt.Sprintf(`batch.%v.anonymousId`, 0), userID)
-		// payload, _ = sjson.SetBytes(payload, fmt.Sprintf(`batch.%v.anonymousId`, 0), userID) //change another fields - few more
-		req, err := http.NewRequest("POST", dataplaneURL, bytes.NewBuffer(payload))
-		if err != nil {
-			fmt.Printf("error creating request: %s\n", err.Error())
-		}
-		req.Header.Add("Authorization", "Basic "+basicAuth(writeKey, ""))
-		_, err = client.Do(req)
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-
 		time.Sleep(deltaT)
+		for i := 0; i < 1; i++ {
+			go httpReq(writeKey, dataplaneURL, deltaT)
+		}
+	}
+}
+
+func httpReq(writeKey, dataplaneURL string, deltaT time.Duration) {
+	client := &http.Client{}
+	userID := ksuid.New().String()
+	payload, _ = sjson.SetBytes(payload, fmt.Sprintf(`batch.%v.anonymousId`, 0), userID)
+	// payload, _ = sjson.SetBytes(payload, fmt.Sprintf(`batch.%v.anonymousId`, 0), userID) //change another fields - few more
+	req, err := http.NewRequest("POST", dataplaneURL, bytes.NewBuffer(payload))
+	if err != nil {
+		fmt.Printf("error creating request: %s\n", err.Error())
+	}
+	req.Header.Add("Authorization", "Basic "+basicAuth(writeKey, ""))
+	_, err = client.Do(req)
+	if err != nil {
+		fmt.Println(err.Error())
 	}
 }
 
@@ -197,12 +202,155 @@ func getRequestGap(j int) float64 {
 	for i := 0; i <= int(poly); i++ {
 		rps += coefficients[int(poly)-i] * math.Pow(float64(j), float64(i))
 	}
-
-	return 604800000000000 / math.Pow(math.E, rps)
+	return (6048000000000 * 5) / math.Pow(math.E, rps)
 }
 
 var data = `{
 	"batch": [
+	  {
+		"anonymousId": "49e4bdd1c280bc00",
+		"channel": "android-sdk",
+		"destination_props": {
+		  "AF": {
+			"af_uid": "1566363489499-3377330514807116178"
+		  }
+		},
+		"context": {
+		  "app": {
+			"build": "1",
+			"name": "RudderAndroidClient",
+			"namespace": "com.rudderlabs.android.sdk",
+			"version": "1.0"
+		  },
+		  "device": {
+			"id": "49e4bdd1c280bc00",
+			"manufacturer": "Google",
+			"model": "Android SDK built for x86",
+			"name": "generic_x86"
+		  },
+		  "locale": "en-US",
+		  "network": {
+			"carrier": "Android"
+		  },
+		  "screen": {
+			"density": 420,
+			"height": 1794,
+			"width": 1080
+		  },
+		  "traits": {
+			"anonymousId": "49e4bdd1c280bc00"
+		  },
+		  "user_agent": "Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"
+		},
+		"event": "Demo Track",
+		"integrations": {
+		  "All": true
+		},
+		"properties": {
+		  "label": "Demo Label",
+		  "category": "Demo Category",
+		  "value": 5
+		},
+		"type": "track",
+		"originalTimestamp": "2019-08-12T05:08:30.909Z",
+		"sentAt": "2019-08-12T05:08:30.909Z"
+	  },
+	  {
+		"anonymousId": "49e4bdd1c280bc00",
+		"channel": "android-sdk",
+		"destination_props": {
+		  "AF": {
+			"af_uid": "1566363489499-3377330514807116178"
+		  }
+		},
+		"context": {
+		  "app": {
+			"build": "1",
+			"name": "RudderAndroidClient",
+			"namespace": "com.rudderlabs.android.sdk",
+			"version": "1.0"
+		  },
+		  "device": {
+			"id": "49e4bdd1c280bc00",
+			"manufacturer": "Google",
+			"model": "Android SDK built for x86",
+			"name": "generic_x86"
+		  },
+		  "locale": "en-US",
+		  "network": {
+			"carrier": "Android"
+		  },
+		  "screen": {
+			"density": 420,
+			"height": 1794,
+			"width": 1080
+		  },
+		  "traits": {
+			"anonymousId": "49e4bdd1c280bc00"
+		  },
+		  "user_agent": "Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"
+		},
+		"event": "Demo Track",
+		"integrations": {
+		  "All": true
+		},
+		"properties": {
+		  "label": "Demo Label",
+		  "category": "Demo Category",
+		  "value": 5
+		},
+		"type": "track",
+		"originalTimestamp": "2019-08-12T05:08:30.909Z",
+		"sentAt": "2019-08-12T05:08:30.909Z"
+	  },
+	  {
+		"anonymousId": "49e4bdd1c280bc00",
+		"channel": "android-sdk",
+		"destination_props": {
+		  "AF": {
+			"af_uid": "1566363489499-3377330514807116178"
+		  }
+		},
+		"context": {
+		  "app": {
+			"build": "1",
+			"name": "RudderAndroidClient",
+			"namespace": "com.rudderlabs.android.sdk",
+			"version": "1.0"
+		  },
+		  "device": {
+			"id": "49e4bdd1c280bc00",
+			"manufacturer": "Google",
+			"model": "Android SDK built for x86",
+			"name": "generic_x86"
+		  },
+		  "locale": "en-US",
+		  "network": {
+			"carrier": "Android"
+		  },
+		  "screen": {
+			"density": 420,
+			"height": 1794,
+			"width": 1080
+		  },
+		  "traits": {
+			"anonymousId": "49e4bdd1c280bc00"
+		  },
+		  "user_agent": "Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"
+		},
+		"event": "Demo Track",
+		"integrations": {
+		  "All": true
+		},
+		"properties": {
+		  "label": "Demo Label",
+		  "category": "Demo Category",
+		  "value": 5
+		},
+		"type": "track",
+		"originalTimestamp": "2019-08-12T05:08:30.909Z",
+		"sentAt": "2019-08-12T05:08:30.909Z"
+	  },
 	  {
 		"anonymousId": "49e4bdd1c280bc00",
 		"channel": "android-sdk",
