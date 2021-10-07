@@ -151,7 +151,6 @@ type clickHouseStatT struct {
 	numRowsLoadFile       stats.RudderStats
 	downloadLoadFilesTime stats.RudderStats
 	syncLoadFileTime      stats.RudderStats
-	execRowTime           stats.RudderStats
 	commitTime            stats.RudderStats
 	failRetries           stats.RudderStats
 	execTimeouts          stats.RudderStats
@@ -174,7 +173,6 @@ func (proc *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
 	numRowsLoadFile := proc.stats.NewTaggedStat("warehouse.clickhouse.numRowsLoadFile", stats.CountType, tags)
 	downloadLoadFilesTime := proc.stats.NewTaggedStat("warehouse.clickhouse.downloadLoadFilesTime", stats.TimerType, tags)
 	syncLoadFileTime := proc.stats.NewTaggedStat("warehouse.clickhouse.syncLoadFileTime", stats.TimerType, tags)
-	execRowTime := proc.stats.NewTaggedStat("warehouse.clickhouse.execRowTime", stats.TimerType, tags)
 	commitTime := proc.stats.NewTaggedStat("warehouse.clickhouse.commitTime", stats.TimerType, tags)
 	failRetries := proc.stats.NewTaggedStat("warehouse.clickhouse.failedRetries", stats.CountType, tags)
 	execTimeouts := proc.stats.NewTaggedStat("warehouse.clickhouse.execTimeouts", stats.CountType, tags)
@@ -184,7 +182,6 @@ func (proc *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
 		numRowsLoadFile:       numRowsLoadFile,
 		downloadLoadFilesTime: downloadLoadFilesTime,
 		syncLoadFileTime:      syncLoadFileTime,
-		execRowTime:           execRowTime,
 		commitTime:            commitTime,
 		failRetries:           failRetries,
 		execTimeouts:          execTimeouts,
@@ -653,9 +650,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 			stmtCtx, stmtCancel := context.WithCancel(context.Background())
 			misc.RunWithTimeout(func() {
 				pkgLogger.Debugf("%s Starting Prepared statement exec", ch.GetLogIdentifier(tableName))
-				chStats.execRowTime.Start()
 				_, err = stmt.ExecContext(stmtCtx, recordInterface...)
-				chStats.execRowTime.End()
 				pkgLogger.Debugf("%s Completed Prepared statement exec", ch.GetLogIdentifier(tableName))
 			}, func() {
 				pkgLogger.Debugf("%s Cancelling and closing statement", ch.GetLogIdentifier(tableName))
