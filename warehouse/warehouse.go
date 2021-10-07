@@ -81,6 +81,7 @@ var (
 	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
 	useParquetLoadFilesRS               bool
+	allowMultipleSourcesForJobsPickup   bool
 )
 
 var (
@@ -176,10 +177,14 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
 	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
 	config.RegisterIntConfigVariable(1, &maxConcurrentUploadJobs, false, 1, "Warehouse.maxConcurrentUploadJobs")
+	config.RegisterBoolConfigVariable(false, &allowMultipleSourcesForJobsPickup, false, "Warehouse.allowMultipleSourcesForJobsPickup")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
 func workerIdentifier(warehouse warehouseutils.WarehouseT) string {
+	if allowMultipleSourcesForJobsPickup {
+		return fmt.Sprintf(`%s_%s_%s`, warehouse.Source.ID, warehouse.Destination.ID, warehouse.Namespace)
+	}
 	return fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
 }
 
@@ -708,8 +713,18 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []string) ([]*UploadJobT, error) {
 
 	var skipIdentifiersSQL string
-	if len(skipIdentifiers) > 0 {
-		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
+	var partitionIdentifierSQL string
+
+	if !allowMultipleSourcesForJobsPickup {
+		if len(skipIdentifiers) > 0 {
+			skipIdentifiersSQL = `and ((source_id || '_' || destination_id || '_' || namespace)) != ALL($1)`
+		}
+		partitionIdentifierSQL = `source_id, destination_id, namespace`
+	} else {
+		if len(skipIdentifiers) > 0 {
+			skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
+		}
+		partitionIdentifierSQL = `destination_id, namespace`
 	}
 
 	sqlStatement := fmt.Sprintf(`
@@ -717,7 +732,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 					id, status, schema, mergedSchema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming, metadata->>'use_rudder_storage', timings, COALESCE(metadata->>'priority', '100')::int
 				FROM (
 					SELECT
-						ROW_NUMBER() OVER (PARTITION BY destination_id, namespace ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
+						ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
 						t.*
 					FROM
 						%s t
@@ -730,7 +745,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 					COALESCE(metadata->>'priority', '100')::int ASC, id ASC
 				LIMIT %d;
 
-		`, warehouseutils.WarehouseUploadsTable, wh.destType, false, ExportedData, Aborted, skipIdentifiersSQL, availableWorkers)
+		`, partitionIdentifierSQL, warehouseutils.WarehouseUploadsTable, wh.destType, false, ExportedData, Aborted, skipIdentifiersSQL, availableWorkers)
 
 	var rows *sql.Rows
 	var err error
