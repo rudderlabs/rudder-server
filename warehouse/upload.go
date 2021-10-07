@@ -621,13 +621,14 @@ func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 }
 
 func areAllTableSkipErrors(loadErrors []error) bool {
-	var skipErrCount int
+	res := true
 	for _, lErr := range loadErrors {
-		if _, ok := lErr.(*TableSkipError); ok {
-			skipErrCount++
+		if _, ok := lErr.(*TableSkipError); !ok {
+			res = false
+			break
 		}
 	}
-	return skipErrCount == len(loadErrors)
+	return res
 }
 
 // TableUploadStatusT captures the status of each table upload along with its parent upload_job's info like destionation_id and namespace
@@ -1332,7 +1333,8 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	// abort after configured retry attempts
 	if errorByState["attempt"].(int) > minRetryAttempts {
 		firstTiming := job.getUploadFirstAttemptTime()
-		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
+		// do not abort upload if the the error list has only skipped errors.
+		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) && !job.hasAllTablesSkipped {
 			state = Aborted
 		}
 	}
