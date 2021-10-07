@@ -241,10 +241,6 @@ type S3Manager struct {
 	session *session.Session
 }
 
-func (manager *S3Manager) GetProvider() string {
-	return "S3"
-}
-
 func GetS3Config(config map[string]interface{}) *S3Config {
 	var bucketName, prefix, accessKeyID, accessKey string
 	var enableSSE, ok bool

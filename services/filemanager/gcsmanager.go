@@ -146,10 +146,6 @@ type GCSManager struct {
 	client *storage.Client
 }
 
-func (manager *GCSManager) GetProvider() string {
-	return "GCS"
-}
-
 func GetGCSConfig(config map[string]interface{}) *GCSConfig {
 	var bucketName, prefix, credentials string
 	if config["bucketName"] != nil {

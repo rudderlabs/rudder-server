@@ -124,10 +124,6 @@ type MinioManager struct {
 	Config *MinioConfig
 }
 
-func (manager *MinioManager) GetProvider() string {
-	return "MINIO"
-}
-
 type MinioConfig struct {
 	Bucket          string
 	Prefix          string

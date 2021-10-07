@@ -343,7 +343,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		}),
 	})
 	if err != nil {
-		pkgLogger.Errorf("%s Error in setting up a downloader with Error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), err)
+		pkgLogger.Errorf("%s Error in setting up a downloader with Error: %v", ch.GetLogIdentifier(tableName, storageProvider), err)
 		return nil, err
 	}
 	var fileNames []string
@@ -360,7 +360,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		Jobs:   &jobs,
 		Run: func(job interface{}) {
 			loadFile := job.(warehouseutils.LoadFileT)
-			fileName, err := ch.downloadLoadFile(&loadFile, tableName, downloader)
+			fileName, err := ch.downloadLoadFile(&loadFile, tableName, downloader, storageProvider)
 			if err != nil {
 				pkgLogger.Errorf("%s Error occurred while downloading fileName: %s, Error: %v", ch.GetLogIdentifier(tableName), fileName, err)
 				dErr = err
@@ -374,44 +374,44 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, dErr
 }
 
-func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager) (fileName string, err error) {
-	pkgLogger.Debugf("%s DownloadLoadFile Started", ch.GetLogIdentifier(tableName, downloader.GetProvider()))
-	defer pkgLogger.Debugf("%s DownloadLoadFile Completed", ch.GetLogIdentifier(tableName, downloader.GetProvider()))
+func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager, storageProvider string) (fileName string, err error) {
+	pkgLogger.Debugf("%s DownloadLoadFile Started", ch.GetLogIdentifier(tableName, storageProvider))
+	defer pkgLogger.Debugf("%s DownloadLoadFile Completed", ch.GetLogIdentifier(tableName, storageProvider))
 
 	objectName, err := warehouseutils.GetObjectName(object.Location, ch.Warehouse.Destination.Config, ch.ObjectStorage)
 	if err != nil {
-		pkgLogger.Errorf("%s Error in converting object location to object key for location: %s, error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), object.Location, err)
+		pkgLogger.Errorf("%s Error in converting object location to object key for location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
 		return
 	}
 
 	dirName := "/rudder-warehouse-load-uploads-tmp/"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		pkgLogger.Errorf("%s Error in getting tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), object.Location, err)
+		pkgLogger.Errorf("%s Error in getting tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
 		return
 	}
 
 	ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
 	err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
 	if err != nil {
-		pkgLogger.Errorf("%s Error in making tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), object.Location, err)
+		pkgLogger.Errorf("%s Error in making tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
 		return
 	}
 
 	objectFile, err := os.Create(ObjectPath)
 	if err != nil {
-		pkgLogger.Errorf("%s Error in creating file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), tableName, object.Location, err)
+		pkgLogger.Errorf("%s Error in creating file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
 		return
 	}
 
 	err = downloader.Download(objectFile, objectName)
 	if err != nil {
-		pkgLogger.Errorf("%s Error in downloading file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), tableName, object.Location, err)
+		pkgLogger.Errorf("%s Error in downloading file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
 		return
 	}
 	fileName = objectFile.Name()
 	if err = objectFile.Close(); err != nil {
-		pkgLogger.Errorf("%s Error in closing downloaded file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, downloader.GetProvider()), tableName, object.Location, err)
+		pkgLogger.Errorf("%s Error in closing downloaded file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
 		return
 	}
 	return fileName, err

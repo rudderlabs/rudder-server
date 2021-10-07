@@ -141,10 +141,6 @@ type DOSpacesManager struct {
 	Config *DOSpacesConfig
 }
 
-func (manager *DOSpacesManager) GetProvider() string {
-	return "DIGITAL_OCEAN_SPACES"
-}
-
 func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 	var bucketName, prefix, endPoint, accessKeyID, accessKey string
 	if config["bucketName"] != nil {
