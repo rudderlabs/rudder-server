@@ -22,7 +22,6 @@ package sysUtils
 
 import (
 	"io"
-	"io/ioutil"
 	"os"
 )
 
@@ -72,14 +71,14 @@ func NewIoUtil() IoUtilI {
 // reads the whole file, it does not treat an EOF from Read as an error
 // to be reported.
 func (iu *IoUtil) ReadFile(filename string) ([]byte, error) {
-	return ioutil.ReadFile(filename)
+	return os.ReadFile(filename)
 }
 
 // WriteFile writes data to a file named by filename.
 // If the file does not exist, WriteFile creates it with permissions perm
 // (before umask); otherwise WriteFile truncates it before writing.
 func (iu *IoUtil) WriteFile(filename string, data []byte, perm os.FileMode) error {
-	return ioutil.WriteFile(filename, data, perm)
+	return os.WriteFile(filename, data, perm)
 
 }
 
@@ -88,13 +87,13 @@ func (iu *IoUtil) WriteFile(filename string, data []byte, perm os.FileMode) erro
 // defined to read from src until EOF, it does not treat an EOF from Read
 // as an error to be reported.
 func (iu *IoUtil) ReadAll(r io.Reader) ([]byte, error) {
-	return ioutil.ReadAll(r)
+	return io.ReadAll(r)
 
 }
 
 // NopCloser returns a ReadCloser with a no-op Close method wrapping
 // the provided Reader r.
 func (iu *IoUtil) NopCloser(r io.Reader) io.ReadCloser {
-	return ioutil.NopCloser(r)
+	return io.NopCloser(r)
 
 }

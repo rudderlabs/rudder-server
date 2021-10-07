@@ -3,6 +3,8 @@ package app
 //go:generate mockgen -destination=../mocks/app/mock_features.go -package=mock_app github.com/rudderlabs/rudder-server/app MigratorFeature,SuppressUserFeature
 
 import (
+	"context"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -10,7 +12,7 @@ import (
 
 // MigratorFeature handles migration of nodes during cluster's scale up/down.
 type MigratorFeature interface {
-	Setup(*jobsdb.HandleT, *jobsdb.HandleT, *jobsdb.HandleT, func(), func())
+	Run(context.Context, *jobsdb.HandleT, *jobsdb.HandleT, *jobsdb.HandleT, func(), func())
 	PrepareJobsdbsForImport(*jobsdb.HandleT, *jobsdb.HandleT, *jobsdb.HandleT)
 }
 

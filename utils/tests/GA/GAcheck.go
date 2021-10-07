@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"math"
 	"math/rand"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -82,7 +83,7 @@ func main() {
 
 	fmt.Println(*sendToRuderPtr)
 
-	gaReferenceMap, _ = ioutil.ReadFile("GAReference.json")
+	gaReferenceMap, _ = os.ReadFile("GAReference.json")
 
 	for i := 1; i <= *numberOfUsers; i++ {
 		id := uuid.NewV4()
@@ -103,7 +104,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 	var data, gaJSONData []byte
 	var rudderEvents []map[string]interface{}
 	var unmarshalleRudderdData, unmarshalleGAData map[string]interface{}
-	data, err = ioutil.ReadFile("mapping.json")
+	data, err = os.ReadFile("mapping.json")
 	check(err)
 	//fmt.Println(string(data))
 
@@ -229,7 +230,7 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 	var data, gaJSONData []byte
 	var rudderEvents []map[string]interface{}
 	var unmarshalleRudderdData, unmarshalleGAData map[string]interface{}
-	data, err = ioutil.ReadFile("mapping.json")
+	data, err = os.ReadFile("mapping.json")
 	check(err)
 	//fmt.Println(string(data))
 
@@ -388,7 +389,7 @@ func sendToRudder(jsonPayload string) {
 
 	fmt.Println("response Status:", resp.Status)
 	fmt.Println("response Headers:", resp.Header)
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	fmt.Println("response Body:", string(body))
 }
 
@@ -463,7 +464,7 @@ func sendToGA(payload *map[string]interface{}, url string) {
 	check(err)
 
 	defer resp.Body.Close()
-	respBody, _ := ioutil.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(resp.Body)
 
 	fmt.Println(string(respBody))
 

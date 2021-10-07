@@ -2,6 +2,7 @@ package router
 
 import (
 	"container/list"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -28,6 +29,7 @@ import (
 	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -105,6 +107,11 @@ type HandleT struct {
 	reportingEnabled                       bool
 	savePayloadOnError                     bool
 	transformerProxy                       bool
+
+	backgroundGroup  *errgroup.Group
+	backgroundCtx    context.Context
+	backgroundCancel context.CancelFunc
+	backgroundWait   func() error
 }
 
 type jobResponseT struct {
@@ -116,15 +123,20 @@ type jobResponseT struct {
 
 //JobParametersT struct holds source id and destination id of a job
 type JobParametersT struct {
-	SourceID        string `json:"source_id"`
-	DestinationID   string `json:"destination_id"`
-	ReceivedAt      string `json:"received_at"`
-	TransformAt     string `json:"transform_at"`
-	SourceBatchID   string `json:"source_batch_id"`
-	SourceTaskID    string `json:"source_task_id"`
-	SourceTaskRunID string `json:"source_task_run_id"`
-	SourceJobID     string `json:"source_job_id"`
-	SourceJobRunID  string `json:"source_job_run_id"`
+	SourceID                string      `json:"source_id"`
+	DestinationID           string      `json:"destination_id"`
+	ReceivedAt              string      `json:"received_at"`
+	TransformAt             string      `json:"transform_at"`
+	SourceBatchID           string      `json:"source_batch_id"`
+	SourceTaskID            string      `json:"source_task_id"`
+	SourceTaskRunID         string      `json:"source_task_run_id"`
+	SourceJobID             string      `json:"source_job_id"`
+	SourceJobRunID          string      `json:"source_job_run_id"`
+	SourceDefinitionID      string      `json:"source_definition_id"`
+	DestinationDefinitionID string      `json:"destination_definition_id"`
+	SourceCategory          string      `json:"source_category"`
+	RecordID                interface{} `json:"record_id"`
+	MessageID               string      `json:"message_id"`
 }
 
 type workerMessageT struct {
@@ -219,6 +231,10 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Router.fixedLoopSleep", "Router.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(10, &failedEventsCacheSize, false, 1, "Router.failedEventsCacheSize")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
+	// sources failed keys config
+	config.RegisterDurationConfigVariable(time.Duration(48), &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
+	config.RegisterDurationConfigVariable(time.Duration(24), &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
+	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -295,14 +311,29 @@ func (worker *workerT) workerProcess() {
 				<-worker.resumeChannel
 				pkgLogger.Infof("Router worker %d is resumed. Dest type: %s", worker.workerID, worker.rt.destName)
 			}
-		case message := <-worker.channel:
+		case message, hasMore := <-worker.channel:
+			if !hasMore {
+				if len(worker.routerJobs) == 0 {
+					return
+				}
+
+				if worker.rt.enableBatching {
+					worker.destinationJobs = worker.batch(worker.routerJobs)
+				} else {
+					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
+				}
+				worker.processDestinationJobs()
+
+				return
+			}
+
 			if worker.rt.pausingWorkers {
 				continue
 			}
 
 			job := message.job
 			worker.throttledAtTime = message.throttledAtTime
-			worker.rt.logger.Debugf("[%v Router] :: performing checks to send payload to %s. Payload: ", worker.rt.destName, job.EventPayload)
+			worker.rt.logger.Debugf("[%v Router] :: performing checks to send payload.", worker.rt.destName)
 
 			userID := job.UserID
 
@@ -558,12 +589,12 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
 							//for proxying through transformer
-							pkgLogger.Infof(`transformerProxy status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
+							pkgLogger.Debugf(`transformerProxy status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
 							if worker.rt.transformerProxy {
-								pkgLogger.Infof(`routing via transformer, proxy enabled`)
+								pkgLogger.Debugf(`routing via transformer, proxy enabled`)
 								respStatusCode, respBodyTemp = worker.rt.transformer.Send(val, worker.rt.destName)
 							} else {
-								pkgLogger.Infof(`routing via server, proxy disabled`)
+								pkgLogger.Debugf(`routing via server, proxy disabled`)
 								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
 							}
 							if isSuccessStatus(respStatusCode) {
@@ -785,9 +816,9 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 	}
 
-	status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
+	status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
 	if respBody != "" {
-		status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "response", respBody)
+		status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "response", respBody)
 	}
 
 	if isSuccessStatus(respStatusCode) {
@@ -814,7 +845,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		//2. if router job undergoes batching or dest transform.
 		if payload != nil && (worker.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
 			if worker.rt.savePayloadOnError {
-				status.ErrorResponse = router_utils.EnhanceResponse(status.ErrorResponse, "payload", string(payload))
+				status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "payload", string(payload))
 			}
 		}
 		// the job failed
@@ -1019,6 +1050,8 @@ func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
 
 func (rt *HandleT) initWorkers() {
 	rt.workers = make([]*workerT, rt.noOfWorkers)
+
+	g, _ := errgroup.WithContext(context.Background())
 	for i := 0; i < rt.noOfWorkers; i++ {
 		worker := &workerT{
 			pauseChannel:           make(chan *PauseT),
@@ -1038,13 +1071,35 @@ func (rt *HandleT) initWorkers() {
 			jobCountsByDestAndUser: make(map[string]*destJobCountsT),
 		}
 		rt.workers[i] = worker
-		rruntime.Go(func() {
+
+		g.Go(misc.WithBugsnag(func() error {
 			worker.workerProcess()
-		})
+			return nil
+		}))
+	}
+
+	rt.backgroundGroup.Go(func() error {
+		err := g.Wait()
+
+		// clean up channels workers are publishing to:
+		close(rt.responseQ)
+		close(rt.failedEventsChan)
+
+		return err
+	})
+}
+
+func (rt *HandleT) stopWorkers() {
+	for _, worker := range rt.workers {
+		// FIXME remove paused worker, use shutdown instead
+		close(worker.channel)
 	}
 }
 
 func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSendWorker *workerT) {
+	if rt.backgroundCtx.Err() != nil {
+		return nil
+	}
 
 	if !rt.guaranteeUserEventOrder {
 		//if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
@@ -1170,21 +1225,22 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 
+	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
 	for _, resp := range *responseList {
+		var parameters JobParametersT
+		err := json.Unmarshal(resp.JobT.Parameters, &parameters)
+		if err != nil {
+			rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
+		}
 		//Update metrics maps
 		//REPORTING - ROUTER - START
 		if rt.reporting != nil && rt.reportingEnabled {
-			var parameters JobParametersT
-			err := json.Unmarshal(resp.JobT.Parameters, &parameters)
-			if err != nil {
-				rt.logger.Error("Unmarshal of job parameters failed. ", string(resp.JobT.Parameters))
-			}
 			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
 			cd, ok := connectionDetailsMap[key]
 			if !ok {
-				cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID)
+				cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 				connectionDetailsMap[key] = cd
 			}
 			sd, ok := statusDetailsMap[key]
@@ -1193,7 +1249,9 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				if err != nil {
 					errorCode = 200 //TODO handle properly
 				}
-				sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload)
+				eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
+				eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
+				sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload, eventName, eventType)
 				statusDetailsMap[key] = sd
 			}
 			if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 {
@@ -1209,6 +1267,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 		if resp.status.JobState == jobsdb.Aborted.State {
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
+			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
 		}
 
 		//tracking router errors
@@ -1263,6 +1322,10 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
+		//Save msgids of aborted jobs
+		if len(jobRunIDAbortedEventsMap) > 0 {
+			GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
+		}
 		if rt.reporting != nil && rt.reportingEnabled {
 			rt.reporting.Report(reportMetrics, txn)
 		}
@@ -1296,6 +1359,8 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 }
 
+// statusInsertLoop will run in a separate goroutine
+// Blocking method, returns when rt.responseQ channel is closed.
 func (rt *HandleT) statusInsertLoop() {
 
 	var responseList []jobResponseT
@@ -1306,6 +1371,7 @@ func (rt *HandleT) statusInsertLoop() {
 	statusStat := stats.NewTaggedStat("router_status_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
 	countStat := stats.NewTaggedStat("router_status_events", stats.CountType, stats.Tags{"destType": rt.destName})
 	timeout := time.After(maxStatusUpdateWait)
+
 	for {
 		rt.perfStats.Start()
 		select {
@@ -1322,9 +1388,28 @@ func (rt *HandleT) statusInsertLoop() {
 			pause.respChannel <- true
 			<-rt.statusLoopResumeChannel
 			pkgLogger.Infof("statusInsertLoop loop is resumed. Dest type: %s", rt.destName)
-		case jobStatus := <-rt.responseQ:
-			rt.logger.Debugf("[%v Router] :: Got back status error %v and state %v for job %v", rt.destName, jobStatus.status.ErrorCode,
-				jobStatus.status.JobState, jobStatus.status.JobID)
+		case jobStatus, hasMore := <-rt.responseQ:
+			if !hasMore {
+				if len(responseList) == 0 {
+					return
+				}
+
+				statusStat.Start()
+				rt.commitStatusList(&responseList)
+				responseList = nil // FIXME: is this a bug ? count len after responseList
+				countStat.Count(len(responseList))
+				statusStat.End()
+
+				rt.perfStats.End(0)
+				return
+			}
+			rt.logger.Debugf(
+				"[%v Router] :: Got back status error %v and state %v for job %v",
+				rt.destName,
+				jobStatus.status.ErrorCode,
+				jobStatus.status.JobState,
+				jobStatus.status.JobID,
+			)
 			responseList = append(responseList, jobStatus)
 			rt.perfStats.End(1)
 		case <-timeout:
@@ -1338,70 +1423,79 @@ func (rt *HandleT) statusInsertLoop() {
 			rt.commitStatusList(&responseList)
 			responseList = nil
 			lastUpdate = time.Now()
-			countStat.Count(len(responseList))
+			countStat.Count(len(responseList)) // FIXME: is this a bug ? count len after responseList
 			statusStat.End()
 		}
 	}
 
 }
 
-func (rt *HandleT) collectMetrics() {
-	if diagnostics.EnableRouterMetric {
-		for range rt.diagnosisTicker.C {
-			rt.requestsMetricLock.RLock()
-			var diagnosisProperties map[string]interface{}
-			retries := 0
-			aborted := 0
-			success := 0
-			var compTime time.Duration
-			for _, reqMetric := range rt.requestsMetric {
-				retries = retries + reqMetric.RequestRetries
-				aborted = aborted + reqMetric.RequestAborted
-				success = success + reqMetric.RequestSuccess
-				compTime = compTime + reqMetric.RequestCompletedTime
-			}
-			if len(rt.requestsMetric) > 0 {
-				diagnosisProperties = map[string]interface{}{
-					rt.destName: map[string]interface{}{
-						diagnostics.RouterAborted:       aborted,
-						diagnostics.RouterRetries:       retries,
-						diagnostics.RouterSuccess:       success,
-						diagnostics.RouterCompletedTime: (compTime / time.Duration(len(rt.requestsMetric))) / time.Millisecond,
-					},
-				}
-
-				Diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
-			}
-
-			rt.requestsMetric = nil
-			rt.requestsMetricLock.RUnlock()
-
-			//This lock will ensure we dont send out Track Request while filling up the
-			//failureMetric struct
-			rt.failureMetricLock.RLock()
-			for key, values := range rt.failuresMetric {
-				var stringValue string
-				var err error
-				errorMap := make(map[string]int)
-				for _, value := range values {
-					errorMap[string(value.ErrorResponse)] = errorMap[string(value.ErrorResponse)] + 1
-				}
-				for k, v := range errorMap {
-					stringValue, err = sjson.Set(stringValue, k, v)
-					if err != nil {
-						stringValue = ""
-					}
-				}
-				Diagnostics.Track(key, map[string]interface{}{
-					diagnostics.RouterDestination: rt.destName,
-					diagnostics.Count:             len(values),
-					diagnostics.ErrorCountMap:     stringValue,
-				})
-			}
-			rt.failuresMetric = make(map[string][]failureMetric)
-			rt.failureMetricLock.RUnlock()
-		}
+func (rt *HandleT) collectMetrics(ctx context.Context) {
+	if !diagnostics.EnableRouterMetric {
+		return
 	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-rt.diagnosisTicker.C:
+
+		}
+		rt.requestsMetricLock.RLock()
+		var diagnosisProperties map[string]interface{}
+		retries := 0
+		aborted := 0
+		success := 0
+		var compTime time.Duration
+		for _, reqMetric := range rt.requestsMetric {
+			retries = retries + reqMetric.RequestRetries
+			aborted = aborted + reqMetric.RequestAborted
+			success = success + reqMetric.RequestSuccess
+			compTime = compTime + reqMetric.RequestCompletedTime
+		}
+		if len(rt.requestsMetric) > 0 {
+			diagnosisProperties = map[string]interface{}{
+				rt.destName: map[string]interface{}{
+					diagnostics.RouterAborted:       aborted,
+					diagnostics.RouterRetries:       retries,
+					diagnostics.RouterSuccess:       success,
+					diagnostics.RouterCompletedTime: (compTime / time.Duration(len(rt.requestsMetric))) / time.Millisecond,
+				},
+			}
+
+			Diagnostics.Track(diagnostics.RouterEvents, diagnosisProperties)
+		}
+
+		rt.requestsMetric = nil
+		rt.requestsMetricLock.RUnlock()
+
+		//This lock will ensure we dont send out Track Request while filling up the
+		//failureMetric struct
+		rt.failureMetricLock.RLock()
+		for key, values := range rt.failuresMetric {
+			var stringValue string
+			var err error
+			errorMap := make(map[string]int)
+			for _, value := range values {
+				errorMap[string(value.ErrorResponse)] = errorMap[string(value.ErrorResponse)] + 1
+			}
+			for k, v := range errorMap {
+				stringValue, err = sjson.Set(stringValue, k, v)
+				if err != nil {
+					stringValue = ""
+				}
+			}
+			Diagnostics.Track(key, map[string]interface{}{
+				diagnostics.RouterDestination: rt.destName,
+				diagnostics.Count:             len(values),
+				diagnostics.ErrorCountMap:     stringValue,
+			})
+		}
+		rt.failuresMetric = make(map[string][]failureMetric)
+		rt.failureMetricLock.RUnlock()
+	}
+
 }
 
 //#JobOrder (see other #JobOrder comment)
@@ -1432,7 +1526,7 @@ func (rt *HandleT) collectMetrics() {
 //    that responseQ and statusInsertLoop Buffer are empty for that userID.
 // C. Finally, we want for generatorLoop buffer to be fully processed.
 
-func (rt *HandleT) generatorLoop() {
+func (rt *HandleT) generatorLoop(ctx context.Context) {
 
 	rt.logger.Info("Generator started")
 
@@ -1442,6 +1536,8 @@ func (rt *HandleT) generatorLoop() {
 	timeout := time.After(10 * time.Millisecond)
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case pause := <-rt.generatorPauseChannel:
 			pkgLogger.Infof("Generator loop is paused. Dest type: %s", rt.destName)
 			pause.respChannel <- true
@@ -1518,7 +1614,7 @@ func (rt *HandleT) readAndProcess() int {
 	var statusList []*jobsdb.JobStatusT
 	var drainList []*jobsdb.JobStatusT
 	var drainJobList []*jobsdb.JobT
-	drainCountByDest := make(map[string]int)
+	drainStatsbyDest := make(map[string]*router_utils.DrainStats)
 
 	var toProcess []workerJobT
 
@@ -1539,14 +1635,22 @@ func (rt *HandleT) readAndProcess() int {
 				RetryTime:     time.Now(),
 				ErrorCode:     "",
 				Parameters:    []byte(`{}`),
-				ErrorResponse: router_utils.EnhanceResponse([]byte(`{}`), "reason", reason),
+				ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 			}
+			//Enhancing job parameter with the drain reason.
+			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
-			if _, ok := drainCountByDest[destID]; !ok {
-				drainCountByDest[destID] = 0
+			if _, ok := drainStatsbyDest[destID]; !ok {
+				drainStatsbyDest[destID] = &router_utils.DrainStats{
+					Count:   0,
+					Reasons: []string{},
+				}
 			}
-			drainCountByDest[destID] = drainCountByDest[destID] + 1
+			drainStatsbyDest[destID].Count = drainStatsbyDest[destID].Count + 1
+			if !misc.Contains(drainStatsbyDest[destID].Reasons, reason) {
+				drainStatsbyDest[destID].Reasons = append(drainStatsbyDest[destID].Reasons, reason)
+			}
 			continue
 		}
 		w := rt.findWorker(job, throttledAtTime)
@@ -1585,13 +1689,14 @@ func (rt *HandleT) readAndProcess() int {
 			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
 			panic(err)
 		}
-		for destID, count := range drainCountByDest {
+		for destID, destDrainStat := range drainStatsbyDest {
 			rt.drainedJobsStat = stats.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 				"destType": rt.destName,
 				"destId":   destID,
 				"module":   "router",
+				"reasons":  strings.Join(destDrainStat.Reasons, ", "),
 			})
-			rt.drainedJobsStat.Count(count)
+			rt.drainedJobsStat.Count(destDrainStat.Count)
 		}
 	}
 
@@ -1640,7 +1745,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 
 	//waiting for reporting client setup
 	if rt.reporting != nil && rt.reportingEnabled {
-		rt.reporting.WaitForSetup(utilTypes.CORE_REPORTING_CLIENT)
+		rt.reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)
 	}
 
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
@@ -1711,16 +1816,28 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.isBackendConfigInitialized = false
 	rt.backendConfigInitialized = make(chan bool)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	rt.backgroundCtx = ctx
+	rt.backgroundGroup = g
+	rt.backgroundCancel = cancel
+	rt.backgroundWait = g.Wait
+
 	rt.initWorkers()
-	rruntime.Go(func() {
-		rt.collectMetrics()
-	})
-	rruntime.Go(func() {
+	g.Go(misc.WithBugsnag(func() error {
+		rt.collectMetrics(ctx)
+		return nil
+	}))
+	g.Go(misc.WithBugsnag(func() error {
 		rt.readFailedJobStatusChan()
-	})
-	rruntime.Go(func() {
+		return nil
+	}))
+	g.Go(misc.WithBugsnag(func() error {
 		rt.statusInsertLoop()
-	})
+		return nil
+	}))
+
 	rruntime.Go(func() {
 		rt.backendConfigSubscriber()
 	})
@@ -1728,9 +1845,11 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 }
 
 func (rt *HandleT) Start() {
-	rruntime.Go(func() {
+	ctx := rt.backgroundCtx
+	rt.backgroundGroup.Go(func() error {
 		<-rt.backendConfigInitialized
-		rt.generatorLoop()
+		rt.generatorLoop(ctx)
+		return nil
 	})
 
 	rm, err := GetRoutersManager()
@@ -1738,6 +1857,13 @@ func (rt *HandleT) Start() {
 		panic("Routers manager is nil. Shouldn't happen. Go Debug")
 	}
 	rm.AddRouter(rt)
+}
+
+func (rt *HandleT) Shutdown() {
+	rt.backgroundCancel()
+	rt.stopWorkers()
+
+	rt.backgroundWait()
 }
 
 func (rt *HandleT) backendConfigSubscriber() {
@@ -1866,4 +1992,17 @@ func (rt *HandleT) Resume() {
 	rt.generatorResumeChannel <- true
 
 	rt.paused = false
+}
+
+func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
+	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").String()
+	destinationID := gjson.GetBytes(parameters, "destination_id").String()
+	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").Raw)
+	if taskRunID == "" {
+		return
+	}
+	if _, ok := jobRunIDAbortedEventsMap[taskRunID]; !ok {
+		jobRunIDAbortedEventsMap[taskRunID] = []*FailedEventRowT{}
+	}
+	jobRunIDAbortedEventsMap[taskRunID] = append(jobRunIDAbortedEventsMap[taskRunID], &FailedEventRowT{DestinationID: destinationID, RecordID: recordID})
 }

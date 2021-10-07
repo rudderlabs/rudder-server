@@ -197,10 +197,14 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 						uploadErrorChan <- err
 						return
 					}
+					contentLength := loadFileStats.Size()
+					if contentLength == 0 {
+						panic(fmt.Errorf("[WH]: Empty load file generated in slave jobId: %v for tablename: %v", job.UploadID, uploadJob.tableName))
+					}
 					loadFileOutputChan <- loadFileUploadOutputT{
 						TableName:     tableName,
 						Location:      uploadOutput.Location,
-						ContentLength: loadFileStats.Size(),
+						ContentLength: contentLength,
 						TotalRows:     jobRun.tableEventCountMap[tableName],
 						StagingFileID: stagingFileId,
 					}
@@ -291,14 +295,11 @@ func (jobRun *JobRunT) cleanup() {
 	}
 
 	if jobRun.stagingFilePath != "" {
-		err := os.Remove(jobRun.stagingFilePath)
-		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to remove staging file: %v", err)
-		}
+		misc.RemoveFilePaths(jobRun.stagingFilePath)
 	}
 	if jobRun.outputFileWritersMap != nil {
 		for _, writer := range jobRun.outputFileWritersMap {
-			os.Remove(writer.GetLoadFile().Name())
+			misc.RemoveFilePaths(writer.GetLoadFile().Name())
 		}
 	}
 }

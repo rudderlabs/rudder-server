@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"compress/gzip"
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"fmt"
@@ -12,7 +13,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -22,8 +23,9 @@ import (
 )
 
 var (
-	stagingTablePrefix string
-	pkgLogger          logger.LoggerI
+	stagingTablePrefix            string
+	pkgLogger                     logger.LoggerI
+	skipComputingUserLatestTraits bool
 )
 
 const (
@@ -115,6 +117,7 @@ func Init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
+	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
 }
 
 func (pg *HandleT) getConnectionCredentials() credentialsT {
@@ -233,7 +236,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		defer pg.dropStagingTable(stagingTableName)
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
+	stmt, err := txn.Prepare(pq.CopyInSchema(pg.Namespace, stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		pkgLogger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
 		txn.Rollback()
@@ -367,6 +370,14 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
+	if skipComputingUserLatestTraits {
+		_, err := pg.loadTable(warehouseutils.UsersTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable), false)
+		if err != nil {
+			errorMap[warehouseutils.UsersTable] = err
+		}
+		return
+	}
+
 	unionStagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.NewV4().String(), "-", ""), "users_identifies_union"), 63)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.NewV4().String(), "-", ""), warehouseutils.UsersTable), 63)
 	defer pg.dropStagingTable(stagingTableName)
@@ -381,12 +392,12 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		userColNames = append(userColNames, colName)
 		caseSubQuery := fmt.Sprintf(`case
 						  when (select true) then (
-						  	select %[1]s from %[2]s
-						  	where x.id = %[2]s.id
+						  	select %[1]s from "%[3]s"."%[2]s" as staging_table
+						  	where x.id = staging_table.id
 							  and %[1]s is not null
 							  order by received_at desc
 						  	limit 1)
-						  end as %[1]s`, colName, unionStagingTableName)
+						  end as %[1]s`, colName, unionStagingTableName, pg.Namespace)
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
@@ -410,7 +421,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 										(
 											SELECT
 											x.id, %[2]s
-											FROM %[3]s as x
+											FROM %[4]s.%[3]s as x
 										) as xyz
 									)`,
 		stagingTableName,
@@ -490,7 +501,7 @@ func (pg *HandleT) CreateSchema() (err error) {
 
 func (pg *HandleT) dropStagingTable(stagingTableName string) {
 	pkgLogger.Infof("PG: dropping table %+v\n", stagingTableName)
-	_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, stagingTableName))
+	_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%[1]s"."%[2]s"`, pg.Namespace, stagingTableName))
 	if err != nil {
 		pkgLogger.Errorf("PG:  Error dropping staging table %s in postgres: %v", stagingTableName, err)
 	}
@@ -544,18 +555,23 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	if err != nil {
 		return
 	}
-	pingResultChannel := make(chan error, 1)
 	defer pg.Db.Close()
-	rruntime.Go(func() {
-		pingResultChannel <- pg.Db.Ping()
-	})
-	var timeOut time.Duration = 5
-	select {
-	case err = <-pingResultChannel:
-	case <-time.After(timeOut * time.Second):
-		err = fmt.Errorf("connection testing timed out after %d sec", timeOut)
+
+	timeOut := 5 * time.Second
+
+	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	defer cancel()
+
+	err = pg.Db.PingContext(ctx)
+	if err == context.DeadlineExceeded {
+		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
 	}
-	return
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
 func (pg *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
