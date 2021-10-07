@@ -40,6 +40,9 @@ func (embedded *EmbeddedApp) GetAppType() string {
 func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	pkgLogger.Info("Main starting")
 
+	rudderCoreDBValidator()
+	rudderCoreNodeSetup()
+	rudderCoreWorkSpaceTableSetup()
 	rudderCoreBaseSetup()
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -91,12 +94,18 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	if embedded.App.Features().Migrator != nil && config.GetBool("Migrator.enabled", false) {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startProcessorFunc := func(ctx context.Context) {
+			startProcessorFunc := func() {
 				clearDB := false
-				StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+				g.Go(misc.WithBugsnag(func() error {
+					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+					return nil
+				}))
 			}
-			startRouterFunc := func(ctx context.Context) {
-				StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+			startRouterFunc := func() {
+				g.Go(misc.WithBugsnag(func() error {
+					StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+					return nil
+				}))
 			}
 			enableRouter = false
 			enableProcessor = false

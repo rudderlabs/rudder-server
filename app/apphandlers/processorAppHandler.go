@@ -66,6 +66,9 @@ func loadConfigHandler() {
 func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	pkgLogger.Info("Processor starting")
 
+	rudderCoreDBValidator()
+	rudderCoreNodeSetup()
+	rudderCoreWorkSpaceTableSetup()
 	rudderCoreBaseSetup()
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -109,12 +112,19 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 	if processor.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startProcessorFunc := func(ctx context.Context) {
-				clearDB := false
-				StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+			startProcessorFunc := func() {
+				g.Go(func() error {
+					clearDB := false
+					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+
+					return nil
+				})
 			}
-			startRouterFunc := func(ctx context.Context) {
-				StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+			startRouterFunc := func() {
+				g.Go(func() error {
+					StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+					return nil
+				})
 			}
 			enableRouter = false
 			enableProcessor = false

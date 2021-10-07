@@ -82,13 +82,19 @@ func loadConfig() {
 	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE"}
 }
 
+func rudderCoreDBValidator() {
+	validators.ValidateEnv()
+}
+
+func rudderCoreNodeSetup() {
+	validators.InitializeNodeMigrations()
+}
+
+func rudderCoreWorkSpaceTableSetup() {
+	validators.CheckAndValidateWorkspaceToken()
+}
+
 func rudderCoreBaseSetup() {
-
-	if !validators.ValidateEnv() {
-		panic(errors.New("Failed to start rudder-server"))
-	}
-	validators.InitializeEnv()
-
 	// Check if there is a probable inconsistent state of Data
 	if diagnostics.EnableServerStartMetric {
 		Diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{

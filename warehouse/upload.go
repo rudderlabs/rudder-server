@@ -270,6 +270,7 @@ func (job *UploadJobT) getTotalRowsInStagingFiles() int64 {
 
 func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
 	var total sql.NullInt64
+
 	sqlStatement := fmt.Sprintf(`
 		WITH row_numbered_load_files as (
 			SELECT
@@ -623,13 +624,14 @@ func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 }
 
 func areAllTableSkipErrors(loadErrors []error) bool {
-	var skipErrCount int
+	res := true
 	for _, lErr := range loadErrors {
-		if _, ok := lErr.(*TableSkipError); ok {
-			skipErrCount++
+		if _, ok := lErr.(*TableSkipError); !ok {
+			res = false
+			break
 		}
 	}
-	return skipErrCount == len(loadErrors)
+	return res
 }
 
 // TableUploadStatusT captures the status of each table upload along with its parent upload_job's info like destionation_id and namespace
@@ -639,6 +641,19 @@ type TableUploadStatusT struct {
 	namespace     string
 	tableName     string
 	status        string
+	error         string
+}
+
+// TableUploadStatusInfoT captures the status and error for [uploadID][tableName]
+type TableUploadStatusInfoT struct {
+	status string
+	error  string
+}
+
+// TableUploadIDInfoT captures the uploadID and error for [uploadID][tableName]
+type TableUploadIDInfoT struct {
+	uploadID int64
+	error    string
 }
 
 func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
@@ -651,7 +666,8 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 			%[1]s.destination_id,
 			%[1]s.namespace,
 			%[2]s.table_name,
-			%[2]s.status
+			%[2]s.status,
+			%[2]s.error
 		FROM
 			%[1]s INNER JOIN %[2]s
 		ON
@@ -688,6 +704,7 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 			&tableUploadStatus.namespace,
 			&tableUploadStatus.tableName,
 			&tableUploadStatus.status,
+			&tableUploadStatus.error,
 		)
 		if err != nil {
 			panic(err)
@@ -698,28 +715,35 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 	return tableUploadStatuses
 }
 
-func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int64]map[string]string {
-	tableUploadStatus := make(map[int64]map[string]string)
+func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int64]map[string]*TableUploadStatusInfoT {
+	tableUploadStatus := make(map[int64]map[string]*TableUploadStatusInfoT)
 	for _, tUploadStatus := range tableUploadStatuses {
 		if _, ok := tableUploadStatus[tUploadStatus.uploadID]; !ok {
-			tableUploadStatus[tUploadStatus.uploadID] = make(map[string]string)
+			tableUploadStatus[tUploadStatus.uploadID] = make(map[string]*TableUploadStatusInfoT)
 		}
-		tableUploadStatus[tUploadStatus.uploadID][tUploadStatus.tableName] = tUploadStatus.status
+		tableUploadStatus[tUploadStatus.uploadID][tUploadStatus.tableName] = &TableUploadStatusInfoT{
+			status: tUploadStatus.status,
+			error:  tUploadStatus.error,
+		}
 	}
 	return tableUploadStatus
 }
 
-func (job *UploadJobT) getTablesToSkip() (map[string]int64, map[string]bool) {
+func (job *UploadJobT) getTablesToSkip() (map[string]*TableUploadIDInfoT, map[string]bool) {
 	tableUploadStatuses := job.fetchPendingUploadTableStatus()
 	tableUploadStatus := getTableUploadStatusMap(tableUploadStatuses)
-	previouslyFailedTableMap := make(map[string]int64)
+	previouslyFailedTableMap := make(map[string]*TableUploadIDInfoT)
 	currentlySucceededTableMap := make(map[string]bool)
 	for uploadID, tableStatusMap := range tableUploadStatus {
-		for tableName, status := range tableStatusMap {
+		for tableName, tableStatus := range tableStatusMap {
+			status := tableStatus.status
 			if uploadID < job.upload.ID && (status == TableUploadExportingFailed ||
 				status == UserTableUploadExportingFailed ||
 				status == IdentityTableUploadExportingFailed) { //Previous upload and table upload failed
-				previouslyFailedTableMap[tableName] = uploadID
+				previouslyFailedTableMap[tableName] = &TableUploadIDInfoT{
+					uploadID: uploadID,
+					error:    tableStatus.error,
+				}
 			}
 			if uploadID == job.upload.ID && status == TableUploadExported { //Current upload and table upload succeeded
 				currentlySucceededTableMap[tableName] = true
@@ -780,14 +804,16 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	return err
 }
 
+
 //TableSkipError is a custom error type to capture if a table load is skipped because of a previously failed table load
 type TableSkipError struct {
-	tableName     string
-	previousJobID int64
+	tableName        string
+	previousJobID    int64
+	previousJobError string
 }
 
 func (tse *TableSkipError) Error() string {
-	return fmt.Sprintf("Skipping %s table because it previously failed to load in an earlier job: %d", tse.tableName, tse.previousJobID)
+	return fmt.Sprintf("Skipping %s table because it previously failed to load in an earlier job: %d with error: %s", tse.tableName, tse.previousJobID, tse.previousJobError)
 }
 
 func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
@@ -816,8 +842,8 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string) []error {
 			wg.Done()
 			continue
 		}
-		if prevJobID, ok := previouslyFailedTables[tableName]; ok {
-			loadErrors = append(loadErrors, &TableSkipError{tableName: tableName, previousJobID: prevJobID})
+		if prevJobStatus, ok := previouslyFailedTables[tableName]; ok {
+			loadErrors = append(loadErrors, &TableSkipError{tableName: tableName, previousJobID: prevJobStatus.uploadID, previousJobError: prevJobStatus.error})
 			wg.Done()
 			continue
 		}
@@ -947,8 +973,8 @@ func (job *UploadJobT) loadUserTables() ([]error, error) {
 	var err error
 	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for _, tName := range userTables {
-		if prevJobID, ok := previouslyFailedTables[tName]; ok {
-			err = &TableSkipError{tableName: tName, previousJobID: prevJobID}
+		if prevJobStatus, ok := previouslyFailedTables[tName]; ok {
+			err = &TableSkipError{tableName: tName, previousJobID: prevJobStatus.uploadID, previousJobError: prevJobStatus.error}
 			return []error{err}, nil
 		}
 	}
@@ -1007,8 +1033,8 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for _, tableName := range identityTables {
-		if prevJobID, ok := previouslyFailedTables[tableName]; ok {
-			return []error{&TableSkipError{tableName: tableName, previousJobID: prevJobID}}, nil
+		if prevJobStatus, ok := previouslyFailedTables[tableName]; ok {
+			return []error{&TableSkipError{tableName: tableName, previousJobID: prevJobStatus.uploadID, previousJobError: prevJobStatus.error}}, nil
 		}
 	}
 
@@ -1310,7 +1336,8 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	// abort after configured retry attempts
 	if errorByState["attempt"].(int) > minRetryAttempts {
 		firstTiming := job.getUploadFirstAttemptTime()
-		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
+		// do not abort upload if the the error list has only skipped errors.
+		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) && !job.hasAllTablesSkipped {
 			state = Aborted
 		}
 	}

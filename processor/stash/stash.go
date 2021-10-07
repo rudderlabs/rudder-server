@@ -81,13 +81,11 @@ func (st *HandleT) Start(ctx context.Context) {
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		st.runErrWorkers(ctx)
-
 		return nil
 	})
 
 	g.Go(func() error {
 		st.readErrJobsLoop(ctx)
-
 		return nil
 	})
 
