@@ -271,8 +271,8 @@ var MigrationAssets = func() http.FileSystem {
 			modTime: time.Date(2021, 10, 7, 7, 49, 59, 987443737, time.UTC),
 			content: []byte("\x0a\x2d\x2d\x0a\x2d\x2d\x20\x77\x68\x5f\x75\x70\x6c\x6f\x61\x64\x73\x0a\x2d\x2d\x0a\x0a\x41\x4c\x54\x45\x52\x20\x54\x41\x42\x4c\x45\x20\x77\x68\x5f\x75\x70\x6c\x6f\x61\x64\x73\x20\x41\x44\x44\x20\x43\x4f\x4c\x55\x4d\x4e\x20\x49\x46\x20\x4e\x4f\x54\x20\x45\x58\x49\x53\x54\x53\x20\x69\x6e\x5f\x70\x72\x6f\x67\x72\x65\x73\x73\x20\x42\x4f\x4f\x4c\x20\x4e\x4f\x54\x20\x4e\x55\x4c\x4c\x20\x44\x45\x46\x41\x55\x4c\x54\x20\x66\x61\x6c\x73\x65\x3b\x0a"),
 		},
-		"/warehouse/000014_add_and_drop_wh_uploads_index_for_In_progress.up.sql": &vfsgen۰CompressedFileInfo{
-			name:             "000014_add_and_drop_wh_uploads_index_for_In_progress.up.sql",
+		"/warehouse/000014_add_and_drop_wh_uploads_index_for_in_progress.up.sql": &vfsgen۰CompressedFileInfo{
+			name:             "000014_add_and_drop_wh_uploads_index_for_in_progress.up.sql",
 			modTime:          time.Date(2021, 10, 7, 10, 39, 8, 714010218, time.UTC),
 			uncompressedSize: 335,
 
@@ -328,7 +328,7 @@ var MigrationAssets = func() http.FileSystem {
 		fs["/warehouse/000011_add_wh_loadfiles_metadata_column.up.sql"].(os.FileInfo),
 		fs["/warehouse/000012_add_mergedSchema_to_wh_uploads.up.sql"].(os.FileInfo),
 		fs["/warehouse/000013_add_in_progress_to_wh_uploads.up.sql"].(os.FileInfo),
-		fs["/warehouse/000014_add_and_drop_wh_uploads_index_for_In_progress.up.sql"].(os.FileInfo),
+		fs["/warehouse/000014_add_and_drop_wh_uploads_index_for_in_progress.up.sql"].(os.FileInfo),
 	}
 
 	return fs

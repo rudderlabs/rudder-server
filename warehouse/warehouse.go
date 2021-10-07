@@ -181,11 +181,13 @@ func loadConfig() {
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
-func workerIdentifier(warehouse warehouseutils.WarehouseT) string {
+func workerIdentifier(warehouse warehouseutils.WarehouseT) (identifier string) {
+	identifier = fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
+
 	if allowMultipleSourcesForJobsPickup {
-		return fmt.Sprintf(`%s_%s_%s`, warehouse.Source.ID, warehouse.Destination.ID, warehouse.Namespace)
+		identifier = fmt.Sprintf(`%s_%s_%s`, warehouse.Source.ID, warehouse.Destination.ID, warehouse.Namespace)
 	}
-	return fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
+	return
 }
 
 func (wh *HandleT) getActiveWorkerCount() int {
@@ -713,18 +715,17 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []string) ([]*UploadJobT, error) {
 
 	var skipIdentifiersSQL string
-	var partitionIdentifierSQL string
+	var partitionIdentifierSQL = `destination_id, namespace`
 
-	if !allowMultipleSourcesForJobsPickup {
+	if len(skipIdentifiers) > 0 {
+		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
+	}
+
+	if allowMultipleSourcesForJobsPickup {
 		if len(skipIdentifiers) > 0 {
 			skipIdentifiersSQL = `and ((source_id || '_' || destination_id || '_' || namespace)) != ALL($1)`
 		}
-		partitionIdentifierSQL = `source_id, destination_id, namespace`
-	} else {
-		if len(skipIdentifiers) > 0 {
-			skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
-		}
-		partitionIdentifierSQL = `destination_id, namespace`
+		partitionIdentifierSQL = fmt.Sprintf(`%s, %s`, "source_id", partitionIdentifierSQL)
 	}
 
 	sqlStatement := fmt.Sprintf(`
