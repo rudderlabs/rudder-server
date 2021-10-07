@@ -8,7 +8,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
+	integrations "github.com/rudderlabs/rudder-server/processor/integrations"
 	types "github.com/rudderlabs/rudder-server/router/types"
 )
 
@@ -35,6 +35,21 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 	return m.recorder
 }
 
+// Send mocks base method.
+func (m *MockTransformer) Send(arg0 integrations.PostParametersT, arg1 string) (int, string) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Send", arg0, arg1)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(string)
+	return ret0, ret1
+}
+
+// Send indicates an expected call of Send.
+func (mr *MockTransformerMockRecorder) Send(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Send", reflect.TypeOf((*MockTransformer)(nil).Send), arg0, arg1)
+}
+
 // Setup mocks base method.
 func (m *MockTransformer) Setup() {
 	m.ctrl.T.Helper()
@@ -59,10 +74,4 @@ func (m *MockTransformer) Transform(arg0 string, arg1 *types.TransformMessageT) 
 func (mr *MockTransformerMockRecorder) Transform(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0, arg1)
-}
-
-func (mr *MockTransformer) Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string) {
-	statusCode = 200
-	respBody = "OK"
-	return statusCode, respBody
 }

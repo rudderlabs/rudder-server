@@ -168,7 +168,7 @@ func (trans *HandleT) Send(transformedData integrations.PostParametersT, destNam
 	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
 	trans.transformerNetworkRequestTimerStat.End()
 	if resp != nil && resp.Body != nil {
-		respData, _ = ioutil.ReadAll(resp.Body)
+		respData, _ = io.ReadAll(resp.Body)
 	}
 	var contentTypeHeader string
 	if resp != nil && resp.Header != nil {
