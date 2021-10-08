@@ -138,7 +138,7 @@ func TestJobsDB(t *testing.T) {
 
 	unprocessedListEmpty := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
-		Count:            1,
+		JobCount:            1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
 
@@ -148,7 +148,7 @@ func TestJobsDB(t *testing.T) {
 
 	unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
-		Count:            1,
+		JobCount:            1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
 	require.Equal(t, 1, len(unprocessedList))
@@ -169,7 +169,7 @@ func TestJobsDB(t *testing.T) {
 
 	unprocessedList = jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
-		Count:            1,
+		JobCount:            1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
 
@@ -197,7 +197,7 @@ func TestJobsDB(t *testing.T) {
 		t.Log("GetUnprocessed with job count limit")
 		JobLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
-			Count:            100,
+			JobCount:            100,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 		require.Equal(t, jobCount, len(JobLimitList))
@@ -205,7 +205,7 @@ func TestJobsDB(t *testing.T) {
 		t.Log("GetUnprocessed with event count limit")
 		eventLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
-			Count:            100,
+			JobCount:            100,
 			EventCount:       eventsPerJob * 3,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
@@ -236,14 +236,14 @@ func TestJobsDB(t *testing.T) {
 		t.Log("GetUnprocessed with job count limit")
 		retryJobLimitList := jobDB.GetToRetry(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
-			Count:            100,
+			JobCount:            100,
 		})
 		require.Equal(t, jobCount, len(retryJobLimitList))
 
 		t.Log("GetToRetry with event count limit")
 		retryEventLimitList := jobDB.GetToRetry(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
-			Count:            100,
+			JobCount:            100,
 			EventCount:       eventsPerJob * 3,
 		})
 		require.Equal(t, 3, len(retryEventLimitList))
@@ -300,7 +300,7 @@ func BenchmarkJobsdb(b *testing.B) {
 			for {
 				unprocessedList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 					CustomValFilters: []string{customVal},
-					Count:            1,
+					JobCount:            1,
 				})
 
 				status := make([]*jobsdb.JobStatusT, len(unprocessedList))

@@ -1699,7 +1699,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 	unTruncatedRetryList := proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{GWCustomVal},
-		Count:            toQuery,
+		JobCount:            toQuery,
 		EventCount:       maxEventsToProcess,
 	})
 	retryList, totalRetryEvents = getTruncatedEventList(unTruncatedRetryList, maxEventsToProcess)
@@ -1711,7 +1711,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 		toQuery = misc.MinInt(eventsLeftToProcess, dbReadBatchSize)
 		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{GWCustomVal},
-			Count:            toQuery,
+			JobCount:            toQuery,
 			EventCount:       eventsLeftToProcess,
 		})
 		unprocessedList, totalUnprocessedEvents = getTruncatedEventList(unTruncatedUnProcessedList, eventsLeftToProcess)
@@ -1794,7 +1794,7 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 }
 
 func (proc *HandleT) crashRecover() {
-	proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: -1})
+	proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, JobCount: -1})
 }
 
 func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {

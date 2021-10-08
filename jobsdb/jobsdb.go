@@ -65,7 +65,7 @@ type GetQueryParamsT struct {
 	CustomValFilters              []string
 	ParameterFilters              []ParameterFilterT
 	StateFilters                  []string
-	Count                         int
+	JobCount                         int
 	EventCount                    int
 	IgnoreCustomValFiltersInQuery bool
 	UseTimeFilter                 bool
@@ -3280,7 +3280,7 @@ those whose state hasn't been marked in the DB.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetUnprocessed(params GetQueryParamsT) []*JobT {
-	if params.Count == 0 {
+	if params.JobCount == 0 {
 		return []*JobT{}
 	}
 
@@ -3311,11 +3311,11 @@ getUnprocessed returns the unprocessed events. Unprocessed events are
 those whose state hasn't been marked in the DB
 */
 func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
-	if params.Count == 0 {
+	if params.JobCount == 0 {
 		return []*JobT{}
 	}
 
-	count := params.Count
+	count := params.JobCount
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
 	queryStat := jd.getTimerStat("unprocessed_jobs_time", tags)
@@ -3352,7 +3352,7 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 }
 
 func (jd *HandleT) GetImportingList(params GetQueryParamsT) []*JobT {
-	if params.Count == 0 {
+	if params.JobCount == 0 {
 		return []*JobT{}
 	}
 
@@ -3409,7 +3409,7 @@ if count passed is less than 0, then delete happens on the entire dsList;
 deleteJobStatusInTxn deletes the latest status of a batch of jobs
 */
 func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, params GetQueryParamsT) error {
-	if params.Count == 0 {
+	if params.JobCount == 0 {
 		return nil
 	}
 
@@ -3437,11 +3437,11 @@ func (jd *HandleT) deleteJobStatusInTxn(txHandler transactionHandler, params Get
 		totalDeletedCount += deletedCount
 
 		//since count is less than 0, iterating on complete dsList
-		if params.Count < 0 {
+		if params.JobCount < 0 {
 			continue
 		}
 
-		if totalDeletedCount >= params.Count {
+		if totalDeletedCount >= params.JobCount {
 			break
 		}
 	}
@@ -3529,11 +3529,11 @@ can return the same set of events. It is the responsibility of the caller to cal
 one thread, update the state (to "waiting") in the same thread and pass on the the processors
 */
 func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
-	if params.Count == 0 {
+	if params.JobCount == 0 {
 		return []*JobT{}
 	}
 
-	count := params.Count
+	count := params.JobCount
 
 	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
 	queryStat := jd.getTimerStat("processed_jobs_time", tags)
@@ -3576,7 +3576,7 @@ GetToRetry returns events which need to be retried.
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetToRetry(params GetQueryParamsT) []*JobT {
-	if params.Count == 0 {
+	if params.JobCount == 0 {
 		return []*JobT{}
 	}
 
@@ -3617,7 +3617,7 @@ GetWaiting returns events which are under processing
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetWaiting(params GetQueryParamsT) []*JobT {
-	if params.Count == 0 {
+	if params.JobCount == 0 {
 		return []*JobT{}
 	}
 
@@ -3658,7 +3658,7 @@ GetThrottled returns events which were throttled before
 If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
 */
 func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
-	if params.Count == 0 {
+	if params.JobCount == 0 {
 		return []*JobT{}
 	}
 
@@ -3695,7 +3695,7 @@ func (jd *HandleT) getThrottled(params GetQueryParamsT) []*JobT {
 }
 
 func (jd *HandleT) GetExecuting(params GetQueryParamsT) []*JobT {
-	if params.Count == 0 {
+	if params.JobCount == 0 {
 		return []*JobT{}
 	}
 
@@ -3735,7 +3735,7 @@ DeleteExecuting deletes events whose latest job state is executing.
 This is only done during recovery, which happens during the server start.
 */
 func (jd *HandleT) DeleteExecuting(params GetQueryParamsT) {
-	if params.Count == 0 {
+	if params.JobCount == 0 {
 		return
 	}
 

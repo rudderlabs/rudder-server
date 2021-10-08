@@ -549,7 +549,7 @@ var _ = Describe("jobsdb", func() {
 				c.mock.ExpectPrepare(stmt).
 					ExpectQuery().WithArgs(timeNow).WillReturnRows(mockJobsForState(ds, state, 1))
 
-				jobs := jd.GetToRetry(GetQueryParamsT{CustomValFilters: []string{"MOCKDS"}, Count: 2})
+				jobs := jd.GetToRetry(GetQueryParamsT{CustomValFilters: []string{"MOCKDS"}, JobCount: 2})
 				Expect(len(jobs)).To(Equal(2))
 				assertJobs(getJobsWithLastState(state), jobs)
 
@@ -602,7 +602,7 @@ var _ = Describe("jobsdb", func() {
 					},
 				}
 
-				jobs := jd.GetToRetry(GetQueryParamsT{CustomValFilters: []string{"MOCKDS"}, ParameterFilters: parameterFilters, Count: 2})
+				jobs := jd.GetToRetry(GetQueryParamsT{CustomValFilters: []string{"MOCKDS"}, ParameterFilters: parameterFilters, JobCount: 2})
 				Expect(len(jobs)).To(Equal(2))
 				assertJobs(getJobsWithLastState(state), jobs)
 
@@ -662,7 +662,7 @@ var _ = Describe("jobsdb", func() {
 			stmt = stmt + customValQuery + sourceQuery + orderQuery + limitQuery
 			c.mock.ExpectQuery(stmt).WillReturnRows(mockUnprocessedJobs(ds, 1))
 
-			jobs := jd.GetUnprocessed(GetQueryParamsT{CustomValFilters: []string{"MOCKDS"}, Count: 2})
+			jobs := jd.GetUnprocessed(GetQueryParamsT{CustomValFilters: []string{"MOCKDS"}, JobCount: 2})
 			Expect(len(jobs)).To(Equal(2))
 			assertJobs(getJobsWithLastState(""), jobs)
 
@@ -709,7 +709,7 @@ var _ = Describe("jobsdb", func() {
 				},
 			}
 
-			jobs := jd.GetUnprocessed(GetQueryParamsT{CustomValFilters: []string{"MOCKDS"}, ParameterFilters: parameterFilters, Count: 2})
+			jobs := jd.GetUnprocessed(GetQueryParamsT{CustomValFilters: []string{"MOCKDS"}, ParameterFilters: parameterFilters, JobCount: 2})
 			Expect(len(jobs)).To(Equal(2))
 			assertJobs(getJobsWithLastState(""), jobs)
 
@@ -753,7 +753,7 @@ var _ = Describe("jobsdb", func() {
 
 			c.mock.ExpectCommit()
 
-			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"MOCKDEST"}, Count: 1})
+			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"MOCKDEST"}, JobCount: 1})
 
 			// we make sure that all expectations were met
 			if err := c.mock.ExpectationsWereMet(); err != nil {
@@ -787,7 +787,7 @@ var _ = Describe("jobsdb", func() {
 
 			c.mock.ExpectCommit()
 
-			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"MOCKDEST"}, ParameterFilters: parameterFilters, Count: 1})
+			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"MOCKDEST"}, ParameterFilters: parameterFilters, JobCount: 1})
 
 			// we make sure that all expectations were met
 			if err := c.mock.ExpectationsWereMet(); err != nil {
@@ -815,7 +815,7 @@ var _ = Describe("jobsdb", func() {
 
 			c.mock.ExpectCommit()
 
-			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"MOCKDEST"}, Count: -1})
+			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"MOCKDEST"}, JobCount: -1})
 
 			// we make sure that all expectations were met
 			if err := c.mock.ExpectationsWereMet(); err != nil {
@@ -856,7 +856,7 @@ var _ = Describe("jobsdb", func() {
 
 			c.mock.ExpectCommit()
 
-			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"MOCKDEST"}, ParameterFilters: parameterFilters, Count: -1})
+			jd.DeleteExecuting(GetQueryParamsT{CustomValFilters: []string{"MOCKDEST"}, ParameterFilters: parameterFilters, JobCount: -1})
 
 			// we make sure that all expectations were met
 			if err := c.mock.ExpectationsWereMet(); err != nil {
