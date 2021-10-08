@@ -258,8 +258,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	userColMapInUpload := bq.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)
-	if len(userColMapInUpload) == 0 {
+	if len(bq.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
 		return
 	}
 	errorMap[warehouseutils.UsersTable] = nil
@@ -303,8 +302,10 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	bqUsersView := bqTable(warehouseutils.UsersView)
 	viewExists, _ := bq.tableExists(warehouseutils.UsersView)
 	if !viewExists {
-		bq.createTableView(warehouseutils.UsersTable, userColMapInUpload)
+		pkgLogger.Infof("BQ: Creating view: %s in bigquery dataset: %s in project: %s", warehouseutils.UsersView, bq.Namespace, bq.ProjectID)
+		bq.createTableView(warehouseutils.UsersTable, userColMap)
 	}
+
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", partitionDate)
 	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
