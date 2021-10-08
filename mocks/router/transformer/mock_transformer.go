@@ -36,21 +36,21 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 }
 
 // Send mocks base method.
-func (m *MockTransformer) Send(arg0 integrations.PostParametersT, arg1, arg2 string) (int, string) {
+func (m *MockTransformer) Send(arg0 integrations.PostParametersT, arg1 string) (int, string) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Send", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "Send", arg0, arg1)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(string)
 	return ret0, ret1
 }
 
 // Send indicates an expected call of Send.
-func (mr *MockTransformerMockRecorder) Send(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockTransformerMockRecorder) Send(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Send", reflect.TypeOf((*MockTransformer)(nil).Send), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Send", reflect.TypeOf((*MockTransformer)(nil).Send), arg0, arg1)
 }
 
-// Setup mocks base method
+// Setup mocks base method.
 func (m *MockTransformer) Setup() {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Setup")
