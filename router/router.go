@@ -1763,7 +1763,9 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.netHandle = netHandle
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
-	rt.customDestinationManager = customDestinationManager.New(destName)
+	rt.customDestinationManager = customDestinationManager.New(destName, customDestinationManager.Opts{
+		Timeout: rt.netClientTimeout,
+	})
 	rt.failuresMetric = make(map[string][]failureMetric)
 
 	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
