@@ -1280,6 +1280,7 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 		metadata = make(map[string]string)
 	}
 	metadata["nextRetryTime"] = time.Now().Add(-time.Hour * 1).Format(time.RFC3339)
+	metadata["priority"] = "50"
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return err

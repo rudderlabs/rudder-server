@@ -445,13 +445,14 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
 		"load_file_type":     getLoadFileType(wh.destType),
 	}
+	// 1. In Sync Now case, we should set newly created upload priority to 50
+	// 2. In Retry now case too, we should set the priority to 50.
+	// 3. In case of merging waiting jobs we need to retain the previous waiting job's priority
 	if isUploadTriggered {
-		// set priority to 50 if the upload was manually triggered
 		metadataMap["priority"] = 50
-	} else {
-		if priority != 0 {
-			metadataMap["priority"] = priority
-		}
+	}
+	if priority != 0 {
+		metadataMap["priority"] = priority
 	}
 	metadata, err := json.Marshal(metadataMap)
 	if err != nil {
