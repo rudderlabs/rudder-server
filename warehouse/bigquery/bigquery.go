@@ -98,6 +98,11 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		return err
 	}
 
+	bq.createTableView(tableName, columnMap)
+	return
+}
+
+func (bq *HandleT) createTableView(tableName string, columnMap map[string]string) (err error) {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
@@ -110,14 +115,14 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 
 	// assuming it has field named id upon which dedup is done in view
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + tableName + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
-					AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
-			)
+		SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number FROM ` + "`" + bq.ProjectID + "." + bq.Namespace + "." + tableName + "`" + ` WHERE _PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 60 * 24 * 1000000), DAY, 'UTC')
+				AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
+		)
 		WHERE __row_number = 1`
-	metaData = &bigquery.TableMetadata{
+	metaData := &bigquery.TableMetadata{
 		ViewQuery: viewQuery,
 	}
-	tableRef = bq.Db.Dataset(bq.Namespace).Table(tableName + "_view")
+	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName + "_view")
 	err = tableRef.Create(bq.BQContext, metaData)
 	return
 }
@@ -253,7 +258,8 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	if len(bq.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
+	userColMapInUpload := bq.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)
+	if len(userColMapInUpload) == 0 {
 		return
 	}
 	errorMap[warehouseutils.UsersTable] = nil
@@ -295,6 +301,10 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.Namespace, name) }
 
 	bqUsersView := bqTable(warehouseutils.UsersView)
+	viewExists, _ := bq.tableExists(warehouseutils.UsersView)
+	if !viewExists {
+		bq.createTableView(warehouseutils.UsersTable, userColMapInUpload)
+	}
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", partitionDate)
 	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
