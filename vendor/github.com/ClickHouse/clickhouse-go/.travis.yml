@@ -1,19 +1,14 @@
 sudo: required
 language: go
 go:
-  - 1.12.x
-  - 1.13.x
-  - master
+  - 1.15.x
+  - 1.16.x
 go_import_path: github.com/ClickHouse/clickhouse-go
 services:
   - docker
 install:
-  - go get github.com/mattn/goveralls
-  - go get golang.org/x/tools/cmd/cover
-  - go get github.com/stretchr/testify/assert
-  - go get github.com/cloudflare/golz4
-  - go get github.com/bkaradzic/go-lz4
-  - go get github.com/pierrec/lz4
+  - export GO111MODULE="on"
+  - go mod vendor
 
 before_install:
   - docker --version

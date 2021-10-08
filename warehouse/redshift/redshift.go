@@ -220,7 +220,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	if err != nil {
 		panic(err)
 	}
-	defer os.Remove(localManifestPath)
+	defer misc.RemoveFilePaths(localManifestPath)
 	_ = os.WriteFile(localManifestPath, manifestJSON, 0644)
 
 	file, err := os.Open(localManifestPath)
