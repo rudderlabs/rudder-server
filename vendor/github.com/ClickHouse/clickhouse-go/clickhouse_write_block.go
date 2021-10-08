@@ -5,14 +5,14 @@ import (
 	"github.com/ClickHouse/clickhouse-go/lib/protocol"
 )
 
-func (ch *clickhouse) writeBlock(block *data.Block) error {
+func (ch *clickhouse) writeBlock(block *data.Block, tableName string) error {
 	ch.Lock()
 	defer ch.Unlock()
 	if err := ch.encoder.Uvarint(protocol.ClientData); err != nil {
 		return err
 	}
 
-	if err := ch.encoder.String(""); err != nil { // temporary table
+	if err := ch.encoder.String(tableName); err != nil { // temporary table
 		return err
 	}
 

@@ -180,6 +180,8 @@ func Factory(name, chType string, timezone *time.Location) (Column, error) {
 		} else {
 			return Factory(name, nestedType, timezone)
 		}
+	case strings.HasPrefix(chType, "Tuple"):
+		return parseTuple(name, chType, timezone)
 	}
 	return nil, fmt.Errorf("column: unhandled type %v", chType)
 }
@@ -193,6 +195,11 @@ func getNestedType(chType string, wrapType string) (string, error) {
 		if len(nested) == 2 {
 			return strings.TrimSpace(nested[1]), nil
 		}
+
+		if len(nested) == 3 {
+			return strings.TrimSpace(strings.Join(nested[1:], ",")), nil
+		}
 	}
+
 	return "", fmt.Errorf("column: invalid %s type (%s)", wrapType, chType)
 }
