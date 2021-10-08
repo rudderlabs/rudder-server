@@ -1,5 +1,6 @@
 package oauthResponseHandler
 
+//go:generate mockgen -destination=../../mocks/router/oauthResponseHandler/mock_oauthResponseHandler.go -package=mocks_oauthResponseHandler github.com/rudderlabs/rudder-server/router/oauthResponseHandler Authorizer
 import (
 	"bytes"
 	"encoding/json"
