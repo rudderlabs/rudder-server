@@ -22,7 +22,7 @@ phases:
       - (cd && go get github.com/onsi/ginkgo/ginkgo)
       - (cd && go get github.com/golang/mock/mockgen)
       - docker pull postgres:11-alpine
-      - time go mod download
+      - go mod download
 
   build:
     commands:
