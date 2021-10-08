@@ -71,7 +71,6 @@ var (
 	longRunningUploadStatThresholdInMin time.Duration
 	pkgLogger                           logger.LoggerI
 	numLoadFileUploadWorkers            int
-	maxConcurrentUploadJobs             int
 	slaveUploadTimeout                  time.Duration
 	runningMode                         string
 	uploadStatusTrackFrequency          time.Duration
@@ -81,7 +80,6 @@ var (
 	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
 	useParquetLoadFilesRS               bool
-	allowMultipleSourcesForJobsPickup   bool
 )
 
 var (
@@ -108,21 +106,23 @@ type WorkerIdentifierT string
 type JobIDT int64
 
 type HandleT struct {
-	destType              string
-	warehouses            []warehouseutils.WarehouseT
-	dbHandle              *sql.DB
-	notifier              pgnotifier.PgNotifierT
-	isEnabled             bool
-	configSubscriberLock  sync.RWMutex
-	workerChannelMap      map[string]chan *UploadJobT
-	workerChannelMapLock  sync.RWMutex
-	initialConfigFetched  bool
-	inProgressMap         map[WorkerIdentifierT][]JobIDT
-	inProgressMapLock     sync.RWMutex
-	areBeingEnqueuedLock  sync.RWMutex
-	noOfWorkers           int
-	activeWorkerCount     int
-	activeWorkerCountLock sync.RWMutex
+	destType                          string
+	warehouses                        []warehouseutils.WarehouseT
+	dbHandle                          *sql.DB
+	notifier                          pgnotifier.PgNotifierT
+	isEnabled                         bool
+	configSubscriberLock              sync.RWMutex
+	workerChannelMap                  map[string]chan *UploadJobT
+	workerChannelMapLock              sync.RWMutex
+	initialConfigFetched              bool
+	inProgressMap                     map[WorkerIdentifierT][]JobIDT
+	inProgressMapLock                 sync.RWMutex
+	areBeingEnqueuedLock              sync.RWMutex
+	noOfWorkers                       int
+	activeWorkerCount                 int
+	activeWorkerCountLock             sync.RWMutex
+	maxConcurrentUploadJobs           int
+	allowMultipleSourcesForJobsPickup bool
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -176,15 +176,13 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
 	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
-	config.RegisterIntConfigVariable(1, &maxConcurrentUploadJobs, false, 1, "Warehouse.maxConcurrentUploadJobs")
-	config.RegisterBoolConfigVariable(false, &allowMultipleSourcesForJobsPickup, false, "Warehouse.allowMultipleSourcesForJobsPickup")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
-func workerIdentifier(warehouse warehouseutils.WarehouseT) (identifier string) {
+func (wh *HandleT) workerIdentifier(warehouse warehouseutils.WarehouseT) (identifier string) {
 	identifier = fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
 
-	if allowMultipleSourcesForJobsPickup {
+	if wh.allowMultipleSourcesForJobsPickup {
 		identifier = fmt.Sprintf(`%s_%s_%s`, warehouse.Source.ID, warehouse.Destination.ID, warehouse.Namespace)
 	}
 	return
@@ -212,7 +210,7 @@ func (wh *HandleT) incrementActiveWorkers() {
 
 func (wh *HandleT) initWorker() chan *UploadJobT {
 	workerChan := make(chan *UploadJobT, 1000)
-	for i := 0; i < maxConcurrentUploadJobs; i++ {
+	for i := 0; i < wh.maxConcurrentUploadJobs; i++ {
 		wh.backgroundGroup.Go(func() error {
 			for uploadJob := range workerChan {
 				wh.incrementActiveWorkers()
@@ -269,7 +267,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				}
 				wh.warehouses = append(wh.warehouses, warehouse)
 
-				workerName := workerIdentifier(warehouse)
+				workerName := wh.workerIdentifier(warehouse)
 				wh.workerChannelMapLock.Lock()
 				// spawn one worker for each unique destID_namespace
 				// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
@@ -468,22 +466,31 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 }
 
 func (wh *HandleT) setDestInProgress(warehouse warehouseutils.WarehouseT, jobID int64) {
-	identifier := workerIdentifier(warehouse)
+	identifier := wh.workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
 	wh.inProgressMap[WorkerIdentifierT(identifier)] = append(wh.inProgressMap[WorkerIdentifierT(identifier)], JobIDT(jobID))
 }
 
 func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.WarehouseT, jobID int64) {
-	identifier := workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
+	if idx, inProgess := wh.isUploadJobInProgress(warehouse, jobID); inProgess {
+		identifier := wh.workerIdentifier(warehouse)
+		wh.inProgressMap[WorkerIdentifierT(identifier)] = removeFromJobsIDT(wh.inProgressMap[WorkerIdentifierT(identifier)], idx)
+	}
+}
+
+func (wh *HandleT) isUploadJobInProgress(warehouse warehouseutils.WarehouseT, jobID int64) (inProgressIdx int, inProgress bool) {
+	identifier := wh.workerIdentifier(warehouse)
 	for idx, id := range wh.inProgressMap[WorkerIdentifierT(identifier)] {
 		if jobID == int64(id) {
-			wh.inProgressMap[WorkerIdentifierT(identifier)] = removeFromJobsIDT(wh.inProgressMap[WorkerIdentifierT(identifier)], idx)
-			break
+			inProgress = true
+			inProgressIdx = idx
+			return
 		}
 	}
+	return
 }
 
 func removeFromJobsIDT(slice []JobIDT, idx int) []JobIDT {
@@ -589,18 +596,8 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	wh.areBeingEnqueuedLock.Lock()
 	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(warehouse)
 	if uploadStatus == Waiting {
-		identifier := workerIdentifier(warehouse)
-		inProgress := false
-		for _, id := range wh.inProgressMap[WorkerIdentifierT(identifier)] {
-			if uploadID == int64(id) {
-				inProgress = true
-				break
-			}
-		}
-		if inProgress {
-			// do nothing
-		} else {
-			// delete it
+		// If it is present do nothing else delete it
+		if _, inProgess := wh.isUploadJobInProgress(warehouse, uploadID); !inProgess {
 			wh.deleteWaitingUploadJob(uploadID)
 		}
 	}
@@ -721,7 +718,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
 	}
 
-	if allowMultipleSourcesForJobsPickup {
+	if wh.allowMultipleSourcesForJobsPickup {
 		if len(skipIdentifiers) > 0 {
 			skipIdentifiersSQL = `and ((source_id || '_' || destination_id || '_' || namespace)) != ALL($1)`
 		}
@@ -848,7 +845,7 @@ func (wh *HandleT) getInProgressNamespaces() (identifiers []string) {
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
 	for k, v := range wh.inProgressMap {
-		if len(v) >= maxConcurrentUploadJobs {
+		if len(v) >= wh.maxConcurrentUploadJobs {
 			identifiers = append(identifiers, string(k))
 		}
 	}
@@ -894,7 +891,7 @@ loop:
 		wh.areBeingEnqueuedLock.Unlock()
 
 		for _, uploadJob := range uploadJobsToProcess {
-			workerName := workerIdentifier(uploadJob.warehouse)
+			workerName := wh.workerIdentifier(uploadJob.warehouse)
 			wh.workerChannelMapLock.Lock()
 			wh.workerChannelMap[workerName] <- uploadJob
 			wh.workerChannelMapLock.Unlock()
@@ -1017,6 +1014,8 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobIDT)
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
+	config.RegisterIntConfigVariable(1, &wh.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
+	config.RegisterBoolConfigVariable(false, &wh.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
