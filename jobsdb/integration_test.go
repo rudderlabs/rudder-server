@@ -210,6 +210,10 @@ func TestJobsDB(t *testing.T) {
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
 		require.Equal(t, 3, len(eventLimitList))
+		t.Log("GetUnprocessed jobs should have the expected event count")
+		for _, j := range eventLimitList {
+			require.Equal(t, eventsPerJob, j.EventCount)
+		}
 
 		statuses := make([]*jobsdb.JobStatusT, len(JobLimitList))
 
@@ -243,6 +247,11 @@ func TestJobsDB(t *testing.T) {
 			EventCount:       eventsPerJob * 3,
 		})
 		require.Equal(t, 3, len(retryEventLimitList))
+		t.Log("GetToRetry jobs should have the expected event count")
+		for _, j := range eventLimitList {
+			require.Equal(t, eventsPerJob, j.EventCount)
+		}
+
 	})
 }
 

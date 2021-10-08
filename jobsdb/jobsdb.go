@@ -2023,7 +2023,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 
 	if len(parameterFilters) > 0 {
 		jd.assert(!getAll, "getAll is true")
-		sourceQuery += " AND " + constructParameterJSONQuery(jd, "J", parameterFilters)
+		sourceQuery += " AND " + constructParameterJSONQuery("J", parameterFilters)
 	} else {
 		sourceQuery = ""
 	}
@@ -2038,7 +2038,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	var rows *sql.Rows
 	if getAll {
 		sqlStatement := fmt.Sprintf(`SELECT
-                                  J.job_id, J.uuid, J.user_id, J.parameters,  J.custom_val, J.event_payload,
+                                  J.job_id, J.uuid, J.user_id, J.parameters,  J.custom_val, J.event_payload, J.event_count,
                                   J.created_at, J.expire_at,
 								  sum(J.event_count) over (order by J.job_id asc) as running_event_counts,
                                   job_latest_state.job_state, job_latest_state.attempt,
@@ -2058,7 +2058,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		defer rows.Close()
 	} else {
 		sqlStatement := fmt.Sprintf(`SELECT
-                                               J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload,
+                                               J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.event_count,
                                                J.created_at, J.expire_at,
 											   sum(J.event_count) over (order by J.job_id asc) as running_event_counts,
                                                job_latest_state.job_state, job_latest_state.attempt,
@@ -2093,7 +2093,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.CreatedAt, &job.ExpireAt, &_null,
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &_null,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
 			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
@@ -2143,7 +2143,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	if useJoinForUnprocessed {
 		// event_count default 1, number of items in payload
 		sqlStatement = fmt.Sprintf(
-			`SELECT J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.created_at, J.expire_at,`+
+			`SELECT J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.event_count, J.created_at, J.expire_at,`+
 				`	sum(J.event_count) over (order by J.job_id asc) as running_event_counts `+
 				`FROM %[1]s J `+
 				`LEFT JOIN %[2]s S ON J.job_id=S.job_id `+
@@ -2151,7 +2151,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 			ds.JobTable, ds.JobStatusTable)
 	} else {
 		sqlStatement = fmt.Sprintf(
-			`SELECT J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.created_at, J.expire_at,`+
+			`SELECT J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.event_count, J.created_at, J.expire_at,`+
 				`	sum(J.event_count) over (order by J.job_id asc) as running_event_counts `+
 				` FROM J `+
 				`WHERE J.job_id NOT IN (SELECT DISTINCT(S.job_id) FROM %[2]s S)`,
@@ -2163,7 +2163,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	}
 
 	if len(parameterFilters) > 0 {
-		sqlStatement += " AND " + constructParameterJSONQuery(jd, "J", parameterFilters)
+		sqlStatement += " AND " + constructParameterJSONQuery("J", parameterFilters)
 	}
 
 	if params.UseTimeFilter {
@@ -2201,7 +2201,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.CreatedAt, &job.ExpireAt, &_null)
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &_null)
 		jd.assertError(err)
 		jobList = append(jobList, &job)
 	}
@@ -3487,7 +3487,7 @@ func (jd *HandleT) deleteJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 	}
 
 	if len(parameterFilters) > 0 {
-		sourceQuery += constructParameterJSONQuery(jd, ds.JobTable, parameterFilters)
+		sourceQuery += constructParameterJSONQuery(ds.JobTable, parameterFilters)
 	} else {
 		sourceQuery = ""
 	}
