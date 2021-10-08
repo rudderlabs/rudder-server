@@ -1,6 +1,7 @@
 package data
 
 import (
+	"bytes"
 	"database/sql/driver"
 	"fmt"
 	"io"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/lib/binary"
 	"github.com/ClickHouse/clickhouse-go/lib/column"
-	wb "github.com/ClickHouse/clickhouse-go/lib/writebuffer"
 )
 
 type offset [][]int
@@ -41,8 +41,10 @@ func (block *Block) ColumnNames() []string {
 }
 
 func (block *Block) Read(serverInfo *ServerInfo, decoder *binary.Decoder) (err error) {
-	if err = block.info.read(decoder); err != nil {
-		return err
+	if serverInfo.Revision > 0 {
+		if err = block.info.read(decoder); err != nil {
+			return err
+		}
 	}
 
 	if block.NumColumns, err = decoder.Uvarint(); err != nil {
@@ -83,6 +85,10 @@ func (block *Block) Read(serverInfo *ServerInfo, decoder *binary.Decoder) (err e
 			if block.Values[i], err = column.ReadNull(decoder, int(block.NumRows)); err != nil {
 				return err
 			}
+		case *column.Tuple:
+			if block.Values[i], err = column.ReadTuple(decoder, int(block.NumRows)); err != nil {
+				return err
+			}
 		default:
 			for row := 0; row < int(block.NumRows); row++ {
 				if value, err = column.Read(decoder, false); err != nil {
@@ -95,10 +101,15 @@ func (block *Block) Read(serverInfo *ServerInfo, decoder *binary.Decoder) (err e
 	return nil
 }
 
-func (block *Block) writeArray(column column.Column, value Value, num, level int) error {
-	if level > column.Depth() {
-		return column.Write(block.buffers[num].Column, value.Interface())
+func (block *Block) writeArray(col column.Column, value Value, num, level int) error {
+	if level > col.Depth() {
+		arrColumn, ok := col.(*column.Array)
+		if ok && strings.Contains(col.CHType(), "Nullable") {
+			return arrColumn.WriteNull(block.buffers[num].Offset, block.buffers[num].Column, value.Interface())
+		}
+		return col.Write(block.buffers[num].Column, value.Interface())
 	}
+
 	switch {
 	case value.Kind() == reflect.Slice:
 		if len(block.offsets[num]) < level {
@@ -110,12 +121,12 @@ func (block *Block) writeArray(column column.Column, value Value, num, level int
 			)
 		}
 		for i := 0; i < value.Len(); i++ {
-			if err := block.writeArray(column, value.Index(i), num, level+1); err != nil {
+			if err := block.writeArray(col, value.Index(i), num, level+1); err != nil {
 				return err
 			}
 		}
 	default:
-		if err := column.Write(block.buffers[num].Column, value.Interface()); err != nil {
+		if err := col.Write(block.buffers[num].Column, value.Interface()); err != nil {
 			return err
 		}
 	}
@@ -159,8 +170,8 @@ func (block *Block) Reserve() {
 		block.offsets = make([]offset, len(block.Columns))
 		for i := 0; i < len(block.Columns); i++ {
 			var (
-				offsetBuffer = wb.New(wb.InitialSize)
-				columnBuffer = wb.New(wb.InitialSize)
+				offsetBuffer = new(bytes.Buffer)
+				columnBuffer = new(bytes.Buffer)
 			)
 			block.buffers[i] = &buffer{
 				Offset:       binary.NewEncoder(offsetBuffer),
@@ -175,6 +186,9 @@ func (block *Block) Reserve() {
 func (block *Block) Reset() {
 	block.NumRows = 0
 	block.NumColumns = 0
+	block.Values = block.Values[:0]
+	block.Columns = block.Columns[:0]
+	block.info.reset()
 	for _, buffer := range block.buffers {
 		buffer.reset()
 	}
@@ -185,10 +199,14 @@ func (block *Block) Reset() {
 }
 
 func (block *Block) Write(serverInfo *ServerInfo, encoder *binary.Encoder) error {
-	if err := block.info.write(encoder); err != nil {
+	if serverInfo.Revision > 0 {
+		if err := block.info.write(encoder); err != nil {
+			return err
+		}
+	}
+	if err := encoder.Uvarint(block.NumColumns); err != nil {
 		return err
 	}
-	encoder.Uvarint(block.NumColumns)
 	encoder.Uvarint(block.NumRows)
 	defer func() {
 		block.NumRows = 0
@@ -221,6 +239,14 @@ type blockInfo struct {
 	num2        uint64
 	bucketNum   int32
 	num3        uint64
+}
+
+func (info *blockInfo) reset() {
+	info.num1 = 0
+	info.isOverflows = false
+	info.num2 = 0
+	info.bucketNum = 0
+	info.num3 = 0
 }
 
 func (info *blockInfo) read(decoder *binary.Decoder) error {
@@ -268,8 +294,8 @@ func (info *blockInfo) write(encoder *binary.Encoder) error {
 type buffer struct {
 	Offset       *binary.Encoder
 	Column       *binary.Encoder
-	offsetBuffer *wb.WriteBuffer
-	columnBuffer *wb.WriteBuffer
+	offsetBuffer *bytes.Buffer
+	columnBuffer *bytes.Buffer
 }
 
 func (buf *buffer) WriteTo(w io.Writer) (int64, error) {

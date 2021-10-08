@@ -258,7 +258,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 	setDestHistoricIdentitiesPopulateInProgress(warehouse, true)
 	rruntime.Go(func() {
 		var err error
-		defer wh.removeDestInProgress(warehouse)
+		defer wh.removeDestInProgress(warehouse, 0)
 		defer setDestHistoricIdentitiesPopulateInProgress(warehouse, false)
 		defer setDestHistoricIndetitiesPopulated(warehouse)
 		defer wh.setFailedStat(warehouse, err)

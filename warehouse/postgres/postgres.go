@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -22,8 +23,9 @@ import (
 )
 
 var (
-	stagingTablePrefix string
-	pkgLogger          logger.LoggerI
+	stagingTablePrefix            string
+	pkgLogger                     logger.LoggerI
+	skipComputingUserLatestTraits bool
 )
 
 const (
@@ -115,6 +117,7 @@ func Init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
+	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
 }
 
 func (pg *HandleT) getConnectionCredentials() credentialsT {
@@ -366,6 +369,14 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 	errorMap[warehouseutils.UsersTable] = nil
+
+	if skipComputingUserLatestTraits {
+		_, err := pg.loadTable(warehouseutils.UsersTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable), false)
+		if err != nil {
+			errorMap[warehouseutils.UsersTable] = err
+		}
+		return
+	}
 
 	unionStagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.NewV4().String(), "-", ""), "users_identifies_union"), 63)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.NewV4().String(), "-", ""), warehouseutils.UsersTable), 63)

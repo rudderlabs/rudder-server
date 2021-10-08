@@ -102,22 +102,27 @@ const (
 	triggerUploadQPName           = "triggerUpload"
 )
 
+type WorkerIdentifierT string
+type JobIDT int64
+
 type HandleT struct {
-	destType              string
-	warehouses            []warehouseutils.WarehouseT
-	dbHandle              *sql.DB
-	notifier              pgnotifier.PgNotifierT
-	isEnabled             bool
-	configSubscriberLock  sync.RWMutex
-	workerChannelMap      map[string]chan *UploadJobT
-	workerChannelMapLock  sync.RWMutex
-	initialConfigFetched  bool
-	inProgressMap         map[string]int64
-	inProgressMapLock     sync.RWMutex
-	areBeingEnqueuedLock  sync.RWMutex
-	noOfWorkers           int
-	activeWorkerCount     int
-	activeWorkerCountLock sync.RWMutex
+	destType                          string
+	warehouses                        []warehouseutils.WarehouseT
+	dbHandle                          *sql.DB
+	notifier                          pgnotifier.PgNotifierT
+	isEnabled                         bool
+	configSubscriberLock              sync.RWMutex
+	workerChannelMap                  map[string]chan *UploadJobT
+	workerChannelMapLock              sync.RWMutex
+	initialConfigFetched              bool
+	inProgressMap                     map[WorkerIdentifierT][]JobIDT
+	inProgressMapLock                 sync.RWMutex
+	areBeingEnqueuedLock              sync.RWMutex
+	noOfWorkers                       int
+	activeWorkerCount                 int
+	activeWorkerCountLock             sync.RWMutex
+	maxConcurrentUploadJobs           int
+	allowMultipleSourcesForJobsPickup bool
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -174,8 +179,13 @@ func loadConfig() {
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
-func workerIdentifier(warehouse warehouseutils.WarehouseT) string {
-	return fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
+func (wh *HandleT) workerIdentifier(warehouse warehouseutils.WarehouseT) (identifier string) {
+	identifier = fmt.Sprintf(`%s_%s`, warehouse.Destination.ID, warehouse.Namespace)
+
+	if wh.allowMultipleSourcesForJobsPickup {
+		identifier = fmt.Sprintf(`%s_%s_%s`, warehouse.Source.ID, warehouse.Destination.ID, warehouse.Namespace)
+	}
+	return
 }
 
 func (wh *HandleT) getActiveWorkerCount() int {
@@ -200,18 +210,20 @@ func (wh *HandleT) incrementActiveWorkers() {
 
 func (wh *HandleT) initWorker() chan *UploadJobT {
 	workerChan := make(chan *UploadJobT, 1000)
-	wh.backgroundGroup.Go(func() error {
-		for uploadJob := range workerChan {
-			wh.incrementActiveWorkers()
-			err := wh.handleUploadJob(uploadJob)
-			if err != nil {
-				pkgLogger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
+	for i := 0; i < wh.maxConcurrentUploadJobs; i++ {
+		wh.backgroundGroup.Go(func() error {
+			for uploadJob := range workerChan {
+				wh.incrementActiveWorkers()
+				err := wh.handleUploadJob(uploadJob)
+				if err != nil {
+					pkgLogger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
+				}
+				wh.removeDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
+				wh.decrementActiveWorkers()
 			}
-			wh.removeDestInProgress(uploadJob.warehouse)
-			wh.decrementActiveWorkers()
-		}
-		return nil
-	})
+			return nil
+		})
+	}
 	return workerChan
 }
 
@@ -255,7 +267,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				}
 				wh.warehouses = append(wh.warehouses, warehouse)
 
-				workerName := workerIdentifier(warehouse)
+				workerName := wh.workerIdentifier(warehouse)
 				wh.workerChannelMapLock.Lock()
 				// spawn one worker for each unique destID_namespace
 				// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
@@ -455,17 +467,35 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 }
 
 func (wh *HandleT) setDestInProgress(warehouse warehouseutils.WarehouseT, jobID int64) {
-	identifier := workerIdentifier(warehouse)
+	identifier := wh.workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	wh.inProgressMap[identifier] = jobID
+	wh.inProgressMap[WorkerIdentifierT(identifier)] = append(wh.inProgressMap[WorkerIdentifierT(identifier)], JobIDT(jobID))
 }
 
-func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.WarehouseT) {
-	identifier := workerIdentifier(warehouse)
+func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.WarehouseT, jobID int64) {
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	delete(wh.inProgressMap, identifier)
+	if idx, inProgess := wh.isUploadJobInProgress(warehouse, jobID); inProgess {
+		identifier := wh.workerIdentifier(warehouse)
+		wh.inProgressMap[WorkerIdentifierT(identifier)] = removeFromJobsIDT(wh.inProgressMap[WorkerIdentifierT(identifier)], idx)
+	}
+}
+
+func (wh *HandleT) isUploadJobInProgress(warehouse warehouseutils.WarehouseT, jobID int64) (inProgressIdx int, inProgress bool) {
+	identifier := wh.workerIdentifier(warehouse)
+	for idx, id := range wh.inProgressMap[WorkerIdentifierT(identifier)] {
+		if jobID == int64(id) {
+			inProgress = true
+			inProgressIdx = idx
+			return
+		}
+	}
+	return
+}
+
+func removeFromJobsIDT(slice []JobIDT, idx int) []JobIDT {
+	return append(slice[:idx], slice[idx+1:]...)
 }
 
 func getUploadFreqInS(syncFrequency string) int64 {
@@ -567,11 +597,8 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	wh.areBeingEnqueuedLock.Lock()
 	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(warehouse)
 	if uploadStatus == Waiting {
-		identifier := workerIdentifier(warehouse)
-		if uID, ok := wh.inProgressMap[identifier]; ok && (uID == uploadID) {
-			// do nothing
-		} else {
-			// delete it
+		// If it is present do nothing else delete it
+		if _, inProgess := wh.isUploadJobInProgress(warehouse, uploadID); !inProgess {
 			wh.deleteWaitingUploadJob(uploadID)
 		}
 	}
@@ -686,8 +713,17 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []string) ([]*UploadJobT, error) {
 
 	var skipIdentifiersSQL string
+	var partitionIdentifierSQL = `destination_id, namespace`
+
 	if len(skipIdentifiers) > 0 {
 		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
+	}
+
+	if wh.allowMultipleSourcesForJobsPickup {
+		if len(skipIdentifiers) > 0 {
+			skipIdentifiersSQL = `and ((source_id || '_' || destination_id || '_' || namespace)) != ALL($1)`
+		}
+		partitionIdentifierSQL = fmt.Sprintf(`%s, %s`, "source_id", partitionIdentifierSQL)
 	}
 
 	sqlStatement := fmt.Sprintf(`
@@ -695,12 +731,12 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 					id, status, schema, mergedSchema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming, metadata->>'use_rudder_storage', timings, COALESCE(metadata->>'priority', '100')::int
 				FROM (
 					SELECT
-						ROW_NUMBER() OVER (PARTITION BY destination_id, namespace ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
+						ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
 						t.*
 					FROM
 						%s t
 					WHERE
-						t.destination_type = '%s' and t.status != '%s' and t.status != '%s' %s and COALESCE(metadata->>'nextRetryTime', now()::text)::timestamptz <= now()
+						t.destination_type = '%s' and t.in_progress=%t and t.status != '%s' and t.status != '%s' %s and COALESCE(metadata->>'nextRetryTime', now()::text)::timestamptz <= now()
 				) grouped_uplaods
 				WHERE
 					grouped_uplaods.row_number = 1
@@ -708,7 +744,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 					COALESCE(metadata->>'priority', '100')::int ASC, id ASC
 				LIMIT %d;
 
-		`, warehouseutils.WarehouseUploadsTable, wh.destType, ExportedData, Aborted, skipIdentifiersSQL, availableWorkers)
+		`, partitionIdentifierSQL, warehouseutils.WarehouseUploadsTable, wh.destType, false, ExportedData, Aborted, skipIdentifiersSQL, availableWorkers)
 
 	var rows *sql.Rows
 	var err error
@@ -809,7 +845,12 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 func (wh *HandleT) getInProgressNamespaces() (identifiers []string) {
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	return misc.StringKeys(wh.inProgressMap)
+	for k, v := range wh.inProgressMap {
+		if len(v) >= wh.maxConcurrentUploadJobs {
+			identifiers = append(identifiers, string(k))
+		}
+	}
+	return
 }
 
 func (wh *HandleT) runUploadJobAllocator(ctx context.Context) {
@@ -851,7 +892,7 @@ loop:
 		wh.areBeingEnqueuedLock.Unlock()
 
 		for _, uploadJob := range uploadJobsToProcess {
-			workerName := workerIdentifier(uploadJob.warehouse)
+			workerName := wh.workerIdentifier(uploadJob.warehouse)
 			wh.workerChannelMapLock.Lock()
 			wh.workerChannelMap[workerName] <- uploadJob
 			wh.workerChannelMapLock.Unlock()
@@ -946,7 +987,7 @@ func (wh *HandleT) setInterruptedDestinations() {
 	if !misc.Contains(crashRecoverWarehouses, wh.destType) {
 		return
 	}
-	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s')`, warehouseutils.WarehouseUploadsTable, wh.destType, getInProgressState(ExportedData), getFailedState(ExportedData))
+	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s') and in_progress=%t`, warehouseutils.WarehouseUploadsTable, wh.destType, getInProgressState(ExportedData), getFailedState(ExportedData), true)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
@@ -969,10 +1010,13 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	wh.notifier = notifier
 	wh.destType = whType
 	wh.setInterruptedDestinations()
+	wh.resetInProgressJobs()
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
-	wh.inProgressMap = make(map[string]int64)
+	wh.inProgressMap = make(map[WorkerIdentifierT][]JobIDT)
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
+	config.RegisterIntConfigVariable(1, &wh.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
+	config.RegisterBoolConfigVariable(false, &wh.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
@@ -1003,6 +1047,14 @@ func (wh *HandleT) Setup(whType string, whName string) {
 func (wh *HandleT) Shutdown() {
 	wh.backgroundCancel()
 	wh.backgroundWait()
+}
+
+func (wh *HandleT) resetInProgressJobs() {
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET in_progress=%t WHERE destination_type='%s'`, warehouseutils.WarehouseUploadsTable, false, wh.destType)
+	_, err := wh.dbHandle.Query(sqlStatement)
+	if err != nil {
+		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
+	}
 }
 
 func getLoadFileFormat(whType string) string {

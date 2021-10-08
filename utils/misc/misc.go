@@ -24,6 +24,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -277,12 +279,29 @@ func UnZipSingleFile(outputfile string, filename string) {
 	rc.Close()
 }
 
-func RemoveFilePaths(filepaths ...string) {
-	for _, filepath := range filepaths {
-		err := os.Remove(filepath)
+// RemoveFilePaths removes filePaths as well as cleans up the empty folder structure.
+func RemoveFilePaths(filePaths ...string) {
+	for _, fp := range filePaths {
+		err := os.Remove(fp)
 		if err != nil {
 			pkgLogger.Error(err)
 		}
+		RemoveEmptyFolderStructureForFilePath(fp)
+	}
+}
+
+// RemoveEmptyFolderStructureForFilePath recursively cleans up everything till it reaches the stage where the folders are not empty or parent.
+func RemoveEmptyFolderStructureForFilePath(fp string) {
+	if fp == "" {
+		return
+	}
+	for currDir := filepath.Dir(fp); currDir != "/" && currDir != "."; {
+		parentDir := filepath.Dir(currDir)
+		err := syscall.Rmdir(currDir)
+		if err != nil {
+			break
+		}
+		currDir = parentDir
 	}
 }
 
@@ -864,6 +883,42 @@ func RunWithTimeout(f func(), onTimeout func(), d time.Duration) {
 	case <-time.After(d):
 		onTimeout()
 	}
+}
+
+/*
+RWCConfig config for RunWithConcurrency
+factor: number of concurrent job
+jobs:  range of jobs you need to provide
+runJob: caller function for the concurrent job
+*/
+type RWCJob interface{}
+
+type RWCConfig struct {
+	Factor int
+	Jobs   *[]RWCJob
+	Run    func(RWCJob interface{})
+}
+
+/*
+RunWithConcurrency runs provided function f with concurrency provided by the factor factor.
+*/
+func RunWithConcurrency(config *RWCConfig) {
+	var wg sync.WaitGroup
+
+	concurrencyChan := make(chan struct{}, config.Factor)
+	for _, job := range *config.Jobs {
+		wg.Add(1)
+		concurrencyChan <- struct{}{}
+		runJob := job
+		go func() {
+			defer func() {
+				<-concurrencyChan
+				wg.Done()
+			}()
+			config.Run(runJob)
+		}()
+	}
+	wg.Wait()
 }
 
 /*
