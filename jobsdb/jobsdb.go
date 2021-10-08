@@ -65,7 +65,7 @@ type GetQueryParamsT struct {
 	CustomValFilters              []string
 	ParameterFilters              []ParameterFilterT
 	StateFilters                  []string
-	JobCount                         int
+	JobCount                      int
 	EventCount                    int
 	IgnoreCustomValFiltersInQuery bool
 	UseTimeFilter                 bool
@@ -1797,15 +1797,16 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 
 	customValParamMap := make(map[string]map[string]struct{})
 	for _, job := range jobList {
-		if job.EventCount == 0 {
-			job.EventCount = 1
+		eventCount := 1
+		if job.EventCount > 1 {
+			eventCount = job.EventCount
 		}
 
 		if copyID {
 			_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
-				string(job.EventPayload), job.EventCount, job.CreatedAt, job.ExpireAt)
+				string(job.EventPayload), eventCount, job.CreatedAt, job.ExpireAt)
 		} else {
-			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount)
+			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount)
 		}
 		if err != nil {
 			return err
