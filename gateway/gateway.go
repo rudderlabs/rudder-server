@@ -1520,7 +1520,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.dbWritesStat = gateway.stats.NewStat("gateway.db_writes", stats.CountType)
 	gateway.dbWorkersBufferFullStat = gateway.stats.NewStat("gateway.db_workers_buffer_full", stats.CountType)
 	gateway.dbWorkersTimeOutStat = gateway.stats.NewStat("gateway.db_workers_time_out", stats.CountType)
-	gateway.bodyReadTimeStat = gateway.stats.NewStat("gateway.batch_size", stats.TimerType)
+	gateway.bodyReadTimeStat = gateway.stats.NewStat("gateway.http_body_read_time", stats.TimerType)
 
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
