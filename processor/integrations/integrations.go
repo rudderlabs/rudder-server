@@ -10,8 +10,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 )
 
@@ -128,24 +126,6 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 //GetTransformerURL gets the transfomer base url endpoint
 func GetTransformerURL() string {
 	return destTransformURL
-}
-
-//GetDestinationURL returns node URL
-func GetDestinationURL(destType string) string {
-	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
-	if misc.Contains(warehouse.WarehouseDestinations, destType) {
-		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", config.GetWHSchemaVersion(), warehouseutils.IDResolutionEnabled())
-		if destType == "RS" {
-			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
-			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + rsAlterStringToTextQueryParam
-		}
-		if destType == "CLICKHOUSE" {
-			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", config.GetArraySupportForCH()))
-			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + enableArraySupport
-		}
-		return destinationEndPoint + "?" + whSchemaVersionQueryParam
-	}
-	return destinationEndPoint
 }
 
 //GetUserTransformURL returns the port of running user transform

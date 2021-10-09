@@ -15,6 +15,9 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 )
 
@@ -29,12 +32,17 @@ type HandleT struct {
 	client                    *http.Client
 	transformRequestTimerStat stats.RudderStats
 	logger                    logger.LoggerI
+	features                  features
 }
 
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
+}
+
+type features interface {
+	Get(string) string
 }
 
 //NewTransformer creates a new transformer
@@ -57,7 +65,25 @@ func loadConfig() {
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router").Child("transformer")
+}
 
+//GetDestinationURL returns node URL
+func GetDestinationURL(destType string) string {
+	destTransformURL := "" // TODO
+	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
+	if misc.Contains(warehouse.WarehouseDestinations, destType) {
+		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", config.GetWHSchemaVersion(), warehouseutils.IDResolutionEnabled())
+		if destType == "RS" {
+			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
+			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + rsAlterStringToTextQueryParam
+		}
+		if destType == "CLICKHOUSE" {
+			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", config.GetArraySupportForCH()))
+			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + enableArraySupport
+		}
+		return destinationEndPoint + "?" + whSchemaVersionQueryParam
+	}
+	return destinationEndPoint
 }
 
 //Transform transforms router jobs to destination jobs

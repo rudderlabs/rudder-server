@@ -1303,7 +1303,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		//REPORTING - END
 
-		url := integrations.GetDestinationURL(destType)
 		var response transformer.ResponseT
 		var eventsToTransform []transformer.TransformerEventT
 		// Send to custom transformer only if the destination has a transformer enabled
@@ -1360,29 +1359,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 		startedAt = time.Now()
 
-		transformAt := "processor"
-		if val, ok := destination.DestinationDefinition.Config["transformAtV1"].(string); ok {
-			transformAt = val
-		}
-		//Check for overrides through env
-		transformAtOverrideFound := config.IsSet("Processor." + destination.DestinationDefinition.Name + ".transformAt")
-		if transformAtOverrideFound {
-			transformAt = config.GetString("Processor."+destination.DestinationDefinition.Name+".transformAt", "processor")
-		}
-		transformAtFromFeaturesFile := gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String()
+		transformAt := "router"
 
 		destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 		//If transformAt is none
 		// OR
 		//router and transformer supports router transform, then no destination transformation happens.
-		if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
-			response = ConvertToFilteredTransformerResponse(eventsToTransform, transformAt != "none")
-		} else {
-			destTransformationStat.transformTime.Start()
-			response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize)
-			destTransformationStat.transformTime.End()
-			transformAt = "processor"
-		}
+		response = ConvertToFilteredTransformerResponse(eventsToTransform, transformAt != "none")
 
 		endedAt = time.Now()
 		timeTaken = endedAt.Sub(startedAt).Seconds()

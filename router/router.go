@@ -471,24 +471,17 @@ func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUse
 	return true
 }
 
-func getIterableStruct(payload []byte, transformAt string) []integrations.PostParametersT {
+func getIterableStruct(payload []byte) []integrations.PostParametersT {
 	var err error
 	var response integrations.PostParametersT
 	responseArray := make([]integrations.PostParametersT, 0)
-	if transformAt == "router" {
-		err = json.Unmarshal(payload, &response)
-		if err != nil {
-			err = json.Unmarshal(payload, &responseArray)
-		} else {
-			responseArray = append(responseArray, response)
-		}
-
+	err = json.Unmarshal(payload, &response)
+	if err != nil {
+		err = json.Unmarshal(payload, &responseArray)
 	} else {
-		err = json.Unmarshal(payload, &response)
-		if err == nil {
-			responseArray = append(responseArray, response)
-		}
+		responseArray = append(responseArray, response)
 	}
+
 	if err != nil {
 		panic(fmt.Errorf("setting Payload through sjson failed with err %v", err))
 	}
@@ -557,7 +550,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
 
 				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
-				transformAt := destinationJob.JobMetadataArray[0].TransformAt
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
@@ -580,7 +572,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, sourceID, destinationID)
 				} else {
-					result := getIterableStruct(destinationJob.Message, transformAt)
+					result := getIterableStruct(destinationJob.Message)
 					for _, val := range result {
 						err := integrations.ValidatePostInfo(val)
 						if err != nil {
