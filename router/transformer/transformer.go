@@ -182,6 +182,7 @@ func (trans *HandleT) Setup() {
 	trans.client = &http.Client{
 		Transport: &http.Transport{
 			MaxIdleConnsPerHost: 100,
+			MaxConnsPerHost:     100,
 		},
 	}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
