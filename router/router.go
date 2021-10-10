@@ -404,7 +404,7 @@ func (worker *workerT) workerProcess() {
 					worker.destinationJobs = worker.batch(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
-			} else if parameters.TransformAt == "router" {
+			} else {
 				worker.encounteredRouterTransform = true
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
@@ -413,10 +413,6 @@ func (worker *workerT) workerProcess() {
 					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
-			} else {
-				destinationJob := types.DestinationJobT{Message: job.EventPayload, JobMetadataArray: []types.JobMetadataT{jobMetadata}, Destination: destination}
-				worker.destinationJobs = append(worker.destinationJobs, destinationJob)
-				worker.processDestinationJobs()
 			}
 
 		case <-timeout:
