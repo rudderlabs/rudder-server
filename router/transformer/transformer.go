@@ -4,9 +4,11 @@ package transformer
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
+	"golang.org/x/net/http2"
 )
 
 const (
@@ -179,8 +182,14 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
-	trans.tr = &http.Transport{}
-	trans.client = &http.Client{Transport: trans.tr}
+	trans.client = &http.Client{
+		Transport: &http2.Transport{
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+			AllowHTTP: true,
+		},
+	}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 }
 
