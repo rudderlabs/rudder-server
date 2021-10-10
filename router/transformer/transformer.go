@@ -33,6 +33,7 @@ type HandleT struct {
 	transformRequestTimerStat stats.RudderStats
 	logger                    logger.LoggerI
 	features                  features
+	concGuard                 chan struct{}
 }
 
 //Transformer provides methods to transform events
@@ -88,6 +89,11 @@ func GetDestinationURL(destType string) string {
 
 //Transform transforms router jobs to destination jobs
 func (trans *HandleT) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
+	trans.concGuard <- struct{}{}
+	defer func() {
+		<-trans.concGuard
+	}()
+
 	//Call remote transformation
 	rawJSON, err := json.Marshal(transformMessage)
 	if err != nil {
@@ -181,10 +187,10 @@ func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
 	trans.client = &http.Client{
 		Transport: &http.Transport{
-			MaxIdleConnsPerHost: 100,
-			MaxConnsPerHost:     100,
+			MaxIdleConnsPerHost: 16,
 		},
 	}
+	trans.concGuard = make(chan struct{}, 16)
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 }
 
