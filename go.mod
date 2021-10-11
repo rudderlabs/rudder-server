@@ -82,6 +82,7 @@ require (
 	github.com/xdg/scram v1.0.3
 	github.com/xitongsys/parquet-go v1.6.1-0.20210531003158-8ed615220b7d
 	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
+	go.uber.org/automaxprocs v1.4.0
 	go.uber.org/multierr v1.5.0 // indirect
 	go.uber.org/zap v1.14.0
 	golang.org/x/oauth2 v0.0.0-20201208152858-08078c50e5b5

@@ -27,7 +27,6 @@ import (
 )
 
 var (
-	maxProcess                                                 int
 	gwDBRetention, routerDBRetention                           time.Duration
 	enableProcessor, enableRouter, enableReplay                bool
 	objectStorageDestinations                                  []string
@@ -71,7 +70,6 @@ func Init2() {
 }
 
 func loadConfig() {
-	config.RegisterIntConfigVariable(12, &maxProcess, false, 1, "maxProcess")
 	config.RegisterDurationConfigVariable(time.Duration(0), &gwDBRetention, false, time.Hour, []string{"gwDBRetention", "gwDBRetentionInHr"}...)
 	config.RegisterDurationConfigVariable(time.Duration(0), &routerDBRetention, false, time.Hour, "routerDBRetention")
 	config.RegisterBoolConfigVariable(true, &enableProcessor, false, "enableProcessor")
@@ -112,8 +110,6 @@ func rudderCoreBaseSetup() {
 
 	processor.RegisterAdminHandlers(&readonlyProcErrorDB)
 	router.RegisterAdminHandlers(&readonlyRouterDB, &readonlyBatchRouterDB)
-
-	runtime.GOMAXPROCS(maxProcess)
 }
 
 //StartProcessor atomically starts processor process if not already started
