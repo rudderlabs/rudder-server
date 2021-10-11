@@ -460,7 +460,8 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 }
 
 func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
-	if len(sf.Uploader.GetTableSchemaInUpload(identifiesTable)) == 0 {
+	identifyColMap := sf.Uploader.GetTableSchemaInUpload(identifiesTable)
+	if len(identifyColMap) == 0 {
 		return errorMap
 	}
 	errorMap = map[string]error{identifiesTable: nil}
@@ -479,12 +480,17 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	errorMap[usersTable] = nil
 
 	userColMap := sf.Uploader.GetTableSchemaInWarehouse(usersTable)
-	var userColNames, firstValProps []string
+	var userColNames, firstValProps, identifyColNames []string
 	for colName := range userColMap {
 		if colName == "ID" {
 			continue
 		}
 		userColNames = append(userColNames, fmt.Sprintf(`"%s"`, colName))
+		if _, ok := identifyColMap[colName]; ok {
+			identifyColNames = append(identifyColNames, fmt.Sprintf(`"%s"`, colName))
+		} else {
+			identifyColNames = append(identifyColNames, fmt.Sprintf(`NULL as "%s"`, colName))
+		}
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), usersTable), 127)
@@ -497,17 +503,18 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 													SELECT "ID", %[6]s FROM "%[1]s"."%[4]s" WHERE "ID" in (SELECT "USER_ID" FROM "%[5]s" WHERE "USER_ID" IS NOT NULL)
 												) UNION
 												(
-													SELECT "USER_ID", %[6]s FROM "%[5]s" WHERE "USER_ID" IS NOT NULL
+													SELECT "USER_ID", %[7]s FROM "%[5]s" WHERE "USER_ID" IS NOT NULL
 												)
 											)
 										)
 									)`,
-		sf.Namespace,                     // 1
-		stagingTableName,                 // 2
-		strings.Join(firstValProps, ","), // 3
-		usersTable,                       // 4
-		resp.stagingTable,                // 5
-		strings.Join(userColNames, ","),  // 6
+		sf.Namespace,                        // 1
+		stagingTableName,                    // 2
+		strings.Join(firstValProps, ","),    // 3
+		usersTable,                          // 4
+		resp.stagingTable,                   // 5
+		strings.Join(userColNames, ","),     // 6
+		strings.Join(identifyColNames, ","), // 7
 	)
 	pkgLogger.Infof("SF: Creating staging table for users: %s\n", sqlStatement)
 	_, err = resp.dbHandle.Exec(sqlStatement)
