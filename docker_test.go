@@ -603,7 +603,7 @@ func run(m *testing.M) (int, error) {
 
 	// os.Setenv("RSERVER_DEDUP_ENABLE_DEDUP", "true")
 	// os.Setenv("RSERVER_DEDUP_DEDUP_WINDOW", "10s")
-	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_UPLOAD_FREQ", "10s")
+	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10s")
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := make(chan struct{})
@@ -674,7 +674,7 @@ func TestPostgres(t *testing.T) {
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
 		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
-		return myEvent.anonymous_id == "anon-id-new"
+		return myEvent.anonymous_id == "anon-id-new"	
 	}, time.Minute, 10*time.Millisecond)
 	eventSql := "select count(*) from dev_integration_test_1.identifies"
 	db.QueryRow(eventSql).Scan(&myEvent.count)
@@ -696,7 +696,7 @@ func TestRedis(t *testing.T) {
 
 }
 func TestKafka(t *testing.T) {
-	t.Skip("Skipping Kafka test")
+	// t.Skip("Skipping Kafka test")
 
 	config := sarama.NewConfig()
 	config.ClientID = "go-kafka-consumer"
