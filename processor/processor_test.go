@@ -383,6 +383,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  createBatchPayload(WriteKeyEnabledNoUT, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
+					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
 				},
@@ -393,6 +394,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:      time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
+					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    nil,
 				},
@@ -406,6 +408,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
 					CustomVal:    gatewayCustomVal[0],
 					EventPayload: createBatchPayload(WriteKeyEnabledNoUT, "2002-01-02T02:23:45.000Z", []mockEventData{messages["message-3"], messages["message-4"], messages["message-5"]}),
+					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 1,
 					},
@@ -418,6 +421,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:      time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
+					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    nil,
 				},
@@ -428,6 +432,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:      time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
+					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    nil,
 				},
@@ -438,12 +443,12 @@ var _ = Describe("Processor", func() {
 
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobCount:            c.dbReadBatchSize,
+				JobCount:         c.dbReadBatchSize,
 				EventCount:       c.processEventSize,
 			}).Return(toRetryJobsList).Times(1)
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobCount:            c.dbReadBatchSize - len(toRetryJobsList),
+				JobCount:         c.dbReadBatchSize - len(toRetryJobsList),
 				EventCount:       c.processEventSize - len(toRetryJobsList),
 			}).Return(unprocessedJobsList).Times(1).After(callRetry)
 
@@ -559,6 +564,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  createBatchPayload(WriteKeyEnabledOnlyUT, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
+					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    createBatchParameters(SourceIDEnabledOnlyUT),
 				},
@@ -569,6 +575,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:      time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
+					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    nil,
 				},
@@ -582,6 +589,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
 					CustomVal:    gatewayCustomVal[0],
 					EventPayload: createBatchPayload(WriteKeyEnabledOnlyUT, "2002-01-02T02:23:45.000Z", []mockEventData{messages["message-3"], messages["message-4"], messages["message-5"]}),
+					EventCount:   1,
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 1,
 					},
@@ -594,6 +602,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:      time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
+					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    nil,
 				},
@@ -604,6 +613,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:      time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
+					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    nil,
 				},
@@ -614,12 +624,12 @@ var _ = Describe("Processor", func() {
 
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobCount:            c.dbReadBatchSize,
+				JobCount:         c.dbReadBatchSize,
 				EventCount:       c.processEventSize,
 			}).Return(toRetryJobsList).Times(1)
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobCount:            c.dbReadBatchSize - len(toRetryJobsList),
+				JobCount:         c.dbReadBatchSize - len(toRetryJobsList),
 				EventCount:       c.processEventSize - len(toRetryJobsList),
 			}).Return(unprocessedJobsList).Times(1).After(callRetry)
 
@@ -738,6 +748,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  createBatchPayloadWithSameMessageId(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-some-id-2"], messages["message-some-id-1"]}),
+					EventCount:    1,
 					LastJobStatus: jobsdb.JobStatusT{},
 					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
@@ -751,6 +762,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
 					CustomVal:    gatewayCustomVal[0],
 					EventPayload: createBatchPayloadWithSameMessageId(WriteKeyEnabled, "2002-01-02T02:23:45.000Z", []mockEventData{messages["message-some-id-3"]}),
+					EventCount:   1,
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 1,
 					},
@@ -877,12 +889,12 @@ var _ = Describe("Processor", func() {
 
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobCount:            c.dbReadBatchSize,
+				JobCount:         c.dbReadBatchSize,
 				EventCount:       c.processEventSize,
 			}).Return(toRetryJobsList).Times(1)
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobCount:            c.dbReadBatchSize - len(toRetryJobsList),
+				JobCount:         c.dbReadBatchSize - len(toRetryJobsList),
 				EventCount:       c.processEventSize,
 			}).Return(unprocessedJobsList).Times(1).After(callRetry)
 			// Test transformer failure
@@ -1010,12 +1022,12 @@ var _ = Describe("Processor", func() {
 
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobCount:            c.dbReadBatchSize,
+				JobCount:         c.dbReadBatchSize,
 				EventCount:       c.processEventSize,
 			}).Return(toRetryJobsList).Times(1)
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
-				JobCount:            c.dbReadBatchSize - len(toRetryJobsList),
+				JobCount:         c.dbReadBatchSize - len(toRetryJobsList),
 				EventCount:       c.processEventSize,
 			}).Return(unprocessedJobsList).Times(1).After(callRetry)
 
