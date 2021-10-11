@@ -693,7 +693,6 @@ func TestRedis(t *testing.T) {
 
 }
 func TestKafka(t *testing.T) {
-	// t.Skip("Skipping Kafka test")
 
 	config := sarama.NewConfig()
 	config.ClientID = "go-kafka-consumer"
