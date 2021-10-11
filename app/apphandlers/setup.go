@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"runtime"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/app"
