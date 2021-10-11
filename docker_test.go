@@ -600,9 +600,6 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("MINIO_SSL", "false")
 	os.Setenv("WAREHOUSE_URL", "http://localhost:8082")
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
-
-	// os.Setenv("RSERVER_DEDUP_ENABLE_DEDUP", "true")
-	// os.Setenv("RSERVER_DEDUP_DEDUP_WINDOW", "10s")
 	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10s")
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
@@ -648,8 +645,10 @@ func TestWebhook(t *testing.T) {
 	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
 	SendEvent()
 	SendEvent() //sending duplicate event to check dedup
-	time.Sleep(60 * time.Second)
-	require.Equal(t, 2, len(webhook.Requests()))
+	require.Eventually(t, func() bool {
+		fmt.Println(len(webhook.Requests()))
+		return 2 == len(webhook.Requests())
+	}, time.Minute, 10*time.Millisecond)
 
 	req := webhook.Requests()[0]
 
