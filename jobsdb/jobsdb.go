@@ -326,6 +326,7 @@ type HandleT struct {
 	enableReaderQueue             bool
 	maxReaders                    int
 	maxWriters                    int
+	MaxDSSize                     int
 	queryFilterKeys               QueryFiltersT
 	backgroundCancel              context.CancelFunc
 	backgroundGroup               *errgroup.Group
@@ -333,6 +334,8 @@ type HandleT struct {
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup bool
+
+	TriggerAddNewDS func() <-chan time.Time
 }
 
 type QueryFiltersT struct {
@@ -594,6 +597,16 @@ in the retention time
 */
 func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
 	jd.initGlobalDBHandle()
+
+	if jd.MaxDSSize == 0 {
+		jd.MaxDSSize = maxDSSize
+	}
+
+	if jd.TriggerAddNewDS == nil {
+		jd.TriggerAddNewDS = func() <-chan time.Time {
+			return time.After(addNewDSLoopSleepDuration)
+		}
+	}
 
 	// Initialize dbHandle if not already set
 	if jd.dbHandle == nil {
@@ -1048,7 +1061,7 @@ func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 	}
 
 	totalCount := jd.getTableRowCount(ds.JobTable)
-	if totalCount > maxDSSize {
+	if totalCount > jd.MaxDSSize {
 		jd.logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, jd.getTableSize(ds.JobTable))
 		return true
 	}
@@ -2317,7 +2330,7 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(addNewDSLoopSleepDuration):
+		case <-jd.TriggerAddNewDS():
 		}
 
 		jd.logger.Debugf("[[ %s : addNewDSLoop ]]: Start", jd.tablePrefix)
@@ -2393,7 +2406,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 				idxCheck = (idx == len(dsList)-1)
 			}
 
-			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idxCheck {
+			if liveDSCount >= maxMigrateOnce || liveJobCount >= jd.MaxDSSize || idxCheck {
 				break
 			}
 
@@ -3337,6 +3350,11 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 	if count == 0 {
 		return outJobs
 	}
+	limitByEventCount := false
+	if params.EventCount > 0 {
+		limitByEventCount = true
+	}
+
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 		jobs := jd.getUnprocessedJobsDS(ds, true, count, params)
@@ -3346,8 +3364,18 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 		if count == 0 {
 			break
 		}
+		if limitByEventCount {
+			sumEventCount := 0
+			for _, j := range jobs {
+				sumEventCount += j.EventCount
+			}
+			params.EventCount -= sumEventCount
+			jd.assert(params.EventCount >= 0, fmt.Sprintf("event count:%d received is less than 0", params.EventCount))
+			if params.EventCount == 0 {
+				break
+			}
+		}
 	}
-
 	//Release lock
 	return outJobs
 }
@@ -3557,6 +3585,12 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 		return outJobs
 	}
 
+	limitByEventCount := false
+	if params.EventCount > 0 {
+		limitByEventCount = true
+	}
+
+
 	for _, ds := range dsList {
 		//count==0 means return all which we don't want
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
@@ -3566,6 +3600,18 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 		jd.assert(count >= 0, fmt.Sprintf("count:%d after subtracting len(jobs):%d is less than 0", count, len(jobs)))
 		if count == 0 {
 			break
+		}
+
+		if limitByEventCount {
+			sumEventCount := 0
+			for _, j := range jobs {
+				sumEventCount += j.EventCount
+			}
+			params.EventCount -= sumEventCount
+			jd.assert(params.EventCount >= 0, fmt.Sprintf("event count:%d received is less than 0", params.EventCount))
+			if params.EventCount == 0 {
+				break
+			}
 		}
 	}
 
