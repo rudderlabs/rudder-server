@@ -1041,7 +1041,7 @@ func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Req
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
 
-		return []byte{}, writeKey, fmt.Errorf("payload from request: %w", err)
+		return []byte{}, writeKey, fmt.Errorf("read payload from request: %w", err)
 	}
 	return payload, writeKey, err
 }
