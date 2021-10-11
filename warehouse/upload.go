@@ -141,6 +141,7 @@ const (
 	UploadSchemaField          = "schema"
 	MergedSchemaField          = "mergedschema"
 	UploadLastExecAtField      = "last_exec_at"
+	UploadInProgress           = "in_progress"
 )
 
 var (
@@ -305,6 +306,8 @@ func (job *UploadJobT) run() (err error) {
 	timerStat.Start()
 	ch := job.trackLongRunningUpload()
 	defer func() {
+		job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadInProgress, Value: false}}})
+
 		timerStat.End()
 		ch <- struct{}{}
 	}()
@@ -316,7 +319,7 @@ func (job *UploadJobT) run() (err error) {
 	// )
 	job.uploadLock.Lock()
 	defer job.uploadLock.Unlock()
-	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}}})
+	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}, UploadColumnT{Column: UploadInProgress, Value: true}}})
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")
@@ -621,13 +624,14 @@ func (job *UploadJobT) exportRegularTables(specialTables []string) (err error) {
 }
 
 func areAllTableSkipErrors(loadErrors []error) bool {
-	var skipErrCount int
+	res := true
 	for _, lErr := range loadErrors {
-		if _, ok := lErr.(*TableSkipError); ok {
-			skipErrCount++
+		if _, ok := lErr.(*TableSkipError); !ok {
+			res = false
+			break
 		}
 	}
-	return skipErrCount == len(loadErrors)
+	return res
 }
 
 // TableUploadStatusT captures the status of each table upload along with its parent upload_job's info like destionation_id and namespace
@@ -1332,7 +1336,8 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (newstate
 	// abort after configured retry attempts
 	if errorByState["attempt"].(int) > minRetryAttempts {
 		firstTiming := job.getUploadFirstAttemptTime()
-		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) {
+		// do not abort upload if the the error list has only skipped errors.
+		if !firstTiming.IsZero() && (timeutil.Now().Sub(firstTiming) > retryTimeWindow) && !job.hasAllTablesSkipped {
 			state = Aborted
 		}
 	}
