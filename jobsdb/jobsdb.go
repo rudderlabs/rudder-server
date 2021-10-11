@@ -335,6 +335,8 @@ type HandleT struct {
 	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup bool
 
+	// TriggerAddNewDS is useful for triggering addNewDS to run from tests.
+	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS func() <-chan time.Time
 }
 
@@ -3589,7 +3591,6 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 	if params.EventCount > 0 {
 		limitByEventCount = true
 	}
-
 
 	for _, ds := range dsList {
 		//count==0 means return all which we don't want
