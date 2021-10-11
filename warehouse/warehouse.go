@@ -102,6 +102,10 @@ const (
 	triggerUploadQPName           = "triggerUpload"
 )
 
+// WareHouseVersion Update this only when there are changes involving:
+// 1. Master and Slave Both
+const WareHouseVersion = "0.0.1"
+
 type WorkerIdentifierT string
 type JobIDT int64
 

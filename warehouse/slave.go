@@ -679,6 +679,12 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 		handleErr(err, claimedJob)
 		return
 	}
+	// Check for WareHouseVersion in PayloadT
+	if job.WareHouseVersion != WareHouseVersion {
+		panic(fmt.Sprintf("Version Mismatch between WareHouse Master and Slave with master: %s and slave: %s", job.WareHouseVersion, WareHouseVersion))
+		return
+	}
+
 	job.BatchID = claimedJob.BatchID
 	pkgLogger.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.ID)
 	loadFileOutputs, err := processStagingFile(job, workerIndex)

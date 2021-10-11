@@ -33,6 +33,7 @@ type PayloadT struct {
 	Output               []loadFileUploadOutputT
 	LoadFilePrefix       string // prefix for the load file name
 	LoadFileType         string
+	WareHouseVersion     string // To be used only for the version mismatch check between master and slave
 }
 
 type ProcessStagingFilesJobT struct {

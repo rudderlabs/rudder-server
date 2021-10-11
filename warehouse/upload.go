@@ -804,7 +804,6 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	return err
 }
 
-
 //TableSkipError is a custom error type to capture if a table load is skipped because of a previously failed table load
 type TableSkipError struct {
 	tableName        string
@@ -1623,6 +1622,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				UniqueLoadGenID:      uniqueLoadGenID,
 				UseRudderStorage:     job.upload.UseRudderStorage,
 				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
+				WareHouseVersion:     WareHouseVersion,
 			}
 
 			if job.warehouse.Type == "S3_DATALAKE" {
