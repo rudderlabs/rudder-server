@@ -602,7 +602,7 @@ type identityRulesT struct {
 	MergeProperty1Type  string `json:"merge_property_1_type"`
 	MergeProperty1Value string `json:"merge_property_1_value"`
 	MergeProperty2Type  string `json:"merge_property_2_type"`
-	MergeProperty2Value string `json:"merge_property_2_value`
+	MergeProperty2Value string `json:"merge_property_2_value"`
 }
 
 func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) {
