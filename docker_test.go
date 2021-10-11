@@ -647,7 +647,7 @@ func TestWebhook(t *testing.T) {
 	SendEvent() //sending duplicate event to check dedup
 	require.Eventually(t, func() bool {
 		fmt.Println(len(webhook.Requests()))
-		return 2 == len(webhook.Requests())
+		return len(webhook.Requests()) == 2
 	}, time.Minute, 10*time.Millisecond)
 
 	req := webhook.Requests()[0]
