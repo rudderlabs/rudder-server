@@ -69,7 +69,6 @@ var (
 
 type WebhookRecorder struct {
 	Server *httptest.Server
-
 	requestsMu   sync.RWMutex
 	requestDumps [][]byte
 }
