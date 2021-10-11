@@ -123,6 +123,9 @@ var querySettingList = []querySettingInfo{
 	{"http_max_multipart_form_data_size", uintQS},
 	{"max_partitions_per_insert_block", uintQS},
 	{"max_threads", uintQS},
+	{"optimize_skip_unused_shards_nesting", uintQS},
+	{"force_optimize_skip_unused_shards", uintQS},
+	{"force_optimize_skip_unused_shards_nesting", uintQS},
 
 	{"network_zstd_compression_level", intQS},
 	{"http_zlib_compression_level", intQS},

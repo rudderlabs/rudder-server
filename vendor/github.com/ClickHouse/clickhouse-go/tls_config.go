@@ -42,4 +42,3 @@ func getTLSConfigClone(key string) (config *tls.Config) {
 	tlsConfigLock.RUnlock()
 	return
 }
-

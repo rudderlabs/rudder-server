@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql/driver"
 	"fmt"
+	"math"
 	"reflect"
 	"regexp"
 	"strings"
@@ -17,16 +18,29 @@ func numInput(query string) int {
 		args          = make(map[string]struct{})
 		reader        = bytes.NewReader([]byte(query))
 		quote, gravis bool
+		escape        bool
 		keyword       bool
 		inBetween     bool
 		like          = newMatcher("like")
 		limit         = newMatcher("limit")
+		offset        = newMatcher("offset")
 		between       = newMatcher("between")
+		in            = newMatcher("in")
 		and           = newMatcher("and")
+		from          = newMatcher("from")
+		join          = newMatcher("join")
 	)
 	for {
 		if char, _, err := reader.ReadRune(); err == nil {
+			if escape {
+				escape = false
+				continue
+			}
 			switch char {
+			case '\\':
+				if gravis || quote {
+					escape = true
+				}
 			case '\'':
 				if !gravis {
 					quote = !quote
@@ -55,10 +69,12 @@ func numInput(query string) int {
 				char == '>',
 				char == '(',
 				char == ',',
-				char == '[':
+				char == '[',
+				char == '%':
 				keyword = true
 			default:
-				if limit.matchRune(char) || like.matchRune(char) {
+				if limit.matchRune(char) || offset.matchRune(char) || like.matchRune(char) ||
+					in.matchRune(char) || from.matchRune(char) || join.matchRune(char) {
 					keyword = true
 				} else if between.matchRune(char) {
 					keyword = true
@@ -122,8 +138,9 @@ func quote(v driver.Value) string {
 }
 
 func formatTime(value time.Time) string {
-	if (value.Hour() + value.Minute() + value.Second() + value.Nanosecond()) == 0 {
-		return fmt.Sprintf("toDate(%d)", int(int16(value.Unix()/24/3600)))
+	// toDate() overflows after 65535 days, but toDateTime() only overflows when time.Time overflows (after 9223372036854775807 seconds)
+	if days := value.Unix() / 24 / 3600; days <= math.MaxUint16 && (value.Hour()+value.Minute()+value.Second()+value.Nanosecond()) == 0 {
+		return fmt.Sprintf("toDate(%d)", days)
 	}
-	return fmt.Sprintf("toDateTime(%d)", int(uint32(value.Unix())))
+	return fmt.Sprintf("toDateTime(%d)", value.Unix())
 }
