@@ -685,7 +685,6 @@ func TestWebhook(t *testing.T) {
 
 // Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
-	// t.Skip("Skipping Postgres test")
 	var myEvent Event
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
@@ -712,7 +711,6 @@ func TestRedis(t *testing.T) {
 
 }
 func TestKafka(t *testing.T) {
-	// t.Skip("Skipping Kafka test")
 
 	config := sarama.NewConfig()
 	config.ClientID = "go-kafka-consumer"
