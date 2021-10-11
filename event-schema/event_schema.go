@@ -636,6 +636,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 		updatedEventModels = make(map[string]*EventModelT)
 		updatedSchemaVersions = make(map[string]*SchemaVersionT)
 		toDeleteEventModelIDs = []string{}
+		toDeleteSchemaVersionIDs = []string{}
 
 		manager.schemaVersionLock.Unlock()
 		manager.eventModelLock.Unlock()
