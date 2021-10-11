@@ -318,6 +318,12 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		log.Panic(err)
 	}
+	defer func() {
+		if err := pool.Purge(z); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	
 
 	// Set Kafka: pulls an image, creates a container based on it and runs it
 	KAFKA_ZOOKEEPER_CONNECT := fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
@@ -364,6 +370,11 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		log.Panic(err)
 	}
+	defer func() {
+		if err := pool.Purge(resourceKafka); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
 
 	// pulls an redis image, creates a container based on it and runs it
 	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
@@ -514,6 +525,12 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
 	}
+	defer func() {
+		if err := pool.Purge(resource); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	
 
 	minioEndpoint := fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
 
@@ -539,6 +556,7 @@ func run(m *testing.M) (int, error) {
 		panic(err)
 	}
 	log.Printf("%#v\n", minioClient) // minioClient is now set up
+	
 
 	// Create bucket for MINIO
 	// Create a bucket at region 'us-east-1' with object locking enabled.
