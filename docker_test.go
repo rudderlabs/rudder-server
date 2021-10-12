@@ -195,14 +195,6 @@ func blockOnHold() {
 	<-c
 }
 
-func CreateSchemaPostgres() {
-	// TODO: Need to configure with workspace json
-	_, err := db.Exec("CREATE SCHEMA example")
-	if err != nil {
-		panic(err)
-	}
-}
-
 func SendEvent(payload *strings.Reader) {
 	log.Println("Sending Track Event")
 	url := fmt.Sprintf("http://localhost:%s/v1/identify", httpPort)
@@ -629,10 +621,6 @@ func run(m *testing.M) (int, error) {
 }
 
 func TestWebhook(t *testing.T) {
-	//Testing postgres Client
-	CreateSchemaPostgres()
-
-	//
 	var err error
 	psqlInfo := jobsdb.GetConnectionString()
 	dbHandle, err = sql.Open("postgres", psqlInfo)
@@ -689,7 +677,6 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, "/", req.URL.Path)
 	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
 	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
-
 
 	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anonymousId_1")
 	require.Equal(t, gjson.GetBytes(body, "messageId").Str, "messageId_1")
