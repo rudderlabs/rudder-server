@@ -98,7 +98,7 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		return err
 	}
 
-	bq.createTableView(tableName, columnMap)
+	err = bq.createTableView(tableName, columnMap)
 	return
 }
 
