@@ -98,6 +98,11 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		return err
 	}
 
+	err = bq.createTableView(tableName, columnMap)
+	return
+}
+
+func (bq *HandleT) createTableView(tableName string, columnMap map[string]string) (err error) {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
@@ -114,10 +119,10 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 					AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
 			)
 		WHERE __row_number = 1`
-	metaData = &bigquery.TableMetadata{
+	metaData := &bigquery.TableMetadata{
 		ViewQuery: viewQuery,
 	}
-	tableRef = bq.Db.Dataset(bq.Namespace).Table(tableName + "_view")
+	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName + "_view")
 	err = tableRef.Create(bq.BQContext, metaData)
 	return
 }
@@ -295,6 +300,12 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.Namespace, name) }
 
 	bqUsersView := bqTable(warehouseutils.UsersView)
+	viewExists, _ := bq.tableExists(warehouseutils.UsersView)
+	if !viewExists {
+		pkgLogger.Infof("BQ: Creating view: %s in bigquery dataset: %s in project: %s", warehouseutils.UsersView, bq.Namespace, bq.ProjectID)
+		bq.createTableView(warehouseutils.UsersTable, userColMap)
+	}
+
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", partitionDate)
 	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
@@ -591,7 +602,7 @@ type identityRulesT struct {
 	MergeProperty1Type  string `json:"merge_property_1_type"`
 	MergeProperty1Value string `json:"merge_property_1_value"`
 	MergeProperty2Type  string `json:"merge_property_2_type"`
-	MergeProperty2Value string `json:"merge_property_2_value`
+	MergeProperty2Value string `json:"merge_property_2_value"`
 }
 
 func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) {
