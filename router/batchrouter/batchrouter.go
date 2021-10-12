@@ -877,7 +877,7 @@ func GetStorageDateFormat(manager filemanager.FileManager, destination *Destinat
 		replacedKey := strings.Replace(key, fullPrefix, "", 1)
 		splittedKeys := strings.Split(replacedKey, "/")
 		if len(splittedKeys) >= 1 {
-			date := splittedKeys[1]
+			date := splittedKeys[0]
 			for layout, format := range dateFormatLayouts {
 				_, err = time.Parse(layout, date)
 				if err == nil {
