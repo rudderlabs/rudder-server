@@ -203,27 +203,10 @@ func CreateSchemaPostgres() {
 	}
 }
 
-func SendEvent() {
+func SendEvent(payload *strings.Reader) {
 	log.Println("Sending Track Event")
 	url := fmt.Sprintf("http://localhost:%s/v1/identify", httpPort)
 	method := "POST"
-
-	payload := strings.NewReader(`{
-	"userId": "identified user id",
-	"anonymousId":"anon-id-new",
-	"messageId":"xxyyzz",
-	"context": {
-	  "traits": {
-		 "trait1": "new-val"
-	  },
-	  "ip": "14.5.67.21",
-	  "library": {
-		  "name": "http"
-	  }
-	},
-	"timestamp": "2020-02-02T00:23:09.544Z"
-  }`)
-
 	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
 
@@ -660,25 +643,63 @@ func TestWebhook(t *testing.T) {
 	sourceJSON = getWorkspaceConfig()
 
 	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
-	SendEvent()
-	SendEvent() //sending duplicate event to check dedup
+	payload_1 := strings.NewReader(`{
+		"userId": "identified user id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"eventOrderNo":"1",
+		"context": {
+		  "traits": {
+			 "trait1": "new-val"
+		  },
+		  "ip": "14.5.67.21",
+		  "library": {
+			  "name": "http"
+		  }
+		},
+		"timestamp": "2020-02-02T00:23:09.544Z"
+	  }`)
+	SendEvent(payload_1)
+	payload_2 := strings.NewReader(`{
+		"userId": "identified user id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"eventOrderNo":"2",
+		"context": {
+		  "traits": {
+			 "trait1": "new-val"
+		  },
+		  "ip": "14.5.67.21",
+		  "library": {
+			  "name": "http"
+		  }
+		},
+		"timestamp": "2020-02-02T00:23:09.544Z"
+	  }`)
+	SendEvent(payload_2) //sending duplicate event to check dedup
 	require.Eventually(t, func() bool {
 		return len(webhook.Requests()) == 2
 	}, time.Minute, 10*time.Millisecond)
 
 	req := webhook.Requests()[0]
-
 	body, err := io.ReadAll(req.Body)
+
 	require.NoError(t, err)
 	require.Equal(t, "POST", req.Method)
 	require.Equal(t, "/", req.URL.Path)
 	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
 	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
 
-	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anon-id-new")
+
+	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anonymousId_1")
+	require.Equal(t, gjson.GetBytes(body, "messageId").Str, "messageId_1")
+	require.Equal(t, gjson.GetBytes(body, "eventOrderNo").Str, "1")
 	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified user id")
-	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "daf823fb-e8d3-413a-8313-d34cd756f968")
+	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
+
+
+
 
 }
 
@@ -688,7 +709,7 @@ func TestPostgres(t *testing.T) {
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
 		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
-		return myEvent.anonymous_id == "anon-id-new"	
+		return myEvent.anonymous_id == "anonymousId_1"	
 	}, time.Minute, 10*time.Millisecond)
 	eventSql := "select count(*) from dev_integration_test_1.identifies"
 	db.QueryRow(eventSql).Scan(&myEvent.count)
