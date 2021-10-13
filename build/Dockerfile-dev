@@ -5,5 +5,5 @@ RUN go get github.com/onsi/ginkgo/ginkgo
 RUN mkdir /app
 ADD . /app
 WORKDIR /app
-ENTRYPOINT ["go", "run", "-mod", "vendor", "main.go"]
+ENTRYPOINT ["go", "run", "main.go"]
 #ENTRYPOINT ["go", "run", "main.go"]
