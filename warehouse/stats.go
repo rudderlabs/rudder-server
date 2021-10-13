@@ -176,7 +176,7 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	retried := gjson.GetBytes(job.upload.Metadata, "retried").String()
 
 	if time.Since(firstEventAt).Minutes() > float64(syncValue) && !(retried == "true") {
-		job.counterStat("warehouse_late_event_delivery", tag{name: "tablename", value: strings.ToLower(tableName)})
+		job.counterStat("warehouse_late_event_delivery", tag{name: "tablename", value: strings.ToLower(tableName)}).Count(1)
 	}
 }
 
