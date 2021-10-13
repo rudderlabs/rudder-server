@@ -804,7 +804,6 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	return err
 }
 
-
 //TableSkipError is a custom error type to capture if a table load is skipped because of a previously failed table load
 type TableSkipError struct {
 	tableName        string
@@ -1280,6 +1279,7 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 		metadata = make(map[string]string)
 	}
 	metadata["nextRetryTime"] = time.Now().Add(-time.Hour * 1).Format(time.RFC3339)
+	metadata["retried"] = "true"
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return err

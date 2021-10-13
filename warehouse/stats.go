@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/tidwall/gjson"
 )
 
 const moduleName = "warehouse"
@@ -161,8 +162,21 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
-	if job.upload.LastAttemptAt.IsZero() {
-		job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}).SendTiming(time.Since(firstEventAt))
+
+	config := job.warehouse.Destination.Config
+	syncFrequency := "1440"
+	if config[warehouseutils.SyncFrequency] != nil {
+		syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
+	}
+
+	var syncValue int
+	if val, err := strconv.Atoi(syncFrequency); err == nil {
+		syncValue = 2 * val
+	}
+	retried := gjson.GetBytes(job.upload.Metadata, "retried").String()
+
+	if time.Since(firstEventAt).Minutes() > float64(syncValue) && !(retried == "true") {
+		job.counterStat("warehouse_late_event_delivery", tag{name: "tablename", value: strings.ToLower(tableName)})
 	}
 }
 
