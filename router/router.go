@@ -934,6 +934,8 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 			"module":         "router",
 			"destType":       worker.rt.destName,
 			"destination":    destinationTag,
+			"destinationId":  destination.ID,
+			"workspaceId":    destination.WorkspaceID,
 			"attempt_number": strconv.Itoa(status.AttemptNum),
 		})
 		eventsDeliveredStat.Count(1)

@@ -103,6 +103,7 @@ type DestinationT struct {
 	DestinationDefinition DestinationDefinitionT
 	Config                map[string]interface{}
 	Enabled               bool
+	WorkspaceID           string
 	Transformations       []TransformationT
 	IsProcessorEnabled    bool
 }
@@ -135,11 +136,11 @@ type SourceRegulationT struct {
 }
 
 type ConfigT struct {
-	EnableMetrics   bool            `json:"enableMetrics"`
-	WorkspaceID     string          `json:"workspaceId"`
-	Sources         []SourceT       `json:"sources"`
-	Libraries       LibrariesT      `json:"libraries"`
-	ConnectionFlags ConnectionFlags `json:"flags"`
+	EnableMetrics   bool
+	WorkspaceID     string
+	Sources         []SourceT
+	Libraries       LibrariesT
+	ConnectionFlags ConnectionFlags
 }
 
 type ConnectionFlags struct {
