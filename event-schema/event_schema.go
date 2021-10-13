@@ -458,6 +458,7 @@ func (manager *EventSchemaManagerT) createModel(writeKey string, eventType strin
 		EventIdentifier: eventIdentifier,
 		Schema:          []byte("{}"),
 	}
+
 	eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, 0, 0)
 
 	if totalEventModels >= eventModelLimit {
