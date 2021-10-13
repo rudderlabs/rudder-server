@@ -126,7 +126,7 @@ func (x *XDGSCRAMClient) Done() bool {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
+func NewProducer(destinationConfig interface{}, o Opts) (sarama.SyncProducer, error) {
 
 	var destConfig = Config{}
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -143,6 +143,7 @@ func NewProducer(destinationConfig interface{}) (sarama.SyncProducer, error) {
 	hosts := []string{hostName}
 
 	config := getDefaultConfiguration()
+	config.Producer.Timeout = o.Timeout
 
 	if isSslEnabled {
 		caCertificate := destConfig.CACertificate
@@ -186,8 +187,12 @@ func SetSASLConfig(config *sarama.Config, destConfig Config) (err error) {
 	return nil
 }
 
+type Opts struct {
+	Timeout time.Duration
+}
+
 // NewProducerForAzureEventHub creates a producer for Azure event hub based on destination config
-func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProducer, error) {
+func NewProducerForAzureEventHub(destinationConfig interface{}, o Opts) (sarama.SyncProducer, error) {
 
 	var destConfig = AzureEventHubConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -215,13 +220,15 @@ func NewProducerForAzureEventHub(destinationConfig interface{}) (sarama.SyncProd
 		ClientAuth:         0,
 	}
 
+	config.Producer.Timeout = o.Timeout
+
 	producer, err := sarama.NewSyncProducer(hosts, config)
 
 	return producer, err
 }
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
-func NewProducerForConfluentCloud(destinationConfig interface{}) (sarama.SyncProducer, error) {
+func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (sarama.SyncProducer, error) {
 
 	var destConfig = ConfluentCloudConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
@@ -249,6 +256,8 @@ func NewProducerForConfluentCloud(destinationConfig interface{}) (sarama.SyncPro
 		InsecureSkipVerify: true,
 		ClientAuth:         0,
 	}
+
+	config.Producer.Timeout = o.Timeout
 
 	producer, err := sarama.NewSyncProducer(hosts, config)
 
