@@ -1260,24 +1260,38 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.destProcessing.Start()
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
+
+	chOut := make(chan processPipelineOutput, 1)
+	wg := sync.WaitGroup{}
+	wg.Add(len(groupedEvents))
 	for srcAndDestKey, eventList := range groupedEvents {
+		srcAndDestKey, eventList := srcAndDestKey, eventList
+		go func() {
+			defer wg.Done()
+			chOut <- proc.processPipeline(
+				srcAndDestKey, eventList,
 
-		reportMetrics, batchDestJobs, destJobs = proc.processPipeline(
-			srcAndDestKey, eventList,
+				trackingPlanEnabledMap,
+				eventsByMessageID,
+				uniqueMessageIdsBySrcDestKey,
+			)
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(chOut)
+	}()
 
-			trackingPlanEnabledMap,
-			eventsByMessageID,
-			procErrorJobsByDestID,
-			uniqueMessageIdsBySrcDestKey,
-
-			// TODO: make them channels
-			reportMetrics,
-			batchDestJobs,
-			destJobs,
-		)
-
+	for o := range chOut {
+		batchDestJobs = append(batchDestJobs, o.batchDestJobs...)
+		destJobs = append(destJobs, o.destJobs...)
+		reportMetrics = append(reportMetrics, o.reportMetrics...)
+		for k, v := range o.errorsPerDestID {
+			procErrorJobsByDestID[k] = append(procErrorJobsByDestID[k], v...)
+		}
 	}
 
+	//procErrorJobsByDestID
 	proc.destProcessing.End()
 	if len(statusList) != len(jobList) {
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
@@ -1362,6 +1376,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.processJobsTime.End()
 }
 
+type processPipelineOutput struct {
+	reportMetrics   []*types.PUReportedMetric
+	destJobs        []*jobsdb.JobT
+	batchDestJobs   []*jobsdb.JobT
+	errorsPerDestID map[string][]*jobsdb.JobT
+}
+
 func (proc *HandleT) processPipeline(
 	// main inputs
 	srcAndDestKey string, eventList []transformer.TransformerEventT,
@@ -1369,18 +1390,8 @@ func (proc *HandleT) processPipeline(
 	// helpers
 	trackingPlanEnabledMap map[SourceIDT]bool,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
-	procErrorJobsByDestID map[string][]*jobsdb.JobT, // needs lock
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
-
-	// side effects:
-	reportMetrics []*types.PUReportedMetric,
-	batchDestJobs []*jobsdb.JobT,
-	destJobs []*jobsdb.JobT,
-) (
-	[]*types.PUReportedMetric,
-	[]*jobsdb.JobT,
-	[]*jobsdb.JobT,
-) {
+) processPipelineOutput {
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	destination := eventList[0].Destination
 	workspaceID := eventList[0].Metadata.WorkspaceID
@@ -1394,6 +1405,11 @@ func (proc *HandleT) processPipeline(
 		DestinationID:   destID,
 		DestinationType: destination.DestinationDefinition.Name,
 	}
+
+	reportMetrics := make([]*types.PUReportedMetric, 0)
+	batchDestJobs := make([]*jobsdb.JobT, 0)
+	destJobs := make([]*jobsdb.JobT, 0)
+	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT, 0)
 
 	configSubscriberLock.RLock()
 	destType := destinationIDtoTypeMap[destID]
@@ -1479,7 +1495,12 @@ func (proc *HandleT) processPipeline(
 	}
 
 	if len(eventsToTransform) == 0 {
-		return reportMetrics, batchDestJobs, destJobs
+		return processPipelineOutput{
+			destJobs:        destJobs,
+			batchDestJobs:   batchDestJobs,
+			errorsPerDestID: procErrorJobsByDestID,
+			reportMetrics:   reportMetrics,
+		}
 	}
 
 	proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
@@ -1644,7 +1665,12 @@ func (proc *HandleT) processPipeline(
 	}
 	//REPORTING - PROCESSOR metrics - END
 
-	return reportMetrics, batchDestJobs, destJobs
+	return processPipelineOutput{
+		destJobs:        destJobs,
+		batchDestJobs:   batchDestJobs,
+		errorsPerDestID: procErrorJobsByDestID,
+		reportMetrics:   reportMetrics,
+	}
 }
 
 func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
