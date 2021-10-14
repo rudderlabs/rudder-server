@@ -1000,8 +1000,10 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 }
 
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
-	proc.processJobsTime.Start()
-	proc.pStatsJobs.Start()
+	start := time.Now()
+	defer func() {
+		proc.processJobsTime.SendTiming(time.Since(start))
+	}()
 
 	proc.statNumRequests.Count(len(jobList))
 
@@ -1297,8 +1299,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
 	}
 
-	proc.statDBW.Start()
-	proc.pStatsDBW.Start()
+	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
@@ -1358,13 +1359,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
-	proc.statDBW.End()
+	proc.statDBW.SendTiming(time.Since(beforeStoreStatus))
 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
 
-	proc.pStatsDBW.End(len(statusList))
-	proc.pStatsJobs.End(totalEvents)
+	proc.pStatsDBW.Rate(len(statusList), time.Since(beforeStoreStatus))
+	proc.pStatsJobs.Rate(totalEvents, time.Since(start))
 
 	proc.statGatewayDBW.Count(len(statusList))
 	proc.statRouterDBW.Count(len(destJobs))
@@ -1373,7 +1374,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
-	proc.processJobsTime.End()
 }
 
 type processPipelineOutput struct {
@@ -1409,7 +1409,7 @@ func (proc *HandleT) processPipeline(
 	reportMetrics := make([]*types.PUReportedMetric, 0)
 	batchDestJobs := make([]*jobsdb.JobT, 0)
 	destJobs := make([]*jobsdb.JobT, 0)
-	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT, 0)
+	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
 
 	configSubscriberLock.RLock()
 	destType := destinationIDtoTypeMap[destID]
