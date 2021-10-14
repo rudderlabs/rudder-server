@@ -373,6 +373,12 @@ func (stats *PerfStats) End(events int) {
 	stats.instantRateCall = float64(events) * float64(time.Second) / float64(elapsed)
 }
 
+func (stats *PerfStats) Rate(events int, elapsed time.Duration) {
+	stats.elapsedTime += elapsed
+	stats.eventCount += int64(events)
+	stats.instantRateCall = float64(events) * float64(time.Second) / float64(elapsed)
+}
+
 //Print displays the stats
 func (stats *PerfStats) Print() {
 	if time.Since(stats.lastPrintTime) > time.Duration(stats.printThres)*time.Second {
