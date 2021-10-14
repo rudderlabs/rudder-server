@@ -1331,9 +1331,11 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 	receivedTime, err := time.Parse(misc.RFC3339Milli, output.FirstEventAt)
 	if err != nil {
 		eventDeliveryTimeStat := stats.NewTaggedStat("event_delivery_time", stats.TimerType, map[string]string{
-			"module":      "batch_router",
-			"destType":    brt.destType,
-			"destination": destinationTag,
+			"module":        "batch_router",
+			"destType":      brt.destType,
+			"destination":   destinationTag,
+			"destinationId": destination.Destination.ID,
+			"workspaceId":   destination.Destination.WorkspaceID,
 		})
 		eventDeliveryTimeStat.SendTiming(time.Since(receivedTime))
 	}

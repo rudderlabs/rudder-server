@@ -948,6 +948,8 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 						"destType":       worker.rt.destName,
 						"destination":    destinationTag,
 						"attempt_number": strconv.Itoa(status.AttemptNum),
+						"destinationId":  destination.ID,
+						"workspaceId":    destination.WorkspaceID,
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
