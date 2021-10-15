@@ -620,10 +620,10 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							authType := router_utils.GetAuthType(destinationJob.Destination)
 							if worker.rt.transformerProxy || (router_utils.IsNotEmptyString(authType) && authType == "OAuth") {
 								pkgLogger.Infof(`routing via transformer, proxy enabled`)
-								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(ctx, val, destinationJob, 0, worker.workerID)
+								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(sendCtx, val, destinationJob, 0, worker.workerID)
 							} else {
 								pkgLogger.Infof(`routing via server, proxy disabled`)
-								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(ctx, val)
+								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
 							}
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
