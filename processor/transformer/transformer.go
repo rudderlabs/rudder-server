@@ -329,7 +329,10 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	trans.accessLock.Lock()
 	defer trans.accessLock.Unlock()
 
-	trans.transformTimerStat.Start()
+	s := time.Now()
+	defer func() {
+		trans.transformTimerStat.SendTiming(time.Since(s))
+	}()
 
 	var transformResponse = make([]*transformedMessageT, 0)
 	//Enqueue all the jobs
@@ -426,8 +429,6 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	trans.failedStat.Count(len(failedEvents))
 	trans.perfStats.End(len(clientEvents))
 	trans.perfStats.Print()
-
-	trans.transformTimerStat.End()
 
 	return ResponseT{
 		Events:       outClientEvents,
