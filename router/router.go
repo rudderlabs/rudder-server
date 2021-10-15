@@ -460,7 +460,7 @@ func (worker *workerT) workerProcess() {
 }
 
 func (worker *workerT) processDestinationJobs() {
-	worker.handleWorkerDestinationJobs()
+	worker.handleWorkerDestinationJobs(context.TODO())
 	//routerJobs/destinationJobs are processed. Clearing the queues.
 	worker.routerJobs = make([]types.RouterJobT, 0)
 	worker.destinationJobs = make([]types.DestinationJobT, 0)
@@ -517,7 +517,7 @@ func getIterableStruct(payload []byte, transformAt string) []integrations.PostPa
 	return responseArray
 }
 
-func (worker *workerT) handleWorkerDestinationJobs() {
+func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	worker.batchTimeStat.Start()
 
 	var respStatusCode, prevRespStatusCode int
@@ -590,6 +590,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				})
 				deliveryLatencyStat.Start()
 
+				// TODO: remove trackStuckDelivery once we verify it is not needed,
+				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := worker.trackStuckDelivery()
 				if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
@@ -609,16 +611,19 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
+							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
+							defer cancel()
+
 							//for proxying through transformer
 							pkgLogger.Infof(`transformerProxy status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
 							// Proxying through Transformer with or without OAuth
 							authType := router_utils.GetAuthType(destinationJob.Destination)
 							if worker.rt.transformerProxy || (router_utils.IsNotEmptyString(authType) && authType == "OAuth") {
 								pkgLogger.Infof(`routing via transformer, proxy enabled`)
-								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(val, destinationJob, 0, worker.workerID)
+								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(ctx, val, destinationJob, 0, worker.workerID)
 							} else {
 								pkgLogger.Infof(`routing via server, proxy disabled`)
-								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
+								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(ctx, val)
 							}
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
@@ -1790,7 +1795,9 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.netHandle = netHandle
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
-	rt.customDestinationManager = customDestinationManager.New(destName)
+	rt.customDestinationManager = customDestinationManager.New(destName, customDestinationManager.Opts{
+		Timeout: rt.netClientTimeout,
+	})
 	rt.failuresMetric = make(map[string][]failureMetric)
 
 	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
@@ -2023,7 +2030,7 @@ func (rt *HandleT) Resume() {
 }
 
 // Currently the retry logic has been implemented for only OAuth
-func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParametersT,
+func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val integrations.PostParametersT,
 	destinationJob types.DestinationJobT, retryCount int, workerId int) (int, string) {
 	var proxyStatusCode int
 	var proxyResBody string
@@ -2071,7 +2078,7 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 			val.AccessToken = refSec.Account.AccessToken
 			val.ExpirationDate = refSec.Account.ExpirationDate
 			// Retry with Refreshed Token(variable "errCatResponse" - contains refreshed access token & expirationDate)
-			return rt.SendToTransformerProxyWithRetry(val, destinationJob, retryCount, workerId)
+			return rt.SendToTransformerProxyWithRetry(ctx, val, destinationJob, retryCount, workerId)
 		}
 	}
 

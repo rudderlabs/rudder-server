@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -44,6 +45,7 @@ type CustomManagerT struct {
 	destinationLockMap   map[string]*sync.RWMutex
 	latestConfig         map[string]backendconfig.DestinationT
 	configSubscriberLock sync.RWMutex
+	timeout              time.Duration
 }
 
 //CustomDestination keeps the config of a destination and corresponding producer for a stream destination
@@ -75,7 +77,9 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 	switch customManager.managerType {
 	case STREAM:
 		var producer interface{}
-		producer, err = streammanager.NewProducer(destConfig, customManager.destType)
+		producer, err = streammanager.NewProducer(destConfig, customManager.destType, streammanager.Opts{
+			Timeout: customManager.timeout,
+		})
 		if err == nil {
 			customDestination = &CustomDestination{
 				Config: destConfig,
@@ -227,8 +231,12 @@ func (customManager *CustomManagerT) onConfigChange(destination backendconfig.De
 	return nil
 }
 
+type Opts struct {
+	Timeout time.Duration
+}
+
 // New returns CustomdestinationManager
-func New(destType string) DestinationManager {
+func New(destType string, o Opts) DestinationManager {
 	if misc.ContainsString(Destinations, destType) {
 
 		managerType := STREAM
@@ -242,6 +250,7 @@ func New(destType string) DestinationManager {
 		}
 
 		customManager = &CustomManagerT{
+			timeout:            o.Timeout,
 			destType:           destType,
 			managerType:        managerType,
 			destinationsMap:    make(map[string]*CustomDestination),
