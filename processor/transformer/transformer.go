@@ -164,7 +164,7 @@ func (trans *HandleT) transformWorker() {
 		reqFailed := false
 
 		for {
-			transformRequestTimerStat.Start()
+			s := time.Now()
 			resp, err = client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
 
@@ -175,7 +175,7 @@ func (trans *HandleT) transformWorker() {
 			}
 
 			if err != nil {
-				transformRequestTimerStat.End()
+				transformRequestTimerStat.SendTiming(time.Since(s))
 				reqFailed = true
 				trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
 				if retryCount > maxRetry {
@@ -202,7 +202,7 @@ func (trans *HandleT) transformWorker() {
 				}
 			}
 
-			transformRequestTimerStat.End()
+			transformRequestTimerStat.SendTiming(time.Since(s))
 			break
 		}
 
