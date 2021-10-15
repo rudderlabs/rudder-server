@@ -2047,7 +2047,7 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(val integrations.PostParamete
 		errCatStatusCode, errCatResponse = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
 		if errCatStatusCode == 200 {
 			// Abort the jobs as the destination is disable
-			return http.StatusBadRequest, errCatResponse
+			return http.StatusBadRequest, proxyResBody
 		}
 	} else if proxyErrOutput.Output.AuthErrorCategory == oauth.REFRESH_TOKEN {
 		rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
