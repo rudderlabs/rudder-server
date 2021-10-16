@@ -602,7 +602,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 								defer cancel()
 								pkgLogger.Debugf(`routing via server, proxy disabled`)
-								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
+								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
 								dResponse := integrations.DeliveryResponseT{
 									Status: int64(respStatusCode),
 									Body:   respBodyTemp,
