@@ -3,6 +3,7 @@ package streammanager
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/services/streammanager/eventbridge"
 	"github.com/rudderlabs/rudder-server/services/streammanager/firehose"
@@ -13,15 +14,23 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/personalize"
 )
 
+type Opts struct {
+	Timeout time.Duration
+}
+
 // NewProducer delegates the call to the appropriate based on parameter destination for creating producer
-func NewProducer(destinationConfig interface{}, destType string) (interface{}, error) {
+func NewProducer(destinationConfig interface{}, destType string, o Opts) (interface{}, error) {
 
 	switch destType {
 	case "AZURE_EVENT_HUB":
-		producer, err := kafka.NewProducerForAzureEventHub(destinationConfig)
+		producer, err := kafka.NewProducerForAzureEventHub(destinationConfig, kafka.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "CONFLUENT_CLOUD":
-		producer, err := kafka.NewProducerForConfluentCloud(destinationConfig)
+		producer, err := kafka.NewProducerForConfluentCloud(destinationConfig, kafka.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "EVENTBRIDGE":
 		producer, err := eventbridge.NewProducer(destinationConfig)
@@ -30,7 +39,9 @@ func NewProducer(destinationConfig interface{}, destType string) (interface{}, e
 		producer, err := firehose.NewProducer(destinationConfig)
 		return producer, err
 	case "KAFKA":
-		producer, err := kafka.NewProducer(destinationConfig)
+		producer, err := kafka.NewProducer(destinationConfig, kafka.Opts{
+			Timeout: o.Timeout,
+		})
 		return producer, err
 	case "KINESIS":
 		producer, err := kinesis.NewProducer(destinationConfig)

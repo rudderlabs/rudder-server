@@ -214,9 +214,11 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 		}(ctx)
 	}
 	// Create upload jobs
-	for tableName, loadFile := range jobRun.outputFileWritersMap {
-		uploadJobChan <- &loadFileUploadJob{tableName: tableName, outputFile: loadFile}
-	}
+	go func() {
+		for tableName, loadFile := range jobRun.outputFileWritersMap {
+			uploadJobChan <- &loadFileUploadJob{tableName: tableName, outputFile: loadFile}
+		}
+	}()
 
 	// Wait for response
 	for {
