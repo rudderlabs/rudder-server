@@ -141,6 +141,7 @@ const (
 	UploadSchemaField          = "schema"
 	MergedSchemaField          = "mergedschema"
 	UploadLastExecAtField      = "last_exec_at"
+	UploadInProgress           = "in_progress"
 )
 
 var (
@@ -305,6 +306,8 @@ func (job *UploadJobT) run() (err error) {
 	timerStat.Start()
 	ch := job.trackLongRunningUpload()
 	defer func() {
+		job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadInProgress, Value: false}}})
+
 		timerStat.End()
 		ch <- struct{}{}
 	}()
@@ -316,7 +319,7 @@ func (job *UploadJobT) run() (err error) {
 	// )
 	job.uploadLock.Lock()
 	defer job.uploadLock.Unlock()
-	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}}})
+	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()}, UploadColumnT{Column: UploadInProgress, Value: true}}})
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("No staging files found")

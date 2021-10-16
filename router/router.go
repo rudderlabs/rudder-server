@@ -440,7 +440,7 @@ func (worker *workerT) workerProcess() {
 }
 
 func (worker *workerT) processDestinationJobs() {
-	worker.handleWorkerDestinationJobs()
+	worker.handleWorkerDestinationJobs(context.TODO())
 	//routerJobs/destinationJobs are processed. Clearing the queues.
 	worker.routerJobs = make([]types.RouterJobT, 0)
 	worker.destinationJobs = make([]types.DestinationJobT, 0)
@@ -497,7 +497,7 @@ func getIterableStruct(payload []byte, transformAt string) []integrations.PostPa
 	return responseArray
 }
 
-func (worker *workerT) handleWorkerDestinationJobs() {
+func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	worker.batchTimeStat.Start()
 
 	var respStatusCode, prevRespStatusCode int
@@ -570,6 +570,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				})
 				deliveryLatencyStat.Start()
 
+				// TODO: remove trackStuckDelivery once we verify it is not needed,
+				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := worker.trackStuckDelivery()
 				if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
@@ -597,6 +599,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 								pkgLogger.Debugf(`routing via transformer, proxy enabled`)
 								respStatusCode, respBodyTemp = worker.rt.transformer.Send(val, worker.rt.destName)
 							} else {
+								sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
+								defer cancel()
 								pkgLogger.Debugf(`routing via server, proxy disabled`)
 								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
 								dResponse := integrations.DeliveryResponseT{
@@ -1778,7 +1782,9 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.netHandle = netHandle
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
-	rt.customDestinationManager = customDestinationManager.New(destName)
+	rt.customDestinationManager = customDestinationManager.New(destName, customDestinationManager.Opts{
+		Timeout: rt.netClientTimeout,
+	})
 	rt.failuresMetric = make(map[string][]failureMetric)
 
 	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
