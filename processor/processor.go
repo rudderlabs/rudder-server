@@ -1263,7 +1263,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.destProcessing.Start()
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
 
-	chOut := make(chan processPipelineOutput, 1)
+	chOut := make(chan processPipelineOutput, 5)
 	wg := sync.WaitGroup{}
 	wg.Add(len(groupedEvents))
 	for srcAndDestKey, eventList := range groupedEvents {
