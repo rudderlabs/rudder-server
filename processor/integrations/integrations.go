@@ -57,6 +57,11 @@ type PostParametersT struct {
 	Files       map[string]interface{} `json:"files"`
 }
 
+type DeliveryResponseT struct {
+	Status int64
+	Body   string
+}
+
 // GetPostInfo parses the transformer response
 func ValidatePostInfo(transformRawParams PostParametersT) error {
 	transformRaw, err := json.Marshal(transformRawParams)

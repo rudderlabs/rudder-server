@@ -38,6 +38,7 @@ type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
 	Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string)
+	ResponseTransform(responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string)
 }
 
 //NewTransformer creates a new transformer
@@ -153,6 +154,41 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
+func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string) {
+	rawJSON, err := json.Marshal(responseData)
+	if err != nil {
+		panic(err)
+	}
+	var resp *http.Response
+	var respData []byte
+	url := getResponseTransformURL(destName)
+	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+	if resp != nil && resp.Body != nil {
+		respData, _ = io.ReadAll(resp.Body)
+	}
+	var contentTypeHeader string
+	if resp != nil && resp.Header != nil {
+		contentTypeHeader = resp.Header.Get("Content-Type")
+	}
+	if contentTypeHeader == "" {
+		//Detecting content type of the respBody
+		contentTypeHeader = http.DetectContentType(respData)
+	}
+	//If content type is not of type "*text*", overriding it with empty string
+	if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
+		strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
+		strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
+		respData = []byte("")
+	}
+	if err != nil {
+		respData = []byte("")
+		trans.logger.Errorf("[Transfomrer Network request] :: destaination request failed: %+v", err)
+		return http.StatusInternalServerError, string(respData)
+	}
+	resp.Body.Close()
+	return resp.StatusCode, string(respData)
+}
+
 func (trans *HandleT) Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string) {
 
 	rawJSON, err := json.Marshal(transformedData)
@@ -213,4 +249,8 @@ func getRouterTransformURL() string {
 
 func getNetworkTransformerURL(destName string) string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/network/" + strings.ToLower(destName) + "/proxy"
+}
+
+func getResponseTransformURL(destName string) string {
+	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/transform/" + strings.ToLower(destName) + "/response"
 }
