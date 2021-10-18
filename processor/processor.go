@@ -330,6 +330,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 		return nil
 	}))
 
+	proc.transformerPerPipe = make(map[string]transformer.Transformer)
 	proc.transformer.Setup()
 
 	proc.crashRecover()
