@@ -5,9 +5,11 @@ package transformer
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -21,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"golang.org/x/net/http2"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -147,8 +150,17 @@ type ValidationErrorT struct {
 }
 
 func (trans *HandleT) transformWorker() {
-	tr := &http.Transport{}
-	client := &http.Client{Transport: tr}
+	client := http.Client{
+		Transport: &http2.Transport{
+			// So http2.Transport doesn't complain the URL scheme isn't 'https'
+			AllowHTTP: true,
+			// Pretend we are dialing a TLS endpoint. (Note, we ignore the passed tls.Config)
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
+
 	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
 
 	for job := range trans.requestQ {
