@@ -86,6 +86,7 @@ type HandleT struct {
 	statListSort                   stats.RudderStats
 	marshalSingularEvents          stats.RudderStats
 	destProcessing                 stats.RudderStats
+	pipeProcessing                 stats.RudderStats
 	statNumRequests                stats.RudderStats
 	statNumEvents                  stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
@@ -290,6 +291,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statListSort = proc.stats.NewStat("processor.job_list_sort", stats.TimerType)
 	proc.marshalSingularEvents = proc.stats.NewStat("processor.marshal_singular_events", stats.TimerType)
 	proc.destProcessing = proc.stats.NewStat("processor.dest_processing", stats.TimerType)
+	proc.pipeProcessing = proc.stats.NewStat("processor.pipe_processing", stats.TimerType)
 	proc.statNumRequests = proc.stats.NewStat("processor.num_requests", stats.CountType)
 	proc.statNumEvents = proc.stats.NewStat("processor.num_events", stats.CountType)
 	// Add a separate tag for batch router
@@ -1392,6 +1394,9 @@ func (proc *HandleT) processPipeline(
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) processPipelineOutput {
+	s := time.Now()
+	defer proc.pipeProcessing.SendTiming(time.Since(s))
+
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	destination := eventList[0].Destination
 	workspaceID := eventList[0].Metadata.WorkspaceID
@@ -1524,9 +1529,9 @@ func (proc *HandleT) processPipeline(
 	if transformAt == "none" || (transformAt == "router" && transformAtFromFeaturesFile != "") {
 		response = ConvertToFilteredTransformerResponse(eventsToTransform, transformAt != "none")
 	} else {
-		destTransformationStat.transformTime.Start()
+		s := time.Now()
 		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize)
-		destTransformationStat.transformTime.End()
+		destTransformationStat.transformTime.SendTiming(time.Since(s))
 		transformAt = "processor"
 	}
 
