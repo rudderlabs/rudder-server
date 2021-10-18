@@ -59,6 +59,12 @@ type PostParametersT struct {
 	ExpirationDate string                 `json:"expirationDate"`
 }
 
+type DeliveryResponseT struct {
+	Status  int64           `json:"status"`
+	Body    string          `json:"dResponse"`
+	Payload PostParametersT `json:"payload"`
+}
+
 // GetPostInfo parses the transformer response
 func ValidatePostInfo(transformRawParams PostParametersT) error {
 	transformRaw, err := json.Marshal(transformRawParams)

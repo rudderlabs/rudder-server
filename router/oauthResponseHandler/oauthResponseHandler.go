@@ -118,6 +118,8 @@ type ErrorResponse struct {
 	Status            int                    `json:"status"`
 	AuthErrorCategory string                 `json:"authErrorCategory"`
 	AccessToken       string                 `json:"accessToken"`
+	StatTags          map[string]string      `json:"statTags"`
+	StatName          string                 `json:"statName"`
 }
 
 type RefreshTokenBodyParams struct {
