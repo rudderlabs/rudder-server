@@ -83,6 +83,7 @@ var ObjectStorageMap = map[string]string{
 	"RS":          "S3",
 	"S3_DATALAKE": "S3",
 	"BQ":          "GCS",
+	"DELTALAKE":  "S3",
 }
 
 var SnowflakeStorageMap = map[string]string{
@@ -566,7 +567,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	if useRudderStorage {
 		return "S3"
 	}
-	if destType == "RS" || destType == "BQ" || destType == "S3_DATALAKE" {
+	if destType == "RS" || destType == "BQ" || destType == "S3_DATALAKE" || destType == "DELTALAKE" {
 		return ObjectStorageMap[destType]
 	}
 	if destType == "SNOWFLAKE" {
