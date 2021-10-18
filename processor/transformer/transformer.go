@@ -265,13 +265,10 @@ func (trans *HandleT) Setup() {
 	trans.backgroundWait = g.Wait
 
 	trans.client = http.Client{
-		Transport: &http2.Transport{
-			// So http2.Transport doesn't complain the URL scheme isn't 'https'
-			AllowHTTP: true,
-			// Pretend we are dialing a TLS endpoint. (Note, we ignore the passed tls.Config)
-			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
-				return net.Dial(network, addr)
-			},
+		Transport: &http.Transport{
+			MaxConnsPerHost: 100,
+			MaxIdleConnsPerHost: 50,
+			IdleConnTimeout: time.Minute,
 		},
 	}
 
