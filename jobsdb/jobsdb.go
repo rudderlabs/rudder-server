@@ -1792,7 +1792,6 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 
 	defer stmt.Close()
 
-	customValParamMap := make(map[string]map[string]struct{})
 	for _, job := range jobList {
 		if copyID {
 			_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
@@ -1803,13 +1802,6 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 		if err != nil {
 			return err
 		}
-
-		jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters)
-	}
-	if useNewCacheBurst {
-		jd.clearCache(ds, customValParamMap)
-	} else {
-		jd.markClearEmptyResult(ds, []string{}, []string{}, nil, hasJobs, nil)
 	}
 	_, err = stmt.Exec()
 
