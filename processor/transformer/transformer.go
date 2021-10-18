@@ -99,6 +99,8 @@ type HandleT struct {
 	transformTimerStat stats.RudderStats
 	logger             logger.LoggerI
 
+	client http.Client
+
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
 }
@@ -150,16 +152,6 @@ type ValidationErrorT struct {
 }
 
 func (trans *HandleT) transformWorker() {
-	client := http.Client{
-		Transport: &http2.Transport{
-			// So http2.Transport doesn't complain the URL scheme isn't 'https'
-			AllowHTTP: true,
-			// Pretend we are dialing a TLS endpoint. (Note, we ignore the passed tls.Config)
-			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
-				return net.Dial(network, addr)
-			},
-		},
-	}
 
 	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
 
@@ -177,7 +169,7 @@ func (trans *HandleT) transformWorker() {
 
 		for {
 			s := time.Now()
-			resp, err = client.Post(job.url, "application/json; charset=utf-8",
+			resp, err = trans.client.Post(job.url, "application/json; charset=utf-8",
 				bytes.NewBuffer(rawJSON))
 
 			if err == nil {
@@ -271,6 +263,17 @@ func (trans *HandleT) Setup() {
 
 	trans.backgroundCancel = cancel
 	trans.backgroundWait = g.Wait
+
+	trans.client = http.Client{
+		Transport: &http2.Transport{
+			// So http2.Transport doesn't complain the URL scheme isn't 'https'
+			AllowHTTP: true,
+			// Pretend we are dialing a TLS endpoint. (Note, we ignore the passed tls.Config)
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		},
+	}
 
 	for i := 0; i < numTransformWorker; i++ {
 		trans.logger.Info("Starting transformer worker", i)
