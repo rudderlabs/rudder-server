@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -108,7 +109,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 
 }
-  
+
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("main")
@@ -172,6 +173,7 @@ func runAllInit() {
 	mssql.Init()
 	postgres.Init()
 	redshift.Init()
+	deltalake.Init()
 	snowflake.Init()
 	transformer.Init()
 	webhook.Init()
