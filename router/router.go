@@ -594,11 +594,13 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 						} else {
 							//for proxying through transformer
 							// stat start
-							worker.routerDeliveryLatencyStat.Start()
 							pkgLogger.Debugf(`transformerProxy status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
 							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 							defer cancel()
+							worker.routerDeliveryLatencyStat.Start()
 							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
+							// stat end
+							worker.routerDeliveryLatencyStat.End()
 							if worker.rt.transformerProxy {
 								dResponse := integrations.DeliveryResponseT{
 									Status: int64(respStatusCode),
@@ -608,8 +610,6 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(dResponse, worker.rt.destName)
 								worker.routerResponseTransformStat.End()
 							}
-							// stat end
-							worker.routerDeliveryLatencyStat.End()
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
