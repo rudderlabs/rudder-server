@@ -5,11 +5,9 @@ package transformer
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -23,7 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"golang.org/x/net/http2"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -266,9 +263,9 @@ func (trans *HandleT) Setup() {
 
 	trans.client = http.Client{
 		Transport: &http.Transport{
-			MaxConnsPerHost: 100,
+			MaxConnsPerHost:     100,
 			MaxIdleConnsPerHost: 50,
-			IdleConnTimeout: time.Minute,
+			IdleConnTimeout:     time.Minute,
 		},
 	}
 
