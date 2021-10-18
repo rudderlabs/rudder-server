@@ -8,7 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 )
 
-var timeout time.Duration
+var sleepTime time.Duration
 
 //creates `loop` object and call getJobLoop and updateStatusLoop methods in different go routines.
 func main() {

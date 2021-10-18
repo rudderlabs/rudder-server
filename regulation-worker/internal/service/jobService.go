@@ -12,7 +12,7 @@ import (
 
 var status string
 
-type ApiClient interface {
+type APIClient interface {
 	GetJobAPI(ctx context.Context) error
 	UpdateJobStatusAPI(ctx context.Context, status string) error
 }
@@ -31,9 +31,8 @@ type JobSvcImpl struct {
 //called by looper
 //calls api-client.getJob(workspaceID)
 //calls api-client to get new job with workspaceID, which returns jobID.
-func (js *JobSvcImpl) GetJob() error {
+func (js *JobSvcImpl) GetJob(ctx context.Context) error {
 
-	ctx := context.Background()
 	job, err := js.Api.GetJobAPI(ctx)
 	if err != nil {
 		return err
