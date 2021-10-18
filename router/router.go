@@ -589,7 +589,7 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
-							//for proxying through transformer
+							//for proxying through transformer || test comment
 							// stat start
 							worker.routerDeliveryLatencyStat.Start()
 							pkgLogger.Debugf(`transformerProxy status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
