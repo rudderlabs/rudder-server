@@ -146,27 +146,28 @@ type workerMessageT struct {
 
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	pauseChannel               chan *PauseT
-	resumeChannel              chan bool
-	channel                    chan workerMessageT     // the worker job channel
-	workerID                   int                     // identifies the worker
-	failedJobs                 int                     // counts the failed jobs of a worker till it gets reset by external channel
-	sleepTime                  time.Duration           // the sleep duration for every job of the worker
-	failedJobIDMap             map[string]int64        // user to failed jobId
-	failedJobIDMutex           sync.RWMutex            // lock to protect structure above
-	retryForJobMap             map[int64]time.Time     // jobID to next retry time map
-	retryForJobMapMutex        sync.RWMutex            // lock to protect structure above
-	routerJobs                 []types.RouterJobT      // slice to hold router jobs to send to destination transformer
-	destinationJobs            []types.DestinationJobT // slice to hold destination jobs
-	rt                         *HandleT                // handle to router
-	deliveryTimeStat           stats.RudderStats
-	routerDeliveryLatencyStat  stats.RudderStats
-	batchTimeStat              stats.RudderStats
-	abortedUserIDMap           map[string]int // aborted user to count of jobs allowed map
-	abortedUserMutex           sync.RWMutex
-	jobCountsByDestAndUser     map[string]*destJobCountsT
-	throttledAtTime            time.Time
-	encounteredRouterTransform bool
+	pauseChannel                chan *PauseT
+	resumeChannel               chan bool
+	channel                     chan workerMessageT     // the worker job channel
+	workerID                    int                     // identifies the worker
+	failedJobs                  int                     // counts the failed jobs of a worker till it gets reset by external channel
+	sleepTime                   time.Duration           // the sleep duration for every job of the worker
+	failedJobIDMap              map[string]int64        // user to failed jobId
+	failedJobIDMutex            sync.RWMutex            // lock to protect structure above
+	retryForJobMap              map[int64]time.Time     // jobID to next retry time map
+	retryForJobMapMutex         sync.RWMutex            // lock to protect structure above
+	routerJobs                  []types.RouterJobT      // slice to hold router jobs to send to destination transformer
+	destinationJobs             []types.DestinationJobT // slice to hold destination jobs
+	rt                          *HandleT                // handle to router
+	deliveryTimeStat            stats.RudderStats
+	routerDeliveryLatencyStat   stats.RudderStats
+	routerResponseTransformStat stats.RudderStats
+	batchTimeStat               stats.RudderStats
+	abortedUserIDMap            map[string]int // aborted user to count of jobs allowed map
+	abortedUserMutex            sync.RWMutex
+	jobCountsByDestAndUser      map[string]*destJobCountsT
+	throttledAtTime             time.Time
+	encounteredRouterTransform  bool
 }
 
 type destJobCountsT struct {
@@ -595,19 +596,17 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							// stat start
 							worker.routerDeliveryLatencyStat.Start()
 							pkgLogger.Debugf(`transformerProxy status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
+							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
+							defer cancel()
+							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
 							if worker.rt.transformerProxy {
-								pkgLogger.Debugf(`routing via transformer, proxy enabled`)
-								respStatusCode, respBodyTemp = worker.rt.transformer.Send(val, worker.rt.destName)
-							} else {
-								sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
-								defer cancel()
-								pkgLogger.Debugf(`routing via server, proxy disabled`)
-								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
 								dResponse := integrations.DeliveryResponseT{
 									Status: int64(respStatusCode),
 									Body:   respBodyTemp,
 								}
+								worker.routerResponseTransformStat.Start()
 								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(dResponse, worker.rt.destName)
+								worker.routerResponseTransformStat.End()
 							}
 							// stat end
 							worker.routerDeliveryLatencyStat.End()
@@ -1068,22 +1067,23 @@ func (rt *HandleT) initWorkers() {
 	g, _ := errgroup.WithContext(context.Background())
 	for i := 0; i < rt.noOfWorkers; i++ {
 		worker := &workerT{
-			pauseChannel:              make(chan *PauseT),
-			resumeChannel:             make(chan bool),
-			channel:                   make(chan workerMessageT, noOfJobsPerChannel),
-			failedJobIDMap:            make(map[string]int64),
-			retryForJobMap:            make(map[int64]time.Time),
-			workerID:                  i,
-			failedJobs:                0,
-			sleepTime:                 minSleep,
-			routerJobs:                make([]types.RouterJobT, 0),
-			destinationJobs:           make([]types.DestinationJobT, 0),
-			rt:                        rt,
-			deliveryTimeStat:          stats.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
-			batchTimeStat:             stats.NewTaggedStat("router_batch_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
-			routerDeliveryLatencyStat: stats.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
-			abortedUserIDMap:          make(map[string]int),
-			jobCountsByDestAndUser:    make(map[string]*destJobCountsT),
+			pauseChannel:                make(chan *PauseT),
+			resumeChannel:               make(chan bool),
+			channel:                     make(chan workerMessageT, noOfJobsPerChannel),
+			failedJobIDMap:              make(map[string]int64),
+			retryForJobMap:              make(map[int64]time.Time),
+			workerID:                    i,
+			failedJobs:                  0,
+			sleepTime:                   minSleep,
+			routerJobs:                  make([]types.RouterJobT, 0),
+			destinationJobs:             make([]types.DestinationJobT, 0),
+			rt:                          rt,
+			deliveryTimeStat:            stats.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			batchTimeStat:               stats.NewTaggedStat("router_batch_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			routerDeliveryLatencyStat:   stats.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			routerResponseTransformStat: stats.NewTaggedStat("response_transform_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			abortedUserIDMap:            make(map[string]int),
+			jobCountsByDestAndUser:      make(map[string]*destJobCountsT),
 		}
 		rt.workers[i] = worker
 
