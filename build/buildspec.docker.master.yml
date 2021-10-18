@@ -21,7 +21,7 @@ phases:
       - (cd && go get github.com/onsi/ginkgo/ginkgo)
       - (cd && go get github.com/golang/mock/mockgen)
       - docker pull postgres:11-alpine
-
+      - go mod download
   build:
     commands:
       - export GO111MODULE=on
@@ -35,7 +35,7 @@ phases:
       - docker build -t rudderlabs/rudder-server:$VERSION -f build/Dockerfile-aws .
       # Build Enterprise version
       - make enterprise-init
-      - ginkgo -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests ./...
+      - ginkgo --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests ./...
       - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
       - docker build -t rudderstack/rudder-server-enterprise:$VERSION -f build/Dockerfile-aws .
   post_build:
@@ -49,3 +49,8 @@ reports:
 artifacts:
   files:
     - "**/*"
+
+cache:
+  paths: |
+    ~/.cache/go-build
+    ~/go/pkg/mod
