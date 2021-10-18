@@ -335,8 +335,8 @@ func GetVersion() (transformerBuildVersion string) {
 func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	url string, batchSize int) ResponseT {
 
-	// trans.accessLock.Lock()
-	// defer trans.accessLock.Unlock()
+	trans.accessLock.Lock()
+	defer trans.accessLock.Unlock()
 
 	s := time.Now()
 	defer func() {
