@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	backoff "github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
@@ -36,41 +37,23 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
 	//once job is successfully received, calling updatestatus API to update the status of job to running.
-	js.API.JobID = job.ID
 	status := model.JobStatusRunning
-	err = js.API.UpdateStatus(ctx, status)
-	if err != nil {
-		fmt.Println(err)
-	}
+
+	js.updateStatus(ctx, status, job.ID)
 
 	//executing deletion
-	js.Deleter.Job = job
 	dest, err := getDestDetails(job.DestinationID, job.WorkspaceID)
 	if err != nil {
 		return fmt.Errorf("error while getting destination details: %w", err)
 	}
-	js.Deleter.Destination = dest
-	status, err = js.Deleter.DeleteJob(ctx)
+	status, err = js.Deleter.DeleteJob(ctx, job, dest)
 	if err != nil {
 		return err
 	}
 
-	//trying to update the status of job for 10 min, if failed, then panic.
-	retryTimeout := time.After(time.Minute * 10)
-	for {
-		select {
-		case <-retryTimeout:
-			panic(err)
-		default:
-			err = js.API.UpdateStatus(ctx, status)
-			if err == nil {
-				return nil
-			}
-		}
-
-	}
+	js.updateStatus(ctx, status, job.ID)
+	return nil
 }
 
 //make api call to get json and then parse it to get destination related details
@@ -78,4 +61,20 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 //return destination Type enum{file, api}
 func getDestDetails(destID, workspaceID string) (model.Destination, error) {
 	return model.Destination{}, nil
+}
+
+func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobID int) {
+	maxWait := time.Minute * 10
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxInterval = time.Minute
+	bo.MaxElapsedTime = maxWait
+	if err := backoff.Retry(func() error {
+		err := js.API.UpdateStatus(ctx, status, jobID)
+		return err
+	}, bo); err != nil {
+		if bo.NextBackOff() == backoff.Stop {
+			panic(err)
+		}
+
+	}
 }

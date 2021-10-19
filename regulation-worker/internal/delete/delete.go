@@ -8,37 +8,36 @@ import (
 )
 
 type Deleter struct {
-	Job         model.Job
-	Destination model.Destination
 }
 
 //get destType & access credentials from workspaceID & destID
 //call appropriate struct file type or api type based on destType.
-func (d *Deleter) DeleteJob(ctx context.Context) (model.JobStatus, error) {
-	if d.Destination.Type == "api" {
+func (d *Deleter) DeleteJob(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error) {
+
+	if dest.Type == "api" {
 
 		deleter := MockAPIDeleter{}
-		return deleter.CallTransformer()
+		return deleter.CallTransformer(job, dest)
 
-	} else if d.Destination.Type == "batch" {
+	} else if dest.Type == "batch" {
 
 		deleter := MockBatchDeleter{}
-		data, err := deleter.GetData()
+		data, err := deleter.GetData(job, dest)
 		if err != nil {
 			return model.JobStatusFailed, fmt.Errorf("error while getting deletion data: %w", err)
 		}
-		cleanedData, err := deleter.DeleteData(data)
+		cleanedData, err := deleter.DeleteData(job, dest, data)
 		if err != nil {
 			return model.JobStatusFailed, fmt.Errorf("error while deleting users from destination data: %w", err)
 		}
 
-		status, err := deleter.UploadData(cleanedData)
+		status, err := deleter.UploadData(job, dest, cleanedData)
 		if err != nil {
 			return model.JobStatusFailed, fmt.Errorf("error while uploading deleted data: %w", err)
 		}
 		return status, nil
 
 	} else {
-		return model.JobStatusFailed, fmt.Errorf("deletion feature not available for %s destination type", d.Destination.Type)
+		return model.JobStatusFailed, fmt.Errorf("deletion feature not available for %s destination type", dest.Type)
 	}
 }

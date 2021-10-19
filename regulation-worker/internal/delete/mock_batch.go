@@ -7,14 +7,14 @@ type MockBatchDeleter struct {
 	Destination model.Destination
 }
 
-func (d *MockBatchDeleter) GetData() (interface{}, error) {
+func (d *MockBatchDeleter) GetData(job model.Job, dest model.Destination) (interface{}, error) {
 	return nil, nil
 }
 
-func (d *MockBatchDeleter) DeleteData(data interface{}) (interface{}, error) {
+func (d *MockBatchDeleter) DeleteData(job model.Job, dest model.Destination, data interface{}) (interface{}, error) {
 	return nil, nil
 }
 
-func (d *MockBatchDeleter) UploadData(data interface{}) (model.JobStatus, error) {
+func (d *MockBatchDeleter) UploadData(job model.Job, dest model.Destination, data interface{}) (model.JobStatus, error) {
 	return model.JobStatusComplete, nil
 }
