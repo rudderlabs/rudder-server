@@ -599,11 +599,6 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							} else {
 								pkgLogger.Debugf(`routing via server, proxy disabled`)
 								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
-								dResponse := integrations.DeliveryResponseT{
-									Status: int64(respStatusCode),
-									Body:   respBodyTemp,
-								}
-								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(dResponse, worker.rt.destName)
 							}
 							// stat end
 							worker.routerDeliveryLatencyStat.End()
