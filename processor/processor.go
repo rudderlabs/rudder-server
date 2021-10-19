@@ -62,7 +62,6 @@ type HandleT struct {
 	routerDB                       jobsdb.JobsDB
 	batchRouterDB                  jobsdb.JobsDB
 	errorDB                        jobsdb.JobsDB
-	transformerPerPipe             map[string]transformer.Transformer
 	transformer                    transformer.Transformer
 	pStatsJobs                     *misc.PerfStats
 	pStatsDBR                      *misc.PerfStats
@@ -330,7 +329,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 		return nil
 	}))
 
-	proc.transformerPerPipe = make(map[string]transformer.Transformer)
 	proc.transformer.Setup()
 
 	proc.crashRecover()
@@ -365,10 +363,6 @@ func (proc *HandleT) Shutdown() {
 	// It is important to make sure everything has stopped,
 	//	 before we shutdown the transformer
 	proc.transformer.Shutdown()
-
-	for _, t := range proc.transformerPerPipe {
-		t.Shutdown()
-	}
 }
 
 var (
@@ -1275,15 +1269,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	wg := sync.WaitGroup{}
 	wg.Add(len(groupedEvents))
 
-	// FIXME, hacky way to prepare transformer per pipeline
-	for srcAndDestKey := range groupedEvents {
-		_, ok := proc.transformerPerPipe[srcAndDestKey]
-		if !ok {
-			proc.transformerPerPipe[srcAndDestKey] = transformer.NewTransformer()
-			proc.transformerPerPipe[srcAndDestKey].Setup()
-		}
-	}
-
 	for srcAndDestKey, eventList := range groupedEvents {
 		srcAndDestKey, eventList := srcAndDestKey, eventList
 		go func() {
@@ -1472,7 +1457,7 @@ func (proc *HandleT) processPipeline(
 
 		userTransformationStat.transformTime.Start()
 		startedAt := time.Now()
-		response = proc.transformerPerPipe[srcAndDestKey].Transform(eventList, integrations.GetUserTransformURL(), userTransformBatchSize)
+		response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(), userTransformBatchSize)
 		d := time.Since(startedAt)
 		userTransformationStat.transformTime.SendTiming(d)
 		proc.addToTransformEventByTimePQ(&TransformRequestT{
@@ -1546,7 +1531,7 @@ func (proc *HandleT) processPipeline(
 		response = ConvertToFilteredTransformerResponse(eventsToTransform, transformAt != "none")
 	} else {
 		s := time.Now()
-		response = proc.transformerPerPipe[srcAndDestKey].Transform(eventsToTransform, url, transformBatchSize)
+		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize)
 		destTransformationStat.transformTime.SendTiming(time.Since(s))
 		transformAt = "processor"
 	}
