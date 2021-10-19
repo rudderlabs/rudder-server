@@ -55,7 +55,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
-type context struct {
+type testContext struct {
 	asyncHelper     testutils.AsyncTestHelper
 	dbReadBatchSize int
 
@@ -66,7 +66,7 @@ type context struct {
 }
 
 // Initiaze mocks and common expectations
-func (c *context) Setup() {
+func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
@@ -85,7 +85,7 @@ func (c *context) Setup() {
 	c.dbReadBatchSize = 10000
 }
 
-func (c *context) Finish() {
+func (c *testContext) Finish() {
 	c.asyncHelper.WaitWithTimeout(testTimeout)
 	c.mockCtrl.Finish()
 }
@@ -106,11 +106,11 @@ func initRouter() {
 var _ = Describe("Router", func() {
 	initRouter()
 
-	var c *context
+	var c *testContext
 
 	BeforeEach(func() {
 		router_utils.JobRetention = time.Duration(175200) * time.Hour //20 Years(20*365*24)
-		c = &context{}
+		c = &testContext{}
 		c.Setup()
 
 		// setup static requirements of dependencies
@@ -195,7 +195,7 @@ var _ = Describe("Router", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil)
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(2).Return(200, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(200, "")
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
@@ -250,7 +250,7 @@ var _ = Describe("Router", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(1).Return(400, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(400, "")
 
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
 				Do(func(jobList []*jobsdb.JobT) {
@@ -440,14 +440,17 @@ var _ = Describe("Router", func() {
 									{
 										UserID: "u1",
 										JobID:  2009,
+										JobT:   toRetryJobsList[0],
 									},
 									{
 										UserID: "u2",
 										JobID:  2010,
+										JobT:   unprocessedJobsList[0],
 									},
 									{
 										UserID: "u3",
 										JobID:  2011,
+										JobT:   unprocessedJobsList[1],
 									},
 								},
 								Batched:    true,
@@ -457,7 +460,7 @@ var _ = Describe("Router", func() {
 						}
 					})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(1).Return(200, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(200, "")
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
@@ -599,7 +602,7 @@ var _ = Describe("Router", func() {
 					}
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(0).Return(200, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(200, "")
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
@@ -762,6 +765,7 @@ var _ = Describe("Router", func() {
 									UserID:     "u1",
 									JobID:      2009,
 									AttemptNum: 1,
+									JobT:       toRetryJobsList[0],
 								},
 							},
 							Batched:    false,
@@ -774,6 +778,7 @@ var _ = Describe("Router", func() {
 								{
 									UserID: "u1",
 									JobID:  2010,
+									JobT:   unprocessedJobsList[0],
 								},
 							},
 							Batched:    false,
@@ -786,6 +791,7 @@ var _ = Describe("Router", func() {
 								{
 									UserID: "u2",
 									JobID:  2011,
+									JobT:   unprocessedJobsList[1],
 								},
 							},
 							Batched:    false,
@@ -798,6 +804,7 @@ var _ = Describe("Router", func() {
 								{
 									UserID: "u2",
 									JobID:  2012,
+									JobT:   unprocessedJobsList[2],
 								},
 							},
 							Batched:    false,
@@ -810,6 +817,7 @@ var _ = Describe("Router", func() {
 								{
 									UserID: "u3",
 									JobID:  2013,
+									JobT:   unprocessedJobsList[3],
 								},
 							},
 							Batched:    false,
@@ -819,7 +827,7 @@ var _ = Describe("Router", func() {
 					}
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(2).Return(200, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(200, "")
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().AnyTimes().Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().AnyTimes().After(callBeginTransaction)
@@ -933,6 +941,7 @@ var _ = Describe("Router", func() {
 									UserID:     "u1",
 									JobID:      2009,
 									AttemptNum: 1,
+									JobT:       toRetryJobsList[0],
 								},
 							},
 							Batched:    false,
@@ -945,6 +954,7 @@ var _ = Describe("Router", func() {
 								{
 									UserID: "u1",
 									JobID:  2010,
+									JobT:   unprocessedJobsList[0],
 								},
 							},
 							Batched:    false,
@@ -957,6 +967,7 @@ var _ = Describe("Router", func() {
 								{
 									UserID: "u1",
 									JobID:  2010,
+									JobT:   unprocessedJobsList[0],
 								},
 							},
 							Batched:    false,
@@ -965,7 +976,7 @@ var _ = Describe("Router", func() {
 						},
 					}
 				})
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(0).Return(200, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(200, "")
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().AnyTimes().Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().AnyTimes().After(callBeginTransaction)

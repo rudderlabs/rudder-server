@@ -2,11 +2,13 @@ package router
 
 import (
 	"bytes"
-	"io/ioutil"
+	"context"
+	"io"
 	"net/http"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
+	"github.com/onsi/gomega"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -78,7 +80,7 @@ var _ = Describe("Network", func() {
 				"full_name": "mock-repo"
    			}]`
 			//New reader with that JSON
-			r := ioutil.NopCloser(bytes.NewReader([]byte(jsonResponse)))
+			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
 			c.mockHTTPClient.EXPECT().Do(gomock.Any()).Times(1).Do(func(req *http.Request) {
 				//asserting http request
@@ -90,7 +92,27 @@ var _ = Describe("Network", func() {
 				Body:       r,
 			}, nil)
 
-			network.SendPost(structData)
+			network.SendPost(context.Background(), structData)
+		})
+
+		It("should respect ctx cancelation", func() {
+
+			network := &NetHandleT{}
+			network.logger = logger.NewLogger().Child("network")
+			network.httpClient = http.DefaultClient
+
+			structData := integrations.PostParametersT{
+				Type: "REST",
+				URL:  "https://www.google-analytics.com/collect",
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			statusCode, body := network.SendPost(ctx, structData)
+
+			gomega.Expect(statusCode).To(gomega.Equal(http.StatusGatewayTimeout))
+			gomega.Expect(body).To(gomega.Equal(""))
 		})
 	})
 })

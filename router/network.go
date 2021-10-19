@@ -3,11 +3,11 @@
 package router
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,7 +27,7 @@ type NetHandleT struct {
 
 //Network interface
 type NetHandleI interface {
-	SendPost(structData integrations.PostParametersT) (statusCode int, respBody string)
+	SendPost(ctx context.Context, structData integrations.PostParametersT) (statusCode int, respBody string)
 }
 
 //temp solution for handling complex query params
@@ -50,7 +50,7 @@ func handleQueryParam(param interface{}) string {
 
 //SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
-func (network *NetHandleT) SendPost(structData integrations.PostParametersT) (statusCode int, respBody string) {
+func (network *NetHandleT) SendPost(ctx context.Context, structData integrations.PostParametersT) (statusCode int, respBody string) {
 	if disableEgress {
 		return 200, `200: outgoing disabled`
 	}
@@ -107,7 +107,7 @@ func (network *NetHandleT) SendPost(structData integrations.PostParametersT) (st
 			}
 		}
 
-		req, err := http.NewRequest(requestMethod, postInfo.URL, payload)
+		req, err := http.NewRequestWithContext(ctx, requestMethod, postInfo.URL, payload)
 		if err != nil {
 			network.logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
 			return 400, fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)
@@ -140,7 +140,7 @@ func (network *NetHandleT) SendPost(structData integrations.PostParametersT) (st
 		var respBody []byte
 
 		if resp != nil && resp.Body != nil {
-			respBody, _ = ioutil.ReadAll(resp.Body)
+			respBody, _ = io.ReadAll(resp.Body)
 			network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 			defer resp.Body.Close()
 		}

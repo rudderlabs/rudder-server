@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
@@ -13,7 +14,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/cenkalti/backoff/v4"
+
+	"github.com/rudderlabs/rudder-server/services/stats"
 
 	"github.com/ClickHouse/clickhouse-go"
 	"github.com/rudderlabs/rudder-server/config"
@@ -26,11 +32,18 @@ import (
 )
 
 var (
-	queryDebugLogs  string
-	blockSize       string
-	poolSize        string
-	pkgLogger       logger.LoggerI
-	disableNullable bool
+	queryDebugLogs              string
+	blockSize                   string
+	poolSize                    string
+	readTimeout                 string
+	writeTimeout                string
+	compress                    bool
+	pkgLogger                   logger.LoggerI
+	disableNullable             bool
+	execTimeOutInSeconds        time.Duration
+	commitTimeOutInSeconds      time.Duration
+	loadTableFailureRetries     int
+	numWorkersDownloadLoadFiles int
 )
 var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
@@ -68,7 +81,7 @@ var clickhouseSpecificColumnNameMappings = map[string]string{
 var datatypeDefaultValuesMap = map[string]interface{}{
 	"int":      0,
 	"float":    0.0,
-	"bool":     0,
+	"boolean":  0,
 	"datetime": clikhouseDefaultDateTime,
 }
 
@@ -78,15 +91,20 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"Int32":                            "int",
 	"Int64":                            "int",
 	"Array(Int64)":                     "array(int)",
+	"Array(Nullable(Int64))":           "array(int)",
 	"Float32":                          "float",
 	"Float64":                          "float",
 	"Array(Float64)":                   "array(float)",
+	"Array(Nullable(Float64))":         "array(float)",
 	"String":                           "string",
 	"Array(String)":                    "array(string)",
+	"Array(Nullable(String))":          "array(string)",
 	"DateTime":                         "datetime",
 	"Array(DateTime)":                  "array(datetime)",
+	"Array(Nullable(DateTime))":        "array(datetime)",
 	"UInt8":                            "boolean",
 	"Array(UInt8)":                     "array(boolean)",
+	"Array(Nullable(UInt8))":           "array(boolean)",
 	"LowCardinality(String)":           "string",
 	"LowCardinality(Nullable(String))": "string",
 	"Nullable(Int8)":                   "int",
@@ -115,6 +133,7 @@ type HandleT struct {
 	ObjectStorage string
 	Warehouse     warehouseutils.WarehouseT
 	Uploader      warehouseutils.UploaderI
+	stats         stats.Stats
 }
 
 type credentialsT struct {
@@ -126,6 +145,48 @@ type credentialsT struct {
 	secure        string
 	skipVerify    string
 	tlsConfigName string
+}
+
+type clickHouseStatT struct {
+	numRowsLoadFile       stats.RudderStats
+	downloadLoadFilesTime stats.RudderStats
+	syncLoadFileTime      stats.RudderStats
+	commitTime            stats.RudderStats
+	failRetries           stats.RudderStats
+	execTimeouts          stats.RudderStats
+	commitTimeouts        stats.RudderStats
+}
+
+// newClickHouseStat Creates a new clickHouseStatT instance
+func (proc *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
+	warehouse := proc.Warehouse
+
+	tags := map[string]string{
+		"destination": warehouse.Destination.ID,
+		"destType":    warehouse.Type,
+		"source":      warehouse.Source.ID,
+		"namespace":   warehouse.Namespace,
+		"identifier":  warehouse.Identifier,
+		"tableName":   tableName,
+	}
+
+	numRowsLoadFile := proc.stats.NewTaggedStat("warehouse.clickhouse.numRowsLoadFile", stats.CountType, tags)
+	downloadLoadFilesTime := proc.stats.NewTaggedStat("warehouse.clickhouse.downloadLoadFilesTime", stats.TimerType, tags)
+	syncLoadFileTime := proc.stats.NewTaggedStat("warehouse.clickhouse.syncLoadFileTime", stats.TimerType, tags)
+	commitTime := proc.stats.NewTaggedStat("warehouse.clickhouse.commitTime", stats.TimerType, tags)
+	failRetries := proc.stats.NewTaggedStat("warehouse.clickhouse.failedRetries", stats.CountType, tags)
+	execTimeouts := proc.stats.NewTaggedStat("warehouse.clickhouse.execTimeouts", stats.CountType, tags)
+	commitTimeouts := proc.stats.NewTaggedStat("warehouse.clickhouse.commitTimeouts", stats.CountType, tags)
+
+	return &clickHouseStatT{
+		numRowsLoadFile:       numRowsLoadFile,
+		downloadLoadFilesTime: downloadLoadFilesTime,
+		syncLoadFileTime:      syncLoadFileTime,
+		commitTime:            commitTime,
+		failRetries:           failRetries,
+		execTimeouts:          execTimeouts,
+		commitTimeouts:        commitTimeouts,
+	}
 }
 
 func Init() {
@@ -140,7 +201,7 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 		dbNameParam = fmt.Sprintf(`database=%s`, cred.dbName)
 	}
 
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s",
+	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t",
 		cred.host,
 		cred.port,
 		cred.user,
@@ -152,6 +213,9 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 		cred.skipVerify,
 		cred.tlsConfigName,
 		dbNameParam,
+		readTimeout,
+		writeTimeout,
+		compress,
 	)
 
 	var err error
@@ -165,9 +229,16 @@ func connect(cred credentialsT, includeDBInConn bool) (*sql.DB, error) {
 
 func loadConfig() {
 	config.RegisterStringConfigVariable("false", &queryDebugLogs, true, "Warehouse.clickhouse.queryDebugLogs")
-	config.RegisterStringConfigVariable("1000", &blockSize, true, "Warehouse.clickhouse.blockSize")
-	config.RegisterStringConfigVariable("10", &poolSize, true, "Warehouse.clickhouse.poolSize")
+	config.RegisterStringConfigVariable("1000000", &blockSize, true, "Warehouse.clickhouse.blockSize")
+	config.RegisterStringConfigVariable("100", &poolSize, true, "Warehouse.clickhouse.poolSize")
 	config.RegisterBoolConfigVariable(false, &disableNullable, false, "Warehouse.clickhouse.disableNullable")
+	config.RegisterStringConfigVariable("300", &readTimeout, true, "Warehouse.clickhouse.readTimeout")
+	config.RegisterStringConfigVariable("1800", &writeTimeout, true, "Warehouse.clickhouse.writeTimeout")
+	config.RegisterBoolConfigVariable(false, &compress, true, "Warehouse.clickhouse.compress")
+	config.RegisterDurationConfigVariable(time.Duration(600), &execTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
+	config.RegisterDurationConfigVariable(time.Duration(600), &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
+	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
+	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
 }
 
 /*
@@ -256,6 +327,8 @@ func getClickHouseColumnTypeForSpecificTable(tableName string, columnName string
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
 func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
+	pkgLogger.Infof("%s DownloadLoadFiles Started", ch.GetLogIdentifier(tableName))
+	defer pkgLogger.Infof("%s DownloadLoadFiles Completed", ch.GetLogIdentifier(tableName))
 	objects := ch.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 	downloader, err := filemanager.New(&filemanager.SettingsT{
@@ -267,48 +340,80 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		}),
 	})
 	if err != nil {
-		pkgLogger.Errorf("CH: Error in setting up a downloader for destionationID : %s Error : %v", ch.Warehouse.Destination.ID, err)
+		pkgLogger.Errorf("%s Error in setting up a downloader with Error: %v", ch.GetLogIdentifier(tableName, storageProvider), err)
 		return nil, err
 	}
 	var fileNames []string
-	for _, object := range objects {
-		objectName, err := warehouseutils.GetObjectName(object.Location, ch.Warehouse.Destination.Config, ch.ObjectStorage)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
-			return nil, err
-		}
-		dirName := "/rudder-warehouse-load-uploads-tmp/"
-		tmpDirPath, err := misc.CreateTMPDIR()
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in getting tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
-		err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, object.Location, err)
-			return nil, err
-		}
-		objectFile, err := os.Create(ObjectPath)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		err = downloader.Download(objectFile, objectName)
-		if err != nil {
-			pkgLogger.Errorf("CH: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		fileName := objectFile.Name()
-		if err = objectFile.Close(); err != nil {
-			pkgLogger.Errorf("CH: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		fileNames = append(fileNames, fileName)
-	}
-	return fileNames, nil
+	var dErr error
+	var fileNamesLock sync.RWMutex
 
+	var jobs = make([]misc.RWCJob, 0)
+	for _, object := range objects {
+		jobs = append(jobs, object)
+	}
+
+	misc.RunWithConcurrency(&misc.RWCConfig{
+		Factor: numWorkersDownloadLoadFiles,
+		Jobs:   &jobs,
+		Run: func(job interface{}) {
+			loadFile := job.(warehouseutils.LoadFileT)
+			fileName, err := ch.downloadLoadFile(&loadFile, tableName, downloader, storageProvider)
+			if err != nil {
+				pkgLogger.Errorf("%s Error occurred while downloading fileName: %s, Error: %v", ch.GetLogIdentifier(tableName), fileName, err)
+				dErr = err
+				return
+			}
+			fileNamesLock.Lock()
+			fileNames = append(fileNames, fileName)
+			fileNamesLock.Unlock()
+		},
+	})
+	return fileNames, dErr
 }
+
+func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager, storageProvider string) (fileName string, err error) {
+	pkgLogger.Debugf("%s DownloadLoadFile Started", ch.GetLogIdentifier(tableName, storageProvider))
+	defer pkgLogger.Debugf("%s DownloadLoadFile Completed", ch.GetLogIdentifier(tableName, storageProvider))
+
+	objectName, err := warehouseutils.GetObjectName(object.Location, ch.Warehouse.Destination.Config, ch.ObjectStorage)
+	if err != nil {
+		pkgLogger.Errorf("%s Error in converting object location to object key for location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
+		return
+	}
+
+	dirName := "/rudder-warehouse-load-uploads-tmp/"
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		pkgLogger.Errorf("%s Error in getting tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
+		return
+	}
+
+	ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
+	err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
+	if err != nil {
+		pkgLogger.Errorf("%s Error in making tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
+		return
+	}
+
+	objectFile, err := os.Create(ObjectPath)
+	if err != nil {
+		pkgLogger.Errorf("%s Error in creating file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
+		return
+	}
+
+	err = downloader.Download(objectFile, objectName)
+	if err != nil {
+		pkgLogger.Errorf("%s Error in downloading file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
+		return
+	}
+	fileName = objectFile.Name()
+	if err = objectFile.Close(); err != nil {
+		pkgLogger.Errorf("%s Error in closing downloaded file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
+		return
+	}
+	return fileName, err
+}
+
 func generateArgumentString(arg string, length int) string {
 	var args []string
 	for i := 0; i < length; i++ {
@@ -413,49 +518,107 @@ func typecastDataFromType(data string, dataType string) interface{} {
 
 // loadTable loads table to clickhouse from the load files
 func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
-	pkgLogger.Infof("CH: Starting load for table:%s", tableName)
+	pkgLogger.Infof("%s LoadTable Started", ch.GetLogIdentifier(tableName))
+	defer pkgLogger.Infof("%s LoadTable Completed", ch.GetLogIdentifier(tableName))
 
-	// sort column names
-	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
-	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
+	// Clickhouse stats
+	chStats := ch.newClickHouseStat(tableName)
 
+	chStats.downloadLoadFilesTime.Start()
 	fileNames, err := ch.DownloadLoadFiles(tableName)
+	chStats.downloadLoadFilesTime.End()
 	if err != nil {
 		return
 	}
 	defer misc.RemoveFilePaths(fileNames...)
 
-	txn, err := ch.Db.Begin()
-	if err != nil {
-		pkgLogger.Errorf("CH: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
-		return
-	}
-	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
-	stmt, err := txn.Prepare(sqlStatement)
-	if err != nil {
-		pkgLogger.Errorf("CH: Error while preparing statement for  transaction in db for loading in  table:%s: query:%s error:%v", tableName, sqlStatement, err)
-		return
+	operation := func() error {
+		tableError := ch.loadTablesFromFilesNamesWithRetry(tableName, tableSchemaInUpload, fileNames, chStats)
+		if !tableError.enableRetry {
+			return nil
+		}
+		return tableError.err
 	}
 
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), uint64(loadTableFailureRetries))
+	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(error error, t time.Duration) {
+		err = fmt.Errorf("%s Error occurred while retrying for load tables with error: %v", ch.GetLogIdentifier(tableName), error)
+		pkgLogger.Error(err)
+		chStats.failRetries.Count(1)
+	})
+	return
+}
+
+type tableError struct {
+	enableRetry bool
+	err         error
+}
+
+func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, fileNames []string, chStats *clickHouseStatT) (terr tableError) {
+	pkgLogger.Debugf("%s LoadTablesFromFilesNamesWithRetry Started", ch.GetLogIdentifier(tableName))
+	defer pkgLogger.Debugf("%s LoadTablesFromFilesNamesWithRetry Completed", ch.GetLogIdentifier(tableName))
+
+	var txn *sql.Tx
+	var err error
+
+	onError := func(err error) {
+		if txn != nil {
+			go func() {
+				pkgLogger.Debugf("%s Rollback Started for loading in table", ch.GetLogIdentifier(tableName))
+				txn.Rollback()
+				pkgLogger.Debugf("%s Rollback Completed for loading in table", ch.GetLogIdentifier(tableName))
+			}()
+		}
+		terr.err = err
+		pkgLogger.Errorf("%s OnError for loading in table with error: %v", ch.GetLogIdentifier(tableName), err)
+	}
+
+	pkgLogger.Debugf("%s Beginning a transaction in db for loading in table", ch.GetLogIdentifier(tableName))
+	txn, err = ch.Db.Begin()
+	if err != nil {
+		err = fmt.Errorf("%s Error while beginning a transaction in db for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
+		onError(err)
+		return
+	}
+	pkgLogger.Debugf("%s Completed a transaction in db for loading in table", ch.GetLogIdentifier(tableName))
+
+	// sort column names
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
+	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
+
+	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
+	pkgLogger.Debugf("%s Preparing statement exec in db for loading in table for query:%s", ch.GetLogIdentifier(tableName), sqlStatement)
+	stmt, err := txn.Prepare(sqlStatement)
+	if err != nil {
+		err = fmt.Errorf("%s Error while preparing statement for transaction in db for loading in table for query:%s error:%v", ch.GetLogIdentifier(tableName), sqlStatement, err)
+		onError(err)
+		return
+	}
+	pkgLogger.Debugf("%s Prepared statement exec in db for loading in table", ch.GetLogIdentifier(tableName))
+
 	for _, objectFileName := range fileNames {
+		chStats.syncLoadFileTime.Start()
+
 		var gzipFile *os.File
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
-			pkgLogger.Errorf("CH: Error opening file using os.Open for file:%s while loading to table %s: %v", objectFileName, tableName, err.Error())
+			err = fmt.Errorf("%s Error opening file using os.Open for file:%s while loading to table with error:%v", ch.GetLogIdentifier(tableName), objectFileName, err.Error())
+			onError(err)
 			return
 		}
 
 		var gzipReader *gzip.Reader
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
-			pkgLogger.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: %v", gzipFile.Name(), tableName, err.Error())
 			rruntime.Go(func() {
 				misc.RemoveFilePaths(objectFileName)
 			})
 			gzipFile.Close()
+			err = fmt.Errorf("%s Error reading file using gzip.NewReader for file:%s while loading to table with error:%v", ch.GetLogIdentifier(tableName), gzipFile.Name(), err.Error())
+			onError(err)
 			return
-
 		}
+
 		csvReader := csv.NewReader(gzipReader)
 		var csvRowsProcessedCount int
 		for {
@@ -463,19 +626,18 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			record, err = csvReader.Read()
 			if err != nil {
 				if err == io.EOF {
-					pkgLogger.Debugf("CH: File reading completed while reading csv file for loading in table:%s: %s", tableName, objectFileName)
+					pkgLogger.Debugf("%s File reading completed while reading csv file for loading in table for objectFileName:%s", ch.GetLogIdentifier(tableName), objectFileName)
 					break
 				} else {
-					pkgLogger.Errorf("CH: Error while reading csv file %s for loading in table:%s: %v", objectFileName, tableName, err)
-					txn.Rollback()
+					err = fmt.Errorf("%s Error while reading csv file %s for loading in table with error:%v", ch.GetLogIdentifier(tableName), objectFileName, err)
+					onError(err)
 					return
 				}
 			}
 			if len(sortedColumnKeys) != len(record) {
-				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
-				pkgLogger.Error(err)
-				txn.Rollback()
-				return err
+				err = fmt.Errorf(`%s Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table with sortedColumnKeys: %d. Processed rows in csv file until mismatch: %d`, ch.GetLogIdentifier(tableName), len(record), len(sortedColumnKeys), csvRowsProcessedCount)
+				onError(err)
+				return
 			}
 			var recordInterface []interface{}
 			for index, value := range record {
@@ -485,22 +647,60 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				recordInterface = append(recordInterface, data)
 			}
 
-			_, err = stmt.Exec(recordInterface...)
+			stmtCtx, stmtCancel := context.WithCancel(context.Background())
+			misc.RunWithTimeout(func() {
+				pkgLogger.Debugf("%s Starting Prepared statement exec", ch.GetLogIdentifier(tableName))
+				_, err = stmt.ExecContext(stmtCtx, recordInterface...)
+				pkgLogger.Debugf("%s Completed Prepared statement exec", ch.GetLogIdentifier(tableName))
+			}, func() {
+				pkgLogger.Debugf("%s Cancelling and closing statement", ch.GetLogIdentifier(tableName))
+				stmtCancel()
+				go func() {
+					stmt.Close()
+				}()
+				err = fmt.Errorf("%s Timed out exec table for objectFileName: %s", ch.GetLogIdentifier(tableName), objectFileName)
+				terr.enableRetry = true
+				chStats.execTimeouts.Count(1)
+			}, execTimeOutInSeconds)
+
 			if err != nil {
-				pkgLogger.Errorf("CH: Error in exec statement for loading in table:%s: %v", tableName, err)
-				txn.Rollback()
+				err = fmt.Errorf("%s Error in inserting statement for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
+				onError(err)
 				return
 			}
 			csvRowsProcessedCount++
 		}
+
+		chStats.numRowsLoadFile.Count(csvRowsProcessedCount)
+
 		gzipReader.Close()
 		gzipFile.Close()
+
+		chStats.syncLoadFileTime.End()
 	}
-	if err = txn.Commit(); err != nil {
-		pkgLogger.Errorf("CH: Error while committing transaction as there was error while loading in table:%s: %v", tableName, err)
+
+	misc.RunWithTimeout(func() {
+		chStats.commitTime.Start()
+		defer chStats.commitTime.End()
+
+		pkgLogger.Debugf("%s Committing transaction", ch.GetLogIdentifier(tableName))
+		if err = txn.Commit(); err != nil {
+			err = fmt.Errorf("%s Error while committing transaction as there was error while loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
+			return
+		}
+		pkgLogger.Debugf("%v Committed transaction", ch.GetLogIdentifier(tableName))
+	}, func() {
+		err = fmt.Errorf("%s Timed out while committing", ch.GetLogIdentifier(tableName))
+		terr.enableRetry = true
+		chStats.commitTimeouts.Count(1)
+	}, commitTimeOutInSeconds)
+
+	if err != nil {
+		err = fmt.Errorf("%s Error occurred while committing with error:%v", ch.GetLogIdentifier(tableName), err)
+		onError(err)
 		return
 	}
-	pkgLogger.Infof("CH: Complete load for table:%s", tableName)
+	pkgLogger.Infof("%s Completed loading the table", ch.GetLogIdentifier(tableName))
 	return
 }
 
@@ -637,23 +837,29 @@ func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 		return
 	}
 	defer ch.Db.Close()
-	pingResultChannel := make(chan error, 1)
-	rruntime.Go(func() {
-		pingResultChannel <- ch.Db.Ping()
-	})
-	var timeOut time.Duration = 5
-	select {
-	case err = <-pingResultChannel:
-	case <-time.After(timeOut * time.Second):
-		err = fmt.Errorf("connection testing timed out after %d sec", timeOut)
+
+	timeOut := 5 * time.Second
+
+	ctx, cancel := context.WithTimeout(context.TODO(), timeOut)
+	defer cancel()
+
+	err = ch.Db.PingContext(ctx)
+	if err == context.DeadlineExceeded {
+		return fmt.Errorf("connection testing timed out after %d sec", timeOut/time.Second)
 	}
-	return
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
 func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader
+	ch.stats = stats.DefaultStats
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 
 	ch.Db, err = connect(ch.getConnectionCredentials(), true)
@@ -775,4 +981,11 @@ func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	}
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+}
+
+func (ch *HandleT) GetLogIdentifier(args ...string) string {
+	if len(args) == 0 {
+		return fmt.Sprintf("[%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace)
+	}
+	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }

@@ -154,6 +154,6 @@ func (manager *MinioManager) ListFilesWithPrefix(prefix string, maxItems int64) 
 	return
 }
 
-func (manager *MinioManager) GetConfiguredPrefix() (string) {
+func (manager *MinioManager) GetConfiguredPrefix() string {
 	return manager.Config.Prefix
 }

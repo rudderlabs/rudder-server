@@ -3,6 +3,7 @@
 package types
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"time"
@@ -45,8 +46,8 @@ type ConfigEnvI interface {
 
 // ReportingI is interface to report metrics
 type ReportingI interface {
-	WaitForSetup(clientName string)
-	AddClient(c Config)
+	WaitForSetup(ctx context.Context, clientName string)
+	AddClient(ctx context.Context, c Config)
 	Report(metrics []*PUReportedMetric, txn *sql.Tx)
 }
 

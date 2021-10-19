@@ -7,10 +7,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"math/rand"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -120,7 +121,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 	var data []byte
 	var rudderEvents []map[string]interface{}
 	var unmarshalleRudderdData map[string]interface{}
-	data, err = ioutil.ReadFile("mapping.json")
+	data, err = os.ReadFile("mapping.json")
 	if err != nil {
 		panic(err)
 	}
@@ -237,7 +238,7 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 	var data []byte
 	var rudderEvents []map[string]interface{}
 	var unmarshalleRudderdData map[string]interface{}
-	data, err = ioutil.ReadFile("mapping.json")
+	data, err = os.ReadFile("mapping.json")
 	if err != nil {
 		panic(err)
 	}
@@ -393,8 +394,8 @@ func sendToRudder(jsonPayload string) {
 	}
 	// fmt.Println("response Status:", resp.Status)
 	// fmt.Println("response Headers:", resp.Header)
-	ioutil.ReadAll(resp.Body)
-	// body, _ := ioutil.ReadAll(resp.Body)
+	io.ReadAll(resp.Body)
+	// body, _ := io.ReadAll(resp.Body)
 	// fmt.Println("response Body:", string(body))
 	atomic.AddUint64(&successCount, 1)
 }

@@ -37,6 +37,7 @@ import (
 
 	"github.com/jeremywohl/flatten"
 	"github.com/lib/pq"
+	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -45,7 +46,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	uuid "github.com/satori/go.uuid"
 )
 
 // EventModelT is a struct that represents EVENT_MODELS_TABLE
@@ -147,6 +147,7 @@ var (
 	schemaVersionPerEventModelLimit int
 	offloadLoopInterval             time.Duration
 	offloadThreshold                time.Duration
+	areEventSchemasPopulated        bool
 )
 
 const EVENT_MODELS_TABLE = "event_models"
@@ -457,6 +458,7 @@ func (manager *EventSchemaManagerT) createModel(writeKey string, eventType strin
 		EventIdentifier: eventIdentifier,
 		Schema:          []byte("{}"),
 	}
+
 	eventModel.reservoirSample = NewReservoirSampler(reservoirSampleSize, 0, 0)
 
 	if totalEventModels >= eventModelLimit {
@@ -576,7 +578,9 @@ func (manager *EventSchemaManagerT) NewSchemaVersion(versionID string, schema ma
 
 func (manager *EventSchemaManagerT) recordEvents() {
 	for gatewayEventBatch := range eventSchemaChannel {
-
+		if !areEventSchemasPopulated {
+			continue
+		}
 		var eventPayload EventPayloadT
 		err := json.Unmarshal([]byte(gatewayEventBatch.eventBatch), &eventPayload)
 		assertError(err)
@@ -616,6 +620,9 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 	// Otherwise the ticker won't be GC'ed
 	ticker := time.Tick(flushInterval)
 	for range ticker {
+		if !areEventSchemasPopulated {
+			continue
+		}
 
 		// If needed, copy the maps and release the lock immediately
 		manager.eventModelLock.Lock()
@@ -728,6 +735,11 @@ func eventTypeIdentifier(eventType, eventIdentifier string) string {
 
 func (manager *EventSchemaManagerT) offloadEventSchemas() {
 	for {
+		if !areEventSchemasPopulated {
+			time.Sleep(time.Second * 10)
+			continue
+		}
+
 		time.Sleep(offloadLoopInterval)
 		manager.eventModelLock.Lock()
 		manager.schemaVersionLock.Lock()
@@ -980,6 +992,10 @@ func (manager *EventSchemaManagerT) populateEventSchemas() {
 	manager.populateSchemaVersionsMinimal()
 }
 
+func setEventSchemasPopulated(status bool) {
+	areEventSchemasPopulated = status
+}
+
 func getSchema(flattenedEvent map[string]interface{}) map[string]string {
 	schema := make(map[string]string)
 	for k, v := range flattenedEvent {
@@ -1041,7 +1057,15 @@ func (manager *EventSchemaManagerT) Setup() {
 	archivedSchemaVersions = make(map[string]map[string]*OffloadedSchemaVersionT)
 
 	if !manager.disableInMemoryCache {
-		manager.populateEventSchemas()
+		rruntime.Go(func() {
+			defer setEventSchemasPopulated(true)
+
+			populateESTimer := stats.NewTaggedStat("populate_event_schemas", stats.TimerType, stats.Tags{"module": "event_schemas"})
+			populateESTimer.Start()
+			defer populateESTimer.End()
+
+			manager.populateEventSchemas()
+		})
 	}
 	eventSchemaChannel = make(chan *GatewayEventBatchT, 10000)
 
