@@ -205,7 +205,11 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 
 	trans.perfStats.Start()
 
-	transformResponse := make([][]TransformerResponseT, len(clientEvents)/batchSize)
+	batchCount := len(clientEvents)/batchSize
+	if len(clientEvents) % batchSize != 0 {
+		batchCount += 1
+	}
+	transformResponse := make([][]TransformerResponseT, batchCount)
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(transformResponse))
