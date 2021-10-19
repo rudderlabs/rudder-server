@@ -9,7 +9,6 @@ import (
 
 	backoff "github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
@@ -18,12 +17,12 @@ type APIClient interface {
 	UpdateStatus(ctx context.Context, status model.JobStatus) error
 }
 
-type Deleter interface {
-	DeleteJob(ctx context.Context) (string, error)
+type deleter interface {
+	DeleteJob(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error)
 }
 type JobSvc struct {
 	API     client.JobAPI
-	Deleter delete.Deleter
+	Deleter deleter
 }
 
 //called by looper
