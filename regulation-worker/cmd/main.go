@@ -15,7 +15,10 @@ func main() {
 	}
 
 	l := &service.Looper{Svc: svc}
-	l.Loop()
+	err := l.Loop()
+	if err != nil {
+		panic(err)
+	}
 }
 
 //TODO: get workspaceID from env

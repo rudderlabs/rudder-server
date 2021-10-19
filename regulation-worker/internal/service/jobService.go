@@ -40,7 +40,10 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	//once job is successfully received, calling updatestatus API to update the status of job to running.
 	status := model.JobStatusRunning
 
-	js.updateStatus(ctx, status, job.ID)
+	err = js.updateStatus(ctx, status, job.ID)
+	if err != nil {
+		return err
+	}
 
 	//executing deletion
 	dest, err := getDestDetails(job.DestinationID, job.WorkspaceID)
@@ -52,7 +55,10 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 		return err
 	}
 
-	js.updateStatus(ctx, status, job.ID)
+	err = js.updateStatus(ctx, status, job.ID)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -63,18 +69,20 @@ func getDestDetails(destID, workspaceID string) (model.Destination, error) {
 	return model.Destination{}, nil
 }
 
-func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobID int) {
+func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
 	maxWait := time.Minute * 10
 	bo := backoff.NewExponentialBackOff()
+	boCtx := backoff.WithContext(bo, ctx)
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = maxWait
 	if err := backoff.Retry(func() error {
 		err := js.API.UpdateStatus(ctx, status, jobID)
 		return err
-	}, bo); err != nil {
+	}, boCtx); err != nil {
 		if bo.NextBackOff() == backoff.Stop {
-			panic(err)
+			return err
 		}
 
 	}
+	return nil
 }

@@ -11,11 +11,13 @@ type Looper struct {
 	Svc JobSvc
 }
 
-func (l *Looper) Loop() {
+func (l *Looper) Loop() error{
 	for {
 		err := l.Svc.JobSvc(context.Background())
 		if err == model.ErrNoRunnableJob {
 			time.Sleep(10 * time.Minute)
+		}else if err!=nil{
+			return err
 		}
 	}
 }
