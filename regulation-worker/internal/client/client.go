@@ -11,11 +11,11 @@ type JobAPI struct {
 	JobID       int
 }
 
-func (j *JobAPI) GetJobAPI(ctx context.Context) (model.Job, error) {
+func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	return model.Job{}, nil
 }
 
-func (j *JobAPI) UpdateJobStatusAPI(ctx context.Context, status string) error {
+func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus) error {
 
 	return nil
 }

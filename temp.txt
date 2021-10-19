@@ -1,3 +1,0 @@
-Access Key id: AKIAWTVBJHCTDZDVVMTE
-Secret access key: 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
-region: us-east-1
