@@ -26,11 +26,12 @@ const (
 
 //HandleT is the handle for this class
 type HandleT struct {
-	tr                                 *http.Transport
-	client                             *http.Client
-	transformRequestTimerStat          stats.RudderStats
-	transformerNetworkRequestTimerStat stats.RudderStats
-	logger                             logger.LoggerI
+	tr                                      *http.Transport
+	client                                  *http.Client
+	transformRequestTimerStat               stats.RudderStats
+	transformerNetworkRequestTimerStat      stats.RudderStats
+	transformerResponseTransformRequestTime stats.RudderStats
+	logger                                  logger.LoggerI
 }
 
 //Transformer provides methods to transform events
@@ -162,7 +163,9 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 	var resp *http.Response
 	var respData []byte
 	url := getResponseTransformURL(destName)
+	trans.transformerResponseTransformRequestTime.Start()
 	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+	trans.transformerResponseTransformRequestTime.End()
 	if resp != nil && resp.Body != nil {
 		respData, _ = io.ReadAll(resp.Body)
 	}
@@ -237,6 +240,7 @@ func (trans *HandleT) Setup() {
 	trans.client = &http.Client{Transport: trans.tr, Timeout: 10 * time.Minute}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
+	trans.transformerResponseTransformRequestTime = stats.NewStat("router.transformer_response_transform_time", stats.TimerType)
 }
 
 func getBatchURL() string {
