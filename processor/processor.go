@@ -365,6 +365,10 @@ func (proc *HandleT) Shutdown() {
 	// It is important to make sure everything has stopped,
 	//	 before we shutdown the transformer
 	proc.transformer.Shutdown()
+
+	for _, t := range proc.transformerPerPipe {
+		t.Shutdown()
+	}
 }
 
 var (
