@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/alexbrainman/odbc"
 	_ "github.com/alexbrainman/odbc"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -574,6 +575,21 @@ func (dl *HandleT) AlterColumn(tableName string, columnName string, columnType s
 	return
 }
 
+func checkAndIgnoreAlreadyExistError(err error) bool {
+	if err != nil {
+		if odbcErrs, ok := err.(*odbc.Error); ok {
+			for _, odbcErr := range odbcErrs.Diag {
+				// Checking for Table or view not found
+				if odbcErr.NativeError == 31740 {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return true
+}
+
 // FetchSchema queries deltalake and returns the schema assoiciated with provided namespace
 func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
 	dl.Warehouse = warehouse
@@ -591,6 +607,9 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
+		if checkAndIgnoreAlreadyExistError(err) {
+			return schema, nil
+		}
 		pkgLogger.Errorf("DELTALAKE: Error in fetching schema from deltalake destination:%v, query: %v", dl.Warehouse.Destination.ID, sqlStatement)
 		return
 	}
