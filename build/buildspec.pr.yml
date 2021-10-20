@@ -30,6 +30,7 @@ phases:
       - echo Build started on `date`
       - echo Building the Docker image...
       - make test
+      - go test -v ./docker_test.go -integration -count 1
       - find . -name "profile.out" | while read file;do cat $file >> coverage.txt; echo "" >> coverage.txt;done
       - bash build/codecov.sh
       - TAG=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
