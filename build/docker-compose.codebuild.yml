@@ -14,7 +14,7 @@ services:
       - d-transformer
     build:
       context: ../
-      dockerfile: build/Dockerfile-dev
+      dockerfile: build/Dockerfile
     volumes:
       - ..:/app
 
