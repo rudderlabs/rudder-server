@@ -2032,14 +2032,14 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
 		jd.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
-			constructQuery(jd, "J.custom_val", customValFilters, "OR")
+			constructQuery(jd, "jobs.custom_val", customValFilters, "OR")
 	} else {
 		customValQuery = ""
 	}
 
 	if len(parameterFilters) > 0 {
 		jd.assert(!getAll, "getAll is true")
-		sourceQuery += " AND " + constructParameterJSONQuery("J", parameterFilters)
+		sourceQuery += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
 	} else {
 		sourceQuery = ""
 	}
@@ -2054,19 +2054,19 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	var rows *sql.Rows
 	if getAll {
 		sqlStatement := fmt.Sprintf(`SELECT
-                                  J.job_id, J.uuid, J.user_id, J.parameters,  J.custom_val, J.event_payload, J.event_count,
-                                  J.created_at, J.expire_at,
-								  sum(J.event_count) over (order by J.job_id asc) as running_event_counts,
+                                  jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters,  jobs.custom_val, jobs.event_payload, jobs.event_count,
+                                  jobs.created_at, jobs.expire_at,
+								  sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
                                   job_latest_state.job_state, job_latest_state.attempt,
                                   job_latest_state.exec_time, job_latest_state.retry_time,
                                   job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
                                  FROM
-                                  %[1]s J,
+                                  %[1]s AS jobs,
                                   (SELECT job_id, job_state, attempt, exec_time, retry_time,
                                     error_code, error_response,parameters FROM %[2]s WHERE id IN
                                     (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
                                   AS job_latest_state
-                                   WHERE J.job_id=job_latest_state.job_id`,
+                                   WHERE jobs.job_id=job_latest_state.job_id`,
 			ds.JobTable, ds.JobStatusTable, stateQuery)
 		var err error
 		rows, err = jd.dbHandle.Query(sqlStatement)
@@ -2074,21 +2074,21 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		defer rows.Close()
 	} else {
 		sqlStatement := fmt.Sprintf(`SELECT
-                                               J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.event_count,
-                                               J.created_at, J.expire_at,
-											   sum(J.event_count) over (order by J.job_id asc) as running_event_counts,
+                                               jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
+                                               jobs.created_at, jobs.expire_at,
+											   sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
                                                job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
                                             FROM
-                                               %[1]s J,
+                                               %[1]s AS jobs,
                                                (SELECT job_id, job_state, attempt, exec_time, retry_time,
                                                  error_code, error_response, parameters FROM %[2]s WHERE id IN
                                                    (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
                                                AS job_latest_state
-                                            WHERE J.job_id=job_latest_state.job_id
+                                            WHERE jobs.job_id=job_latest_state.job_id
                                              %[4]s %[5]s
-                                             AND job_latest_state.retry_time < $1 ORDER BY J.job_id %[6]s`,
+                                             AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[6]s`,
 			ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
 
 		args := []interface{}{getTimeNowFunc()}
@@ -2159,27 +2159,27 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	if useJoinForUnprocessed {
 		// event_count default 1, number of items in payload
 		sqlStatement = fmt.Sprintf(
-			`SELECT J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.event_count, J.created_at, J.expire_at,`+
-				`	sum(J.event_count) over (order by J.job_id asc) as running_event_counts `+
-				`FROM %[1]s J `+
-				`LEFT JOIN %[2]s S ON J.job_id=S.job_id `+
-				`WHERE S.job_id is NULL `,
+			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at,`+
+				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `+
+				`FROM %[1]s AS jobs `+
+				`LEFT JOIN %[2]s AS job_status ON jobs.job_id=job_status.job_id `+
+				`WHERE job_status.job_id is NULL `,
 			ds.JobTable, ds.JobStatusTable)
 	} else {
 		sqlStatement = fmt.Sprintf(
-			`SELECT J.job_id, J.uuid, J.user_id, J.parameters, J.custom_val, J.event_payload, J.event_count, J.created_at, J.expire_at,`+
-				`	sum(J.event_count) over (order by J.job_id asc) as running_event_counts `+
-				` FROM J `+
-				`WHERE J.job_id NOT IN (SELECT DISTINCT(S.job_id) FROM %[2]s S)`,
+			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at,`+
+				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `+
+				` FROM AS jobs `+
+				`WHERE jobs.job_id NOT IN (SELECT DISTINCT(job_status.job_id) FROM %[2]s AS job_status)`,
 			ds.JobTable, ds.JobStatusTable)
 	}
 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
-		sqlStatement += " AND " + constructQuery(jd, "J.custom_val", customValFilters, "OR")
+		sqlStatement += " AND " + constructQuery(jd, "jobs.custom_val", customValFilters, "OR")
 	}
 
 	if len(parameterFilters) > 0 {
-		sqlStatement += " AND " + constructParameterJSONQuery("J", parameterFilters)
+		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
 	}
 
 	if params.UseTimeFilter {
@@ -2188,7 +2188,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	}
 
 	if order {
-		sqlStatement += " ORDER BY J.job_id"
+		sqlStatement += " ORDER BY jobs.job_id"
 	}
 	if count > 0 {
 		sqlStatement += fmt.Sprintf(" LIMIT $%d", len(args)+1)
