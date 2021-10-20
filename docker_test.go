@@ -340,10 +340,10 @@ func run(m *testing.M) (int, error) {
 			"KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL",
 		},
 	})
-	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
 	if err != nil {
 		log.Panic(err)
 	}
+	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
 	defer func() {
 		if err := pool.Purge(resourceKafka); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
