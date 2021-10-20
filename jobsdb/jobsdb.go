@@ -3350,7 +3350,7 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 
 	dsList := jd.getDSList(false)
 	outJobs := make([]*JobT, 0)
-	jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
+	jd.assert(count >= 0, fmt.Sprintf("request job count cannot be negative: %d", count))
 	if count == 0 {
 		return outJobs
 	}
@@ -3360,11 +3360,11 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 	}
 
 	for _, ds := range dsList {
-		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
+		jd.assert(count > 0, fmt.Sprintf("cannot receive negative job count: %d", count))
 		jobs := jd.getUnprocessedJobsDS(ds, true, count, params)
 		outJobs = append(outJobs, jobs...)
 		count -= len(jobs)
-		jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
+		jd.assert(count >= 0, fmt.Sprintf("cannot receive more jobs than requested, diff: %d", count))
 		if count == 0 {
 			break
 		}
@@ -3374,7 +3374,7 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 				sumEventCount += j.EventCount
 			}
 			params.EventCount -= sumEventCount
-			jd.assert(params.EventCount >= 0, fmt.Sprintf("event count:%d received is less than 0", params.EventCount))
+			jd.assert(params.EventCount >= 0, fmt.Sprintf("cannot receive more events than requested, diff: %d", params.EventCount))
 			if params.EventCount == 0 {
 				break
 			}
@@ -3584,7 +3584,7 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 	dsList := jd.getDSList(false)
 	outJobs := make([]*JobT, 0)
 
-	jd.assert(count >= 0, fmt.Sprintf("count:%d received is less than 0", count))
+	jd.assert(count >= 0, fmt.Sprintf("request job count cannot be negative: %d", count))
 	if count == 0 {
 		return outJobs
 	}
@@ -3611,7 +3611,7 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 				sumEventCount += j.EventCount
 			}
 			params.EventCount -= sumEventCount
-			jd.assert(params.EventCount >= 0, fmt.Sprintf("event count:%d received is less than 0", params.EventCount))
+			jd.assert(params.EventCount >= 0, fmt.Sprintf("cannot receive more jobs than requested, diff: %d", params.EventCount))
 			if params.EventCount == 0 {
 				break
 			}
