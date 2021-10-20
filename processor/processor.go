@@ -1,4 +1,4 @@
-package processor
+gd package processor
 
 import (
 	"bytes"
@@ -368,7 +368,7 @@ var (
 	maxLoopSleep              time.Duration
 	fixedLoopSleep            time.Duration
 	maxEventsToProcess        int
-	avgEventsInRequest        int
+	avgEventsInRequest        int // TODO: Remove in next release
 	dbReadBatchSize           int
 	transformBatchSize        int
 	userTransformBatchSize    int
@@ -404,6 +404,8 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, false, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
+
+	// DEPRECATED: don't use avgEventsInRequest, rudder-server will automatically adapt
 	config.RegisterIntConfigVariable(1, &avgEventsInRequest, true, 1, "Processor.avgEventsInRequest")
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
 	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
