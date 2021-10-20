@@ -14,7 +14,7 @@ services:
       - d-transformer
     build:
       context: ./
-      dockerfile: build/Dockerfile-dev
+      dockerfile: build/Dockerfile
 
     ports:
       - "8081:8080"
@@ -37,7 +37,7 @@ services:
       - d-transformer
     build:
       context: ./
-      dockerfile: build/Dockerfile-dev
+      dockerfile: build/Dockerfile
 
     ports:
       - "8082:8080"
