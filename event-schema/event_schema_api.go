@@ -91,7 +91,6 @@ type JSPropertyTypeT struct {
 }
 
 type JSPropertyT struct {
-	Required []string               `json:"required"`
 	Property map[string]interface{} `json:"properties"`
 }
 
@@ -172,11 +171,9 @@ func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[str
 	jsProperties := JSPropertyT{
 		Property: make(map[string]interface{}),
 	}
-	required := make([]string, 0)
 	finalSchema := make(map[string]interface{})
 
 	for k, v := range schemaProperties {
-		required = append(required, k)
 		switch value := v.(type) {
 		case string:
 			jsProperties.Property[k] = getPropertyTypesFromSchValue(value)
@@ -204,9 +201,7 @@ func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[str
 			pkgLogger.Errorf("unknown type found")
 		}
 	}
-	jsProperties.Required = required
 	finalSchema["properties"] = jsProperties.Property
-	finalSchema["required"] = required
 	finalSchema["type"] = "object"
 	return finalSchema
 }
