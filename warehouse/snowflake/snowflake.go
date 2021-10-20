@@ -449,7 +449,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s" AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY "MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE" ORDER BY "UPDATED_AT" DESC, "ID") AS _rudder_staging_row_number FROM "%[2]s"
+											SELECT *, row_number() OVER (PARTITION BY "MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE" ORDER BY "ID" DESC) AS _rudder_staging_row_number FROM "%[2]s"
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
 									ON (original."MERGE_PROPERTY_TYPE" = staging."MERGE_PROPERTY_TYPE" AND original."MERGE_PROPERTY_VALUE" = staging."MERGE_PROPERTY_VALUE")
