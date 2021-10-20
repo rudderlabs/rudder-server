@@ -1,4 +1,4 @@
-gd package processor
+package processor
 
 import (
 	"bytes"
