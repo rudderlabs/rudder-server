@@ -41,3 +41,9 @@ type Destination struct {
 	Type          string
 	Credentials   string
 }
+
+type APIReqErr struct {
+	StatusCode int
+	Body       string
+	Err        error
+}
