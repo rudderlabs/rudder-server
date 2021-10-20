@@ -222,6 +222,7 @@ func (rStats *RudderStatsT) Gauge(value interface{}) {
 }
 
 // Start starts a new timing for this stat. Only applies to TimerType stats
+
 func (rStats *RudderStatsT) Start() {
 	if !statsEnabled || rStats.dontProcess {
 		return
@@ -233,6 +234,7 @@ func (rStats *RudderStatsT) Start() {
 }
 
 // End send the time elapsed since the Start()  call of this stat. Only applies to TimerType stats
+// Deprecated: Use concurrent safe SendTiming() instead
 func (rStats *RudderStatsT) End() {
 	if !statsEnabled || rStats.dontProcess {
 		return

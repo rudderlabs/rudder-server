@@ -6,4 +6,4 @@ ADD . /app
 WORKDIR /app
 
 EXPOSE 8181
-CMD ["go", "run", "-mod", "vendor", "tests/sink.go"]
+CMD ["go", "run", "tests/sink.go"]
