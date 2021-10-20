@@ -30,7 +30,6 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	method := "GET"
 
 	urlPrefix := getURLPrefix("urlPrefix", "http://localhost:35359")
-	fmt.Println("urlPrefix:", urlPrefix)
 	genEndPoint := "/worker/workspaces/{workspace_id}/regulations/worker-job"
 	url := fmt.Sprint(urlPrefix, prepURL(genEndPoint, j.WorkspaceID))
 
@@ -38,16 +37,12 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	if err != nil {
 		return model.Job{}, err
 	}
-	fmt.Println("making get request")
 	client := &http.Client{}
-	fmt.Println("req:", req)
 	resp, err := client.Do(req)
 	if err != nil {
 		return model.Job{}, err
 	}
-	fmt.Println("request completed")
 	//if successful
-	fmt.Println("resp.StatusCode: ", resp.StatusCode)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var jobSchema jobSchema
 		if err := json.NewDecoder(resp.Body).Decode(&jobSchema); err != nil {
@@ -102,7 +97,6 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	if err != nil {
 		return fmt.Errorf("error while marshalling status: %w", err)
 	}
-	fmt.Println("request body: ", string(body))
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 	if err != nil {
 		return err

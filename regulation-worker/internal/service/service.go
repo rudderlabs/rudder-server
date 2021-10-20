@@ -8,27 +8,26 @@ import (
 	"time"
 
 	backoff "github.com/cenkalti/backoff/v4"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
+//go:generate mockgen -source=service.go -destination=mock_deleter_test.go -package=service github.com/rudderlabs/rudder-server/regulation-worker/internal/service deleter,APIClient
 type APIClient interface {
-	Get(ctx context.Context) error
-	UpdateStatus(ctx context.Context, status model.JobStatus) error
+	Get(ctx context.Context) (model.Job, error)
+	UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error
 }
 
 type deleter interface {
 	DeleteJob(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error)
 }
 type JobSvc struct {
-	API     client.JobAPI
+	API     APIClient
 	Deleter deleter
 }
 
 //called by looper
 //calls api-client.getJob(workspaceID)
 //calls api-client to get new job with workspaceID, which returns jobID.
-//Doubt: context is for a flow. So, should we define new context for each sub-flow.
 func (js *JobSvc) JobSvc(ctx context.Context) error {
 
 	//API request to get new job
@@ -38,7 +37,6 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	}
 	//once job is successfully received, calling updatestatus API to update the status of job to running.
 	status := model.JobStatusRunning
-
 	err = js.updateStatus(ctx, status, job.ID)
 	if err != nil {
 		return err
