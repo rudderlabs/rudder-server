@@ -195,7 +195,7 @@ var _ = Describe("Router", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil)
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(2).Return(200, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(200, "")
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
@@ -250,7 +250,7 @@ var _ = Describe("Router", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(1).Return(400, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(400, "")
 
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
 				Do(func(jobList []*jobsdb.JobT) {
@@ -460,7 +460,7 @@ var _ = Describe("Router", func() {
 						}
 					})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(1).Return(200, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(200, "")
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
@@ -602,7 +602,7 @@ var _ = Describe("Router", func() {
 					}
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(0).Return(200, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(200, "")
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
@@ -827,7 +827,7 @@ var _ = Describe("Router", func() {
 					}
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(2).Return(200, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(200, "")
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().AnyTimes().Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().AnyTimes().After(callBeginTransaction)
@@ -976,7 +976,7 @@ var _ = Describe("Router", func() {
 						},
 					}
 				})
-			mockNetHandle.EXPECT().SendPost(gomock.Any()).Times(0).Return(200, "")
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(200, "")
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().AnyTimes().Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().AnyTimes().After(callBeginTransaction)
