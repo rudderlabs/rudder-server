@@ -64,8 +64,8 @@ type BackupSettingsT struct {
 //
 // JobCount puts an upper limit on the number of returned jobs,
 //		if is not specified zero jobs will be returned.
-// 
-// EventCount can further limit the number of returned jobs, 
+//
+// EventCount can further limit the number of returned jobs,
 //		based on the total number of event these jobs contain.
 type GetQueryParamsT struct {
 	CustomValFilters              []string
@@ -2401,6 +2401,9 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		var liveJobCount int
 		var liveDSCount int
 		var migrateDSProbeCount int
+		// we don't want `maxDSSize` value to change, during dsList loop
+		maxDSSize := *jd.MaxDSSize
+
 		for idx, ds := range dsList {
 
 			ifMigrate, remCount := jd.checkIfMigrateDS(ds)
@@ -2415,7 +2418,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 				idxCheck = (idx == len(dsList)-1)
 			}
 
-			if liveDSCount >= maxMigrateOnce || liveJobCount >= *jd.MaxDSSize || idxCheck {
+			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idxCheck {
 				break
 			}
 
