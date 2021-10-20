@@ -25,6 +25,7 @@ jobs:
           ${{ runner.os }}-go-
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
+    - run: make enterprise-init
     - run: go test -v ./docker_test.go -integration -count 1
   unit:
     name: Unit & Component Integration
@@ -46,4 +47,5 @@ jobs:
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
     - run: (cd /tmp && go get -u github.com/onsi/ginkgo/ginkgo@v1.16.4)
+    - run: make enterprise-init
     - run: make test
