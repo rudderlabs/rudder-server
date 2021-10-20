@@ -430,6 +430,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	sqlStatement = fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN "ID" int AUTOINCREMENT start 1 increment 1`, stagingTableName)
 	pkgLogger.Infof("SF: Adding autoincrement column for table:%s at %s\n", stagingTableName, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
+
 	if err != nil && !checkAndIgnoreAlreadyExistError(err) {
 		pkgLogger.Errorf("SF: Error adding autoincrement column for table:%s: %v\n", stagingTableName, err)
 		return
