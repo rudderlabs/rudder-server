@@ -135,8 +135,9 @@ func TestJobsDB(t *testing.T) {
 	migrationMode := ""
 
 	triggerAddNewDS := make(chan time.Time, 0)
+	maxDSSize := 10
 	jobDB := jobsdb.HandleT{
-		MaxDSSize: 10,
+		MaxDSSize: &maxDSSize,
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},

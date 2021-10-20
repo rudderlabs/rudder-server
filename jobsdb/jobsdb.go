@@ -60,7 +60,13 @@ type BackupSettingsT struct {
 	PathPrefix    string
 }
 
-//GetQueryParamsT is a struct to hold jobsdb query params
+// GetQueryParamsT is a struct to hold jobsdb query params.
+//
+// JobCount puts an upper limit on the number of returned jobs,
+//		if is not specified zero jobs will be returned.
+// 
+// EventCount can further limit the number of returned jobs, 
+//		based on the total number of event these jobs contain.
 type GetQueryParamsT struct {
 	CustomValFilters              []string
 	ParameterFilters              []ParameterFilterT
@@ -326,7 +332,7 @@ type HandleT struct {
 	enableReaderQueue             bool
 	maxReaders                    int
 	maxWriters                    int
-	MaxDSSize                     int
+	MaxDSSize                     *int
 	queryFilterKeys               QueryFiltersT
 	backgroundCancel              context.CancelFunc
 	backgroundGroup               *errgroup.Group
@@ -600,8 +606,9 @@ in the retention time
 func (jd *HandleT) Setup(ownerType OwnerType, clearAll bool, tablePrefix string, retentionPeriod time.Duration, migrationMode string, registerStatusHandler bool, queryFilterKeys QueryFiltersT) {
 	jd.initGlobalDBHandle()
 
-	if jd.MaxDSSize == 0 {
-		jd.MaxDSSize = maxDSSize
+	if jd.MaxDSSize == nil {
+		// passing `maxDSSize` by reference, so it can be hot reloaded
+		jd.MaxDSSize = &maxDSSize
 	}
 
 	if jd.TriggerAddNewDS == nil {
@@ -1063,7 +1070,7 @@ func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
 	}
 
 	totalCount := jd.getTableRowCount(ds.JobTable)
-	if totalCount > jd.MaxDSSize {
+	if totalCount > *jd.MaxDSSize {
 		jd.logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, jd.getTableSize(ds.JobTable))
 		return true
 	}
@@ -2408,7 +2415,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 				idxCheck = (idx == len(dsList)-1)
 			}
 
-			if liveDSCount >= maxMigrateOnce || liveJobCount >= jd.MaxDSSize || idxCheck {
+			if liveDSCount >= maxMigrateOnce || liveJobCount >= *jd.MaxDSSize || idxCheck {
 				break
 			}
 
