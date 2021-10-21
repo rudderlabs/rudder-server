@@ -5,6 +5,6 @@ COPY go.mod .
 COPY go.sum .
 RUN go mod download
 COPY . .
-RUN go install 
+RUN go install
 ENTRYPOINT [ "rudder-server" ]
 EXPOSE 8080
