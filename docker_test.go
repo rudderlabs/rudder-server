@@ -68,7 +68,7 @@ var (
 )
 
 type WebhookRecorder struct {
-	Server *httptest.Server
+	Server       *httptest.Server
 	requestsMu   sync.RWMutex
 	requestDumps [][]byte
 }
@@ -124,7 +124,7 @@ func randString(n int) string {
 type Event struct {
 	anonymous_id string
 	user_id      string
-	count string
+	count        string
 }
 
 type Author struct {
@@ -297,7 +297,6 @@ func run(m *testing.M) (int, error) {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	
 
 	// Set Kafka: pulls an image, creates a container based on it and runs it
 	KAFKA_ZOOKEEPER_CONNECT := fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
@@ -343,6 +342,7 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		log.Panic(err)
 	}
+
 	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
 	defer func() {
 		if err := pool.Purge(resourceKafka); err != nil {
@@ -504,7 +504,6 @@ func run(m *testing.M) (int, error) {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	
 
 	minioEndpoint := fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
 
@@ -530,7 +529,6 @@ func run(m *testing.M) (int, error) {
 		panic(err)
 	}
 	log.Printf("%#v\n", minioClient) // minioClient is now set up
-	
 
 	// Create bucket for MINIO
 	// Create a bucket at region 'us-east-1' with object locking enabled.
@@ -574,7 +572,7 @@ func run(m *testing.M) (int, error) {
 
 	fmt.Printf("--- Setup done (%s)\n", time.Since(setupStart))
 
-    os.Setenv("CONFIG_PATH", "./config/config.yaml")
+	os.Setenv("CONFIG_PATH", "./config/config.yaml")
 	os.Setenv("TEST_SINK_URL", "http://localhost:8181")
 	os.Setenv("GO_ENV", "production")
 	os.Setenv("LOG_LEVEL", "INFO")
@@ -685,9 +683,6 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
 
-
-
-
 }
 
 // Verify Event in POSTGRES
@@ -696,11 +691,11 @@ func TestPostgres(t *testing.T) {
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
 		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
-		return myEvent.anonymous_id == "anonymousId_1"	
+		return myEvent.anonymous_id == "anonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
 	eventSql := "select count(*) from dev_integration_test_1.identifies"
 	db.QueryRow(eventSql).Scan(&myEvent.count)
-	require.Equal(t, myEvent.count , "1")
+	require.Equal(t, myEvent.count, "1")
 }
 
 // Verify Event in Redis
