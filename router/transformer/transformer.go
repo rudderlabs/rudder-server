@@ -30,6 +30,7 @@ type HandleT struct {
 	client                             *http.Client
 	transformRequestTimerStat          stats.RudderStats
 	transformerNetworkRequestTimerStat stats.RudderStats
+	respTransformNetReqTimerStat       stats.RudderStats
 	logger                             logger.LoggerI
 }
 
@@ -162,7 +163,9 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 	var resp *http.Response
 	var respData []byte
 	url := getResponseTransformURL(destName)
+	respTransformNetReqTimeStart := time.Now()
 	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+	trans.respTransformNetReqTimerStat.SendTiming(time.Since(respTransformNetReqTimeStart))
 	if resp != nil && resp.Body != nil {
 		var ioBodyErr error
 		respData, ioBodyErr = io.ReadAll(resp.Body)
@@ -205,11 +208,16 @@ func (trans *HandleT) Send(transformedData integrations.PostParametersT, destNam
 	var respData []byte
 	url := getNetworkTransformerURL(destName)
 
-	trans.transformerNetworkRequestTimerStat.Start()
+	transformerNetReqStTime := time.Now()
 	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
-	trans.transformerNetworkRequestTimerStat.End()
+	trans.transformerNetworkRequestTimerStat.SendTiming(time.Since(transformerNetReqStTime))
 	if resp != nil && resp.Body != nil {
-		respData, _ = io.ReadAll(resp.Body)
+		var ioBodyErr error
+		respData, ioBodyErr = io.ReadAll(resp.Body)
+		if ioBodyErr != nil {
+			trans.logger.Errorf("[Transformer Network request] :: destination request failed: %+v", ioBodyErr)
+			return http.StatusInternalServerError, ioBodyErr.Error()
+		}
 	}
 	var contentTypeHeader string
 	if resp != nil && resp.Header != nil {
@@ -242,6 +250,7 @@ func (trans *HandleT) Setup() {
 	trans.client = &http.Client{Transport: trans.tr, Timeout: 10 * time.Minute}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
+	trans.respTransformNetReqTimerStat = stats.NewStat("router.response_transform_net_req_time", stats.TimerType)
 }
 
 func getBatchURL() string {
