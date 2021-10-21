@@ -342,7 +342,6 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		log.Panic(err)
 	}
-
 	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
 	defer func() {
 		if err := pool.Purge(resourceKafka); err != nil {
