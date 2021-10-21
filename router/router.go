@@ -1634,7 +1634,8 @@ func (rt *HandleT) readAndProcess() int {
 				ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 			}
 			//Enhancing job parameter with the drain reason.
-			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
+			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", "router")
+			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "reason", reason)
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
 			if _, ok := drainStatsbyDest[destID]; !ok {
