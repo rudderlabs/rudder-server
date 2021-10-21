@@ -32,7 +32,8 @@ func main() {
 func Run(ctx context.Context) {
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			WorkspaceID: getWorkspaceID("workspaceID","1001"),
+			WorkspaceID: getEnv("workspaceID","1001"),
+			URLPrefix: getEnv("urlPrefix", "http://localhost:35359"),
 		},
 	}
 
@@ -44,8 +45,7 @@ func Run(ctx context.Context) {
 
 }
 
-
-func getWorkspaceID(name, defaultValue string) string {
+func getEnv(name, defaultValue string) string {
 	if value := os.Getenv(name); value != "" {
 		return value
 	}

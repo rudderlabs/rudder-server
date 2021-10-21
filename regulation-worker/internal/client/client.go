@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"regexp"
 	"strconv"
 	"time"
@@ -17,6 +16,7 @@ import (
 
 type JobAPI struct {
 	WorkspaceID string
+	URLPrefix   string
 }
 
 //sends http request with workspaceID in the url and receives a json payload
@@ -29,9 +29,8 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 
 	method := "GET"
 
-	urlPrefix := getURLPrefix("urlPrefix", "http://localhost:35359")
 	genEndPoint := "/worker/workspaces/{workspace_id}/regulations/worker-job"
-	url := fmt.Sprint(urlPrefix, prepURL(genEndPoint, j.WorkspaceID))
+	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID))
 
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
@@ -87,9 +86,8 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 
 	method := "PATCH"
 
-	urlPrefix := getURLPrefix("urlPrefix", "http://localhost:35359")
 	genEndPoint := "/worker/workspaces/{workspace_id}/regulations/worker-job/{job_id}"
-	url := fmt.Sprint(urlPrefix, prepURL(genEndPoint, j.WorkspaceID, fmt.Sprint(jobID)))
+	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID, fmt.Sprint(jobID)))
 	statusSchema := statusJobSchema{
 		Status: string(status),
 	}
@@ -125,13 +123,6 @@ func prepURL(url string, params ...string) string {
 		i++
 		return []byte(v)
 	}))
-}
-
-func getURLPrefix(name, defaultValue string) string {
-	if value := os.Getenv(name); value != "" {
-		return value
-	}
-	return defaultValue
 }
 
 func mapPayloadToJob(wjs jobSchema, workspaceID string) (model.Job, error) {

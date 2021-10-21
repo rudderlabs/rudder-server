@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
@@ -52,11 +51,10 @@ func TestGet(t *testing.T) {
 				fmt.Fprintf(w, tt.respBody)
 			}))
 			defer svr.Close()
-			url := svr.URL
-			os.Setenv("urlPrefix", url)
 
 			c := client.JobAPI{
 				WorkspaceID: tt.workspaceID,
+				URLPrefix:   svr.URL,
 			}
 			job, err := c.Get(context.Background())
 			require.Equal(t, tt.expectedErr, err)
@@ -104,10 +102,9 @@ func TestUpdateStatus(t *testing.T) {
 				body, _ = ioutil.ReadAll(r.Body)
 			}))
 			defer svr.Close()
-			url := svr.URL
-			os.Setenv("urlPrefix", url)
 
 			c := client.JobAPI{
+				URLPrefix:   svr.URL,
 				WorkspaceID: tt.workspaceID,
 			}
 			err := c.UpdateStatus(context.Background(), tt.status, tt.jobID)
