@@ -529,7 +529,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	var destinationResponseHandler ResponseHandlerI
 	worker.rt.configSubscriberLock.RLock()
 	destinationResponseHandler = worker.rt.destinationResponseHandler
-	// saveDestinationResponse := worker.rt.saveDestinationResponse
+	saveDestinationResponse := worker.rt.saveDestinationResponse
 	worker.rt.configSubscriberLock.RUnlock()
 
 	/*
@@ -649,15 +649,15 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				deliveryLatencyStat.End()
 				// END: request to destination endpoint
 
-				// if isSuccessStatus(respStatusCode) {
-				// 	if saveDestinationResponse {
-				// 		if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
-				// 			respBody = ""
-				// 		}
-				// 	} else {
-				// 		respBody = ""
-				// 	}
-				// }
+				if isSuccessStatus(respStatusCode) {
+					if saveDestinationResponse {
+						if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
+							respBody = ""
+						}
+					} else {
+						respBody = ""
+					}
+				}
 
 				worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
 			} else {
