@@ -53,3 +53,4 @@ type ReportingI interface {
 
 // ConfigT simple map config structure
 type ConfigT map[string]interface{}
+
