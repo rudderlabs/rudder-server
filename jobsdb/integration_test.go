@@ -270,6 +270,97 @@ func TestJobsDB(t *testing.T) {
 		}
 
 	})
+
+	t.Run("DSoverflow", func(t *testing.T) {
+		customVal := "MOCKDS"
+
+		triggerAddNewDS := make(chan time.Time, 0)
+
+		maxDSSize := 9
+		jobDB := jobsdb.HandleT{
+			MaxDSSize: &maxDSSize,
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS
+			},
+		}
+
+		jobDB.Setup(jobsdb.ReadWrite, false, "gw", dbRetention, migrationMode, true, queryFilters)
+		defer jobDB.TearDown()
+
+		jobCountPerDS := 10
+		eventsPerJob_ds1 := 60
+		eventsPerJob_ds2 := 20
+
+		t.Log("First jobs table with jobs of 60 events, second with jobs of 20 events")
+		require.NoError(t, jobDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob_ds1)))
+		triggerAddNewDS <- time.Now()
+		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+
+		require.NoError(t, jobDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob_ds2)))
+		triggerAddNewDS <- time.Now()
+		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+
+		t.Log("GetUnprocessed with event count limit")
+		t.Log("Using event count that will cause spill-over, not exact for ds1, but remainder suitable for ds2")
+		trickyEventCount := (eventsPerJob_ds1 * (jobCountPerDS - 1)) + eventsPerJob_ds2
+
+		eventLimitList := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			JobCount:         100,
+			EventCount:       trickyEventCount,
+			ParameterFilters: []jobsdb.ParameterFilterT{},
+		})
+		requireSequential(t, eventLimitList)
+		require.Equal(t, jobCountPerDS, len(eventLimitList))
+
+		t.Log("Prepare GetToRetry")
+		{
+			allJobs := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{customVal},
+				JobCount:         1000,
+				ParameterFilters: []jobsdb.ParameterFilterT{},
+			})
+
+			statuses := make([]*jobsdb.JobStatusT, len(allJobs))
+			n := time.Now().Add(time.Hour * -1)
+			for i := range statuses {
+				statuses[i] = &jobsdb.JobStatusT{
+					JobID:         allJobs[i].JobID,
+					JobState:      jobsdb.Failed.State,
+					AttemptNum:    1,
+					ExecTime:      n,
+					RetryTime:     n,
+					ErrorResponse: []byte(`{"success":"OK"}`),
+					Parameters:    []byte(`{}`),
+				}
+			}
+			t.Log("Mark all jobs as failed")
+			err = jobDB.UpdateJobStatus(statuses, []string{customVal}, []jobsdb.ParameterFilterT{})
+			require.NoError(t, err)
+		}
+	
+		t.Log("Test spill over with GetToRetry")
+		{
+			eventLimitList := jobDB.GetToRetry(jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{customVal},
+				JobCount:         100,
+				EventCount:       trickyEventCount,
+				ParameterFilters: []jobsdb.ParameterFilterT{},
+			})
+			requireSequential(t, eventLimitList)
+			require.Equal(t, jobCountPerDS, len(eventLimitList))	
+		}
+
+	})
+
+}
+
+func requireSequential(t *testing.T, jobs []*jobsdb.JobT) {
+	t.Helper()
+	t.Log("job ids should be sequential")
+	for i := 0; i < len(jobs)-1; i++ {
+		require.Equal(t, jobs[i].JobID+1, jobs[i+1].JobID, "Gap detected: jobs[%d].id = %d +1 != jobs[%d].id = %d +1", i, jobs[i].JobID, i+1, jobs[i+1].JobID)
+	}
 }
 
 func BenchmarkJobsdb(b *testing.B) {

@@ -67,6 +67,7 @@ type BackupSettingsT struct {
 //
 // EventCount can further limit the number of returned jobs,
 //		based on the total number of event these jobs contain.
+// 	    NOTE: EventCount is not an exact limit. If the last job is split in half, it will be returned.
 type GetQueryParamsT struct {
 	CustomValFilters              []string
 	ParameterFilters              []ParameterFilterT
@@ -2092,7 +2093,9 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 
 		args := []interface{}{getTimeNowFunc()}
 		if params.EventCount > 0 {
-			sqlStatement = fmt.Sprintf(`SELECT * FROM (`+sqlStatement+`) t WHERE running_event_counts <= $%d;`, len(args)+1)
+			sqlStatement = fmt.Sprintf(`SELECT * FROM (`+sqlStatement+`) t WHERE running_event_counts - t.event_count + 1 <= $%d;`, len(args)+1)
+			// EXPLAIN `running_event_counts - t.event_count + 1`: If the event count limit "splits" a job we want this jobs to be returned.
+			//				`+1` prevents a job with event count of 1 to be returned.
 			args = append(args, params.EventCount)
 		}
 
@@ -2195,7 +2198,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	}
 
 	if params.EventCount > 0 {
-		sqlStatement = fmt.Sprintf(`SELECT * FROM (`+sqlStatement+`) AS subquery WHERE running_event_counts <= $%d;`, len(args)+1)
+		sqlStatement = fmt.Sprintf(`SELECT * FROM (`+sqlStatement+`) AS subquery WHERE running_event_counts - event_count + 1 <= $%d;`, len(args)+1)
 		args = append(args, params.EventCount)
 	}
 
@@ -3374,8 +3377,8 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 				sumEventCount += j.EventCount
 			}
 			params.EventCount -= sumEventCount
-			jd.assert(params.EventCount >= 0, fmt.Sprintf("cannot receive more events than requested, diff: %d", params.EventCount))
-			if params.EventCount == 0 {
+			// received event count could exceed the requested event count, by the spillover of the last selected job
+			if params.EventCount <= 0 {
 				break
 			}
 		}
@@ -3611,8 +3614,8 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 				sumEventCount += j.EventCount
 			}
 			params.EventCount -= sumEventCount
-			jd.assert(params.EventCount >= 0, fmt.Sprintf("cannot receive more jobs than requested, diff: %d", params.EventCount))
-			if params.EventCount == 0 {
+			// received event count could exceed the requested event count, by the spillover of the last selected job
+			if params.EventCount <= 0 {
 				break
 			}
 		}
