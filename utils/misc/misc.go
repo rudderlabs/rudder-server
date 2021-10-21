@@ -1261,3 +1261,4 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 	}
 	return "object"
 }
+
