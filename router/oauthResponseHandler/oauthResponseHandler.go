@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -219,8 +220,8 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 
 	authErrHandler.logger.Infof("[%s] Refresh Lock Acquired by rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
 
-	authErrHandler.oauthErrHandlerReqTimerStat.Start()
-	defer authErrHandler.oauthErrHandlerReqTimerStat.End()
+	errHandlerReqTimeStart := time.Now()
+	defer authErrHandler.oauthErrHandlerReqTimerStat.SendTiming(time.Since(errHandlerReqTimeStart))
 
 	statusCode := authErrHandler.fetchAccountInfoFromCp(refTokenParams, refTokenBody, authStats, logTypeName)
 	// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
@@ -248,9 +249,9 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 
-	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
+	cpiCallStartTime := time.Now()
 	statusCode, response := authErrHandler.cpApiCall(refreshCpReq)
-	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
+	authErrHandler.oauthErrHandlerNetReqTimerStat.SendTiming(time.Since(cpiCallStartTime))
 
 	authErrHandler.logger.Infof("[%s] Got the response from Control-Plane: rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
 
@@ -318,7 +319,7 @@ func (refStats *OAuthStats) SendCountStat() {
 }
 
 func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backendconfig.DestinationT, workspaceId string) (statusCode int, respBody string) {
-	authErrHandler.oauthErrHandlerReqTimerStat.Start()
+	authErrHandlerTimeStart := time.Now()
 	destinationId := destination.ID
 	resMgrErr := authErrHandler.NewMutex(destinationId, DISABLE_DEST)
 	if resMgrErr != nil {
@@ -359,9 +360,9 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	disableDestStats.isCallToCpApi = true
 	disableDestStats.SendCountStat()
 
-	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
+	cpiCallStartTime := time.Now()
 	statusCode, respBody = authErrHandler.cpApiCall(disableCpReq)
-	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
+	authErrHandler.oauthErrHandlerNetReqTimerStat.SendTiming(time.Since(cpiCallStartTime))
 
 	var disableDestRes *DisableDestinationResponse
 	if disableErr := json.Unmarshal([]byte(respBody), &disableDestRes); disableErr != nil || !router_utils.IsNotEmptyString(disableDestRes.DestinationId) {
@@ -378,7 +379,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	}
 	authErrHandler.disableDestMap[destinationId] = !disableDestRes.Enabled
 
-	authErrHandler.oauthErrHandlerReqTimerStat.End()
+	authErrHandler.oauthErrHandlerReqTimerStat.SendTiming(time.Since(authErrHandlerTimeStart))
 	authErrHandler.logger.Infof("[%s request] :: (Write) Disable Response received : %s\n", loggerNm, respBody)
 	disableDestStats.eventName = "disable_destination_success"
 	disableDestStats.errorMessage = ""
@@ -436,9 +437,9 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		req.Header.Set("Content-Type", cpReq.ContentType)
 	}
 
-	authErrHandler.oauthErrHandlerNetReqTimerStat.Start()
+	authErrHandlerTimeStart := time.Now()
 	res, doErr := authErrHandler.client.Do(req)
-	authErrHandler.oauthErrHandlerNetReqTimerStat.End()
+	authErrHandler.oauthErrHandlerNetReqTimerStat.SendTiming(time.Since(authErrHandlerTimeStart))
 	authErrHandler.logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
 	if doErr != nil {
 		// Abort on receiving an error

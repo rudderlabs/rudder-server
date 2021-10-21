@@ -2039,13 +2039,13 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val inte
 	var destResBody string
 
 	destRespStCd, destResBody = rt.netHandle.SendPost(ctx, val)
-	rt.routerResponseTransformStat.Start()
+	respTransformStartTime := time.Now()
 	trRespStatusCode, trRespBody := rt.transformer.ResponseTransform(integrations.DeliveryResponseT{
 		Status:  int64(destRespStCd),
 		Body:    destResBody,
 		Payload: val,
 	}, rt.destName)
-	rt.routerResponseTransformStat.End()
+	rt.routerResponseTransformStat.SendTiming(time.Since(respTransformStartTime))
 	if retryCount >= rt.maxFailedOAuthCountForJob {
 		// Retrial termination condition
 		return destRespStCd, destResBody
@@ -2060,16 +2060,17 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val inte
 		var errCatStatusCode int
 		var errCatResponse string
 		destinationErrOutput := destErrOutput.Output
-		stats.NewTaggedStat(destinationErrOutput.StatName, stats.CountType, destinationErrOutput.StatTags)
+		stats.NewTaggedStat(destinationErrOutput.StatName, stats.CountType, destinationErrOutput.StatTags).Increment()
 		// Check the category
 		// Trigger the refresh endpoint/disable endpoint
-		if destErrOutput.Output.AuthErrorCategory == oauth.DISABLE_DEST {
+		switch destErrOutput.Output.AuthErrorCategory {
+		case oauth.DISABLE_DEST:
 			errCatStatusCode, errCatResponse = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
 			if errCatStatusCode == 200 {
 				// Abort the jobs as the destination is disable
 				return http.StatusBadRequest, destResBody
 			}
-		} else if destErrOutput.Output.AuthErrorCategory == oauth.REFRESH_TOKEN {
+		case oauth.REFRESH_TOKEN:
 			rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{

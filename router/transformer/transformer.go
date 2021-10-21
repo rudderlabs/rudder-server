@@ -164,7 +164,12 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 	url := getResponseTransformURL(destName)
 	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
 	if resp != nil && resp.Body != nil {
-		respData, _ = io.ReadAll(resp.Body)
+		var ioBodyErr error
+		respData, ioBodyErr = io.ReadAll(resp.Body)
+		if ioBodyErr != nil {
+			trans.logger.Errorf("[Response Transformer request] :: destination request failed: %+v", ioBodyErr)
+			return http.StatusInternalServerError, ioBodyErr.Error()
+		}
 	}
 	var contentTypeHeader string
 	if resp != nil && resp.Header != nil {
@@ -182,7 +187,7 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 	}
 	if err != nil {
 		respData = []byte("")
-		trans.logger.Errorf("[Transfomrer Network request] :: destaination request failed: %+v", err)
+		trans.logger.Errorf("[Response Transformer request] :: destination request failed: %+v", err)
 		return http.StatusInternalServerError, string(respData)
 	}
 	resp.Body.Close()
