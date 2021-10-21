@@ -19,7 +19,7 @@ type JobAPI struct {
 	URLPrefix   string
 }
 
-//sends http request with workspaceID in the url and receives a json payload
+//Get sends http request with workspaceID in the url and receives a json payload
 //which is decoded using schema and then mapped from schema to internal model.Job struct,
 //which is actually returned.
 func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
