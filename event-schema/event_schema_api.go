@@ -75,6 +75,10 @@ func (manager *EventSchemaManagerT) GetJsonSchemas(w http.ResponseWriter, r *htt
 	}
 
 	eventModels := manager.fetchEventModelsByWriteKey(writeKey)
+	if len(eventModels) == 0 {
+		http.Error(w, response.MakeResponse("No event models exists to create a tracking plan."), 404)
+		return
+	}
 
 	// generating json schema from eventModels
 	jsonSchemas, err := generateJsonSchFromEM(eventModels)
