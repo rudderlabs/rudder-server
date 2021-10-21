@@ -2051,7 +2051,7 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val inte
 		// Retrial termination condition
 		return destRespStCd, destResBody
 	}
-	if trRespStatusCode == http.StatusOK {
+	if trRespStatusCode != http.StatusOK {
 		var destErrOutput oauth.ErrorOutput
 		if destError := json.Unmarshal([]byte(trRespBody), &destErrOutput); destError != nil {
 			// If destResBody comes out with a plain string, then this will occur
@@ -2101,10 +2101,9 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val inte
 			// Client errors and Server errors
 			return errCatStatusCode, errCatResponse
 		}
-		// By default send the status code & errCatResponse from destination directly
-		return destRespStCd, destResBody
 	}
-	return trRespStatusCode, trRespBody + "--" + destResBody
+	// By default send the status code & response from transformed response directly
+	return trRespStatusCode, trRespBody
 }
 
 func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
