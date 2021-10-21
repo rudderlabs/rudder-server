@@ -130,7 +130,7 @@ func generateJsonSchFromEM(eventModels []*EventModelT) ([]byte, error) {
 		}
 
 		jsonSchema := generateJsonSchFromSchProp(schemaProperties)
-		jsonSchema["additionalProperties"] = true
+		jsonSchema["additionalProperties"] = false
 		jsonSchema["$schema"] = "http://json-schema.org/draft-07/schema#"
 
 		// TODO: validate if the jsonSchema is correct.
