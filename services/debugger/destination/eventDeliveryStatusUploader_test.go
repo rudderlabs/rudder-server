@@ -218,6 +218,7 @@ var _ = Describe("eventDesliveryStatusUploader", func() {
 					go func() {
 						channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 						c.configInitialised = true
+						close(channel)
 					}()
 				}).
 				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
@@ -235,6 +236,7 @@ var _ = Describe("eventDesliveryStatusUploader", func() {
 					go func() {
 						channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 						c.configInitialised = true
+						close(channel)
 					}()
 				}).
 				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
@@ -250,6 +252,7 @@ var _ = Describe("eventDesliveryStatusUploader", func() {
 					go func() {
 						channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 						c.configInitialised = true
+						close(channel)
 					}()
 				}).
 				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
@@ -265,6 +268,7 @@ var _ = Describe("eventDesliveryStatusUploader", func() {
 					go func() {
 						channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 						c.configInitialised = true
+						close(channel)
 					}()
 				}).
 				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
@@ -284,6 +288,7 @@ var _ = Describe("eventDesliveryStatusUploader", func() {
 					go func() {
 						channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
 						c.configInitialised = true
+						close(channel)
 					}()
 				}).
 				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
