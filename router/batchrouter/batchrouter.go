@@ -1448,7 +1448,8 @@ func (worker *workerT) workerProcess() {
 						Parameters:    []byte(`{}`), // check
 					}
 					//Enhancing job parameter with the drain reason.
-					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
+					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", "batch_router")
+					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "reason", reason)
 					drainList = append(drainList, &status)
 					drainJobList = append(drainJobList, job)
 					if _, ok := drainStatsbyDest[batchDest.Destination.ID]; !ok {

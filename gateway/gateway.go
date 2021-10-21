@@ -1033,6 +1033,8 @@ func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Req
 		err = errors.New(response.NoWriteKeyInBasicAuth)
 		misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType})
+
 		return []byte{}, "", err
 	}
 	payload, err := gateway.getPayloadFromRequest(r)
@@ -1040,7 +1042,7 @@ func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Req
 		sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
-
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
 		return []byte{}, writeKey, fmt.Errorf("read payload from request: %w", err)
 	}
 	return payload, writeKey, err
