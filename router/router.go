@@ -115,7 +115,6 @@ type HandleT struct {
 	backgroundWait                         func() error
 	transformerProxy                       bool
 	oauth                                  oauth.Authorizer
-	maxFailedOAuthCountForJob              int
 }
 
 type jobResponseT struct {
@@ -412,6 +411,8 @@ func (worker *workerT) workerProcess() {
 					})
 					if tokenStatusCode == http.StatusOK {
 						jobMetadata.OAuthAccessToken = accountSecretInfo.Account.AccessToken
+					} else {
+						worker.rt.logger.Infof(`Error in Token Fetch statusCode: %d\t error: %s\n`, tokenStatusCode, accountSecretInfo.Err)
 					}
 				}
 			}
@@ -621,7 +622,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							authType := router_utils.GetAuthType(destinationJob.Destination)
 							if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 								pkgLogger.Infof(`routing via transformer, proxy enabled`)
-								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(sendCtx, val, destinationJob, 0, worker.workerID)
+								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(sendCtx, val, destinationJob, worker.workerID)
 							} else {
 								pkgLogger.Infof(`routing via server, proxy disabled`)
 								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
@@ -1809,12 +1810,10 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
-	maxFailedOAuthCountKeys := []string{"Router." + rt.destName + "." + "maxFailedOAuthCountForJob", "Router." + "maxFailedOAuthCountForJob"}
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
 	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
 	transformerProxyKeys := []string{"Router." + rt.destName + "." + "transformerProxy", "Router." + "transformerProxy"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
-	config.RegisterIntConfigVariable(2, &rt.maxFailedOAuthCountForJob, true, 1, maxFailedOAuthCountKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
@@ -2035,7 +2034,7 @@ func (rt *HandleT) Resume() {
 
 // Currently the retry logic has been implemented for only OAuth
 func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val integrations.PostParametersT,
-	destinationJob types.DestinationJobT, retryCount int, workerId int) (int, string) {
+	destinationJob types.DestinationJobT, workerId int) (int, string) {
 	var destRespStCd int
 	var destResBody string
 
@@ -2047,13 +2046,10 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val inte
 		Payload: val,
 	}, rt.destName)
 	rt.routerResponseTransformStat.SendTiming(time.Since(respTransformStartTime))
-	if retryCount >= rt.maxFailedOAuthCountForJob {
-		// Retrial termination condition
-		return destRespStCd, destResBody
-	}
 	if trRespStatusCode != http.StatusOK {
 		var destErrOutput oauth.ErrorOutput
 		if destError := json.Unmarshal([]byte(trRespBody), &destErrOutput); destError != nil {
+			// Errors like OOM kills of transformer, transformer down etc,.
 			// If destResBody comes out with a plain string, then this will occur
 			return http.StatusInternalServerError, destError.Error()
 		}
@@ -2067,10 +2063,12 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val inte
 		switch destErrOutput.Output.AuthErrorCategory {
 		case oauth.DISABLE_DEST:
 			errCatStatusCode, errCatResponse = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
-			if errCatStatusCode == 200 {
+			if errCatStatusCode == http.StatusOK {
 				// Abort the jobs as the destination is disable
 				return http.StatusBadRequest, destResBody
 			}
+			// Error while disabling a destination
+			return errCatStatusCode, errCatResponse
 		case oauth.REFRESH_TOKEN:
 			rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
 			var refSecret *oauth.AuthResponse
@@ -2084,26 +2082,20 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val inte
 			}
 			errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
 			refSec := *refSecret
-			if errCatStatusCode == 200 && router_utils.IsNotEmptyString(refSec.Account.AccessToken) {
-				retryCount += 1
-				if router_utils.IsNotEmptyString(refSec.Err) {
-					return errCatStatusCode, refSec.Err
-				}
-				// Refreshed Token is being set
-				val.AccessToken = refSec.Account.AccessToken
-				val.ExpirationDate = refSec.Account.ExpirationDate
-				// Retry with Refreshed Token(variable "errCatResponse" - contains refreshed access token & expirationDate)
-				return rt.SendToTransformerProxyWithRetry(ctx, val, destinationJob, retryCount, workerId)
+			// Error while refreshing the token or Has an error while refreshing or sending empty access token
+			if errCatStatusCode != http.StatusOK || router_utils.IsNotEmptyString(refSec.Err) {
+				return http.StatusTooManyRequests, refSec.Err
 			}
+			// Refreshed Token is being set
+			val.AccessToken = refSec.Account.AccessToken
+			val.ExpirationDate = refSec.Account.ExpirationDate
+			// Retry with Refreshed Token(variable "errCatResponse" - contains refreshed access token & expirationDate)
+			return http.StatusInternalServerError, trRespBody
 		}
-
-		if errCatStatusCode >= 400 && errCatStatusCode < 600 {
-			// Client errors and Server errors
-			return errCatStatusCode, errCatResponse
-		}
+		// By default send the status code & response from transformed response directly
+		return trRespStatusCode, trRespBody
 	}
-	// By default send the status code & response from transformed response directly
-	return trRespStatusCode, trRespBody
+	return http.StatusOK, destResBody
 }
 
 func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {

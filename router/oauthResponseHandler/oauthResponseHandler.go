@@ -37,7 +37,7 @@ type OAuthStats struct {
 	isCallToCpApi   bool
 	authErrCategory string
 	destDefName     string
-	isFromProc      bool // This stats field is used to identify if a request to get token is arising from processor
+	isTokenFetch    bool // This stats field is used to identify if a request to get token is arising from processor
 }
 
 type DisableDestinationResponse struct {
@@ -112,14 +112,15 @@ type ErrorOutput struct {
 
 // This struct represents the datastructure present in Transformer network layer Error builder
 type ErrorResponse struct {
-	Message           string                 `json:"message"`
-	Destination       map[string]interface{} `json:"destination"`
-	NetworkFailure    bool                   `json:"networkFailure"`
-	Status            int                    `json:"status"`
-	AuthErrorCategory string                 `json:"authErrorCategory"`
-	AccessToken       string                 `json:"accessToken"`
-	StatTags          map[string]string      `json:"statTags"`
-	StatName          string                 `json:"statName"`
+	Message             string                 `json:"message"`
+	Destination         map[string]interface{} `json:"destination"`
+	NetworkFailure      bool                   `json:"networkFailure"`
+	Status              int                    `json:"status"`
+	AuthErrorCategory   string                 `json:"authErrorCategory"`
+	AccessToken         string                 `json:"accessToken"`
+	StatTags            map[string]string      `json:"statTags"`
+	StatName            string                 `json:"statName"`
+	DestinationResponse map[string]interface{} `json:"destinationResponse"`
 }
 
 type RefreshTokenBodyParams struct {
@@ -181,7 +182,7 @@ func (authErrHandler *OAuthErrResHandler) FetchToken(fetchTokenParams *RefreshTo
 		authErrCategory: "",
 		errorMessage:    "",
 		destDefName:     fetchTokenParams.DestDefName,
-		isFromProc:      true,
+		isTokenFetch:    true,
 	}
 	return authErrHandler.GetTokenInfo(fetchTokenParams, "Fetch token", authStats)
 }
@@ -253,19 +254,21 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	authErrHandler.oauthErrHandlerNetReqTimerStat.SendTiming(time.Since(cpiCallStartTime))
 
 	authErrHandler.logger.Infof("[%s] Got the response from Control-Plane: rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
+	authErrHandler.logger.Infof("[%s] Got the response from Control-Plane: rt-worker-%d with statusCode: %d\n", loggerNm, refTokenParams.WorkerId, statusCode)
 
 	// Empty Refresh token response
 	if !router_utils.IsNotEmptyString(response) {
 		authStats.eventName = fmt.Sprintf("%s_failure", refTokenParams.EventNamePrefix)
-		authStats.errorMessage = "Empty Response"
+		authStats.errorMessage = "Empty token"
 		authStats.SendCountStat()
 		// Setting empty accessToken value into in-memory auth info map(cache)
 		authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
 			Account: AccountSecret{},
+			Err:     "Empty token",
 		}
 		authErrHandler.logger.Infof("[%s request] :: Empty %s response received(rt-worker-%d) : %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
 		// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
-		return statusCode
+		return http.StatusInternalServerError
 	}
 
 	if refErrMsg := getRefreshTokenErrResp(response, &accountSecret); router_utils.IsNotEmptyString(refErrMsg) {
@@ -313,7 +316,7 @@ func (refStats *OAuthStats) SendCountStat() {
 		"isCallToCpApi":   strconv.FormatBool(refStats.isCallToCpApi),
 		"authErrCategory": refStats.authErrCategory,
 		"destDefName":     refStats.destDefName,
-		"isFromProc":      strconv.FormatBool(refStats.isFromProc),
+		"isTokenFetch":    strconv.FormatBool(refStats.isTokenFetch),
 	}).Increment()
 }
 
