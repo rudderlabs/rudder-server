@@ -60,51 +60,67 @@ func Test_Transformer(t *testing.T) {
 
 	tr.Setup()
 
-	batchSize := 10
-	eventsCount := 100
-	failEvery := 4
-
-	events := make([]transformer.TransformerEventT, eventsCount)
-	expectedResponse := transformer.ResponseT{}
-
-	for i := range events {
-		msgID := fmt.Sprintf("messageID-%d", i)
-		statusCode := 200
-
-		if i%failEvery == 0 {
-			statusCode = 400
-		}
-
-		events[i] = transformer.TransformerEventT{
-			Metadata: transformer.MetadataT{
-				MessageID: msgID,
-			},
-			Message: map[string]interface{}{
-				"src-key-1":       msgID,
-				"forceStatusCode": statusCode,
-			},
-		}
-
-		tresp := transformer.TransformerResponseT{
-			Metadata: transformer.MetadataT{
-				MessageID: msgID,
-			},
-			StatusCode: statusCode,
-			Output: map[string]interface{}{
-				"src-key-1":  msgID,
-				"echo-key-1": msgID,
-			},
-		}
-
-		if statusCode < 400 {
-			expectedResponse.Events = append(expectedResponse.Events, tresp)
-		} else {
-			tresp.Error = "error"
-			expectedResponse.FailedEvents = append(expectedResponse.FailedEvents, tresp)
-		}
-
+	tc := []struct {
+		batchSize   int
+		eventsCount int
+		failEvery   int
+	}{
+		{batchSize: 10, eventsCount: 100},
+		{batchSize: 10, eventsCount: 9},
+		{batchSize: 10, eventsCount: 91},
+		{batchSize: 10, eventsCount: 99},
+		{batchSize: 10, eventsCount: 1},
+		{batchSize: 10, eventsCount: 80, failEvery: 4},
+		{batchSize: 10, eventsCount: 80, failEvery: 1},
 	}
 
-	rsp := tr.Transform(events, srv.URL, batchSize)
-	require.Equal(t, expectedResponse, rsp)
+	for _, tt := range tc {
+		batchSize := tt.batchSize
+		eventsCount := tt.eventsCount
+		failEvery := tt.failEvery
+
+		events := make([]transformer.TransformerEventT, eventsCount)
+		expectedResponse := transformer.ResponseT{}
+
+		for i := range events {
+			msgID := fmt.Sprintf("messageID-%d", i)
+			statusCode := 200
+
+			if failEvery != 0 && i%failEvery == 0 {
+				statusCode = 400
+			}
+
+			events[i] = transformer.TransformerEventT{
+				Metadata: transformer.MetadataT{
+					MessageID: msgID,
+				},
+				Message: map[string]interface{}{
+					"src-key-1":       msgID,
+					"forceStatusCode": statusCode,
+				},
+			}
+
+			tresp := transformer.TransformerResponseT{
+				Metadata: transformer.MetadataT{
+					MessageID: msgID,
+				},
+				StatusCode: statusCode,
+				Output: map[string]interface{}{
+					"src-key-1":  msgID,
+					"echo-key-1": msgID,
+				},
+			}
+
+			if statusCode < 400 {
+				expectedResponse.Events = append(expectedResponse.Events, tresp)
+			} else {
+				tresp.Error = "error"
+				expectedResponse.FailedEvents = append(expectedResponse.FailedEvents, tresp)
+			}
+
+		}
+
+		rsp := tr.Transform(events, srv.URL, batchSize)
+		require.Equal(t, expectedResponse, rsp)
+	}
 }
