@@ -35,21 +35,6 @@ func (m *MockAuthorizer) EXPECT() *MockAuthorizerMockRecorder {
 	return m.recorder
 }
 
-// CpApiCall mocks base method.
-func (m *MockAuthorizer) CpApiCall(arg0 *oauthResponseHandler.ControlPlaneRequestT) (int, string) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CpApiCall", arg0)
-	ret0, _ := ret[0].(int)
-	ret1, _ := ret[1].(string)
-	return ret0, ret1
-}
-
-// CpApiCall indicates an expected call of CpApiCall.
-func (mr *MockAuthorizerMockRecorder) CpApiCall(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CpApiCall", reflect.TypeOf((*MockAuthorizer)(nil).CpApiCall), arg0)
-}
-
 // DisableDestination mocks base method.
 func (m *MockAuthorizer) DisableDestination(arg0 backendconfig.DestinationT, arg1 string) (int, string) {
 	m.ctrl.T.Helper()

@@ -73,7 +73,6 @@ type Authorizer interface {
 	DisableDestination(destination backendconfig.DestinationT, workspaceId string) (statusCode int, resBody string)
 	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse)
 	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse)
-	CpApiCall(cpReq *ControlPlaneRequestT) (int, string)
 }
 
 type ControlPlaneRequestT struct {
@@ -407,11 +406,6 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	}
 
 	return resp.StatusCode, string(respData)
-}
-
-// Check for unit-testing, don't commit
-func (authErrHandler *OAuthErrResHandler) CpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
-	return authErrHandler.cpApiCall(cpReq)
 }
 
 func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
