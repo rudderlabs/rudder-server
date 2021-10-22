@@ -942,7 +942,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		SourceJobRunID:   sampleParameters.SourceJobRunID,
 	}
 
-	if brt.destType == "S3_DATALAKE" {
+	if brt.destType == "S3_DATALAKE" || brt.destType == "DATALAKE" {
 		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
@@ -1882,8 +1882,8 @@ func IsWarehouseDestination(destType string) bool {
 
 func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
 	var splitBatches = map[time.Time]*BatchJobsT{}
-	if brt.destType != "S3_DATALAKE" {
-		// return only one batchJob if the destination type is not s3 datalake
+	if brt.destType != "S3_DATALAKE" && brt.destType != "DATALAKE" {
+		// return only one batchJob if the destination type is not datalake
 		splitBatches[time.Time{}] = &batchJobs
 		return splitBatches
 	}
@@ -1953,7 +1953,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(2), &mainLoopSleep, true, time.Second, []string{"BatchRouter.mainLoopSleep", "BatchRouter.mainLoopSleepInS"}...)
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE"}
+	warehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "DATALAKE"}
 	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
 	warehouseURL = misc.GetWarehouseURL()
 	// Time period for diagnosis ticker

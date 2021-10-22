@@ -38,6 +38,15 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 		"text":     PARQUET_STRING,
 		"datetime": PARQUET_TIMESTAMP_MICROS,
 	},
+	"DATALAKE": {
+		"bigint":   PARQUET_INT_64,
+		"int":      PARQUET_INT_64,
+		"boolean":  PARQUET_BOOLEAN,
+		"float":    PARQUET_DOUBLE,
+		"string":   PARQUET_STRING,
+		"text":     PARQUET_STRING,
+		"datetime": PARQUET_TIMESTAMP_MICROS,
+	},
 }
 
 type ParquetWriter struct {
