@@ -81,7 +81,7 @@ type HandleT struct {
 
 	logger logger.LoggerI
 
-	client http.Client
+	Client *http.Client
 
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
@@ -147,12 +147,14 @@ func (trans *HandleT) Setup() {
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 
-	trans.client = http.Client{
-		Transport: &http.Transport{
-			MaxConnsPerHost:     maxHTTPConnections,
-			MaxIdleConnsPerHost: maxHTTPIdleConnections,
-			IdleConnTimeout:     time.Minute,
-		},
+	if trans.Client == nil {
+		trans.Client = &http.Client{
+			Transport: &http.Transport{
+				MaxConnsPerHost:     maxHTTPConnections,
+				MaxIdleConnsPerHost: maxHTTPIdleConnections,
+				IdleConnTimeout:     time.Minute,
+			},
+		}
 	}
 }
 
@@ -203,10 +205,8 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 		trans.transformTimerStat.SendTiming(time.Since(s))
 	}()
 
-	trans.perfStats.Start()
-
-	batchCount := len(clientEvents)/batchSize
-	if len(clientEvents) % batchSize != 0 {
+	batchCount := len(clientEvents) / batchSize
+	if len(clientEvents)%batchSize != 0 {
 		batchCount += 1
 	}
 	transformResponse := make([][]TransformerResponseT, batchCount)
@@ -276,7 +276,7 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 
 	for {
 		s := time.Now()
-		resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+		resp, err = trans.Client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
 
 		if err == nil {
 			//If no err returned by client.Post, reading body.
