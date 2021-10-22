@@ -368,7 +368,7 @@ var (
 	maxLoopSleep              time.Duration
 	fixedLoopSleep            time.Duration
 	maxEventsToProcess        int
-	avgEventsInRequest        int
+	avgEventsInRequest        int // TODO: Remove in next release
 	dbReadBatchSize           int
 	transformBatchSize        int
 	userTransformBatchSize    int
@@ -404,6 +404,8 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, false, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
+
+	// DEPRECATED: don't use avgEventsInRequest, rudder-server will automatically adapt
 	config.RegisterIntConfigVariable(1, &avgEventsInRequest, true, 1, "Processor.avgEventsInRequest")
 	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
 	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
@@ -1661,17 +1663,6 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 	return transformer.ResponseT{Events: responses, FailedEvents: failedEvents}
 }
 
-func getTruncatedEventList(jobList []*jobsdb.JobT, maxEvents int) (truncatedList []*jobsdb.JobT, totalEvents int) {
-	for idx, job := range jobList {
-		eventsInJob := len(gjson.GetBytes(job.EventPayload, "batch").Array())
-		totalEvents += eventsInJob
-		if totalEvents >= maxEvents {
-			return jobList[:idx+1], totalEvents
-		}
-	}
-	return jobList, totalEvents
-}
-
 func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *transformRequestPQ) {
 	proc.transformEventsByTimeMutex.Lock()
 	defer proc.transformEventsByTimeMutex.Unlock()
@@ -1698,19 +1689,30 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	//Should not have any failure while processing (in v0) so
 	//retryList should be empty. Remove the assert
 
-	var retryList, unprocessedList []*jobsdb.JobT
-	var totalRetryEvents, totalUnprocessedEvents int
+	var unprocessedList []*jobsdb.JobT
+	retryList := proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{
+		CustomValFilters: []string{GWCustomVal},
+		JobCount:         toQuery,
+		EventCount:       maxEventsToProcess,
+	})
 
-	unTruncatedRetryList := proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: toQuery})
-	retryList, totalRetryEvents = getTruncatedEventList(unTruncatedRetryList, maxEventsToProcess)
+	totalEvents := 0
+	for _, job := range retryList {
+		totalEvents += job.EventCount
+	}
 
-	if len(unTruncatedRetryList) >= dbReadBatchSize || totalRetryEvents >= maxEventsToProcess {
-		// skip querying for unprocessed jobs if either retreived dbReadBatchSize or retreived maxEventToProcess
-	} else {
-		eventsLeftToProcess := maxEventsToProcess - totalRetryEvents
+	// skip querying for unprocessed jobs if either retreived dbReadBatchSize or retreived maxEventToProcess
+	if !(len(retryList) >= dbReadBatchSize || totalEvents >= maxEventsToProcess) {
+		eventsLeftToProcess := maxEventsToProcess - totalEvents
 		toQuery = misc.MinInt(eventsLeftToProcess, dbReadBatchSize)
-		unTruncatedUnProcessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: toQuery})
-		unprocessedList, totalUnprocessedEvents = getTruncatedEventList(unTruncatedUnProcessedList, eventsLeftToProcess)
+		unprocessedList = proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			CustomValFilters: []string{GWCustomVal},
+			JobCount:         toQuery,
+			EventCount:       eventsLeftToProcess,
+		})
+		for _, job := range retryList {
+			totalEvents += job.EventCount
+		}
 	}
 
 	proc.statDBR.End()
@@ -1732,7 +1734,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	// handle pending jobs
 	proc.statListSort.Start()
 	combinedList := append(unprocessedList, retryList...)
-	proc.logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total_requests: %v, total_events: %d", len(retryList), len(unprocessedList), len(combinedList), totalRetryEvents+totalUnprocessedEvents)
+	proc.logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total_requests: %v, total_events: %d", len(retryList), len(unprocessedList), len(combinedList), totalEvents)
 	proc.pStatsDBR.End(len(combinedList))
 	proc.statGatewayDBR.Count(len(combinedList))
 
@@ -1790,7 +1792,7 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 }
 
 func (proc *HandleT) crashRecover() {
-	proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, Count: -1})
+	proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, JobCount: -1})
 }
 
 func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {
