@@ -455,6 +455,7 @@ func (resHandler *OAuthErrResHandler) NewMutex(id string, errCategory string) er
 	case REFRESH_TOKEN:
 		mutexMap = resHandler.accountLockMap
 	default:
+		// when errorCategory i empty
 		resHandler.logger.Infof("[%s request] :: Case missing for mutex for %s\n", loggerNm, id)
 		return fmt.Errorf(`except %v, %v error category is not supported`, DISABLE_DEST, REFRESH_TOKEN)
 	}
