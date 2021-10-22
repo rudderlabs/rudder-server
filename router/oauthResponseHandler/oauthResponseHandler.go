@@ -460,17 +460,17 @@ func (resHandler *OAuthErrResHandler) NewMutex(id string, errCategory string) er
 		mutexMap = resHandler.destLockMap
 	case REFRESH_TOKEN:
 		mutexMap = resHandler.accountLockMap
+	default:
+		resHandler.logger.Infof("[%s request] :: Case missing for mutex for %s\n", loggerNm, id)
+		return fmt.Errorf(`except %v, %v error category is not supported`, DISABLE_DEST, REFRESH_TOKEN)
 	}
 	resHandler.lockMapWMutex.Lock()
 	defer resHandler.lockMapWMutex.Unlock()
-	if mutexMap != nil {
-		if _, ok := mutexMap[id]; !ok {
-			resHandler.logger.Infof("[%s request] :: Creating new mutex for %s\n", loggerNm, id)
-			mutexMap[id] = &sync.RWMutex{}
-		}
-		resHandler.logger.Infof("[%s request] :: Already created mutex for %s\n", loggerNm, id)
-		return nil
+	// mutexMap will not be nil
+	if _, ok := mutexMap[id]; !ok {
+		resHandler.logger.Infof("[%s request] :: Creating new mutex for %s\n", loggerNm, id)
+		mutexMap[id] = &sync.RWMutex{}
 	}
-	resHandler.logger.Infof("[%s request] :: Case missing for mutex for %s\n", loggerNm, id)
-	return fmt.Errorf(`except %v, %v error category is not supported`, DISABLE_DEST, REFRESH_TOKEN)
+	resHandler.logger.Infof("[%s request] :: Already created mutex for %s\n", loggerNm, id)
+	return nil
 }
