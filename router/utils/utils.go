@@ -75,16 +75,6 @@ func IsNotEmptyString(s string) bool {
 	return len(strings.TrimSpace(s)) > 0
 }
 
-// Gets the workspace token data for a single workspace or multi workspace case
-func GetWorkspaceToken() (workspaceToken string) {
-	workspaceToken = config.GetWorkspaceToken()
-	isMultiWorkspace := config.GetEnvAsBool("HOSTED_SERVICE", false)
-	if isMultiWorkspace {
-		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
-	}
-	return workspaceToken
-}
-
 func GetAuthType(dest backendconfig.DestinationT) (authType string) {
 	destConfig := dest.DestinationDefinition.Config
 	var lookupErr error

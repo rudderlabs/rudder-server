@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -132,11 +131,7 @@ func Init() {
 	configBEURL = backendconfig.GetConfigBackendURL()
 	pkgLogger = logger.NewLogger().Child("router").Child("OAuthResponseHandler")
 	loggerNm = "OAuthResponseHandler"
-	workspaceToken = config.GetWorkspaceToken()
-	isMultiWorkspace = config.GetEnvAsBool("HOSTED_SERVICE", false)
-	if isMultiWorkspace {
-		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
-	}
+	workspaceToken = backendconfig.GetWorkspaceToken()
 	destAuthInfoMap = make(map[string]*AuthResponse)
 	accountLockMap = make(map[string]*sync.RWMutex)
 	destLockMap = make(map[string]*sync.RWMutex)
