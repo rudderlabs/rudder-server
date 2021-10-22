@@ -1574,13 +1574,13 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	toQuery := jobQueryBatchSize
-	retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
+	retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 	toQuery -= len(retryList)
-	throttledList := rt.jobsDB.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
+	throttledList := rt.jobsDB.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 	toQuery -= len(throttledList)
-	waitList := rt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery}) //Jobs send to waiting state
+	waitList := rt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery}) //Jobs send to waiting state
 	toQuery -= len(waitList)
-	unprocessedList := rt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
+	unprocessedList := rt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 
 	combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
 
@@ -1634,7 +1634,8 @@ func (rt *HandleT) readAndProcess() int {
 				ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 			}
 			//Enhancing job parameter with the drain reason.
-			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
+			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", "router")
+			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "reason", reason)
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
 			if _, ok := drainStatsbyDest[destID]; !ok {
@@ -1715,7 +1716,7 @@ func destinationID(job *jobsdb.JobT) string {
 }
 
 func (rt *HandleT) crashRecover() {
-	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})
+	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: -1})
 }
 
 func Init() {
