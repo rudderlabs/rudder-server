@@ -1,4 +1,4 @@
-package datalakes
+package datalake
 
 import (
 	"fmt"
