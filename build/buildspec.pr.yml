@@ -22,6 +22,13 @@ phases:
       - ssh-add ~/.ssh/ssh_key
       - (cd && go get github.com/onsi/ginkgo/ginkgo)
       - (cd && go get github.com/golang/mock/mockgen)
+      - docker pull confluentinc/cp-zookeeper:latest
+      - docker pull confluentinc/cp-kafka:latest
+      - docker pull minio/minio:latest
+      - docker pull redis:alpine3.14
+      - docker pull postgres:11-alpine
+      - docker pull rudderlabs/rudder-transformer:latest
+      - go mod download
   build:
     commands:
       - export GO111MODULE=on

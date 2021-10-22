@@ -17,6 +17,12 @@ phases:
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
+      - docker pull confluentinc/cp-zookeeper:latest
+      - docker pull confluentinc/cp-kafka:latest
+      - docker pull minio/minio:latest
+      - docker pull redis:alpine3.14
+      - docker pull postgres:11-alpine
+      - docker pull rudderlabs/rudder-transformer:latest
       - go mod download
   build:
     commands:
