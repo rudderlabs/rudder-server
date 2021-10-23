@@ -38,7 +38,6 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string)
 	ResponseTransform(responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string)
 }
 
@@ -166,6 +165,11 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 	respTransformNetReqTimeStart := time.Now()
 	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
 	trans.respTransformNetReqTimerStat.SendTiming(time.Since(respTransformNetReqTimeStart))
+	if err != nil {
+		respData = []byte("")
+		trans.logger.Errorf("[Response Transformer request] :: destination request failed: %+v", err)
+		return http.StatusInternalServerError, string(respData)
+	}
 	if resp != nil && resp.Body != nil {
 		var ioBodyErr error
 		respData, ioBodyErr = io.ReadAll(resp.Body)
@@ -188,59 +192,8 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 		strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
 		respData = []byte("")
 	}
-	if err != nil {
-		respData = []byte("")
-		trans.logger.Errorf("[Response Transformer request] :: destination request failed: %+v", err)
-		return http.StatusInternalServerError, string(respData)
-	}
 	resp.Body.Close()
 	return resp.StatusCode, string(respData)
-}
-
-func (trans *HandleT) Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string) {
-
-	rawJSON, err := json.Marshal(transformedData)
-	if err != nil {
-		panic(err)
-	}
-	trans.logger.Debugf("[Transfomrer Network request] :: prepared destination payload : %s", string(rawJSON))
-	var resp *http.Response
-	var respData []byte
-	url := getNetworkTransformerURL(destName)
-
-	transformerNetReqStTime := time.Now()
-	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
-	trans.transformerNetworkRequestTimerStat.SendTiming(time.Since(transformerNetReqStTime))
-	if resp != nil && resp.Body != nil {
-		var ioBodyErr error
-		respData, ioBodyErr = io.ReadAll(resp.Body)
-		if ioBodyErr != nil {
-			trans.logger.Errorf("[Transformer Network request] :: destination request failed: %+v", ioBodyErr)
-			return http.StatusInternalServerError, ioBodyErr.Error()
-		}
-	}
-	var contentTypeHeader string
-	if resp != nil && resp.Header != nil {
-		contentTypeHeader = resp.Header.Get("Content-Type")
-	}
-	if contentTypeHeader == "" {
-		//Detecting content type of the respBody
-		contentTypeHeader = http.DetectContentType(respData)
-	}
-	//If content type is not of type "*text*", overriding it with empty string
-	if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
-		strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
-		strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
-		respData = []byte("")
-	}
-	if err != nil {
-		respData = []byte("")
-		trans.logger.Errorf("[Transfomrer Network request] :: destaination request failed: %+v", err)
-		return http.StatusInternalServerError, string(respData)
-	}
-	resp.Body.Close()
-	return resp.StatusCode, string(respData)
-
 }
 
 //is it ok to use same client for network and transformer calls? need to understand timeout setup in router
