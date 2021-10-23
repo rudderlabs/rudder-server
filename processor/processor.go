@@ -1749,7 +1749,7 @@ func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *t
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
 // Returns true if any job is handled, otherwise returns false.
-func (proc *HandleT) handlePendingGatewayJobs() bool {
+func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 	proc.statLoopTime.Start()
 	proc.pStatsDBR.Start()
 	proc.statDBR.Start()
@@ -1779,6 +1779,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 			CustomValFilters: []string{GWCustomVal},
 			JobCount:         toQuery,
 			EventCount:       eventsLeftToProcess,
+			AfterJobID:       nextJobID,
 		})
 		for _, job := range retryList {
 			totalEvents += job.EventCount
@@ -1791,7 +1792,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	if len(unprocessedList)+len(retryList) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
 		proc.pStatsDBR.End(0)
-		return false
+		return false, 0
 	}
 	proc.eventSchemasTime.Start()
 	if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
@@ -1821,7 +1822,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 
 	proc.statLoopTime.End()
 
-	return true
+	return true, combinedList[len(combinedList)-1].JobID
 }
 
 func (proc *HandleT) mainLoop(ctx context.Context) {
@@ -1830,6 +1831,7 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
 	}
 
+	jobIDCursor := int64(0)
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
 	for {
@@ -1844,7 +1846,9 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 		case <-time.After(mainLoopTimeout):
 			proc.paused = false
 			if isUnLocked {
-				if proc.handlePendingGatewayJobs() {
+				var found bool
+				found, jobIDCursor = proc.handlePendingGatewayJobs(jobIDCursor)
+				if found {
 					currLoopSleep = time.Duration(0)
 				} else {
 					currLoopSleep = 2*currLoopSleep + loopSleep

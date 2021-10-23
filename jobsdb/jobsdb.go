@@ -77,6 +77,7 @@ type GetQueryParamsT struct {
 	IgnoreCustomValFiltersInQuery bool
 	UseTimeFilter                 bool
 	Before                        time.Time
+	AfterJobID                    int64
 }
 
 //StatTagsT is a struct to hold tags for stats
@@ -2182,6 +2183,11 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 
 	if len(parameterFilters) > 0 {
 		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
+	}
+
+	if params.AfterJobID == 0 {
+		sqlStatement += fmt.Sprintf(" AND jobs.job_id > $%d", len(args)+1)
+		args = append(args, params.AfterJobID)
 	}
 
 	if params.UseTimeFilter {
