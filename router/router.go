@@ -2063,12 +2063,12 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val inte
 		switch destErrOutput.Output.AuthErrorCategory {
 		case oauth.DISABLE_DEST:
 			errCatStatusCode, errCatResponse = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
-			if errCatStatusCode == http.StatusOK {
-				// Abort the jobs as the destination is disable
-				return http.StatusBadRequest, destResBody
+			if errCatStatusCode != http.StatusOK {
+				// Error while disabling a destination
+				return errCatStatusCode, errCatResponse
 			}
-			// Error while disabling a destination
-			return errCatStatusCode, errCatResponse
+			// Abort the jobs as the destination is disable
+			return http.StatusBadRequest, destResBody
 		case oauth.REFRESH_TOKEN:
 			rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
 			var refSecret *oauth.AuthResponse
@@ -2086,10 +2086,7 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val inte
 			if errCatStatusCode != http.StatusOK || router_utils.IsNotEmptyString(refSec.Err) {
 				return http.StatusTooManyRequests, refSec.Err
 			}
-			// Refreshed Token is being set
-			val.AccessToken = refSec.Account.AccessToken
-			val.ExpirationDate = refSec.Account.ExpirationDate
-			// Retry with Refreshed Token(variable "errCatResponse" - contains refreshed access token & expirationDate)
+			// Retry with Refreshed Token by failing with 5xx
 			return http.StatusInternalServerError, trRespBody
 		}
 		// By default send the status code & response from transformed response directly
