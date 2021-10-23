@@ -1,0 +1,6 @@
+run:
+  timeout: 4m
+
+  skip-files:
+   - warehouse/
+   - enterprise/
