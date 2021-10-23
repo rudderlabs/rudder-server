@@ -8,7 +8,7 @@ env:
 phases:
   install:
     runtime-versions:
-      golang: 1.13
+      golang: 1.16
   pre_build:
     commands:
       - docker login --username rudderlabs --password $dockerhub_passwd
@@ -17,6 +17,7 @@ phases:
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
+      - go mod download
   build:
     commands:
       - export GO111MODULE=on
@@ -37,3 +38,8 @@ phases:
 artifacts:
   files:
     - "**/*"
+
+cache:
+  paths: |
+    ~/.cache/go-build
+    ~/go/pkg/mod

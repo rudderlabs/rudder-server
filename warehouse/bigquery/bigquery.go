@@ -294,7 +294,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 
 	bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.Namespace, name) }
 
-	bqUsersTable := bqTable(warehouseutils.UsersTable)
+	bqUsersView := bqTable(warehouseutils.UsersView)
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", partitionDate)
 	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
@@ -311,7 +311,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		)`,
 		strings.Join(firstValProps, ","), // 1
 		strings.Join(userColNames, ","),  // 2
-		bqUsersTable,                     // 3
+		bqUsersView,                      // 3
 		identifiesFrom,                   // 4
 	)
 

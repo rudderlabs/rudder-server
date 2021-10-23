@@ -14,11 +14,11 @@ services:
       - d-transformer
     build:
       context: ../
-      dockerfile: build/Dockerfile-dev
+      dockerfile: build/Dockerfile
     volumes:
       - ..:/app
 
-    entrypoint: sh -c './build/wait-for db:5432 -- go run -mod=vendor main.go'
+    entrypoint: sh -c './build/wait-for db:5432 -- go run main.go'
 
     ports:
       - "8080:8080"

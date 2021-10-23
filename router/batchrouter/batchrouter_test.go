@@ -66,7 +66,7 @@ var sampleFileObjects = []*filemanager.FileObject{
 	},
 }
 
-type context struct {
+type testContext struct {
 	asyncHelper       testutils.AsyncTestHelper
 	jobQueryBatchSize int
 
@@ -81,7 +81,7 @@ type context struct {
 }
 
 // Initiaze mocks and common expectations
-func (c *context) Setup() {
+func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockBatchRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
@@ -104,7 +104,7 @@ func (c *context) Setup() {
 	c.mockFileObjects = sampleFileObjects
 }
 
-func (c *context) Finish() {
+func (c *testContext) Finish() {
 	c.asyncHelper.WaitWithTimeout(testTimeout)
 	c.mockCtrl.Finish()
 }
@@ -125,12 +125,12 @@ func initBatchRouter() {
 
 var _ = Describe("BatchRouter", func() {
 	initBatchRouter()
-
-	var c *context
+	
+	var c *testContext
 
 	BeforeEach(func() {
 		router_utils.JobRetention = time.Duration(175200) * time.Hour //20 Years(20*365*24)
-		c = &context{}
+		c = &testContext{}
 		c.Setup()
 
 		// setup static requirements of dependencies
@@ -147,7 +147,7 @@ var _ = Describe("BatchRouter", func() {
 		It("should initialize and recover after crash", func() {
 			batchrouter := &HandleT{}
 
-			c.mockBatchRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{s3DestinationDefinition.Name}, Count: -1}).Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{s3DestinationDefinition.Name}, JobCount: -1}).Times(1)
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
 			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil)
@@ -157,7 +157,7 @@ var _ = Describe("BatchRouter", func() {
 	Context("normal operation - s3 - do not readPerDestination", func() {
 		BeforeEach(func() {
 			// crash recovery check
-			c.mockBatchRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{s3DestinationDefinition.Name}, Count: -1}).Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{s3DestinationDefinition.Name}, JobCount: -1}).Times(1)
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 		})
 
@@ -223,8 +223,8 @@ var _ = Describe("BatchRouter", func() {
 				},
 			}
 
-			callRetry := c.mockBatchRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, Count: c.jobQueryBatchSize}).Return(toRetryJobsList).Times(1)
-			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, Count: c.jobQueryBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callRetry)
+			callRetry := c.mockBatchRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobCount: c.jobQueryBatchSize}).Return(toRetryJobsList).Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobCount: c.jobQueryBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callRetry)
 
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {

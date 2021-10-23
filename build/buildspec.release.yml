@@ -4,26 +4,35 @@ env:
     # The SSH deploy key with enterprise rudder server repo
     ssh_key: "/codebuild/github/ssh-key"
     dockerhub_passwd: "/prod/codebuild/dockerhub-password"
+    gh_token: "/codebuild/github/token"
 
 phases:
   install:
     runtime-versions:
-      golang: 1.13
+      golang: 1.16
   pre_build:
     commands:
+      - echo Logging in to Docker Hub...
       - docker login --username rudderlabs --password $dockerhub_passwd
       - mkdir -p ~/.ssh
       - echo "$ssh_key" > ~/.ssh/ssh_key
       - chmod 600 ~/.ssh/ssh_key
       - eval "$(ssh-agent -s)"
       - ssh-add ~/.ssh/ssh_key
+      - apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
+      - apt-add-repository https://cli.github.com/packages
+      - apt update
+      - apt install gh
+      - touch gh_token.txt
+      - echo "$gh_token" > gh_token.txt
+      - gh auth login --with-token < gh_token.txt
   build:
     commands:
       - export GO111MODULE=on
       - DATE=$(date "+%F,%T")
       - echo date.. $DATE
       - TAG=$CODEBUILD_WEBHOOK_TRIGGER
-      - echo tag.. $TAG 
+      - echo tag.. $TAG
       - VERSION=$(echo $TAG | cut -d "/" -f 2)
       - echo version.. $VERSION
       # Build Open source version
@@ -37,6 +46,7 @@ phases:
     commands:
       - docker push rudderlabs/rudder-server:$VERSION
       - docker push rudderstack/rudder-server-enterprise:$VERSION
+      - gh release create $VERSION -F CHANGELOG.md
 artifacts:
   files:
     - "**/*"

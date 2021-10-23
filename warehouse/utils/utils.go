@@ -62,6 +62,7 @@ const (
 
 const (
 	UsersTable      = "users"
+	UsersView       = "users_view"
 	IdentifiesTable = "identifies"
 )
 

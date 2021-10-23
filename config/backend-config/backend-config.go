@@ -3,11 +3,13 @@ package backendconfig
 //go:generate mockgen -destination=../../mocks/config/backend-config/mock_backendconfig.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/config/backend-config BackendConfig
 
 import (
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"context"
 	"reflect"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/admin"
 
@@ -219,7 +221,7 @@ type BackendConfig interface {
 	GetRegulations() (RegulationsT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
-	WaitForConfig()
+	WaitForConfig(ctx context.Context) error
 	Subscribe(channel chan utils.DataEvent, topic Topic)
 }
 type CommonBackendConfig struct {
@@ -411,14 +413,14 @@ func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic Top
 WaitForConfig waits until backend config has been initialized
 Deprecated: Use an instance of BackendConfig instead of static function
 */
-func WaitForConfig() {
-	backendConfig.WaitForConfig()
+func WaitForConfig(ctx context.Context) error {
+	return backendConfig.WaitForConfig(ctx)
 }
 
 /*
 WaitForConfig waits until backend config has been initialized
 */
-func (bc *CommonBackendConfig) WaitForConfig() {
+func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 	for {
 		initializedLock.RLock()
 		if initialized && !waitForRegulations {
@@ -427,8 +429,13 @@ func (bc *CommonBackendConfig) WaitForConfig() {
 		}
 		initializedLock.RUnlock()
 		pkgLogger.Info("Waiting for initializing backend config")
-		time.Sleep(time.Duration(pollInterval))
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(pollInterval)):
+		}
 	}
+	return nil
 }
 
 // Setup backend config

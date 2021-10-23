@@ -5,36 +5,38 @@
 package mock_backendconfig
 
 import (
+	context "context"
+	reflect "reflect"
+
 	gomock "github.com/golang/mock/gomock"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	utils "github.com/rudderlabs/rudder-server/utils"
-	reflect "reflect"
 )
 
-// MockBackendConfig is a mock of BackendConfig interface
+// MockBackendConfig is a mock of BackendConfig interface.
 type MockBackendConfig struct {
 	ctrl     *gomock.Controller
 	recorder *MockBackendConfigMockRecorder
 }
 
-// MockBackendConfigMockRecorder is the mock recorder for MockBackendConfig
+// MockBackendConfigMockRecorder is the mock recorder for MockBackendConfig.
 type MockBackendConfigMockRecorder struct {
 	mock *MockBackendConfig
 }
 
-// NewMockBackendConfig creates a new mock instance
+// NewMockBackendConfig creates a new mock instance.
 func NewMockBackendConfig(ctrl *gomock.Controller) *MockBackendConfig {
 	mock := &MockBackendConfig{ctrl: ctrl}
 	mock.recorder = &MockBackendConfigMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use
+// EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockBackendConfig) EXPECT() *MockBackendConfigMockRecorder {
 	return m.recorder
 }
 
-// Get mocks base method
+// Get mocks base method.
 func (m *MockBackendConfig) Get() (backendconfig.ConfigT, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get")
@@ -43,13 +45,13 @@ func (m *MockBackendConfig) Get() (backendconfig.ConfigT, bool) {
 	return ret0, ret1
 }
 
-// Get indicates an expected call of Get
+// Get indicates an expected call of Get.
 func (mr *MockBackendConfigMockRecorder) Get() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockBackendConfig)(nil).Get))
 }
 
-// GetRegulations mocks base method
+// GetRegulations mocks base method.
 func (m *MockBackendConfig) GetRegulations() (backendconfig.RegulationsT, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetRegulations")
@@ -58,13 +60,13 @@ func (m *MockBackendConfig) GetRegulations() (backendconfig.RegulationsT, bool) 
 	return ret0, ret1
 }
 
-// GetRegulations indicates an expected call of GetRegulations
+// GetRegulations indicates an expected call of GetRegulations.
 func (mr *MockBackendConfigMockRecorder) GetRegulations() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRegulations", reflect.TypeOf((*MockBackendConfig)(nil).GetRegulations))
 }
 
-// GetWorkspaceIDForWriteKey mocks base method
+// GetWorkspaceIDForWriteKey mocks base method.
 func (m *MockBackendConfig) GetWorkspaceIDForWriteKey(arg0 string) string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetWorkspaceIDForWriteKey", arg0)
@@ -72,13 +74,13 @@ func (m *MockBackendConfig) GetWorkspaceIDForWriteKey(arg0 string) string {
 	return ret0
 }
 
-// GetWorkspaceIDForWriteKey indicates an expected call of GetWorkspaceIDForWriteKey
+// GetWorkspaceIDForWriteKey indicates an expected call of GetWorkspaceIDForWriteKey.
 func (mr *MockBackendConfigMockRecorder) GetWorkspaceIDForWriteKey(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceIDForWriteKey", reflect.TypeOf((*MockBackendConfig)(nil).GetWorkspaceIDForWriteKey), arg0)
 }
 
-// GetWorkspaceLibrariesForWorkspaceID mocks base method
+// GetWorkspaceLibrariesForWorkspaceID mocks base method.
 func (m *MockBackendConfig) GetWorkspaceLibrariesForWorkspaceID(arg0 string) backendconfig.LibrariesT {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetWorkspaceLibrariesForWorkspaceID", arg0)
@@ -86,44 +88,46 @@ func (m *MockBackendConfig) GetWorkspaceLibrariesForWorkspaceID(arg0 string) bac
 	return ret0
 }
 
-// GetWorkspaceLibrariesForWorkspaceID indicates an expected call of GetWorkspaceLibrariesForWorkspaceID
+// GetWorkspaceLibrariesForWorkspaceID indicates an expected call of GetWorkspaceLibrariesForWorkspaceID.
 func (mr *MockBackendConfigMockRecorder) GetWorkspaceLibrariesForWorkspaceID(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceLibrariesForWorkspaceID", reflect.TypeOf((*MockBackendConfig)(nil).GetWorkspaceLibrariesForWorkspaceID), arg0)
 }
 
-// SetUp mocks base method
+// SetUp mocks base method.
 func (m *MockBackendConfig) SetUp() {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "SetUp")
 }
 
-// SetUp indicates an expected call of SetUp
+// SetUp indicates an expected call of SetUp.
 func (mr *MockBackendConfigMockRecorder) SetUp() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUp", reflect.TypeOf((*MockBackendConfig)(nil).SetUp))
 }
 
-// Subscribe mocks base method
+// Subscribe mocks base method.
 func (m *MockBackendConfig) Subscribe(arg0 chan utils.DataEvent, arg1 backendconfig.Topic) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Subscribe", arg0, arg1)
 }
 
-// Subscribe indicates an expected call of Subscribe
+// Subscribe indicates an expected call of Subscribe.
 func (mr *MockBackendConfigMockRecorder) Subscribe(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Subscribe", reflect.TypeOf((*MockBackendConfig)(nil).Subscribe), arg0, arg1)
 }
 
-// WaitForConfig mocks base method
-func (m *MockBackendConfig) WaitForConfig() {
+// WaitForConfig mocks base method.
+func (m *MockBackendConfig) WaitForConfig(arg0 context.Context) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "WaitForConfig")
+	ret := m.ctrl.Call(m, "WaitForConfig", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
-// WaitForConfig indicates an expected call of WaitForConfig
-func (mr *MockBackendConfigMockRecorder) WaitForConfig() *gomock.Call {
+// WaitForConfig indicates an expected call of WaitForConfig.
+func (mr *MockBackendConfigMockRecorder) WaitForConfig(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForConfig", reflect.TypeOf((*MockBackendConfig)(nil).WaitForConfig))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForConfig", reflect.TypeOf((*MockBackendConfig)(nil).WaitForConfig), arg0)
 }

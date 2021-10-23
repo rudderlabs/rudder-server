@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -86,18 +86,18 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	}
 
 	for {
-		trans.transformRequestTimerStat.Start()
+		s := time.Now()
 		resp, err = trans.client.Post(url, "application/json; charset=utf-8",
 			bytes.NewBuffer(rawJSON))
 
 		if err == nil {
 			//If no err returned by client.Post, reading body.
 			//If reading body fails, retrying.
-			respData, err = ioutil.ReadAll(resp.Body)
+			respData, err = io.ReadAll(resp.Body)
 		}
 
 		if err != nil {
-			trans.transformRequestTimerStat.End()
+			trans.transformRequestTimerStat.SendTiming(time.Since(s))
 			reqFailed = true
 			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
 			if retryCount > maxRetry {
@@ -112,7 +112,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 			trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
 		}
 
-		trans.transformRequestTimerStat.End()
+		trans.transformRequestTimerStat.SendTiming(time.Since(s))
 		break
 	}
 
