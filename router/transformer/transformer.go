@@ -200,7 +200,7 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
-	trans.client = &http.Client{Transport: trans.tr, Timeout: 10 * time.Minute}
+	trans.client = &http.Client{Transport: trans.tr}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
 	trans.respTransformNetReqTimerStat = stats.NewStat("router.response_transform_net_req_time", stats.TimerType)
