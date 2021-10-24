@@ -321,8 +321,9 @@ var _ = Describe("Processor", func() {
 			callRetry := c.mockGatewayJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: c.dbReadBatchSize, EventCount: c.processEventSize}).Return(emptyJobsList).Times(1)
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: c.dbReadBatchSize, EventCount: c.processEventSize}).Return(emptyJobsList).Times(1).After(callRetry)
 
-			var didWork = processor.handlePendingGatewayJobs()
+			didWork, nextJobID := processor.handlePendingGatewayJobs(0)
 			Expect(didWork).To(Equal(false))
+			Expect(nextJobID).To(Equal(int64(0)))
 		})
 
 		It("should process ToRetry and Unprocessed jobs to destination without user transformation", func() {
@@ -408,7 +409,7 @@ var _ = Describe("Processor", func() {
 					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
 					CustomVal:    gatewayCustomVal[0],
 					EventPayload: createBatchPayload(WriteKeyEnabledNoUT, "2002-01-02T02:23:45.000Z", []mockEventData{messages["message-3"], messages["message-4"], messages["message-5"]}),
-					EventCount:    1,
+					EventCount:   1,
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 1,
 					},
@@ -1650,6 +1651,6 @@ func Setup(processor *HandleT, c *testContext, enableDedup, enableReporting bool
 }
 
 func handlePendingGatewayJobs(processor *HandleT) {
-	didWork := processor.handlePendingGatewayJobs()
+	didWork, _ := processor.handlePendingGatewayJobs(0)
 	Expect(didWork).To(Equal(true))
 }
