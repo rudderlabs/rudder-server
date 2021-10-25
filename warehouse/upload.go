@@ -804,7 +804,6 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 	return err
 }
 
-
 //TableSkipError is a custom error type to capture if a table load is skipped because of a previously failed table load
 type TableSkipError struct {
 	tableName        string
@@ -933,10 +932,10 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	generateTableLoadCountVerificationsMetrics := config.GetBool("Warehouse.generateTableLoadCountMetrics", true)
 	var totalBeforeLoad, totalAfterLoad int64
 	if generateTableLoadCountVerificationsMetrics {
-		var countErr error
-		totalBeforeLoad, countErr = job.getTotalCount(tName)
-		if countErr != nil {
-			pkgLogger.Errorf(`Error getting total count in table:%s before load: %v`, tName, countErr)
+		var errTotalCount error
+		totalBeforeLoad, errTotalCount = job.getTotalCount(tName)
+		if errTotalCount != nil {
+			pkgLogger.Errorf(`Error getting total count in table:%s before load: %v`, tName, errTotalCount)
 		}
 	}
 
@@ -946,17 +945,26 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		return
 	}
 
-	if generateTableLoadCountVerificationsMetrics {
-		var countErr error
-		totalAfterLoad, countErr = job.getTotalCount(tName)
-		if countErr != nil {
-			pkgLogger.Errorf(`Error getting total count in table:%s after load: %v`, tName, countErr)
+	generateTableLoadMetrics := func() {
+		if !generateTableLoadCountVerificationsMetrics {
+			return
+		}
+		var errTotalCount error
+		totalAfterLoad, errTotalCount = job.getTotalCount(tName)
+		if errTotalCount != nil {
+			pkgLogger.Errorf(`Error getting total count in table:%s after load: %v`, tName, errTotalCount)
+			return
+		}
+		eventsInTableUpload, errEventCount := tableUpload.getTotalEvents()
+		if errEventCount != nil {
+			return
 		}
 		job.guageStat(`pre_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
-		eventsInTableUpload := tableUpload.getTotalEvents()
 		job.guageStat(`post_load_table_rows_estimate`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + eventsInTableUpload))
 		job.guageStat(`post_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
 	}
+
+	generateTableLoadMetrics()
 
 	tableUpload.setStatus(TableUploadExported)
 	numEvents, queryErr := tableUpload.getNumEvents()
