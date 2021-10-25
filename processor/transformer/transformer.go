@@ -4,7 +4,6 @@ package transformer
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,8 +82,7 @@ type HandleT struct {
 
 	Client *http.Client
 
-	backgroundWait   func() error
-	backgroundCancel context.CancelFunc
+	guardConcurrency chan struct{}
 }
 
 //Transformer provides methods to transform events
@@ -101,9 +99,9 @@ func NewTransformer() *HandleT {
 }
 
 var (
-	maxChanSize, maxHTTPConnections, maxHTTPIdleConnections, maxRetry int
-	retrySleep                                                        time.Duration
-	pkgLogger                                                         logger.LoggerI
+	maxConcurrency, maxHTTPConnections, maxHTTPIdleConnections, maxRetry int
+	retrySleep                                                           time.Duration
+	pkgLogger                                                            logger.LoggerI
 )
 
 func Init() {
@@ -112,7 +110,7 @@ func Init() {
 }
 
 func loadConfig() {
-	config.RegisterIntConfigVariable(2048, &maxChanSize, false, 1, "Processor.maxChanSize")
+	config.RegisterIntConfigVariable(200, &maxConcurrency, false, 1, "Processor.maxConcurrency")
 	config.RegisterIntConfigVariable(100, &maxHTTPConnections, false, 1, "Processor.maxHTTPConnections")
 	config.RegisterIntConfigVariable(50, &maxHTTPIdleConnections, false, 1, "Processor.maxHTTPIdleConnections")
 
@@ -144,6 +142,7 @@ func (trans *HandleT) Setup() {
 	trans.transformTimerStat = stats.NewStat("processor.transformation_time", stats.TimerType)
 	trans.transformRequestTimerStat = stats.NewStat("processor.transformer_request_time", stats.TimerType)
 
+	trans.guardConcurrency = make(chan struct{}, maxConcurrency)
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 

@@ -20,7 +20,9 @@ type fakeTransformer struct {
 
 func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var reqBody []transformer.TransformerEventT
-	json.NewDecoder(r.Body).Decode(&reqBody)
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		panic(err)
+	}
 
 	t.requests = append(t.requests, reqBody)
 	resps := make([]transformer.TransformerResponseT, len(reqBody))
@@ -40,8 +42,9 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("apiVersion", "1")
-
-	json.NewEncoder(w).Encode(resps)
+	if err := json.NewEncoder(w).Encode(resps); err != nil {
+		panic(err)
+	}
 }
 
 func Test_Transformer(t *testing.T) {
