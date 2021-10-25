@@ -37,9 +37,18 @@ type UserAttribute struct {
 }
 
 type Destination struct {
+	Config        ConfigT
 	DestinationID string
 	Type          string
-	Credentials   string
+	Name          string
+}
+
+type ConfigT struct {
+	BucketName  interface{}
+	Prefix      interface{}
+	AccessKeyID interface{}
+	AccessKey   interface{}
+	EnableSSE   interface{}
 }
 
 type APIReqErr struct {

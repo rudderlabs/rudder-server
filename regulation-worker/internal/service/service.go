@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //go:generate mockgen -source=service.go -destination=mock_deleter_test.go -package=service github.com/rudderlabs/rudder-server/regulation-worker/internal/service deleter,APIClient
@@ -44,7 +46,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	}
 
 	//executing deletion
-	dest, err := getDestDetails(job.DestinationID, job.WorkspaceID)
+	dest, err := GetDestDetails(job.DestinationID, job.WorkspaceID)
 	if err != nil {
 		return fmt.Errorf("error while getting destination details: %w", err)
 	}
@@ -63,10 +65,33 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 //make api call to get json and then parse it to get destination related details
 //like: dest_type, auth details,
 //return destination Type enum{file, api}
-func getDestDetails(destID, workspaceID string) (model.Destination, error) {
-	return model.Destination{
-		Type: "batch",
-	}, nil
+func GetDestDetails(destID, workspaceID string) (model.Destination, error) {
+	workspaceConfig := backendconfig.WorkspaceConfig{}
+	config, notErr := workspaceConfig.Get()
+	if !notErr {
+		return model.Destination{}, fmt.Errorf("error while getting destination details")
+	}
+	destDetail := model.Destination{}
+	for _, source := range config.Sources {
+		for _, dest := range source.Destinations {
+			if dest.ID == destID {
+				destDetail.Config.BucketName = dest.Config["bucketName"]
+				destDetail.Config.Prefix = dest.Config["prefix"]
+				destDetail.Config.AccessKeyID = dest.Config["accessKeyID"]
+				destDetail.Config.AccessKey = dest.Config["accessKey"]
+				destDetail.Config.EnableSSE = dest.Config["enableSSE"]
+				destDetail.DestinationID = dest.ID
+				destDetail.Name = dest.DestinationDefinition.Name
+			}
+		}
+	}
+	batchDestinations, _ := misc.LoadDestinations()
+	if misc.Contains(batchDestinations, destDetail.Name) {
+		destDetail.Type = "batch"
+	} else {
+		destDetail.Type = "API"
+	}
+	return destDetail, nil
 }
 
 func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobID int) error {

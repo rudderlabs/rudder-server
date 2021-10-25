@@ -1,15 +1,17 @@
 package service_test
 
 import (
-	"context"
+	"fmt"
+	"os"
 	"testing"
 
-	gomock "github.com/golang/mock/gomock"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
+/*
 func TestJobSvc(t *testing.T) {
 	var tests = []struct {
 		name                        string
@@ -72,4 +74,20 @@ func TestJobSvc(t *testing.T) {
 			require.Equal(t, tt.expectedFinalErr, err, "actual error different than expected")
 		})
 	}
+}
+*/
+func TestGetDestDetails(t *testing.T) {
+	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
+	os.Setenv("WORKSPACE_TOKEN", "1zzAnCvbknUuGogjQIBhkST0O4K")
+	os.Setenv("CONFIG_PATH", "./test_config.yaml")
+	config.Load()
+	backendconfig.Init()
+	workspaceID := "1zzAn8ZshcdkLN5TvP86VqLMT90"
+	destID := "1zzK2ZRgKofS6nxfcJ2nthi0Cme"
+	dest, err := service.GetDestDetails(destID, workspaceID)
+	fmt.Println("dest", dest)
+	require.NoError(t, err, "found error")
+	// require.Error(t, err, "actual error different than expected")
+	fmt.Println("destination details:")
+	fmt.Println(dest)
 }
