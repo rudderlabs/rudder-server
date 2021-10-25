@@ -2185,7 +2185,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
 	}
 
-	if params.AfterJobID == 0 {
+	if params.AfterJobID > 0 {
 		sqlStatement += fmt.Sprintf(" AND jobs.job_id > $%d", len(args)+1)
 		args = append(args, params.AfterJobID)
 	}
