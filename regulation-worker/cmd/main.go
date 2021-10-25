@@ -5,13 +5,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 )
 
-//TODO: in case of os.Interrupt, syscall.SIGTERM make sure that all are notified about the termination of the service (like transformer, if a job is in progress, etc.)
-//creates `loop` object and call getJobLoop and updateStatusLoop methods in different go routines.
 func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -32,12 +33,13 @@ func main() {
 func Run(ctx context.Context) {
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			WorkspaceID: getEnv("workspaceID","1001"),
-			URLPrefix: getEnv("urlPrefix", "http://localhost:35359"),
+			WorkspaceID: getEnv("workspaceID", "1001"),
+			URLPrefix:   getEnv("urlPrefix", "http://localhost:35359"),
 		},
+		Deleter: &delete.Deleter{},
 	}
 
-	l := withLoop(svc)
+	l := withLoop(ctx, svc)
 	err := l.Loop(ctx)
 	if err != nil {
 		panic(err)
@@ -52,6 +54,13 @@ func getEnv(name, defaultValue string) string {
 	return defaultValue
 }
 
-func withLoop(svc service.JobSvc) *service.Looper {
-	return &service.Looper{Svc: svc}
+func withLoop(ctx context.Context, svc service.JobSvc) *service.Looper {
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxInterval = time.Hour * 72
+	boCtx := backoff.WithContext(bo, ctx)
+
+	return &service.Looper{
+		Svc:     svc,
+		Backoff: boCtx,
+	}
 }

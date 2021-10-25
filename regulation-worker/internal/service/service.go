@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	backoff "github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
@@ -29,12 +29,13 @@ type JobSvc struct {
 //calls api-client.getJob(workspaceID)
 //calls api-client to get new job with workspaceID, which returns jobID.
 func (js *JobSvc) JobSvc(ctx context.Context) error {
-
 	//API request to get new job
 	job, err := js.API.Get(ctx)
+
 	if err != nil {
 		return err
 	}
+
 	//once job is successfully received, calling updatestatus API to update the status of job to running.
 	status := model.JobStatusRunning
 	err = js.updateStatus(ctx, status, job.ID)
@@ -63,16 +64,20 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 //like: dest_type, auth details,
 //return destination Type enum{file, api}
 func getDestDetails(destID, workspaceID string) (model.Destination, error) {
-	return model.Destination{}, nil
+	return model.Destination{
+		Type: "batch",
+	}, nil
 }
 
 func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
 	maxWait := time.Minute * 10
+	var err error
 	bo := backoff.NewExponentialBackOff()
 	boCtx := backoff.WithContext(bo, ctx)
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = maxWait
-	if err := backoff.Retry(func() error {
+
+	if err = backoff.Retry(func() error {
 		err := js.API.UpdateStatus(ctx, status, jobID)
 		return err
 	}, boCtx); err != nil {
@@ -81,5 +86,5 @@ func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobI
 		}
 
 	}
-	return nil
+	return err
 }

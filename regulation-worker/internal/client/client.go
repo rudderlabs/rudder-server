@@ -36,6 +36,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	if err != nil {
 		return model.Job{}, err
 	}
+
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -80,7 +81,6 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 //marshals status into appropriate status schema, and sent as payload
 //checked for returned status code.
 func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
-
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Minute))
 	defer cancel()
 

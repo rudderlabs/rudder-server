@@ -2,22 +2,24 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"time"
 
+	backoff "github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
 type Looper struct {
-	Svc JobSvc
+	Backoff backoff.BackOffContext
+	Svc     JobSvc
 }
 
 func (l *Looper) Loop(ctx context.Context) error {
 	for {
-		fmt.Println("loop iterator tracker")
 		err := l.Svc.JobSvc(ctx)
-		if err == model.ErrNoRunnableJob {
-			time.Sleep(10 * time.Minute)
+		if err == nil {
+			l.Backoff.Reset()
+		} else if err == model.ErrNoRunnableJob {
+			time.Sleep(l.Backoff.NextBackOff())
 		} else if err != nil {
 			return err
 		}

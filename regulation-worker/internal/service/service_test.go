@@ -34,6 +34,7 @@ func TestJobSvc(t *testing.T) {
 			},
 			expectedStatus:              model.JobStatusRunning,
 			deleteJobStatus:             model.JobStatusComplete,
+			dest:                        model.Destination{Type: "batch"},
 			getJobCallCount:             1,
 			updateStatusBeforeCallCount: 1,
 			updateStatusAfterCallCount:  1,

@@ -20,10 +20,13 @@ type Deleter struct {
 func (d *Deleter) DeleteJob(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error) {
 	switch dest.Type {
 	case "api":
-		return d.API.Delete(ctx, job, dest)
+		delAPI := MockAPIDeleter{}
+		return delAPI.Delete(ctx, job, dest)
 	case "batch":
-		return d.Batch.Delete(ctx, job, dest)
+		delBatch := MockBatchDeleter{}
+		return delBatch.Delete(ctx, job, dest)
 	default:
+		fmt.Println("default called")
 		return model.JobStatusFailed, fmt.Errorf("deletion feature not available for %s destination type", dest.Type)
 
 	}
