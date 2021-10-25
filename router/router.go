@@ -2065,7 +2065,7 @@ func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val inte
 			errCatStatusCode, errCatResponse = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
 			if errCatStatusCode != http.StatusOK {
 				// Error while disabling a destination
-				return errCatStatusCode, errCatResponse
+				return http.StatusBadRequest, errCatResponse
 			}
 			// Abort the jobs as the destination is disable
 			return http.StatusBadRequest, destResBody
