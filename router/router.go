@@ -113,7 +113,6 @@ type HandleT struct {
 	backgroundCtx                          context.Context
 	backgroundCancel                       context.CancelFunc
 	backgroundWait                         func() error
-	transformerProxy                       bool
 	oauth                                  oauth.Authorizer
 }
 
@@ -617,14 +616,12 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							defer cancel()
 
 							//for proxying through transformer
-							pkgLogger.Infof(`transformerProxy status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
-							// Proxying through Transformer with or without OAuth
 							authType := router_utils.GetAuthType(destinationJob.Destination)
 							if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
-								pkgLogger.Infof(`routing via transformer, proxy enabled`)
-								respStatusCode, respBodyTemp = worker.rt.SendToTransformerProxyWithRetry(sendCtx, val, destinationJob, worker.workerID)
+								pkgLogger.Infof(`Sending for OAuth destination`)
+								respStatusCode, respBodyTemp = worker.rt.SendOAuthDestEvent(sendCtx, val, destinationJob, worker.workerID)
 							} else {
-								pkgLogger.Infof(`routing via server, proxy disabled`)
+								pkgLogger.Infof(`Sending event for non-oauth destination`)
 								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
 							}
 							if isSuccessStatus(respStatusCode) {
@@ -1812,12 +1809,10 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
 	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
-	transformerProxyKeys := []string{"Router." + rt.destName + "." + "transformerProxy", "Router." + "transformerProxy"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
-	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
@@ -2033,7 +2028,7 @@ func (rt *HandleT) Resume() {
 }
 
 // Currently the retry logic has been implemented for only OAuth
-func (rt *HandleT) SendToTransformerProxyWithRetry(ctx context.Context, val integrations.PostParametersT,
+func (rt *HandleT) SendOAuthDestEvent(ctx context.Context, val integrations.PostParametersT,
 	destinationJob types.DestinationJobT, workerId int) (int, string) {
 	var destRespStCd int
 	var destResBody string
