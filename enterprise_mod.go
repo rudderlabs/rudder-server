@@ -8,4 +8,6 @@
 // 3. observe the changes on go.mod `git diff go.mod`
 package enterprisemod
 
-import ()
+import (
+	_ "github.com/spaolacci/murmur3"
+)
