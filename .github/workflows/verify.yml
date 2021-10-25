@@ -32,7 +32,8 @@ jobs:
         run: echo '::error file=Makefile,line=11,col=1::Incorrectly generated files. Ensure you have run `make mocks` and committed the files locally.'
 
       - run: go mod tidy
-      - run: git diff --exit-code
+      - run: git diff --exit-code go.mod
       - name: Error message
         if: ${{ failure() }}
-        run: echo '::error file=go.mod,line=1,col=1::Inconsistent go mod file. Ensure you have run `go mod tidy` and committed the files locally.'
+        run: echo '::error file=go.mod,line=1,col=1::Inconsistent go mod file. Ensure you have run `go mod tidy` and committed the files locally.' && \
+          echo '::error file=enterprise_mod.go,line=1,col=1::Possible missing enterprise exclusive dependencies.'
