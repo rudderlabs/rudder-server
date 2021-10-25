@@ -47,8 +47,9 @@ To contribute to this project, you may need to install RudderStack on your machi
 ## Getting help
 
 For any questions, concerns, or queries, you can start by asking a question on our [**Slack**](https://rudderstack.com/join-rudderstack-slack-community/) channel.
+<br><br>
 
-We look forward to your feedback on improving this project.
+### We look forward to your feedback on improving this project!
 
 
 <!----variables---->
