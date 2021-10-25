@@ -30,3 +30,9 @@ jobs:
       - name: Error message
         if: ${{ failure() }}
         run: echo '::error file=Makefile,line=11,col=1::Incorrectly generated files. Ensure you have run `make mocks` and committed the files locally.'
+
+      - run: go mod tidy
+      - run: git diff --exit-code
+      - name: Error message
+        if: ${{ failure() }}
+        run: echo '::error file=go.mod,line=1,col=1::Inconsistent go mod file. Ensure you have run `go mod tidy` and committed the files locally.'
