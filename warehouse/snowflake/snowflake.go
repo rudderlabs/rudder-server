@@ -489,6 +489,7 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		if _, ok := identifyColMap[colName]; ok {
 			identifyColNames = append(identifyColNames, fmt.Sprintf(`"%s"`, colName))
 		} else {
+			//This is to handle cases when column in users table not present in inditifies table
 			identifyColNames = append(identifyColNames, fmt.Sprintf(`NULL as "%s"`, colName))
 		}
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
