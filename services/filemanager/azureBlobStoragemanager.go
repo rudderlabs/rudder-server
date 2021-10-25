@@ -152,7 +152,7 @@ func (manager *AzureBlobStorageManager) Download(output *os.File, key string) er
 	blobURL := containerURL.NewBlockBlobURL(key)
 	ctx := context.Background()
 	// Here's how to download the blob
-	downloadResponse, err := blobURL.Download(ctx, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false)
+	downloadResponse, err := blobURL.Download(ctx, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return err
 	}
@@ -225,6 +225,6 @@ func (manager *AzureBlobStorageManager) DeleteObjects(locations []string) (err e
 	return
 }
 
-func (manager *AzureBlobStorageManager) GetConfiguredPrefix() (string) {
+func (manager *AzureBlobStorageManager) GetConfiguredPrefix() string {
 	return manager.Config.Prefix
 }
