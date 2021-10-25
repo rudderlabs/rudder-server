@@ -95,7 +95,7 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
 	err = tableRef.Create(bq.BQContext, metaData)
 	if !checkAndIgnoreAlreadyExistError(err) {
-		return err
+		return
 	}
 
 	err = bq.createTableView(tableName, columnMap)
