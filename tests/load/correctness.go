@@ -25,10 +25,10 @@ import (
 	"time"
 
 	"github.com/go-redis/redis"
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	uuid "github.com/satori/go.uuid"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -181,7 +181,7 @@ func getS3DestData() {
 		if s3Object.LastModified.Before(startTime) {
 			continue
 		}
-		jsonPath := "/Users/srikanth/" + "s3-correctness/" + uuid.NewV4().String()
+		jsonPath := "/Users/srikanth/" + "s3-correctness/" + uuid.Must(uuid.NewV4()).String()
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		jsonFile, err := os.Create(jsonPath)
 		if err != nil {

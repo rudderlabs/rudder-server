@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 )
 
 var pkgLogger logger.LoggerI
@@ -85,7 +85,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 		// generate new one and assign to these two
 		var rudderID string
 		if len(rudderIDs) == 0 {
-			rudderID = uuid.NewV4().String()
+			rudderID = uuid.Must(uuid.NewV4()).String()
 		} else {
 			rudderID = rudderIDs[0]
 		}
@@ -172,7 +172,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 	// add rules from load files into temp table
 	// use original table to delete redundant ones from temp table
 	// insert from temp table into original table
-	mergeRulesStagingTable := fmt.Sprintf(`rudder_identity_merge_rules_staging_%s`, strings.Replace(uuid.NewV4().String(), "-", "", -1))
+	mergeRulesStagingTable := fmt.Sprintf(`rudder_identity_merge_rules_staging_%s`, strings.Replace(uuid.Must(uuid.NewV4()).String(), "-", "", -1))
 	sqlStatement := fmt.Sprintf(`CREATE TEMP TABLE %s
 						ON COMMIT DROP
 						AS SELECT * FROM %s
@@ -438,7 +438,7 @@ func (idr *HandleT) createTempGzFile(dirName string) (gzWriter misc.GZipWriter, 
 		panic(err)
 	}
 	fileExtension := warehouseutils.GetTempFileExtension(idr.Warehouse.Type)
-	path = tmpDirPath + dirName + fmt.Sprintf(`%s_%s/%v/`, idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.ID, idr.UploadID) + uuid.NewV4().String() + "." + fileExtension
+	path = tmpDirPath + dirName + fmt.Sprintf(`%s_%s/%v/`, idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.ID, idr.UploadID) + uuid.Must(uuid.NewV4()).String() + "." + fileExtension
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	if err != nil {
 		panic(err)

@@ -18,12 +18,12 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 )
 
@@ -1546,7 +1546,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files for %s:%s", publishBatchSize, destType, destID)
-	uniqueLoadGenID := uuid.NewV4().String()
+	uniqueLoadGenID := uuid.Must(uuid.NewV4()).String()
 	job.upload.LoadFileGenStartTime = timeutil.Now()
 
 	var wg sync.WaitGroup
