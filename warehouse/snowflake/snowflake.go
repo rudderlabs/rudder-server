@@ -427,6 +427,14 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 		return
 	}
 
+	sqlStatement = fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN "ID" int AUTOINCREMENT start 1 increment 1`, stagingTableName)
+	pkgLogger.Infof("SF: Adding autoincrement column for table:%s at %s\n", stagingTableName, sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil && !checkAndIgnoreAlreadyExistError(err) {
+		pkgLogger.Errorf("SF: Error adding autoincrement column for table:%s: %v\n", stagingTableName, err)
+		return
+	}
+
 	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadfile.Location)
 	sqlStatement = fmt.Sprintf(`COPY INTO %v("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT") FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`"%s"."%s"`, sf.Namespace, stagingTableName), loadLocation, sf.authString())
@@ -441,7 +449,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s" AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY "MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE" ORDER BY "UPDATED_AT" DESC) AS _rudder_staging_row_number FROM "%[2]s"
+											SELECT *, row_number() OVER (PARTITION BY "MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE" ORDER BY "ID" DESC) AS _rudder_staging_row_number FROM "%[2]s"
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
 									ON (original."MERGE_PROPERTY_TYPE" = staging."MERGE_PROPERTY_TYPE" AND original."MERGE_PROPERTY_VALUE" = staging."MERGE_PROPERTY_VALUE")
