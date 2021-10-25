@@ -106,7 +106,8 @@ type HandleT struct {
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
 	savePayloadOnError                     bool
-	transformerProxy                       bool
+	responseTransform                      bool
+	saveDestinationResponseOverride        bool
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -509,7 +510,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	var destinationResponseHandler ResponseHandlerI
 	worker.rt.configSubscriberLock.RLock()
 	destinationResponseHandler = worker.rt.destinationResponseHandler
-	// saveDestinationResponse := worker.rt.saveDestinationResponse
+	saveDestinationResponse := worker.rt.saveDestinationResponse
 	worker.rt.configSubscriberLock.RUnlock()
 
 	/*
@@ -592,16 +593,15 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
-							//for proxying through transformer
 							// stat start
-							pkgLogger.Debugf(`transformerProxy status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
+							pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.responseTransform, worker.rt.destName)
 							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 							defer cancel()
 							worker.routerDeliveryLatencyStat.Start()
 							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
 							// stat end
 							worker.routerDeliveryLatencyStat.End()
-							if worker.rt.transformerProxy {
+							if worker.rt.responseTransform {
 								dResponse := integrations.DeliveryResponseT{
 									Status: int64(respStatusCode),
 									Body:   respBodyTemp,
@@ -633,15 +633,15 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				deliveryLatencyStat.End()
 				// END: request to destination endpoint
 
-				// if isSuccessStatus(respStatusCode) {
-				// 	if saveDestinationResponse {
-				// 		if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
-				// 			respBody = ""
-				// 		}
-				// 	} else {
-				// 		respBody = ""
-				// 	}
-				// }
+				if isSuccessStatus(respStatusCode) && !worker.rt.saveDestinationResponseOverride {
+					if saveDestinationResponse {
+						if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
+							respBody = ""
+						}
+					} else {
+						respBody = ""
+					}
+				}
 
 				worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
 			} else {
@@ -1797,12 +1797,14 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
 	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
-	transformerProxyKeys := []string{"Router." + rt.destName + "." + "transformerProxy", "Router." + "transformerProxy"}
+	responseTransformKeys := []string{"Router." + rt.destName + "." + "responseTransform", "Router." + "responseTransform"}
+	saveDestinationResponseOverrideKeys := []string{"Router." + rt.destName + "." + "saveDestinationResponseOverride", "Router." + "saveDestinationResponseOverride"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
-	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
+	config.RegisterBoolConfigVariable(false, &rt.responseTransform, true, responseTransformKeys...)
+	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
