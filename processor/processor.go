@@ -1457,7 +1457,6 @@ func (proc *HandleT) processPipeline(
 		userTransformationStat.numEvents.Count(len(eventList))
 		proc.logger.Debug("Custom Transform input size", len(eventList))
 
-		userTransformationStat.transformTime.Start()
 		startedAt := time.Now()
 		response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(), userTransformBatchSize)
 		d := time.Since(startedAt)
