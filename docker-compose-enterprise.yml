@@ -17,7 +17,7 @@ services:
       # - grafana
     build:
       context: ./
-      dockerfile: build/Dockerfile-dev
+      dockerfile: build/Dockerfile
     entrypoint: sh -c './build/wait-for db:5432 -- go run main.go'
     ports:
       - "8080:8080"
