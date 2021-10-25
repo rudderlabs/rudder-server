@@ -89,7 +89,6 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
-	Shutdown()
 	Validate(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 }
 
@@ -155,11 +154,6 @@ func (trans *HandleT) Setup() {
 			},
 		}
 	}
-}
-
-// Shutdown stops transform workers gracefully and waits for them to stop
-// WARNING: No Transform() call should be running or called when and after
-func (trans *HandleT) Shutdown() {
 }
 
 //ResponseT represents a Transformer response

@@ -26,14 +26,14 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	t.requests = append(t.requests, reqBody)
 	resps := make([]transformer.TransformerResponseT, len(reqBody))
-	for i, r := range reqBody {
-		statusCode := int(r.Message["forceStatusCode"].(float64))
-		delete(r.Message, "forceStatusCode")
-		r.Message["echo-key-1"] = r.Message["src-key-1"]
+	for i := range reqBody {
+		statusCode := int(reqBody[i].Message["forceStatusCode"].(float64))
+		delete(reqBody[i].Message, "forceStatusCode")
+		reqBody[i].Message["echo-key-1"] = reqBody[i].Message["src-key-1"]
 
 		resps[i] = transformer.TransformerResponseT{
-			Output:     r.Message,
-			Metadata:   r.Metadata,
+			Output:     reqBody[i].Message,
+			Metadata:   reqBody[i].Metadata,
 			StatusCode: statusCode,
 			Error:      "",
 		}

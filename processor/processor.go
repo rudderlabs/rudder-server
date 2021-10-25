@@ -359,10 +359,6 @@ func (proc *HandleT) Start(ctx context.Context) {
 func (proc *HandleT) Shutdown() {
 	proc.backgroundCancel()
 	proc.backgroundWait()
-
-	// It is important to make sure everything has stopped,
-	//	 before we shutdown the transformer
-	proc.transformer.Shutdown()
 }
 
 var (
