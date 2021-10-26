@@ -843,6 +843,10 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			"record_id":          failedEvent.Metadata.RecordID,
 			"source_task_run_id": failedEvent.Metadata.SourceTaskRunID,
 		}
+		eventContext, castOk := failedEvent.Output["context"].(map[string]interface{})
+		if castOk {
+			params["violationErrors"] = eventContext["violationErrors"]
+		}
 		marshalledParams, err := json.Marshal(params)
 		if err != nil {
 			proc.logger.Errorf("[Processor] Failed to marshal parameters. Parameters: %v", params)
