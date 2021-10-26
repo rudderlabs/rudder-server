@@ -12,7 +12,6 @@ import (
 	"github.com/satori/go.uuid"
 	"reflect"
 	"runtime"
-	"sort"
 	"strings"
 	"time"
 )
@@ -106,12 +105,7 @@ func getDeltaLakeDataType(columnType string) string {
 }
 
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
-	var keys []string
-	for colName := range columns {
-		keys = append(keys, colName)
-	}
-	sort.Strings(keys)
-
+	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	var arr []string
 	for _, name := range keys {
 		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, getDeltaLakeDataType(columns[name])))
@@ -169,15 +163,28 @@ func (dl *HandleT) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
-func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
-	keys := reflect.ValueOf(tableSchemaInUpload).MapKeys()
-	strKeys := make([]string, len(keys))
-	for i := 0; i < len(keys); i++ {
-		strKeys[i] = fmt.Sprintf(`%s`, keys[i].String())
-	}
-	sort.Strings(strKeys)
-	sortedColumnNames := strings.Join(strKeys[:], ",")
+func (dl *HandleT) getSortedColumnNames(tableSchemaInUpload warehouseutils.TableSchemaT) (sortedColumnNames string) {
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
+	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+		sortedColumnNames = strings.Join(sortedColumnKeys[:], ",")
+	} else {
+		keys := reflect.ValueOf(tableSchemaInUpload).MapKeys()
+		strKeys := make([]string, len(keys))
+
+		for index, value := range sortedColumnKeys {
+			csvColumnIndex := fmt.Sprintf(`%s%d`, "_c", index)
+			columnName := value
+			columnType := getDeltaLakeDataType(tableSchemaInUpload[columnName])
+			strKeys[index] = fmt.Sprintf(`CAST ( %s AS %s ) AS %s`, csvColumnIndex, columnType, columnName)
+		}
+		sortedColumnNames = strings.Join(strKeys[:], ",")
+	}
+	return
+}
+
+func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+	sortedColumnNames := dl.getSortedColumnNames(tableSchemaInUpload)
 	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
 	err = dl.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
@@ -203,14 +210,16 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		// copy statement for parquet load files
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = PARQUET "+
-			"PATTERN = '*.parquet'",
+			"PATTERN = '*.parquet' "+
+			"COPY_OPTIONS ('force' = 'true')",
 			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder)
 	} else {
 		// copy statement for csv load files
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = CSV "+
 			"PATTERN = '*.gz' "+
-			"FORMAT_OPTIONS ( 'compression' = 'gzip' )",
+			"FORMAT_OPTIONS ( 'compression' = 'gzip' ) "+
+			"COPY_OPTIONS ('force' = 'true')",
 			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder)
 	}
 
