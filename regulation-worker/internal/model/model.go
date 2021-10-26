@@ -32,8 +32,8 @@ type Job struct {
 
 type UserAttribute struct {
 	UserID string
-	Phone  *string
-	Email  *string
+	Phone  string
+	Email  string
 }
 
 type Destination struct {
