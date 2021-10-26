@@ -213,8 +213,10 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 		if to > len(clientEvents) {
 			to = len(clientEvents)
 		}
+		trans.guardConcurrency <- struct{}{}
 		go func() {
 			transformResponse[i] = trans.request(url, clientEvents[from:to])
+			<-trans.guardConcurrency
 			wg.Done()
 		}()
 	}
