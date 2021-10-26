@@ -18,6 +18,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
+	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -109,7 +110,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 
 }
-  
+
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("main")

@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -377,7 +377,7 @@ var _ = Describe("Processor", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:          uuid.NewV4(),
+					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         1010,
 					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
 					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
@@ -388,7 +388,7 @@ var _ = Describe("Processor", func() {
 					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
 				},
 				{
-					UUID:          uuid.NewV4(),
+					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         1002,
 					CreatedAt:     time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
 					ExpireAt:      time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
@@ -402,20 +402,20 @@ var _ = Describe("Processor", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
 					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
 					CustomVal:    gatewayCustomVal[0],
 					EventPayload: createBatchPayload(WriteKeyEnabledNoUT, "2002-01-02T02:23:45.000Z", []mockEventData{messages["message-3"], messages["message-4"], messages["message-5"]}),
-					EventCount:    1,
+					EventCount:   1,
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 1,
 					},
 					Parameters: createBatchParameters(SourceIDEnabledNoUT),
 				},
 				{
-					UUID:          uuid.NewV4(),
+					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         2002,
 					CreatedAt:     time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
 					ExpireAt:      time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
@@ -426,7 +426,7 @@ var _ = Describe("Processor", func() {
 					Parameters:    nil,
 				},
 				{
-					UUID:          uuid.NewV4(),
+					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         2003,
 					CreatedAt:     time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
 					ExpireAt:      time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
@@ -558,7 +558,7 @@ var _ = Describe("Processor", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:          uuid.NewV4(),
+					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         1010,
 					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
 					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
@@ -569,7 +569,7 @@ var _ = Describe("Processor", func() {
 					Parameters:    createBatchParameters(SourceIDEnabledOnlyUT),
 				},
 				{
-					UUID:          uuid.NewV4(),
+					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         1002,
 					CreatedAt:     time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
 					ExpireAt:      time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
@@ -583,7 +583,7 @@ var _ = Describe("Processor", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
 					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -596,7 +596,7 @@ var _ = Describe("Processor", func() {
 					Parameters: createBatchParameters(SourceIDEnabledOnlyUT),
 				},
 				{
-					UUID:          uuid.NewV4(),
+					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         2002,
 					CreatedAt:     time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
 					ExpireAt:      time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
@@ -607,7 +607,7 @@ var _ = Describe("Processor", func() {
 					Parameters:    nil,
 				},
 				{
-					UUID:          uuid.NewV4(),
+					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         2003,
 					CreatedAt:     time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
 					ExpireAt:      time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
@@ -742,7 +742,7 @@ var _ = Describe("Processor", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:          uuid.NewV4(),
+					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         1010,
 					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
 					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
@@ -756,7 +756,7 @@ var _ = Describe("Processor", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
 					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -826,7 +826,7 @@ var _ = Describe("Processor", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:          uuid.NewV4(),
+					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         1010,
 					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
 					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
@@ -962,7 +962,7 @@ var _ = Describe("Processor", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:          uuid.NewV4(),
+					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         1010,
 					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
 					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),

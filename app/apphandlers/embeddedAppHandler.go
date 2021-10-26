@@ -92,7 +92,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		reportingI = embedded.App.Features().Reporting.GetReportingInstance()
 	}
 
-	if embedded.App.Features().Migrator != nil && config.GetBool("Migrator.enabled", false) {
+	if embedded.App.Features().Migrator != nil {
 		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
 			startProcessorFunc := func() {
 				clearDB := false
