@@ -57,6 +57,7 @@ func TestGet(t *testing.T) {
 				URLPrefix:   svr.URL,
 			}
 			job, err := c.Get(context.Background())
+			fmt.Println(job)
 			require.Equal(t, tt.expectedErr, err)
 			require.Equal(t, tt.expectedUsrAttributeCount, len(job.UserAttributes), "no of users different than expected")
 			t.Log("actual job:", job)
