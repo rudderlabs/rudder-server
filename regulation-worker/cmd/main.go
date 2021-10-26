@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	destination "github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
@@ -37,6 +39,10 @@ func Run(ctx context.Context) {
 			URLPrefix:   getEnv("urlPrefix", "http://localhost:35359"),
 		},
 		Deleter: &delete.Deleter{},
+		DestDetail: &destination.DestMiddleware{
+			Dest:    &backendconfig.WorkspaceConfig{},
+			DestCat: &destination.DestCategory{},
+		},
 	}
 
 	l := withLoop(ctx, svc)

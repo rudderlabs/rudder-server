@@ -37,19 +37,19 @@ type UserAttribute struct {
 }
 
 type Destination struct {
-	Config        ConfigT
+	Config        map[string]interface{}
 	DestinationID string
 	Type          string
 	Name          string
 }
 
-type ConfigT struct {
-	BucketName  interface{}
-	Prefix      interface{}
-	AccessKeyID interface{}
-	AccessKey   interface{}
-	EnableSSE   interface{}
-}
+// type ConfigT struct {
+// 	BucketName  interface{}
+// 	Prefix      interface{}
+// 	AccessKeyID interface{}
+// 	AccessKey   interface{}
+// 	EnableSSE   interface{}
+// }
 
 type APIReqErr struct {
 	StatusCode int

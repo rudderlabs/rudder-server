@@ -1,18 +1,23 @@
 package service_test
 
 import (
-	"fmt"
-	"os"
+	"context"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	gomock "github.com/golang/mock/gomock"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
-/*
 func TestJobSvc(t *testing.T) {
+	config := map[string]interface{}{
+		"bucketName":  "malani-deletefeature-testdata",
+		"prefix":      "regulation",
+		"accessKeyID": "xyz",
+		"accessKey":   "pqr",
+		"enableSSE":   false,
+	}
 	var tests = []struct {
 		name                        string
 		job                         model.Job
@@ -28,19 +33,26 @@ func TestJobSvc(t *testing.T) {
 		updateStatusBeforeCallCount int
 		updateStatusAfterCallCount  int
 		deleteJobCallCount          int
+		getDestDetailsCount         int
 	}{
 		{
 			name: "regulation worker returns without err",
 			job: model.Job{
 				ID: 1,
 			},
-			expectedStatus:              model.JobStatusRunning,
-			deleteJobStatus:             model.JobStatusComplete,
-			dest:                        model.Destination{Type: "batch"},
+			expectedStatus:  model.JobStatusRunning,
+			deleteJobStatus: model.JobStatusComplete,
+			dest: model.Destination{
+				Config:        config,
+				DestinationID: "1111",
+				Type:          "batch",
+				Name:          "S3",
+			},
 			getJobCallCount:             1,
 			updateStatusBeforeCallCount: 1,
 			updateStatusAfterCallCount:  1,
 			deleteJobCallCount:          1,
+			getDestDetailsCount:         1,
 		},
 		{
 			name:                        "regulation worker returns with get job err",
@@ -50,44 +62,36 @@ func TestJobSvc(t *testing.T) {
 			updateStatusBeforeCallCount: 0,
 			updateStatusAfterCallCount:  0,
 			deleteJobCallCount:          0,
+			getDestDetailsCount:         0,
 		},
 	}
 
 	ctx := context.Background()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
+
 			mockAPIClient := service.NewMockAPIClient(mockCtrl)
 			mockAPIClient.EXPECT().Get(ctx).Return(tt.job, tt.getErr).Times(tt.getJobCallCount)
+
 			jobID := tt.job.ID
 			mockAPIClient.EXPECT().UpdateStatus(ctx, tt.expectedStatus, jobID).Return(tt.updateStatusErrBefore).Times(tt.updateStatusBeforeCallCount)
 			mockAPIClient.EXPECT().UpdateStatus(ctx, tt.deleteJobStatus, jobID).Return(tt.updateStatusErrAfter).Times(tt.updateStatusAfterCallCount)
 
 			mockDeleter := service.NewMockdeleter(mockCtrl)
 			mockDeleter.EXPECT().DeleteJob(ctx, tt.job, tt.dest).Return(tt.deleteJobStatus, tt.deleteJobErr).Times(tt.deleteJobCallCount)
+
+			mockDestDetail := service.NewMockdestDetail(mockCtrl)
+			mockDestDetail.EXPECT().GetDestDetails(tt.job.DestinationID, tt.job.WorkspaceID).Return(tt.dest, nil).Times(tt.getDestDetailsCount)
 			svc := service.JobSvc{
-				API:     mockAPIClient,
-				Deleter: mockDeleter,
+				API:        mockAPIClient,
+				Deleter:    mockDeleter,
+				DestDetail: mockDestDetail,
 			}
 			err := svc.JobSvc(ctx)
 			require.Equal(t, tt.expectedFinalErr, err, "actual error different than expected")
 		})
 	}
-}
-*/
-func TestGetDestDetails(t *testing.T) {
-	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
-	os.Setenv("WORKSPACE_TOKEN", "1zzAnCvbknUuGogjQIBhkST0O4K")
-	os.Setenv("CONFIG_PATH", "./test_config.yaml")
-	config.Load()
-	backendconfig.Init()
-	workspaceID := "1zzAn8ZshcdkLN5TvP86VqLMT90"
-	destID := "1zzK2ZRgKofS6nxfcJ2nthi0Cme"
-	dest, err := service.GetDestDetails(destID, workspaceID)
-	fmt.Println("dest", dest)
-	require.NoError(t, err, "found error")
-	// require.Error(t, err, "actual error different than expected")
-	fmt.Println("destination details:")
-	fmt.Println(dest)
 }
