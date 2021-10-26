@@ -874,7 +874,7 @@ var _ = Describe("Processor", func() {
 
 				// compare payloads
 				var payload []map[string]interface{}
-				err := json.Unmarshal(job.EventPayload, &payload)
+				err = json.Unmarshal(job.EventPayload, &payload)
 				Expect(err).To(BeNil())
 				Expect(len(payload)).To(Equal(1))
 				message := messages[fmt.Sprintf(`message-%v`, i+1)]
