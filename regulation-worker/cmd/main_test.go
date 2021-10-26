@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 var (
 	c        = make(chan os.Signal, 1)
 	testData []test
+	mu       sync.Mutex
 )
 
 func TestMain(m *testing.M) {
@@ -35,7 +37,6 @@ func handler() http.Handler {
 }
 
 func run(m *testing.M) int {
-
 	svr := httptest.NewServer(handler())
 	defer svr.Close()
 	workspaceID := "1001"
@@ -90,7 +91,10 @@ func TestFlow(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			for _, test := range testData {
-				if test.status == "pending " && test.getJobRespCode == 200 {
+				mu.Lock()
+				status := test.status
+				mu.Unlock()
+				if status == "pending " && test.getJobRespCode == 200 {
 					return false
 				}
 			}
@@ -105,7 +109,10 @@ func getJob(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	for i, test := range testData {
-		if test.status == "pending" {
+		mu.Lock()
+		status := test.status
+		mu.Unlock()
+		if status == "pending" {
 			w.WriteHeader(testData[i].getJobRespCode)
 			_, _ = w.Write([]byte(testData[i].respBody))
 			return
@@ -122,9 +129,11 @@ func updateJobStatus(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&status); err != nil {
 		return
 	}
+	mu.Lock()
 	if status == "complete" {
 		testData[jobID-1].status = "complete"
 	}
+	mu.Unlock()
 	w.WriteHeader(testData[jobID-1].updateJobRespCode)
 
 	body, err := json.Marshal(struct{}{})
