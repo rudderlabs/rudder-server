@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
@@ -134,7 +135,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		}
 
 		req.Header.Add("User-Agent", "RudderLabs")
-
+		req.Header.Add("customerId", fmt.Sprint(rand.Intn(10)))
 		resp, err := client.Do(req)
 
 		var respBody []byte

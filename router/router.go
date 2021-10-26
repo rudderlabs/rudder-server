@@ -38,6 +38,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	uuid "github.com/satori/go.uuid"
 )
 
 type PauseT struct {
@@ -1301,32 +1302,32 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	//REPORTING - ROUTER - END
 
 	if len(statusList) > 0 {
-		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
+		// rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
 
-		sort.Slice(statusList, func(i, j int) bool {
-			return statusList[i].JobID < statusList[j].JobID
-		})
-		//Store the aborted jobs to errorDB
-		if routerAbortedJobs != nil {
-			rt.errorDB.Store(routerAbortedJobs)
-		}
-		//Update the status
-		txn := rt.jobsDB.BeginGlobalTransaction()
-		rt.jobsDB.AcquireUpdateJobStatusLocks()
-		err := rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil)
-		if err != nil {
-			rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
-			panic(err)
-		}
-		//Save msgids of aborted jobs
-		if len(jobRunIDAbortedEventsMap) > 0 {
-			GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
-		}
-		if rt.reporting != nil && rt.reportingEnabled {
-			rt.reporting.Report(reportMetrics, txn)
-		}
-		rt.jobsDB.CommitTransaction(txn)
-		rt.jobsDB.ReleaseUpdateJobStatusLocks()
+		// sort.Slice(statusList, func(i, j int) bool {
+		// 	return statusList[i].JobID < statusList[j].JobID
+		// })
+		// //Store the aborted jobs to errorDB
+		// if routerAbortedJobs != nil {
+		// 	rt.errorDB.Store(routerAbortedJobs)
+		// }
+		// //Update the status
+		// txn := rt.jobsDB.BeginGlobalTransaction()
+		// rt.jobsDB.AcquireUpdateJobStatusLocks()
+		// err := rt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{rt.destName}, nil)
+		// if err != nil {
+		// 	rt.logger.Errorf("[Router] :: Error occurred while updating %s jobs statuses. Panicking. Err: %v", rt.destName, err)
+		// 	panic(err)
+		// }
+		// //Save msgids of aborted jobs
+		// if len(jobRunIDAbortedEventsMap) > 0 {
+		// 	GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
+		// }
+		// if rt.reporting != nil && rt.reportingEnabled {
+		// 	rt.reporting.Report(reportMetrics, txn)
+		// }
+		// rt.jobsDB.CommitTransaction(txn)
+		// rt.jobsDB.ReleaseUpdateJobStatusLocks()
 	}
 
 	if rt.guaranteeUserEventOrder {
@@ -1556,6 +1557,42 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 	}
 }
 
+func generateUUID() []string {
+	uuidList := make([]string, 0)
+	for i := 0; i < 20; i++ {
+		uuidList = append(uuidList, uuid.NewV4().String())
+	}
+	return uuidList
+}
+
+func generateFakeCombinedList() []*jobsdb.JobT {
+	combinedList := make([]*jobsdb.JobT, 0)
+	uuidList := generateUUID()
+	userID := uuidList[rand.Intn(len(uuidList))]
+	url := "95.216.43.45:5000"
+	payload := fmt.Sprintf(`{"body":{"XML":{},"FORM":{},"JSON":{"type":"track","event":"Demo Track","sentAt":"2019-08-12T05:08:30.909Z","channel":"android-sdk","context":{"ip":"[::1]","app":{"name":"RudderAndroidClient","build":"1","version":"1.0","namespace":"com.rudderlabs.android.sdk"},"device":{"id":"49e4bdd1c280bc00","name":"generic_x86","model":"Android SDK built for x86","manufacturer":"Google"},"locale":"en-US","screen":{"width":1080,"height":1794,"density":420},"traits":{"anonymousId":"49e4bdd1c280bc00"},"library":{"name":"com.rudderstack.android.sdk.core"},"network":{"carrier":"Android"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"rudderId":"90ca6da0-292e-4e79-9880-f8009e0ae4a3","messageId":"026af35f-f230-4e59-9b73-b22e46be4a3f","timestamp":"2021-10-25T17:24:06.740+05:30","properties":{"label":"Demo Label","value":5,"testMap":{"t1":"a","t2":4},"category":"Demo Category","floatVal":4.501,"testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}]},"receivedAt":"2021-10-25T17:24:06.740+05:30","request_ip":"[::1]","anonymousId":"%s","integrations":{"All":true},"originalTimestamp":"2019-08-12T05:08:30.909Z"}},"type":"REST","files":{},"method":"GET","params":{},"userId":"anon_id","headers":{"content-type":"application/json"},"version":"1","endpoint":"%s"}`, userID, url)
+	parameters := `{"source_id": "1mh4K00WltILRBzWW2jzdIpX7YZ", "destination_id": "1y8pFzE16L2PrF3VN7YU9qsigso", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`
+	for i := 0; i < 60000; i++ {
+
+		job := jobsdb.JobT{
+			UUID:         uuid.NewV4(),
+			UserID:       "u1",
+			JobID:        2009,
+			CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+			ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+			CustomVal:    "WEBHOOK",
+			EventPayload: []byte(payload),
+			LastJobStatus: jobsdb.JobStatusT{
+				AttemptNum:    1,
+				ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
+			},
+			Parameters: []byte(parameters),
+		}
+		combinedList = append(combinedList, &job)
+	}
+	return combinedList
+}
+
 func (rt *HandleT) readAndProcess() int {
 	if rt.guaranteeUserEventOrder {
 		//#JobOrder (See comment marked #JobOrder
@@ -1573,24 +1610,24 @@ func (rt *HandleT) readAndProcess() int {
 		//End of #JobOrder
 	}
 
-	toQuery := jobQueryBatchSize
-	retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
-	toQuery -= len(retryList)
-	throttledList := rt.jobsDB.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
-	toQuery -= len(throttledList)
-	waitList := rt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery}) //Jobs send to waiting state
-	toQuery -= len(waitList)
-	unprocessedList := rt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
+	// toQuery := jobQueryBatchSize
+	// retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
+	// toQuery -= len(retryList)
+	// throttledList := rt.jobsDB.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
+	// toQuery -= len(throttledList)
+	// waitList := rt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery}) //Jobs send to waiting state
+	// toQuery -= len(waitList)
+	// unprocessedList := rt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 
-	combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
-
+	// combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
+	combinedList := generateFakeCombinedList()
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
 		time.Sleep(readSleep)
 		return 0
 	}
 
-	rt.logger.Debugf("RT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", rt.destName, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
+	//rt.logger.Debugf("RT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", rt.destName, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
 
 	sort.Slice(combinedList, func(i, j int) bool {
 		return combinedList[i].JobID < combinedList[j].JobID
@@ -1620,9 +1657,9 @@ func (rt *HandleT) readAndProcess() int {
 	for _, job := range combinedList {
 		destID := destinationID(job)
 		rt.configSubscriberLock.RLock()
-		drain, reason := router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap)
+		_, reason := router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap)
 		rt.configSubscriberLock.RUnlock()
-		if drain {
+		if false {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -1669,23 +1706,23 @@ func (rt *HandleT) readAndProcess() int {
 	rt.throttledUserMap = nil
 
 	//Mark the jobs as executing
-	err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
-	if err != nil {
-		pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
-		panic(err)
-	}
+	// err := rt.jobsDB.UpdateJobStatus(statusList, []string{rt.destName}, nil)
+	// if err != nil {
+	// 	pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
+	// 	panic(err)
+	// }
 	//Mark the jobs as aborted
 	if len(drainList) > 0 {
-		err = rt.errorDB.Store(drainJobList)
-		if err != nil {
-			pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
-			panic(err)
-		}
-		err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
-		if err != nil {
-			pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
-			panic(err)
-		}
+		// err = rt.errorDB.Store(drainJobList)
+		// if err != nil {
+		// 	pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
+		// 	panic(err)
+		// }
+		// err = rt.jobsDB.UpdateJobStatus(drainList, []string{rt.destName}, nil)
+		// if err != nil {
+		// 	pkgLogger.Errorf("Error occurred while marking %s jobs statuses as aborted. Panicking. Err: %v", rt.destName, err)
+		// 	panic(err)
+		// }
 		for destID, destDrainStat := range drainStatsbyDest {
 			rt.drainedJobsStat = stats.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 				"destType": rt.destName,
