@@ -28,6 +28,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go"
+	uuid "github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
@@ -42,7 +43,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -472,7 +472,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				toSet := vjson.Value().(map[string]interface{})
 				toSet["rudderId"] = rudderId
 				if messageId := strings.TrimSpace(vjson.Get("messageId").String()); messageId == "" {
-					toSet["messageId"] = uuid.NewV4().String()
+					toSet["messageId"] = uuid.Must(uuid.NewV4()).String()
 				}
 				out = append(out, toSet)
 				return true // keep iterating
@@ -509,7 +509,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
 			eventBatchesToRecord = append(eventBatchesToRecord, fmt.Sprintf("%s", body))
 			sourcesJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str // pick the job_run_id from the first event of batch. We are assuming job_run_id will be same for all events in a batch and the batch is coming from rudder-sources
-			id := uuid.NewV4()
+			id := uuid.Must(uuid.NewV4())
 
 			params := map[string]interface{}{
 				"source_id":         sourceID,
@@ -1455,7 +1455,7 @@ func (gateway *HandleT) addToWebRequestQ(writer *http.ResponseWriter, req *http.
 	//If necessary fetch userID from request body.
 	if userIDHeader == "" {
 		//If the request comes through proxy, proxy would already send this. So this shouldn't be happening in that case
-		userIDHeader = uuid.NewV4().String()
+		userIDHeader = uuid.Must(uuid.NewV4()).String()
 	}
 	userWebRequestWorker := gateway.findUserWebRequestWorker(userIDHeader)
 	ipAddr := misc.GetIPFromReq(req)

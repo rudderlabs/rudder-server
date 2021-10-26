@@ -32,11 +32,11 @@ import (
 	"github.com/araddon/dateparse"
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/cenkalti/backoff"
+	uuid "github.com/gofrs/uuid"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
