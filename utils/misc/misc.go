@@ -32,11 +32,11 @@ import (
 	"github.com/araddon/dateparse"
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/cenkalti/backoff"
+	uuid "github.com/gofrs/uuid"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -368,6 +368,12 @@ func (stats *PerfStats) Start() {
 //End marks the end of one round of stat collection. events is number of events processed since start
 func (stats *PerfStats) End(events int) {
 	elapsed := time.Since(stats.tmpStart)
+	stats.elapsedTime += elapsed
+	stats.eventCount += int64(events)
+	stats.instantRateCall = float64(events) * float64(time.Second) / float64(elapsed)
+}
+
+func (stats *PerfStats) Rate(events int, elapsed time.Duration) {
 	stats.elapsedTime += elapsed
 	stats.eventCount += int64(events)
 	stats.instantRateCall = float64(events) * float64(time.Second) / float64(elapsed)

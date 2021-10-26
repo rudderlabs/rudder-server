@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -125,7 +125,7 @@ func initBatchRouter() {
 
 var _ = Describe("BatchRouter", func() {
 	initBatchRouter()
-	
+
 	var c *testContext
 
 	BeforeEach(func() {
@@ -192,7 +192,7 @@ var _ = Describe("BatchRouter", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -209,7 +209,7 @@ var _ = Describe("BatchRouter", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),

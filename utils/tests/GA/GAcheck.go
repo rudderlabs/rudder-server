@@ -18,7 +18,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
-	uuid "github.com/satori/go.uuid"
+	uuid "github.com/gofrs/uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -86,7 +86,7 @@ func main() {
 	gaReferenceMap, _ = os.ReadFile("GAReference.json")
 
 	for i := 1; i <= *numberOfUsers; i++ {
-		id := uuid.NewV4()
+		id := uuid.Must(uuid.NewV4())
 		if *numberOfEventPtr == "one" {
 			go generateJobsForSameEvent(id.String(), *eventPtr, *numberOfIterPtr, *sendToRuderPtr)
 		} else {
