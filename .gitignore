@@ -13,4 +13,3 @@ enterprise
 junit*.xml
 **/profile.out
 .idea/*
-vendor
