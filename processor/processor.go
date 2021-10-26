@@ -1590,6 +1590,7 @@ func (proc *HandleT) processPipeline(
 		sourceDefID := destEvent.Metadata.SourceDefinitionID
 		destDefID := destEvent.Metadata.DestinationDefinitionID
 		sourceCategory := destEvent.Metadata.SourceCategory
+		workspaceId := destEvent.Metadata.WorkspaceID
 		//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 		//This is done to respect findWorker logic in router.
 		if rudderID == "" {
@@ -1614,6 +1615,7 @@ func (proc *HandleT) processPipeline(
 			SourceDefinitionID:      sourceDefID,
 			DestinationDefinitionID: destDefID,
 			RecordID:                recordId,
+			WorkspaceId:             workspaceId,
 		}
 		marshalledParams, err := json.Marshal(params)
 		if err != nil {
