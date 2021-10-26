@@ -864,9 +864,11 @@ var _ = Describe("Processor", func() {
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
 
 				var paramsMap, expectedParamsMap map[string]interface{}
-				json.Unmarshal(job.Parameters, &paramsMap)
+				err := json.Unmarshal(job.Parameters, &paramsMap)
+				Expect(err).To(BeNil())
 				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer", "source_task_run_id": "", "record_id": null}`, SourceIDEnabled, i+1))
-				json.Unmarshal(expectedStr, &expectedParamsMap)
+				err = json.Unmarshal(expectedStr, &expectedParamsMap)
+				Expect(err).To(BeNil())
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 				Expect(equals).To(Equal(true))
 
@@ -993,15 +995,17 @@ var _ = Describe("Processor", func() {
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
 
 				var paramsMap, expectedParamsMap map[string]interface{}
-				json.Unmarshal(job.Parameters, &paramsMap)
+				err := json.Unmarshal(job.Parameters, &paramsMap)
+				Expect(err).To(BeNil())
 				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": 400, "stage": "user_transformer", "source_task_run_id":"", "record_id": null}`, SourceIDEnabled))
-				json.Unmarshal(expectedStr, &expectedParamsMap)
+				err = json.Unmarshal(expectedStr, &expectedParamsMap)
+				Expect(err).To(BeNil())
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 				Expect(equals).To(Equal(true))
 
 				// compare payloads
 				var payload []map[string]interface{}
-				err := json.Unmarshal(job.EventPayload, &payload)
+				err = json.Unmarshal(job.EventPayload, &payload)
 				Expect(err).To(BeNil())
 				Expect(len(payload)).To(Equal(2))
 				message1 := messages[fmt.Sprintf(`message-%v`, 1)]
@@ -1443,9 +1447,6 @@ type mockEventData struct {
 	expectedReceivedAt        string
 	integrations              map[string]bool
 }
-type mockTransformerData struct {
-	id string
-}
 
 type transformExpectation struct {
 	events                    int
@@ -1460,10 +1461,6 @@ func setProcessorPausedVariable(processor *HandleT, setValue bool) {
 
 func pauseMainLoop(processor *HandleT) {
 	processor.pauseChannel <- &PauseT{respChannel: make(chan bool)}
-}
-
-func resumeMainLoop(processor *HandleT) {
-	processor.resumeChannel <- true
 }
 
 func createMessagePayload(e mockEventData) string {

@@ -353,12 +353,12 @@ func (proc *HandleT) Start(ctx context.Context) {
 		return nil
 	}))
 
-	g.Wait()
+	_ = g.Wait()
 }
 
 func (proc *HandleT) Shutdown() {
 	proc.backgroundCancel()
-	proc.backgroundWait()
+	_ = proc.backgroundWait()
 }
 
 var (
@@ -509,34 +509,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 	}
 }
 
-//We create sessions (of individul events) from set of input jobs  from a user
-//Those sesssion events are transformed and we have a transformed set of
-//events that must be processed further via destination specific transformations
-//(in processJobsForDest). This function creates jobs from eventList
-func createUserTransformedJobsFromEvents(transformUserEventList [][]types.SingularEventT,
-	userIDList []string, userJobs map[string][]*jobsdb.JobT) ([]*jobsdb.JobT, [][]types.SingularEventT) {
-
-	transJobList := make([]*jobsdb.JobT, 0)
-	transEventList := make([][]types.SingularEventT, 0)
-	if len(transformUserEventList) != len(userIDList) {
-		panic(fmt.Errorf("len(transformUserEventList):%d != len(userIDList):%d", len(transformUserEventList), len(userIDList)))
-	}
-	for idx, userID := range userIDList {
-		userEvents := transformUserEventList[idx]
-
-		for idx, job := range userJobs[userID] {
-			//We put all the transformed event on the first job
-			//and empty out the remaining payloads
-			transJobList = append(transJobList, job)
-			if idx == 0 {
-				transEventList = append(transEventList, userEvents)
-			} else {
-				transEventList = append(transEventList, nil)
-			}
-		}
-	}
-	return transJobList, transEventList
-}
 
 func getSourceByWriteKey(writeKey string) (backendconfig.SourceT, error) {
 	var err error
