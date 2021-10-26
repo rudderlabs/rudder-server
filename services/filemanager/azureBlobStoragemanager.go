@@ -101,7 +101,6 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 }
 
 func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
-	fileObjects = make([]*FileObject, 0)
 	ctx := context.Background()
 	marker := string("")
 
@@ -137,8 +136,9 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxIt
 		return
 	}
 
-	for _, item := range response.Segment.BlobItems {
-		fileObjects = append(fileObjects, &FileObject{item.Name, item.Properties.LastModified})
+	fileObjects = make([]*FileObject, len(response.Segment.BlobItems))
+	for idx := range response.Segment.BlobItems {
+		fileObjects = append(fileObjects, &FileObject{response.Segment.BlobItems[idx].Name, response.Segment.BlobItems[idx].Properties.LastModified})
 	}
 	return
 }
@@ -152,7 +152,7 @@ func (manager *AzureBlobStorageManager) Download(output *os.File, key string) er
 	blobURL := containerURL.NewBlockBlobURL(key)
 	ctx := context.Background()
 	// Here's how to download the blob
-	downloadResponse, err := blobURL.Download(ctx, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false)
+	downloadResponse, err := blobURL.Download(ctx, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return err
 	}
@@ -225,6 +225,6 @@ func (manager *AzureBlobStorageManager) DeleteObjects(locations []string) (err e
 	return
 }
 
-func (manager *AzureBlobStorageManager) GetConfiguredPrefix() (string) {
+func (manager *AzureBlobStorageManager) GetConfiguredPrefix() string {
 	return manager.Config.Prefix
 }
