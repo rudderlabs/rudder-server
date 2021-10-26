@@ -151,6 +151,9 @@ type HandleT struct {
 	dbWritesStat                                               stats.RudderStats
 	dbWorkersBufferFullStat, dbWorkersTimeOutStat              stats.RudderStats
 	bodyReadTimeStat                                           stats.RudderStats
+	addToWebRequestQWaitTime                                   stats.RudderStats
+	ProcessRequestTime                                         stats.RudderStats
+	addToBatchRequestQWaitTime                                 stats.RudderStats
 	trackSuccessCount                                          int
 	trackFailureCount                                          int
 	requestMetricLock                                          sync.RWMutex
@@ -334,13 +337,16 @@ func (gateway *HandleT) findUserWebRequestWorker(userID string) *userWebRequestW
 func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebRequestWorkerT) {
 	var reqBuffer = make([]*webRequestT, 0)
 	timeout := time.After(userWebRequestBatchTimeout)
+	var start time.Time
 	for {
 		select {
 		case req, ok := <-userWebRequestWorker.webRequestQ:
 			if !ok {
 				breq := batchWebRequestT{batchRequest: reqBuffer}
 				userWebRequestWorker.bufferFullStat.Count(1)
+				start = time.Now()
 				userWebRequestWorker.batchRequestQ <- &breq
+				gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
 				close(userWebRequestWorker.batchRequestQ)
 				return
 			}
@@ -350,7 +356,9 @@ func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebReque
 			if len(reqBuffer) == maxUserWebRequestBatchSize {
 				breq := batchWebRequestT{batchRequest: reqBuffer}
 				userWebRequestWorker.bufferFullStat.Count(1)
+				start = time.Now()
 				userWebRequestWorker.batchRequestQ <- &breq
+				gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
 				reqBuffer = make([]*webRequestT, 0)
 			}
 		case <-timeout:
@@ -358,7 +366,9 @@ func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebReque
 			if len(reqBuffer) > 0 {
 				breq := batchWebRequestT{batchRequest: reqBuffer}
 				userWebRequestWorker.timeOutStat.Count(1)
+				start = time.Now()
 				userWebRequestWorker.batchRequestQ <- &breq
+				gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
 				reqBuffer = make([]*webRequestT, 0)
 			}
 		}
@@ -1003,7 +1013,10 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 //ProcessRequest throws a webRequest into the queue and waits for the response before returning
 func (rrh *RegularRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
 	done := make(chan string, 1)
+	start := time.Now()
 	gateway.addToWebRequestQ(w, r, done, reqType, payload, writeKey)
+	gateway.addToWebRequestQWaitTime.SendTiming(time.Since(start))
+	defer gateway.ProcessRequestTime.SendTiming(time.Since(start))
 	errorMessage := <-done
 	return errorMessage
 }
@@ -1524,6 +1537,9 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.dbWorkersBufferFullStat = gateway.stats.NewStat("gateway.db_workers_buffer_full", stats.CountType)
 	gateway.dbWorkersTimeOutStat = gateway.stats.NewStat("gateway.db_workers_time_out", stats.CountType)
 	gateway.bodyReadTimeStat = gateway.stats.NewStat("gateway.http_body_read_time", stats.TimerType)
+	gateway.addToWebRequestQWaitTime = gateway.stats.NewStat("gateway.web_request_queue_wait_time", stats.TimerType)
+	gateway.addToBatchRequestQWaitTime = gateway.stats.NewStat("gateway.batch_request_queue_wait_time", stats.TimerType)
+	gateway.ProcessRequestTime = gateway.stats.NewStat("gateway.process_request_time", stats.TimerType)
 
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
