@@ -4,7 +4,6 @@ package transformer
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,15 +82,13 @@ type HandleT struct {
 
 	Client *http.Client
 
-	backgroundWait   func() error
-	backgroundCancel context.CancelFunc
+	guardConcurrency chan struct{}
 }
 
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
 	Transform(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
-	Shutdown()
 	Validate(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 }
 
@@ -101,9 +98,9 @@ func NewTransformer() *HandleT {
 }
 
 var (
-	maxChanSize, maxHTTPConnections, maxHTTPIdleConnections, maxRetry int
-	retrySleep                                                        time.Duration
-	pkgLogger                                                         logger.LoggerI
+	maxConcurrency, maxHTTPConnections, maxHTTPIdleConnections, maxRetry int
+	retrySleep                                                           time.Duration
+	pkgLogger                                                            logger.LoggerI
 )
 
 func Init() {
@@ -112,7 +109,7 @@ func Init() {
 }
 
 func loadConfig() {
-	config.RegisterIntConfigVariable(2048, &maxChanSize, false, 1, "Processor.maxChanSize")
+	config.RegisterIntConfigVariable(200, &maxConcurrency, false, 1, "Processor.maxConcurrency")
 	config.RegisterIntConfigVariable(100, &maxHTTPConnections, false, 1, "Processor.maxHTTPConnections")
 	config.RegisterIntConfigVariable(50, &maxHTTPIdleConnections, false, 1, "Processor.maxHTTPIdleConnections")
 
@@ -144,6 +141,7 @@ func (trans *HandleT) Setup() {
 	trans.transformTimerStat = stats.NewStat("processor.transformation_time", stats.TimerType)
 	trans.transformRequestTimerStat = stats.NewStat("processor.transformer_request_time", stats.TimerType)
 
+	trans.guardConcurrency = make(chan struct{}, maxConcurrency)
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 
@@ -156,11 +154,6 @@ func (trans *HandleT) Setup() {
 			},
 		}
 	}
-}
-
-// Shutdown stops transform workers gracefully and waits for them to stop
-// WARNING: No Transform() call should be running or called when and after
-func (trans *HandleT) Shutdown() {
 }
 
 //ResponseT represents a Transformer response
@@ -220,8 +213,10 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 		if to > len(clientEvents) {
 			to = len(clientEvents)
 		}
+		trans.guardConcurrency <- struct{}{}
 		go func() {
 			transformResponse[i] = trans.request(url, clientEvents[from:to])
+			<-trans.guardConcurrency
 			wg.Done()
 		}()
 	}

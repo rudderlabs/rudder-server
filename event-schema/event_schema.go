@@ -35,9 +35,9 @@ import (
 	"sync"
 	"time"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/jeremywohl/flatten"
 	"github.com/lib/pq"
-	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -450,7 +450,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 }
 
 func (manager *EventSchemaManagerT) createModel(writeKey string, eventType string, eventIdentifier string, eventModel *EventModelT, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
-	eventModelID := uuid.NewV4().String()
+	eventModelID := uuid.Must(uuid.NewV4()).String()
 	eventModel = &EventModelT{
 		UUID:            eventModelID,
 		WriteKey:        writeKey,
@@ -470,7 +470,7 @@ func (manager *EventSchemaManagerT) createModel(writeKey string, eventType strin
 }
 
 func (manager *EventSchemaManagerT) createSchema(schema map[string]string, schemaHash string, eventModel *EventModelT, totalSchemaVersions int, archiveOldestLastSeenVersion func()) *SchemaVersionT {
-	versionID := uuid.NewV4().String()
+	versionID := uuid.Must(uuid.NewV4()).String()
 	schemaVersion := manager.NewSchemaVersion(versionID, schema, schemaHash, eventModel.UUID)
 	eventModel.mergeSchema(schemaVersion)
 

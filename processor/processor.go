@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"golang.org/x/sync/errgroup"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -38,7 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 )
 
@@ -359,10 +359,6 @@ func (proc *HandleT) Start(ctx context.Context) {
 func (proc *HandleT) Shutdown() {
 	proc.backgroundCancel()
 	proc.backgroundWait()
-
-	// It is important to make sure everything has stopped,
-	//	 before we shutdown the transformer
-	proc.transformer.Shutdown()
 }
 
 var (
@@ -864,7 +860,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		//Update metrics maps
 		proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
 
-		id := uuid.NewV4()
+		id := uuid.Must(uuid.NewV4())
 
 		params := map[string]interface{}{
 			"source_id":          commonMetaData.SourceID,
@@ -1457,7 +1453,6 @@ func (proc *HandleT) processPipeline(
 		userTransformationStat.numEvents.Count(len(eventList))
 		proc.logger.Debug("Custom Transform input size", len(eventList))
 
-		userTransformationStat.transformTime.Start()
 		startedAt := time.Now()
 		response = proc.transformer.Transform(eventList, integrations.GetUserTransformURL(), userTransformBatchSize)
 		d := time.Since(startedAt)
@@ -1573,7 +1568,7 @@ func (proc *HandleT) processPipeline(
 		}
 
 		//Need to replace UUID his with messageID from client
-		id := uuid.NewV4()
+		id := uuid.Must(uuid.NewV4())
 		// read source_id from metadata that is replayed back from transformer
 		// in case of custom transformations metadata of first event is returned along with all events in session
 		// source_id will be same for all events belong to same user in a session
