@@ -10,20 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// func TestGetDestDetails(t *testing.T) {
-// 	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
-// 	os.Setenv("WORKSPACE_TOKEN", "1zzAnCvbknUuGogjQIBhkST0O4K")
-// 	os.Setenv("CONFIG_PATH", "./test_config.yaml")
-// 	config.Load()
-// 	backendconfig.Init()
-// 	// 	// workspaceID := "1zzAn8ZshcdkLN5TvP86VqLMT90"
-// 	// 	// destID := "1zzK2ZRgKofS6nxfcJ2nthi0Cme"
-// 	// 	destination.GetTestData()
-// 	// 	// fmt.Println("dest", dest)
-// 	// 	// require.NoError(t, err, "found error")
-// 	// 	// fmt.Println("destination details:")
-// 	// 	// fmt.Println(dest)
-// }
 
 func TestGetDestDetails(t *testing.T) {
 
