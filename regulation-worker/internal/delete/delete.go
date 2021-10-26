@@ -26,26 +26,8 @@ func (d *Deleter) DeleteJob(ctx context.Context, job model.Job, dest model.Desti
 		delBatch := MockBatchDeleter{}
 		return delBatch.Delete(ctx, job, dest)
 	default:
-		fmt.Println("default called")
 		return model.JobStatusFailed, fmt.Errorf("deletion feature not available for %s destination type", dest.Type)
 
 	}
 }
-
-// func getDestSpecDetails(){
-// 	destDetail := model.Destination{}
-// 	for _, source := range config.Sources {
-// 		for _, dest := range source.Destinations {
-// 			if dest.ID == destID {
-// 				destDetail.Config.BucketName = dest.Config["bucketName"]
-// 				destDetail.Config.Prefix = dest.Config["prefix"]
-// 				destDetail.Config.AccessKeyID = dest.Config["accessKeyID"]
-// 				destDetail.Config.AccessKey = dest.Config["accessKey"]
-// 				destDetail.Config.EnableSSE = dest.Config["enableSSE"]
-// 				destDetail.DestinationID = dest.ID
-// 				destDetail.Name = dest.DestinationDefinition.Name
-// 			}
-// 		}
-// 	}
-
 // }

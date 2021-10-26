@@ -44,8 +44,6 @@ func run(m *testing.M) int {
 	defer svr.Close()
 	workspaceID := "1zzAn8ZshcdkLN5TvP86VqLMT90"
 	svcCtx, svcCancel := context.WithCancel(context.Background())
-	// 	// 	// workspaceID := "1zzAn8ZshcdkLN5TvP86VqLMT90"
-	// 	// 	// destID := "1zzK2ZRgKofS6nxfcJ2nthi0Cme"
 
 	go func() {
 		_ = os.Setenv("workspaceID", workspaceID)

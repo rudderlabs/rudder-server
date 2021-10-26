@@ -43,13 +43,6 @@ type Destination struct {
 	Name          string
 }
 
-// type ConfigT struct {
-// 	BucketName  interface{}
-// 	Prefix      interface{}
-// 	AccessKeyID interface{}
-// 	AccessKey   interface{}
-// 	EnableSSE   interface{}
-// }
 
 type APIReqErr struct {
 	StatusCode int
