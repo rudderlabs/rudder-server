@@ -815,6 +815,14 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
+
+	if gateway.application.Options().DegradedMode {
+		errorMessage = "pod in degraded mode"
+		defer http.Error(w, errorMessage, 500)
+		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 500, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
+		return
+	}
+
 	defer func() {
 		if errorMessage != "" {
 			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
@@ -911,7 +919,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	pendingEventsResponse := totalPendingTillNow
-	if whPending {
+	if whPending || pendingEventsResponse > 0 {
 		pendingEventsResponse = 1
 	}
 
@@ -957,6 +965,14 @@ func (gateway *HandleT) clearFailedEventsHandler(w http.ResponseWriter, r *http.
 func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
+
+	if gateway.application.Options().DegradedMode {
+		errorMessage := "pod in degraded mode"
+		defer http.Error(w, errorMessage, 500)
+		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 500, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
+		return
+	}
+
 	var err error
 	var payload []byte
 	defer func() {
