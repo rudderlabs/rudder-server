@@ -5,18 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/alexbrainman/odbc"
-	_ "github.com/alexbrainman/odbc"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	awsS3Manager "github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/satori/go.uuid"
 	"reflect"
 	"runtime"
 	"sort"
@@ -24,45 +17,25 @@ import (
 	"time"
 )
 
-// Done
+// ODBC NATIVE ERRORS
+const (
+	odbcTableOrViewNotFound = 31740
+	odbcDBNotFound          = 80
+)
+
+// String constants for delta lake destination config
+const (
+	DLHost  = "host"
+	DLPort  = "port"
+	DLPath  = "path"
+	DLToken = "token"
+)
+
 var (
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
 )
 
-// Done
-func Init() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("deltalake")
-}
-
-// Done
-func loadConfig() {
-	stagingTablePrefix = "rudder_staging_"
-}
-
-// Done
-type HandleT struct {
-	Db            *sql.DB
-	Namespace     string
-	ObjectStorage string
-	Warehouse     warehouseutils.WarehouseT
-	Uploader      warehouseutils.UploaderI
-}
-
-// Done
-// String constants for deltalake destination config
-const (
-	AWSAccessKey   = "accessKey"
-	AWSAccessKeyID = "accessKeyID"
-	AWSBucketName  = "bucketName"
-	DeltaLakeHost  = "host"
-	DeltaLakePort  = "port"
-	DeltaLakePath  = "path"
-	DeltaLakeToken = "token"
-)
-
-// Done
 var dataTypesMap = map[string]string{
 	"boolean":  "BOOLEAN",
 	"int":      "BIGINT",
@@ -71,7 +44,6 @@ var dataTypesMap = map[string]string{
 	"datetime": "TIMESTAMP",
 }
 
-// Done
 // Reference: https://docs.databricks.com/sql/language-manual/sql-ref-datatype-rules.html
 var dataTypesMapToRudder = map[string]string{
 	"TINYINT":   "int",
@@ -98,99 +70,113 @@ var dataTypesMapToRudder = map[string]string{
 	"timestamp": "datetime",
 }
 
-// Done
 var primaryKeyMap = map[string]string{
 	"users":                      "id",
 	"identifies":                 "id",
 	warehouseutils.DiscardsTable: "row_id",
 }
 
-// Done
-var partitionKeyMap = map[string]string{
-	"users":                      "id",
-	"identifies":                 "id",
-	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
+type CredentialsT struct {
+	host  string
+	port  string
+	path  string
+	token string
 }
 
-// Done
-// getDeltaLakeDataType gets datatype for deltalake which is mapped with rudderstack datatype
+func Init() {
+	loadConfig()
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("deltalake")
+}
+
+func loadConfig() {
+	stagingTablePrefix = "rudder_staging_"
+}
+
+type HandleT struct {
+	Db            *sql.DB
+	Namespace     string
+	ObjectStorage string
+	Warehouse     warehouseutils.WarehouseT
+	Uploader      warehouseutils.UploaderI
+}
+
+// getDeltaLakeDataType gets datatype for delta lake which is mapped with rudderstack datatype
 func getDeltaLakeDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 
-// Done
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
-	keys := []string{}
+	var keys []string
 	for colName := range columns {
 		keys = append(keys, colName)
 	}
 	sort.Strings(keys)
 
-	arr := []string{}
+	var arr []string
 	for _, name := range keys {
 		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, getDeltaLakeDataType(columns[name])))
 	}
 	return strings.Join(arr[:], ",")
 }
 
-// Done
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v )`, name, columnsWithDataTypes(columns, ""))
-	pkgLogger.Infof("Creating table in deltalake for DL:%s : %v", dl.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
 	_, err = dl.Db.Exec(sqlStatement)
 	return
 }
 
-// Done
-func (dl *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	var databaseName string
-	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s'`, schemaname)
+	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s'`, schemaName)
 	err = dl.Db.QueryRow(sqlStatement).Scan(&databaseName)
+	if err != nil && err != sql.ErrNoRows {
+		if checkAndIgnoreAlreadyExistError(err, odbcDBNotFound) {
+			return false, nil
+		}
+		return
+	}
 	if err == sql.ErrNoRows {
 		err = nil
 	}
-	exists = strings.Compare(databaseName, schemaname) == 0
+	exists = strings.Compare(databaseName, schemaName) == 0
 	return
 }
 
-// Done
 func (dl *HandleT) AddColumn(name string, columnName string, columnType string) (err error) {
 	tableName := fmt.Sprintf(`%s.%s`, dl.Namespace, name)
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMNS ( %s %s )`, tableName, columnName, getDeltaLakeDataType(columnType))
-	pkgLogger.Infof("Adding column in deltalake for DL:%s : %v", dl.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("%s Adding column in delta lake with SQL:%v", dl.GetLogIdentifier(tableName, columnName), sqlStatement)
 	_, err = dl.Db.Exec(sqlStatement)
 	return
 }
 
-// Done
 func (dl *HandleT) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, dl.Namespace)
-	pkgLogger.Infof("Creating schemaname in deltalake for DL:%s : %v", dl.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("%s Creating schema in delta lake with SQL:%v", dl.GetLogIdentifier(), sqlStatement)
 	_, err = dl.Db.Exec(sqlStatement)
 	return
 }
 
-// Done
 func (dl *HandleT) dropStagingTables(stagingTableNames []string) {
 	for _, stagingTableName := range stagingTableNames {
-		pkgLogger.Infof("WH: dropping table %+v\n", stagingTableName)
+		pkgLogger.Infof("%s Dropping table %+v\n", dl.GetLogIdentifier(), stagingTableName)
 		_, err := dl.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, dl.Namespace, stagingTableName))
 		if err != nil {
-			pkgLogger.Errorf("WH: DL:  Error dropping staging tables in deltalake: %v", err)
+			pkgLogger.Errorf("%s Error dropping staging tables in delta lake: %v", dl.GetLogIdentifier(), err)
 		}
 	}
 }
 
-// Done
 func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
 	keys := reflect.ValueOf(tableSchemaInUpload).MapKeys()
-	strkeys := make([]string, len(keys))
+	strKeys := make([]string, len(keys))
 	for i := 0; i < len(keys); i++ {
-		strkeys[i] = fmt.Sprintf(`%s`, keys[i].String())
+		strKeys[i] = fmt.Sprintf(`%s`, keys[i].String())
 	}
-	sort.Strings(strkeys)
-	sortedColumnNames := strings.Join(strkeys[:], ",")
+	sort.Strings(strKeys)
+	sortedColumnNames := strings.Join(strKeys[:], ",")
 
 	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
 	err = dl.CreateTable(stagingTableName, tableSchemaAfterUpload)
@@ -201,9 +187,6 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		defer dl.dropStagingTables([]string{stagingTableName})
 	}
 
-	// create session token and temporary credentials
-	tempAccessKeyId, tempSecretAccessKey, token, region, err := dl.getTemporaryCredForCopy()
-
 	loadFiles := dl.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	loadFiles = warehouseutils.GetS3Locations(loadFiles)
 
@@ -212,23 +195,23 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 	loadFolder := warehouseutils.GetObjectFolder(dl.ObjectStorage, csvObjectLocation)
+	// TODO: Check for s3://
+	loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)
 
 	var sqlStatement string
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		// copy statement for parquet load files
-		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' )  "+
+		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = PARQUET "+
-			"PATTERN = '*.parquet' "+
-			"CREDENTIALS ( 'awsKeyId' = '%v', 'awsSecretKey' = '+%v', 'awsSessionToken' = '%v', 'region' = '%v' )",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, tempAccessKeyId, tempSecretAccessKey, token, region)
+			"PATTERN = '*.parquet'",
+			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder)
 	} else {
 		// copy statement for csv load files
-		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' )  "+
+		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = CSV "+
 			"PATTERN = '*.gz' "+
-			"FORMAT_OPTIONS ( 'compression' = 'gzip' ) "+
-			"CREDENTIALS ( 'awsKeyId' = '%v', 'awsSecretKey' = '+%v', 'awsSessionToken' = '%v', 'region' = '%v' )",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, tempAccessKeyId, tempSecretAccessKey, token, region)
+			"FORMAT_OPTIONS ( 'compression' = 'gzip' )",
+			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder)
 	}
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
@@ -236,32 +219,36 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
 	})
 	if regexErr == nil {
-		pkgLogger.Infof("DL: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
+		pkgLogger.Infof("%s Running COPY command with SQL: %s\n", dl.GetLogIdentifier(tableName), sanitisedSQLStmt)
 	}
 
 	_, err = dl.Db.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("DL: Error running COPY command: %v\n", err)
+		pkgLogger.Errorf("%s Error running COPY command: %v\n", dl.GetLogIdentifier(tableName), err)
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN USING %[1]s.%[3]s AS STAGING ON MAIN.row = STAGING.row WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *`, dl.Namespace, tableName, stagingTableName)
-	pkgLogger.Infof("DL: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
+	primaryKey := "id"
+	if column, ok := primaryKeyMap[tableName]; ok {
+		primaryKey = column
+	}
+
+	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN USING %[1]s.%[3]s AS STAGING ON MAIN.%[4]s = STAGING.%[4]s WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *`, dl.Namespace, tableName, stagingTableName, primaryKey)
+	pkgLogger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
 	_, err = dl.Db.Exec(sqlStatement)
 
 	if err != nil {
-		pkgLogger.Errorf("DL: Error inserting into original table: %v\n", err)
+		pkgLogger.Errorf("%v Error inserting into original table: %v\n", dl.GetLogIdentifier(tableName), err)
 		return
 	}
 
-	pkgLogger.Infof("DL: Complete load for table:%s\n", tableName)
+	pkgLogger.Infof("%v Complete load for table\n", dl.GetLogIdentifier(tableName))
 	return
 }
 
-// Done
 func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
-	pkgLogger.Infof("DL: Starting load for identifies and users tables\n")
+	pkgLogger.Infof("%s Starting load for identifies and users tables\n", dl.GetLogIdentifier())
 
 	identifyStagingTable, err := dl.loadTable(warehouseutils.IdentifiesTable, dl.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), dl.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable), true)
 	if err != nil {
@@ -283,21 +270,21 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 			continue
 		}
 		userColNames = append(userColNames, colName)
-		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
+		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s , TRUE) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
 	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), warehouseutils.UsersTable), 127)
 
-	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
+	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]s.%[2]s AS (SELECT DISTINCT * FROM
 										(
 											SELECT
 											id, %[3]s
 											FROM (
 												(
-													SELECT id, %[6]s FROM "%[1]s"."%[4]s" WHERE id in (SELECT DISTINCT(user_id) FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL)
+													SELECT id, %[6]s FROM %[1]s.%[4]s WHERE id in (SELECT DISTINCT(user_id) FROM %[1]s.%[5]s WHERE user_id IS NOT NULL)
 												) UNION
 												(
-													SELECT user_id, %[6]s FROM "%[1]s"."%[5]s" WHERE user_id IS NOT NULL
+													SELECT user_id, %[6]s FROM %[1]s.%[5]s WHERE user_id IS NOT NULL
 												)
 											)
 										)
@@ -310,107 +297,40 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		quotedUserColNames,               // 6
 	)
 
-	// BEGIN TRANSACTION
-	tx, err := dl.Db.Begin()
+	_, err = dl.Db.Exec(sqlStatement)
 	if err != nil {
-		errorMap[warehouseutils.UsersTable] = err
-		return
-	}
-
-	_, err = tx.Exec(sqlStatement)
-	if err != nil {
-		pkgLogger.Errorf("DL: Creating staging table for users failed: %s\n", sqlStatement)
-		pkgLogger.Errorf("DL: Error creating users staging table from original table and identifies staging table: %v\n", err)
-		tx.Rollback()
+		pkgLogger.Errorf("%s Creating staging table for users failed with SQL: %s\n", dl.GetLogIdentifier(), sqlStatement)
+		pkgLogger.Errorf("%s Error creating users staging table from original table and identifies staging table: %v\n", dl.GetLogIdentifier(), err)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 	defer dl.dropStagingTables([]string{stagingTableName})
 
 	primaryKey := "id"
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, dl.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
-
-	_, err = tx.Exec(sqlStatement)
-	if err != nil {
-		pkgLogger.Errorf("DL: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
-		pkgLogger.Errorf("DL: Error deleting from original table for dedup: %v\n", err)
-		tx.Rollback()
-		errorMap[warehouseutils.UsersTable] = err
-		return
-	}
-
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, dl.Namespace, warehouseutils.UsersTable, stagingTableName, warehouseutils.DoubleQuoteAndJoinByComma(append([]string{"id"}, userColNames...)))
-	pkgLogger.Infof("DL: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
-	_, err = tx.Exec(sqlStatement)
+	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN USING %[1]s.%[3]s AS STAGING ON MAIN.%[4]s = STAGING.%[4]s WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *`, dl.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
+	pkgLogger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)
+	_, err = dl.Db.Exec(sqlStatement)
 
 	if err != nil {
-		pkgLogger.Errorf("DL: Error inserting into users table from staging table: %v\n", err)
-		tx.Rollback()
-		errorMap[warehouseutils.UsersTable] = err
-		return
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		pkgLogger.Errorf("DL: Error in transaction commit for users table: %v\n", err)
-		tx.Rollback()
+		pkgLogger.Errorf("%s Error inserting into users table from staging table: %v\n", err)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 	return
 }
 
-// Done
-func (dl *HandleT) getTemporaryCredForCopy() (string, string, string, string, error) {
-	var accessKey, accessKeyID, bucket string
-	if misc.HasAWSKeysInConfig(dl.Warehouse.Destination.Config) && !misc.IsConfiguredToUseRudderObjectStorage(dl.Warehouse.Destination.Config) {
-		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
-		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, dl.Warehouse)
-		bucket = warehouseutils.GetConfigValue(AWSBucketName, dl.Warehouse)
-	} else {
-		accessKeyID = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-		accessKey = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
-		bucket = config.GetEnv("RUDDER_WAREHOUSE_BUCKET", "rudder-warehouse-storage")
-	}
-
-	mySession := session.Must(session.NewSession())
-	// Create a STS client from just a session.
-	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
-
-	//sts.New(mySession, aws.NewConfig().WithRegion("us-west-2"))
-	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &warehouseutils.AWSCredsExpiryInS})
-	if err != nil {
-		return "", "", "", "", err
-	}
-
-	region, err := awsS3Manager.GetBucketRegion(aws.BackgroundContext(), mySession, bucket, "us-east-1")
-	if err != nil {
-		return "", "", "", "", err
-	}
-	return *SessionTokenOutput.Credentials.AccessKeyId, *SessionTokenOutput.Credentials.SecretAccessKey, *SessionTokenOutput.Credentials.SessionToken, region, err
-}
-
-// CredentialsT ...
-type CredentialsT struct {
-	host  string
-	port  string
-	path  string
-	token string
-}
-
-// Done
 // GetDriver
 // macOS: /Library/simba/spark/lib/libsparkodbc_sbu.dylib
 // Linux 64-bit: /opt/simba/spark/lib/64/libsparkodbc_sb64.so
 // Linux 32-bit: /opt/simba/spark/lib/32/libsparkodbc_sb32.so
 func GetDriver() string {
+	// TODO: Check for OSX and Linux
 	pkgLogger.Infof("Running in platform %v", runtime.GOOS)
 	return "/Library/simba/spark/lib/libsparkodbc_sbu.dylib"
 }
 
-// Done
 func connect(cred CredentialsT) (*sql.DB, error) {
-	dsn := fmt.Sprintf("Driver=%v;HOST=%v;PORT=%v;Schema=default;SparkServerType=3;AuthMech=3;UID=token;PWD=%v;ThriftTransport=2;SSL=1;HTTPPath=%v",
+	dsn := fmt.Sprintf("Driver=%v; HOST=%v; PORT=%v; Schema=default; SparkServerType=3; AuthMech=3; UID=token; PWD=%v; ThriftTransport=2; SSL=1; HTTPPath=%v",
 		GetDriver(),
 		cred.host,
 		cred.port,
@@ -420,86 +340,77 @@ func connect(cred CredentialsT) (*sql.DB, error) {
 	var err error
 	var db *sql.DB
 	if db, err = sql.Open("odbc", dsn); err != nil {
-		return nil, fmt.Errorf("deltalake connect error : (%v)", err)
+		return nil, fmt.Errorf("%s Delta lake connect error : (%v)", err)
 	}
 	return db, nil
 }
 
-// Done
 func (dl *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := fmt.Sprintf(`SHOW TABLES FROM %s LIKE '%s';`, dl.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
+	sqlStatement := fmt.Sprintf(`SHOW TABLES FROM %s LIKE '%s';`, dl.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "*"))
 	rows, err := dl.Db.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		if checkAndIgnoreAlreadyExistError(err) {
+		if checkAndIgnoreAlreadyExistError(err, odbcDBNotFound) {
 			return true
 		}
-		pkgLogger.Errorf("WH: DL: Error dropping dangling staging tables in deltalake: %v\nQuery: %s\n", err, sqlStatement)
+		pkgLogger.Errorf("%s Error dropping dangling staging tables in delta lake with SQL: %s\nError: %v\n", dl.GetLogIdentifier(), sqlStatement, err)
 		return false
 	}
 	defer rows.Close()
 
 	var stagingTableNames []string
 	for rows.Next() {
-		var tableName string
-		err := rows.Scan(&tableName)
+		var database, tableName string
+		var isTemporary bool
+		err = rows.Scan(&database, &tableName, &isTemporary)
 		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			panic(fmt.Errorf("%s Failed to scan result with SQL: %s\nError: %w", dl.GetLogIdentifier(), sqlStatement, err))
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
-	pkgLogger.Infof("WH: DL: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
+	pkgLogger.Infof("%s Dropping dangling staging tables: %+v %+v\n", dl.GetLogIdentifier(), len(stagingTableNames), stagingTableNames)
 	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
-		_, err := dl.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, dl.Namespace, stagingTableName))
+		_, err := dl.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, dl.Namespace, stagingTableName))
 		if err != nil {
-			pkgLogger.Errorf("WH: DL:  Error dropping dangling staging table: %s in deltalake: %v\n", stagingTableName, err)
+			pkgLogger.Errorf("%s Error dropping dangling staging table: %s in delta lake: %v\n", dl.GetLogIdentifier(), stagingTableName, err)
 			delSuccess = false
 		}
 	}
 	return delSuccess
 }
 
-// Done
 func (dl *HandleT) connectToWarehouse() (*sql.DB, error) {
 	return connect(CredentialsT{
-		host:  warehouseutils.GetConfigValue(DeltaLakeHost, dl.Warehouse),
-		port:  warehouseutils.GetConfigValue(DeltaLakePort, dl.Warehouse),
-		path:  warehouseutils.GetConfigValue(DeltaLakePath, dl.Warehouse),
-		token: warehouseutils.GetConfigValue(DeltaLakeToken, dl.Warehouse),
+		host:  warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
+		port:  warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
+		path:  warehouseutils.GetConfigValue(DLPath, dl.Warehouse),
+		token: warehouseutils.GetConfigValue(DLToken, dl.Warehouse),
 	})
 }
 
-// Done
 func (dl *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
 	schemaExists, err = dl.schemaExists(dl.Namespace)
 	if err != nil {
-		pkgLogger.Errorf("DL: Error checking if schema: %s exists: %v", dl.Namespace, err)
+		pkgLogger.Errorf("%s Error checking if schema: %s exists: %v", dl.GetLogIdentifier(), dl.Namespace, err)
 		return err
 	}
 	if schemaExists {
-		pkgLogger.Infof("DL: Skipping creating schema: %s since it already exists", dl.Namespace)
+		pkgLogger.Infof("%s Skipping creating schema: %s since it already exists", dl.GetLogIdentifier(), dl.Namespace)
 		return
 	}
 	return dl.createSchema()
 }
 
-// Done
 func (dl *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
 	return
 }
 
-// Done
-func checkAndIgnoreAlreadyExistError(err error) bool {
+func checkAndIgnoreAlreadyExistError(err error, ignoreNativeError int) bool {
 	if err != nil {
 		if odbcErrs, ok := err.(*odbc.Error); ok {
 			for _, odbcErr := range odbcErrs.Diag {
-				// Checking for Table or view not found
-				if odbcErr.NativeError == 31740 {
-					return true
-				}
-				// Checking for Database not found
-				if odbcErr.NativeError == 80 {
+				if odbcErr.NativeError == ignoreNativeError {
 					return true
 				}
 			}
@@ -509,8 +420,21 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
-// Done
 // FetchSchema queries delta lake and returns the schema associated with provided namespace
+/*
+DESCRIBE TABLE salesdb.customer;
++-----------------------+---------+----------+
+|               col_name|data_type|   comment|
++-----------------------+---------+----------+
+|                cust_id|      int|      null|
+|                   name|   string|Short name|
+|                  state|   string|      null|
+|                       |         |          |
+|# Partition Information|         |          |
+|             # col_name|data_type|   comment|
+|                  state|   string|      null|
++-----------------------+---------+----------+
+*/
 func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
@@ -525,10 +449,10 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	tSqlStatement := fmt.Sprintf(`SHOW TABLES FROM %s`, dl.Namespace)
 	tRows, err := dbHandle.Query(tSqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		if checkAndIgnoreAlreadyExistError(err) {
+		if checkAndIgnoreAlreadyExistError(err, odbcDBNotFound) {
 			return schema, nil
 		}
-		pkgLogger.Errorf("DL: Error in fetching tables schema from deltalake destination:%v, query: %v", dl.Warehouse.Destination.ID, tSqlStatement)
+		pkgLogger.Errorf("%s Error in fetching tables schema from delta lake with SQL: %v", dl.GetLogIdentifier(), tSqlStatement)
 		return
 	}
 	defer tRows.Close()
@@ -539,9 +463,10 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		var isTemporary bool
 		err = tRows.Scan(&database, &tableName, &isTemporary)
 		if err != nil {
-			pkgLogger.Errorf("DL: Error in processing fetched tables schema from deltalake destination:%v, tableName:%v", dl.Warehouse.Destination.ID, tableName)
+			pkgLogger.Errorf("%s Error in processing fetched tables schema from delta lake tableName: %v", dl.GetLogIdentifier(), tableName)
 			return
 		}
+		// Ignoring the staging tables
 		if strings.HasPrefix(tableName, stagingTablePrefix) {
 			continue
 		}
@@ -552,14 +477,14 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		ttSqlStatement := fmt.Sprintf(`DESCRIBE TABLE %s.%s`, dl.Namespace, tableName)
 		ttRows, err := dbHandle.Query(ttSqlStatement)
 		if err != nil && err != sql.ErrNoRows {
-			if checkAndIgnoreAlreadyExistError(err) {
+			if checkAndIgnoreAlreadyExistError(err, odbcTableOrViewNotFound) {
 				return schema, nil
 			}
-			pkgLogger.Errorf("DL: Error in fetching describe table schema from deltalake destination:%v, query: %v", dl.Warehouse.Destination.ID, ttSqlStatement)
+			pkgLogger.Errorf("%s Error in fetching describe table schema from delta lake with SQL: %v", dl.GetLogIdentifier(), ttSqlStatement)
 			break
 		}
 		if err == sql.ErrNoRows {
-			pkgLogger.Infof("DL: No rows, while fetched describe table schema from destination:%v, query: %v", dl.Warehouse.Identifier, ttSqlStatement)
+			pkgLogger.Infof("%s No rows, while fetched describe table schema from delta lake with SQL: %v", dl.GetLogIdentifier(), ttSqlStatement)
 			return schema, nil
 		}
 
@@ -568,7 +493,11 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 			var col_name, data_type, comment string
 			err := ttRows.Scan(&col_name, &data_type, &comment)
 			if err != nil {
-				pkgLogger.Errorf("DL: Error in processing fetched describe table schema from deltalake destination:%v", dl.Warehouse.Destination.ID)
+				pkgLogger.Errorf("%s Error in processing fetched describe table schema from delta lake", dl.GetLogIdentifier())
+				break
+			}
+			// Here the breaking condition is when we are finding empty row.
+			if len(col_name) == 0 && len(data_type) == 0 {
 				break
 			}
 			if _, ok := schema[tableName]; !ok {
@@ -582,12 +511,11 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	return
 }
 
-// Done
 func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dl.Uploader = uploader
-	dl.ObjectStorage = warehouseutils.ObjectStorageType("SNOWFLAKE", warehouse.Destination.Config, dl.Uploader.UseRudderStorage())
+	dl.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.DELTALAKE, warehouse.Destination.Config, dl.Uploader.UseRudderStorage())
 
 	dl.Db, err = dl.connectToWarehouse()
 	return err
@@ -616,7 +544,6 @@ func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	return
 }
 
-// Done
 func (dl *HandleT) Cleanup() {
 	if dl.Db != nil {
 		dl.dropDanglingStagingTables()
@@ -624,7 +551,6 @@ func (dl *HandleT) Cleanup() {
 	}
 }
 
-// Done
 func (dl *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
@@ -637,48 +563,40 @@ func (dl *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	return
 }
 
-// Done
 func (dl *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
-// Done
 func (dl *HandleT) LoadUserTables() map[string]error {
 	return dl.loadUserTables()
 }
 
-// Done
 func (dl *HandleT) LoadTable(tableName string) error {
 	_, err := dl.loadTable(tableName, dl.Uploader.GetTableSchemaInUpload(tableName), dl.Uploader.GetTableSchemaInWarehouse(tableName), false)
 	return err
 }
 
-// Done
 func (dl *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-// Done
 func (dl *HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-// Done
 func (dl *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-// Done
 func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s`, dl.Namespace, tableName)
 	err = dl.Db.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
-		pkgLogger.Errorf(`DL: Error getting total count in table %s:%s`, dl.Namespace, tableName)
+		pkgLogger.Errorf(`%s Error getting total count`, dl.GetLogIdentifier(tableName))
 	}
 	return
 }
 
-// Done
 func (dl *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
@@ -689,4 +607,11 @@ func (dl *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	}
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+}
+
+func (dl *HandleT) GetLogIdentifier(args ...string) string {
+	if len(args) == 0 {
+		return fmt.Sprintf("[%s][%s][%s][%s]", dl.Warehouse.Type, dl.Warehouse.Source.ID, dl.Warehouse.Destination.ID, dl.Warehouse.Namespace)
+	}
+	return fmt.Sprintf("[%s][%s][%s][%s][%s]", dl.Warehouse.Type, dl.Warehouse.Source.ID, dl.Warehouse.Destination.ID, dl.Warehouse.Namespace, strings.Join(args, "]["))
 }
