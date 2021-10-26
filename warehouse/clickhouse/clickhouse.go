@@ -634,9 +634,13 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
 			rruntime.Go(func() {
+				pkgLogger.Debugf("Calling remove file paths with objectFileName as %v", objectFileName)
 				misc.RemoveFilePaths(objectFileName)
+				pkgLogger.Debugf("Deleted files - %v", objectFileName)
 			})
+			pkgLogger.Debugf("Closing file %v", objectFileName)
 			gzipFile.Close()
+			pkgLogger.Debugf("Closed file %v", objectFileName)
 			err = fmt.Errorf("CH: Error reading file using gzip.NewReader for file:%s while loading to table %s: namespace:%s: error:%v", gzipFile.Name(), tableName, ch.Namespace, err.Error())
 			pkgLogger.Info(err)
 			onError(err)

@@ -276,9 +276,12 @@ func UnZipSingleFile(outputfile string, filename string) {
 }
 
 func RemoveFilePaths(filepaths ...string) {
+	pkgLogger.Debugf("RemoveFilePaths : Removing files : %v", filepaths)
 	for _, filepath := range filepaths {
+		pkgLogger.Debugf("Removing file : %s", filepath)
 		err := os.Remove(filepath)
 		if err != nil {
+			pkgLogger.Debugf("Failed to remove file : %s", filepath)
 			pkgLogger.Error(err)
 		}
 	}
