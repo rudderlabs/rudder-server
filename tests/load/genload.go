@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	uuid "github.com/satori/go.uuid"
+	uuid "github.com/gofrs/uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -75,7 +75,7 @@ func main() {
 	go printStats()
 
 	for i := 1; i <= *numberOfUsers; i++ {
-		id := uuid.NewV4()
+		id := uuid.Must(uuid.NewV4())
 		if *numberOfEventPtr == 1 {
 			go generateJobsForSameEvent(id.String(), *eventPtr, *numberOfIterPtr, *sendToRuderPtr)
 		} else {
@@ -139,7 +139,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 	}
 	var duplicateIds []string
 	for index := 0; index < 10; index++ {
-		duplicateIds = append(duplicateIds, uuid.NewV4().String())
+		duplicateIds = append(duplicateIds, uuid.Must(uuid.NewV4()).String())
 	}
 	countLoop := 0
 
@@ -193,7 +193,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 				} else if toSendDuplicateMessageID() {
 					messageID = duplicateIds[rand.Intn(10)]
 				} else {
-					messageID = uuid.NewV4().String()
+					messageID = uuid.Must(uuid.NewV4()).String()
 				}
 				rudderData, err = sjson.SetBytes(rudderData, "messageId", messageID)
 				if err != nil {

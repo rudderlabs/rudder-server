@@ -9,9 +9,9 @@ import (
 	json "encoding/json"
 	reflect "reflect"
 
+	uuid "github.com/gofrs/uuid"
 	gomock "github.com/golang/mock/gomock"
 	jobsdb "github.com/rudderlabs/rudder-server/jobsdb"
-	uuid "github.com/satori/go.uuid"
 )
 
 // MockJobsDB is a mock of JobsDB interface.
