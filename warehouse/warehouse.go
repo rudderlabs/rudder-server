@@ -79,7 +79,6 @@ var (
 	waitForWorkerSleep                  time.Duration
 	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
-	useParquetLoadFilesRS               bool
 )
 
 var (
@@ -123,6 +122,7 @@ type HandleT struct {
 	activeWorkerCountLock             sync.RWMutex
 	maxConcurrentUploadJobs           int
 	allowMultipleSourcesForJobsPickup bool
+	useParquetLoadFiles               bool
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -175,7 +175,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
 	config.RegisterBoolConfigVariable(true, &ShouldForceSetLowerVersion, false, "SQLMigrator.forceSetLowerVersion")
-	config.RegisterBoolConfigVariable(false, &useParquetLoadFilesRS, true, "Warehouse.useParquetLoadFilesRS")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -443,7 +442,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
 		"source_job_id":      jsonUploadsList[0].SourceJobID,
 		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
-		"load_file_type":     getLoadFileType(wh.destType),
+		"load_file_type":     wh.getLoadFileType(),
 	}
 	if isUploadTriggered {
 		// set priority to 50 if the upload was manually triggered
@@ -1016,6 +1015,7 @@ func (wh *HandleT) Setup(whType string, whName string) {
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 	config.RegisterIntConfigVariable(1, &wh.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
 	config.RegisterBoolConfigVariable(false, &wh.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
+	config.RegisterBoolConfigVariable(false, &wh.useParquetLoadFiles, true, fmt.Sprintf(`Warehouse.%v.useParquetLoadFiles`, whName))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
@@ -1053,22 +1053,6 @@ func (wh *HandleT) resetInProgressJobs() {
 	_, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
-	}
-}
-
-func getLoadFileFormat(whType string) string {
-	switch whType {
-	case "BQ":
-		return "json.gz"
-	case "S3_DATALAKE":
-		return "parquet"
-	case "RS":
-		if useParquetLoadFilesRS {
-			return "parquet"
-		}
-		return "csv.gz"
-	default:
-		return "csv.gz"
 	}
 }
 
@@ -1739,12 +1723,12 @@ func Start(ctx context.Context, app app.Interface) error {
 	return g.Wait()
 }
 
-func getLoadFileType(wh string) string {
-	switch wh {
+func (wh *HandleT) getLoadFileType() string {
+	switch wh.destType {
 	case "BQ":
 		return warehouseutils.LOAD_FILE_TYPE_JSON
-	case "RS":
-		if useParquetLoadFilesRS {
+	case "RS", "DELTALAKE":
+		if wh.useParquetLoadFiles {
 			return warehouseutils.LOAD_FILE_TYPE_PARQUET
 		}
 		return warehouseutils.LOAD_FILE_TYPE_CSV
