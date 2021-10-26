@@ -509,7 +509,6 @@ func (proc *HandleT) backendConfigSubscriber() {
 	}
 }
 
-
 func getSourceByWriteKey(writeKey string) (backendconfig.SourceT, error) {
 	var err error
 	configSubscriberLock.RLock()
@@ -1727,11 +1726,17 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 	//retryList should be empty. Remove the assert
 
 	var unprocessedList []*jobsdb.JobT
-	retryList := proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{
-		CustomValFilters: []string{GWCustomVal},
-		JobCount:         toQuery,
-		EventCount:       maxEventsToProcess,
-	})
+	retryList := []*jobsdb.JobT{}
+
+	if nextJobID == 0 {
+		// TODO: hack fix me!
+		retryList = proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{
+			CustomValFilters: []string{GWCustomVal},
+			JobCount:         toQuery,
+			EventCount:       maxEventsToProcess,
+			AfterJobID:       nextJobID,
+		})
+	}
 
 	totalEvents := 0
 	for _, job := range retryList {
