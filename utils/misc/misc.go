@@ -32,11 +32,11 @@ import (
 	"github.com/araddon/dateparse"
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/cenkalti/backoff"
+	uuid "github.com/gofrs/uuid"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -368,6 +368,12 @@ func (stats *PerfStats) Start() {
 //End marks the end of one round of stat collection. events is number of events processed since start
 func (stats *PerfStats) End(events int) {
 	elapsed := time.Since(stats.tmpStart)
+	stats.elapsedTime += elapsed
+	stats.eventCount += int64(events)
+	stats.instantRateCall = float64(events) * float64(time.Second) / float64(elapsed)
+}
+
+func (stats *PerfStats) Rate(events int, elapsed time.Duration) {
 	stats.elapsedTime += elapsed
 	stats.eventCount += int64(events)
 	stats.instantRateCall = float64(events) * float64(time.Second) / float64(elapsed)
@@ -1205,3 +1211,60 @@ func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
 	}
 	return result
 }
+
+/*
+// Go supported types
+var kindNames = []string{
+	Invalid:       "invalid",
+	Bool:          "bool",
+	Int:           "int",
+	Int8:          "int8",
+	Int16:         "int16",
+	Int32:         "int32",
+	Int64:         "int64",
+	Uint:          "uint",
+	Uint8:         "uint8",
+	Uint16:        "uint16",
+	Uint32:        "uint32",
+	Uint64:        "uint64",
+	Uintptr:       "uintptr",
+	Float32:       "float32",
+	Float64:       "float64",
+	Complex64:     "complex64",
+	Complex128:    "complex128",
+	Array:         "array",
+	Chan:          "chan",
+	Func:          "func",
+	Interface:     "interface",
+	Map:           "map",
+	Ptr:           "ptr",
+	Slice:         "slice",
+	String:        "string",
+	Struct:        "struct",
+	UnsafePointer: "unsafe.Pointer",
+}
+
+// Json schema supported types
+string
+number
+integer
+object
+array
+boolean
+null
+*/
+// GetJsonSchemaDTFromGoDT returns the json schema supported data types from go lang supported data types.
+func GetJsonSchemaDTFromGoDT(goType string) string {
+	switch goType {
+	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64":
+		return "integer"
+	case "float32", "float64":
+		return "number"
+	case "string":
+		return "string"
+	case "bool":
+		return "boolean"
+	}
+	return "object"
+}
+

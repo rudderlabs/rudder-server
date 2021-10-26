@@ -19,6 +19,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go"
 	"github.com/gorilla/mux"
+	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/gateway"

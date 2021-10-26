@@ -47,8 +47,8 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/lib/pq"
-	uuid "github.com/satori/go.uuid"
 )
 
 // BackupSettingsT is for capturing the backup

@@ -36,6 +36,7 @@ type EventSchemasI interface {
 	GetSchemaVersionMissingKeys(w http.ResponseWriter, r *http.Request)
 	GetKeyCounts(w http.ResponseWriter, r *http.Request)
 	GetEventModelMetadata(w http.ResponseWriter, r *http.Request)
+	GetJsonSchemas(w http.ResponseWriter, r *http.Request)
 }
 
 // ConfigEnvI is interface to inject env variables into config

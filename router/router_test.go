@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -153,7 +153,7 @@ var _ = Describe("Router", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -170,7 +170,7 @@ var _ = Describe("Router", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -226,7 +226,7 @@ var _ = Describe("Router", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -296,7 +296,7 @@ var _ = Describe("Router", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -371,7 +371,7 @@ var _ = Describe("Router", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -388,7 +388,7 @@ var _ = Describe("Router", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u2",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -401,7 +401,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u3",
 					JobID:        2011,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
@@ -503,7 +503,7 @@ var _ = Describe("Router", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -519,7 +519,7 @@ var _ = Describe("Router", func() {
 			}
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -532,7 +532,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2011,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
@@ -664,7 +664,7 @@ var _ = Describe("Router", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -681,7 +681,7 @@ var _ = Describe("Router", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -694,7 +694,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u2",
 					JobID:        2011,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -707,7 +707,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u2",
 					JobID:        2012,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -720,7 +720,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u3",
 					JobID:        2013,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -870,7 +870,7 @@ var _ = Describe("Router", func() {
 
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -887,7 +887,7 @@ var _ = Describe("Router", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -900,7 +900,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.NewV4(),
+					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u2",
 					JobID:        2011,
 					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),

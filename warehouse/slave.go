@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -21,7 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 )
 
 // Temporary store for processing staging file to load file
@@ -136,7 +136,7 @@ func (job *PayloadT) getDiscardsTable() string {
 }
 
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
-	randomness := uuid.NewV4().String()
+	randomness := uuid.Must(uuid.NewV4()).String()
 	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, jobRun.getLoadFileFormat())
 }
 
@@ -717,7 +717,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 
 func setupSlave() {
 	slaveWorkerRoutineBusy = make([]bool, noOfSlaveWorkerRoutines)
-	slaveID := uuid.NewV4().String()
+	slaveID := uuid.Must(uuid.NewV4()).String()
 	rruntime.Go(func() {
 		jobNotificationChannel, err := notifier.Subscribe(StagingFilesPGNotifierChannel, 2*noOfSlaveWorkerRoutines)
 		if err != nil {
