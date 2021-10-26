@@ -40,17 +40,21 @@ var (
 	configBackendURL    string
 	disableEventUploads bool
 	pkgLogger           logger.LoggerI
+	eventsCacheMap      map[string][]string
+	eventsCacheMapLock  sync.RWMutex
+	maxEventsCacheSize  int
 )
 
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("debugger").Child("source")
-
+	eventsCacheMap = make(map[string][]string)
 }
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableEventUploads, true, "SourceDebugger.disableEventUploads")
+	config.RegisterIntConfigVariable(2, &maxEventsCacheSize, true, 1, "SourceDebugger.maxEventsCacheSize")
 }
 
 type EventUploader struct {
@@ -66,6 +70,57 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 	rruntime.Go(func() {
 		backendConfigSubscriber(backendConfig)
 	})
+	rruntime.Go(func() {
+		printEventCache()
+	})
+}
+
+func printEventCache() {
+	for {
+		time.Sleep(time.Second * 5)
+		fmt.Println("*******************")
+		for k, v := range eventsCacheMap {
+			fmt.Println("key: ", k)
+			for _, e := range v {
+				fmt.Printf(e + " ")
+			}
+			fmt.Println("")
+		}
+	}
+}
+
+func populateEventsCache(cache map[string][]string, writeKey, eventBatch string) {
+	eventsCacheMapLock.Lock()
+	defer eventsCacheMapLock.Unlock()
+
+	if _, ok := cache[writeKey]; !ok {
+		cache[writeKey] = make([]string, 0, maxEventsCacheSize)
+	}
+	eventsCache := cache[writeKey]
+	eventsCache = append(eventsCache, eventBatch)
+	if len(eventsCache) > maxEventsCacheSize {
+		eventsCache = eventsCache[len(eventsCache)-maxEventsCacheSize:]
+	}
+	cache[writeKey] = eventsCache
+}
+
+//recordHistoricEvents sends the events collected in cache as live events.
+//This is called on config update.
+//IMP: The function must be called before releasing configSubscriberLock lock to ensure the order of RecordEvent call
+func recordHistoricEvents(writeKeys []string) {
+	for _, writeKey := range writeKeys {
+		var historicEvents []string
+		eventsCacheMapLock.Lock()
+		if _, ok := eventsCacheMap[writeKey]; ok {
+			historicEvents = eventsCacheMap[writeKey]
+			delete(eventsCacheMap, writeKey)
+		}
+		eventsCacheMapLock.Unlock()
+
+		for _, eventBatch := range historicEvents {
+			uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatch})
+		}
+	}
 }
 
 //RecordEvent is used to put the event batch in the eventBatchChannel,
@@ -80,6 +135,7 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !misc.ContainsString(uploadEnabledWriteKeys, writeKey) {
+		populateEventsCache(eventsCacheMap, writeKey, eventBatch)
 		return false
 	}
 
@@ -148,6 +204,8 @@ func updateConfig(sources backendconfig.ConfigT) {
 			}
 		}
 	}
+
+	recordHistoricEvents(uploadEnabledWriteKeys)
 	configSubscriberLock.Unlock()
 }
 
