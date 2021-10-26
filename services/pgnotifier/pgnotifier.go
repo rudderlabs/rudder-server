@@ -10,11 +10,11 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	uuid "github.com/satori/go.uuid"
 )
 
 var (
@@ -348,7 +348,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority
 	}
 	defer stmt.Close()
 
-	batchID := uuid.NewV4().String()
+	batchID := uuid.Must(uuid.NewV4()).String()
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(messages), queueName, batchID)
 	for _, message := range messages {
 		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload), notifier.workspaceIdentifier, priority)

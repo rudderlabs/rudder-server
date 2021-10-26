@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	uuid "github.com/satori/go.uuid"
 )
 
 var sampleEvent string = `
@@ -82,7 +82,7 @@ func storeProcess(jd *jobsdb.HandleT) {
 		time.Sleep(storeSleep)
 		var jobList []*jobsdb.JobT
 		for i := 0; i < batchSize; i++ {
-			id := uuid.NewV4()
+			id := uuid.Must(uuid.NewV4())
 			uuidWriteMap[id] = true
 			newJob := jobsdb.JobT{
 				UUID:         id,

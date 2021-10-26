@@ -13,8 +13,8 @@ import (
 
 	"reflect"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	uuid "github.com/satori/go.uuid"
 	"github.com/segmentio/ksuid"
 	"github.com/tidwall/sjson"
 )
@@ -226,7 +226,7 @@ func SendEventRequest(options EventOptsT) int {
 		options.ID = ksuid.New().String()
 	}
 	if options.MessageID == "" {
-		options.MessageID = uuid.NewV4().String()
+		options.MessageID = uuid.Must(uuid.NewV4()).String()
 	}
 
 	jsonPayload, _ := sjson.Set(BatchPayload, "batch.0.sentAt", time.Now())
