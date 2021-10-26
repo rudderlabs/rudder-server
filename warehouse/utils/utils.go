@@ -30,6 +30,7 @@ const (
 	CLICKHOUSE    = "CLICKHOUSE"
 	MSSQL         = "MSSQL"
 	AZURE_SYNAPSE = "AZURE_SYNAPSE"
+	DELTALAKE     = "DELTALAKE"
 )
 
 const (
@@ -83,7 +84,7 @@ var ObjectStorageMap = map[string]string{
 	"RS":          "S3",
 	"S3_DATALAKE": "S3",
 	"BQ":          "GCS",
-	"DELTALAKE":  "S3",
+	"DELTALAKE":   "S3",
 }
 
 var SnowflakeStorageMap = map[string]string{
