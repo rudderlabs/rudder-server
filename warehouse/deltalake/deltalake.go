@@ -196,16 +196,11 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		defer dl.dropStagingTables([]string{stagingTableName})
 	}
 
-	loadFiles := dl.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
-	loadFiles = warehouseutils.GetS3Locations(loadFiles)
-
 	csvObjectLocation, err := dl.Uploader.GetSampleLoadFileLocation(tableName)
 	if err != nil {
 		return
 	}
 	loadFolder := warehouseutils.GetObjectFolder(dl.ObjectStorage, csvObjectLocation)
-	// TODO: Check for s3://
-	loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)
 
 	var sqlStatement string
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
