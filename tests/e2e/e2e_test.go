@@ -6,12 +6,12 @@ import (
 	"strconv"
 	"time"
 
+	uuid "github.com/gofrs/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/tests/helpers"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -227,7 +227,7 @@ var _ = Describe("E2E", func() {
 		})
 
 		It("should dedup duplicate events", func() {
-			sampleID := uuid.NewV4().String()
+			sampleID := uuid.Must(uuid.NewV4()).String()
 
 			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 			helpers.SendEventRequest(helpers.EventOptsT{
@@ -243,7 +243,7 @@ var _ = Describe("E2E", func() {
 				MessageID: sampleID,
 			})
 			helpers.SendEventRequest(helpers.EventOptsT{
-				MessageID: uuid.NewV4().String(),
+				MessageID: uuid.Must(uuid.NewV4()).String(),
 			})
 			Consistently(func() int {
 				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
@@ -251,7 +251,7 @@ var _ = Describe("E2E", func() {
 		})
 
 		It("should dedup duplicate events only till specified TTL", func() {
-			sampleID := uuid.NewV4().String()
+			sampleID := uuid.Must(uuid.NewV4()).String()
 
 			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 			helpers.SendEventRequest(helpers.EventOptsT{

@@ -48,7 +48,6 @@ func run(m *testing.M) int {
 	go func() {
 		_ = os.Setenv("workspaceID", workspaceID)
 		_ = os.Setenv("urlPrefix", svr.URL)
-
 		main.Run(svcCtx)
 		<-c
 		svcCancel()

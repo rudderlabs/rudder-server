@@ -43,7 +43,6 @@ type Destination struct {
 	Name          string
 }
 
-
 type APIReqErr struct {
 	StatusCode int
 	Body       string

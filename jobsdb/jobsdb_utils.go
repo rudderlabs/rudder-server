@@ -186,7 +186,7 @@ func constructQuery(jd AssertInterface, paramKey string, paramList []string, que
 }
 
 //constructParameterJSONQuery construct and return query
-func constructParameterJSONQuery(jd AssertInterface, table string, parameterFilters []ParameterFilterT) string {
+func constructParameterJSONQuery(table string, parameterFilters []ParameterFilterT) string {
 	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
 	var allKeyValues, mandatoryKeyValues, opNullConditions []string
 	for _, parameter := range parameterFilters {

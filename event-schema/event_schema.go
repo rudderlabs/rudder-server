@@ -35,9 +35,9 @@ import (
 	"sync"
 	"time"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/jeremywohl/flatten"
 	"github.com/lib/pq"
-	uuid "github.com/satori/go.uuid"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -450,7 +450,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 }
 
 func (manager *EventSchemaManagerT) createModel(writeKey string, eventType string, eventIdentifier string, eventModel *EventModelT, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
-	eventModelID := uuid.NewV4().String()
+	eventModelID := uuid.Must(uuid.NewV4()).String()
 	eventModel = &EventModelT{
 		UUID:            eventModelID,
 		WriteKey:        writeKey,
@@ -470,7 +470,7 @@ func (manager *EventSchemaManagerT) createModel(writeKey string, eventType strin
 }
 
 func (manager *EventSchemaManagerT) createSchema(schema map[string]string, schemaHash string, eventModel *EventModelT, totalSchemaVersions int, archiveOldestLastSeenVersion func()) *SchemaVersionT {
-	versionID := uuid.NewV4().String()
+	versionID := uuid.Must(uuid.NewV4()).String()
 	schemaVersion := manager.NewSchemaVersion(versionID, schema, schemaHash, eventModel.UUID)
 	eventModel.mergeSchema(schemaVersion)
 
@@ -616,6 +616,16 @@ func getPrivateDataJSON(schemaHash string) []byte {
 }
 
 func (manager *EventSchemaManagerT) flushEventSchemas() {
+	var flushDBHandle *sql.DB
+	defer func() {
+		if r := recover(); r != nil {
+			// If some of the panicking happens while doing the flushing of events, then we need to close the connection.
+			if flushDBHandle != nil {
+				flushDBHandle.Close()
+			}
+		}
+	}()
+
 	// This will run forever. If you want to quit in between, change it to ticker and call stop()
 	// Otherwise the ticker won't be GC'ed
 	ticker := time.Tick(flushInterval)
@@ -639,7 +649,9 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 			continue
 		}
 
-		txn, err := manager.dbHandle.Begin()
+		flushDBHandle = createDBConnection()
+
+		txn, err := flushDBHandle.Begin()
 		assertError(err)
 
 		// Handle Event Models
@@ -718,6 +730,8 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 
 		err = txn.Commit()
 		assertTxnError(err, txn)
+
+		flushDBHandle.Close()
 
 		updatedEventModels = make(map[string]*EventModelT)
 		updatedSchemaVersions = make(map[string]*SchemaVersionT)

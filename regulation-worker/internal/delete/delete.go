@@ -26,6 +26,7 @@ func (d *Deleter) DeleteJob(ctx context.Context, job model.Job, dest model.Desti
 		delBatch := MockBatchDeleter{}
 		return delBatch.Delete(ctx, job, dest)
 	default:
+		fmt.Println("default called")
 		return model.JobStatusFailed, fmt.Errorf("deletion feature not available for %s destination type", dest.Type)
 
 	}

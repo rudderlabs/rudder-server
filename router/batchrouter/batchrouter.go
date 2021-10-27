@@ -23,6 +23,7 @@ import (
 	"github.com/thoas/go-funk"
 	"golang.org/x/sync/errgroup"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -37,7 +38,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -295,7 +295,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 						}
 						parameterFilters = append(parameterFilters, parameterFilter)
 					}
-					importingJob := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: 1, ParameterFilters: parameterFilters})
+					importingJob := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: 1, ParameterFilters: parameterFilters})
 					if len(importingJob) != 0 {
 						importingJob := importingJob[0]
 						parameters := importingJob.LastJobStatus.Parameters
@@ -338,7 +338,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 							statusCode := asyncResponse.StatusCode
 							if uploadStatus {
 								var statusList []*jobsdb.JobStatusT
-								importingList := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: brt.maxEventsInABatch, ParameterFilters: parameterFilters})
+								importingList := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: brt.maxEventsInABatch, ParameterFilters: parameterFilters})
 								if !asyncResponse.HasFailed {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
@@ -445,7 +445,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 								brt.jobsDB.ReleaseUpdateJobStatusLocks()
 							} else if statusCode != 0 {
 								var statusList []*jobsdb.JobStatusT
-								importingList := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: brt.maxEventsInABatch, ParameterFilters: parameterFilters})
+								importingList := brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: brt.maxEventsInABatch, ParameterFilters: parameterFilters})
 								if isJobTerminated(statusCode) {
 									for _, job := range importingList {
 										status := jobsdb.JobStatusT{
@@ -508,7 +508,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 		localTmpDirName = "/rudder-raw-data-destination-logs/"
 	}
 
-	uuid := uuid.NewV4()
+	uuid := uuid.Must(uuid.NewV4())
 	brt.logger.Debugf("BRT: Starting logging to %s", provider)
 
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -794,7 +794,7 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 
 func (brt *HandleT) asyncStructSetup(sourceID, destinationID string) {
 	localTmpDirName := "/rudder-async-destination-logs/"
-	uuid := uuid.NewV4()
+	uuid := uuid.Must(uuid.NewV4())
 
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -1391,9 +1391,9 @@ func (worker *workerT) workerProcess() {
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
-					retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					toQuery -= len(retryList)
-					unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					brtQueryStat.End()
 
 					combinedList = append(retryList, unprocessedList...)
@@ -1448,7 +1448,8 @@ func (worker *workerT) workerProcess() {
 						Parameters:    []byte(`{}`), // check
 					}
 					//Enhancing job parameter with the drain reason.
-					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
+					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", "batch_router")
+					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "reason", reason)
 					drainList = append(drainList, &status)
 					drainJobList = append(drainJobList, job)
 					if _, ok := drainStatsbyDest[batchDest.Destination.ID]; !ok {
@@ -1724,9 +1725,9 @@ func (brt *HandleT) readAndProcess() {
 		brtQueryStat.Start()
 		toQuery := brt.jobQueryBatchSize
 		if !brt.holdFetchingJobs([]jobsdb.ParameterFilterT{}) {
-			retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
+			retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
 			toQuery -= len(retryList)
-			unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: toQuery})
+			unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
 			brtQueryStat.End()
 
 			jobs = append(retryList, unprocessedList...)
@@ -1798,7 +1799,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		if err != nil {
 			panic(err)
 		}
-		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
+		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.Must(uuid.NewV4()).String()))
 
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		if err != nil {
@@ -1853,7 +1854,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 func (brt *HandleT) holdFetchingJobs(parameterFilters []jobsdb.ParameterFilterT) bool {
 	var importingList []*jobsdb.JobT
 	if IsAsyncDestination(brt.destType) {
-		importingList = brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: 1, ParameterFilters: parameterFilters})
+		importingList = brt.jobsDB.GetImportingList(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: 1, ParameterFilters: parameterFilters})
 		return len(importingList) != 0
 	}
 	return false
@@ -1864,7 +1865,7 @@ func IsAsyncDestination(destType string) bool {
 }
 
 func (brt *HandleT) crashRecover() {
-	brt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, Count: -1})
+	brt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: -1})
 
 	if misc.Contains(objectStorageDestinations, brt.destType) {
 		brt.dedupRawDataDestJobsOnCrash()

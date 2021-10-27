@@ -16,10 +16,8 @@ type Looper struct {
 func (l *Looper) Loop(ctx context.Context) error {
 	for {
 		err := l.Svc.JobSvc(ctx)
-		if err == nil {
-			l.Backoff.Reset()
-		} else if err == model.ErrNoRunnableJob {
-			time.Sleep(l.Backoff.NextBackOff())
+		if err == model.ErrNoRunnableJob {
+			time.Sleep(10 * time.Minute)
 		} else if err != nil {
 			return err
 		}

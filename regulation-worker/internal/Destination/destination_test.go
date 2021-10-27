@@ -5,11 +5,10 @@ import (
 
 	"github.com/golang/mock/gomock"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	destination "github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination"
+	destination "github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/stretchr/testify/require"
 )
-
 
 func TestGetDestDetails(t *testing.T) {
 

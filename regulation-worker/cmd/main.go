@@ -5,13 +5,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
-	"github.com/cenkalti/backoff"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	destination "github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
+	destination "github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 )
 
@@ -45,7 +43,7 @@ func Run(ctx context.Context) {
 		},
 	}
 
-	l := withLoop(ctx, svc)
+	l := withLoop(svc)
 	err := l.Loop(ctx)
 	if err != nil {
 		panic(err)
@@ -60,13 +58,9 @@ func getEnv(name, defaultValue string) string {
 	return defaultValue
 }
 
-func withLoop(ctx context.Context, svc service.JobSvc) *service.Looper {
-	bo := backoff.NewExponentialBackOff()
-	bo.MaxInterval = time.Hour * 72
-	boCtx := backoff.WithContext(bo, ctx)
+func withLoop(svc service.JobSvc) *service.Looper {
 
 	return &service.Looper{
-		Svc:     svc,
-		Backoff: boCtx,
+		Svc: svc,
 	}
 }
