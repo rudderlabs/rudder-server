@@ -438,7 +438,7 @@ func (worker *workerT) workerProcess() {
 }
 
 func (worker *workerT) processDestinationJobs() {
-	worker.handleWorkerDestinationJobs()
+	worker.handleWorkerDestinationJobs(context.TODO())
 	//routerJobs/destinationJobs are processed. Clearing the queues.
 	worker.routerJobs = make([]types.RouterJobT, 0)
 	worker.destinationJobs = make([]types.DestinationJobT, 0)
@@ -495,7 +495,7 @@ func getIterableStruct(payload []byte, transformAt string) []integrations.PostPa
 	return responseArray
 }
 
-func (worker *workerT) handleWorkerDestinationJobs() {
+func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	worker.batchTimeStat.Start()
 
 	var respStatusCode, prevRespStatusCode int
@@ -568,6 +568,8 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 				})
 				deliveryLatencyStat.Start()
 
+				// TODO: remove trackStuckDelivery once we verify it is not needed,
+				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := worker.trackStuckDelivery()
 				if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
@@ -587,7 +589,10 @@ func (worker *workerT) handleWorkerDestinationJobs() {
 							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
-							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(val)
+							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
+							defer cancel()
+
+							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
@@ -1569,13 +1574,13 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	toQuery := jobQueryBatchSize
-	retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
+	retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 	toQuery -= len(retryList)
-	throttledList := rt.jobsDB.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
+	throttledList := rt.jobsDB.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 	toQuery -= len(throttledList)
-	waitList := rt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery}) //Jobs send to waiting state
+	waitList := rt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery}) //Jobs send to waiting state
 	toQuery -= len(waitList)
-	unprocessedList := rt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: toQuery})
+	unprocessedList := rt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 
 	combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
 
@@ -1629,7 +1634,8 @@ func (rt *HandleT) readAndProcess() int {
 				ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 			}
 			//Enhancing job parameter with the drain reason.
-			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", reason)
+			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", "router")
+			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "reason", reason)
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
 			if _, ok := drainStatsbyDest[destID]; !ok {
@@ -1710,7 +1716,7 @@ func destinationID(job *jobsdb.JobT) string {
 }
 
 func (rt *HandleT) crashRecover() {
-	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, Count: -1})
+	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: -1})
 }
 
 func Init() {
@@ -1758,7 +1764,9 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.netHandle = netHandle
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
-	rt.customDestinationManager = customDestinationManager.New(destName)
+	rt.customDestinationManager = customDestinationManager.New(destName, customDestinationManager.Opts{
+		Timeout: rt.netClientTimeout,
+	})
 	rt.failuresMetric = make(map[string][]failureMetric)
 
 	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)

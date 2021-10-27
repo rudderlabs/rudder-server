@@ -234,7 +234,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 	}
 
 	if len(parameterFilters) > 0 {
-		sqlStatement += " AND " + constructParameterJSONQuery(jd, ds.JobTable, parameterFilters)
+		sqlStatement += " AND " + constructParameterJSONQuery(ds.JobTable, parameterFilters)
 	}
 
 	if jd.tablePrefix == "gw" {
@@ -332,7 +332,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	}
 
 	if len(parameterFilters) > 0 {
-		sourceQuery += " AND " + constructParameterJSONQuery(jd, ds.JobTable, parameterFilters)
+		sourceQuery += " AND " + constructParameterJSONQuery(ds.JobTable, parameterFilters)
 	} else {
 		sourceQuery = ""
 	}

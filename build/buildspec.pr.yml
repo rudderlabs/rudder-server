@@ -22,6 +22,13 @@ phases:
       - ssh-add ~/.ssh/ssh_key
       - (cd && go get github.com/onsi/ginkgo/ginkgo)
       - (cd && go get github.com/golang/mock/mockgen)
+      - docker pull confluentinc/cp-zookeeper:latest
+      - docker pull confluentinc/cp-kafka:latest
+      - docker pull minio/minio:latest
+      - docker pull redis:alpine3.14
+      - docker pull postgres:11-alpine
+      - docker pull rudderlabs/rudder-transformer:latest
+      - go mod download
   build:
     commands:
       - export GO111MODULE=on
@@ -30,6 +37,7 @@ phases:
       - echo Build started on `date`
       - echo Building the Docker image...
       - make test
+      - go test -v ./docker_test.go -integration -count 1
       - find . -name "profile.out" | while read file;do cat $file >> coverage.txt; echo "" >> coverage.txt;done
       - bash build/codecov.sh
       - TAG=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
@@ -44,7 +52,8 @@ phases:
       - docker build -t rudderlabs/develop-rudder-server:$VERSION -f build/Dockerfile-aws-dev .
       # Build Enterprise version
       - make enterprise-init
-      - ginkgo -mod vendor --randomizeAllSpecs --randomizeSuites --failOnPending --cover -coverprofile=profile.out -covermode=atomic --trace --skipPackage=tests ./...
+      - make test
+      - go test -v ./docker_test.go -integration -count 1
       - GOOS=linux GOARCH=amd64 CGO_ENABLED=1 RACE_ENABLED=TRUE LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
       - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 LDFLAGS="-s -w -X main.version=$VERSION -X main.commit=$CODEBUILD_RESOLVED_SOURCE_VERSION -X main.buildDate=$DATE -X main.builtBy=codebuild-$CODEBUILD_BUILD_ID " make build
       - docker build -t rudderstack/develop-rudder-server-enterprise:$VERSION -f build/Dockerfile-aws-dev .

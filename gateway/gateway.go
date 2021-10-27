@@ -28,6 +28,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bugsnag/bugsnag-go"
+	uuid "github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 	"github.com/rudderlabs/rudder-server/config"
@@ -42,7 +43,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -151,6 +151,9 @@ type HandleT struct {
 	dbWritesStat                                               stats.RudderStats
 	dbWorkersBufferFullStat, dbWorkersTimeOutStat              stats.RudderStats
 	bodyReadTimeStat                                           stats.RudderStats
+	addToWebRequestQWaitTime                                   stats.RudderStats
+	ProcessRequestTime                                         stats.RudderStats
+	addToBatchRequestQWaitTime                                 stats.RudderStats
 	trackSuccessCount                                          int
 	trackFailureCount                                          int
 	requestMetricLock                                          sync.RWMutex
@@ -334,13 +337,16 @@ func (gateway *HandleT) findUserWebRequestWorker(userID string) *userWebRequestW
 func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebRequestWorkerT) {
 	var reqBuffer = make([]*webRequestT, 0)
 	timeout := time.After(userWebRequestBatchTimeout)
+	var start time.Time
 	for {
 		select {
 		case req, ok := <-userWebRequestWorker.webRequestQ:
 			if !ok {
 				breq := batchWebRequestT{batchRequest: reqBuffer}
 				userWebRequestWorker.bufferFullStat.Count(1)
+				start = time.Now()
 				userWebRequestWorker.batchRequestQ <- &breq
+				gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
 				close(userWebRequestWorker.batchRequestQ)
 				return
 			}
@@ -350,7 +356,9 @@ func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebReque
 			if len(reqBuffer) == maxUserWebRequestBatchSize {
 				breq := batchWebRequestT{batchRequest: reqBuffer}
 				userWebRequestWorker.bufferFullStat.Count(1)
+				start = time.Now()
 				userWebRequestWorker.batchRequestQ <- &breq
+				gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
 				reqBuffer = make([]*webRequestT, 0)
 			}
 		case <-timeout:
@@ -358,7 +366,9 @@ func (gateway *HandleT) userWebRequestBatcher(userWebRequestWorker *userWebReque
 			if len(reqBuffer) > 0 {
 				breq := batchWebRequestT{batchRequest: reqBuffer}
 				userWebRequestWorker.timeOutStat.Count(1)
+				start = time.Now()
 				userWebRequestWorker.batchRequestQ <- &breq
+				gateway.addToBatchRequestQWaitTime.SendTiming(time.Since(start))
 				reqBuffer = make([]*webRequestT, 0)
 			}
 		}
@@ -472,7 +482,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				toSet := vjson.Value().(map[string]interface{})
 				toSet["rudderId"] = rudderId
 				if messageId := strings.TrimSpace(vjson.Get("messageId").String()); messageId == "" {
-					toSet["messageId"] = uuid.NewV4().String()
+					toSet["messageId"] = uuid.Must(uuid.NewV4()).String()
 				}
 				out = append(out, toSet)
 				return true // keep iterating
@@ -509,7 +519,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
 			eventBatchesToRecord = append(eventBatchesToRecord, fmt.Sprintf("%s", body))
 			sourcesJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str // pick the job_run_id from the first event of batch. We are assuming job_run_id will be same for all events in a batch and the batch is coming from rudder-sources
-			id := uuid.NewV4()
+			id := uuid.Must(uuid.NewV4())
 
 			params := map[string]interface{}{
 				"source_id":         sourceID,
@@ -529,6 +539,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				Parameters:   marshalledParams,
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
+				EventCount:   totalEventsInReq,
 			}
 			jobList = append(jobList, &newJob)
 
@@ -1002,7 +1013,10 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 //ProcessRequest throws a webRequest into the queue and waits for the response before returning
 func (rrh *RegularRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
 	done := make(chan string, 1)
+	start := time.Now()
 	gateway.addToWebRequestQ(w, r, done, reqType, payload, writeKey)
+	gateway.addToWebRequestQWaitTime.SendTiming(time.Since(start))
+	defer gateway.ProcessRequestTime.SendTiming(time.Since(start))
 	errorMessage := <-done
 	return errorMessage
 }
@@ -1033,6 +1047,8 @@ func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Req
 		err = errors.New(response.NoWriteKeyInBasicAuth)
 		misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType})
+
 		return []byte{}, "", err
 	}
 	payload, err := gateway.getPayloadFromRequest(r)
@@ -1040,7 +1056,7 @@ func (gateway *HandleT) getPayloadAndWriteKey(w http.ResponseWriter, r *http.Req
 		sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
-
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
 		return []byte{}, writeKey, fmt.Errorf("read payload from request: %w", err)
 	}
 	return payload, writeKey, err
@@ -1330,6 +1346,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata)).Methods("GET")
 		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata)).Methods("GET")
 		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys)).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-models/json-schemas", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas)).Methods("GET")
 	}
 
 	//todo: remove in next release
@@ -1452,7 +1469,7 @@ func (gateway *HandleT) addToWebRequestQ(writer *http.ResponseWriter, req *http.
 	//If necessary fetch userID from request body.
 	if userIDHeader == "" {
 		//If the request comes through proxy, proxy would already send this. So this shouldn't be happening in that case
-		userIDHeader = uuid.NewV4().String()
+		userIDHeader = uuid.Must(uuid.NewV4()).String()
 	}
 	userWebRequestWorker := gateway.findUserWebRequestWorker(userIDHeader)
 	ipAddr := misc.GetIPFromReq(req)
@@ -1521,6 +1538,9 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.dbWorkersBufferFullStat = gateway.stats.NewStat("gateway.db_workers_buffer_full", stats.CountType)
 	gateway.dbWorkersTimeOutStat = gateway.stats.NewStat("gateway.db_workers_time_out", stats.CountType)
 	gateway.bodyReadTimeStat = gateway.stats.NewStat("gateway.http_body_read_time", stats.TimerType)
+	gateway.addToWebRequestQWaitTime = gateway.stats.NewStat("gateway.web_request_queue_wait_time", stats.TimerType)
+	gateway.addToBatchRequestQWaitTime = gateway.stats.NewStat("gateway.batch_request_queue_wait_time", stats.TimerType)
+	gateway.ProcessRequestTime = gateway.stats.NewStat("gateway.process_request_time", stats.TimerType)
 
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter

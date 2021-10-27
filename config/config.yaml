@@ -160,11 +160,12 @@ Processor:
   maxLoopSleep: 5000ms
   fixedLoopSleep: 0ms
   maxLoopProcessEvents: 10000
-  avgEventsInRequest: 1
+  avgEventsInRequest: 1 # DEPRECATED: don't use avgEventsInRequest, rudder-server will automatically adapt
   transformBatchSize: 100
   userTransformBatchSize: 200
-  maxChanSize: 2048
-  numTransformWorker: 8
+  maxConcurrency: 200
+  maxHTTPConnections: 100
+  maxHTTPIdleConnections: 50
   maxRetry: 30
   retrySleep: 100ms
   errReadLoopSleep: 30s

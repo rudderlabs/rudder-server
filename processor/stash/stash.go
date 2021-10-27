@@ -11,13 +11,13 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	uuid "github.com/satori/go.uuid"
 )
 
 var (
@@ -71,7 +71,7 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB) {
 }
 
 func (st *HandleT) crashRecover() {
-	st.errorDB.DeleteExecuting(jobsdb.GetQueryParamsT{Count: -1})
+	st.errorDB.DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
 }
 
 func (st *HandleT) Start(ctx context.Context) {
@@ -132,7 +132,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOutputT {
 	localTmpDirName := "/rudder-processor-errors/"
 
-	uuid := uuid.NewV4()
+	uuid := uuid.Must(uuid.NewV4())
 	st.logger.Debug("[Processor: storeErrorsToObjectStorage]: Starting logging to object storage")
 
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -226,9 +226,9 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 
 			//NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			toQuery := errDBReadBatchSize
-			retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, Count: toQuery, IgnoreCustomValFiltersInQuery: true})
+			retryList := st.errorDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, JobCount: toQuery, IgnoreCustomValFiltersInQuery: true})
 			toQuery -= len(retryList)
-			unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, Count: toQuery, IgnoreCustomValFiltersInQuery: true})
+			unprocessedList := st.errorDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{""}, JobCount: toQuery, IgnoreCustomValFiltersInQuery: true})
 
 			st.statErrDBR.End()
 
