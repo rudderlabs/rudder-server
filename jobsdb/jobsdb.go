@@ -3197,7 +3197,11 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 	if count == 0 {
 		return outJobs
 	}
-	for _, ds := range dsList {
+
+	for i, ds := range dsList {
+		if i > config.GetInt("JobsDB.maxReadDSCount", 10000) {
+			break
+		}
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 		jobs := jd.getUnprocessedJobsDS(ds, true, count, params)
 		outJobs = append(outJobs, jobs...)
@@ -3417,7 +3421,10 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 		return outJobs
 	}
 
-	for _, ds := range dsList {
+	for i, ds := range dsList {
+		if i > config.GetInt("JobsDB.maxReadDSCount", 10000) {
+			break
+		}
 		//count==0 means return all which we don't want
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 		jobs := jd.getProcessedJobsDS(ds, false, count, params)
