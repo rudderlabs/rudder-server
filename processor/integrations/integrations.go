@@ -62,6 +62,22 @@ type DeliveryResponseT struct {
 	Body   string
 }
 
+// This struct represents the datastructure present in Transformer network layer Error builder
+type TransErrorResponseT struct {
+	Message                  string                 `json:"message"`
+	Status                   int                    `json:"status"`
+	StatTags                 map[string]string      `json:"statTags"`
+	DestinationResponse      map[string]interface{} `json:"destinationResponse"`
+	ApiLimit                 map[string]interface{} `json:"apiLimit"`
+	Metadata                 map[string]interface{} `json:"metadata"`
+	ResponseTransformFailure bool                   `json:"responseTransformFailure"`
+	FailureAt                string                 `json:"failureAt"`
+}
+
+type TransErrorLogT struct {
+	ErrorLog map[string]interface{} `json:"errorLog"`
+}
+
 // GetPostInfo parses the transformer response
 func ValidatePostInfo(transformRawParams PostParametersT) error {
 	transformRaw, err := json.Marshal(transformRawParams)
