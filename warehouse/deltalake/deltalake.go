@@ -165,9 +165,7 @@ func (dl *HandleT) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
-func (dl *HandleT) getSortedColumnNames(tableSchemaInUpload warehouseutils.TableSchemaT) (sortedColumnNames string) {
-	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
-
+func (dl *HandleT) getSortedColumnNames(tableSchemaInUpload warehouseutils.TableSchemaT, sortedColumnKeys []string) (sortedColumnNames string) {
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sortedColumnNames = strings.Join(sortedColumnKeys[:], ",")
 	} else {
@@ -186,7 +184,9 @@ func (dl *HandleT) getSortedColumnNames(tableSchemaInUpload warehouseutils.Table
 }
 
 func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
-	sortedColumnNames := dl.getSortedColumnNames(tableSchemaInUpload)
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
+
+	sortedColumnNames := dl.getSortedColumnNames(tableSchemaInUpload, sortedColumnKeys)
 	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
 	err = dl.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
@@ -239,7 +239,19 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		primaryKey = column
 	}
 
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN USING %[1]s.%[3]s AS STAGING ON MAIN.%[4]s = STAGING.%[4]s WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *`, dl.Namespace, tableName, stagingTableName, primaryKey)
+	var columnNames, stagingColumnNames, columnsWithValues string
+	for idx, str := range sortedColumnKeys {
+		columnNames += str
+		stagingColumnNames += fmt.Sprintf(`STAGING.%s`, str)
+		columnsWithValues += fmt.Sprintf(`MAIN.%[1]s = STAGING.%[1]s`, str)
+		if idx != len(sortedColumnKeys)-1 {
+			columnNames += `,`
+			stagingColumnNames += `,`
+			columnsWithValues += `,`
+		}
+	}
+
+	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN USING ( SELECT * FROM ( SELECT *, row_number() OVER (PARTITION BY %[4]s ORDER BY RECEIVED_AT ASC) AS _rudder_staging_row_number FROM %[1]s.%[3]s ) AS q WHERE _rudder_staging_row_number = 1) AS STAGING ON MAIN.%[4]s = STAGING.%[4]s WHEN MATCHED THEN UPDATE SET %[5]s WHEN NOT MATCHED THEN INSERT (%[6]s) VALUES (%[7]s)`, dl.Namespace, tableName, stagingTableName, primaryKey, columnsWithValues, columnNames, stagingColumnNames)
 	pkgLogger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
 	_, err = dl.Db.Exec(sqlStatement)
 
@@ -313,7 +325,20 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	defer dl.dropStagingTables([]string{stagingTableName})
 
 	primaryKey := "id"
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN USING %[1]s.%[3]s AS STAGING ON MAIN.%[4]s = STAGING.%[4]s WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *`, dl.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
+
+	columnNames := append([]string{`id`}, userColNames...)
+	columnNamesStr := strings.Join(columnNames, ",")
+	var columnsWithValues, stagingColumnValues string
+	for idx, colName := range columnNames {
+		columnsWithValues += fmt.Sprintf(`MAIN.%[1]s = STAGING.%[1]s`, colName)
+		stagingColumnValues += fmt.Sprintf(`STAGING.%s`, colName)
+		if idx != len(columnNames)-1 {
+			columnsWithValues += `,`
+			stagingColumnValues += `,`
+		}
+	}
+
+	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN USING ( SELECT %[5]s FROM %[1]s.%[2]s ) AS STAGING ON MAIN.%[4]s = STAGING.%[4]s WHEN MATCHED THEN UPDATE SET %[6]s WHEN NOT MATCHED THEN INSERT (%[5]s) VALUES (%[7]s)`, dl.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey, columnNamesStr, columnsWithValues, stagingColumnValues)
 	pkgLogger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)
 	_, err = dl.Db.Exec(sqlStatement)
 
