@@ -1346,6 +1346,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata)).Methods("GET")
 		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata)).Methods("GET")
 		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys)).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-models/json-schemas", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas)).Methods("GET")
 	}
 
 	//todo: remove in next release
