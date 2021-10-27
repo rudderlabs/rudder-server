@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/alexbrainman/odbc"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/satori/go.uuid"
 	"reflect"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -32,6 +32,7 @@ const (
 
 var (
 	stagingTablePrefix string
+	driverPath         string
 	pkgLogger          logger.LoggerI
 )
 
@@ -89,6 +90,7 @@ func Init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
+	config.RegisterStringConfigVariable("/opt/simba/spark/lib/64/libsparkodbc_sb64.so", &driverPath, false, "Warehouse.deltalake.driverPath") // Reference: https://docs.databricks.com/integrations/bi/jdbc-odbc-bi.html
 }
 
 type HandleT struct {
@@ -328,19 +330,9 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-// GetDriver
-// macOS: /Library/simba/spark/lib/libsparkodbc_sbu.dylib
-// Linux 64-bit: /opt/simba/spark/lib/64/libsparkodbc_sb64.so
-// Linux 32-bit: /opt/simba/spark/lib/32/libsparkodbc_sb32.so
-func GetDriver() string {
-	// TODO: Check for OSX and Linux
-	pkgLogger.Infof("Running in platform %v", runtime.GOOS)
-	return "/Library/simba/spark/lib/libsparkodbc_sbu.dylib"
-}
-
 func connect(cred CredentialsT) (*sql.DB, error) {
 	dsn := fmt.Sprintf("Driver=%v; HOST=%v; PORT=%v; Schema=default; SparkServerType=3; AuthMech=3; UID=token; PWD=%v; ThriftTransport=2; SSL=1; HTTPPath=%v",
-		GetDriver(),
+		driverPath,
 		cred.host,
 		cred.port,
 		cred.token,
