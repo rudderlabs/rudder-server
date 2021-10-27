@@ -351,7 +351,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 }
 
 func connect(cred CredentialsT) (*sql.DB, error) {
-	dsn := fmt.Sprintf("Driver=%v; HOST=%v; PORT=%v; Schema=default; SparkServerType=3; AuthMech=3; UID=token; PWD=%v; ThriftTransport=2; SSL=1; HTTPPath=%v",
+	dsn := fmt.Sprintf("Driver=%v; HOST=%v; PORT=%v; Schema=default; SparkServerType=3; AuthMech=3; UID=token; PWD=%v; ThriftTransport=2; SSL=1; HTTPPath=%v; UserAgentEntry=RudderStack",
 		driverPath,
 		cred.host,
 		cred.port,
