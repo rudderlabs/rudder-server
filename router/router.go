@@ -31,6 +31,7 @@ import (
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -38,7 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	uuid "github.com/satori/go.uuid"
 )
 
 type PauseT struct {
@@ -1560,7 +1560,7 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 func generateUUID() []string {
 	uuidList := make([]string, 0)
 	for i := 0; i < 20; i++ {
-		uuidList = append(uuidList, uuid.NewV4().String())
+		uuidList = append(uuidList, uuid.Must(uuid.NewV4()).String())
 	}
 	return uuidList
 }
@@ -1575,7 +1575,7 @@ func generateFakeCombinedList() []*jobsdb.JobT {
 	for i := 0; i < 60000; i++ {
 
 		job := jobsdb.JobT{
-			UUID:         uuid.NewV4(),
+			UUID:         uuid.Must(uuid.NewV4()),
 			UserID:       "u1",
 			JobID:        2009,
 			CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
