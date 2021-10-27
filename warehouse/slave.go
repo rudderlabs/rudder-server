@@ -136,29 +136,9 @@ func (job *PayloadT) getDiscardsTable() string {
 }
 
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
-	randomness := uuid.Must(uuid.NewV4()).String()
-	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, jobRun.getLoadFileFormat())
-}
-
-// TODO: Discuss with @$hanmukh around cleaner way of doing this.
-// Should we send this information to slave.
-// But in that case we need to handle the mismatch between master and slave cases.
-func (jobRun *JobRunT) getLoadFileFormat() string {
 	job := jobRun.job
-	useParquetLoadFiles := job.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET
-	switch job.DestinationType {
-	case "BQ":
-		return "json.gz"
-	case "S3_DATALAKE":
-		return "parquet"
-	case "RS", "DELTALAKE":
-		if useParquetLoadFiles {
-			return "parquet"
-		}
-		return "csv.gz"
-	default:
-		return "csv.gz"
-	}
+	randomness := uuid.Must(uuid.NewV4()).String()
+	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, getLoadFileFormat(job.DestinationType))
 }
 
 func (job *PayloadT) getColumnName(columnName string) string {
