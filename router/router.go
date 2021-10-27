@@ -31,6 +31,7 @@ import (
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -38,7 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	uuid "github.com/satori/go.uuid"
 )
 
 type PauseT struct {
@@ -1560,7 +1560,7 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 func generateUUID() []string {
 	uuidList := make([]string, 0)
 	for i := 0; i < 20; i++ {
-		uuidList = append(uuidList, uuid.NewV4().String())
+		uuidList = append(uuidList, uuid.Must(uuid.NewV4()).String())
 	}
 	return uuidList
 }
@@ -1572,10 +1572,12 @@ func generateFakeCombinedList() []*jobsdb.JobT {
 	url := "95.216.43.45:5000"
 	payload := fmt.Sprintf(`{"body":{"XML":{},"FORM":{},"JSON":{"type":"track","event":"Demo Track","sentAt":"2019-08-12T05:08:30.909Z","channel":"android-sdk","context":{"ip":"[::1]","app":{"name":"RudderAndroidClient","build":"1","version":"1.0","namespace":"com.rudderlabs.android.sdk"},"device":{"id":"49e4bdd1c280bc00","name":"generic_x86","model":"Android SDK built for x86","manufacturer":"Google"},"locale":"en-US","screen":{"width":1080,"height":1794,"density":420},"traits":{"anonymousId":"49e4bdd1c280bc00"},"library":{"name":"com.rudderstack.android.sdk.core"},"network":{"carrier":"Android"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"rudderId":"90ca6da0-292e-4e79-9880-f8009e0ae4a3","messageId":"026af35f-f230-4e59-9b73-b22e46be4a3f","timestamp":"2021-10-25T17:24:06.740+05:30","properties":{"label":"Demo Label","value":5,"testMap":{"t1":"a","t2":4},"category":"Demo Category","floatVal":4.501,"testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}]},"receivedAt":"2021-10-25T17:24:06.740+05:30","request_ip":"[::1]","anonymousId":"%s","integrations":{"All":true},"originalTimestamp":"2019-08-12T05:08:30.909Z"}},"type":"REST","files":{},"method":"GET","params":{},"userId":"anon_id","headers":{"content-type":"application/json"},"version":"1","endpoint":"%s"}`, userID, url)
 	parameters := `{"source_id": "1mh4K00WltILRBzWW2jzdIpX7YZ", "destination_id": "1y8pFzE16L2PrF3VN7YU9qsigso", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`
-	for i := 0; i < 60000; i++ {
+	jobs := config.GetEnv("JOBS", "100000")
+	job, _ := strconv.Atoi(jobs)
+	for i := 0; i < job; i++ {
 
 		job := jobsdb.JobT{
-			UUID:         uuid.NewV4(),
+			UUID:         uuid.Must(uuid.NewV4()),
 			UserID:       "u1",
 			JobID:        2009,
 			CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
@@ -1620,13 +1622,16 @@ func (rt *HandleT) readAndProcess() int {
 	// unprocessedList := rt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 
 	// combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
-	combinedList := generateFakeCombinedList()
+	var combinedList []*jobsdb.JobT
+	if rt.destName == "WEBHOOK" {
+		combinedList = generateFakeCombinedList()
+	}
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
 		time.Sleep(readSleep)
 		return 0
 	}
-
+	rt.logger.Info("*************************            Len of Combined List is %s", len(combinedList))
 	//rt.logger.Debugf("RT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", rt.destName, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
 
 	sort.Slice(combinedList, func(i, j int) bool {
