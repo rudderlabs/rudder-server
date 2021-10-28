@@ -338,7 +338,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		}
 	}
 
-	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN USING ( SELECT %[5]s FROM %[1]s.%[2]s ) AS STAGING ON MAIN.%[4]s = STAGING.%[4]s WHEN MATCHED THEN UPDATE SET %[6]s WHEN NOT MATCHED THEN INSERT (%[5]s) VALUES (%[7]s)`, dl.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey, columnNamesStr, columnsWithValues, stagingColumnValues)
+	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s.%[2]s AS MAIN USING ( SELECT %[5]s FROM %[1]s.%[3]s ) AS STAGING ON MAIN.%[4]s = STAGING.%[4]s WHEN MATCHED THEN UPDATE SET %[6]s WHEN NOT MATCHED THEN INSERT (%[5]s) VALUES (%[7]s)`, dl.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey, columnNamesStr, columnsWithValues, stagingColumnValues)
 	pkgLogger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)
 	_, err = dl.Db.Exec(sqlStatement)
 
