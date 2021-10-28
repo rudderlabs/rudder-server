@@ -74,6 +74,15 @@ var primaryKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id",
 }
 
+// HandleT Defining necessary types for DeltaLake
+type HandleT struct {
+	Db            *sql.DB
+	Namespace     string
+	ObjectStorage string
+	Warehouse     warehouseutils.WarehouseT
+	Uploader      warehouseutils.UploaderI
+}
+
 type CredentialsT struct {
 	host  string
 	port  string
@@ -89,14 +98,6 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	config.RegisterStringConfigVariable("/opt/simba/spark/lib/64/libsparkodbc_sb64.so", &driverPath, false, "Warehouse.deltalake.driverPath") // Reference: https://docs.databricks.com/integrations/bi/jdbc-odbc-bi.html
-}
-
-type HandleT struct {
-	Db            *sql.DB
-	Namespace     string
-	ObjectStorage string
-	Warehouse     warehouseutils.WarehouseT
-	Uploader      warehouseutils.UploaderI
 }
 
 // getDeltaLakeDataType gets datatype for delta lake which is mapped with rudderstack datatype
@@ -128,6 +129,68 @@ func columnsWithValues(sortedColumnKeys []string) string {
 		return fmt.Sprintf(`MAIN.%[1]s = STAGING.%[1]s`, str)
 	}
 	return warehouseutils.JoinWithFormatting(sortedColumnKeys, format, ",")
+}
+
+func checkAndIgnoreAlreadyExistError(err error, ignoreNativeError int) bool {
+	if err != nil {
+		if odbcErrs, ok := err.(*odbc.Error); ok {
+			for _, odbcErr := range odbcErrs.Diag {
+				if odbcErr.NativeError == ignoreNativeError {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return true
+}
+
+func connect(cred CredentialsT) (*sql.DB, error) {
+	dsn := fmt.Sprintf("Driver=%v; HOST=%v; PORT=%v; Schema=default; SparkServerType=3; AuthMech=3; UID=token; PWD=%v; ThriftTransport=2; SSL=1; HTTPPath=%v; UserAgentEntry=RudderStack",
+		driverPath,
+		cred.host,
+		cred.port,
+		cred.token,
+		cred.path)
+
+	var err error
+	var db *sql.DB
+	if db, err = sql.Open("odbc", dsn); err != nil {
+		return nil, fmt.Errorf("%s Delta lake connect error : (%v)", err)
+	}
+	return db, nil
+}
+
+func (dl *HandleT) fetchTables(db *sql.DB, sqlStatement string) (tableNames []string, err error) {
+	// Executing the table sql statement
+	rows, err := db.Query(sqlStatement)
+	if err != nil && err != sql.ErrNoRows {
+		if checkAndIgnoreAlreadyExistError(err, odbcDBNotFound) {
+			err = nil
+			return
+		}
+		pkgLogger.Errorf("%s Error in fetching tables schema from delta lake with SQL: %v", dl.GetLogIdentifier(), sqlStatement)
+		return
+	}
+	defer rows.Close()
+
+	if err == sql.ErrNoRows {
+		err = nil
+		return
+	}
+
+	// Populating tablesNames
+	for rows.Next() {
+		var database, tableName string
+		var isTemporary bool
+		err = rows.Scan(&database, &tableName, &isTemporary)
+		if err != nil {
+			pkgLogger.Errorf("%s Error in processing fetched tables schema from delta lake tableName: %v", dl.GetLogIdentifier(), tableName)
+			return
+		}
+		tableNames = append(tableNames, tableName)
+	}
+	return
 }
 
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
@@ -177,6 +240,9 @@ func (dl *HandleT) dropStagingTables(stagingTableNames []string) {
 		pkgLogger.Infof("%s Dropping table %+v\n", dl.GetLogIdentifier(), stagingTableName)
 		_, err := dl.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, dl.Namespace, stagingTableName))
 		if err != nil {
+			if checkAndIgnoreAlreadyExistError(err, odbcTableOrViewNotFound) {
+				continue
+			}
 			pkgLogger.Errorf("%s Error dropping staging tables in delta lake: %v", dl.GetLogIdentifier(), err)
 		}
 	}
@@ -198,6 +264,7 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 }
 
 func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+	// Getting sorted column keys from tableSchemaInUpload
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
 	// Creating staging table
@@ -253,7 +320,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	// Primary key for the merge sql statement
+	// Getting the primary key for the merge sql statement
 	primaryKey := "id"
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
@@ -287,6 +354,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 }
 
 func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
+	// Creating errorMap
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	pkgLogger.Infof("%s Starting load for identifies and users tables\n", dl.GetLogIdentifier())
 
@@ -306,7 +374,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
-	// Creating userColNames and firstValProps
+	// Creating userColNames and firstValProps for create table sql statement
 	userColMap := dl.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
@@ -387,48 +455,14 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func connect(cred CredentialsT) (*sql.DB, error) {
-	dsn := fmt.Sprintf("Driver=%v; HOST=%v; PORT=%v; Schema=default; SparkServerType=3; AuthMech=3; UID=token; PWD=%v; ThriftTransport=2; SSL=1; HTTPPath=%v; UserAgentEntry=RudderStack",
-		driverPath,
-		cred.host,
-		cred.port,
-		cred.token,
-		cred.path)
-
-	var err error
-	var db *sql.DB
-	if db, err = sql.Open("odbc", dsn); err != nil {
-		return nil, fmt.Errorf("%s Delta lake connect error : (%v)", err)
-	}
-	return db, nil
-}
-
 func (dl *HandleT) dropDanglingStagingTables() {
+	// Creating show tables sql statement to get the staging tables associated with the namespace
 	sqlStatement := fmt.Sprintf(`SHOW TABLES FROM %s LIKE '%s';`, dl.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "*"))
-	rows, err := dl.Db.Query(sqlStatement)
-	if err != nil && err != sql.ErrNoRows {
-		if checkAndIgnoreAlreadyExistError(err, odbcDBNotFound) {
-			return
-		}
-		pkgLogger.Errorf("%s Error dropping dangling staging tables in delta lake with SQL: %s\nError: %v\n", dl.GetLogIdentifier(), sqlStatement, err)
-		return
-	}
-	defer rows.Close()
 
-	if err == sql.ErrNoRows {
-		return
-	}
+	// Fetching the staging tables
+	stagingTableNames, _ := dl.fetchTables(dl.Db, sqlStatement)
 
-	var stagingTableNames []string
-	for rows.Next() {
-		var database, tableName string
-		var isTemporary bool
-		err = rows.Scan(&database, &tableName, &isTemporary)
-		if err != nil {
-			panic(fmt.Errorf("%s Failed to scan result with SQL: %s\nError: %w", dl.GetLogIdentifier(), sqlStatement, err))
-		}
-		stagingTableNames = append(stagingTableNames, tableName)
-	}
+	// Drop staging tables
 	dl.dropStagingTables(stagingTableNames)
 	return
 }
@@ -443,6 +477,7 @@ func (dl *HandleT) connectToWarehouse() (*sql.DB, error) {
 }
 
 func (dl *HandleT) CreateSchema() (err error) {
+	// Checking if schema exists or not
 	var schemaExists bool
 	schemaExists, err = dl.schemaExists(dl.Namespace)
 	if err != nil {
@@ -453,25 +488,13 @@ func (dl *HandleT) CreateSchema() (err error) {
 		pkgLogger.Infof("%s Skipping creating schema: %s since it already exists", dl.GetLogIdentifier(), dl.Namespace)
 		return
 	}
+
+	// Creating schema
 	return dl.createSchema()
 }
 
 func (dl *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
 	return
-}
-
-func checkAndIgnoreAlreadyExistError(err error, ignoreNativeError int) bool {
-	if err != nil {
-		if odbcErrs, ok := err.(*odbc.Error); ok {
-			for _, odbcErr := range odbcErrs.Diag {
-				if odbcErr.NativeError == ignoreNativeError {
-					return true
-				}
-			}
-		}
-		return false
-	}
-	return true
 }
 
 // FetchSchema queries delta lake and returns the schema associated with provided namespace
@@ -498,43 +521,34 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	}
 	defer dbHandle.Close()
 
+	// Schema Initialization
 	schema = make(warehouseutils.SchemaT)
 
-	tSqlStatement := fmt.Sprintf(`SHOW TABLES FROM %s`, dl.Namespace)
-	tRows, err := dbHandle.Query(tSqlStatement)
-	if err != nil && err != sql.ErrNoRows {
-		if checkAndIgnoreAlreadyExistError(err, odbcDBNotFound) {
-			err = nil
-			return
-		}
-		pkgLogger.Errorf("%s Error in fetching tables schema from delta lake with SQL: %v", dl.GetLogIdentifier(), tSqlStatement)
-		return
-	}
-	defer tRows.Close()
+	// Creating show tables sql statement to get the tables associated with the namespace
+	sqlStatement := fmt.Sprintf(`SHOW TABLES FROM %s`, dl.Namespace)
 
-	if err == sql.ErrNoRows {
-		err = nil
+	// Fetching the tables
+	tableNames, err := dl.fetchTables(dl.Db, sqlStatement)
+	if err != nil {
 		return
 	}
 
-	var tableNames []string
-	for tRows.Next() {
-		var database, tableName string
-		var isTemporary bool
-		err = tRows.Scan(&database, &tableName, &isTemporary)
-		if err != nil {
-			pkgLogger.Errorf("%s Error in processing fetched tables schema from delta lake tableName: %v", dl.GetLogIdentifier(), tableName)
-			return
-		}
+	// Filtering tables based on not part of staging tables
+	var filteredTablesNames []string
+	for _, tableName := range tableNames {
 		// Ignoring the staging tables
 		if strings.HasPrefix(tableName, stagingTablePrefix) {
 			continue
 		}
-		tableNames = append(tableNames, tableName)
+		filteredTablesNames = append(filteredTablesNames, tableName)
 	}
 
-	for _, tableName := range tableNames {
+	// For each table we are generating schema
+	for _, tableName := range filteredTablesNames {
+		// Creating describe sql statement for table
 		ttSqlStatement := fmt.Sprintf(`DESCRIBE TABLE %s.%s`, dl.Namespace, tableName)
+
+		// Executing describe sql statement
 		var ttRows *sql.Rows
 		ttRows, err = dbHandle.Query(ttSqlStatement)
 		if err != nil && err != sql.ErrNoRows {
@@ -550,8 +564,9 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 			err = nil
 			return
 		}
-
 		defer ttRows.Close()
+
+		// Populating the schema for the table
 		for ttRows.Next() {
 			var col_name, data_type, comment string
 			err := ttRows.Scan(&col_name, &data_type, &comment)
