@@ -71,9 +71,9 @@ var dataTypesMapToRudder = map[string]string{
 }
 
 var primaryKeyMap = map[string]string{
-	"users":                      "id",
-	"identifies":                 "id",
-	warehouseutils.DiscardsTable: "row_id",
+	warehouseutils.UsersTable:      "id",
+	warehouseutils.IdentifiesTable: "id",
+	warehouseutils.DiscardsTable:   "row_id",
 }
 
 type CredentialsT struct {
@@ -108,11 +108,10 @@ func getDeltaLakeDataType(columnType string) string {
 
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
-	var arr []string
-	for _, name := range keys {
-		arr = append(arr, fmt.Sprintf(`%s%s %s`, prefix, name, getDeltaLakeDataType(columns[name])))
+	format := func(idx int, name string) string {
+		return fmt.Sprintf(`%s%s %s`, prefix, name, getDeltaLakeDataType(columns[name]))
 	}
-	return strings.Join(arr[:], ",")
+	return warehouseutils.JoinWithFormatting(keys, format, ",")
 }
 
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
@@ -129,12 +128,14 @@ func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	err = dl.Db.QueryRow(sqlStatement).Scan(&databaseName)
 	if err != nil && err != sql.ErrNoRows {
 		if checkAndIgnoreAlreadyExistError(err, odbcDBNotFound) {
-			return false, nil
+			err = nil
+			return
 		}
 		return
 	}
 	if err == sql.ErrNoRows {
 		err = nil
+		return
 	}
 	exists = strings.Compare(databaseName, schemaName) == 0
 	return
@@ -366,17 +367,21 @@ func connect(cred CredentialsT) (*sql.DB, error) {
 	return db, nil
 }
 
-func (dl *HandleT) dropDanglingStagingTables() bool {
+func (dl *HandleT) dropDanglingStagingTables() {
 	sqlStatement := fmt.Sprintf(`SHOW TABLES FROM %s LIKE '%s';`, dl.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "*"))
 	rows, err := dl.Db.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		if checkAndIgnoreAlreadyExistError(err, odbcDBNotFound) {
-			return true
+			return
 		}
 		pkgLogger.Errorf("%s Error dropping dangling staging tables in delta lake with SQL: %s\nError: %v\n", dl.GetLogIdentifier(), sqlStatement, err)
-		return false
+		return
 	}
 	defer rows.Close()
+
+	if err == sql.ErrNoRows {
+		return
+	}
 
 	var stagingTableNames []string
 	for rows.Next() {
@@ -388,16 +393,8 @@ func (dl *HandleT) dropDanglingStagingTables() bool {
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
-	pkgLogger.Infof("%s Dropping dangling staging tables: %+v %+v\n", dl.GetLogIdentifier(), len(stagingTableNames), stagingTableNames)
-	delSuccess := true
-	for _, stagingTableName := range stagingTableNames {
-		_, err := dl.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, dl.Namespace, stagingTableName))
-		if err != nil {
-			pkgLogger.Errorf("%s Error dropping dangling staging table: %s in delta lake: %v\n", dl.GetLogIdentifier(), stagingTableName, err)
-			delSuccess = false
-		}
-	}
-	return delSuccess
+	dl.dropStagingTables(stagingTableNames)
+	return
 }
 
 func (dl *HandleT) connectToWarehouse() (*sql.DB, error) {
@@ -471,12 +468,18 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	tRows, err := dbHandle.Query(tSqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		if checkAndIgnoreAlreadyExistError(err, odbcDBNotFound) {
-			return schema, nil
+			err = nil
+			return
 		}
 		pkgLogger.Errorf("%s Error in fetching tables schema from delta lake with SQL: %v", dl.GetLogIdentifier(), tSqlStatement)
 		return
 	}
 	defer tRows.Close()
+
+	if err == sql.ErrNoRows {
+		err = nil
+		return
+	}
 
 	var tableNames []string
 	for tRows.Next() {
@@ -496,17 +499,20 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 	for _, tableName := range tableNames {
 		ttSqlStatement := fmt.Sprintf(`DESCRIBE TABLE %s.%s`, dl.Namespace, tableName)
-		ttRows, err := dbHandle.Query(ttSqlStatement)
+		var ttRows *sql.Rows
+		ttRows, err = dbHandle.Query(ttSqlStatement)
 		if err != nil && err != sql.ErrNoRows {
 			if checkAndIgnoreAlreadyExistError(err, odbcTableOrViewNotFound) {
-				return schema, nil
+				err = nil
+				return
 			}
 			pkgLogger.Errorf("%s Error in fetching describe table schema from delta lake with SQL: %v", dl.GetLogIdentifier(), ttSqlStatement)
 			break
 		}
 		if err == sql.ErrNoRows {
 			pkgLogger.Infof("%s No rows, while fetched describe table schema from delta lake with SQL: %v", dl.GetLogIdentifier(), ttSqlStatement)
-			return schema, nil
+			err = nil
+			return
 		}
 
 		defer ttRows.Close()
