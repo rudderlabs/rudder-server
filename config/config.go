@@ -75,7 +75,7 @@ func UpdateConfig() {
 func watchForConfigChange() {
 	defer func() {
 		if r := recover(); r != nil {
-			err := fmt.Errorf("failed while trying to update Config Variabled with Error: %w", r)
+			err := fmt.Errorf("failed while trying to update Config Variables with Error: %w", r)
 			fmt.Println(err)
 		}
 	}()
