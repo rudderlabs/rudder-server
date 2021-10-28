@@ -1,4 +1,4 @@
-package batch
+package kv_store
 
 //This is going to call appropriate method of KVStoreManager & DeleteManager
 //to get deletion done.
@@ -12,6 +12,7 @@ import (
 )
 
 type deleteManager interface {
+	Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus, error)
 }
 
 type KVStore struct {
@@ -22,7 +23,7 @@ type KVStore struct {
 //calls KVStoreManager to download data
 //calls deletemanager to delete users from downloaded data
 //calls KVStoreManager to upload data
-func (b *KVStore) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (status string, err error) {
+func (kv *KVStore) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (status model.JobStatus, err error) {
 
-	return "successful", nil
+	return kv.DeleteManager.Delete(ctx, job, destDetail)
 }

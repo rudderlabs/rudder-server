@@ -12,6 +12,7 @@ import (
 )
 
 type deleteManager interface {
+	Delete(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error)
 }
 
 type Batch struct {
@@ -22,7 +23,32 @@ type Batch struct {
 //calls filemanager to download data
 //calls deletemanager to delete users from downloaded data
 //calls filemanager to upload data
-func (b *Batch) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (status string, err error) {
+func (b *Batch) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (status model.JobStatus, err error) {
+	// data, err := getData(job, dest)
+	// if err != nil {
+	// 	return model.JobStatusFailed, fmt.Errorf("error while getting deletion data: %w", err)
+	// }
+	// cleanedData, err := deleteData(job, dest, data)
+	// if err != nil {
+	// 	return model.JobStatusFailed, fmt.Errorf("error while deleting users from destination data: %w", err)
+	// }
 
-	return "successful", nil
+	// status, err := uploadData(job, dest, cleanedData)
+	// if err != nil {
+	// 	return model.JobStatusFailed, fmt.Errorf("error while uploading deleted data: %w", err)
+	// }
+	return b.DeleteManager.Delete(ctx, job, destDetail)
+
+}
+
+func getData(job model.Job, dest model.Destination) (interface{}, error) {
+	return nil, nil
+}
+
+func deleteData(job model.Job, dest model.Destination, data interface{}) (interface{}, error) {
+	return nil, nil
+}
+
+func uploadData(job model.Job, dest model.Destination, data interface{}) (model.JobStatus, error) {
+	return model.JobStatusComplete, nil
 }
