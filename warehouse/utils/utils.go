@@ -676,3 +676,11 @@ func GetTimeWindow(ts time.Time) time.Time {
 func GetTablePathInObjectStorage(namespace string, tableName string) string {
 	return fmt.Sprintf("%s/%s/%s", config.GetEnv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), namespace, tableName)
 }
+
+func JoinWithFormatting(keys []string, format func(idx int, str string) string, separtor string) string {
+	var output []string
+	for idx, str := range keys {
+		output[idx] += format(idx, str)
+	}
+	return strings.Join(output[:], separtor)
+}
