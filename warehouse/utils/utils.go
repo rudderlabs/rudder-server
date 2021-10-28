@@ -678,7 +678,7 @@ func GetTablePathInObjectStorage(namespace string, tableName string) string {
 }
 
 func JoinWithFormatting(keys []string, format func(idx int, str string) string, separator string) string {
-	var output []string
+	output := make([]string, len(keys))
 	for idx, str := range keys {
 		output[idx] += format(idx, str)
 	}
