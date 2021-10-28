@@ -1067,6 +1067,8 @@ func getLoadFileFormat(whType string) string {
 			return "parquet"
 		}
 		return "csv.gz"
+	case "DELTALAKE":
+		return "csv.gz"
 	default:
 		return "csv.gz"
 	}
