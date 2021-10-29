@@ -24,7 +24,6 @@ type deleter interface {
 	DeleteJob(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error)
 }
 
-// type d
 type JobSvc struct {
 	API        APIClient
 	Deleter    deleter
@@ -59,11 +58,12 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	err = js.updateStatus(ctx, status, job.ID)
 
+	err = js.updateStatus(ctx, status, job.ID)
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
