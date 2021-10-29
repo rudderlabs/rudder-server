@@ -88,18 +88,18 @@ func (m *MockdestDetail) EXPECT() *MockdestDetailMockRecorder {
 }
 
 // GetDestDetails mocks base method.
-func (m *MockdestDetail) GetDestDetails(destID, workspaceID string) (model.Destination, error) {
+func (m *MockdestDetail) GetDestDetails(destID string) (model.Destination, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetDestDetails", destID, workspaceID)
+	ret := m.ctrl.Call(m, "GetDestDetails", destID)
 	ret0, _ := ret[0].(model.Destination)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetDestDetails indicates an expected call of GetDestDetails.
-func (mr *MockdestDetailMockRecorder) GetDestDetails(destID, workspaceID interface{}) *gomock.Call {
+func (mr *MockdestDetailMockRecorder) GetDestDetails(destID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDestDetails", reflect.TypeOf((*MockdestDetail)(nil).GetDestDetails), destID, workspaceID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDestDetails", reflect.TypeOf((*MockdestDetail)(nil).GetDestDetails), destID)
 }
 
 // Mockdeleter is a mock of deleter interface.
