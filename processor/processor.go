@@ -102,12 +102,6 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 }
 
-var defaultTransformerFeatures = `{
-	"routerTransform": {
-	  "MARKETO": true,
-	  "HS": true
-	}
-  }`
 
 var mainLoopTimeout = 200 * time.Millisecond
 var featuresRetryMaxAttempts = 10

@@ -4,6 +4,7 @@ package transformer
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -255,6 +257,64 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 func (trans *HandleT) Validate(clientEvents []TransformerEventT,
 	url string, batchSize int) ResponseT {
 	return trans.Transform(clientEvents, url, batchSize)
+}
+
+
+
+
+
+var defaultTransformerFeatures = `{
+	"routerTransform": {
+	  "MARKETO": true,
+	  "HS": true
+	}
+  }`
+
+
+type transfomerFeatures struct {
+	RouterTransform map[string]bool `json:"routerTransform"`
+}
+
+type defaultTransfomerFeatures struct {
+	RouterTransform map[string]bool `json:"routerTransform"`
+}
+
+func (trans *HandleT) Features(ctx context.Context, transformerURL string) (transfomerFeatures, error) {
+	url := transformerURL + "/features"
+
+	features := json.RawMessage(defaultTransformerFeatures)
+
+	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
+	err := backoff.RetryNotify(func() error {
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return err
+		}
+
+		res, err := trans.Client.Do(req)
+		if err != nil {
+			return err
+		}
+		if res.StatusCode == 404 {
+			return nil
+		}
+		if res.StatusCode != 200 {
+			return fmt.Errorf("unexpected error code: %d", res.StatusCode)
+		}
+
+		body, err := io.ReadAll(res.Body)
+		if err == nil {
+			return err
+		}
+		defer res.Body.Close()
+		features = json.RawMessage(body)
+
+		return nil
+	}, b, func(err error, t time.Duration) {
+		trans.logger.Warnf("Error fetching transformer features: %s", err)
+	})
+
+	return features, err
 }
 
 func (trans *HandleT) request(url string, data []TransformerEventT) []TransformerResponseT {
