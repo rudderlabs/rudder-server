@@ -32,14 +32,15 @@ type Job struct {
 
 type UserAttribute struct {
 	UserID string
-	Phone  string
-	Email  string
+	Phone  *string
+	Email  *string
 }
 
 type Destination struct {
+	Config        map[string]interface{}
 	DestinationID string
 	Type          string
-	Credentials   string
+	Name          string
 }
 
 type APIReqErr struct {

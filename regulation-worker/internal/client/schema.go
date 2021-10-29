@@ -11,7 +11,7 @@ type statusJobSchema struct {
 }
 
 type userAttributesSchema struct {
-	UserID string `json:"userId"`
-	Phone  string `json:"phone,omitempty"`
-	Email  string `json:"email,omitempty"`
+	UserID string  `json:"userId"`
+	Phone  *string `json:"phone,omitempty"`
+	Email  *string `json:"email,omitempty"`
 }
