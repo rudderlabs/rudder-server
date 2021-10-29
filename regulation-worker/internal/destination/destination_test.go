@@ -62,7 +62,6 @@ func TestGetDestDetails(t *testing.T) {
 	testBatchDestinations := []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "MARKETO_BULK_UPLOAD"}
 	testDestName := "S3"
 	testDestID := "1111"
-	testWorkspaceID := "1234"
 	expDest := model.Destination{
 		Config:        config,
 		DestinationID: "1111",
@@ -85,7 +84,7 @@ func TestGetDestDetails(t *testing.T) {
 		DestCat: mockDestType,
 	}
 
-	destDetail, err := dest.GetDestDetails(testDestID, testWorkspaceID)
+	destDetail, err := dest.GetDestDetails(testDestID)
 
 	require.NoError(t, err, "expected no err")
 	require.Equal(t, expDest, destDetail, "actual dest detail different than expected")
