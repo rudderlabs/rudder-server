@@ -10,7 +10,6 @@ import (
 	"math"
 	"net/http"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1726,48 +1725,22 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 	proc.pStatsDBR.Start()
 	proc.statDBR.Start()
 
-	toQuery := dbReadBatchSize
-	proc.logger.Debugf("Processor DB Read size: %v", toQuery)
-	//Should not have any failure while processing (in v0) so
-	//retryList should be empty. Remove the assert
-
-	var unprocessedList []*jobsdb.JobT
-	retryList := []*jobsdb.JobT{}
-
-	if nextJobID == 0 {
-		// TODO: hack fix me!
-		retryList = proc.gatewayDB.GetToRetry(jobsdb.GetQueryParamsT{
-			CustomValFilters: []string{GWCustomVal},
-			JobCount:         toQuery,
-			EventCount:       maxEventsToProcess,
-			AfterJobID:       nextJobID,
-		})
-	}
-
+	proc.logger.Debugf("Processor DB Read size: %d", dbReadBatchSize)
+	unprocessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		CustomValFilters: []string{GWCustomVal},
+		JobCount:         dbReadBatchSize,
+		EventCount:       maxEventsToProcess,
+		AfterJobID:       nextJobID,
+	})
 	totalEvents := 0
-	for _, job := range retryList {
+	for _, job := range unprocessedList {
 		totalEvents += job.EventCount
-	}
-
-	// skip querying for unprocessed jobs if either retreived dbReadBatchSize or retreived maxEventToProcess
-	if !(len(retryList) >= dbReadBatchSize || totalEvents >= maxEventsToProcess) {
-		eventsLeftToProcess := maxEventsToProcess - totalEvents
-		toQuery = misc.MinInt(eventsLeftToProcess, dbReadBatchSize)
-		unprocessedList = proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-			CustomValFilters: []string{GWCustomVal},
-			JobCount:         toQuery,
-			EventCount:       eventsLeftToProcess,
-			AfterJobID:       nextJobID,
-		})
-		for _, job := range retryList {
-			totalEvents += job.EventCount
-		}
 	}
 
 	proc.statDBR.End()
 
 	// check if there is work to be done
-	if len(unprocessedList)+len(retryList) == 0 {
+	if len(unprocessedList) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
 		proc.pStatsDBR.End(0)
 		return false, 0
@@ -1780,27 +1753,18 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 		}
 	}
 	proc.eventSchemasTime.End()
-	// handle pending jobs
-	proc.statListSort.Start()
-	combinedList := append(unprocessedList, retryList...)
-	proc.logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total_requests: %v, total_events: %d", len(retryList), len(unprocessedList), len(combinedList), totalEvents)
-	proc.pStatsDBR.End(len(combinedList))
-	proc.statGatewayDBR.Count(len(combinedList))
+
+	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList), totalEvents)
+	proc.pStatsDBR.End(len(unprocessedList))
+	proc.statGatewayDBR.Count(len(unprocessedList))
 
 	proc.pStatsDBR.Print()
 
-	//Sort by JOBID
-	sort.Slice(combinedList, func(i, j int) bool {
-		return combinedList[i].JobID < combinedList[j].JobID
-	})
-
-	proc.statListSort.End()
-
-	proc.processJobsForDest(combinedList, nil)
+	proc.processJobsForDest(unprocessedList, nil)
 
 	proc.statLoopTime.End()
 
-	return true, combinedList[len(combinedList)-1].JobID
+	return true, unprocessedList[len(unprocessedList)-1].JobID
 }
 
 func (proc *HandleT) mainLoop(ctx context.Context) {
