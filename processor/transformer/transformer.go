@@ -26,7 +26,7 @@ const (
 	DestTransformerStage        = "dest_transformer"
 	TrackingPlanValidationStage = "trackingPlan_validation"
 )
-const supportedTransformerAPIVersion = 1
+const supportedTransformerAPIVersion = 2
 
 type MetadataT struct {
 	SourceID            string                            `json:"sourceId"`

@@ -92,7 +92,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 				payload = strings.NewReader(string(jsonValue))
 			case "JSON_ARRAY":
 				// support for JSON ARRAY
-				jsonListStr, ok := bodyValue["payload"].(string)
+				jsonListStr, ok := bodyValue["batch"].(string)
 				if !ok {
 					return 400, "400 Unable to parse json list. Unexpected transformer response"
 				}
