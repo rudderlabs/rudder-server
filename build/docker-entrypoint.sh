@@ -14,12 +14,17 @@ _is_sourced() {
 _main() {
     echo "Executing docker entrypoint script"
     mkdir -p $RUDDER_TMPDIR 2>/dev/null
-    if [ "$COMPUTE_DB_HOST_IN_K8S" = true ]; then
+    if [ "$COMPUTE_DB_HOST_IN_K8S" = true ] && [ "$POSTGRES_HA_ENABLED" = false ]; then
         _pod_index=${HOSTNAME##*-}
         if [ -z ${POSTGRES_POD_NAME} ]; then echo "POSTGRES_POD_NAME env variable is required"; exit 1; fi
         if [ -z ${POSTGRES_HEADLESS_SVC} ]; then echo "POSTGRES_HEADLESS_SVC env variable is required"; exit 1; fi
         _target_postgres_pod="$POSTGRES_POD_NAME-$_pod_index"
         export JOBS_DB_HOST="$_target_postgres_pod.$POSTGRES_HEADLESS_SVC"
+        echo "Computed db host to $JOBS_DB_HOST"
+    else
+        _pod_index=${HOSTNAME##*-}
+        if [ -z ${POSTGRES_SVC} ]; then echo "POSTGRES_SVC env variable is required"; exit 1; fi
+        export JOBS_DB_HOST="$POSTGRES_SVC-$_pod_index"
         echo "Computed db host to $JOBS_DB_HOST"
     fi
 	exec "$@"
