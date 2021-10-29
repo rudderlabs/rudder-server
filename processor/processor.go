@@ -96,6 +96,7 @@ type HandleT struct {
 	dedupHandler                   dedup.DedupI
 	reporting                      types.ReportingI
 	reportingEnabled               bool
+	useCursor                      bool
 	transformerFeatures            json.RawMessage
 
 	backgroundWait   func() error
@@ -257,6 +258,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.resumeChannel = make(chan bool)
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(false, &proc.useCursor, false, "Processor.UseCursor")
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -1823,6 +1825,9 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 			proc.paused = false
 			if isUnLocked {
 				var found bool
+				if !proc.useCursor {
+					jobIDCursor = 0
+				}
 				found, jobIDCursor = proc.handlePendingGatewayJobs(jobIDCursor)
 				if found {
 					currLoopSleep = time.Duration(0)
