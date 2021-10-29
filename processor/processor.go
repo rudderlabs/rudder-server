@@ -82,7 +82,6 @@ type HandleT struct {
 	statSessionTransform           stats.RudderStats
 	statUserTransform              stats.RudderStats
 	statDestTransform              stats.RudderStats
-	statListSort                   stats.RudderStats
 	marshalSingularEvents          stats.RudderStats
 	destProcessing                 stats.RudderStats
 	pipeProcessing                 stats.RudderStats
@@ -95,7 +94,6 @@ type HandleT struct {
 	dedupHandler                   dedup.DedupI
 	reporting                      types.ReportingI
 	reportingEnabled               bool
-	useCursor                      bool
 	transformerFeatures            json.RawMessage
 
 	backgroundWait   func() error
@@ -257,7 +255,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.resumeChannel = make(chan bool)
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
-	config.RegisterBoolConfigVariable(false, &proc.useCursor, false, "Processor.UseCursor")
 	proc.logger = pkgLogger
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
@@ -289,7 +286,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statSessionTransform = proc.stats.NewStat("processor.session_transform_time", stats.TimerType)
 	proc.statUserTransform = proc.stats.NewStat("processor.user_transform_time", stats.TimerType)
 	proc.statDestTransform = proc.stats.NewStat("processor.dest_transform_time", stats.TimerType)
-	proc.statListSort = proc.stats.NewStat("processor.job_list_sort", stats.TimerType)
 	proc.marshalSingularEvents = proc.stats.NewStat("processor.marshal_singular_events", stats.TimerType)
 	proc.destProcessing = proc.stats.NewStat("processor.dest_processing", stats.TimerType)
 	proc.pipeProcessing = proc.stats.NewStat("processor.pipe_processing", stats.TimerType)
@@ -1721,9 +1717,7 @@ func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *t
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
 // Returns true if any job is handled, otherwise returns false.
 func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
-	proc.statLoopTime.Start()
-	proc.pStatsDBR.Start()
-	proc.statDBR.Start()
+	s := time.Now()
 
 	proc.logger.Debugf("Processor DB Read size: %d", dbReadBatchSize)
 	unprocessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
@@ -1737,12 +1731,12 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 		totalEvents += job.EventCount
 	}
 
-	proc.statDBR.End()
+	proc.statDBR.SendTiming(time.Since(s))
 
 	// check if there is work to be done
 	if len(unprocessedList) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
-		proc.pStatsDBR.End(0)
+		proc.pStatsDBR.Rate(0, time.Since(s))
 		return false, 0
 	}
 	proc.eventSchemasTime.Start()
@@ -1755,14 +1749,14 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 	proc.eventSchemasTime.End()
 
 	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList), totalEvents)
-	proc.pStatsDBR.End(len(unprocessedList))
+	proc.pStatsDBR.Rate(len(unprocessedList), time.Since(s))
 	proc.statGatewayDBR.Count(len(unprocessedList))
 
 	proc.pStatsDBR.Print()
 
 	proc.processJobsForDest(unprocessedList, nil)
 
-	proc.statLoopTime.End()
+	proc.statLoopTime.SendTiming(time.Since(s))
 
 	return true, unprocessedList[len(unprocessedList)-1].JobID
 }
@@ -1789,9 +1783,6 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 			proc.paused = false
 			if isUnLocked {
 				var found bool
-				if !proc.useCursor {
-					jobIDCursor = 0
-				}
 				found, jobIDCursor = proc.handlePendingGatewayJobs(jobIDCursor)
 				if found {
 					currLoopSleep = time.Duration(0)
