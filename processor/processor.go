@@ -781,9 +781,9 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 		}
 
 		key := fmt.Sprintf("%s:%s:%s:%s:%d", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, status, event.StatusCode)
-		cd, ok := connectionDetailsMap[key]
+		_, ok := connectionDetailsMap[key]
 		if !ok {
-			cd = types.CreateConnectionDetail(event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, event.Metadata.SourceTaskID, event.Metadata.SourceTaskRunID, event.Metadata.SourceJobID, event.Metadata.SourceJobRunID, event.Metadata.SourceDefinitionID, event.Metadata.DestinationDefinitionID, event.Metadata.SourceCategory)
+			cd := types.CreateConnectionDetail(event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, event.Metadata.SourceTaskID, event.Metadata.SourceTaskRunID, event.Metadata.SourceJobID, event.Metadata.SourceJobRunID, event.Metadata.SourceDefinitionID, event.Metadata.DestinationDefinitionID, event.Metadata.SourceCategory)
 			connectionDetailsMap[key] = cd
 		}
 		sd, ok := statusDetailsMap[key]
@@ -958,8 +958,8 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	//diff = succesCount + abortCount - inCount
 	diffMetrics := make([]*types.PUReportedMetric, 0)
 	for key, inCount := range inCountMap {
-		successCount, _ := successCountMap[key]
-		failedCount, _ := failedCountMap[key]
+		successCount := successCountMap[key]
+		failedCount := failedCountMap[key]
 		diff := successCount + failedCount - inCount
 		if diff != 0 {
 			metricMetadata := inCountMetadataMap[key]
@@ -1116,9 +1116,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 						inCountMetadataMap[key] = MetricMetadata{sourceID: commonMetadataFromSingularEvent.SourceID, sourceBatchID: commonMetadataFromSingularEvent.SourceBatchID, sourceTaskID: commonMetadataFromSingularEvent.SourceTaskID, sourceTaskRunID: commonMetadataFromSingularEvent.SourceTaskRunID, sourceJobID: commonMetadataFromSingularEvent.SourceJobID, sourceJobRunID: commonMetadataFromSingularEvent.SourceJobRunID}
 					}
 
-					cd, ok := connectionDetailsMap[key]
+					_, ok := connectionDetailsMap[key]
 					if !ok {
-						cd = types.CreateConnectionDetail(commonMetadataFromSingularEvent.SourceID, "", commonMetadataFromSingularEvent.SourceBatchID, commonMetadataFromSingularEvent.SourceTaskID, commonMetadataFromSingularEvent.SourceTaskRunID, commonMetadataFromSingularEvent.SourceJobID, commonMetadataFromSingularEvent.SourceJobRunID, commonMetadataFromSingularEvent.SourceDefinitionID, commonMetadataFromSingularEvent.DestinationDefinitionID, commonMetadataFromSingularEvent.SourceCategory)
+						cd := types.CreateConnectionDetail(commonMetadataFromSingularEvent.SourceID, "", commonMetadataFromSingularEvent.SourceBatchID, commonMetadataFromSingularEvent.SourceTaskID, commonMetadataFromSingularEvent.SourceTaskRunID, commonMetadataFromSingularEvent.SourceJobID, commonMetadataFromSingularEvent.SourceJobRunID, commonMetadataFromSingularEvent.SourceDefinitionID, commonMetadataFromSingularEvent.DestinationDefinitionID, commonMetadataFromSingularEvent.SourceCategory)
 						connectionDetailsMap[key] = cd
 					}
 					sd, ok := statusDetailsMap[key]
