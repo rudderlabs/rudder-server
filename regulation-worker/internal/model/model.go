@@ -32,12 +32,18 @@ type Job struct {
 
 type UserAttribute struct {
 	UserID string
-	Phone  *string
-	Email  *string
+	Phone  string
+	Email  string
 }
 
 type Destination struct {
 	DestinationID string
 	Type          string
 	Credentials   string
+}
+
+type APIReqErr struct {
+	StatusCode int
+	Body       string
+	Err        error
 }
