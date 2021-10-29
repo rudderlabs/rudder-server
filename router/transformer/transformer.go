@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
 )
 
@@ -123,6 +125,15 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 
 	var destinationJobs []types.DestinationJobT
 	if resp.StatusCode == http.StatusOK {
+		transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
+		if convErr != nil {
+			transformerAPIVersion = 0
+		}
+		if utilTypes.SUPPORTED_TRANSFORMER_API_VERSION != transformerAPIVersion {
+			trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SUPPORTED_TRANSFORMER_API_VERSION, transformerAPIVersion, url)
+			panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SUPPORTED_TRANSFORMER_API_VERSION, transformerAPIVersion, url))
+		}
+
 		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
 
 		if transformType == BATCH {
