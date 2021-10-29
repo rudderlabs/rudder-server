@@ -139,7 +139,7 @@ type TransformerResponseT struct {
 	ValidationErrors []ValidationErrorT     `json:"validationErrors"`
 }
 
-type ValidationErrorT struct {
+type ValidationErrorT struct { 
 	Type    string            `json:"type"`
 	Message string            `json:"message"`
 	Meta    map[string]string `json:"meta"`
