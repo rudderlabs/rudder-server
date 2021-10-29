@@ -31,4 +31,3 @@ func (d *Deleter) DeleteJob(ctx context.Context, job model.Job, dest model.Desti
 
 	}
 }
-// }
