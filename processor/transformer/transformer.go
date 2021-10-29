@@ -214,7 +214,7 @@ func (trans *HandleT) transformWorker() {
 		}
 
 		var transformerResponses []TransformerResponseT
-		if resp.StatusCode == http.StatusOK {
+		if resp.StatusCode == http.StatusOK { 
 			err = json.Unmarshal(respData, &transformerResponses)
 			//This is returned by our JS engine so should  be parsable
 			//but still handling it
