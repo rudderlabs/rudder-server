@@ -72,7 +72,11 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		var bodyFormat string
 		var bodyValue map[string]interface{}
 		for k, v := range requestBody {
-			if len(v.(map[string]interface{})) > 0 {
+			validJSON, ok := v.(map[string]interface{})
+			if !ok {
+				panic("Invalid Response Format from Transformer causing panic with error")
+			}
+			if len(validJSON) > 0 {
 				bodyFormat = k
 				bodyValue = v.(map[string]interface{})
 				break
