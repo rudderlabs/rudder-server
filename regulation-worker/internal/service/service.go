@@ -11,18 +11,23 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
-//go:generate mockgen -source=service.go -destination=mock_deleter_test.go -package=service github.com/rudderlabs/rudder-server/regulation-worker/internal/service deleter,APIClient
+//go:generate mockgen -source=service.go -destination=mock_service_test.go -package=service github.com/rudderlabs/rudder-server/regulation-worker/internal/service
 type APIClient interface {
 	Get(ctx context.Context) (model.Job, error)
 	UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error
 }
 
+type destDetail interface {
+	GetDestDetails(destID string) (model.Destination, error)
+}
 type deleter interface {
 	DeleteJob(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error)
 }
+
 type JobSvc struct {
-	API     APIClient
-	Deleter deleter
+	API        APIClient
+	Deleter    deleter
+	DestDetail destDetail
 }
 
 //called by looper
@@ -44,10 +49,11 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	}
 
 	//executing deletion
-	dest, err := getDestDetails(job.DestinationID, job.WorkspaceID)
+	dest, err := js.DestDetail.GetDestDetails(job.DestinationID)
 	if err != nil {
 		return fmt.Errorf("error while getting destination details: %w", err)
 	}
+
 	status, err = js.Deleter.DeleteJob(ctx, job, dest)
 	if err != nil {
 		return err
@@ -57,16 +63,8 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return nil
-}
 
-//make api call to get json and then parse it to get destination related details
-//like: dest_type, auth details,
-//return destination Type enum{file, api}
-func getDestDetails(destID, workspaceID string) (model.Destination, error) {
-	return model.Destination{
-		Type: "batch",
-	}, nil
+	return nil
 }
 
 func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
