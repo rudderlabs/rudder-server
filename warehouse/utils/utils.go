@@ -682,5 +682,5 @@ func JoinWithFormatting(keys []string, format func(idx int, str string) string, 
 	for idx, str := range keys {
 		output[idx] += format(idx, str)
 	}
-	return strings.Join(output[:], separator)
+	return strings.Join(output, separator)
 }
