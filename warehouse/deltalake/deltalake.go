@@ -71,6 +71,7 @@ var dataTypesMapToRudder = map[string]string{
 	"timestamp": "datetime",
 }
 
+// Primary Key mappings for tables
 var primaryKeyMap = map[string]string{
 	warehouseutils.UsersTable:      "id",
 	warehouseutils.IdentifiesTable: "id",
