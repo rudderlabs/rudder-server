@@ -21,6 +21,7 @@ const (
 	odbcDBNotFound          = 80
 )
 
+// Database configuration
 const (
 	DLHost  = "host"
 	DLPort  = "port"
@@ -34,6 +35,7 @@ var (
 	pkgLogger          logger.LoggerI
 )
 
+// Rudder data type mapping with Delta lake mappings.
 var dataTypesMap = map[string]string{
 	"boolean":  "BOOLEAN",
 	"int":      "BIGINT",
@@ -42,6 +44,7 @@ var dataTypesMap = map[string]string{
 	"datetime": "TIMESTAMP",
 }
 
+// Delta Lake mapping with rudder data types mappings.
 // Reference: https://docs.databricks.com/sql/language-manual/sql-ref-datatype-rules.html
 var dataTypesMapToRudder = map[string]string{
 	"TINYINT":   "int",
@@ -74,7 +77,6 @@ var primaryKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id",
 }
 
-// HandleT Defining necessary types for DeltaLake
 type HandleT struct {
 	Db            *sql.DB
 	Namespace     string
@@ -90,21 +92,24 @@ type CredentialsT struct {
 	token string
 }
 
+// Init initializes the delta lake warehouse
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("deltalake")
 }
 
+// loadConfig loads config
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	config.RegisterStringConfigVariable("/opt/simba/spark/lib/64/libsparkodbc_sb64.so", &driverPath, false, "Warehouse.deltalake.driverPath") // Reference: https://docs.databricks.com/integrations/bi/jdbc-odbc-bi.html
 }
 
-// getDeltaLakeDataType gets datatype for delta lake which is mapped with rudderstack datatype
+// getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
 func getDeltaLakeDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 
+// columnsWithDataTypes returns columns with specified prefix and data type
 func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	keys := warehouseutils.SortColumnKeysFromColumnMap(columns)
 	format := func(idx int, name string) string {
@@ -113,24 +118,28 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	return warehouseutils.JoinWithFormatting(keys, format, ",")
 }
 
+// columnNames returns joined column with comma separated
 func columnNames(keys []string) string {
 	return strings.Join(keys[:], ",")
 }
 
-func stagingColumnNames(sortedColumnKeys []string) string {
+// stagingColumnNames returns staging column names
+func stagingColumnNames(keys []string) string {
 	format := func(idx int, str string) string {
 		return fmt.Sprintf(`STAGING.%s`, str)
 	}
-	return warehouseutils.JoinWithFormatting(sortedColumnKeys, format, ",")
+	return warehouseutils.JoinWithFormatting(keys, format, ",")
 }
 
-func columnsWithValues(sortedColumnKeys []string) string {
+// columnsWithValues returns main and staging column values.
+func columnsWithValues(keys []string) string {
 	format := func(idx int, str string) string {
 		return fmt.Sprintf(`MAIN.%[1]s = STAGING.%[1]s`, str)
 	}
-	return warehouseutils.JoinWithFormatting(sortedColumnKeys, format, ",")
+	return warehouseutils.JoinWithFormatting(keys, format, ",")
 }
 
+// checkAndIgnoreAlreadyExistError checks and ignores native errors.
 func checkAndIgnoreAlreadyExistError(err error, ignoreNativeError int) bool {
 	if err != nil {
 		if odbcErrs, ok := err.(*odbc.Error); ok {
@@ -145,6 +154,7 @@ func checkAndIgnoreAlreadyExistError(err error, ignoreNativeError int) bool {
 	return true
 }
 
+// connect creates database connection with CredentialsT
 func connect(cred CredentialsT) (*sql.DB, error) {
 	dsn := fmt.Sprintf("Driver=%v; HOST=%v; PORT=%v; Schema=default; SparkServerType=3; AuthMech=3; UID=token; PWD=%v; ThriftTransport=2; SSL=1; HTTPPath=%v; UserAgentEntry=RudderStack",
 		driverPath,
@@ -161,6 +171,7 @@ func connect(cred CredentialsT) (*sql.DB, error) {
 	return db, nil
 }
 
+// fetchTables fetch tables with tableNames
 func (dl *HandleT) fetchTables(db *sql.DB, sqlStatement string) (tableNames []string, err error) {
 	// Executing the table sql statement
 	rows, err := db.Query(sqlStatement)
@@ -193,6 +204,7 @@ func (dl *HandleT) fetchTables(db *sql.DB, sqlStatement string) (tableNames []st
 	return
 }
 
+// CreateTable creates tables with table name and columns
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v )`, name, columnsWithDataTypes(columns, ""))
@@ -201,6 +213,7 @@ func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	return
 }
 
+// schemaExists checks it schema exists or not.
 func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	var databaseName string
 	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s'`, schemaName)
@@ -220,6 +233,7 @@ func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	return
 }
 
+// AddColumn adds column for column name and type
 func (dl *HandleT) AddColumn(name string, columnName string, columnType string) (err error) {
 	tableName := fmt.Sprintf(`%s.%s`, dl.Namespace, name)
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMNS ( %s %s )`, tableName, columnName, getDeltaLakeDataType(columnType))
@@ -228,6 +242,7 @@ func (dl *HandleT) AddColumn(name string, columnName string, columnType string) 
 	return
 }
 
+// createSchema creates schema
 func (dl *HandleT) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, dl.Namespace)
 	pkgLogger.Infof("%s Creating schema in delta lake with SQL:%v", dl.GetLogIdentifier(), sqlStatement)
@@ -235,8 +250,9 @@ func (dl *HandleT) createSchema() (err error) {
 	return
 }
 
-func (dl *HandleT) dropStagingTables(stagingTableNames []string) {
-	for _, stagingTableName := range stagingTableNames {
+// dropStagingTables drops staging tables
+func (dl *HandleT) dropStagingTables(tableNames []string) {
+	for _, stagingTableName := range tableNames {
 		pkgLogger.Infof("%s Dropping table %+v\n", dl.GetLogIdentifier(), stagingTableName)
 		_, err := dl.Db.Exec(fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, dl.Namespace, stagingTableName))
 		if err != nil {
@@ -248,6 +264,9 @@ func (dl *HandleT) dropStagingTables(stagingTableNames []string) {
 	}
 }
 
+// sortedColumnNames returns sorted column names for
+// 1. LOAD_FILE_TYPE_PARQUET
+// 2. LOAD_FILE_TYPE_CSV
 func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSchemaT, sortedColumnKeys []string) (sortedColumnNames string) {
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sortedColumnNames = strings.Join(sortedColumnKeys[:], ",")
@@ -455,6 +474,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
+// dropDanglingStagingTables drop dandling staging tables.
 func (dl *HandleT) dropDanglingStagingTables() {
 	// Creating show tables sql statement to get the staging tables associated with the namespace
 	sqlStatement := fmt.Sprintf(`SHOW TABLES FROM %s LIKE '%s';`, dl.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "*"))
@@ -467,6 +487,7 @@ func (dl *HandleT) dropDanglingStagingTables() {
 	return
 }
 
+// connectToWarehouse returns the database connection configured with CredentialsT
 func (dl *HandleT) connectToWarehouse() (*sql.DB, error) {
 	return connect(CredentialsT{
 		host:  warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
@@ -476,6 +497,7 @@ func (dl *HandleT) connectToWarehouse() (*sql.DB, error) {
 	})
 }
 
+// CreateSchema checks if schema exists or not. If it does not exists, it creates the schema.
 func (dl *HandleT) CreateSchema() (err error) {
 	// Checking if schema exists or not
 	var schemaExists bool
@@ -493,6 +515,7 @@ func (dl *HandleT) CreateSchema() (err error) {
 	return dl.createSchema()
 }
 
+// AlterColumn alter table with column name and type
 func (dl *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
 	return
 }
@@ -589,6 +612,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	return
 }
 
+// Setup populate the HandleT
 func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
@@ -599,6 +623,7 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
+// TestConnection test the connection for the warehouse
 func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	dl.Warehouse = warehouse
 	dl.Db, err = dl.connectToWarehouse()
@@ -622,6 +647,7 @@ func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	return
 }
 
+// Cleanup handle cleanup when upload is done.
 func (dl *HandleT) Cleanup() {
 	if dl.Db != nil {
 		dl.dropDanglingStagingTables()
@@ -629,6 +655,7 @@ func (dl *HandleT) Cleanup() {
 	}
 }
 
+// CrashRecover handle crash recover scenarios
 func (dl *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
@@ -641,31 +668,38 @@ func (dl *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	return
 }
 
+// IsEmpty checks if the warehouse is empty or not
 func (dl *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
+// LoadUserTables loads user tables
 func (dl *HandleT) LoadUserTables() map[string]error {
 	return dl.loadUserTables()
 }
 
+// LoadTable loads table for table name
 func (dl *HandleT) LoadTable(tableName string) error {
 	_, err := dl.loadTable(tableName, dl.Uploader.GetTableSchemaInUpload(tableName), dl.Uploader.GetTableSchemaInWarehouse(tableName), false)
 	return err
 }
 
+// LoadIdentityMergeRulesTable loads identifies merge rules tables
 func (dl *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
+// LoadIdentityMappingsTable loads identifies mappings table
 func (dl *HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
+// DownloadIdentityRules download identity tules
 func (dl *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
+// GetTotalCountInTable returns total count in tables.
 func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s`, dl.Namespace, tableName)
 	err = dl.Db.QueryRow(sqlStatement).Scan(&total)
@@ -675,6 +709,7 @@ func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 	return
 }
 
+// Connect returns Client
 func (dl *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
@@ -687,10 +722,10 @@ func (dl *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
+// GetLogIdentifier returns log identifier
 func (dl *HandleT) GetLogIdentifier(args ...string) string {
 	if len(args) == 0 {
 		return fmt.Sprintf("[%s][%s][%s][%s]", dl.Warehouse.Type, dl.Warehouse.Source.ID, dl.Warehouse.Destination.ID, dl.Warehouse.Namespace)
 	}
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", dl.Warehouse.Type, dl.Warehouse.Source.ID, dl.Warehouse.Destination.ID, dl.Warehouse.Namespace, strings.Join(args, "]["))
 }
-
