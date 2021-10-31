@@ -26,6 +26,7 @@ services:
       - DEST_TRANSFORM_URL=http://d-transformer:9090
       - CONFIG_BACKEND_URL=https://api.rudderlabs.com
       - WORKSPACE_TOKEN=<your_workspace_token>
+      # - STATSD_SERVER_URL=telemetry-telegraf:8125 # Uncomment to enable telemetry
       # - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
       # - RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH=<workspace_config_filepath_in_container> # For ex., /etc/rudderstack/workspaceConfig.json
     # Uncomment the following lines to mount workspaceConfig file
@@ -40,9 +41,33 @@ services:
   #   ports:
   #     - "9000:9000"
   #   command: server /data
-
-
-
-
-
-  
+  #
+  ## Uncomment telemetry-* services to enable telemetry
+  # telemetry-influxdb:
+  #   image: influxdb:alpine
+  #   ports:
+  #     - "8086:8086"
+  #   volumes:
+  #     - influxdb:/var/lib/influxdb2
+  #   environment:
+  #     - DOCKER_INFLUXDB_INIT_MODE=setup
+  #     - DOCKER_INFLUXDB_INIT_USERNAME=admin
+  #     - DOCKER_INFLUXDB_INIT_PASSWORD=password
+  #     - DOCKER_INFLUXDB_INIT_ORG=my-org
+  #     - DOCKER_INFLUXDB_INIT_BUCKET=my-bucket
+  #     - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=supersecret
+  # telemetry-telegraf:
+  #   image: telegraf:alpine
+  #   ports:
+  #     - "8125:8125"
+  #   depends_on:
+  #     - telemetry-influxdb
+  #   volumes:
+  #     - ./config/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+  #   environment:
+  #     - INFLUX_HOST=http://telemetry-influxdb:8086
+  #     - INFLUX_ORG=my-org
+  #     - INFLUX_BUCKET=my-bucket
+  #     - INFLUX_TOKEN=supersecret
+volumes:
+  influxdb:
