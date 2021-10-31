@@ -283,6 +283,20 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 	return
 }
 
+// authString return authentication for AWS STS and SSE-C encryption
+/*
+ENCRYPTION ('type' = 'SSE-C', 'masterKey' = '$encryptionKey')
+CREDENTIALS ('awsKeyId' = '$key', 'awsSecretKey' = '$secret', 'awsSessionToken' = '$token)
+*/
+func (sf *HandleT) authString() string {
+	var auth string
+	if sf.Uploader.UseRudderStorage() {
+		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
+		auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', awsSessionToken = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
+	}
+	return auth
+}
+
 func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, tableSchemaAfterUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
 	// Getting sorted column keys from tableSchemaInUpload
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
@@ -306,6 +320,9 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	loadFolder := warehouseutils.GetObjectFolder(dl.ObjectStorage, csvObjectLocation)
 
+	// Get the auth string to copu from the stagling locstion to table
+	credentialsStr := dl.authString()
+
 	// Creating copy sql statement to copy from load folder to the staging table
 	var sortedColumnNames = dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys)
 	var sqlStatement string
@@ -313,15 +330,17 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = PARQUET "+
 			"PATTERN = '*.parquet' "+
-			"COPY_OPTIONS ('force' = 'true')",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder)
+			"COPY_OPTIONS ('force' = 'true') "+
+			"%s",
+			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, credentialsStr)
 	} else {
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = CSV "+
 			"PATTERN = '*.gz' "+
 			"FORMAT_OPTIONS ( 'compression' = 'gzip' ) "+
-			"COPY_OPTIONS ('force' = 'true')",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder)
+			"COPY_OPTIONS ('force' = 'true') "+
+			"%s",
+			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, credentialsStr)
 	}
 
 	// Sanitising copy sql statement for logging
