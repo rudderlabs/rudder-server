@@ -283,12 +283,11 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 	return
 }
 
-// authString return authentication for AWS STS and SSE-C encryption
+// credentialsStr return authentication for AWS STS and SSE-C encryption
 /*
-ENCRYPTION ('type' = 'SSE-C', 'masterKey' = '$encryptionKey')
 CREDENTIALS ('awsKeyId' = '$key', 'awsSecretKey' = '$secret', 'awsSessionToken' = '$token)
 */
-func (sf *HandleT) authString() string {
+func (sf *HandleT) credentialsStr() string {
 	var auth string
 	if sf.Uploader.UseRudderStorage() {
 		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
@@ -321,7 +320,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	loadFolder := warehouseutils.GetObjectFolder(dl.ObjectStorage, csvObjectLocation)
 
 	// Get the auth string to copu from the stagling locstion to table
-	credentialsStr := dl.authString()
+	credentialsStr := dl.credentialsStr()
 
 	// Creating copy sql statement to copy from load folder to the staging table
 	var sortedColumnNames = dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys)
