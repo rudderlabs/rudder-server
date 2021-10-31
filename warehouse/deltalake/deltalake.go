@@ -193,14 +193,18 @@ func (dl *HandleT) fetchTables(db *sql.DB, sqlStatement string) (tableNames []st
 
 	// Populating tablesNames
 	for rows.Next() {
-		var database, tableName string
+		var database, tableName sql.NullString
 		var isTemporary bool
 		err = rows.Scan(&database, &tableName, &isTemporary)
 		if err != nil {
 			pkgLogger.Errorf("%s Error in processing fetched tables schema from delta lake tableName: %v", dl.GetLogIdentifier(), tableName)
 			return
 		}
-		tableNames = append(tableNames, tableName)
+		if !tableName.Valid {
+			pkgLogger.Errorf("%s Error in processing fetched tables schema from delta lake tableName: %v ValidTableName: %v", dl.GetLogIdentifier(), tableName, tableName.String)
+			return
+		}
+		tableNames = append(tableNames, tableName.String)
 	}
 	return
 }
@@ -440,7 +444,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 												)
 											)
 										)
-									)`,
+									) `,
 		dl.Namespace,
 		stagingTableName,
 		strings.Join(firstValProps, ","),
@@ -610,21 +614,24 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 		// Populating the schema for the table
 		for ttRows.Next() {
-			var col_name, data_type, comment string
-			err := ttRows.Scan(&col_name, &data_type, &comment)
+			var col_name, data_type, comment sql.NullString
+			err := ttRows.Scan(col_name, data_type, comment)
 			if err != nil {
 				pkgLogger.Errorf("%s Error in processing fetched describe table schema from delta lake", dl.GetLogIdentifier())
 				break
 			}
+			if !col_name.Valid || !data_type.Valid {
+				continue
+			}
 			// Here the breaking condition is when we are finding empty row.
-			if len(col_name) == 0 && len(data_type) == 0 {
+			if len(col_name.String) == 0 && len(data_type.String) == 0 {
 				break
 			}
 			if _, ok := schema[tableName]; !ok {
 				schema[tableName] = make(map[string]string)
 			}
-			if datatype, ok := dataTypesMapToRudder[data_type]; ok {
-				schema[tableName][col_name] = datatype
+			if datatype, ok := dataTypesMapToRudder[data_type.String]; ok {
+				schema[tableName][col_name.String] = datatype
 			}
 		}
 	}
