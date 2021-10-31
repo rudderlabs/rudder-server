@@ -180,33 +180,27 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 //Setup initializes the module
 func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) {
 	network.logger.Info("Network Handler Startup")
-	//Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
-	defaultRoundTripper := http.DefaultTransport
-	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
-	if !ok {
-		panic(fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed")) //TODO: Handle error
-	}
-	var defaultTransportCopy http.Transport
-	//Not safe to copy DefaultTransport
-	//https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU
-	//Solved in go1.8 https://github.com/golang/go/issues/26013
-	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+
 	network.logger.Info("forceHTTP1: ", getRouterConfigBool("forceHTTP1", destID, false))
 	if getRouterConfigBool("forceHTTP1", destID, false) {
 		network.logger.Info("Forcing HTTP1 connection for ", destID)
-		defaultTransportCopy.ForceAttemptHTTP2 = false
+		tr.ForceAttemptHTTP2 = false
 		var tlsClientConfig tls.Config
-		if defaultTransportCopy.TLSClientConfig != nil {
-			misc.Copy(&tlsClientConfig, defaultTransportCopy.TLSClientConfig)
+		if tr.TLSClientConfig != nil {
+			misc.Copy(&tlsClientConfig, tr.TLSClientConfig)
 		}
 		tlsClientConfig.NextProtos = []string{"http/1.1"}
-		defaultTransportCopy.TLSClientConfig = &tlsClientConfig
-		network.logger.Info(destID, defaultTransportCopy.TLSClientConfig.NextProtos)
+		tr.TLSClientConfig = &tlsClientConfig
+		network.logger.Info(destID, tr.TLSClientConfig.NextProtos)
 	}
-	defaultTransportCopy.MaxIdleConns = getRouterConfigInt("httpMaxIdleConns", destID, 100)
-	defaultTransportCopy.MaxIdleConnsPerHost = getRouterConfigInt("httpMaxIdleConnsPerHost", destID, 100)
-	network.logger.Info(destID, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
-	network.logger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
+	tr.MaxIdleConns = getRouterConfigInt("httpMaxIdleConns", destID, 100)
+	tr.MaxIdleConnsPerHost = getRouterConfigInt("httpMaxIdleConnsPerHost", destID, 100)
+	network.logger.Info(destID, ":   tr.MaxIdleConns: ", tr.MaxIdleConns)
+	network.logger.Info("tr.MaxIdleConnsPerHost: ", tr.MaxIdleConnsPerHost)
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
-	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
+	network.httpClient = &http.Client{
+		Transport: tr,
+		Timeout:   netClientTimeout,
+	}
 }
