@@ -6,8 +6,10 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -21,13 +23,32 @@ import (
 
 //NetHandleT is the wrapper holding private variables
 type NetHandleT struct {
-	httpClient sysUtils.HTTPClientI
-	logger     logger.LoggerI
+	httpClient  sysUtils.HTTPClientI
+	logger      logger.LoggerI
+	ipBlacklist []net.IPNet
 }
 
 //Network interface
 type NetHandleI interface {
 	SendPost(ctx context.Context, structData integrations.PostParametersT) (statusCode int, respBody string)
+}
+
+// TODO need more https://en.wikipedia.org/wiki/Reserved_IP_addresses
+var defaultBlacklistIPNets = parseCIDRs([]string{
+	// private networks:
+	"127.0.0.0/8", // IPv4 loopback
+	"10.0.0.0/8",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+})
+
+func parseCIDRs(cidrs []string) []net.IPNet {
+	b := []net.IPNet{}
+	for _, sCIDR := range cidrs {
+		_, c, _ := net.ParseCIDR(sCIDR)
+		b = append(b, *c)
+	}
+	return b
 }
 
 //temp solution for handling complex query params
@@ -177,6 +198,17 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 
 }
 
+func (network *NetHandleT) isAllowed(sIP string) bool {
+	ip := net.ParseIP(sIP)
+
+	for _, r := range network.ipBlacklist {
+		if r.Contains(ip) {
+			return false
+		}
+	}
+	return true
+}
+
 //Setup initializes the module
 func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) {
 	network.logger.Info("Network Handler Startup")
@@ -199,6 +231,32 @@ func (network *NetHandleT) Setup(destID string, netClientTimeout time.Duration) 
 	network.logger.Info(destID, ":   tr.MaxIdleConns: ", tr.MaxIdleConns)
 	network.logger.Info("tr.MaxIdleConnsPerHost: ", tr.MaxIdleConnsPerHost)
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
+
+	network.ipBlacklist = defaultBlacklistIPNets
+
+	nw := network //FIXME
+	tr.DialContext = func(ctx context.Context, network string, addr string) (conn net.Conn, err error) {
+		s := strings.LastIndex(addr, ":")
+		host, port := addr[:s], addr[s+1:]
+
+		IPs, err := net.LookupHost(host)
+		if err != nil {
+			return nil, err
+		}
+		for _, IP := range IPs {
+			if !nw.isAllowed(IP) {
+				err = errors.New("IP not allowed")
+				return
+			}
+
+			conn, err = net.Dial(network, fmt.Sprintf("%s:%s", IP, port))
+			if err == nil {
+				break
+			}
+		}
+		return
+	}
+
 	network.httpClient = &http.Client{
 		Transport: tr,
 		Timeout:   netClientTimeout,
