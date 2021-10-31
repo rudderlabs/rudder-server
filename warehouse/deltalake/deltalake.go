@@ -319,7 +319,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	loadFolder := warehouseutils.GetObjectFolder(dl.ObjectStorage, csvObjectLocation)
 
-	// Get the auth string to copu from the stagling locstion to table
+	// Get the credentials string to copy from the stagling locstion to table
 	credentialsStr := dl.credentialsStr()
 
 	// Creating copy sql statement to copy from load folder to the staging table
