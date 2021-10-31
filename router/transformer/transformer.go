@@ -166,6 +166,11 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 	url := getResponseTransformURL(destName)
 	trans.transformerResponseTransformRequestTime.Start()
 	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+	if err != nil {
+		respData = []byte("")
+		trans.logger.Errorf("[Transformer Response Transform request] :: %+v", err)
+		return http.StatusInternalServerError, string(respData)
+	}
 	trans.transformerResponseTransformRequestTime.End()
 	if resp != nil && resp.Body != nil {
 		respData, _ = io.ReadAll(resp.Body)
@@ -184,11 +189,6 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 		strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
 		strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
 		respData = []byte("")
-	}
-	if err != nil {
-		respData = []byte("")
-		trans.logger.Errorf("[Transformer Response Transform request] :: %+v", err)
-		return http.StatusInternalServerError, string(respData)
 	}
 	resp.Body.Close()
 	return resp.StatusCode, string(respData)
