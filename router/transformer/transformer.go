@@ -38,7 +38,6 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string)
 	ResponseTransform(responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string)
 }
 
@@ -131,8 +130,10 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
 
 		if transformType == BATCH {
+			integrations.CollectIntgErrorStats(respData, true)
 			err = json.Unmarshal(respData, &destinationJobs)
 		} else if transformType == ROUTER_TRANSFORM {
+			integrations.CollectIntgErrorStats([]byte(gjson.GetBytes(respData, "output").Raw), true)
 			err = json.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
 		}
 		//This is returned by our JS engine so should  be parsable
@@ -169,6 +170,7 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 	if resp != nil && resp.Body != nil {
 		respData, _ = io.ReadAll(resp.Body)
 	}
+	integrations.CollectIntgErrorStats([]byte(gjson.GetBytes(respData, "output").Raw), false)
 	var contentTypeHeader string
 	if resp != nil && resp.Header != nil {
 		contentTypeHeader = resp.Header.Get("Content-Type")
@@ -185,52 +187,11 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 	}
 	if err != nil {
 		respData = []byte("")
-		trans.logger.Errorf("[Transfomrer Network request] :: destaination request failed: %+v", err)
+		trans.logger.Errorf("[Transformer Response Transform request] :: %+v", err)
 		return http.StatusInternalServerError, string(respData)
 	}
 	resp.Body.Close()
 	return resp.StatusCode, string(respData)
-}
-
-func (trans *HandleT) Send(transformedData integrations.PostParametersT, destName string) (statusCode int, respBody string) {
-
-	rawJSON, err := json.Marshal(transformedData)
-	if err != nil {
-		panic(err)
-	}
-	trans.logger.Debugf("[Transfomrer Network request] :: prepared destination payload : %s", string(rawJSON))
-	var resp *http.Response
-	var respData []byte
-	url := getNetworkTransformerURL(destName)
-
-	trans.transformerNetworkRequestTimerStat.Start()
-	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
-	trans.transformerNetworkRequestTimerStat.End()
-	if resp != nil && resp.Body != nil {
-		respData, _ = io.ReadAll(resp.Body)
-	}
-	var contentTypeHeader string
-	if resp != nil && resp.Header != nil {
-		contentTypeHeader = resp.Header.Get("Content-Type")
-	}
-	if contentTypeHeader == "" {
-		//Detecting content type of the respBody
-		contentTypeHeader = http.DetectContentType(respData)
-	}
-	//If content type is not of type "*text*", overriding it with empty string
-	if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
-		strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
-		strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
-		respData = []byte("")
-	}
-	if err != nil {
-		respData = []byte("")
-		trans.logger.Errorf("[Transfomrer Network request] :: destaination request failed: %+v", err)
-		return http.StatusInternalServerError, string(respData)
-	}
-	resp.Body.Close()
-	return resp.StatusCode, string(respData)
-
 }
 
 //is it ok to use same client for network and transformer calls? need to understand timeout setup in router
@@ -249,10 +210,6 @@ func getBatchURL() string {
 
 func getRouterTransformURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
-}
-
-func getNetworkTransformerURL(destName string) string {
-	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/network/" + strings.ToLower(destName) + "/proxy"
 }
 
 func getResponseTransformURL(destName string) string {
