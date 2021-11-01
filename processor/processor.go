@@ -92,15 +92,14 @@ type HandleT struct {
 	statPayloadInBytes             stats.RudderStats
 	statPayloadOutRouterBytes      stats.RudderStats
 	statPayloadOutBatchBytes       stats.RudderStats
-
-	statDestNumOutputEvents      stats.RudderStats
-	statBatchDestNumOutputEvents stats.RudderStats
-	logger                       logger.LoggerI
-	eventSchemaHandler           types.EventSchemasI
-	dedupHandler                 dedup.DedupI
-	reporting                    types.ReportingI
-	reportingEnabled             bool
-	transformerFeatures          json.RawMessage
+	statDestNumOutputEvents        stats.RudderStats
+	statBatchDestNumOutputEvents   stats.RudderStats
+	logger                         logger.LoggerI
+	eventSchemaHandler             types.EventSchemasI
+	dedupHandler                   dedup.DedupI
+	reporting                      types.ReportingI
+	reportingEnabled               bool
+	transformerFeatures            json.RawMessage
 
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
