@@ -167,7 +167,7 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 	trans.transformerResponseTransformRequestTime.Start()
 	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
 	// In case of error we are sending the original response from destination
-	if err != nil || resp.StatusCode == 500 || resp.StatusCode == 404 || resp.StatusCode == 400 {
+	if err != nil || (resp.StatusCode >= 500 && resp.StatusCode < 600) || resp.StatusCode == 404 || resp.StatusCode == 400 {
 		trans.logger.Errorf("[Transformer Response Transform request] :: %+v", err)
 		return int(responseData.Status), string(responseData.Body)
 	}
