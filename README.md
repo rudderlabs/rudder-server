@@ -47,45 +47,53 @@ With RudderStack, you can build customer data pipelines that connect your whole 
   </a>
 </p>
 
-| Try **RudderStack Cloud Free** - a free tier of [RudderStack Cloud](https://rudderstack.com/cloud). Click [here](https://app.rudderlabs.com/signup?type=freetrial) to start building a smarter customer data pipeline today, with RudderStack Cloud. |
+| Try **RudderStack Cloud Free** - a free tier of [**RudderStack Cloud**](https://rudderstack.com/cloud). Click [**here**](https://app.rudderlabs.com/signup?type=freetrial) to start building a smarter customer data pipeline today, with RudderStack Cloud. |
 |:------|
 
-## Features
+## Key features
+
+- **Warehouse-first**: RudderStack treats your data warehouse as a first class citizen among destinations, with advanced features and configurable, near real-time sync.
+
+- **Developer-focused**: RudderStack is built API-first. It integrates seamlessly with the tools that the developers already use and love.
+
+- **High Availability**: RudderStack comes with at least 99.99% uptime. We have built a sophisticated error handling and retry system that ensures that your data will be delivered even in the event of network partitions or destinations downtime.
+
+- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool. 
 
 - **Unlimited Events**: Event volume-based pricing of most of the commercial systems is broken. With RudderStack, you are be able to collect as much data as possible without worrying about overrunning your event budgets.
-- **Warehouse-first**: RudderStack treats your data warehouse as a first class citizen among destinations, with advanced features and configurable, near real-time sync.
-- **Developer-focused**: RudderStack is built API-first. It integrates seamlessly with the tools that the developers already use and love.
-- **Segment API Compatible**: RudderStack is Segment API compatible. So you don't need to change your app if you are using Segment, just integrate the RudderStack SDKs into your app and your events will keep flowing as before (including data-warehouse).
+
+- **Segment API-compatible**: RudderStack is fully compatible with the Segment API. So you don't need to change your app if you are using Segment; just integrate the RudderStack SDKs into your app and your events will keep flowing to the destinations (including data warehouses) as before.
+
 - **Production-ready**: Companies like Mattermost, IFTTT, Torpedo, Grofers, 1mg, Nana, OnceHub, and dozens of large companies use RudderStack for collecting their events.
-- **Seamless Integration**: RudderStack currently supports integration with over 80 popular [tool](https://rudderstack.com/docs/destinations/) and [warehouse](https://rudderstack.com/docs/data-warehouse-integrations/) destinations.
-- **User-specified Transformation**: RudderStack offers a powerful JavaScript-based event transformation framework which lets you enhance or transform your event data by combining it with your other internal data. Furthermore, RudderStack runs inside your cloud or on-premise environment, so you can easily access your production data to join with the event data.
-- **High Availability**: RudderStack comes with at least 99.99% uptime. We have built a sophisticated error handling and retry system that ensures that your data will be delivered even in the event of network partitions or destinations downtime.
-- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
 
-## Get Started
+- **Seamless Integration**: RudderStack currently supports integration with over 90 popular [**tool**](https://rudderstack.com/docs/destinations/) and [**warehouse**](https://rudderstack.com/docs/data-warehouse-integrations/) destinations.
 
-The easiest way to experience RudderStack is to [sign up](https://app.rudderlabs.com/signup?type=freetrial) for **RudderStack Cloud Free** - a completely free tier of [RudderStack Cloud](https://rudderstack.com/cloud).
+- **User-specified Transformation**: RudderStack offers a powerful JavaScript-based event transformation framework which lets you enhance or transform your event data by combining it with your other internal data. Furthermore, as RudderStack runs inside your cloud or on-premise environment, you can easily access your production data to join with the event data.
+
+## Get started
+
+The easiest way to experience RudderStack is to [**sign up**](https://app.rudderlabs.com/signup?type=freetrial) for **RudderStack Cloud Free** - a completely free tier of [**RudderStack Cloud**](https://rudderstack.com/cloud).
 
 You can also set up RudderStack on your platform of choice with these two easy steps:
 
-### Step 1: Set Up RudderStack
+### Step 1: Set up RudderStack
 
-- [Docker](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/docker/)
-- [Kubernetes](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/kubernetes/)
-- [Developer Machine](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/developer-machine-setup/)
+- [**Docker**](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/docker/)
+- [**Kubernetes**](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/kubernetes/)
+- [**Developer machine setup**](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/developer-machine-setup/)
 
-**Note**: If you are planning to use RudderStack in production, we STRONGLY recommend using our Kubernetes Helm charts. We update our Docker images with bug fixes much more frequently than our GitHub repo.
+> **Note**: If you are planning to use RudderStack in production, we STRONGLY recommend using our Kubernetes Helm charts. We update our Docker images with bug fixes much more frequently than our GitHub repo.
 
-### Step 2: Verify the Installation
+### Step 2: Verify the installation
 
-Once you have installed RudderStack, [send test events](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/sending-test-events/) to verify the setup.
+Once you have installed RudderStack, [**send test events**](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/sending-test-events/) to verify the setup.
 
 ## Contribute
 
-We would love to see you contribute to RudderStack. Get more information on how to contribute [here](https://github.com/rudderlabs/rudder-server/blob/master/CONTRIBUTING.md).
+We would love to see you contribute to RudderStack. Get more information on how to contribute [**here**](https://github.com/rudderlabs/rudder-server/blob/master/CONTRIBUTING.md).
 
 ## License
 
-RudderStack server is released under the [AGPLv3 License](https://github.com/rudderlabs/rudder-server/blob/master/LICENSE).
+RudderStack server is released under the [**AGPLv3 License**](https://github.com/rudderlabs/rudder-server/blob/master/LICENSE).
 
-Read [our blog](https://rudderstack.com/blog/rudderstacks-licensing-explained) to know more about how our software is licensed.
+Read [**our blog**](https://rudderstack.com/blog/rudderstacks-licensing-explained) to know more about how our software is licensed.
