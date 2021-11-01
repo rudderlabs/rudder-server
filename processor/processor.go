@@ -89,14 +89,18 @@ type HandleT struct {
 	pipeProcessing                 stats.RudderStats
 	statNumRequests                stats.RudderStats
 	statNumEvents                  stats.RudderStats
-	statDestNumOutputEvents        stats.RudderStats
-	statBatchDestNumOutputEvents   stats.RudderStats
-	logger                         logger.LoggerI
-	eventSchemaHandler             types.EventSchemasI
-	dedupHandler                   dedup.DedupI
-	reporting                      types.ReportingI
-	reportingEnabled               bool
-	transformerFeatures            json.RawMessage
+	statPayloadInBytes             stats.RudderStats
+	statPayloadOutRouterBytes      stats.RudderStats
+	statPayloadOutBatchBytes       stats.RudderStats
+
+	statDestNumOutputEvents      stats.RudderStats
+	statBatchDestNumOutputEvents stats.RudderStats
+	logger                       logger.LoggerI
+	eventSchemaHandler           types.EventSchemasI
+	dedupHandler                 dedup.DedupI
+	reporting                    types.ReportingI
+	reportingEnabled             bool
+	transformerFeatures          json.RawMessage
 
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
@@ -294,6 +298,14 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pipeProcessing = proc.stats.NewStat("processor.pipe_processing", stats.TimerType)
 	proc.statNumRequests = proc.stats.NewStat("processor.num_requests", stats.CountType)
 	proc.statNumEvents = proc.stats.NewStat("processor.num_events", stats.CountType)
+	proc.statPayloadInBytes = proc.stats.NewStat("processor.job_payload_in_bytes", stats.CountType)
+	proc.statPayloadOutRouterBytes = proc.stats.NewTaggedStat("processor.job_payload_out_bytes", stats.CountType, stats.Tags{
+		"module": "router",
+	})
+	proc.statPayloadOutBatchBytes = proc.stats.NewTaggedStat("processor.job_payload_out_bytes", stats.CountType, stats.Tags{
+		"module": "batch_router",
+	})
+
 	// Add a separate tag for batch router
 	proc.statDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "router",
@@ -1288,9 +1300,20 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		close(chOut)
 	}()
 
+	totalPayloadRouterBytes := 0
+	totalPayloadBatchBytes := 0
+
 	for o := range chOut {
-		batchDestJobs = append(batchDestJobs, o.batchDestJobs...)
+		for i := range o.destJobs {
+			totalPayloadRouterBytes += len(o.destJobs[i].EventPayload)
+		}
 		destJobs = append(destJobs, o.destJobs...)
+
+		for i := range o.batchDestJobs {
+			totalPayloadBatchBytes += len(o.batchDestJobs[i].EventPayload)
+		}
+		batchDestJobs = append(batchDestJobs, o.batchDestJobs...)
+
 		reportMetrics = append(reportMetrics, o.reportMetrics...)
 		for k, v := range o.errorsPerDestID {
 			procErrorJobsByDestID[k] = append(procErrorJobsByDestID[k], v...)
@@ -1313,6 +1336,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			proc.logger.Errorf("destJobs: %v", destJobs)
 			panic(err)
 		}
+		proc.statPayloadOutRouterBytes.Count(totalPayloadRouterBytes)
 		proc.statDestNumOutputEvents.Count(len(destJobs))
 	}
 	if len(batchDestJobs) > 0 {
@@ -1323,6 +1347,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			proc.logger.Errorf("batchDestJobs: %v", batchDestJobs)
 			panic(err)
 		}
+		proc.statPayloadOutBatchBytes.Count(totalPayloadBatchBytes)
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
 
@@ -1765,8 +1790,10 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	})
 
 	totalEvents := 0
+	totalPayloadBytes := 0
 	for _, job := range retryList {
 		totalEvents += job.EventCount
+		totalPayloadBytes += len(job.EventPayload)
 	}
 
 	// skip querying for unprocessed jobs if either retreived dbReadBatchSize or retreived maxEventToProcess
@@ -1778,8 +1805,9 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 			JobCount:         toQuery,
 			EventCount:       eventsLeftToProcess,
 		})
-		for _, job := range retryList {
+		for _, job := range unprocessedList {
 			totalEvents += job.EventCount
+			totalPayloadBytes += len(job.EventPayload)
 		}
 	}
 
@@ -1805,6 +1833,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.logger.Debugf("Processor DB Read Complete. retryList: %v, unprocessedList: %v, total_requests: %v, total_events: %d", len(retryList), len(unprocessedList), len(combinedList), totalEvents)
 	proc.pStatsDBR.End(len(combinedList))
 	proc.statGatewayDBR.Count(len(combinedList))
+	proc.statPayloadInBytes.Count(totalPayloadBytes)
 
 	proc.pStatsDBR.Print()
 
