@@ -293,10 +293,11 @@ CREDENTIALS ('awsKeyId' = '$key', 'awsSecretKey' = '$secret', 'awsSessionToken' 
 */
 func (sf *HandleT) credentialsStr() string {
 	var auth string
-	if sf.Uploader.UseRudderStorage() {
-		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
-		auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', awsSessionToken = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
-	}
+	// TODO: Required when we are going to use hosted data plane.
+	//if sf.Uploader.UseRudderStorage() {
+	//	tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
+	//	auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', awsSessionToken = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
+	//}
 	return auth
 }
 
