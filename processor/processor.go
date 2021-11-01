@@ -1003,7 +1003,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
 
-	proc.marshalSingularEvents.Start()
+	marshalStart := time.Now()
 	uniqueMessageIds := make(map[string]struct{})
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 	var sourceDupStats = make(map[string]int)
@@ -1158,7 +1158,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.statNumEvents.Count(totalEvents)
 
-	proc.marshalSingularEvents.End()
+	marshalTime := time.Since(marshalStart)
+	defer func() {
+		proc.marshalSingularEvents.SendTiming(marshalTime)
+	}()
 
 	//TRACKING PLAN - START
 	//Placing the trackingPlan validation filters here.
@@ -1267,7 +1270,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 
 	destProcTime := time.Since(destProcStart)
-	
+
 	if len(statusList) != len(jobList) {
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
 	}
@@ -1368,8 +1371,8 @@ func (proc *HandleT) processPipeline(
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) processPipelineOutput {
 	s := time.Now()
-	defer func() { 
-		proc.pipeProcessing.SendTiming(time.Since(s)) 
+	defer func() {
+		proc.pipeProcessing.SendTiming(time.Since(s))
 	}()
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
@@ -1739,7 +1742,6 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 	defer func() {
 		proc.statDBR.SendTiming(dbReadTime)
 	}()
-
 
 	// check if there is work to be done
 	if len(unprocessedList) == 0 {
