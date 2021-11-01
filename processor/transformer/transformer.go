@@ -4,12 +4,10 @@ package transformer
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -21,7 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -72,39 +69,26 @@ type TransformerEventT struct {
 	Libraries   []backendconfig.LibraryT   `json:"libraries"`
 }
 
-//transformMessageT is used to pass message to the transformer workers
-type transformMessageT struct {
-	index int
-	data  []TransformerEventT
-	url   string
-}
-
-type transformedMessageT struct {
-	index int
-	data  []TransformerResponseT
-}
-
 //HandleT is the handle for this class
 type HandleT struct {
-	requestQ           chan *transformMessageT
-	responseQ          chan *transformedMessageT
-	accessLock         sync.Mutex
-	perfStats          *misc.PerfStats
-	sentStat           stats.RudderStats
-	receivedStat       stats.RudderStats
-	failedStat         stats.RudderStats
-	transformTimerStat stats.RudderStats
-	logger             logger.LoggerI
+	perfStats                 *misc.PerfStats
+	sentStat                  stats.RudderStats
+	receivedStat              stats.RudderStats
+	failedStat                stats.RudderStats
+	transformTimerStat        stats.RudderStats
+	transformRequestTimerStat stats.RudderStats
 
-	backgroundWait   func() error
-	backgroundCancel context.CancelFunc
+	logger logger.LoggerI
+
+	Client *http.Client
+
+	guardConcurrency chan struct{}
 }
 
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
 	Transform(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
-	Shutdown()
 	Validate(clientEvents []TransformerEventT, url string, batchSize int) ResponseT
 }
 
@@ -114,9 +98,9 @@ func NewTransformer() *HandleT {
 }
 
 var (
-	maxChanSize, numTransformWorker, maxRetry int
-	retrySleep                                time.Duration
-	pkgLogger                                 logger.LoggerI
+	maxConcurrency, maxHTTPConnections, maxHTTPIdleConnections, maxRetry int
+	retrySleep                                                           time.Duration
+	pkgLogger                                                            logger.LoggerI
 )
 
 func Init() {
@@ -125,8 +109,10 @@ func Init() {
 }
 
 func loadConfig() {
-	config.RegisterIntConfigVariable(2048, &maxChanSize, false, 1, "Processor.maxChanSize")
-	config.RegisterIntConfigVariable(8, &numTransformWorker, false, 1, "Processor.numTransformWorker")
+	config.RegisterIntConfigVariable(200, &maxConcurrency, false, 1, "Processor.maxConcurrency")
+	config.RegisterIntConfigVariable(100, &maxHTTPConnections, false, 1, "Processor.maxHTTPConnections")
+	config.RegisterIntConfigVariable(50, &maxHTTPIdleConnections, false, 1, "Processor.maxHTTPIdleConnections")
+
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
 }
@@ -146,141 +132,28 @@ type ValidationErrorT struct {
 	Meta    map[string]string `json:"meta"`
 }
 
-func (trans *HandleT) transformWorker() {
-	tr := &http.Transport{}
-	client := &http.Client{Transport: tr}
-	transformRequestTimerStat := stats.NewStat("processor.transformer_request_time", stats.TimerType)
-
-	for job := range trans.requestQ {
-		//Call remote transformation
-		rawJSON, err := json.Marshal(job.data)
-		if err != nil {
-			panic(err)
-		}
-		retryCount := 0
-		var resp *http.Response
-		var respData []byte
-		//We should rarely have error communicating with our JS
-		reqFailed := false
-
-		for {
-			transformRequestTimerStat.Start()
-			resp, err = client.Post(job.url, "application/json; charset=utf-8",
-				bytes.NewBuffer(rawJSON))
-
-			if err == nil {
-				//If no err returned by client.Post, reading body.
-				//If reading body fails, retrying.
-				respData, err = io.ReadAll(resp.Body)
-			}
-
-			if err != nil {
-				transformRequestTimerStat.End()
-				reqFailed = true
-				trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err)
-				if retryCount > maxRetry {
-					panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", job.url, err))
-				}
-				retryCount++
-				time.Sleep(retrySleep)
-				//Refresh the connection
-				continue
-			}
-			if reqFailed {
-				trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, job.url)
-			}
-
-			// perform version compatability check only on success
-			if resp.StatusCode == http.StatusOK {
-				transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
-				if convErr != nil {
-					transformerAPIVersion = 0
-				}
-				if supportedTransformerAPIVersion != transformerAPIVersion {
-					trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url)
-					panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, job.url))
-				}
-			}
-
-			transformRequestTimerStat.End()
-			break
-		}
-
-		// Remove Assertion?
-		if !(resp.StatusCode == http.StatusOK ||
-			resp.StatusCode == http.StatusBadRequest ||
-			resp.StatusCode == http.StatusNotFound ||
-			resp.StatusCode == http.StatusRequestEntityTooLarge) {
-			trans.logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
-		}
-
-		var transformerResponses []TransformerResponseT
-		if resp.StatusCode == http.StatusOK {
-			integrations.CollectIntgErrorStats(respData, true)
-			err = json.Unmarshal(respData, &transformerResponses)
-			//This is returned by our JS engine so should  be parsable
-			//but still handling it
-			if err != nil {
-				trans.logger.Errorf("Data sent to transformer : %v", string(rawJSON))
-				trans.logger.Errorf("Transformer returned : %v", string(respData))
-				respData = []byte(fmt.Sprintf("Failed to unmarshal transformer response: %s", string(respData)))
-				transformerResponses = nil
-				resp.StatusCode = 400
-			}
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			for i := range job.data {
-				transformEvent := &job.data[i]
-				resp := TransformerResponseT{StatusCode: resp.StatusCode, Error: string(respData), Metadata: transformEvent.Metadata}
-				transformerResponses = append(transformerResponses, resp)
-			}
-		}
-		resp.Body.Close()
-
-		trans.responseQ <- &transformedMessageT{data: transformerResponses, index: job.index}
-	}
-
-}
-
 //Setup initializes this class
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
-	trans.requestQ = make(chan *transformMessageT, maxChanSize)
-	trans.responseQ = make(chan *transformedMessageT, maxChanSize)
 	trans.sentStat = stats.NewStat("processor.transformer_sent", stats.CountType)
 	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
 	trans.failedStat = stats.NewStat("processor.transformer_failed", stats.CountType)
 	trans.transformTimerStat = stats.NewStat("processor.transformation_time", stats.TimerType)
+	trans.transformRequestTimerStat = stats.NewStat("processor.transformer_request_time", stats.TimerType)
+
+	trans.guardConcurrency = make(chan struct{}, maxConcurrency)
 	trans.perfStats = &misc.PerfStats{}
 	trans.perfStats.Setup("JS Call")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	g, _ := errgroup.WithContext(ctx)
-
-	trans.backgroundCancel = cancel
-	trans.backgroundWait = g.Wait
-
-	for i := 0; i < numTransformWorker; i++ {
-		trans.logger.Info("Starting transformer worker", i)
-		g.Go(misc.WithBugsnag(func() error {
-			trans.transformWorker()
-			return nil
-		}))
+	if trans.Client == nil {
+		trans.Client = &http.Client{
+			Transport: &http.Transport{
+				MaxConnsPerHost:     maxHTTPConnections,
+				MaxIdleConnsPerHost: maxHTTPIdleConnections,
+				IdleConnTimeout:     time.Minute,
+			},
+		}
 	}
-
-}
-
-// Shutdown stops transform workers gracefully and waits for them to stop
-// WARNING: No Transform() call should be running or called when and after
-func (trans *HandleT) Shutdown() {
-	trans.backgroundCancel()
-	// Closing requestQ will cause workers to stop.
-	close(trans.requestQ)
-	trans.backgroundWait()
-
-	// After workers have stop, is safe to close responseQ.
-	close(trans.responseQ)
 }
 
 //ResponseT represents a Transformer response
@@ -317,118 +190,61 @@ func GetVersion() (transformerBuildVersion string) {
 }
 
 //Transform function is used to invoke transformer API
-//Transformer is not thread safe. If performance becomes
-//an issue we can create multiple transformer instances
-//but given that they are hitting the same NodeJS
-//process it may not be an issue if batch sizes (len clientEvents)
-//are big enough to saturate NodeJS. Right now the transformer
-//instance is shared between both user specific transformation
-//code and destination transformation code.
 func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	url string, batchSize int) ResponseT {
 
-	trans.accessLock.Lock()
-	defer trans.accessLock.Unlock()
+	s := time.Now()
+	defer func() {
+		trans.transformTimerStat.SendTiming(time.Since(s))
+	}()
 
-	trans.transformTimerStat.Start()
+	batchCount := len(clientEvents) / batchSize
+	if len(clientEvents)%batchSize != 0 {
+		batchCount += 1
+	}
+	transformResponse := make([][]TransformerResponseT, batchCount)
 
-	var transformResponse = make([]*transformedMessageT, 0)
-	//Enqueue all the jobs
-	inputIdx := 0
-	outputIdx := 0
-	totalSent := 0
-	reqQ := trans.requestQ
-	resQ := trans.responseQ
-
-	trans.perfStats.Start()
-	var toSendData []TransformerEventT
-
-	for {
-		//The channel is still live and the last batch has been sent
-		//Construct the next batch
-		if reqQ != nil && toSendData == nil {
-			clientBatch := make([]TransformerEventT, 0)
-			batchCount := 0
-			for {
-				if batchCount >= batchSize && inputIdx != 0 {
-					// break using the batchSize.
-					break
-				}
-				if inputIdx >= len(clientEvents) {
-					break
-				}
-				clientBatch = append(clientBatch, clientEvents[inputIdx])
-				batchCount++
-				inputIdx++
-			}
-			toSendData = clientBatch
-			trans.sentStat.Count(len(clientBatch))
+	wg := sync.WaitGroup{}
+	wg.Add(len(transformResponse))
+	for i := range transformResponse {
+		i := i
+		from := i * batchSize
+		to := (i + 1) * batchSize
+		if to > len(clientEvents) {
+			to = len(clientEvents)
 		}
-
-		select {
-		//In case of batch event, index is the next Index
-		case reqQ <- &transformMessageT{index: inputIdx, data: toSendData, url: url}:
-			totalSent++
-			toSendData = nil
-			if inputIdx == len(clientEvents) {
-				reqQ = nil
-			}
-		case data := <-resQ:
-			transformResponse = append(transformResponse, data)
-			outputIdx++
-			//If all was sent and all was received we are done
-			if reqQ == nil && outputIdx == totalSent {
-				resQ = nil
-			}
-		}
-		if reqQ == nil && resQ == nil {
-			break
-		}
+		trans.guardConcurrency <- struct{}{}
+		go func() {
+			transformResponse[i] = trans.request(url, clientEvents[from:to])
+			<-trans.guardConcurrency
+			wg.Done()
+		}()
 	}
-	if !(inputIdx == len(clientEvents) && outputIdx == totalSent) {
-		panic(fmt.Errorf("inputIdx:%d != len(clientEvents):%d or outputIdx:%d != totalSent:%d", inputIdx, len(clientEvents), outputIdx, totalSent))
-	}
-
-	//Sort the responses in the same order as input
-	sort.Slice(transformResponse, func(i, j int) bool {
-		return transformResponse[i].index < transformResponse[j].index
-	})
-
-	//Some sanity checks
-	if !(batchSize > 0 || transformResponse[0].index == 1) {
-		panic(fmt.Errorf("batchSize:%d <= 0 and transformResponse[0].index:%d != 1", batchSize, transformResponse[0].index))
-	}
-	if transformResponse[len(transformResponse)-1].index != len(clientEvents) {
-		panic(fmt.Errorf("transformResponse[len(transformResponse)-1].index:%d != len(clientEvents):%d", transformResponse[len(transformResponse)-1].index, len(clientEvents)))
-	}
+	wg.Wait()
 
 	var outClientEvents []TransformerResponseT
 	var failedEvents []TransformerResponseT
 
-	for _, resp := range transformResponse {
-		if resp.data == nil {
+	for _, batch := range transformResponse {
+		if batch == nil {
 			continue
 		}
-		respArray := resp.data
 
 		//Transform is one to many mapping so returned
 		//response for each is an array. We flatten it out
-		for _, transformerResponse := range respArray {
+		for _, transformerResponse := range batch {
 			if transformerResponse.StatusCode != 200 {
 				failedEvents = append(failedEvents, transformerResponse)
 				continue
 			}
 			outClientEvents = append(outClientEvents, transformerResponse)
 		}
-
 	}
 
 	trans.receivedStat.Count(len(outClientEvents))
 	trans.failedStat.Count(len(failedEvents))
-	trans.perfStats.End(len(clientEvents))
+	trans.perfStats.Rate(len(clientEvents), time.Since(s))
 	trans.perfStats.Print()
-
-	trans.transformTimerStat.End()
 
 	return ResponseT{
 		Events:       outClientEvents,
@@ -439,4 +255,92 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 func (trans *HandleT) Validate(clientEvents []TransformerEventT,
 	url string, batchSize int) ResponseT {
 	return trans.Transform(clientEvents, url, batchSize)
+}
+
+func (trans *HandleT) request(url string, data []TransformerEventT) []TransformerResponseT {
+	//Call remote transformation
+	rawJSON, err := json.Marshal(data)
+	if err != nil {
+		panic(err)
+	}
+	retryCount := 0
+	var resp *http.Response
+	var respData []byte
+	//We should rarely have error communicating with our JS
+	reqFailed := false
+
+	for {
+		s := time.Now()
+		resp, err = trans.Client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+
+		if err == nil {
+			//If no err returned by client.Post, reading body.
+			//If reading body fails, retrying.
+			respData, err = io.ReadAll(resp.Body)
+			resp.Body.Close()
+		}
+
+		if err != nil {
+			trans.transformRequestTimerStat.SendTiming(time.Since(s))
+			reqFailed = true
+			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
+			if retryCount > maxRetry {
+				panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err))
+			}
+			retryCount++
+			time.Sleep(retrySleep)
+			//Refresh the connection
+			continue
+		}
+		if reqFailed {
+			trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
+		}
+
+		// perform version compatability check only on success
+		if resp.StatusCode == http.StatusOK {
+			transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
+			if convErr != nil {
+				transformerAPIVersion = 0
+			}
+			if supportedTransformerAPIVersion != transformerAPIVersion {
+				trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, url)
+				panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, url))
+			}
+		}
+
+		trans.transformRequestTimerStat.SendTiming(time.Since(s))
+		break
+	}
+
+	// Remove Assertion?
+	if !(resp.StatusCode == http.StatusOK ||
+		resp.StatusCode == http.StatusBadRequest ||
+		resp.StatusCode == http.StatusNotFound ||
+		resp.StatusCode == http.StatusRequestEntityTooLarge) {
+		trans.logger.Errorf("Transformer returned status code: %v", resp.StatusCode)
+	}
+
+	var transformerResponses []TransformerResponseT
+	if resp.StatusCode == http.StatusOK {
+		integrations.CollectIntgErrorStats(respData, true)
+		err = json.Unmarshal(respData, &transformerResponses)
+		//This is returned by our JS engine so should  be parsable
+		//but still handling it
+		if err != nil {
+			trans.logger.Errorf("Data sent to transformer : %v", string(rawJSON))
+			trans.logger.Errorf("Transformer returned : %v", string(respData))
+			respData = []byte(fmt.Sprintf("Failed to unmarshal transformer response: %s", string(respData)))
+			transformerResponses = nil
+			resp.StatusCode = 400
+		}
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		for i := range data {
+			transformEvent := &data[i]
+			resp := TransformerResponseT{StatusCode: resp.StatusCode, Error: string(respData), Metadata: transformEvent.Metadata}
+			transformerResponses = append(transformerResponses, resp)
+		}
+	}
+	return transformerResponses
 }

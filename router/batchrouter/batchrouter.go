@@ -23,6 +23,7 @@ import (
 	"github.com/thoas/go-funk"
 	"golang.org/x/sync/errgroup"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -37,7 +38,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -508,7 +508,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 		localTmpDirName = "/rudder-raw-data-destination-logs/"
 	}
 
-	uuid := uuid.NewV4()
+	uuid := uuid.Must(uuid.NewV4())
 	brt.logger.Debugf("BRT: Starting logging to %s", provider)
 
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -794,7 +794,7 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 
 func (brt *HandleT) asyncStructSetup(sourceID, destinationID string) {
 	localTmpDirName := "/rudder-async-destination-logs/"
-	uuid := uuid.NewV4()
+	uuid := uuid.Must(uuid.NewV4())
 
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -1799,7 +1799,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		if err != nil {
 			panic(err)
 		}
-		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.NewV4().String()))
+		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.Must(uuid.NewV4()).String()))
 
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		if err != nil {

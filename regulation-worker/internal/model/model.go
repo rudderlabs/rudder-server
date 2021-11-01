@@ -37,7 +37,14 @@ type UserAttribute struct {
 }
 
 type Destination struct {
+	Config        map[string]interface{}
 	DestinationID string
 	Type          string
-	Credentials   string
+	Name          string
+}
+
+type APIReqErr struct {
+	StatusCode int
+	Body       string
+	Err        error
 }
