@@ -59,8 +59,8 @@ type PostParametersT struct {
 }
 
 type DeliveryResponseT struct {
-	Status int64
-	Body   string
+	Status int64  `json:"status"`
+	Body   string `json:"responseBody"`
 }
 
 // This struct represents the datastructure present in Transformer network layer Error builder

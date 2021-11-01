@@ -166,10 +166,10 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 	url := getResponseTransformURL(destName)
 	trans.transformerResponseTransformRequestTime.Start()
 	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
-	if err != nil {
-		respData = []byte("")
+	// In case of error we are sending the original response from destination
+	if err != nil || resp.StatusCode == 500 || resp.StatusCode == 404 || resp.StatusCode == 400 {
 		trans.logger.Errorf("[Transformer Response Transform request] :: %+v", err)
-		return http.StatusInternalServerError, string(respData)
+		return int(responseData.Status), string(responseData.Body)
 	}
 	trans.transformerResponseTransformRequestTime.End()
 	if resp != nil && resp.Body != nil {
@@ -198,7 +198,7 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
-	trans.client = &http.Client{Transport: trans.tr, Timeout: 10 * time.Minute}
+	trans.client = &http.Client{Transport: trans.tr, Timeout: 30 * time.Second}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
 	trans.transformerResponseTransformRequestTime = stats.NewStat("router.transformer_response_transform_time", stats.TimerType)
