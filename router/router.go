@@ -607,7 +607,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 									Body:   respBodyTemp,
 								}
 								worker.routerResponseTransformStat.Start()
-								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(dResponse, worker.rt.destName)
+								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(sendCtx, dResponse, worker.rt.destName)
 								worker.routerResponseTransformStat.End()
 							}
 							if isSuccessStatus(respStatusCode) {

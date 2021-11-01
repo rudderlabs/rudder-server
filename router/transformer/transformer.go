@@ -4,6 +4,7 @@ package transformer
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,7 +39,7 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ResponseTransform(responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string)
+	ResponseTransform(ctx context.Context, responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string)
 }
 
 //NewTransformer creates a new transformer
@@ -156,7 +157,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string) {
+func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string) {
 	rawJSON, err := json.Marshal(responseData)
 	if err != nil {
 		panic(err)
