@@ -23,8 +23,8 @@ _main() {
         echo "Computed db host to $JOBS_DB_HOST"
     else
         _pod_index=${HOSTNAME##*-}
-        if [ -z ${POSTGRES_SVC} ]; then echo "POSTGRES_SVC env variable is required"; exit 1; fi
-        export JOBS_DB_HOST="$POSTGRES_SVC-$_pod_index"
+        if [ -z ${POSTGRES_SVC_NAME} ]; then echo "POSTGRES_SVC_NAME env variable is required"; exit 1; fi
+        export JOBS_DB_HOST="$POSTGRES_SVC_NAME-$_pod_index"
         echo "Computed db host to $JOBS_DB_HOST"
     fi
 	exec "$@"
