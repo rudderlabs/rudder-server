@@ -1232,7 +1232,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
 
-	proc.destProcessing.Start()
+	destProcStart := time.Now()
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
 
 	chOut := make(chan processPipelineOutput, 1)
@@ -1266,8 +1266,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 	}
 
-	//procErrorJobsByDestID
-	proc.destProcessing.End()
+	destProcTime := time.Since(destProcStart)
+	
 	if len(statusList) != len(jobList) {
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
 	}
@@ -1337,6 +1337,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
 
+	proc.destProcessing.SendTiming(destProcTime)
+
 	proc.pStatsDBW.Rate(len(statusList), time.Since(beforeStoreStatus))
 	proc.pStatsJobs.Rate(totalEvents, time.Since(start))
 
@@ -1366,7 +1368,9 @@ func (proc *HandleT) processPipeline(
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) processPipelineOutput {
 	s := time.Now()
-	defer proc.pipeProcessing.SendTiming(time.Since(s))
+	defer func() { 
+		proc.pipeProcessing.SendTiming(time.Since(s)) 
+	}()
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	destination := eventList[0].Destination
@@ -1731,7 +1735,11 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 		totalEvents += job.EventCount
 	}
 
-	proc.statDBR.SendTiming(time.Since(s))
+	dbReadTime := time.Since(s)
+	defer func() {
+		proc.statDBR.SendTiming(dbReadTime)
+	}()
+
 
 	// check if there is work to be done
 	if len(unprocessedList) == 0 {
