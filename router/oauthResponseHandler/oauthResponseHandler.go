@@ -65,6 +65,7 @@ type OAuthErrResHandler struct {
 	lockMapWMutex                  *sync.RWMutex            // This mutex is used to prevent concurrent writes in lockMap(s) mentioned in the struct
 	destAuthInfoMap                map[string]*AuthResponse
 	disableDestMap                 map[string]bool // Used to see if a destination is disabled or not
+	refreshActiveMap               map[string]bool // Used to check if a refresh request for an account is already InProgress
 }
 
 type Authorizer interface {
@@ -97,6 +98,7 @@ var (
 	destLockMap      map[string]*sync.RWMutex // Lock used at destination level to handle multiple disable destination requests
 	lockMapMutex     *sync.RWMutex            // Lock used at destination level to handle multiple disable destination requests
 	disableDestMap   map[string]bool          // Stores information about destination if it has been disabled
+	refreshActiveMap map[string]bool
 )
 
 const (
@@ -137,6 +139,7 @@ func Init() {
 	destLockMap = make(map[string]*sync.RWMutex)
 	disableDestMap = make(map[string]bool)
 	lockMapMutex = &sync.RWMutex{}
+	refreshActiveMap = make(map[string]bool)
 }
 
 func (authErrHandler *OAuthErrResHandler) Setup() {
@@ -151,6 +154,7 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.lockMapWMutex = lockMapMutex
 	authErrHandler.destAuthInfoMap = destAuthInfoMap
 	authErrHandler.disableDestMap = disableDestMap
+	authErrHandler.refreshActiveMap = refreshActiveMap
 }
 
 func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse) {
@@ -197,9 +201,11 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 		}
 	}
 	authErrHandler.accountLockMap[refTokenParams.AccountId].RLock()
-	authMap := authErrHandler.destAuthInfoMap
-	if refVal, ok := authMap[refTokenParams.AccountId]; ok {
-		if router_utils.IsNotEmptyString(refVal.Account.AccessToken) && refVal.Account.AccessToken != refTokenParams.AccessToken {
+	refVal, ok := authErrHandler.destAuthInfoMap[refTokenParams.AccountId]
+	if ok {
+		isInvalidAccessTokenForRefresh := (router_utils.IsNotEmptyString(refVal.Account.AccessToken) &&
+			refVal.Account.AccessToken != refTokenParams.AccessToken)
+		if isInvalidAccessTokenForRefresh {
 			authErrHandler.accountLockMap[refTokenParams.AccountId].RUnlock()
 			authStats.eventName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
 			authStats.errorMessage = ""
@@ -211,7 +217,38 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	authErrHandler.accountLockMap[refTokenParams.AccountId].RUnlock()
 
 	authErrHandler.accountLockMap[refTokenParams.AccountId].Lock()
-	defer authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
+	if isRefreshActive, isPresent := authErrHandler.refreshActiveMap[refTokenParams.AccountId]; isPresent && isRefreshActive {
+		authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
+		authStats.eventName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
+		authStats.errorMessage = ""
+		authStats.SendCountStat()
+		authErrHandler.logger.Infof("[%s request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.AccessToken)
+		return http.StatusOK, refVal
+	}
+	// Refresh will start
+	authErrHandler.refreshActiveMap[refTokenParams.AccountId] = true
+	authErrHandler.logger.Infof("[%s request] [rt-worker-%v] :: Refresh request is active!", loggerNm, refTokenParams.WorkerId)
+	authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
+
+	defer func() {
+		authErrHandler.accountLockMap[refTokenParams.AccountId].Lock()
+		authErrHandler.refreshActiveMap[refTokenParams.AccountId] = false
+		authErrHandler.logger.Infof("[%s request] [rt-worker-%v]:: Refresh request is inactive!", loggerNm, refTokenParams.WorkerId)
+		authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
+	}()
+	// TODO: Pseudo-code below will be removed
+	// rt.isrefreshingTokenLock.Lock()
+	// if rt.isrefreshingToken {
+	// 	rt.isrefreshingTokenLock.UnLock()
+	// 	return http.StatusOK, refVal
+	// }
+	// rt.isrefreshingToken = true
+	// rt.isrefreshingTokenLock.UnLock()
+	// defer func() {
+	// 	rt.isrefreshingTokenLock.Lock()
+	// 	rt.isrefreshingToken = false
+	// 	rt.isrefreshingTokenLock.UnLock()
+	// }
 
 	authErrHandler.logger.Infof("[%s] Refresh Lock Acquired by rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
 
