@@ -1,4 +1,4 @@
-FROM alpine:latest
+FROM ubuntu:20.04
 ADD rudder-server /
 ADD ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
 ADD build/wait-for /
