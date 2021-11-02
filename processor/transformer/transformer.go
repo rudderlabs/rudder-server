@@ -26,7 +26,6 @@ const (
 	DestTransformerStage        = "dest_transformer"
 	TrackingPlanValidationStage = "trackingPlan_validation"
 )
-const supportedTransformerAPIVersion = 1
 
 type MetadataT struct {
 	SourceID            string                            `json:"sourceId"`
@@ -304,9 +303,9 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 			if convErr != nil {
 				transformerAPIVersion = 0
 			}
-			if supportedTransformerAPIVersion != transformerAPIVersion {
-				trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, url)
-				panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", supportedTransformerAPIVersion, transformerAPIVersion, url))
+			if types.SUPPORTED_TRANSFORMER_API_VERSION != transformerAPIVersion {
+				trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", types.SUPPORTED_TRANSFORMER_API_VERSION, transformerAPIVersion, url)
+				panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", types.SUPPORTED_TRANSFORMER_API_VERSION, transformerAPIVersion, url))
 			}
 		}
 
