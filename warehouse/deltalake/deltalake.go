@@ -167,7 +167,7 @@ func (dl *HandleT) connect(cred CredentialsT) (*sql.DB, error) {
 	var err error
 	var db *sql.DB
 	if db, err = sql.Open("odbc", dsn); err != nil {
-		return nil, fmt.Errorf("%s Delta lake connect error : (%v)", dl.GetLogIdentifier(), err)
+		return nil, fmt.Errorf("%s Error connection to Delta lake: %v", dl.GetLogIdentifier(), err)
 	}
 	return db, nil
 }
@@ -181,7 +181,7 @@ func (dl *HandleT) fetchTables(db *sql.DB, sqlStatement string) (tableNames []st
 			err = nil
 			return
 		}
-		pkgLogger.Errorf("%s Error in fetching tables schema from delta lake with SQL: %v", dl.GetLogIdentifier(), sqlStatement)
+		pkgLogger.Errorf("%s Error in fetching tables schema from delta lake with SQL: %v, error: %v", dl.GetLogIdentifier(), sqlStatement, err)
 		return
 	}
 	defer rows.Close()
@@ -197,11 +197,11 @@ func (dl *HandleT) fetchTables(db *sql.DB, sqlStatement string) (tableNames []st
 		var isTemporary bool
 		err = rows.Scan(&database, &tableName, &isTemporary)
 		if err != nil {
-			pkgLogger.Errorf("%s Error in processing fetched tables schema from delta lake tableName: %v", dl.GetLogIdentifier(), tableName)
+			pkgLogger.Errorf("%s Error in processing fetched tables schema from delta lake tableName: %v, error: %v", dl.GetLogIdentifier(), tableName, err)
 			return
 		}
 		if !tableName.Valid {
-			pkgLogger.Errorf("%s Error in processing fetched tables schema from delta lake tableName: %v ValidTableName: %v", dl.GetLogIdentifier(), tableName, tableName.String)
+			pkgLogger.Errorf("%s Error in processing fetched tables schema from delta lake tableName: %v ValidTableName: %v, error: %v", dl.GetLogIdentifier(), tableName, tableName.String, err)
 			return
 		}
 		tableNames = append(tableNames, tableName.String)
@@ -359,7 +359,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	// Executing copy sql statement
 	_, err = dl.Db.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("%s Error running COPY command: %v\n", dl.GetLogIdentifier(tableName), err)
+		pkgLogger.Errorf("%s Error running COPY command with SQL: %s\n error: %v", dl.GetLogIdentifier(tableName), sqlStatement, err)
 		return
 	}
 
@@ -527,7 +527,7 @@ func (dl *HandleT) CreateSchema() (err error) {
 	var schemaExists bool
 	schemaExists, err = dl.schemaExists(dl.Namespace)
 	if err != nil {
-		pkgLogger.Errorf("%s Error checking if schema: %s exists: %v", dl.GetLogIdentifier(), dl.Namespace, err)
+		pkgLogger.Errorf("%s Error checking if schema exists: %s, error: %v", dl.GetLogIdentifier(), dl.Namespace, err)
 		return err
 	}
 	if schemaExists {
@@ -607,7 +607,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 			break
 		}
 		if err == sql.ErrNoRows {
-			pkgLogger.Infof("%s No rows, while fetched describe table schema from delta lake with SQL: %v", dl.GetLogIdentifier(), ttSqlStatement)
+			pkgLogger.Infof("%s No rows, while fetched describe table schema from delta lake with SQL: %v, error: %v", dl.GetLogIdentifier(), ttSqlStatement, err)
 			err = nil
 			return
 		}
@@ -618,7 +618,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 			var col_name, data_type, comment sql.NullString
 			err := ttRows.Scan(col_name, data_type, comment)
 			if err != nil {
-				pkgLogger.Errorf("%s Error in processing fetched describe table schema from delta lake", dl.GetLogIdentifier())
+				pkgLogger.Errorf("%s Error in processing fetched describe table schema from delta lake with SQL: %v, error: %v", dl.GetLogIdentifier(), ttSqlStatement, err)
 				break
 			}
 			if !col_name.Valid || !data_type.Valid {
@@ -731,7 +731,7 @@ func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s`, dl.Namespace, tableName)
 	err = dl.Db.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
-		pkgLogger.Errorf(`%s Error getting total count`, dl.GetLogIdentifier(tableName))
+		pkgLogger.Errorf(`%s Error getting total count: %v`, dl.GetLogIdentifier(tableName), err)
 	}
 	return
 }
