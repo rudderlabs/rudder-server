@@ -96,8 +96,10 @@ type HandleT struct {
 	reportingEnabled               bool
 	transformerFeatures            json.RawMessage
 
-	backgroundWait   func() error
-	backgroundCancel context.CancelFunc
+	concurrentProcesses chan struct{}
+	backgroundGroup     *errgroup.Group
+	backgroundWait      func() error
+	backgroundCancel    context.CancelFunc
 }
 
 var defaultTransformerFeatures = `{
@@ -309,6 +311,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
+	proc.concurrentProcesses = make(chan struct{}, concurrency)
+
+	proc.backgroundGroup = g
 	proc.backgroundWait = g.Wait
 	proc.backgroundCancel = cancel
 
@@ -359,6 +364,7 @@ func (proc *HandleT) Shutdown() {
 }
 
 var (
+	concurrency               int
 	loopSleep                 time.Duration
 	maxLoopSleep              time.Duration
 	fixedLoopSleep            time.Duration
@@ -397,6 +403,8 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, false, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
+
+	config.RegisterIntConfigVariable(0, &concurrency, true, 1, "Processor.concurrency")
 
 	// DEPRECATED: don't use avgEventsInRequest, rudder-server will automatically adapt
 	config.RegisterIntConfigVariable(1, &avgEventsInRequest, true, 1, "Processor.avgEventsInRequest")
@@ -1748,14 +1756,15 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 		proc.pStatsDBR.Rate(0, time.Since(s))
 		return false, nextJobID
 	}
-	proc.eventSchemasTime.Start()
+	
+	eventSchamasStart := time.Now()
 	if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
 		for _, unprocessedJob := range unprocessedList {
 			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
 			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
 		}
 	}
-	proc.eventSchemasTime.End()
+	proc.eventSchemasTime.SendTiming(time.Since(eventSchamasStart))
 
 	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList), totalEvents)
 	proc.pStatsDBR.Rate(len(unprocessedList), time.Since(s))
@@ -1763,9 +1772,21 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 
 	proc.pStatsDBR.Print()
 
-	proc.processJobsForDest(unprocessedList, nil)
+	// non-concurrent processing:
+	if len(proc.concurrentProcesses) == 0 {
+		proc.processJobsForDest(unprocessedList, nil)
+		proc.statLoopTime.SendTiming(time.Since(s))
 
-	proc.statLoopTime.SendTiming(time.Since(s))
+		return true, unprocessedList[len(unprocessedList)-1].JobID
+	}
+
+	proc.concurrentProcesses <- struct{}{}
+	proc.backgroundGroup.Go(func() error {
+		proc.processJobsForDest(unprocessedList, nil)
+		proc.statLoopTime.SendTiming(time.Since(s))
+		<-proc.concurrentProcesses
+		return nil
+	})
 
 	return true, unprocessedList[len(unprocessedList)-1].JobID
 }
