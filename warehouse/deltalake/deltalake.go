@@ -616,7 +616,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		// Populating the schema for the table
 		for ttRows.Next() {
 			var col_name, data_type, comment sql.NullString
-			err := ttRows.Scan(col_name, data_type, comment)
+			err := ttRows.Scan(&col_name, &data_type, &comment)
 			if err != nil {
 				pkgLogger.Errorf("%s Error in processing fetched describe table schema from delta lake with SQL: %v, error: %v", dl.GetLogIdentifier(), ttSqlStatement, err)
 				break
