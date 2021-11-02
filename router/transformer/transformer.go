@@ -159,35 +159,94 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 
 func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string) {
 	rawJSON, err := json.Marshal(responseData)
+	requestFailed := false
+	retryCount := 0
 	if err != nil {
 		panic(err)
 	}
 	var resp *http.Response
 	var respData []byte
+	var respCode int
+	var tempRespData []byte
 	url := getResponseTransformURL(destName)
-	trans.transformerResponseTransformRequestTime.Start()
-	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
-	// In case of error we are sending the original response from destination
-	if err != nil || (resp.StatusCode >= 500 && resp.StatusCode < 600) || resp.StatusCode == 404 {
-		trans.logger.Errorf("[Transformer Response Transform request] :: %+v", err)
-		return int(responseData.Status), string(responseData.Body)
-	}
-	trans.transformerResponseTransformRequestTime.End()
-	if resp != nil && resp.Body != nil {
-		respData, _ = io.ReadAll(resp.Body)
-	}
-	integrations.CollectIntgErrorStats([]byte(gjson.GetBytes(respData, "output").Raw), false)
+	for {
+		trans.transformerResponseTransformRequestTime.Start()
+		resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+		trans.transformerResponseTransformRequestTime.End()
+		// retry in case of err
+		if err != nil {
+			trans.logger.Errorf("[Transformer Response Transform request failed] :: %+v", err)
+			requestFailed = true
+			if retryCount > maxRetry {
+				panic(fmt.Errorf("Transformer HTTP connection error: URL: %v Error: %+v", url, err))
+			}
+			retryCount++
+			time.Sleep(retrySleep)
+			//Refresh the connection
+			continue
+		}
 
-	//Detecting content type of the respBody
-	contentTypeHeader := http.DetectContentType(respData)
-	//If content type is not of type "*text*", overriding it with empty string
-	if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
-		strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
-		strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
-		respData = []byte("")
+		if resp != nil && resp.Body != nil {
+			tempRespData, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+		}
+		//Detecting content type of the respBody
+		contentTypeHeader := http.DetectContentType(tempRespData)
+		//If content type is not of type "*text*", overriding it with empty string
+		if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
+			strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
+			strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
+			tempRespData = []byte("")
+		}
+
+		if requestFailed {
+			trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
+		}
+
+		if resp != nil {
+			//handling for 404
+			if resp.StatusCode == 404 {
+				trans.logger.Errorf("[Response transform doesnot exist for URL: %v]", url)
+				respData = tempRespData
+				respCode = 404
+				break
+			}
+			// handling for 5xx
+			if resp.StatusCode >= 500 && resp.StatusCode < 600 {
+				var transError integrations.TransErrorT
+				rawTResponse := []byte(gjson.GetBytes(tempRespData, "output").Raw)
+				err = json.Unmarshal(rawTResponse, &transError)
+				if err != nil {
+					respData = []byte("Failed to parse response transform at server error: " + err.Error())
+					respCode = 400
+					break
+				}
+				// error is explicitly lodged from transformer marking a destination side failure
+				if transError.ErrorDetailed.ResponseTransformFailure {
+					integrations.CollectIntgErrorStats(rawTResponse, false)
+					respData = tempRespData
+					respCode = resp.StatusCode
+					break
+				}
+				// network level 5xx error we need to retry response transform request
+				trans.logger.Errorf("[Transformer Response Transform request failed] :: %+v", err)
+				requestFailed = true
+				if retryCount > maxRetry {
+					panic(fmt.Errorf("Transformer HTTP connection error: URL: %v Error: %+v", url, err))
+				}
+				retryCount++
+				time.Sleep(retrySleep)
+				//Refresh the connection
+				continue
+			}
+			rawTResponse := []byte(gjson.GetBytes(tempRespData, "output").Raw)
+			integrations.CollectIntgErrorStats(rawTResponse, false)
+			respData = tempRespData
+			respCode = resp.StatusCode
+			break
+		}
 	}
-	resp.Body.Close()
-	return resp.StatusCode, string(respData)
+	return respCode, string(respData)
 }
 
 //is it ok to use same client for network and transformer calls? need to understand timeout setup in router
