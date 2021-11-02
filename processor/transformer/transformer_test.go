@@ -41,7 +41,7 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			resps[i].Error = "error"
 		}
 	}
-	w.Header().Set("apiVersion", "1")
+	w.Header().Set("apiVersion", "2")
 	if err := json.NewEncoder(w).Encode(resps); err != nil {
 		panic(err)
 	}
