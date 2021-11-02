@@ -236,7 +236,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 		authErrHandler.logger.Infof("[%s request] [rt-worker-%v]:: Refresh request is inactive!", loggerNm, refTokenParams.WorkerId)
 		authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
 	}()
-	// TODO: Pseudo-code below will be removed
+	// TODO:  Pseudo-code below will be removed
 	// rt.isrefreshingTokenLock.Lock()
 	// if rt.isrefreshingToken {
 	// 	rt.isrefreshingTokenLock.UnLock()
