@@ -251,7 +251,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUploadsResponse, err error) {
 	err = uploadsReq.validateReq()
 	defer func() {
-		if err != nil && response != nil {
+		if err != nil {
 			response = &proto.TriggerWhUploadsResponse{
 				Message:    err.Error(),
 				StatusCode: 400,
@@ -291,6 +291,13 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 		return
 	}
 	err = TriggerUploadHandler(uploadsReq.SourceID, uploadsReq.DestinationID)
+	if err != nil {
+		return
+	}
+	response = &proto.TriggerWhUploadsResponse{
+		Message:    "Triggered successfully",
+		StatusCode: 200,
+	}
 	return
 }
 
@@ -364,7 +371,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsResponse, err error) {
 	err = uploadReq.validateReq()
 	defer func() {
-		if err != nil && response != nil {
+		if err != nil {
 			response = &proto.TriggerWhUploadsResponse{
 				Message:    err.Error(),
 				StatusCode: 400,
@@ -393,6 +400,13 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 	uploadJobT.upload = &upload
 	uploadJobT.dbHandle = uploadReq.API.dbHandle
 	err = uploadJobT.triggerUploadNow()
+	if err != nil {
+		return
+	}
+	response = &proto.TriggerWhUploadsResponse{
+		Message:    "Triggered successfully",
+		StatusCode: 200,
+	}
 	return
 }
 
