@@ -156,7 +156,7 @@ func checkAndIgnoreAlreadyExistError(err error, ignoreNativeError int) bool {
 }
 
 // connect creates database connection with CredentialsT
-func connect(cred CredentialsT) (*sql.DB, error) {
+func (dl *HandleT) connect(cred CredentialsT) (*sql.DB, error) {
 	dsn := fmt.Sprintf("Driver=%v; HOST=%v; PORT=%v; Schema=default; SparkServerType=3; AuthMech=3; UID=token; PWD=%v; ThriftTransport=2; SSL=1; HTTPPath=%v; UserAgentEntry=RudderStack",
 		driverPath,
 		cred.host,
@@ -167,7 +167,7 @@ func connect(cred CredentialsT) (*sql.DB, error) {
 	var err error
 	var db *sql.DB
 	if db, err = sql.Open("odbc", dsn); err != nil {
-		return nil, fmt.Errorf("Delta lake connect error : (%v)", err)
+		return nil, fmt.Errorf("%s Delta lake connect error : (%v)", dl.GetLogIdentifier(), err)
 	}
 	return db, nil
 }
@@ -513,7 +513,7 @@ func (dl *HandleT) dropDanglingStagingTables() {
 
 // connectToWarehouse returns the database connection configured with CredentialsT
 func (dl *HandleT) connectToWarehouse() (*sql.DB, error) {
-	return connect(CredentialsT{
+	return dl.connect(CredentialsT{
 		host:  warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
 		port:  warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
 		path:  warehouseutils.GetConfigValue(DLPath, dl.Warehouse),
