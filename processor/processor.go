@@ -1734,9 +1734,15 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 		AfterJobID:       nextJobID,
 	})
 	totalEvents := 0
+	proc.eventSchemasTime.Start()
 	for _, job := range unprocessedList {
 		totalEvents += job.EventCount
+		if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
+			writeKey := gjson.GetBytes(job.EventPayload, "writeKey").Str
+			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(job.EventPayload))
+		}
 	}
+	proc.eventSchemasTime.End()
 
 	dbReadTime := time.Since(s)
 	defer func() {
@@ -1749,14 +1755,6 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 		proc.pStatsDBR.Rate(0, time.Since(s))
 		return false, nextJobID
 	}
-	proc.eventSchemasTime.Start()
-	if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
-		for _, unprocessedJob := range unprocessedList {
-			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
-			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
-		}
-	}
-	proc.eventSchemasTime.End()
 
 	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList), totalEvents)
 	proc.pStatsDBR.Rate(len(unprocessedList), time.Since(s))
