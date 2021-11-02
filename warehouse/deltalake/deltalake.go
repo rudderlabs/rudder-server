@@ -167,7 +167,7 @@ func connect(cred CredentialsT) (*sql.DB, error) {
 	var err error
 	var db *sql.DB
 	if db, err = sql.Open("odbc", dsn); err != nil {
-		return nil, fmt.Errorf("%s Delta lake connect error : (%v)", err)
+		return nil, fmt.Errorf("Delta lake connect error : (%v)", err)
 	}
 	return db, nil
 }
