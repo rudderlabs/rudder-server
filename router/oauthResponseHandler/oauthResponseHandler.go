@@ -400,7 +400,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	defer func() {
 		authErrHandler.destLockMap[destinationId].Lock()
 		authErrHandler.disableDestActiveMap[destinationId] = false
-		authErrHandler.logger.Infof("[%s request]:: Disable request is inactive!", loggerNm)
+		authErrHandler.logger.Infof("[%s request] :: Disable request is inactive!", loggerNm)
 		authErrHandler.destLockMap[destinationId].Unlock()
 	}()
 
