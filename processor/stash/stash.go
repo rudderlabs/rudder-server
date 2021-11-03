@@ -89,7 +89,7 @@ func (st *HandleT) Start(ctx context.Context) {
 		return nil
 	})
 
-	g.Wait()
+	_ = g.Wait()
 }
 
 func (st *HandleT) setupFileUploader() {
@@ -126,7 +126,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 		}))
 	}
 
-	g.Wait()
+	_ = g.Wait()
 }
 
 func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOutputT {
@@ -161,8 +161,12 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 		contentSlice = append(contentSlice, rawJob)
 	}
 	content := bytes.Join(contentSlice[:], []byte("\n"))
-	gzWriter.Write(content)
-	gzWriter.CloseGZ()
+	if _, err := gzWriter.Write(content); err != nil {
+		panic(err)
+	}
+	if err := gzWriter.CloseGZ(); err != nil {
+		panic(err)
+	}
 
 	outputFile, err := os.Open(gzipFilePath)
 	if err != nil {
