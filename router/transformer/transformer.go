@@ -170,9 +170,9 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 	var tempRespData []byte
 	url := getResponseTransformURL(destName)
 	for {
-		trans.transformerResponseTransformRequestTime.Start()
+		s := time.Now()
 		resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
-		trans.transformerResponseTransformRequestTime.End()
+		trans.transformerResponseTransformRequestTime.SendTiming(time.Since(s))
 		// retry in case of err
 		if err != nil {
 			trans.logger.Errorf("[Transformer Response Transform request failed] :: %+v", err)
@@ -206,10 +206,7 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 		if resp != nil {
 			//handling for 404
 			if resp.StatusCode == 404 {
-				trans.logger.Errorf("[Response transform doesnot exist for URL: %v]", url)
-				respData = tempRespData
-				respCode = 404
-				break
+				panic(fmt.Errorf("[Response transform doesnot exist for URL: URL: %v", url))
 			}
 			// handling for 5xx
 			if resp.StatusCode >= 500 && resp.StatusCode < 600 {

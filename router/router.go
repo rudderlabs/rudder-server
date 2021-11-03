@@ -597,18 +597,18 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.responseTransform, worker.rt.destName)
 							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 							defer cancel()
-							worker.routerDeliveryLatencyStat.Start()
+							rdl_time := time.Now()
 							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
 							// stat end
-							worker.routerDeliveryLatencyStat.End()
+							worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
 							if worker.rt.responseTransform {
 								dResponse := integrations.DeliveryResponseT{
 									Status: int64(respStatusCode),
 									Body:   respBodyTemp,
 								}
-								worker.routerResponseTransformStat.Start()
+								rtl_time := time.Now()
 								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(sendCtx, dResponse, worker.rt.destName)
-								worker.routerResponseTransformStat.End()
+								worker.routerResponseTransformStat.SendTiming(time.Since(rtl_time))
 							}
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
