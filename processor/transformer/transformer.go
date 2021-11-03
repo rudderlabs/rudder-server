@@ -75,7 +75,6 @@ type HandleT struct {
 	receivedStat              stats.RudderStats
 	failedStat                stats.RudderStats
 	transformTimerStat        stats.RudderStats
-	transformRequestTimerStat stats.RudderStats
 
 	logger logger.LoggerI
 
@@ -138,7 +137,6 @@ func (trans *HandleT) Setup() {
 	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
 	trans.failedStat = stats.NewStat("processor.transformer_failed", stats.CountType)
 	trans.transformTimerStat = stats.NewStat("processor.transformation_time", stats.TimerType)
-	trans.transformRequestTimerStat = stats.NewStat("processor.transformer_request_time", stats.TimerType)
 
 	trans.guardConcurrency = make(chan struct{}, maxConcurrency)
 	trans.perfStats = &misc.PerfStats{}
@@ -256,8 +254,8 @@ func (trans *HandleT) Validate(clientEvents []TransformerEventT,
 
 func (trans *HandleT) requestTime(srcID, destID, destName string, d time.Duration) {
 	stats.NewTaggedStat("processor.transformer_request_time", stats.TimerType, stats.Tags{
-		"src_id": srcID,
-		"dest_id": destID,
+		"src_id":    srcID,
+		"dest_id":   destID,
 		"dest_name": destName,
 	}).SendTiming(d)
 }
@@ -322,7 +320,7 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 			}
 		}
 
-		trans.requestTime(destName, time.Since(s))
+		trans.requestTime(destName, destID, srcID, time.Since(s))
 		break
 	}
 
