@@ -70,11 +70,11 @@ type TransformerEventT struct {
 
 //HandleT is the handle for this class
 type HandleT struct {
-	perfStats                 *misc.PerfStats
-	sentStat                  stats.RudderStats
-	receivedStat              stats.RudderStats
-	failedStat                stats.RudderStats
-	transformTimerStat        stats.RudderStats
+	perfStats          *misc.PerfStats
+	sentStat           stats.RudderStats
+	receivedStat       stats.RudderStats
+	failedStat         stats.RudderStats
+	transformTimerStat stats.RudderStats
 
 	logger logger.LoggerI
 
@@ -193,10 +193,21 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	s := time.Now()
 	defer trans.transformTimerStat.SendTiming(time.Since(s))
 
+	if len(clientEvents) == 0 {
+		return ResponseT{}
+	}
+
 	batchCount := len(clientEvents) / batchSize
 	if len(clientEvents)%batchSize != 0 {
 		batchCount += 1
 	}
+
+	stats.NewTaggedStat(
+		"processor.transformer_request_batch_count",
+		stats.TimerType,
+		statsTags(clientEvents[0]),
+	).Observe(float64(batchCount))
+
 	transformResponse := make([][]TransformerResponseT, batchCount)
 
 	wg := sync.WaitGroup{}
@@ -252,12 +263,16 @@ func (trans *HandleT) Validate(clientEvents []TransformerEventT,
 	return trans.Transform(clientEvents, url, batchSize)
 }
 
-func (trans *HandleT) requestTime(srcID, destID, destName string, d time.Duration) {
-	stats.NewTaggedStat("processor.transformer_request_time", stats.TimerType, stats.Tags{
-		"src_id":    srcID,
-		"dest_id":   destID,
-		"dest_name": destName,
-	}).SendTiming(d)
+func (trans *HandleT) requestTime(s stats.Tags, d time.Duration) {
+	stats.NewTaggedStat("processor.transformer_request_time", stats.TimerType, s).SendTiming(d)
+}
+
+func statsTags(event TransformerEventT) stats.Tags {
+	return stats.Tags{
+		"src_id":    event.Destination.DestinationDefinition.Name,
+		"dest_id":   event.Destination.DestinationDefinition.ID,
+		"dest_name": event.Metadata.SourceID,
+	}
 }
 
 func (trans *HandleT) request(url string, data []TransformerEventT) []TransformerResponseT {
@@ -277,9 +292,6 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 	}
 
 	// assume that the first event is representative
-	destName := data[0].Destination.DestinationDefinition.Name
-	destID := data[0].Destination.DestinationDefinition.ID
-	srcID := data[0].Metadata.SourceID
 
 	for {
 		s := time.Now()
@@ -293,7 +305,7 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 		}
 
 		if err != nil {
-			trans.requestTime(destName, destID, srcID, time.Since(s))
+			trans.requestTime(statsTags(data[0]), time.Since(s))
 			reqFailed = true
 			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
 			if retryCount > maxRetry {
@@ -320,7 +332,7 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 			}
 		}
 
-		trans.requestTime(destName, destID, srcID, time.Since(s))
+		trans.requestTime(statsTags(data[0]), time.Since(s))
 		break
 	}
 

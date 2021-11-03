@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	CountType = "count"
-	TimerType = "timer"
-	GaugeType = "gauge"
+	CountType     = "count"
+	TimerType     = "timer"
+	GaugeType     = "gauge"
 	HistogramType = "histogram"
 )
 
