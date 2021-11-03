@@ -66,7 +66,7 @@ type OAuthErrResHandler struct {
 	destAuthInfoMap                map[string]*AuthResponse
 	disableDestMap                 map[string]bool // Used to see if a destination is disabled or not
 	refreshActiveMap               map[string]bool // Used to check if a refresh request for an account is already InProgress
-	disableDestActiveMap           map[string]bool
+	disableDestActiveMap           map[string]bool // Used to check if a disable destination request for a destination is already InProgress
 }
 
 type Authorizer interface {
