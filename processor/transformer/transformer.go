@@ -193,9 +193,7 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	url string, batchSize int) ResponseT {
 
 	s := time.Now()
-	defer func() {
-		trans.transformTimerStat.SendTiming(time.Since(s))
-	}()
+	defer trans.transformTimerStat.SendTiming(time.Since(s))
 
 	batchCount := len(clientEvents) / batchSize
 	if len(clientEvents)%batchSize != 0 {
@@ -256,6 +254,14 @@ func (trans *HandleT) Validate(clientEvents []TransformerEventT,
 	return trans.Transform(clientEvents, url, batchSize)
 }
 
+func (trans *HandleT) requestTime(srcID, destID, destName string, d time.Duration) {
+	stats.NewTaggedStat("processor.transformer_request_time", stats.TimerType, stats.Tags{
+		"src_id": srcID,
+		"dest_id": destID,
+		"dest_name": destName,
+	}).SendTiming(d)
+}
+
 func (trans *HandleT) request(url string, data []TransformerEventT) []TransformerResponseT {
 	//Call remote transformation
 	rawJSON, err := json.Marshal(data)
@@ -267,6 +273,15 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 	var respData []byte
 	//We should rarely have error communicating with our JS
 	reqFailed := false
+
+	if len(data) == 0 {
+		return nil
+	}
+
+	// assume that the first event is representative
+	destName := data[0].Destination.DestinationDefinition.Name
+	destID := data[0].Destination.DestinationDefinition.ID
+	srcID := data[0].Metadata.SourceID
 
 	for {
 		s := time.Now()
@@ -280,7 +295,7 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 		}
 
 		if err != nil {
-			trans.transformRequestTimerStat.SendTiming(time.Since(s))
+			trans.requestTime(destName, destID, srcID, time.Since(s))
 			reqFailed = true
 			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
 			if retryCount > maxRetry {
@@ -307,7 +322,7 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 			}
 		}
 
-		trans.transformRequestTimerStat.SendTiming(time.Since(s))
+		trans.requestTime(destName, time.Since(s))
 		break
 	}
 
