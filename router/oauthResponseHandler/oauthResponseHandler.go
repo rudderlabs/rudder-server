@@ -66,6 +66,7 @@ type OAuthErrResHandler struct {
 	destAuthInfoMap                map[string]*AuthResponse
 	disableDestMap                 map[string]bool // Used to see if a destination is disabled or not
 	refreshActiveMap               map[string]bool // Used to check if a refresh request for an account is already InProgress
+	disableDestActiveMap           map[string]bool
 }
 
 type Authorizer interface {
@@ -88,17 +89,18 @@ func NewOAuthErrorHandler() *OAuthErrResHandler {
 }
 
 var (
-	configBEURL      string
-	pkgLogger        logger.LoggerI
-	loggerNm         string
-	workspaceToken   string
-	isMultiWorkspace bool
-	destAuthInfoMap  map[string]*AuthResponse // Stores information about account after refresh token/fetch token
-	accountLockMap   map[string]*sync.RWMutex // Lock used at account level to handle multiple refresh/fetch token requests
-	destLockMap      map[string]*sync.RWMutex // Lock used at destination level to handle multiple disable destination requests
-	lockMapMutex     *sync.RWMutex            // Lock used at destination level to handle multiple disable destination requests
-	disableDestMap   map[string]bool          // Stores information about destination if it has been disabled
-	refreshActiveMap map[string]bool
+	configBEURL          string
+	pkgLogger            logger.LoggerI
+	loggerNm             string
+	workspaceToken       string
+	isMultiWorkspace     bool
+	destAuthInfoMap      map[string]*AuthResponse // Stores information about account after refresh token/fetch token
+	accountLockMap       map[string]*sync.RWMutex // Lock used at account level to handle multiple refresh/fetch token requests
+	destLockMap          map[string]*sync.RWMutex // Lock used at destination level to handle multiple disable destination requests
+	lockMapMutex         *sync.RWMutex            // Lock used at destination level to handle multiple disable destination requests
+	disableDestMap       map[string]bool          // Stores information about destination if it has been disabled
+	refreshActiveMap     map[string]bool
+	disableDestActiveMap map[string]bool
 )
 
 const (
@@ -140,6 +142,7 @@ func Init() {
 	disableDestMap = make(map[string]bool)
 	lockMapMutex = &sync.RWMutex{}
 	refreshActiveMap = make(map[string]bool)
+	disableDestActiveMap = make(map[string]bool)
 }
 
 func (authErrHandler *OAuthErrResHandler) Setup() {
@@ -155,6 +158,7 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.destAuthInfoMap = destAuthInfoMap
 	authErrHandler.disableDestMap = disableDestMap
 	authErrHandler.refreshActiveMap = refreshActiveMap
+	authErrHandler.disableDestActiveMap = disableDestActiveMap
 }
 
 func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse) {
@@ -219,10 +223,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	authErrHandler.accountLockMap[refTokenParams.AccountId].Lock()
 	if isRefreshActive, isPresent := authErrHandler.refreshActiveMap[refTokenParams.AccountId]; isPresent && isRefreshActive {
 		authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
-		authStats.eventName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
-		authStats.errorMessage = ""
-		authStats.SendCountStat()
-		authErrHandler.logger.Infof("[%s request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.AccessToken)
+		authErrHandler.logger.Infof("[%s request] [Active Refresh Request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.AccessToken)
 		return http.StatusOK, refVal
 	}
 	// Refresh will start
@@ -372,23 +373,42 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	}
 
 	authErrHandler.destLockMap[destinationId].RLock()
-	if isDisabled, ok := authErrHandler.disableDestMap[destinationId]; ok && isDisabled {
+	isDisabled, ok := authErrHandler.disableDestMap[destinationId]
+	disabledRes := strconv.FormatBool(isDisabled)
+	if ok && isDisabled {
 		authErrHandler.destLockMap[destinationId].RUnlock()
 		disableDestStats.eventName = "disable_destination_success"
 		disableDestStats.errorMessage = ""
 		disableDestStats.SendCountStat()
-		authErrHandler.logger.Infof("[%s request] :: (Read) Disable Response received : %s\n", loggerNm, strconv.FormatBool(isDisabled))
-		return http.StatusOK, "Successfully disabled"
+		authErrHandler.logger.Infof("[%s request] :: (Read) Disable Response received : %s\n", loggerNm, disabledRes)
+		return http.StatusOK, fmt.Sprintf(`{response: {isDisabled: %v}`, disabledRes)
 	}
 	authErrHandler.destLockMap[destinationId].RUnlock()
+
+	authErrHandler.destLockMap[destinationId].Lock()
+	isDisableDestActive, isDisableDestReqPresent := authErrHandler.disableDestActiveMap[destinationId]
+	disableActiveReq := strconv.FormatBool(isDisableDestReqPresent && isDisableDestActive)
+	if isDisableDestReqPresent && isDisableDestActive {
+		authErrHandler.destLockMap[destinationId].Unlock()
+		authErrHandler.logger.Infof("[%s request] :: Disable Destination Active : %s\n", loggerNm, disableActiveReq)
+		return http.StatusOK, fmt.Sprintf(`{response: {isDisabled: %v, activeRequest: %v}`, disabledRes, disableActiveReq)
+	}
+
+	authErrHandler.disableDestActiveMap[destinationId] = true
+	authErrHandler.destLockMap[destinationId].Unlock()
+
+	defer func() {
+		authErrHandler.destLockMap[destinationId].Lock()
+		authErrHandler.disableDestActiveMap[destinationId] = false
+		authErrHandler.logger.Infof("[%s request]:: Disable request is inactive!", loggerNm)
+		authErrHandler.destLockMap[destinationId].Unlock()
+	}()
+
 	disableURL := fmt.Sprintf("%s/workspaces/%s/destinations/%s/disable", configBEURL, workspaceId, destinationId)
 	disableCpReq := &ControlPlaneRequestT{
 		Url:    disableURL,
 		Method: http.MethodDelete,
 	}
-
-	authErrHandler.destLockMap[destinationId].Lock()
-	defer authErrHandler.destLockMap[destinationId].Unlock()
 
 	disableDestStats.eventName = "disable_destination_request_sent"
 	disableDestStats.isCallToCpApi = true
@@ -418,7 +438,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	disableDestStats.eventName = "disable_destination_success"
 	disableDestStats.errorMessage = ""
 	disableDestStats.SendCountStat()
-	return statusCode, "Successfully disabled"
+	return statusCode, fmt.Sprintf(`{response: {isDisabled: %v, activeRequest: %v}`, !disableDestRes.Enabled, false)
 }
 
 func processResponse(resp *http.Response) (statusCode int, respBody string) {
