@@ -1373,7 +1373,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 
 	sqlStatement = fmt.Sprintf(`CREATE TABLE %s (
                                      id BIGSERIAL,
-                                     job_id BIGINT REFERENCES %s(job_id),
+                                     job_id BIGINT,
                                      job_state VARCHAR(64),
                                      attempt SMALLINT,
                                      exec_time TIMESTAMP,
@@ -1381,7 +1381,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
                                      error_code VARCHAR(32),
                                      error_response JSONB DEFAULT '{}'::JSONB,
 									 parameters JSONB DEFAULT '{}'::JSONB,
-									 PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable, newDS.JobTable)
+									 PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable)
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
