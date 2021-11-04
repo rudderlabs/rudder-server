@@ -49,6 +49,7 @@ import (
 var (
 	hold             bool = true
 	db               *sql.DB
+	rs_db            *sql.DB
 	redisClient      *redis.Client
 	DB_DSN           = "root@tcp(127.0.0.1:3306)/service"
 	httpPort         string
@@ -419,6 +420,77 @@ func run(m *testing.M) (int, error) {
 	}
 	fmt.Println("DB_DSN:", DB_DSN)
 	// ----------
+	// Set  timescale DB 
+	// pulls an image, creates a container based on it and runs it
+	database = "rs_postgres"
+	timescaleRes, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository:   "timescale/timescaledb",
+		Tag:          "latest-pg13",
+		ExposedPorts: []string{"5432"},
+		Env: []string{
+			"POSTGRES_USER=postgres",
+			"POSTGRES_DB=" + database,
+			"POSTGRES_PASSWORD=password",
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("Could not start resource transformer: %w", err)
+	}
+	defer func() {
+		if err := pool.Purge(timescaleRes); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	timesacaleDB_DSN := fmt.Sprintf("postgresql://postgres:password@host.docker.internal:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
+	fmt.Println("timesacaleDB_DSN",timesacaleDB_DSN)
+	timesacaleDB_DSN_1 := fmt.Sprintf("postgresql://postgres:password@localhost:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
+	if err := pool.Retry(func() error {
+		var err error
+		rs_db, err = sql.Open("postgres", timesacaleDB_DSN_1)
+		if err != nil {
+			return err
+		}
+		return rs_db.Ping()
+	}); err != nil {
+		return 0, fmt.Errorf("Could not connect to postgres %q: %w", timesacaleDB_DSN_1, err)
+	}
+	fmt.Println("timesacaleDB_DSN_1",timesacaleDB_DSN_1)
+	// __________________
+
+
+	
+    // ----------
+	// Set  reporting service
+	// pulls an image, creates a container based on it and runs it
+	reportingRes, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository:   "rudderstack/rudderstack-reporting",
+		Tag:          "dedup",
+		ExposedPorts: []string{"5000"},
+		Env: []string{
+			"DATABASE_URL="+timesacaleDB_DSN,
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("Could not start resource transformer: %w", err)
+	}
+	defer func() {
+		if err := pool.Purge(reportingRes); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+
+	reportingserviceURL := fmt.Sprintf("http://localhost:%s", reportingRes.GetPort("5000/tcp"))
+	fmt.Println("reportingserviceURL",reportingserviceURL)
+	// time.Sleep(300 * time.Second)
+	waitUntilReady(
+		context.Background(),
+		fmt.Sprintf("%s/health", reportingserviceURL),
+		time.Minute,
+		time.Second,
+	)
+
+	// __________________
+	// ----------
 	// Set Rudder Transformer
 	// pulls an image, creates a container based on it and runs it
 	transformerRes, err := pool.RunWithOptions(&dockertest.RunOptions{
@@ -554,10 +626,10 @@ func run(m *testing.M) (int, error) {
 			"kafkaPort":       strconv.Itoa(localhostPortInt),
 		},
 	)
-	defer func() {
-		err := os.Remove(workspaceConfigPath)
-		log.Println(err)
-	}()
+	// defer func() {
+	// 	err := os.Remove(workspaceConfigPath)
+	// 	log.Println(err)
+	// }()
 	log.Println("workspace config path:", workspaceConfigPath)
 	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 
@@ -590,18 +662,19 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("WAREHOUSE_URL", "http://localhost:8082")
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
 	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10s")
+	os.Setenv("RSERVER_REPORTING_URL", reportingserviceURL)
 
-	os.Setenv("MIGRATION_MODE", "export")
-	os.Setenv("MIGRATOR_BUCKET", "priyam-migrationmode-test")
-	os.Setenv("CLUSTER_VERSION", "1")
-	os.Setenv("MIGRATING_TO_CLUSTER_VERSION", "2")
-	os.Setenv("MIGRATING_FROM_CLUSTER_VERSION", "1")
-	os.Setenv("MIGRATING_TO_BACKEND_COUNT", "2")
-	os.Setenv("MIGRATOR_ACCESS_KEY_ID", "")
-	os.Setenv("MIGRATOR_SECRET_ACCESS_KEY", "")
-	os.Setenv("MIGRATOR_PORT", "8084")
-	os.Setenv("INSTANCE_ID_PATTERN", "hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>")
-	os.Setenv("URL_PATTERN", "http://hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>.rudderstack.com")
+	// os.Setenv("MIGRATION_MODE", "export")
+	// os.Setenv("MIGRATOR_BUCKET", "priyam-migrationmode-test")
+	// os.Setenv("CLUSTER_VERSION", "1")
+	// os.Setenv("MIGRATING_TO_CLUSTER_VERSION", "2")
+	// os.Setenv("MIGRATING_FROM_CLUSTER_VERSION", "1")
+	// os.Setenv("MIGRATING_TO_BACKEND_COUNT", "2")
+	// os.Setenv("MIGRATOR_ACCESS_KEY_ID", "")
+	// os.Setenv("MIGRATOR_SECRET_ACCESS_KEY", "")
+	// os.Setenv("MIGRATOR_PORT", "8084")
+	// os.Setenv("INSTANCE_ID_PATTERN", "hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>")
+	// os.Setenv("URL_PATTERN", "http://hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>.rudderstack.com")
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := make(chan struct{})
@@ -707,6 +780,16 @@ func TestPostgres(t *testing.T) {
 	eventSql := "select count(*) from dev_integration_test_1.identifies"
 	db.QueryRow(eventSql).Scan(&myEvent.count)
 	require.Equal(t, myEvent.count, "1")
+}
+
+// Verify Event in POSTGRES
+func TestReportingService(t *testing.T) {
+	var myEvent Event
+	require.Eventually(t, func() bool {
+		eventSql := "select count (*) from metrics"
+		rs_db.QueryRow(eventSql).Scan(&myEvent.count)
+		return myEvent.count == "11"
+	}, time.Minute, 10*time.Millisecond)
 }
 
 // Verify Event in Redis
