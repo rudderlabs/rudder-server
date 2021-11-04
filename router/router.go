@@ -601,6 +601,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
 							// stat end
 							worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
+							//response transform start
 							if worker.rt.responseTransform {
 								dResponse := integrations.DeliveryResponseT{
 									Status: int64(respStatusCode),
@@ -610,6 +611,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(sendCtx, dResponse, worker.rt.destName)
 								worker.routerResponseTransformStat.SendTiming(time.Since(rtl_time))
 							}
+							// response transform end
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
@@ -623,7 +625,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				ch <- struct{}{}
 
 				//Using reponse status code and body to get response code rudder router logic is based on.
-				if destinationResponseHandler != nil {
+				if !worker.rt.responseTransform && destinationResponseHandler != nil {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
 				}
 
