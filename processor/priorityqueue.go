@@ -11,7 +11,6 @@ import (
 //timestamp from that user
 
 type pqItemT struct {
-	userID string    //userID
 	lastTS time.Time //last timestamp
 	index  int       //index in priority queue
 }
