@@ -89,6 +89,8 @@ type HandleT struct {
 	statDBReadRequests             stats.RudderStats
 	statDBReadEvents               stats.RudderStats
 	statDBReadPayloadBytes         stats.RudderStats
+	statDBWriteStatusTime          stats.RudderStats
+	statDBWriteJobsTime            stats.RudderStats
 	statDBWriteRouterPayloadBytes  stats.RudderStats
 	statDBWriteBatchPayloadBytes   stats.RudderStats
 	statDBWriteRouterEvents        stats.RudderStats
@@ -301,6 +303,14 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statDBReadRequests = proc.stats.NewStat("processor.db_read_requests", stats.HistogramType)
 	proc.statDBReadEvents = proc.stats.NewStat("processor.db_read_events", stats.HistogramType)
 	proc.statDBReadPayloadBytes = proc.stats.NewStat("processor.db_read_payload_bytes", stats.HistogramType)
+
+	proc.statDBWriteStatusTime = proc.stats.NewTaggedStat("processor.db_write_time", stats.TimerType, stats.Tags{
+		"part": "status",
+	})
+	proc.statDBWriteJobsTime = proc.stats.NewTaggedStat("processor.db_write_time", stats.TimerType, stats.Tags{
+		"part": "jobs",
+	})
+
 	proc.statDBWriteRouterPayloadBytes = proc.stats.NewTaggedStat("processor.db_write_payload_bytes", stats.HistogramType, stats.Tags{
 		"module": "router",
 	})
@@ -1342,7 +1352,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 		recordEventDeliveryStatus(procErrorJobsByDestID)
 	}
+	writeJobsTime := time.Since(beforeStoreStatus)
 
+	txnStart := time.Now()
 	txn := proc.gatewayDB.BeginGlobalTransaction()
 	proc.gatewayDB.AcquireUpdateJobStatusLocks()
 	err := proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{GWCustomVal}, nil)
@@ -1367,7 +1379,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.statDBW.SendTiming(time.Since(beforeStoreStatus))
-
+	proc.statDBWriteJobsTime.SendTiming(writeJobsTime)
+	proc.statDBWriteStatusTime.SendTiming(time.Since(txnStart))
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
 
