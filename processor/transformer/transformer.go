@@ -204,7 +204,7 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 
 	stats.NewTaggedStat(
 		"processor.transformer_request_batch_count",
-		stats.TimerType,
+		stats.HistogramType,
 		statsTags(clientEvents[0]),
 	).Observe(float64(batchCount))
 
