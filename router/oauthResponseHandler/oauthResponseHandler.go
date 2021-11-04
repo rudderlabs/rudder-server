@@ -64,7 +64,6 @@ type OAuthErrResHandler struct {
 	accountLockMap                 map[string]*sync.RWMutex // This mutex map is used for refresh token locking
 	lockMapWMutex                  *sync.RWMutex            // This mutex is used to prevent concurrent writes in lockMap(s) mentioned in the struct
 	destAuthInfoMap                map[string]*AuthResponse
-	disableDestMap                 map[string]bool // Used to see if a destination is disabled or not
 	refreshActiveMap               map[string]bool // Used to check if a refresh request for an account is already InProgress
 	disableDestActiveMap           map[string]bool // Used to check if a disable destination request for a destination is already InProgress
 }
@@ -98,7 +97,6 @@ var (
 	accountLockMap       map[string]*sync.RWMutex // Lock used at account level to handle multiple refresh/fetch token requests
 	destLockMap          map[string]*sync.RWMutex // Lock used at destination level to handle multiple disable destination requests
 	lockMapMutex         *sync.RWMutex            // Lock used at destination level to handle multiple disable destination requests
-	disableDestMap       map[string]bool          // Stores information about destination if it has been disabled
 	refreshActiveMap     map[string]bool
 	disableDestActiveMap map[string]bool
 )
@@ -139,7 +137,6 @@ func Init() {
 	destAuthInfoMap = make(map[string]*AuthResponse)
 	accountLockMap = make(map[string]*sync.RWMutex)
 	destLockMap = make(map[string]*sync.RWMutex)
-	disableDestMap = make(map[string]bool)
 	lockMapMutex = &sync.RWMutex{}
 	refreshActiveMap = make(map[string]bool)
 	disableDestActiveMap = make(map[string]bool)
@@ -156,7 +153,6 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.accountLockMap = accountLockMap
 	authErrHandler.lockMapWMutex = lockMapMutex
 	authErrHandler.destAuthInfoMap = destAuthInfoMap
-	authErrHandler.disableDestMap = disableDestMap
 	authErrHandler.refreshActiveMap = refreshActiveMap
 	authErrHandler.disableDestActiveMap = disableDestActiveMap
 }
@@ -373,26 +369,13 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 		destDefName:     destination.DestinationDefinition.Name,
 	}
 
-	authErrHandler.destLockMap[destinationId].RLock()
-	isDisabled, ok := authErrHandler.disableDestMap[destinationId]
-	disabledRes := strconv.FormatBool(isDisabled)
-	if ok && isDisabled {
-		authErrHandler.destLockMap[destinationId].RUnlock()
-		disableDestStats.eventName = "disable_destination_success"
-		disableDestStats.errorMessage = ""
-		disableDestStats.SendCountStat()
-		authErrHandler.logger.Infof("[%s request] :: (Read) Disable Response received : %s\n", loggerNm, disabledRes)
-		return http.StatusOK, fmt.Sprintf(`{response: {isDisabled: %v}`, disabledRes)
-	}
-	authErrHandler.destLockMap[destinationId].RUnlock()
-
 	authErrHandler.destLockMap[destinationId].Lock()
 	isDisableDestActive, isDisableDestReqPresent := authErrHandler.disableDestActiveMap[destinationId]
 	disableActiveReq := strconv.FormatBool(isDisableDestReqPresent && isDisableDestActive)
 	if isDisableDestReqPresent && isDisableDestActive {
 		authErrHandler.destLockMap[destinationId].Unlock()
 		authErrHandler.logger.Infof("[%s request] :: Disable Destination Active : %s\n", loggerNm, disableActiveReq)
-		return http.StatusOK, fmt.Sprintf(`{response: {isDisabled: %v, activeRequest: %v}`, disabledRes, disableActiveReq)
+		return http.StatusOK, fmt.Sprintf(`{response: {isDisabled: %v, activeRequest: %v}`, false, disableActiveReq)
 	}
 
 	authErrHandler.disableDestActiveMap[destinationId] = true
@@ -417,6 +400,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 
 	cpiCallStartTime := time.Now()
 	statusCode, respBody = authErrHandler.cpApiCall(disableCpReq)
+	authErrHandler.logger.Debugf(`Response(stCd: %v) from CP for disable dest req: %v`, statusCode, respBody)
 	authErrHandler.oauthErrHandlerNetReqTimerStat.SendTiming(time.Since(cpiCallStartTime))
 
 	var disableDestRes *DisableDestinationResponse
@@ -432,7 +416,6 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 		disableDestStats.SendCountStat()
 		return http.StatusBadRequest, msg
 	}
-	authErrHandler.disableDestMap[destinationId] = !disableDestRes.Enabled
 
 	defer authErrHandler.oauthErrHandlerReqTimerStat.SendTiming(time.Since(authErrHandlerTimeStart))
 	authErrHandler.logger.Infof("[%s request] :: (Write) Disable Response received : %s\n", loggerNm, respBody)
