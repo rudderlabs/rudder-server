@@ -32,7 +32,7 @@ type OAuthStats struct {
 	workspaceId     string
 	errorMessage    string
 	rudderCategory  string
-	eventName       string
+	statName        string
 	isCallToCpApi   bool
 	authErrCategory string
 	destDefName     string
@@ -166,7 +166,7 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTo
 		id:              refTokenParams.AccountId,
 		workspaceId:     refTokenParams.WorkspaceId,
 		rudderCategory:  "destination",
-		eventName:       "",
+		statName:        "",
 		isCallToCpApi:   false,
 		authErrCategory: REFRESH_TOKEN,
 		errorMessage:    "",
@@ -180,7 +180,7 @@ func (authErrHandler *OAuthErrResHandler) FetchToken(fetchTokenParams *RefreshTo
 		id:              fetchTokenParams.AccountId,
 		workspaceId:     fetchTokenParams.WorkspaceId,
 		rudderCategory:  "destination",
-		eventName:       "",
+		statName:        "",
 		isCallToCpApi:   false,
 		authErrCategory: "",
 		errorMessage:    "",
@@ -211,7 +211,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 			refVal.Account.AccessToken != refTokenParams.AccessToken)
 		if isInvalidAccessTokenForRefresh {
 			authErrHandler.accountLockMap[refTokenParams.AccountId].RUnlock()
-			authStats.eventName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
+			authStats.statName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
 			authStats.errorMessage = ""
 			authStats.SendCountStat()
 			authErrHandler.logger.Infof("[%s request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.AccessToken)
@@ -278,7 +278,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	}
 	var accountSecret AccountSecret
 	// Stat for counting number of Refresh Token endpoint calls
-	authStats.eventName = fmt.Sprintf(`%v_request_sent`, refTokenParams.EventNamePrefix)
+	authStats.statName = fmt.Sprintf(`%v_request_sent`, refTokenParams.EventNamePrefix)
 	authStats.isCallToCpApi = true
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
@@ -292,7 +292,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 
 	// Empty Refresh token response
 	if !router_utils.IsNotEmptyString(response) {
-		authStats.eventName = fmt.Sprintf("%s_failure", refTokenParams.EventNamePrefix)
+		authStats.statName = fmt.Sprintf("%s_failure", refTokenParams.EventNamePrefix)
 		authStats.errorMessage = "Empty token"
 		authStats.SendCountStat()
 		// Setting empty accessToken value into in-memory auth info map(cache)
@@ -313,7 +313,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 		} else {
 			authErrHandler.destAuthInfoMap[refTokenParams.AccountId].Err = refErrMsg
 		}
-		authStats.eventName = fmt.Sprintf("%s_failure", refTokenParams.EventNamePrefix)
+		authStats.statName = fmt.Sprintf("%s_failure", refTokenParams.EventNamePrefix)
 		authStats.errorMessage = refErrMsg
 		authStats.SendCountStat()
 		return http.StatusInternalServerError
@@ -322,7 +322,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
 		Account: accountSecret,
 	}
-	authStats.eventName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
+	authStats.statName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
 	authErrHandler.logger.Infof("[%s request] :: (Write) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
@@ -342,7 +342,7 @@ func getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (mess
 
 // Send count type stats related to OAuth(Destination)
 func (refStats *OAuthStats) SendCountStat() {
-	stats.NewTaggedStat(refStats.eventName, stats.CountType, stats.Tags{
+	stats.NewTaggedStat(refStats.statName, stats.CountType, stats.Tags{
 		"accountId":       refStats.id,
 		"workspaceId":     refStats.workspaceId,
 		"rudderCategory":  refStats.rudderCategory,
@@ -366,7 +366,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 		id:              destinationId,
 		workspaceId:     workspaceId,
 		rudderCategory:  "destination",
-		eventName:       "",
+		statName:        "",
 		isCallToCpApi:   false,
 		authErrCategory: DISABLE_DEST,
 		errorMessage:    "",
@@ -411,7 +411,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 		Method: http.MethodDelete,
 	}
 
-	disableDestStats.eventName = "disable_destination_request_sent"
+	disableDestStats.statName = "disable_destination_request_sent"
 	disableDestStats.isCallToCpApi = true
 	disableDestStats.SendCountStat()
 
@@ -427,7 +427,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 		} else {
 			msg = "Could not disable the destination"
 		}
-		disableDestStats.eventName = "disable_destination_failure"
+		disableDestStats.statName = "disable_destination_failure"
 		disableDestStats.errorMessage = msg
 		disableDestStats.SendCountStat()
 		return http.StatusBadRequest, msg
@@ -436,7 +436,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 
 	defer authErrHandler.oauthErrHandlerReqTimerStat.SendTiming(time.Since(authErrHandlerTimeStart))
 	authErrHandler.logger.Infof("[%s request] :: (Write) Disable Response received : %s\n", loggerNm, respBody)
-	disableDestStats.eventName = "disable_destination_success"
+	disableDestStats.statName = "disable_destination_success"
 	disableDestStats.errorMessage = ""
 	disableDestStats.SendCountStat()
 	return statusCode, fmt.Sprintf(`{response: {isDisabled: %v, activeRequest: %v}`, !disableDestRes.Enabled, false)
