@@ -278,6 +278,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	}
 	var accountSecret AccountSecret
 	// Stat for counting number of Refresh Token endpoint calls
+	authStats.eventName = fmt.Sprintf(`%v_request_sent`, refTokenParams.EventNamePrefix)
 	authStats.isCallToCpApi = true
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
@@ -433,7 +434,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	}
 	authErrHandler.disableDestMap[destinationId] = !disableDestRes.Enabled
 
-	authErrHandler.oauthErrHandlerReqTimerStat.SendTiming(time.Since(authErrHandlerTimeStart))
+	defer authErrHandler.oauthErrHandlerReqTimerStat.SendTiming(time.Since(authErrHandlerTimeStart))
 	authErrHandler.logger.Infof("[%s request] :: (Write) Disable Response received : %s\n", loggerNm, respBody)
 	disableDestStats.eventName = "disable_destination_success"
 	disableDestStats.errorMessage = ""
