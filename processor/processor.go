@@ -970,7 +970,7 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
-func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
+func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) transformationMessage {
 	start := time.Now()
 	defer func() {
 		proc.processJobsTime.SendTiming(time.Since(start))
@@ -1234,7 +1234,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
 	}
 
-	proc.transformations(transformationMessage{
+	return transformationMessage{
 		groupedEvents,
 		trackingPlanEnabledMap,
 		eventsByMessageID,
@@ -1247,7 +1247,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		totalEvents,
 		start,
-	})
+	}
 }
 
 type transformationMessage struct {
@@ -1266,7 +1266,7 @@ type transformationMessage struct {
 	start       time.Time
 }
 
-func (proc *HandleT) transformations(in transformationMessage) {
+func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
 
@@ -1311,20 +1311,20 @@ func (proc *HandleT) transformations(in transformationMessage) {
 	destProcTime := time.Since(destProcStart)
 	defer proc.destProcessing.SendTiming(destProcTime)
 
-	proc.Store(storeMessage{
-		in.statusList, 
-		destJobs, 
-		batchDestJobs, 
-		
-		procErrorJobsByDestID, 
-		in.procErrorJobs, 
-		
-		in.reportMetrics, 
-		in.sourceDupStats, 
-		in.uniqueMessageIds, 
-		in.totalEvents, 
+	return storeMessage{
+		in.statusList,
+		destJobs,
+		batchDestJobs,
+
+		procErrorJobsByDestID,
+		in.procErrorJobs,
+
+		in.reportMetrics,
+		in.sourceDupStats,
+		in.uniqueMessageIds,
+		in.totalEvents,
 		in.start,
-	})
+	}
 }
 
 type storeMessage struct {
@@ -1790,9 +1790,7 @@ func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *t
 	}
 }
 
-// handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
-// Returns true if any job is handled, otherwise returns false.
-func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
+func (proc *HandleT) getJobs(nextJobID int64) ([]*jobsdb.JobT, int64) {
 	s := time.Now()
 
 	proc.logger.Debugf("Processor DB Read size: %d", dbReadBatchSize)
@@ -1816,7 +1814,7 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 	if len(unprocessedList) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
 		proc.pStatsDBR.Rate(0, time.Since(s))
-		return false, nextJobID
+		return nil, nextJobID
 	}
 	proc.eventSchemasTime.Start()
 	if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
@@ -1831,13 +1829,27 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 	proc.pStatsDBR.Rate(len(unprocessedList), time.Since(s))
 	proc.statGatewayDBR.Count(len(unprocessedList))
 
-	proc.pStatsDBR.Print()
+	return unprocessedList, unprocessedList[len(unprocessedList)-1].JobID
+}
 
-	proc.processJobsForDest(unprocessedList, nil)
+// handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
+// Returns true if any job is handled, otherwise returns false.
+func (proc *HandleT) handlePendingGatewayJobs(prevJobID int64) (bool, int64) {
+	unprocessedList, nextID := proc.getJobs(prevJobID)
 
-	proc.statLoopTime.SendTiming(time.Since(s))
+	proc.Store(
+		proc.transformations(
+			proc.processJobsForDest(unprocessedList, nil),
+		),
+	)
+	// TODO: proc.statLoopTime.SendTiming(time.Since(s))
 
-	return true, unprocessedList[len(unprocessedList)-1].JobID
+	hasJobs := false
+	if len(unprocessedList) > 0 {
+		hasJobs = true
+	}
+
+	return hasJobs, nextID
 }
 
 func (proc *HandleT) mainLoop(ctx context.Context) {
