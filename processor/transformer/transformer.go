@@ -274,9 +274,14 @@ func (trans *HandleT) requestTime(s stats.Tags, d time.Duration) {
 }
 
 func statsTags(event TransformerEventT) stats.Tags {
+
+	dName := event.Destination.Name
+	if len(dName) > 10 {
+		dName = dName[:5] + "..." + dName[len(dName)-5:]
+	}
 	return stats.Tags{
 		"dest_type": event.Destination.DestinationDefinition.Name,
-		"dest_name": event.Destination.Name,
+		"dest_name": dName,
 		"dest_id":   event.Destination.ID,
 		"src_id":    event.Metadata.SourceID,
 	}
