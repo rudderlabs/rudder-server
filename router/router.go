@@ -2046,7 +2046,11 @@ func (rt *HandleT) SendOAuthDestEvent(ctx context.Context, val integrations.Post
 		if destError := json.Unmarshal([]byte(trRespBody), &destErrOutput); destError != nil {
 			// Errors like OOM kills of transformer, transformer down etc,.
 			// If destResBody comes out with a plain string, then this will occur
-			return http.StatusInternalServerError, fmt.Sprintf(`Error: %v, trRespBody: %v, destResBody: %v`, destError, trRespBody, destResBody)
+			return http.StatusInternalServerError, fmt.Sprintf(`{
+				Error: %v, 
+				(trRespStCd, trRespBody): (%v, %v),
+				(destRespStCd, destResBody): (%v, %v)
+			}`, destError, trRespStatusCode, trRespBody, destRespStCd, destResBody)
 		}
 		workspaceId := destinationJob.JobMetadataArray[0].WorkspaceId
 		var errCatStatusCode int
