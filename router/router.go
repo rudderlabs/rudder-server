@@ -625,6 +625,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				ch <- struct{}{}
 
 				//Using reponse status code and body to get response code rudder router logic is based on.
+				// Works when response transform in disabled
 				if !worker.rt.responseTransform && destinationResponseHandler != nil {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
 				}
