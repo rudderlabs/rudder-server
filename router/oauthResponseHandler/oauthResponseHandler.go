@@ -222,8 +222,15 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 		if refVal != nil {
 			token := refVal.Account.AccessToken
 			authErrHandler.logger.Infof("[%s request] [Active Refresh Request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, token)
+			return http.StatusOK, refVal
 		}
-		return http.StatusOK, refVal
+		// Empty Response(valid while many GetToken calls are happening)
+		return http.StatusOK, &AuthResponse{
+			Account: AccountSecret{
+				AccessToken: "",
+			},
+			Err: "",
+		}
 	}
 	// Refresh will start
 	authErrHandler.refreshActiveMap[refTokenParams.AccountId] = true
