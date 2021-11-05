@@ -995,9 +995,8 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 	start := time.Now()
-	defer func() {
-		proc.processJobsTime.SendTiming(time.Since(start))
-	}()
+	defer proc.processJobsTime.Since(start)
+	
 
 	proc.statNumRequests.Count(len(jobList))
 
@@ -1374,9 +1373,9 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
-	proc.statDBW.SendTiming(time.Since(beforeStoreStatus))
+	proc.statDBW.Since(beforeStoreStatus)
 	proc.statDBWriteJobsTime.SendTiming(writeJobsTime)
-	proc.statDBWriteStatusTime.SendTiming(time.Since(txnStart))
+	proc.statDBWriteStatusTime.Since(txnStart)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
 
@@ -1408,10 +1407,7 @@ func (proc *HandleT) processPipeline(
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) processPipelineOutput {
-	s := time.Now()
-	defer func() {
-		proc.pipeProcessing.SendTiming(time.Since(s))
-	}()
+	defer proc.pipeProcessing.Since(time.Now())
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	destination := eventList[0].Destination
@@ -1546,7 +1542,7 @@ func (proc *HandleT) processPipeline(
 	} else {
 		s := time.Now()
 		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize)
-		destTransformationStat.transformTime.SendTiming(time.Since(s))
+		destTransformationStat.transformTime.Since(s)
 		transformAt = "processor"
 	}
 
@@ -1810,7 +1806,7 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 
 	proc.processJobsForDest(unprocessedList, nil)
 
-	proc.statLoopTime.SendTiming(time.Since(s))
+	proc.statLoopTime.Since(s)
 
 	return true, unprocessedList[len(unprocessedList)-1].JobID
 }

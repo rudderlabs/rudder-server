@@ -190,12 +190,18 @@ func GetVersion() (transformerBuildVersion string) {
 func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	url string, batchSize int) ResponseT {
 
-	s := time.Now()
-	defer trans.transformTimerStat.SendTiming(time.Since(s))
-
 	if len(clientEvents) == 0 {
 		return ResponseT{}
 	}
+
+	sTags := statsTags(clientEvents[0])
+
+	s := time.Now()
+	defer stats.NewTaggedStat(
+		"processor.transformation_time",
+		stats.TimerType,
+		sTags,
+	).Since(s)
 
 	batchCount := len(clientEvents) / batchSize
 	if len(clientEvents)%batchSize != 0 {
@@ -205,7 +211,7 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	stats.NewTaggedStat(
 		"processor.transformer_request_batch_count",
 		stats.HistogramType,
-		statsTags(clientEvents[0]),
+		sTags,
 	).Observe(float64(batchCount))
 
 	transformResponse := make([][]TransformerResponseT, batchCount)
@@ -270,7 +276,7 @@ func (trans *HandleT) requestTime(s stats.Tags, d time.Duration) {
 func statsTags(event TransformerEventT) stats.Tags {
 	return stats.Tags{
 		"dest_type": event.Destination.DestinationDefinition.Name,
-		"dest_name":   event.Destination.Name,
+		"dest_name": event.Destination.Name,
 		"dest_id":   event.Destination.ID,
 		"src_id":    event.Metadata.SourceID,
 	}
