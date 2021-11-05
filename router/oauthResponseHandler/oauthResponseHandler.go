@@ -400,7 +400,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 
 	cpiCallStartTime := time.Now()
 	statusCode, respBody = authErrHandler.cpApiCall(disableCpReq)
-	authErrHandler.logger.Debugf(`Response(stCd: %v) from CP for disable dest req: %v`, statusCode, respBody)
+	authErrHandler.logger.Debugf(`Response from CP(stCd: %v) for disable dest req: %v`, statusCode, respBody)
 	authErrHandler.oauthErrHandlerNetReqTimerStat.SendTiming(time.Since(cpiCallStartTime))
 
 	var disableDestRes *DisableDestinationResponse
