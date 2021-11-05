@@ -1173,9 +1173,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//TRACKING PLAN - START
 	//Placing the trackingPlan validation filters here.
 	//Else further down events are duplicated by destId, so multiple validation takes places for same event
-	proc.validateEventsTime.Start()
+
+	validateEventsStart := time.Now()
 	validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID)
-	proc.validateEventsTime.End()
+	validateEventsTime := time.Since(validateEventsStart)
+	defer proc.validateEventsTime.SendTiming(validateEventsTime)
 
 	// Appending validatedErrorJobs to procErrorJobs
 	procErrorJobs = append(procErrorJobs, validatedErrorJobs...)
@@ -1277,6 +1279,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	}
 
 	destProcTime := time.Since(destProcStart)
+	defer proc.destProcessing.SendTiming(destProcTime)
 
 	if len(statusList) != len(jobList) {
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
@@ -1346,8 +1349,6 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
-
-	proc.destProcessing.SendTiming(destProcTime)
 
 	proc.pStatsDBW.Rate(len(statusList), time.Since(beforeStoreStatus))
 	proc.pStatsJobs.Rate(totalEvents, time.Since(start))
@@ -1756,7 +1757,7 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 		proc.pStatsDBR.Rate(0, time.Since(s))
 		return false, nextJobID
 	}
-	
+
 	eventSchamasStart := time.Now()
 	if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
 		for _, unprocessedJob := range unprocessedList {
