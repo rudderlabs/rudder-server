@@ -978,13 +978,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	proc.statNumRequests.Count(len(jobList))
 
-	var destJobs []*jobsdb.JobT
-	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
 	var groupedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
 	var eventsByMessageID = make(map[string]types.SingularEventWithReceivedAt)
-	var procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 	var procErrorJobs []*jobsdb.JobT
 
 	if !(parsedEventList == nil || len(jobList) == len(parsedEventList)) {
@@ -1165,7 +1162,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//TRACKING PLAN - START
 	//Placing the trackingPlan validation filters here.
 	//Else further down events are duplicated by destId, so multiple validation takes places for same event
-	
+
 	validateEventsStart := time.Now()
 	validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID)
 	validateEventsTime := time.Since(validateEventsStart)
@@ -1233,26 +1230,67 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		}
 	}
 
+	if len(statusList) != len(jobList) {
+		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
+	}
+
+	proc.transformations(transformationMessage{
+		groupedEvents,
+		trackingPlanEnabledMap,
+		eventsByMessageID,
+		uniqueMessageIdsBySrcDestKey,
+		reportMetrics,
+		statusList,
+		procErrorJobs,
+		sourceDupStats,
+		uniqueMessageIds,
+
+		totalEvents,
+		start,
+	})
+}
+
+type transformationMessage struct {
+	groupedEvents map[string][]transformer.TransformerEventT
+
+	trackingPlanEnabledMap       map[SourceIDT]bool
+	eventsByMessageID            map[string]types.SingularEventWithReceivedAt
+	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}
+	reportMetrics                []*types.PUReportedMetric
+	statusList                   []*jobsdb.JobStatusT
+	procErrorJobs                []*jobsdb.JobT
+	sourceDupStats               map[string]int
+	uniqueMessageIds             map[string]struct{}
+
+	totalEvents int
+	start       time.Time
+}
+
+func (proc *HandleT) transformations(in transformationMessage) {
 	//Now do the actual transformation. We call it in batches, once
 	//for each destination ID
+
+	var procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
+	var batchDestJobs []*jobsdb.JobT
+	var destJobs []*jobsdb.JobT
 
 	destProcStart := time.Now()
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
 
 	chOut := make(chan processPipelineOutput, 1)
 	wg := sync.WaitGroup{}
-	wg.Add(len(groupedEvents))
+	wg.Add(len(in.groupedEvents))
 
-	for srcAndDestKey, eventList := range groupedEvents {
+	for srcAndDestKey, eventList := range in.groupedEvents {
 		srcAndDestKey, eventList := srcAndDestKey, eventList
 		go func() {
 			defer wg.Done()
 			chOut <- proc.processPipeline(
 				srcAndDestKey, eventList,
 
-				trackingPlanEnabledMap,
-				eventsByMessageID,
-				uniqueMessageIdsBySrcDestKey,
+				in.trackingPlanEnabledMap,
+				in.eventsByMessageID,
+				in.uniqueMessageIdsBySrcDestKey,
 			)
 		}()
 	}
@@ -1264,7 +1302,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	for o := range chOut {
 		batchDestJobs = append(batchDestJobs, o.batchDestJobs...)
 		destJobs = append(destJobs, o.destJobs...)
-		reportMetrics = append(reportMetrics, o.reportMetrics...)
+		in.reportMetrics = append(in.reportMetrics, o.reportMetrics...)
 		for k, v := range o.errorsPerDestID {
 			procErrorJobsByDestID[k] = append(procErrorJobsByDestID[k], v...)
 		}
@@ -1273,9 +1311,40 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	destProcTime := time.Since(destProcStart)
 	defer proc.destProcessing.SendTiming(destProcTime)
 
-	if len(statusList) != len(jobList) {
-		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
-	}
+	proc.Store(storeMessage{
+		in.statusList, 
+		destJobs, 
+		batchDestJobs, 
+		
+		procErrorJobsByDestID, 
+		in.procErrorJobs, 
+		
+		in.reportMetrics, 
+		in.sourceDupStats, 
+		in.uniqueMessageIds, 
+		in.totalEvents, 
+		in.start,
+	})
+}
+
+type storeMessage struct {
+	statusList    []*jobsdb.JobStatusT
+	destJobs      []*jobsdb.JobT
+	batchDestJobs []*jobsdb.JobT
+
+	procErrorJobsByDestID map[string][]*jobsdb.JobT
+	procErrorJobs         []*jobsdb.JobT
+
+	reportMetrics    []*types.PUReportedMetric
+	sourceDupStats   map[string]int
+	uniqueMessageIds map[string]struct{}
+
+	totalEvents int
+	start       time.Time
+}
+
+func (proc *HandleT) Store(in storeMessage) {
+	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
@@ -1300,18 +1369,18 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 	}
 
-	for _, jobs := range procErrorJobsByDestID {
-		procErrorJobs = append(procErrorJobs, jobs...)
+	for _, jobs := range in.procErrorJobsByDestID {
+		in.procErrorJobs = append(in.procErrorJobs, jobs...)
 	}
-	if len(procErrorJobs) > 0 {
-		proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(procErrorJobs))
-		err := proc.errorDB.Store(procErrorJobs)
+	if len(in.procErrorJobs) > 0 {
+		proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
+		err := proc.errorDB.Store(in.procErrorJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
-			proc.logger.Errorf("procErrorJobs: %v", procErrorJobs)
+			proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
 			panic(err)
 		}
-		recordEventDeliveryStatus(procErrorJobsByDestID)
+		recordEventDeliveryStatus(in.procErrorJobsByDestID)
 	}
 
 	txn := proc.gatewayDB.BeginGlobalTransaction()
@@ -1322,14 +1391,14 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 		panic(err)
 	}
 	if proc.isReportingEnabled() {
-		proc.reporting.Report(reportMetrics, txn)
+		proc.reporting.Report(in.reportMetrics, txn)
 	}
 
 	if enableDedup {
-		proc.updateSourceStats(sourceDupStats, "processor.write_key_duplicate_events")
-		if len(uniqueMessageIds) > 0 {
+		proc.updateSourceStats(in.sourceDupStats, "processor.write_key_duplicate_events")
+		if len(in.uniqueMessageIds) > 0 {
 			var dedupedMessageIdsAcrossJobs []string
-			for k := range uniqueMessageIds {
+			for k := range in.uniqueMessageIds {
 				dedupedMessageIdsAcrossJobs = append(dedupedMessageIdsAcrossJobs, k)
 			}
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
@@ -1342,14 +1411,13 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
 
-
 	proc.pStatsDBW.Rate(len(statusList), time.Since(beforeStoreStatus))
-	proc.pStatsJobs.Rate(totalEvents, time.Since(start))
+	proc.pStatsJobs.Rate(in.totalEvents, time.Since(in.start))
 
 	proc.statGatewayDBW.Count(len(statusList))
 	proc.statRouterDBW.Count(len(destJobs))
 	proc.statBatchRouterDBW.Count(len(batchDestJobs))
-	proc.statProcErrDBW.Count(len(procErrorJobs))
+	proc.statProcErrDBW.Count(len(in.procErrorJobs))
 
 	proc.pStatsJobs.Print()
 	proc.pStatsDBW.Print()
