@@ -219,7 +219,11 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	authErrHandler.accountLockMap[refTokenParams.AccountId].Lock()
 	if isRefreshActive, isPresent := authErrHandler.refreshActiveMap[refTokenParams.AccountId]; isPresent && isRefreshActive {
 		authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
-		authErrHandler.logger.Infof("[%s request] [Active Refresh Request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.AccessToken)
+		token := refTokenParams.AccessToken
+		if refVal != nil {
+			token = refVal.Account.AccessToken
+		}
+		authErrHandler.logger.Infof("[%s request] [Active Refresh Request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, token)
 		return http.StatusOK, refVal
 	}
 	// Refresh will start
