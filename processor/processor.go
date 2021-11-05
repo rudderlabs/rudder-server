@@ -304,12 +304,8 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statDBReadEvents = proc.stats.NewStat("processor.db_read_events", stats.HistogramType)
 	proc.statDBReadPayloadBytes = proc.stats.NewStat("processor.db_read_payload_bytes", stats.HistogramType)
 
-	proc.statDBWriteStatusTime = proc.stats.NewTaggedStat("processor.db_write_time", stats.TimerType, stats.Tags{
-		"part": "status",
-	})
-	proc.statDBWriteJobsTime = proc.stats.NewTaggedStat("processor.db_write_time", stats.TimerType, stats.Tags{
-		"part": "jobs",
-	})
+	proc.statDBWriteJobsTime = proc.stats.NewStat("processor.db_write_jobs_time", stats.TimerType)
+	proc.statDBWriteStatusTime = proc.stats.NewStat("processor.db_write_status_time", stats.TimerType)
 
 	proc.statDBWriteRouterPayloadBytes = proc.stats.NewTaggedStat("processor.db_write_payload_bytes", stats.HistogramType, stats.Tags{
 		"module": "router",
