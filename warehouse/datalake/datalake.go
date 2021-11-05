@@ -1,4 +1,4 @@
-package s3datalake
+package datalake
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	schemarepository "github.com/rudderlabs/rudder-server/warehouse/s3-datalake/schema-repository"
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/datalake/schema-repository"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -15,7 +15,7 @@ var (
 )
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("s3-datalake")
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("datalake")
 }
 
 type HandleT struct {
@@ -91,11 +91,11 @@ func (wh *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error) {
 }
 
 func (wh *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) error {
-	return fmt.Errorf("s3_datalake err :not implemented")
+	return fmt.Errorf("datalake err :not implemented")
 }
 
 func (wh *HandleT) DownloadIdentityRules(*misc.GZipWriter) error {
-	return fmt.Errorf("s3_datalake err :not implemented")
+	return fmt.Errorf("datalake err :not implemented")
 }
 
 func (wh *HandleT) GetTotalCountInTable(tableName string) (int64, error) {
@@ -103,5 +103,5 @@ func (wh *HandleT) GetTotalCountInTable(tableName string) (int64, error) {
 }
 
 func (wh *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
-	return client.Client{}, fmt.Errorf("s3_datalake err :not implemented")
+	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }

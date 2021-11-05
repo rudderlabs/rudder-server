@@ -141,7 +141,7 @@ func Init4() {
 func loadConfig() {
 	//Port where WH is running
 	config.RegisterIntConfigVariable(8082, &webPort, false, 1, "Warehouse.webPort")
-	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCP_DATALAKE", "AZURE_DATALAKE"}
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
@@ -1062,6 +1062,8 @@ func getLoadFileFormat(whType string) string {
 		return "json.gz"
 	case "S3_DATALAKE":
 		return "parquet"
+	case "GCP_DATALAKE":
+		return "json.gz"
 	case "RS":
 		if useParquetLoadFilesRS {
 			return "parquet"
@@ -1750,6 +1752,8 @@ func getLoadFileType(wh string) string {
 		return warehouseutils.LOAD_FILE_TYPE_CSV
 	case "S3_DATALAKE":
 		return warehouseutils.LOAD_FILE_TYPE_PARQUET
+	case "GCP_DATALAKE":
+		return warehouseutils.LOAD_FILE_TYPE_JSON
 	default:
 		return warehouseutils.LOAD_FILE_TYPE_CSV
 	}
