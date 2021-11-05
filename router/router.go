@@ -2067,11 +2067,11 @@ func (rt *HandleT) SendOAuthDestEvent(ctx context.Context, val integrations.Post
 				// Error while disabling a destination
 				// High-Priority notification to rudderstack needs to be sent
 				disableDestStatTags["success"] = "false"
-				stats.NewTaggedStat("oauth.disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
+				stats.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
 				return http.StatusBadRequest, errCatResponse
 			}
 			// High-Priority notification to customer(&rudderstack) needs to be sent
-			stats.NewTaggedStat("oauth.disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
+			stats.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
 			// Abort the jobs as the destination is disable
 			return http.StatusBadRequest, destResBody
 		case oauth.REFRESH_TOKEN:
