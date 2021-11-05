@@ -418,8 +418,7 @@ func run(m *testing.M) (int, error) {
 	}); err != nil {
 		return 0, fmt.Errorf("Could not connect to postgres %q: %w", DB_DSN, err)
 	}
-	fmt.Println("DB_DSN:", DB_DSN)
-	// ----------
+	log.Println("DB_DSN:", DB_DSN)
 	// Set  timescale DB 
 	// pulls an image, creates a container based on it and runs it
 	database = "rs_postgres"
@@ -441,25 +440,21 @@ func run(m *testing.M) (int, error) {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	timesacaleDB_DSN := fmt.Sprintf("postgresql://postgres:password@host.docker.internal:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
-	fmt.Println("timesacaleDB_DSN",timesacaleDB_DSN)
-	timesacaleDB_DSN_1 := fmt.Sprintf("postgresql://postgres:password@localhost:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
+	timescaleDB_DSN := fmt.Sprintf("postgresql://postgres:password@host.docker.internal:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
+	fmt.Println("timesacaleDB_DSN",timescaleDB_DSN)
+	timescaleDB_DSN_1 := fmt.Sprintf("postgresql://postgres:password@localhost:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
 	if err := pool.Retry(func() error {
 		var err error
-		rs_db, err = sql.Open("postgres", timesacaleDB_DSN_1)
+		rs_db, err = sql.Open("postgres", timescaleDB_DSN_1)
 		if err != nil {
 			return err
 		}
 		return rs_db.Ping()
 	}); err != nil {
-		return 0, fmt.Errorf("Could not connect to postgres %q: %w", timesacaleDB_DSN_1, err)
+		return 0, fmt.Errorf("Could not connect to postgres %q: %w", timescaleDB_DSN_1, err)
 	}
-	fmt.Println("timesacaleDB_DSN_1",timesacaleDB_DSN_1)
-	// __________________
+	log.Println("timescaleDB_DSN_1",timescaleDB_DSN_1)
 
-
-	
-    // ----------
 	// Set  reporting service
 	// pulls an image, creates a container based on it and runs it
 	reportingRes, err := pool.RunWithOptions(&dockertest.RunOptions{
@@ -467,7 +462,7 @@ func run(m *testing.M) (int, error) {
 		Tag:          "dedup",
 		ExposedPorts: []string{"5000"},
 		Env: []string{
-			"DATABASE_URL="+timesacaleDB_DSN,
+			"DATABASE_URL="+timescaleDB_DSN,
 		},
 	})
 	if err != nil {
@@ -481,7 +476,6 @@ func run(m *testing.M) (int, error) {
 
 	reportingserviceURL := fmt.Sprintf("http://localhost:%s", reportingRes.GetPort("5000/tcp"))
 	fmt.Println("reportingserviceURL",reportingserviceURL)
-	// time.Sleep(300 * time.Second)
 	waitUntilReady(
 		context.Background(),
 		fmt.Sprintf("%s/health", reportingserviceURL),
@@ -489,8 +483,6 @@ func run(m *testing.M) (int, error) {
 		time.Second,
 	)
 
-	// __________________
-	// ----------
 	// Set Rudder Transformer
 	// pulls an image, creates a container based on it and runs it
 	transformerRes, err := pool.RunWithOptions(&dockertest.RunOptions{
@@ -626,10 +618,10 @@ func run(m *testing.M) (int, error) {
 			"kafkaPort":       strconv.Itoa(localhostPortInt),
 		},
 	)
-	// defer func() {
-	// 	err := os.Remove(workspaceConfigPath)
-	// 	log.Println(err)
-	// }()
+	defer func() {
+		err := os.Remove(workspaceConfigPath)
+		log.Println(err)
+	}()
 	log.Println("workspace config path:", workspaceConfigPath)
 	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
 
