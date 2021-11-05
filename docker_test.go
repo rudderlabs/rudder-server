@@ -769,7 +769,7 @@ func TestReportingService(t *testing.T) {
 		eventSql := "select count (*) from metrics"
 		rs_db.QueryRow(eventSql).Scan(&myEvent.count)
 		return myEvent.count == "11"
-	}, 2*time.Minute, 10*time.Millisecond)
+	}, 3*time.Minute, 10*time.Millisecond)
 }
 
 // Verify Event in Redis
