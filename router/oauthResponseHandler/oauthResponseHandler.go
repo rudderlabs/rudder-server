@@ -55,17 +55,15 @@ type RefreshTokenParams struct {
 
 // OAuthErrResHandler is the handle for this class
 type OAuthErrResHandler struct {
-	tr                             *http.Transport
-	client                         *http.Client
-	oauthErrHandlerReqTimerStat    stats.RudderStats
-	oauthErrHandlerNetReqTimerStat stats.RudderStats
-	logger                         logger.LoggerI
-	destLockMap                    map[string]*sync.RWMutex // This mutex map is used for disable destination locking
-	accountLockMap                 map[string]*sync.RWMutex // This mutex map is used for refresh token locking
-	lockMapWMutex                  *sync.RWMutex            // This mutex is used to prevent concurrent writes in lockMap(s) mentioned in the struct
-	destAuthInfoMap                map[string]*AuthResponse
-	refreshActiveMap               map[string]bool // Used to check if a refresh request for an account is already InProgress
-	disableDestActiveMap           map[string]bool // Used to check if a disable destination request for a destination is already InProgress
+	tr                   *http.Transport
+	client               *http.Client
+	logger               logger.LoggerI
+	destLockMap          map[string]*sync.RWMutex // This mutex map is used for disable destination locking
+	accountLockMap       map[string]*sync.RWMutex // This mutex map is used for refresh token locking
+	lockMapWMutex        *sync.RWMutex            // This mutex is used to prevent concurrent writes in lockMap(s) mentioned in the struct
+	destAuthInfoMap      map[string]*AuthResponse
+	refreshActiveMap     map[string]bool // Used to check if a refresh request for an account is already InProgress
+	disableDestActiveMap map[string]bool // Used to check if a disable destination request for a destination is already InProgress
 }
 
 type Authorizer interface {
@@ -80,6 +78,7 @@ type ControlPlaneRequestT struct {
 	ContentType string
 	Url         string
 	Method      string
+	destName    string
 }
 
 // This function creates a new OauthErrorResponseHandler
@@ -147,8 +146,6 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.tr = &http.Transport{}
 	//This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
 	authErrHandler.client = &http.Client{}
-	authErrHandler.oauthErrHandlerReqTimerStat = stats.NewStat("router.processor.oauthErrorHandler_request_time", stats.TimerType)
-	authErrHandler.oauthErrHandlerNetReqTimerStat = stats.NewStat("router.oauthErrorHandler_network_request_time", stats.TimerType)
 	authErrHandler.destLockMap = destLockMap
 	authErrHandler.accountLockMap = accountLockMap
 	authErrHandler.lockMapWMutex = lockMapMutex
@@ -188,6 +185,12 @@ func (authErrHandler *OAuthErrResHandler) FetchToken(fetchTokenParams *RefreshTo
 
 func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, authStats *OAuthStats) (int, *AuthResponse) {
 
+	startTime := time.Now()
+	defer func() {
+		authStats.statName = fmt.Sprintf("%v_total_req_latency", refTokenParams.EventNamePrefix)
+		authStats.isCallToCpApi = false
+		authStats.SendTimerStats(startTime)
+	}()
 	resMgrErr := authErrHandler.NewMutex(refTokenParams.AccountId, REFRESH_TOKEN)
 	if resMgrErr != nil {
 		panic(resMgrErr)
@@ -207,10 +210,10 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 			refVal.Account.AccessToken != refTokenParams.AccessToken)
 		if isInvalidAccessTokenForRefresh {
 			authErrHandler.accountLockMap[refTokenParams.AccountId].RUnlock()
-			authStats.statName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
-			authStats.errorMessage = ""
-			authStats.SendCountStat()
-			authErrHandler.logger.Infof("[%s request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.AccessToken)
+			// authStats.statName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
+			// authStats.errorMessage = ""
+			// authStats.SendCountStat()
+			authErrHandler.logger.Debugf("[%s request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.AccessToken)
 			return http.StatusOK, refVal
 		}
 	}
@@ -221,7 +224,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 		authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
 		if refVal != nil {
 			token := refVal.Account.AccessToken
-			authErrHandler.logger.Infof("[%s request] [Active Refresh Request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, token)
+			authErrHandler.logger.Debugf("[%s request] [Active Refresh Request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, token)
 			return http.StatusOK, refVal
 		}
 		// Empty Response(valid while many GetToken calls are happening)
@@ -234,13 +237,13 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	}
 	// Refresh will start
 	authErrHandler.refreshActiveMap[refTokenParams.AccountId] = true
-	authErrHandler.logger.Infof("[%s request] [rt-worker-%v] :: Refresh request is active!", loggerNm, refTokenParams.WorkerId)
+	authErrHandler.logger.Debugf("[%s request] [rt-worker-%v] :: Refresh request is active!", loggerNm, refTokenParams.WorkerId)
 	authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
 
 	defer func() {
 		authErrHandler.accountLockMap[refTokenParams.AccountId].Lock()
 		authErrHandler.refreshActiveMap[refTokenParams.AccountId] = false
-		authErrHandler.logger.Infof("[%s request] [rt-worker-%v]:: Refresh request is inactive!", loggerNm, refTokenParams.WorkerId)
+		authErrHandler.logger.Debugf("[%s request] [rt-worker-%v]:: Refresh request is inactive!", loggerNm, refTokenParams.WorkerId)
 		authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
 	}()
 	// TODO:  Pseudo-code below will be removed
@@ -257,10 +260,14 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	// 	rt.isrefreshingTokenLock.UnLock()
 	// }
 
-	authErrHandler.logger.Infof("[%s] Refresh Lock Acquired by rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
+	authErrHandler.logger.Debugf("[%s] Refresh Lock Acquired by rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
 
 	errHandlerReqTimeStart := time.Now()
-	defer authErrHandler.oauthErrHandlerReqTimerStat.SendTiming(time.Since(errHandlerReqTimeStart))
+	defer func() {
+		authStats.statName = fmt.Sprintf("%v_request_exec_time", refTokenParams.EventNamePrefix)
+		authStats.isCallToCpApi = true
+		authStats.SendTimerStats(errHandlerReqTimeStart)
+	}()
 
 	statusCode := authErrHandler.fetchAccountInfoFromCp(refTokenParams, refTokenBody, authStats, logTypeName)
 	// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
@@ -281,6 +288,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 		Url:         refreshUrl,
 		ContentType: "application/json; charset=utf-8",
 		Body:        string(res),
+		destName:    refTokenParams.DestDefName,
 	}
 	var accountSecret AccountSecret
 	// Stat for counting number of Refresh Token endpoint calls
@@ -291,10 +299,11 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 
 	cpiCallStartTime := time.Now()
 	statusCode, response := authErrHandler.cpApiCall(refreshCpReq)
-	authErrHandler.oauthErrHandlerNetReqTimerStat.SendTiming(time.Since(cpiCallStartTime))
+	authStats.statName = fmt.Sprintf(`%v_request_latency`, refTokenParams.EventNamePrefix)
+	authStats.SendTimerStats(cpiCallStartTime)
 
-	authErrHandler.logger.Infof("[%s] Got the response from Control-Plane: rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
-	authErrHandler.logger.Infof("[%s] Got the response from Control-Plane: rt-worker-%d with statusCode: %d\n", loggerNm, refTokenParams.WorkerId, statusCode)
+	authErrHandler.logger.Debugf("[%s] Got the response from Control-Plane: rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
+	authErrHandler.logger.Debugf("[%s] Got the response from Control-Plane: rt-worker-%d with statusCode: %d\n", loggerNm, refTokenParams.WorkerId, statusCode)
 
 	// Empty Refresh token response
 	if !router_utils.IsNotEmptyString(response) {
@@ -306,7 +315,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 			Account: AccountSecret{},
 			Err:     "Empty token",
 		}
-		authErrHandler.logger.Infof("[%s request] :: Empty %s response received(rt-worker-%d) : %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
+		authErrHandler.logger.Debugf("[%s request] :: Empty %s response received(rt-worker-%d) : %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
 		// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
 		return http.StatusInternalServerError
 	}
@@ -331,7 +340,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	authStats.statName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
-	authErrHandler.logger.Infof("[%s request] :: (Write) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
+	authErrHandler.logger.Debugf("[%s request] :: (Write) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
 	return http.StatusOK
 }
 
@@ -346,10 +355,21 @@ func getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (mess
 	return message
 }
 
+func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
+	stats.NewTaggedStat(authStats.statName, stats.TimerType, stats.Tags{
+		"id":              authStats.id,
+		"workspaceId":     authStats.workspaceId,
+		"rudderCategory":  authStats.rudderCategory,
+		"isCallToCpApi":   strconv.FormatBool(authStats.isCallToCpApi),
+		"authErrCategory": authStats.authErrCategory,
+		"destDefName":     authStats.destDefName,
+	}).SendTiming(time.Since(startTime))
+}
+
 // Send count type stats related to OAuth(Destination)
 func (refStats *OAuthStats) SendCountStat() {
 	stats.NewTaggedStat(refStats.statName, stats.CountType, stats.Tags{
-		"accountId":       refStats.id,
+		"id":              refStats.id,
 		"workspaceId":     refStats.workspaceId,
 		"rudderCategory":  refStats.rudderCategory,
 		"errorMessage":    refStats.errorMessage,
@@ -378,13 +398,18 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 		errorMessage:    "",
 		destDefName:     destination.DestinationDefinition.Name,
 	}
+	defer func() {
+		disableDestStats.statName = "disable_destination_total_req_latency"
+		disableDestStats.isCallToCpApi = false
+		disableDestStats.SendTimerStats(authErrHandlerTimeStart)
+	}()
 
 	authErrHandler.destLockMap[destinationId].Lock()
 	isDisableDestActive, isDisableDestReqPresent := authErrHandler.disableDestActiveMap[destinationId]
 	disableActiveReq := strconv.FormatBool(isDisableDestReqPresent && isDisableDestActive)
 	if isDisableDestReqPresent && isDisableDestActive {
 		authErrHandler.destLockMap[destinationId].Unlock()
-		authErrHandler.logger.Infof("[%s request] :: Disable Destination Active : %s\n", loggerNm, disableActiveReq)
+		authErrHandler.logger.Debugf("[%s request] :: Disable Destination Active : %s\n", loggerNm, disableActiveReq)
 		return http.StatusOK, fmt.Sprintf(`{response: {isDisabled: %v, activeRequest: %v}`, false, disableActiveReq)
 	}
 
@@ -394,14 +419,15 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	defer func() {
 		authErrHandler.destLockMap[destinationId].Lock()
 		authErrHandler.disableDestActiveMap[destinationId] = false
-		authErrHandler.logger.Infof("[%s request] :: Disable request is inactive!", loggerNm)
+		authErrHandler.logger.Debugf("[%s request] :: Disable request is inactive!", loggerNm)
 		authErrHandler.destLockMap[destinationId].Unlock()
 	}()
 
 	disableURL := fmt.Sprintf("%s/workspaces/%s/destinations/%s/disable", configBEURL, workspaceId, destinationId)
 	disableCpReq := &ControlPlaneRequestT{
-		Url:    disableURL,
-		Method: http.MethodDelete,
+		Url:      disableURL,
+		Method:   http.MethodDelete,
+		destName: destination.DestinationDefinition.Name,
 	}
 
 	disableDestStats.statName = "disable_destination_request_sent"
@@ -410,8 +436,9 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 
 	cpiCallStartTime := time.Now()
 	statusCode, respBody = authErrHandler.cpApiCall(disableCpReq)
+	disableDestStats.statName = `disable_destination_request_latency`
+	defer disableDestStats.SendTimerStats(cpiCallStartTime)
 	authErrHandler.logger.Debugf(`Response from CP(stCd: %v) for disable dest req: %v`, statusCode, respBody)
-	authErrHandler.oauthErrHandlerNetReqTimerStat.SendTiming(time.Since(cpiCallStartTime))
 
 	var disableDestRes *DisableDestinationResponse
 	if disableErr := json.Unmarshal([]byte(respBody), &disableDestRes); disableErr != nil || !router_utils.IsNotEmptyString(disableDestRes.DestinationId) {
@@ -427,11 +454,11 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 		return http.StatusBadRequest, msg
 	}
 
-	defer authErrHandler.oauthErrHandlerReqTimerStat.SendTiming(time.Since(authErrHandlerTimeStart))
-	authErrHandler.logger.Infof("[%s request] :: (Write) Disable Response received : %s\n", loggerNm, respBody)
+	authErrHandler.logger.Debugf("[%s request] :: (Write) Disable Response received : %s\n", loggerNm, respBody)
 	disableDestStats.statName = "disable_destination_success"
 	disableDestStats.errorMessage = ""
 	disableDestStats.SendCountStat()
+
 	return statusCode, fmt.Sprintf(`{response: {isDisabled: %v, activeRequest: %v}`, !disableDestRes.Enabled, false)
 }
 
@@ -482,7 +509,10 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 
 	authErrHandlerTimeStart := time.Now()
 	res, doErr := authErrHandler.client.Do(req)
-	authErrHandler.oauthErrHandlerNetReqTimerStat.SendTiming(time.Since(authErrHandlerTimeStart))
+	stats.NewTaggedStat("cp_request_latency", stats.TimerType, stats.Tags{
+		"url":         cpReq.Url,
+		"destination": cpReq.destName,
+	}).SendTiming(time.Since(authErrHandlerTimeStart))
 	authErrHandler.logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
 	if doErr != nil {
 		// Abort on receiving an error
@@ -505,16 +535,16 @@ func (resHandler *OAuthErrResHandler) NewMutex(id string, errCategory string) er
 		mutexMap = resHandler.accountLockMap
 	default:
 		// when errorCategory i empty
-		resHandler.logger.Infof("[%s request] :: Case missing for mutex for %s\n", loggerNm, id)
+		resHandler.logger.Debugf("[%s request] :: Case missing for mutex for %s\n", loggerNm, id)
 		return fmt.Errorf(`except %v, %v error category is not supported`, DISABLE_DEST, REFRESH_TOKEN)
 	}
 	resHandler.lockMapWMutex.Lock()
 	defer resHandler.lockMapWMutex.Unlock()
 	// mutexMap will not be nil
 	if _, ok := mutexMap[id]; !ok {
-		resHandler.logger.Infof("[%s request] :: Creating new mutex for %s\n", loggerNm, id)
+		resHandler.logger.Debugf("[%s request] :: Creating new mutex for %s\n", loggerNm, id)
 		mutexMap[id] = &sync.RWMutex{}
 	}
-	resHandler.logger.Infof("[%s request] :: Already created mutex for %s\n", loggerNm, id)
+	resHandler.logger.Debugf("[%s request] :: Already created mutex for %s\n", loggerNm, id)
 	return nil
 }

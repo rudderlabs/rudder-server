@@ -2057,11 +2057,21 @@ func (rt *HandleT) SendOAuthDestEvent(ctx context.Context, val integrations.Post
 		// Trigger the refresh endpoint/disable endpoint
 		switch destErrOutput.Output.AuthErrorCategory {
 		case oauth.DISABLE_DEST:
+			disableDestStatTags := stats.Tags{
+				"id":          destinationJob.Destination.ID,
+				"workspaceId": workspaceId,
+				"success":     "true",
+			}
 			errCatStatusCode, errCatResponse = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
 			if errCatStatusCode != http.StatusOK {
 				// Error while disabling a destination
+				// High-Priority notification to rudderstack needs to be sent
+				disableDestStatTags["success"] = "false"
+				stats.NewTaggedStat("oauth.disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
 				return http.StatusBadRequest, errCatResponse
 			}
+			// High-Priority notification to customer(&rudderstack) needs to be sent
+			stats.NewTaggedStat("oauth.disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
 			// Abort the jobs as the destination is disable
 			return http.StatusBadRequest, destResBody
 		case oauth.REFRESH_TOKEN:
