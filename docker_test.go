@@ -656,18 +656,6 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10s")
 	os.Setenv("RSERVER_REPORTING_URL", reportingserviceURL)
 
-	// os.Setenv("MIGRATION_MODE", "export")
-	// os.Setenv("MIGRATOR_BUCKET", "priyam-migrationmode-test")
-	// os.Setenv("CLUSTER_VERSION", "1")
-	// os.Setenv("MIGRATING_TO_CLUSTER_VERSION", "2")
-	// os.Setenv("MIGRATING_FROM_CLUSTER_VERSION", "1")
-	// os.Setenv("MIGRATING_TO_BACKEND_COUNT", "2")
-	// os.Setenv("MIGRATOR_ACCESS_KEY_ID", "")
-	// os.Setenv("MIGRATOR_SECRET_ACCESS_KEY", "")
-	// os.Setenv("MIGRATOR_PORT", "8084")
-	// os.Setenv("INSTANCE_ID_PATTERN", "hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>")
-	// os.Setenv("URL_PATTERN", "http://hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>.rudderstack.com")
-
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := make(chan struct{})
 	go func() {
@@ -781,7 +769,7 @@ func TestReportingService(t *testing.T) {
 		eventSql := "select count (*) from metrics"
 		rs_db.QueryRow(eventSql).Scan(&myEvent.count)
 		return myEvent.count == "11"
-	}, time.Minute, 10*time.Millisecond)
+	}, 2*time.Minute, 10*time.Millisecond)
 }
 
 // Verify Event in Redis
