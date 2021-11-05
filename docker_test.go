@@ -440,9 +440,9 @@ func run(m *testing.M) (int, error) {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	timescaleDB_DSN := fmt.Sprintf("postgresql://postgres:password@host.docker.internal:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
+	timescaleDB_DSN_Internal := fmt.Sprintf("postgresql://postgres:password@host.docker.internal:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
 	fmt.Println("timesacaleDB_DSN",timescaleDB_DSN)
-	timescaleDB_DSN_1 := fmt.Sprintf("postgresql://postgres:password@localhost:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
+	timescaleDB_DSN_viaHost := fmt.Sprintf("postgresql://postgres:password@localhost:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
 	if err := pool.Retry(func() error {
 		var err error
 		rs_db, err = sql.Open("postgres", timescaleDB_DSN_1)
