@@ -269,9 +269,9 @@ func (trans *HandleT) requestTime(s stats.Tags, d time.Duration) {
 
 func statsTags(event TransformerEventT) stats.Tags {
 	return stats.Tags{
-		"src_id":    event.Destination.DestinationDefinition.Name,
+		"dest_name": event.Destination.DestinationDefinition.Name,
 		"dest_id":   event.Destination.DestinationDefinition.ID,
-		"dest_name": event.Metadata.SourceID,
+		"src_id":    event.Metadata.SourceID,
 	}
 }
 
