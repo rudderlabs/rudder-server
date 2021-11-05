@@ -425,7 +425,6 @@ func run(m *testing.M) (int, error) {
 	timescaleRes, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "timescale/timescaledb",
 		Tag:          "latest-pg13",
-		ExposedPorts: []string{"5432"},
 		Env: []string{
 			"POSTGRES_USER=postgres",
 			"POSTGRES_DB=" + database,
@@ -441,19 +440,19 @@ func run(m *testing.M) (int, error) {
 		}
 	}()
 	timescaleDB_DSN_Internal := fmt.Sprintf("postgresql://postgres:password@host.docker.internal:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
-	fmt.Println("timesacaleDB_DSN",timescaleDB_DSN)
+	fmt.Println("timesacaleDB_DSN",timescaleDB_DSN_Internal)
 	timescaleDB_DSN_viaHost := fmt.Sprintf("postgresql://postgres:password@localhost:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
 	if err := pool.Retry(func() error {
 		var err error
-		rs_db, err = sql.Open("postgres", timescaleDB_DSN_1)
+		rs_db, err = sql.Open("postgres", timescaleDB_DSN_viaHost)
 		if err != nil {
 			return err
 		}
 		return rs_db.Ping()
 	}); err != nil {
-		return 0, fmt.Errorf("Could not connect to postgres %q: %w", timescaleDB_DSN_1, err)
+		return 0, fmt.Errorf("Could not connect to postgres %q: %w", timescaleDB_DSN_viaHost, err)
 	}
-	log.Println("timescaleDB_DSN_1",timescaleDB_DSN_1)
+	log.Println("timescaleDB_DSN_1",timescaleDB_DSN_viaHost)
 
 	// Set  reporting service
 	// pulls an image, creates a container based on it and runs it
@@ -462,7 +461,7 @@ func run(m *testing.M) (int, error) {
 		Tag:          "dedup",
 		ExposedPorts: []string{"5000"},
 		Env: []string{
-			"DATABASE_URL="+timescaleDB_DSN,
+			"DATABASE_URL="+timescaleDB_DSN_Internal,
 		},
 	})
 	if err != nil {
