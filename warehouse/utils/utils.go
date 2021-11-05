@@ -80,10 +80,11 @@ var (
 )
 
 var ObjectStorageMap = map[string]string{
-	"RS":           "S3",
-	"S3_DATALAKE":  "S3",
-	"BQ":           "GCS",
-	"GCP_DATALAKE": "GCS",
+	"RS":             "S3",
+	"S3_DATALAKE":    "S3",
+	"BQ":             "GCS",
+	"GCS_DATALAKE":   "GCS",
+	"AZURE_DATALAKE": "AZURE_BLOB",
 }
 
 var SnowflakeStorageMap = map[string]string{

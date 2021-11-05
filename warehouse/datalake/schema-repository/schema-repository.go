@@ -44,13 +44,8 @@ type SchemaRepository interface {
 }
 
 func NewSchemaRepository(wh warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (SchemaRepository, error) {
-	switch wh.Destination.DestinationDefinition.Name {
-	case "S3_DATALAKE":
-		if warehouseutils.GetConfigValueBoolString(UseGlueConfig, wh) == "true" && misc.HasAWSRegionInConfig(wh.Destination.Config) {
-			return NewGlueSchemaRepository(wh)
-		}
-	case "GCP_DATALAKE":
-		return NewFusionSchemaRepository(wh)
+	if warehouseutils.GetConfigValueBoolString(UseGlueConfig, wh) == "true" && misc.HasAWSRegionInConfig(wh.Destination.Config) {
+		return NewGlueSchemaRepository(wh)
 	}
 	return NewLocalSchemaRepository(wh, uploader)
 }

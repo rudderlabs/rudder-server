@@ -58,12 +58,12 @@ func (wh *HandleT) AlterColumn(tableName string, columnName string, columnType s
 }
 
 func (wh *HandleT) LoadTable(tableName string) error {
-	pkgLogger.Infof("Skipping load for table %s : %s is a s3 datalake destination", tableName, wh.Warehouse.Destination.ID)
+	pkgLogger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, wh.Warehouse.Destination.ID)
 	return nil
 }
 
 func (wh *HandleT) LoadUserTables() map[string]error {
-	pkgLogger.Infof("Skipping load for user tables : %s is a s3 datalake destination", wh.Warehouse.Destination.ID)
+	pkgLogger.Infof("Skipping load for user tables : %s is a datalake destination", wh.Warehouse.Destination.ID)
 	// return map with nil error entries for identifies and users(if any) tables
 	// this is so that they are marked as succeeded
 	errorMap := map[string]error{warehouseutils.IdentifiesTable: nil}
@@ -74,12 +74,12 @@ func (wh *HandleT) LoadUserTables() map[string]error {
 }
 
 func (wh *HandleT) LoadIdentityMergeRulesTable() error {
-	pkgLogger.Infof("Skipping load for identity merge rules : %s is a s3 datalake destination", wh.Warehouse.Destination.ID)
+	pkgLogger.Infof("Skipping load for identity merge rules : %s is a datalake destination", wh.Warehouse.Destination.ID)
 	return nil
 }
 
 func (wh *HandleT) LoadIdentityMappingsTable() error {
-	pkgLogger.Infof("Skipping load for identity mappings : %s is a s3 datalake destination", wh.Warehouse.Destination.ID)
+	pkgLogger.Infof("Skipping load for identity mappings : %s is a datalake destination", wh.Warehouse.Destination.ID)
 	return nil
 }
 

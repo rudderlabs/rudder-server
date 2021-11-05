@@ -60,9 +60,7 @@ func New(destType string) (ManagerI, error) {
 	case "AZURE_SYNAPSE":
 		var as azuresynapse.HandleT
 		return &as, nil
-	case "S3_DATALAKE":
-	case "GCP_DATALAKE":
-	case "AZURE_DATALAKE":
+	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
 		var dl datalake.HandleT
 		return &dl, nil
 	}
