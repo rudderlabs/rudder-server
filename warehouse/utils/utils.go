@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sts"
 	"os"
 	"regexp"
 	"sort"
@@ -30,6 +34,7 @@ const (
 	CLICKHOUSE    = "CLICKHOUSE"
 	MSSQL         = "MSSQL"
 	AZURE_SYNAPSE = "AZURE_SYNAPSE"
+	DELTALAKE     = "DELTALAKE"
 )
 
 const (
@@ -83,6 +88,7 @@ var ObjectStorageMap = map[string]string{
 	"RS":          "S3",
 	"S3_DATALAKE": "S3",
 	"BQ":          "GCS",
+	"DELTALAKE":   "S3",
 }
 
 var SnowflakeStorageMap = map[string]string{
@@ -566,7 +572,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	if useRudderStorage {
 		return "S3"
 	}
-	if destType == "RS" || destType == "BQ" || destType == "S3_DATALAKE" {
+	if destType == "RS" || destType == "BQ" || destType == "S3_DATALAKE" || destType == "DELTALAKE" {
 		return ObjectStorageMap[destType]
 	}
 	if destType == "SNOWFLAKE" {
@@ -673,4 +679,26 @@ func GetTimeWindow(ts time.Time) time.Time {
 // for location - "s3://testbucket/rudder-datalake/namespace/tableName/" - it returns "rudder-datalake/namespace/tableName"
 func GetTablePathInObjectStorage(namespace string, tableName string) string {
 	return fmt.Sprintf("%s/%s/%s", config.GetEnv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), namespace, tableName)
+}
+
+// JoinWithFormatting returns joined string for keys with the provided formatting function.
+func JoinWithFormatting(keys []string, format func(idx int, str string) string, separator string) string {
+	output := make([]string, len(keys))
+	for idx, str := range keys {
+		output[idx] += format(idx, str)
+	}
+	return strings.Join(output, separator)
+}
+
+// GetTemporaryS3Cred returns temporary credentials
+func GetTemporaryS3Cred(accessKeyID, accessKey string) (string, string, string, error) {
+	mySession := session.Must(session.NewSession())
+	// Create a STS client from just a session.
+	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
+
+	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &AWSCredsExpiryInS})
+	if err != nil {
+		return "", "", "", err
+	}
+	return *SessionTokenOutput.Credentials.AccessKeyId, *SessionTokenOutput.Credentials.SecretAccessKey, *SessionTokenOutput.Credentials.SessionToken, err
 }

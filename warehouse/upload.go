@@ -165,6 +165,7 @@ func setMaxParallelLoads() {
 		"MSSQL":      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
 		"SNOWFLAKE":  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
 		"CLICKHOUSE": config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
+		"DELTALAKE":  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
 }
 
