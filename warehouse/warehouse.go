@@ -46,6 +46,7 @@ var (
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
 	WarehouseDestinations               []string
+	timeWindowDestinations              []string
 	noOfSlaveWorkerRoutines             int
 	slaveWorkerRoutineBusy              []bool //Busy-true
 	uploadFreqInS                       int64
@@ -141,7 +142,8 @@ func Init4() {
 func loadConfig() {
 	//Port where WH is running
 	config.RegisterIntConfigVariable(8082, &webPort, false, 1, "Warehouse.webPort")
-	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "DELTALAKE"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "DELTALAKE", "GCS_DATALAKE", "AZURE_DATALAKE"}
+	timeWindowDestinations = []string{"S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE"}
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
@@ -1060,7 +1062,7 @@ func getLoadFileFormat(whType string) string {
 	switch whType {
 	case "BQ":
 		return "json.gz"
-	case "S3_DATALAKE":
+	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
 		return "parquet"
 	case "RS":
 		if useParquetLoadFilesRS {
@@ -1750,7 +1752,7 @@ func getLoadFileType(wh string) string {
 			return warehouseutils.LOAD_FILE_TYPE_PARQUET
 		}
 		return warehouseutils.LOAD_FILE_TYPE_CSV
-	case "S3_DATALAKE":
+	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
 		return warehouseutils.LOAD_FILE_TYPE_PARQUET
 	case "DELTALAKE":
 		return warehouseutils.LOAD_FILE_TYPE_CSV
