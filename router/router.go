@@ -618,7 +618,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							//for proxying through transformer
 							authType := router_utils.GetAuthType(destinationJob.Destination)
 							if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
-								pkgLogger.Infof(`Sending for OAuth destination`)
+								pkgLogger.Debugf(`Sending for OAuth destination`)
 								respStatusCode, respBodyTemp = worker.rt.SendOAuthDestEvent(sendCtx, val, destinationJob, worker.workerID)
 							} else {
 								pkgLogger.Infof(`Sending event for non-oauth destination`)

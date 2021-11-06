@@ -197,13 +197,14 @@ func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryRespon
 		//Detecting content type of the respBody
 		contentTypeHeader = http.DetectContentType(respData)
 	}
-	// REVERT: Should revert this change
-	//If content type is not of type "*text*", overriding it with empty string
-	// if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
-	// 	strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
-	// 	strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
-	// 	respData = []byte("")
-	// }
+	// If content type is not of type "*text*", overriding it with empty string
+	if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
+		strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
+		strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
+		// REVERT: This is only for debugging purposes
+		fmt.Printf(`[router/transformer.go] Original Response:  %v`, respData)
+		respData = []byte("")
+	}
 	resp.Body.Close()
 	return resp.StatusCode, string(respData)
 }

@@ -161,13 +161,14 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			contentTypeHeader = http.DetectContentType(respBody)
 		}
 
-		// REVERT: Should Revert this change, this is meant for checking in deployment
-		//If content type is not of type "*text*", overriding it with empty string
-		// if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
-		// 	strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
-		// 	strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
-		// 	respBody = []byte("")
-		// }
+		// If content type is not of type "*text*", overriding it with empty string
+		if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
+			strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
+			strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
+			// REVERT: This is only for debugging purposes
+			fmt.Printf(`Original Response: %v`, respBody)
+			respBody = []byte("")
+		}
 
 		if err != nil {
 			network.logger.Error("Errored when sending request to the server", err)
