@@ -32,7 +32,7 @@ phases:
   build:
     commands:
       - export GO111MODULE=on
-      - export ACK_GINKGO_RC=false
+      - export ACK_GINKGO_RC=true
       - DATE=$(date "+%F,%T")
       - VERSION=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
       # Build Open source version
