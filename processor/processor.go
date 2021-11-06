@@ -1837,6 +1837,10 @@ func (proc *HandleT) getJobs(nextJobID int64) ([]*jobsdb.JobT, int64) {
 func (proc *HandleT) handlePendingGatewayJobs(prevJobID int64) (bool, int64) {
 	unprocessedList, nextID := proc.getJobs(prevJobID)
 
+	if len(unprocessedList) == 0 {
+		return false, nextID
+	}
+
 	proc.Store(
 		proc.transformations(
 			proc.processJobsForDest(unprocessedList, nil),
@@ -1844,12 +1848,7 @@ func (proc *HandleT) handlePendingGatewayJobs(prevJobID int64) (bool, int64) {
 	)
 	// TODO: proc.statLoopTime.SendTiming(time.Since(s))
 
-	hasJobs := false
-	if len(unprocessedList) > 0 {
-		hasJobs = true
-	}
-
-	return hasJobs, nextID
+	return true, nextID
 }
 
 func (proc *HandleT) mainLoop(ctx context.Context) {
