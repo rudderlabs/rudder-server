@@ -1899,7 +1899,7 @@ func (proc *HandleT) pipeline(ctx context.Context) {
 	}
 
 	wg := sync.WaitGroup{}
-	bufferSize := 3
+	bufferSize := 5
 
 	chProc := make(chan []*jobsdb.JobT, bufferSize)
 	wg.Add(1)
@@ -1950,6 +1950,8 @@ func (proc *HandleT) pipeline(ctx context.Context) {
 			proc.Store(msg)
 		}
 	}()
+
+	wg.Wait()
 }
 
 func (proc *HandleT) crashRecover() {
