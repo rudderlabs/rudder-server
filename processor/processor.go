@@ -339,7 +339,8 @@ func (proc *HandleT) Start(ctx context.Context) {
 		if err := proc.backendConfig.WaitForConfig(ctx); err != nil {
 			return err
 		}
-		proc.mainLoop(ctx)
+		// proc.mainLoop(ctx)
+		proc.pipeline(ctx)
 		return nil
 	}))
 
@@ -1889,6 +1890,66 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (proc *HandleT) pipeline(ctx context.Context) {
+	//waiting for reporting client setup
+	if proc.reporting != nil && proc.reportingEnabled {
+		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
+	}
+
+	wg := sync.WaitGroup{}
+	bufferSize := 3
+
+	chProc := make(chan []*jobsdb.JobT, bufferSize)
+	wg.Add(1)
+	go func() {
+		var jobID int64
+		defer close(chProc)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(mainLoopTimeout):
+				jobs, nextID := proc.getJobs(jobID)
+				if len(jobs) == 0 {
+					continue
+				}
+				jobID = nextID
+				chProc <- jobs
+			}
+		}
+	}()
+
+	chTrans := make(chan transformationMessage, bufferSize)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(chTrans)
+		for jobs := range chProc {
+			chTrans <- proc.processJobsForDest(jobs, nil)
+		}
+	}()
+
+	chStore := make(chan storeMessage, bufferSize)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(chStore)
+
+		for msg := range chTrans {
+			chStore <- proc.transformations(msg)
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		for msg := range chStore {
+			proc.Store(msg)
+		}
+	}()
 }
 
 func (proc *HandleT) crashRecover() {
