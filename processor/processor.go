@@ -1901,11 +1901,14 @@ func (proc *HandleT) pipeline(ctx context.Context) {
 	wg := sync.WaitGroup{}
 	bufferSize := 5
 
-	chProc := make(chan []*jobsdb.JobT, bufferSize)
+	chProc_1 := make(chan []*jobsdb.JobT, bufferSize)
+	chProc_2 := make(chan []*jobsdb.JobT, bufferSize)
+
 	wg.Add(1)
 	go func() {
 		var jobID int64
-		defer close(chProc)
+		defer close(chProc_1)
+		defer close(chProc_2)
 		for {
 			select {
 			case <-ctx.Done():
@@ -1915,30 +1918,54 @@ func (proc *HandleT) pipeline(ctx context.Context) {
 				if len(jobs) == 0 {
 					continue
 				}
+
+				// FIXME: This doesn't maintain the order of the jobs.
 				jobID = nextID
-				chProc <- jobs
+				chProc_1 <- jobs[:len(jobs)/2]
+				chProc_2 <- jobs[len(jobs)/2:]
 			}
 		}
 	}()
 
-	chTrans := make(chan transformationMessage, bufferSize)
+	chTrans_1 := make(chan transformationMessage, bufferSize)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer close(chTrans)
-		for jobs := range chProc {
-			chTrans <- proc.processJobsForDest(jobs, nil)
+		defer close(chTrans_1)
+		for jobs := range chProc_1 {
+			chTrans_1 <- proc.processJobsForDest(jobs, nil)
 		}
 	}()
 
-	chStore := make(chan storeMessage, bufferSize)
+	chTrans_2 := make(chan transformationMessage, bufferSize)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer close(chStore)
+		defer close(chTrans_2)
+		for jobs := range chProc_2 {
+			chTrans_2 <- proc.processJobsForDest(jobs, nil)
+		}
+	}()
 
-		for msg := range chTrans {
-			chStore <- proc.transformations(msg)
+	chStore_1 := make(chan storeMessage, bufferSize)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(chStore_1)
+
+		for msg := range chTrans_1 {
+			chStore_1 <- proc.transformations(msg)
+		}
+	}()
+
+	chStore_2 := make(chan storeMessage, bufferSize)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(chStore_2)
+
+		for msg := range chTrans_1 {
+			chStore_2 <- proc.transformations(msg)
 		}
 	}()
 
@@ -1946,7 +1973,16 @@ func (proc *HandleT) pipeline(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 
-		for msg := range chStore {
+		for msg := range chStore_1 {
+			proc.Store(msg)
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		for msg := range chStore_2 {
 			proc.Store(msg)
 		}
 	}()
