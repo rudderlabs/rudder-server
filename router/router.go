@@ -2075,7 +2075,7 @@ func (rt *HandleT) SendOAuthDestEvent(ctx context.Context, val integrations.Post
 			errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
 			refSec := *refSecret
 			if router_utils.IsNotEmptyString(refSec.Err) && refSec.Err == oauth.INVALID_REFRESH_TOKEN_GRANT {
-				// Incase the refresh token has been revoked, this error comes in
+				// In-case the refresh token has been revoked, this error comes in
 				// Even trying to refresh the token also doesn't work here. Hence this would be more ideal to Abort Events
 				// As well as to disable destination as well.
 				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
