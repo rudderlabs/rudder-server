@@ -2054,30 +2054,13 @@ func (rt *HandleT) SendOAuthDestEvent(ctx context.Context, val integrations.Post
 		}
 		workspaceId := destinationJob.JobMetadataArray[0].WorkspaceId
 		var errCatStatusCode int
-		var errCatResponse string
 		destinationErrOutput := destErrOutput.Output
 		stats.NewTaggedStat(destinationErrOutput.StatName, stats.CountType, destinationErrOutput.StatTags).Increment()
 		// Check the category
 		// Trigger the refresh endpoint/disable endpoint
 		switch destErrOutput.Output.AuthErrorCategory {
 		case oauth.DISABLE_DEST:
-			disableDestStatTags := stats.Tags{
-				"id":          destinationJob.Destination.ID,
-				"workspaceId": workspaceId,
-				"success":     "true",
-			}
-			errCatStatusCode, errCatResponse = rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
-			if errCatStatusCode != http.StatusOK {
-				// Error while disabling a destination
-				// High-Priority notification to rudderstack needs to be sent
-				disableDestStatTags["success"] = "false"
-				stats.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
-				return http.StatusBadRequest, errCatResponse
-			}
-			// High-Priority notification to customer(&rudderstack) needs to be sent
-			stats.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
-			// Abort the jobs as the destination is disable
-			return http.StatusBadRequest, destResBody
+			return rt.ExecDisableDestination(destinationJob, workspaceId, destResBody)
 		case oauth.REFRESH_TOKEN:
 			rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
 			var refSecret *oauth.AuthResponse
@@ -2091,6 +2074,21 @@ func (rt *HandleT) SendOAuthDestEvent(ctx context.Context, val integrations.Post
 			}
 			errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
 			refSec := *refSecret
+			if router_utils.IsNotEmptyString(refSec.Err) && refSec.Err == oauth.INVALID_REFRESH_TOKEN_GRANT {
+				// Incase the refresh token has been revoked, this error comes in
+				// Even trying to refresh the token also doesn't work here. Hence this would be more ideal to Abort Events
+				// As well as to disable destination as well.
+				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
+				disableStCd, _ := rt.ExecDisableDestination(destinationJob, workspaceId, destResBody)
+				stats.NewTaggedStat(oauth.INVALID_REFRESH_TOKEN_GRANT, stats.CountType, stats.Tags{
+					"destinationId": destinationJob.Destination.ID,
+					"worspaceId":    refTokenParams.WorkspaceId,
+					"accountId":     refTokenParams.AccountId,
+					"destName":      refTokenParams.DestDefName,
+				})
+				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
+				return disableStCd, refSec.Err
+			}
 			// Error while refreshing the token or Has an error while refreshing or sending empty access token
 			if errCatStatusCode != http.StatusOK || router_utils.IsNotEmptyString(refSec.Err) {
 				return http.StatusTooManyRequests, refSec.Err
@@ -2102,6 +2100,26 @@ func (rt *HandleT) SendOAuthDestEvent(ctx context.Context, val integrations.Post
 		return trRespStatusCode, trRespBody
 	}
 	return http.StatusOK, destResBody
+}
+
+func (rt *HandleT) ExecDisableDestination(destinationJob types.DestinationJobT, workspaceId string, destResBody string) (int, string) {
+	disableDestStatTags := stats.Tags{
+		"id":          destinationJob.Destination.ID,
+		"workspaceId": workspaceId,
+		"success":     "true",
+	}
+	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
+	if errCatStatusCode != http.StatusOK {
+		// Error while disabling a destination
+		// High-Priority notification to rudderstack needs to be sent
+		disableDestStatTags["success"] = "false"
+		stats.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
+		return http.StatusBadRequest, errCatResponse
+	}
+	// High-Priority notification to customer(&rudderstack) needs to be sent
+	stats.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
+	// Abort the jobs as the destination is disable
+	return http.StatusBadRequest, destResBody
 }
 
 func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {

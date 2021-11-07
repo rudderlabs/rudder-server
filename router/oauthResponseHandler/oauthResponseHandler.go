@@ -16,6 +16,7 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/tidwall/gjson"
 )
 
 type AccountSecret struct {
@@ -101,8 +102,9 @@ var (
 )
 
 const (
-	DISABLE_DEST  = "DISABLE_DESTINATION"
-	REFRESH_TOKEN = "REFRESH_TOKEN"
+	DISABLE_DEST                = "DISABLE_DESTINATION"
+	REFRESH_TOKEN               = "REFRESH_TOKEN"
+	INVALID_REFRESH_TOKEN_GRANT = "refresh_token_invalid_grant"
 )
 
 // The response from the transformer network layer will be sent with a output property(in case of an error)
@@ -246,19 +248,6 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 		authErrHandler.logger.Debugf("[%s request] [rt-worker-%v]:: Refresh request is inactive!", loggerNm, refTokenParams.WorkerId)
 		authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
 	}()
-	// TODO:  Pseudo-code below will be removed
-	// rt.isrefreshingTokenLock.Lock()
-	// if rt.isrefreshingToken {
-	// 	rt.isrefreshingTokenLock.UnLock()
-	// 	return http.StatusOK, refVal
-	// }
-	// rt.isrefreshingToken = true
-	// rt.isrefreshingTokenLock.UnLock()
-	// defer func() {
-	// 	rt.isrefreshingTokenLock.Lock()
-	// 	rt.isrefreshingToken = false
-	// 	rt.isrefreshingTokenLock.UnLock()
-	// }
 
 	authErrHandler.logger.Debugf("[%s] Refresh Lock Acquired by rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
 
@@ -331,6 +320,11 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 		authStats.statName = fmt.Sprintf("%s_failure", refTokenParams.EventNamePrefix)
 		authStats.errorMessage = refErrMsg
 		authStats.SendCountStat()
+		if refErrMsg == INVALID_REFRESH_TOKEN_GRANT {
+			// Should abort the event as refresh is not going to work
+			// until we have new refresh token for the account
+			return http.StatusBadRequest
+		}
 		return http.StatusInternalServerError
 	}
 	// Update the refreshed account information into in-memory map(cache)
@@ -348,6 +342,8 @@ func getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (mess
 	if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
 		// Some problem with AccountSecret unmarshalling
 		message = err.Error()
+	} else if gjson.Get(response, "body.code").String() == INVALID_REFRESH_TOKEN_GRANT {
+		message = INVALID_REFRESH_TOKEN_GRANT
 	} else if !router_utils.IsNotEmptyString(accountSecret.AccessToken) {
 		// Status is 200, but no accesstoken is sent
 		message = `Empty Token cannot be processed further`
