@@ -1964,7 +1964,7 @@ func (proc *HandleT) pipeline(ctx context.Context) {
 		defer wg.Done()
 		defer close(chStore_2)
 
-		for msg := range chTrans_1 {
+		for msg := range chTrans_2 {
 			chStore_2 <- proc.transformations(msg)
 		}
 	}()
