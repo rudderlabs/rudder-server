@@ -88,11 +88,10 @@ func NewOAuthErrorHandler() *OAuthErrResHandler {
 }
 
 var (
-	configBEURL      string
-	pkgLogger        logger.LoggerI
-	loggerNm         string
-	workspaceToken   string
-	isMultiWorkspace bool
+	configBEURL    string
+	pkgLogger      logger.LoggerI
+	loggerNm       string
+	workspaceToken string
 )
 
 const (
