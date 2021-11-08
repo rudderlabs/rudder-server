@@ -165,8 +165,6 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
 			strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
 			strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
-			// REVERT: This is only for debugging purposes
-			fmt.Printf(`Original Response: %v`, respBody)
 			respBody = []byte("")
 		}
 
