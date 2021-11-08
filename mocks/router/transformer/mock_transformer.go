@@ -5,9 +5,11 @@
 package mocks_transformer
 
 import (
+	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
+	integrations "github.com/rudderlabs/rudder-server/processor/integrations"
 	types "github.com/rudderlabs/rudder-server/router/types"
 )
 
@@ -32,6 +34,21 @@ func NewMockTransformer(ctrl *gomock.Controller) *MockTransformer {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 	return m.recorder
+}
+
+// ResponseTransform mocks base method.
+func (m *MockTransformer) ResponseTransform(arg0 context.Context, arg1 integrations.DeliveryResponseT, arg2 string) (int, string) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResponseTransform", arg0, arg1, arg2)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(string)
+	return ret0, ret1
+}
+
+// ResponseTransform indicates an expected call of ResponseTransform.
+func (mr *MockTransformerMockRecorder) ResponseTransform(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResponseTransform", reflect.TypeOf((*MockTransformer)(nil).ResponseTransform), arg0, arg1, arg2)
 }
 
 // Setup mocks base method.

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -87,6 +86,15 @@ type HandleT struct {
 	pipeProcessing                 stats.RudderStats
 	statNumRequests                stats.RudderStats
 	statNumEvents                  stats.RudderStats
+	statDBReadRequests             stats.RudderStats
+	statDBReadEvents               stats.RudderStats
+	statDBReadPayloadBytes         stats.RudderStats
+	statDBWriteStatusTime          stats.RudderStats
+	statDBWriteJobsTime            stats.RudderStats
+	statDBWriteRouterPayloadBytes  stats.RudderStats
+	statDBWriteBatchPayloadBytes   stats.RudderStats
+	statDBWriteRouterEvents        stats.RudderStats
+	statDBWriteBatchEvents         stats.RudderStats
 	statDestNumOutputEvents        stats.RudderStats
 	statBatchDestNumOutputEvents   stats.RudderStats
 	logger                         logger.LoggerI
@@ -291,6 +299,27 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pipeProcessing = proc.stats.NewStat("processor.pipe_processing", stats.TimerType)
 	proc.statNumRequests = proc.stats.NewStat("processor.num_requests", stats.CountType)
 	proc.statNumEvents = proc.stats.NewStat("processor.num_events", stats.CountType)
+
+	proc.statDBReadRequests = proc.stats.NewStat("processor.db_read_requests", stats.HistogramType)
+	proc.statDBReadEvents = proc.stats.NewStat("processor.db_read_events", stats.HistogramType)
+	proc.statDBReadPayloadBytes = proc.stats.NewStat("processor.db_read_payload_bytes", stats.HistogramType)
+
+	proc.statDBWriteJobsTime = proc.stats.NewStat("processor.db_write_jobs_time", stats.TimerType)
+	proc.statDBWriteStatusTime = proc.stats.NewStat("processor.db_write_status_time", stats.TimerType)
+
+	proc.statDBWriteRouterPayloadBytes = proc.stats.NewTaggedStat("processor.db_write_payload_bytes", stats.HistogramType, stats.Tags{
+		"module": "router",
+	})
+	proc.statDBWriteBatchPayloadBytes = proc.stats.NewTaggedStat("processor.db_write_payload_bytes", stats.HistogramType, stats.Tags{
+		"module": "batch_router",
+	})
+	proc.statDBWriteRouterEvents = proc.stats.NewTaggedStat("processor.db_write_events", stats.HistogramType, stats.Tags{
+		"module": "router",
+	})
+	proc.statDBWriteBatchEvents = proc.stats.NewTaggedStat("processor.db_write_events", stats.HistogramType, stats.Tags{
+		"module": "batch_router",
+	})
+
 	// Add a separate tag for batch router
 	proc.statDestNumOutputEvents = proc.stats.NewTaggedStat("processor.num_output_events", stats.CountType, stats.Tags{
 		"module": "router",
@@ -364,8 +393,6 @@ var (
 	maxLoopSleep              time.Duration
 	fixedLoopSleep            time.Duration
 	maxEventsToProcess        int
-	avgEventsInRequest        int // TODO: Remove in next release
-	dbReadBatchSize           int
 	transformBatchSize        int
 	userTransformBatchSize    int
 	writeKeyDestinationMap    map[string][]backendconfig.DestinationT
@@ -399,11 +426,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, false, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 
-	// DEPRECATED: don't use avgEventsInRequest, rudder-server will automatically adapt
-	config.RegisterIntConfigVariable(1, &avgEventsInRequest, true, 1, "Processor.avgEventsInRequest")
 	batchDestinations, customDestinations = misc.LoadDestinations()
-	// assuming every job in gw_jobs has atleast one event, max value for dbReadBatchSize can be maxEventsToProcess
-	dbReadBatchSize = int(math.Ceil(float64(maxEventsToProcess) / float64(avgEventsInRequest)))
 	config.RegisterIntConfigVariable(5, &transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
@@ -973,9 +996,8 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) transformationMessage {
 	start := time.Now()
-	defer func() {
-		proc.processJobsTime.SendTiming(time.Since(start))
-	}()
+	defer proc.processJobsTime.Since(start)
+	
 
 	proc.statNumRequests.Count(len(jobList))
 
@@ -1156,14 +1178,11 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	proc.statNumEvents.Count(totalEvents)
 
 	marshalTime := time.Since(marshalStart)
-	defer func() {
-		proc.marshalSingularEvents.SendTiming(marshalTime)
-	}()
+	defer proc.marshalSingularEvents.SendTiming(marshalTime)
 
 	//TRACKING PLAN - START
 	//Placing the trackingPlan validation filters here.
 	//Else further down events are duplicated by destId, so multiple validation takes places for same event
-
 	validateEventsStart := time.Now()
 	validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID)
 	validateEventsTime := time.Since(validateEventsStart)
@@ -1300,9 +1319,21 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 		close(chOut)
 	}()
 
+	totalPayloadRouterBytes := 0
+	totalPayloadBatchBytes := 0
+
+
 	for o := range chOut {
-		batchDestJobs = append(batchDestJobs, o.batchDestJobs...)
+		for i := range o.destJobs {
+			totalPayloadRouterBytes += len(o.destJobs[i].EventPayload)
+		}
 		destJobs = append(destJobs, o.destJobs...)
+
+		for i := range o.batchDestJobs {
+			totalPayloadBatchBytes += len(o.batchDestJobs[i].EventPayload)
+		}
+		batchDestJobs = append(batchDestJobs, o.batchDestJobs...)
+
 		in.reportMetrics = append(in.reportMetrics, o.reportMetrics...)
 		for k, v := range o.errorsPerDestID {
 			procErrorJobsByDestID[k] = append(procErrorJobsByDestID[k], v...)
@@ -1358,6 +1389,8 @@ func (proc *HandleT) Store(in storeMessage) {
 			panic(err)
 		}
 		proc.statDestNumOutputEvents.Count(len(destJobs))
+		proc.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
+		proc.statDBWriteRouterPayloadBytes.Observe(float64(totalPayloadRouterBytes))
 	}
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
@@ -1368,6 +1401,8 @@ func (proc *HandleT) Store(in storeMessage) {
 			panic(err)
 		}
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
+		proc.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
+		proc.statDBWriteBatchPayloadBytes.Observe(float64(totalPayloadBatchBytes))
 	}
 
 	for _, jobs := range in.procErrorJobsByDestID {
@@ -1383,7 +1418,9 @@ func (proc *HandleT) Store(in storeMessage) {
 		}
 		recordEventDeliveryStatus(in.procErrorJobsByDestID)
 	}
+	writeJobsTime := time.Since(beforeStoreStatus)
 
+	txnStart := time.Now()
 	txn := proc.gatewayDB.BeginGlobalTransaction()
 	proc.gatewayDB.AcquireUpdateJobStatusLocks()
 	err := proc.gatewayDB.UpdateJobStatusInTxn(txn, statusList, []string{GWCustomVal}, nil)
@@ -1407,8 +1444,9 @@ func (proc *HandleT) Store(in storeMessage) {
 	}
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
-	proc.statDBW.SendTiming(time.Since(beforeStoreStatus))
-
+	proc.statDBW.Since(beforeStoreStatus)
+	proc.statDBWriteJobsTime.SendTiming(writeJobsTime)
+	proc.statDBWriteStatusTime.Since(txnStart)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	//XX: End of transaction
 
@@ -1440,10 +1478,7 @@ func (proc *HandleT) processPipeline(
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) processPipelineOutput {
-	s := time.Now()
-	defer func() {
-		proc.pipeProcessing.SendTiming(time.Since(s))
-	}()
+	defer proc.pipeProcessing.Since(time.Now())
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	destination := eventList[0].Destination
@@ -1578,7 +1613,7 @@ func (proc *HandleT) processPipeline(
 	} else {
 		s := time.Now()
 		response = proc.transformer.Transform(eventsToTransform, url, transformBatchSize)
-		destTransformationStat.transformTime.SendTiming(time.Since(s))
+		destTransformationStat.transformTime.Since(s)
 		transformAt = "processor"
 	}
 
@@ -1794,22 +1829,21 @@ func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *t
 func (proc *HandleT) getJobs(nextJobID int64) ([]*jobsdb.JobT, int64) {
 	s := time.Now()
 
-	proc.logger.Debugf("Processor DB Read size: %d", dbReadBatchSize)
+	proc.logger.Debugf("Processor DB Read size: %d", maxEventsToProcess)
 	unprocessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{GWCustomVal},
-		JobCount:         dbReadBatchSize,
+		JobCount:         maxEventsToProcess,
 		EventCount:       maxEventsToProcess,
 		AfterJobID:       nextJobID,
 	})
 	totalEvents := 0
+	totalPayloadBytes := 0
 	for _, job := range unprocessedList {
 		totalEvents += job.EventCount
+		totalPayloadBytes += len(job.EventPayload)
 	}
-
 	dbReadTime := time.Since(s)
-	defer func() {
-		proc.statDBR.SendTiming(dbReadTime)
-	}()
+	defer proc.statDBR.SendTiming(dbReadTime)
 
 	// check if there is work to be done
 	if len(unprocessedList) == 0 {
@@ -1817,6 +1851,8 @@ func (proc *HandleT) getJobs(nextJobID int64) ([]*jobsdb.JobT, int64) {
 		proc.pStatsDBR.Rate(0, time.Since(s))
 		return nil, nextJobID
 	}
+
+	eventSchemasStart := time.Now()
 	proc.eventSchemasTime.Start()
 	if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
 		for _, unprocessedJob := range unprocessedList {
@@ -1824,11 +1860,19 @@ func (proc *HandleT) getJobs(nextJobID int64) ([]*jobsdb.JobT, int64) {
 			proc.eventSchemaHandler.RecordEventSchema(writeKey, string(unprocessedJob.EventPayload))
 		}
 	}
-	proc.eventSchemasTime.End()
+	eventSchemasTime := time.Since(eventSchemasStart)
+	defer proc.eventSchemasTime.SendTiming(eventSchemasTime)
 
 	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList), totalEvents)
 	proc.pStatsDBR.Rate(len(unprocessedList), time.Since(s))
 	proc.statGatewayDBR.Count(len(unprocessedList))
+
+
+	proc.statDBReadRequests.Observe(float64(len(unprocessedList)))
+	proc.statDBReadEvents.Observe(float64(totalEvents))
+	proc.statDBReadPayloadBytes.Observe(float64(totalPayloadBytes))
+
+	proc.pStatsDBR.Print()
 
 	return unprocessedList, unprocessedList[len(unprocessedList)-1].JobID
 }
@@ -1847,7 +1891,7 @@ func (proc *HandleT) handlePendingGatewayJobs(prevJobID int64) (bool, int64) {
 			proc.processJobsForDest(unprocessedList, nil),
 		),
 	)
-	// TODO: proc.statLoopTime.SendTiming(time.Since(s))
+	// TODO: proc.statLoopTime.Since(s)
 
 	return true, nextID
 }
