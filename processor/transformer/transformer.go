@@ -321,7 +321,7 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 
 	var transformerResponses []TransformerResponseT
 	if resp.StatusCode == http.StatusOK {
-		integrations.CollectIntgErrorStats(respData, true)
+		integrations.CollectIntgTransformErrorStats(respData)
 		err = json.Unmarshal(respData, &transformerResponses)
 		//This is returned by our JS engine so should  be parsable
 		//but still handling it

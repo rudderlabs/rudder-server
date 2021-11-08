@@ -608,7 +608,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 									Body:   respBodyTemp,
 								}
 								rtl_time := time.Now()
-								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(sendCtx, dResponse, worker.rt.destName)
+								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(ctx, dResponse, worker.rt.destName)
 								worker.routerResponseTransformStat.SendTiming(time.Since(rtl_time))
 							}
 							// response transform end

@@ -79,24 +79,23 @@ type TransErrorT struct {
 	ErrorDetailed TransErrorSpecT `json:"errorDetailed"`
 }
 
-func CollectIntgErrorStats(input []byte, transformationError bool) {
-	var transErrors []TransErrorT
+func CollectDestErrorStats(input []byte) {
 	var destinationResponseErr TransErrorT
-	var err error
-	if transformationError {
-		err = json.Unmarshal(input, &transErrors)
-		if err == nil {
-			for _, transError := range transErrors {
-				if len(transError.ErrorDetailed.StatTags) > 0 {
-					stats.NewTaggedStat("integration.failure_detailed", stats.CountType, transError.ErrorDetailed.StatTags).Increment()
-				}
-			}
+	err := json.Unmarshal(input, &destinationResponseErr)
+	if err == nil {
+		if len(destinationResponseErr.ErrorDetailed.StatTags) > 0 {
+			stats.NewTaggedStat("integration.failure_detailed", stats.CountType, destinationResponseErr.ErrorDetailed.StatTags).Increment()
 		}
-	} else {
-		err = json.Unmarshal(input, &destinationResponseErr)
-		if err == nil {
-			if len(destinationResponseErr.ErrorDetailed.StatTags) > 0 {
-				stats.NewTaggedStat("integration.failure_detailed", stats.CountType, destinationResponseErr.ErrorDetailed.StatTags).Increment()
+	}
+}
+
+func CollectIntgTransformErrorStats(input []byte) {
+	var transErrors []TransErrorT
+	err := json.Unmarshal(input, &transErrors)
+	if err == nil {
+		for _, transError := range transErrors {
+			if len(transError.ErrorDetailed.StatTags) > 0 {
+				stats.NewTaggedStat("integration.failure_detailed", stats.CountType, transError.ErrorDetailed.StatTags).Increment()
 			}
 		}
 	}

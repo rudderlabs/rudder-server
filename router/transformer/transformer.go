@@ -50,15 +50,16 @@ func NewTransformer() *HandleT {
 }
 
 var (
-	maxRetry   int
-	retrySleep time.Duration
-	pkgLogger  logger.LoggerI
+	maxRetry        int
+	retrySleep      time.Duration
+	timeoutDuration time.Duration
+	pkgLogger       logger.LoggerI
 )
 
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
-
+	config.RegisterDurationConfigVariable(time.Duration(30), &timeoutDuration, true, time.Second, []string{"Processor.timeoutDuration", "Processor.timeoutDurationInSecond"}...)
 }
 
 func Init() {
@@ -142,10 +143,10 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
 
 		if transformType == BATCH {
-			integrations.CollectIntgErrorStats(respData, true)
+			integrations.CollectIntgTransformErrorStats(respData)
 			err = json.Unmarshal(respData, &destinationJobs)
 		} else if transformType == ROUTER_TRANSFORM {
-			integrations.CollectIntgErrorStats([]byte(gjson.GetBytes(respData, "output").Raw), true)
+			integrations.CollectIntgTransformErrorStats([]byte(gjson.GetBytes(respData, "output").Raw))
 			err = json.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
 		}
 		//This is returned by our JS engine so should  be parsable
@@ -179,10 +180,18 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 	var respData []byte
 	var respCode int
 	var tempRespData []byte
+	var payload io.Reader
 	url := getResponseTransformURL(destName)
+	payload = strings.NewReader(string(rawJSON))
 	for {
+		req, err := http.NewRequestWithContext(ctx, "POST", url, payload)
+		if err != nil {
+			trans.logger.Error(fmt.Sprintf(`400 Unable to construct POST request for URL : "%s"`, url))
+			return 400, fmt.Sprintf(`400 Unable to construct POST request for URL : "%s"`, url)
+		}
+		req.Header.Add("Content-Type", "application/json")
 		s := time.Now()
-		resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+		resp, err = trans.client.Do(req)
 		trans.transformerResponseTransformRequestTime.SendTiming(time.Since(s))
 		// retry in case of err
 		if err != nil {
@@ -223,18 +232,21 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 			if resp.StatusCode >= 500 && resp.StatusCode < 600 {
 				var transError integrations.TransErrorT
 				rawTResponse := []byte(gjson.GetBytes(tempRespData, "output").Raw)
-				err = json.Unmarshal(rawTResponse, &transError)
-				if err != nil {
-					respData = []byte("Failed to parse response transform at server error: " + err.Error())
-					respCode = 400
-					break
-				}
-				// error is explicitly lodged from transformer marking a destination side failure
-				if transError.ErrorDetailed.ResponseTransformFailure {
-					integrations.CollectIntgErrorStats(rawTResponse, false)
-					respData = tempRespData
-					respCode = resp.StatusCode
-					break
+				// if the response is not containing "output" is not an explicit error from transformer
+				if len(rawTResponse) != 0 {
+					err = json.Unmarshal(rawTResponse, &transError)
+					if err != nil {
+						respData = []byte("Failed to parse response transform at server error: " + err.Error())
+						respCode = 400
+						break
+					}
+					// error is explicitly lodged from transformer marking a destination side failure
+					if transError.ErrorDetailed.ResponseTransformFailure {
+						integrations.CollectDestErrorStats(rawTResponse)
+						respData = tempRespData
+						respCode = resp.StatusCode
+						break
+					}
 				}
 				// network level 5xx error we need to retry response transform request
 				trans.logger.Errorf("[Transformer Response Transform request failed] :: %+v", err)
@@ -248,7 +260,7 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 				continue
 			}
 			rawTResponse := []byte(gjson.GetBytes(tempRespData, "output").Raw)
-			integrations.CollectIntgErrorStats(rawTResponse, false)
+			integrations.CollectDestErrorStats(rawTResponse)
 			respData = tempRespData
 			respCode = resp.StatusCode
 			break
@@ -261,7 +273,7 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
-	trans.client = &http.Client{Transport: trans.tr, Timeout: 30 * time.Second}
+	trans.client = &http.Client{Transport: trans.tr, Timeout: timeoutDuration}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
 	trans.transformerResponseTransformRequestTime = stats.NewStat("router.transformer_response_transform_time", stats.TimerType)
