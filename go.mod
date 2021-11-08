@@ -9,7 +9,7 @@ require (
 	github.com/Azure/azure-storage-blob-go v0.14.0
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/BurntSushi/toml v0.3.1
-	github.com/ClickHouse/clickhouse-go v1.4.8
+	github.com/ClickHouse/clickhouse-go v1.5.1
 	github.com/DATA-DOG/go-sqlmock v1.5.0
 	github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d // indirect
 	github.com/EagleChen/restrictor v0.0.0-20180420073700-9b81bbf8df1d
@@ -38,7 +38,7 @@ require (
 	github.com/gomodule/redigo v1.8.5
 	github.com/gorilla/mux v1.7.4
 	github.com/gotestyourself/gotestyourself v2.2.0+incompatible // indirect
-	github.com/hashicorp/go-retryablehttp v0.6.6
+	github.com/hashicorp/go-retryablehttp v0.7.0
 	github.com/hashicorp/yamux v0.0.0-20200609203250-aecfd211c9ce
 	github.com/iancoleman/strcase v0.1.3
 	github.com/jeremywohl/flatten v1.0.1
