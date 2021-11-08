@@ -88,17 +88,11 @@ func NewOAuthErrorHandler() *OAuthErrResHandler {
 }
 
 var (
-	configBEURL          string
-	pkgLogger            logger.LoggerI
-	loggerNm             string
-	workspaceToken       string
-	isMultiWorkspace     bool
-	destAuthInfoMap      map[string]*AuthResponse // Stores information about account after refresh token/fetch token
-	accountLockMap       map[string]*sync.RWMutex // Lock used at account level to handle multiple refresh/fetch token requests
-	destLockMap          map[string]*sync.RWMutex // Lock used at destination level to handle multiple disable destination requests
-	lockMapMutex         *sync.RWMutex            // Lock used at destination level to handle multiple disable destination requests
-	refreshActiveMap     map[string]bool
-	disableDestActiveMap map[string]bool
+	configBEURL      string
+	pkgLogger        logger.LoggerI
+	loggerNm         string
+	workspaceToken   string
+	isMultiWorkspace bool
 )
 
 const (
@@ -135,12 +129,6 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("router").Child("OAuthResponseHandler")
 	loggerNm = "OAuthResponseHandler"
 	workspaceToken = backendconfig.GetWorkspaceToken()
-	destAuthInfoMap = make(map[string]*AuthResponse)
-	accountLockMap = make(map[string]*sync.RWMutex)
-	destLockMap = make(map[string]*sync.RWMutex)
-	lockMapMutex = &sync.RWMutex{}
-	refreshActiveMap = make(map[string]bool)
-	disableDestActiveMap = make(map[string]bool)
 }
 
 func (authErrHandler *OAuthErrResHandler) Setup() {
@@ -148,12 +136,12 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.tr = &http.Transport{}
 	//This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
 	authErrHandler.client = &http.Client{}
-	authErrHandler.destLockMap = destLockMap
-	authErrHandler.accountLockMap = accountLockMap
-	authErrHandler.lockMapWMutex = lockMapMutex
-	authErrHandler.destAuthInfoMap = destAuthInfoMap
-	authErrHandler.refreshActiveMap = refreshActiveMap
-	authErrHandler.disableDestActiveMap = disableDestActiveMap
+	authErrHandler.destLockMap = make(map[string]*sync.RWMutex)
+	authErrHandler.accountLockMap = make(map[string]*sync.RWMutex)
+	authErrHandler.lockMapWMutex = &sync.RWMutex{}
+	authErrHandler.destAuthInfoMap = make(map[string]*AuthResponse)
+	authErrHandler.refreshActiveMap = make(map[string]bool)
+	authErrHandler.disableDestActiveMap = make(map[string]bool)
 }
 
 func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse) {
@@ -469,11 +457,11 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 		}
 	}
 	//Detecting content type of the respData
-	contentTypeHeader := http.DetectContentType(respData)
+	contentTypeHeader := strings.ToLower(http.DetectContentType(respData))
 	//If content type is not of type "*text*", overriding it with empty string
-	if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
-		strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
-		strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
+	if !(strings.Contains(contentTypeHeader, "text") ||
+		strings.Contains(contentTypeHeader, "application/json") ||
+		strings.Contains(contentTypeHeader, "application/xml")) {
 		respData = []byte("")
 	}
 
