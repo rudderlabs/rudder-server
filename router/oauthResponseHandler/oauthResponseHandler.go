@@ -181,11 +181,8 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 		authStats.isCallToCpApi = false
 		authStats.SendTimerStats(startTime)
 	}()
-	resMgrErr := authErrHandler.NewMutex(refTokenParams.AccountId, REFRESH_TOKEN)
-	if resMgrErr != nil {
-		panic(resMgrErr)
-	}
 
+	accountMutex := authErrHandler.getKeyMutex(authErrHandler.accountLockMap, refTokenParams.AccountId)
 	refTokenBody := RefreshTokenBodyParams{}
 	if router_utils.IsNotEmptyString(refTokenParams.AccessToken) {
 		refTokenBody = RefreshTokenBodyParams{
@@ -193,25 +190,22 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 			ExpiredToken: refTokenParams.AccessToken,
 		}
 	}
-	authErrHandler.accountLockMap[refTokenParams.AccountId].RLock()
+	accountMutex.RLock()
 	refVal, ok := authErrHandler.destAuthInfoMap[refTokenParams.AccountId]
 	if ok {
 		isInvalidAccessTokenForRefresh := (router_utils.IsNotEmptyString(refVal.Account.AccessToken) &&
 			refVal.Account.AccessToken != refTokenParams.AccessToken)
 		if isInvalidAccessTokenForRefresh {
-			authErrHandler.accountLockMap[refTokenParams.AccountId].RUnlock()
-			// authStats.statName = fmt.Sprintf("%s_success", refTokenParams.EventNamePrefix)
-			// authStats.errorMessage = ""
-			// authStats.SendCountStat()
+			accountMutex.RUnlock()
 			authErrHandler.logger.Debugf("[%s request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.AccessToken)
 			return http.StatusOK, refVal
 		}
 	}
-	authErrHandler.accountLockMap[refTokenParams.AccountId].RUnlock()
+	accountMutex.RUnlock()
 
-	authErrHandler.accountLockMap[refTokenParams.AccountId].Lock()
+	accountMutex.Lock()
 	if isRefreshActive, isPresent := authErrHandler.refreshActiveMap[refTokenParams.AccountId]; isPresent && isRefreshActive {
-		authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
+		accountMutex.Unlock()
 		if refVal != nil {
 			token := refVal.Account.AccessToken
 			authErrHandler.logger.Debugf("[%s request] [Active Refresh Request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, token)
@@ -228,13 +222,13 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	// Refresh will start
 	authErrHandler.refreshActiveMap[refTokenParams.AccountId] = true
 	authErrHandler.logger.Debugf("[%s request] [rt-worker-%v] :: Refresh request is active!", loggerNm, refTokenParams.WorkerId)
-	authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
+	accountMutex.Unlock()
 
 	defer func() {
-		authErrHandler.accountLockMap[refTokenParams.AccountId].Lock()
+		accountMutex.Lock()
 		authErrHandler.refreshActiveMap[refTokenParams.AccountId] = false
 		authErrHandler.logger.Debugf("[%s request] [rt-worker-%v]:: Refresh request is inactive!", loggerNm, refTokenParams.WorkerId)
-		authErrHandler.accountLockMap[refTokenParams.AccountId].Unlock()
+		accountMutex.Unlock()
 	}()
 
 	authErrHandler.logger.Debugf("[%s] Refresh Lock Acquired by rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
@@ -247,7 +241,6 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	}()
 
 	statusCode := authErrHandler.fetchAccountInfoFromCp(refTokenParams, refTokenBody, authStats, logTypeName)
-	// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
 	return statusCode, authErrHandler.destAuthInfoMap[refTokenParams.AccountId]
 }
 
@@ -367,10 +360,7 @@ func (refStats *OAuthStats) SendCountStat() {
 func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backendconfig.DestinationT, workspaceId string) (statusCode int, respBody string) {
 	authErrHandlerTimeStart := time.Now()
 	destinationId := destination.ID
-	resMgrErr := authErrHandler.NewMutex(destinationId, DISABLE_DEST)
-	if resMgrErr != nil {
-		panic(resMgrErr)
-	}
+	disableDestMutex := authErrHandler.getKeyMutex(authErrHandler.destLockMap, destinationId)
 
 	disableDestStats := &OAuthStats{
 		id:              destinationId,
@@ -388,23 +378,23 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 		disableDestStats.SendTimerStats(authErrHandlerTimeStart)
 	}()
 
-	authErrHandler.destLockMap[destinationId].Lock()
+	disableDestMutex.Lock()
 	isDisableDestActive, isDisableDestReqPresent := authErrHandler.disableDestActiveMap[destinationId]
 	disableActiveReq := strconv.FormatBool(isDisableDestReqPresent && isDisableDestActive)
 	if isDisableDestReqPresent && isDisableDestActive {
-		authErrHandler.destLockMap[destinationId].Unlock()
+		disableDestMutex.Unlock()
 		authErrHandler.logger.Debugf("[%s request] :: Disable Destination Active : %s\n", loggerNm, disableActiveReq)
 		return http.StatusOK, fmt.Sprintf(`{response: {isDisabled: %v, activeRequest: %v}`, false, disableActiveReq)
 	}
 
 	authErrHandler.disableDestActiveMap[destinationId] = true
-	authErrHandler.destLockMap[destinationId].Unlock()
+	disableDestMutex.Unlock()
 
 	defer func() {
-		authErrHandler.destLockMap[destinationId].Lock()
+		disableDestMutex.Lock()
 		authErrHandler.disableDestActiveMap[destinationId] = false
 		authErrHandler.logger.Debugf("[%s request] :: Disable request is inactive!", loggerNm)
-		authErrHandler.destLockMap[destinationId].Unlock()
+		disableDestMutex.Unlock()
 	}()
 
 	disableURL := fmt.Sprintf("%s/workspaces/%s/destinations/%s/disable", configBEURL, workspaceId, destinationId)
@@ -510,18 +500,7 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 	return statusCode, resp
 }
 
-func (resHandler *OAuthErrResHandler) NewMutex(id string, errCategory string) error {
-	var mutexMap map[string]*sync.RWMutex
-	switch errCategory {
-	case DISABLE_DEST:
-		mutexMap = resHandler.destLockMap
-	case REFRESH_TOKEN:
-		mutexMap = resHandler.accountLockMap
-	default:
-		// when errorCategory i empty
-		resHandler.logger.Debugf("[%s request] :: Case missing for mutex for %s\n", loggerNm, id)
-		return fmt.Errorf(`except %v, %v error category is not supported`, DISABLE_DEST, REFRESH_TOKEN)
-	}
+func (resHandler *OAuthErrResHandler) getKeyMutex(mutexMap map[string]*sync.RWMutex, id string) *sync.RWMutex {
 	resHandler.lockMapWMutex.Lock()
 	defer resHandler.lockMapWMutex.Unlock()
 	// mutexMap will not be nil
@@ -529,6 +508,5 @@ func (resHandler *OAuthErrResHandler) NewMutex(id string, errCategory string) er
 		resHandler.logger.Debugf("[%s request] :: Creating new mutex for %s\n", loggerNm, id)
 		mutexMap[id] = &sync.RWMutex{}
 	}
-	resHandler.logger.Debugf("[%s request] :: Already created mutex for %s\n", loggerNm, id)
-	return nil
+	return mutexMap[id]
 }
