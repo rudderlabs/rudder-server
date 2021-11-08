@@ -57,7 +57,8 @@ func getRecoveryData() RecoveryDataT {
 		data = []byte(defaultRecoveryJSON)
 	} else {
 		if err != nil {
-			panic(err)
+			pkgLogger.Errorf("Unable to read recovery data to file with error: %v", err)
+			return RecoveryDataT{}
 		}
 	}
 	var recoveryData RecoveryDataT
@@ -79,7 +80,7 @@ func saveRecoveryData(recoveryData RecoveryDataT) {
 	}
 	err = os.WriteFile(storagePath, recoveryDataJSON, 0644)
 	if err != nil {
-		panic(err)
+		pkgLogger.Errorf("Unable to write recovery data to file with error: %v", err)
 	}
 }
 
