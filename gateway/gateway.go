@@ -540,6 +540,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 				EventCount:   totalEventsInReq,
+				Customer:     gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey),
 			}
 			jobList = append(jobList, &newJob)
 
