@@ -650,7 +650,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								rtl_time := time.Now()
 								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(ctx, dResponse, worker.rt.destName)
 								worker.routerResponseTransformStat.SendTiming(time.Since(rtl_time))
-								//Handle OAuth Destinations' Response
+								// Handle OAuth Destinations' Response
 								authType := router_utils.GetAuthType(destinationJob.Destination)
 								if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 									pkgLogger.Debugf(`Sending for OAuth destination`)
