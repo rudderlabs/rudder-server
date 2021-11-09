@@ -259,6 +259,7 @@ type JobT struct {
 	EventPayload  json.RawMessage `json:"EventPayload"`
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
+	Customer      string          `json:"Customer"`
 }
 
 func (job *JobT) String() string {
@@ -1366,7 +1367,8 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
                                       event_payload JSONB NOT NULL,
 									  event_count INTEGER NOT NULL DEFAULT 1,
                                       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                                      expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, newDS.JobTable)
+                                      expire_at TIMESTAMP NOT NULL DEFAULT NOW(),
+									  customer TEXT NOT NULL DEFAULT '');`, newDS.JobTable)
 
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
