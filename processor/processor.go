@@ -368,8 +368,11 @@ func (proc *HandleT) Start(ctx context.Context) {
 		if err := proc.backendConfig.WaitForConfig(ctx); err != nil {
 			return err
 		}
-		// proc.mainLoop(ctx)
-		proc.pipeline(ctx)
+		if enablePipelining {
+			proc.pipelineWithPause(ctx, proc.mainPipeline)
+		} else {
+			proc.mainLoop(ctx)
+		}
 		return nil
 	}))
 
@@ -389,6 +392,7 @@ func (proc *HandleT) Shutdown() {
 }
 
 var (
+	enablePipelining          bool
 	loopSleep                 time.Duration
 	maxLoopSleep              time.Duration
 	fixedLoopSleep            time.Duration
@@ -414,6 +418,7 @@ var (
 )
 
 func loadConfig() {
+	config.RegisterBoolConfigVariable(true, &enablePipelining, false, "Processor.enablePipelining")
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep", "Processor.fixedLoopSleepInMS"}...)
@@ -1296,7 +1301,7 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 	destProcStart := time.Now()
 	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
 
-	chOut := make(chan processPipelineOutput, 1)
+	chOut := make(chan transformSrcDestOutput, 1)
 	wg := sync.WaitGroup{}
 	wg.Add(len(in.groupedEvents))
 
@@ -1304,7 +1309,7 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 		srcAndDestKey, eventList := srcAndDestKey, eventList
 		go func() {
 			defer wg.Done()
-			chOut <- proc.processPipeline(
+			chOut <- proc.transformSrcDest(
 				srcAndDestKey, eventList,
 
 				in.trackingPlanEnabledMap,
@@ -1460,14 +1465,14 @@ func (proc *HandleT) Store(in storeMessage) {
 	proc.pStatsDBW.Print()
 }
 
-type processPipelineOutput struct {
+type transformSrcDestOutput struct {
 	reportMetrics   []*types.PUReportedMetric
 	destJobs        []*jobsdb.JobT
 	batchDestJobs   []*jobsdb.JobT
 	errorsPerDestID map[string][]*jobsdb.JobT
 }
 
-func (proc *HandleT) processPipeline(
+func (proc *HandleT) transformSrcDest(
 	// main inputs
 	srcAndDestKey string, eventList []transformer.TransformerEventT,
 
@@ -1475,7 +1480,7 @@ func (proc *HandleT) processPipeline(
 	trackingPlanEnabledMap map[SourceIDT]bool,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
-) processPipelineOutput {
+) transformSrcDestOutput {
 	defer proc.pipeProcessing.Since(time.Now())
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
@@ -1580,7 +1585,7 @@ func (proc *HandleT) processPipeline(
 	}
 
 	if len(eventsToTransform) == 0 {
-		return processPipelineOutput{
+		return transformSrcDestOutput{
 			destJobs:        destJobs,
 			batchDestJobs:   batchDestJobs,
 			errorsPerDestID: procErrorJobsByDestID,
@@ -1750,7 +1755,7 @@ func (proc *HandleT) processPipeline(
 	}
 	//REPORTING - PROCESSOR metrics - END
 
-	return processPipelineOutput{
+	return transformSrcDestOutput{
 		destJobs:        destJobs,
 		batchDestJobs:   batchDestJobs,
 		errorsPerDestID: procErrorJobsByDestID,
@@ -1877,6 +1882,8 @@ func (proc *HandleT) getJobs(nextJobID int64) ([]*jobsdb.JobT, int64) {
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
 // Returns true if any job is handled, otherwise returns false.
 func (proc *HandleT) handlePendingGatewayJobs(prevJobID int64) (bool, int64) {
+	s := time.Now()
+
 	unprocessedList, nextID := proc.getJobs(prevJobID)
 
 	if len(unprocessedList) == 0 {
@@ -1888,11 +1895,12 @@ func (proc *HandleT) handlePendingGatewayJobs(prevJobID int64) (bool, int64) {
 			proc.processJobsForDest(unprocessedList, nil),
 		),
 	)
-	// TODO: proc.statLoopTime.Since(s)
+	proc.statLoopTime.Since(s)
 
 	return true, nextID
 }
 
+// mainLoop: legacy way of handling jobs
 func (proc *HandleT) mainLoop(ctx context.Context) {
 	//waiting for reporting client setup
 	if proc.reporting != nil && proc.reportingEnabled {
@@ -1933,7 +1941,36 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 	}
 }
 
-func (proc *HandleT) pipeline(ctx context.Context) {
+func (proc *HandleT) pipelineWithPause(ctx context.Context, fn func(ctx context.Context)) {
+	for {
+		var pause *PauseT
+
+		ctxPausable, cancel := context.WithCancel(ctx)
+		go func() {
+			pause = <-proc.pauseChannel
+			cancel()
+		}()
+		fn(ctxPausable)
+
+		// stop due to parent context cancellation
+		if ctx.Err() != nil {
+			return
+		}
+
+		// handle pause
+		if pause == nil {
+			panic("`pause` should not be nil")
+		}
+		proc.paused = true
+		pause.respChannel <- true
+		<-proc.resumeChannel
+	}
+}
+
+// mainPipeline: new way of handling jobs
+//
+// [getJobs] -chProc-> [processJobsForDest] -chTrans-> [transformations] -chStore-> [Store]
+func (proc *HandleT) mainPipeline(ctx context.Context) {
 	//waiting for reporting client setup
 	if proc.reporting != nil && proc.reportingEnabled {
 		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
