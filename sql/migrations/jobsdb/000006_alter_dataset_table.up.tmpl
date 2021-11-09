@@ -1,0 +1,3 @@
+{{range .Datasets}}
+    ALTER TABLE {{$.Prefix}}_jobs_{{.}} ADD COLUMN IF NOT EXISTS customer TEXT NOT NULL DEFAULT '';
+{{end}}
