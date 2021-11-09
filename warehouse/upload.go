@@ -900,6 +900,7 @@ func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error
 	return
 }
 
+
 func (job *UploadJobT) getTotalCount(tName string) (total int64, err error) {
 	operation := func() error {
 		var countErr error
