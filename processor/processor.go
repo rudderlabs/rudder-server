@@ -997,7 +997,6 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) transformationMessage {
 	start := time.Now()
 	defer proc.processJobsTime.Since(start)
-	
 
 	proc.statNumRequests.Count(len(jobList))
 
@@ -1319,19 +1318,8 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 		close(chOut)
 	}()
 
-	totalPayloadRouterBytes := 0
-	totalPayloadBatchBytes := 0
-
-
 	for o := range chOut {
-		for i := range o.destJobs {
-			totalPayloadRouterBytes += len(o.destJobs[i].EventPayload)
-		}
 		destJobs = append(destJobs, o.destJobs...)
-
-		for i := range o.batchDestJobs {
-			totalPayloadBatchBytes += len(o.batchDestJobs[i].EventPayload)
-		}
 		batchDestJobs = append(batchDestJobs, o.batchDestJobs...)
 
 		in.reportMetrics = append(in.reportMetrics, o.reportMetrics...)
@@ -1388,6 +1376,11 @@ func (proc *HandleT) Store(in storeMessage) {
 			proc.logger.Errorf("destJobs: %v", destJobs)
 			panic(err)
 		}
+		totalPayloadRouterBytes := 0
+		for i := range destJobs {
+			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
+		}
+
 		proc.statDestNumOutputEvents.Count(len(destJobs))
 		proc.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
 		proc.statDBWriteRouterPayloadBytes.Observe(float64(totalPayloadRouterBytes))
@@ -1400,6 +1393,11 @@ func (proc *HandleT) Store(in storeMessage) {
 			proc.logger.Errorf("batchDestJobs: %v", batchDestJobs)
 			panic(err)
 		}
+		totalPayloadBatchBytes := 0
+		for i := range batchDestJobs {
+			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
+		}
+
 		proc.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 		proc.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
 		proc.statDBWriteBatchPayloadBytes.Observe(float64(totalPayloadBatchBytes))
@@ -1866,7 +1864,6 @@ func (proc *HandleT) getJobs(nextJobID int64) ([]*jobsdb.JobT, int64) {
 	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList), totalEvents)
 	proc.pStatsDBR.Rate(len(unprocessedList), time.Since(s))
 	proc.statGatewayDBR.Count(len(unprocessedList))
-
 
 	proc.statDBReadRequests.Observe(float64(len(unprocessedList)))
 	proc.statDBReadEvents.Observe(float64(totalEvents))
