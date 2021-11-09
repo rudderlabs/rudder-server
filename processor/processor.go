@@ -607,6 +607,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.Namespace = config.GetKubeNamespace()
 	commonMetadata.InstanceID = config.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
+	commonMetadata.Customer = batchEvent.Customer
 	commonMetadata.JobID = batchEvent.JobID
 	commonMetadata.MessageID = misc.GetStringifiedData(singularEvent["messageId"])
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
@@ -634,6 +635,7 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.Namespace = commonMetadata.Namespace
 	metadata.InstanceID = commonMetadata.InstanceID
 	metadata.RudderID = commonMetadata.RudderID
+	metadata.Customer = commonMetadata.Customer
 	metadata.JobID = commonMetadata.JobID
 	metadata.MessageID = commonMetadata.MessageID
 	metadata.ReceivedAt = commonMetadata.ReceivedAt
@@ -739,6 +741,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.SourceJobID = userTransformedEvent.Metadata.SourceJobID
 		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
+		eventMetadata.Customer = userTransformedEvent.Metadata.Customer
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
 		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
 		eventMetadata.EventName = userTransformedEvent.Metadata.EventName
@@ -880,6 +883,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			ExpireAt:     time.Now(),
 			CustomVal:    commonMetaData.DestinationType,
 			UserID:       failedEvent.Metadata.RudderID,
+			Customer:     failedEvent.Metadata.Customer,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
@@ -996,7 +1000,6 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 	start := time.Now()
 	defer proc.processJobsTime.Since(start)
-	
 
 	proc.statNumRequests.Count(len(jobList))
 
@@ -1602,6 +1605,7 @@ func (proc *HandleT) processPipeline(
 		sourceDefID := destEvent.Metadata.SourceDefinitionID
 		destDefID := destEvent.Metadata.DestinationDefinitionID
 		sourceCategory := destEvent.Metadata.SourceCategory
+		customer := destEvent.Metadata.Customer
 		//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 		//This is done to respect findWorker logic in router.
 		if rudderID == "" {
@@ -1641,6 +1645,7 @@ func (proc *HandleT) processPipeline(
 			ExpireAt:     time.Now(),
 			CustomVal:    destType,
 			EventPayload: destEventJSON,
+			Customer:     customer,
 		}
 		if misc.Contains(batchDestinations, newJob.CustomVal) {
 			batchDestJobs = append(batchDestJobs, &newJob)
