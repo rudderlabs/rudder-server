@@ -13,6 +13,7 @@ import (
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -102,20 +103,7 @@ const (
 
 // The response from the transformer network layer will be sent with a output property(in case of an error)
 type ErrorOutput struct {
-	Output ErrorResponse `json:"output"`
-}
-
-// This struct represents the datastructure present in Transformer network layer Error builder
-type ErrorResponse struct {
-	Message             string                 `json:"message"`
-	Destination         map[string]interface{} `json:"destination"`
-	NetworkFailure      bool                   `json:"networkFailure"`
-	Status              int                    `json:"status"`
-	AuthErrorCategory   string                 `json:"authErrorCategory"`
-	AccessToken         string                 `json:"accessToken"`
-	StatTags            map[string]string      `json:"statTags"`
-	StatName            string                 `json:"statName"`
-	DestinationResponse map[string]interface{} `json:"destinationResponse"`
+	Output integrations.TransErrorT `json:"output"`
 }
 
 type RefreshTokenBodyParams struct {

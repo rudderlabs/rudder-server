@@ -4,6 +4,7 @@ package transformer
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,19 +29,19 @@ const (
 
 //HandleT is the handle for this class
 type HandleT struct {
-	tr                                 *http.Transport
-	client                             *http.Client
-	transformRequestTimerStat          stats.RudderStats
-	transformerNetworkRequestTimerStat stats.RudderStats
-	respTransformNetReqTimerStat       stats.RudderStats
-	logger                             logger.LoggerI
+	tr                                      *http.Transport
+	client                                  *http.Client
+	transformRequestTimerStat               stats.RudderStats
+	transformerNetworkRequestTimerStat      stats.RudderStats
+	transformerResponseTransformRequestTime stats.RudderStats
+	logger                                  logger.LoggerI
 }
 
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ResponseTransform(responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string)
+	ResponseTransform(ctx context.Context, responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string)
 }
 
 //NewTransformer creates a new transformer
@@ -49,15 +50,16 @@ func NewTransformer() *HandleT {
 }
 
 var (
-	maxRetry   int
-	retrySleep time.Duration
-	pkgLogger  logger.LoggerI
+	maxRetry        int
+	retrySleep      time.Duration
+	timeoutDuration time.Duration
+	pkgLogger       logger.LoggerI
 )
 
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
-
+	config.RegisterDurationConfigVariable(time.Duration(5000), &timeoutDuration, true, time.Second, []string{"Processor.timeoutDuration", "Processor.timeoutDurationInSecond"}...)
 }
 
 func Init() {
@@ -141,8 +143,10 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
 
 		if transformType == BATCH {
+			integrations.CollectIntgTransformErrorStats(respData)
 			err = json.Unmarshal(respData, &destinationJobs)
 		} else if transformType == ROUTER_TRANSFORM {
+			integrations.CollectIntgTransformErrorStats([]byte(gjson.GetBytes(respData, "output").Raw))
 			err = json.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
 		}
 		//This is returned by our JS engine so should  be parsable
@@ -165,58 +169,114 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) ResponseTransform(responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string) {
+func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string) {
 	rawJSON, err := json.Marshal(responseData)
+	requestFailed := false
+	retryCount := 0
 	if err != nil {
 		panic(err)
 	}
 	var resp *http.Response
 	var respData []byte
+	var respCode int
+	var tempRespData []byte
 	url := getResponseTransformURL(destName)
-	respTransformNetReqTimeStart := time.Now()
-	resp, err = trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
-	trans.respTransformNetReqTimerStat.SendTiming(time.Since(respTransformNetReqTimeStart))
-	if err != nil {
-		respData = []byte("")
-		trans.logger.Errorf("[Response Transformer request] :: destination request failed: %+v", err)
-		return http.StatusInternalServerError, string(respData)
-	}
-	if resp != nil && resp.Body != nil {
-		var ioBodyErr error
-		respData, ioBodyErr = io.ReadAll(resp.Body)
-		if ioBodyErr != nil {
-			trans.logger.Errorf("[Response Transformer request] :: destination request failed: %+v", ioBodyErr)
-			return http.StatusInternalServerError, ioBodyErr.Error()
+	payload := strings.NewReader(string(rawJSON))
+	for {
+		payload.Seek(0, io.SeekStart)
+		req, err := http.NewRequestWithContext(ctx, "POST", url, payload)
+		if err != nil {
+			trans.logger.Error(fmt.Sprintf(`400 Unable to construct POST request for URL : "%s"`, url))
+			return 400, fmt.Sprintf(`400 Unable to construct POST request for URL : "%s"`, url)
+		}
+		req.Header.Add("Content-Type", "application/json")
+		s := time.Now()
+		resp, err = trans.client.Do(req)
+		trans.transformerResponseTransformRequestTime.SendTiming(time.Since(s))
+		// retry in case of err
+		if err != nil {
+			trans.logger.Errorf("[Transformer Response Transform request failed] :: %+v", err)
+			requestFailed = true
+			if retryCount > maxRetry {
+				panic(fmt.Errorf("Transformer HTTP connection error: URL: %v Error: %+v", url, err))
+			}
+			retryCount++
+			time.Sleep(retrySleep)
+			//Refresh the connection
+			continue
+		}
+
+		if resp != nil && resp.Body != nil {
+			tempRespData, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+		}
+		//Detecting content type of the respBody
+		contentTypeHeader := strings.ToLower(http.DetectContentType(tempRespData))
+		//If content type is not of type "*text*", overriding it with empty string
+		if !(strings.Contains(contentTypeHeader, "text") ||
+			strings.Contains(contentTypeHeader, "application/json") ||
+			strings.Contains(contentTypeHeader, "application/xml")) {
+			tempRespData = []byte("")
+		}
+
+		if requestFailed {
+			trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
+		}
+
+		if resp != nil {
+			//handling for 404
+			if resp.StatusCode == 404 {
+				panic(fmt.Errorf("[Response transform doesnot exist for URL: URL: %v", url))
+			}
+			// handling for 5xx
+			if resp.StatusCode >= 500 && resp.StatusCode < 600 {
+				var transError integrations.TransErrorT
+				rawTResponse := []byte(gjson.GetBytes(tempRespData, "output").Raw)
+				// if the response is not containing "output" is not an explicit error from transformer
+				if len(rawTResponse) != 0 {
+					err = json.Unmarshal(rawTResponse, &transError)
+					if err != nil {
+						respData = []byte("Failed to parse response transform at server error: " + err.Error())
+						respCode = 400
+						break
+					}
+					// error is explicitly lodged from transformer marking a destination side failure
+					if transError.ErrorDetailed.ResponseTransformFailure {
+						integrations.CollectDestErrorStats(rawTResponse)
+						respData = tempRespData
+						respCode = resp.StatusCode
+						break
+					}
+				}
+				// network level 5xx error we need to retry response transform request
+				trans.logger.Errorf("[Transformer Response Transform request failed] :: %+v", err)
+				requestFailed = true
+				if retryCount > maxRetry {
+					panic(fmt.Errorf("Transformer HTTP connection error: URL: %v Error: %+v", url, err))
+				}
+				retryCount++
+				time.Sleep(retrySleep)
+				//Refresh the connection
+				continue
+			}
+			rawTResponse := []byte(gjson.GetBytes(tempRespData, "output").Raw)
+			integrations.CollectDestErrorStats(rawTResponse)
+			respData = tempRespData
+			respCode = resp.StatusCode
+			break
 		}
 	}
-	var contentTypeHeader string
-	if resp != nil && resp.Header != nil {
-		contentTypeHeader = resp.Header.Get("Content-Type")
-	}
-	if contentTypeHeader == "" {
-		//Detecting content type of the respBody
-		contentTypeHeader = http.DetectContentType(respData)
-	}
-	// If content type is not of type "*text*", overriding it with empty string
-	if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
-		strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
-		strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
-		// REVERT: This is only for debugging purposes
-		fmt.Printf(`[router/transformer.go] Original Response:  %v`, respData)
-		respData = []byte("")
-	}
-	resp.Body.Close()
-	return resp.StatusCode, string(respData)
+	return respCode, string(respData)
 }
 
 //is it ok to use same client for network and transformer calls? need to understand timeout setup in router
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
-	trans.client = &http.Client{Transport: trans.tr}
+	trans.client = &http.Client{Transport: trans.tr, Timeout: timeoutDuration}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
-	trans.respTransformNetReqTimerStat = stats.NewStat("router.response_transform_net_req_time", stats.TimerType)
+	trans.transformerResponseTransformRequestTime = stats.NewStat("router.transformer_response_transform_time", stats.TimerType)
 }
 
 func getBatchURL() string {

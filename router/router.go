@@ -48,6 +48,17 @@ type PauseT struct {
 	waitForResume bool
 }
 
+type HandleDestOAuthRespParamsT struct {
+	ctx            context.Context
+	val            integrations.PostParametersT
+	destinationJob types.DestinationJobT
+	workerId       int
+	destRespStCd   int
+	trRespStCd     int
+	destResBody    string
+	trRespBody     string
+}
+
 //HandleT is the handle to this module.
 type HandleT struct {
 	pausingWorkers                         bool
@@ -114,6 +125,8 @@ type HandleT struct {
 	backgroundCancel                       context.CancelFunc
 	backgroundWait                         func() error
 	oauth                                  oauth.Authorizer
+	responseTransform                      bool
+	saveDestinationResponseOverride        bool
 }
 
 type jobResponseT struct {
@@ -150,26 +163,28 @@ type workerMessageT struct {
 
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	pauseChannel               chan *PauseT
-	resumeChannel              chan bool
-	channel                    chan workerMessageT     // the worker job channel
-	workerID                   int                     // identifies the worker
-	failedJobs                 int                     // counts the failed jobs of a worker till it gets reset by external channel
-	sleepTime                  time.Duration           // the sleep duration for every job of the worker
-	failedJobIDMap             map[string]int64        // user to failed jobId
-	failedJobIDMutex           sync.RWMutex            // lock to protect structure above
-	retryForJobMap             map[int64]time.Time     // jobID to next retry time map
-	retryForJobMapMutex        sync.RWMutex            // lock to protect structure above
-	routerJobs                 []types.RouterJobT      // slice to hold router jobs to send to destination transformer
-	destinationJobs            []types.DestinationJobT // slice to hold destination jobs
-	rt                         *HandleT                // handle to router
-	deliveryTimeStat           stats.RudderStats
-	batchTimeStat              stats.RudderStats
-	abortedUserIDMap           map[string]int // aborted user to count of jobs allowed map
-	abortedUserMutex           sync.RWMutex
-	jobCountsByDestAndUser     map[string]*destJobCountsT
-	throttledAtTime            time.Time
-	encounteredRouterTransform bool
+	pauseChannel                chan *PauseT
+	resumeChannel               chan bool
+	channel                     chan workerMessageT     // the worker job channel
+	workerID                    int                     // identifies the worker
+	failedJobs                  int                     // counts the failed jobs of a worker till it gets reset by external channel
+	sleepTime                   time.Duration           // the sleep duration for every job of the worker
+	failedJobIDMap              map[string]int64        // user to failed jobId
+	failedJobIDMutex            sync.RWMutex            // lock to protect structure above
+	retryForJobMap              map[int64]time.Time     // jobID to next retry time map
+	retryForJobMapMutex         sync.RWMutex            // lock to protect structure above
+	routerJobs                  []types.RouterJobT      // slice to hold router jobs to send to destination transformer
+	destinationJobs             []types.DestinationJobT // slice to hold destination jobs
+	rt                          *HandleT                // handle to router
+	deliveryTimeStat            stats.RudderStats
+	routerDeliveryLatencyStat   stats.RudderStats
+	routerResponseTransformStat stats.RudderStats
+	batchTimeStat               stats.RudderStats
+	abortedUserIDMap            map[string]int // aborted user to count of jobs allowed map
+	abortedUserMutex            sync.RWMutex
+	jobCountsByDestAndUser      map[string]*destJobCountsT
+	throttledAtTime             time.Time
+	encounteredRouterTransform  bool
 }
 
 type destJobCountsT struct {
@@ -612,18 +627,46 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							respStatusCode, respBodyTemp = 400, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
+							// stat start
+							pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.responseTransform, worker.rt.destName)
 							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 							defer cancel()
+							rdl_time := time.Now()
+							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
+							// stat end
+							worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
+							//response transform start
+							if worker.rt.responseTransform {
+								dResponse := integrations.DeliveryResponseT{
+									Status:  int64(respStatusCode),
+									Body:    respBodyTemp,
+									Payload: val,
+								}
+								// destination response status code
+								destRespStCd := respStatusCode
+								// destination response body
+								destRespBody := respBodyTemp
 
-							//for proxying through transformer
-							authType := router_utils.GetAuthType(destinationJob.Destination)
-							if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
-								pkgLogger.Debugf(`Sending for OAuth destination`)
-								respStatusCode, respBodyTemp = worker.rt.SendOAuthDestEvent(sendCtx, val, destinationJob, worker.workerID)
-							} else {
-								pkgLogger.Infof(`Sending event for non-oauth destination`)
-								respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
+								rtl_time := time.Now()
+								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(ctx, dResponse, worker.rt.destName)
+								worker.routerResponseTransformStat.SendTiming(time.Since(rtl_time))
+								//Handle OAuth Destinations' Response
+								authType := router_utils.GetAuthType(destinationJob.Destination)
+								if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
+									pkgLogger.Debugf(`Sending for OAuth destination`)
+									respStatusCode, respBodyTemp = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
+										ctx:            ctx,
+										val:            val,
+										destinationJob: destinationJob,
+										workerId:       worker.workerID,
+										destRespStCd:   destRespStCd,
+										destResBody:    destRespBody,
+										trRespStCd:     respStatusCode,
+										trRespBody:     respBodyTemp,
+									})
+								}
 							}
+							// response transform end
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
@@ -637,7 +680,8 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				ch <- struct{}{}
 
 				//Using reponse status code and body to get response code rudder router logic is based on.
-				if destinationResponseHandler != nil {
+				// Works when response transform in disabled
+				if !worker.rt.responseTransform && destinationResponseHandler != nil {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
 				}
 
@@ -647,7 +691,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				deliveryLatencyStat.End()
 				// END: request to destination endpoint
 
-				if isSuccessStatus(respStatusCode) {
+				if isSuccessStatus(respStatusCode) && !worker.rt.saveDestinationResponseOverride {
 					if saveDestinationResponse {
 						if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
 							respBody = ""
@@ -1081,21 +1125,23 @@ func (rt *HandleT) initWorkers() {
 	g, _ := errgroup.WithContext(context.Background())
 	for i := 0; i < rt.noOfWorkers; i++ {
 		worker := &workerT{
-			pauseChannel:           make(chan *PauseT),
-			resumeChannel:          make(chan bool),
-			channel:                make(chan workerMessageT, noOfJobsPerChannel),
-			failedJobIDMap:         make(map[string]int64),
-			retryForJobMap:         make(map[int64]time.Time),
-			workerID:               i,
-			failedJobs:             0,
-			sleepTime:              minSleep,
-			routerJobs:             make([]types.RouterJobT, 0),
-			destinationJobs:        make([]types.DestinationJobT, 0),
-			rt:                     rt,
-			deliveryTimeStat:       stats.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
-			batchTimeStat:          stats.NewTaggedStat("router_batch_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
-			abortedUserIDMap:       make(map[string]int),
-			jobCountsByDestAndUser: make(map[string]*destJobCountsT),
+			pauseChannel:                make(chan *PauseT),
+			resumeChannel:               make(chan bool),
+			channel:                     make(chan workerMessageT, noOfJobsPerChannel),
+			failedJobIDMap:              make(map[string]int64),
+			retryForJobMap:              make(map[int64]time.Time),
+			workerID:                    i,
+			failedJobs:                  0,
+			sleepTime:                   minSleep,
+			routerJobs:                  make([]types.RouterJobT, 0),
+			destinationJobs:             make([]types.DestinationJobT, 0),
+			rt:                          rt,
+			deliveryTimeStat:            stats.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			batchTimeStat:               stats.NewTaggedStat("router_batch_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			routerDeliveryLatencyStat:   stats.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			routerResponseTransformStat: stats.NewTaggedStat("response_transform_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			abortedUserIDMap:            make(map[string]int),
+			jobCountsByDestAndUser:      make(map[string]*destJobCountsT),
 		}
 		rt.workers[i] = worker
 
@@ -1809,10 +1855,14 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
 	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
+	responseTransformKeys := []string{"Router." + rt.destName + "." + "responseTransform", "Router." + "responseTransform"}
+	saveDestinationResponseOverrideKeys := []string{"Router." + rt.destName + "." + "saveDestinationResponseOverride", "Router." + "saveDestinationResponseOverride"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
+	config.RegisterBoolConfigVariable(false, &rt.responseTransform, true, responseTransformKeys...)
+	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
@@ -2027,20 +2077,13 @@ func (rt *HandleT) Resume() {
 	rt.paused = false
 }
 
-// Currently the retry logic has been implemented for only OAuth
-func (rt *HandleT) SendOAuthDestEvent(ctx context.Context, val integrations.PostParametersT,
-	destinationJob types.DestinationJobT, workerId int) (int, string) {
-	var destRespStCd int
-	var destResBody string
+func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (int, string) {
+	destResBody := params.destResBody
+	trRespStatusCode := params.trRespStCd
+	trRespBody := params.trRespBody
+	destRespStCd := params.destRespStCd
+	destinationJob := params.destinationJob
 
-	destRespStCd, destResBody = rt.netHandle.SendPost(ctx, val)
-	respTransformStartTime := time.Now()
-	trRespStatusCode, trRespBody := rt.transformer.ResponseTransform(integrations.DeliveryResponseT{
-		Status:  int64(destRespStCd),
-		Body:    destResBody,
-		Payload: val,
-	}, rt.destName)
-	rt.routerResponseTransformStat.SendTiming(time.Since(respTransformStartTime))
 	if trRespStatusCode != http.StatusOK {
 		var destErrOutput oauth.ErrorOutput
 		if destError := json.Unmarshal([]byte(trRespBody), &destErrOutput); destError != nil {
@@ -2054,23 +2097,23 @@ func (rt *HandleT) SendOAuthDestEvent(ctx context.Context, val integrations.Post
 		}
 		workspaceId := destinationJob.JobMetadataArray[0].WorkspaceId
 		var errCatStatusCode int
-		destinationErrOutput := destErrOutput.Output
-		stats.NewTaggedStat(destinationErrOutput.StatName, stats.CountType, destinationErrOutput.StatTags).Increment()
+		destErrDetailed := destErrOutput.Output.ErrorDetailed
+		// stats.NewTaggedStat(destErrDetailed.StatName, stats.CountType, destErrDetailed.StatTags).Increment()
 		// Check the category
 		// Trigger the refresh endpoint/disable endpoint
-		switch destErrOutput.Output.AuthErrorCategory {
+		switch destErrDetailed.AuthErrorCategory {
 		case oauth.DISABLE_DEST:
 			return rt.ExecDisableDestination(destinationJob, workspaceId, destResBody)
 		case oauth.REFRESH_TOKEN:
 			rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
-				AccessToken:     destErrOutput.Output.AccessToken,
+				AccessToken:     destErrDetailed.AccessToken,
 				WorkspaceId:     workspaceId,
 				AccountId:       rudderAccountId,
 				DestDefName:     destinationJob.Destination.DestinationDefinition.Name,
 				EventNamePrefix: "refresh_token",
-				WorkerId:        workerId,
+				WorkerId:        params.workerId,
 			}
 			errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
 			refSec := *refSecret
@@ -2085,7 +2128,7 @@ func (rt *HandleT) SendOAuthDestEvent(ctx context.Context, val integrations.Post
 					"worspaceId":    refTokenParams.WorkspaceId,
 					"accountId":     refTokenParams.AccountId,
 					"destName":      refTokenParams.DestDefName,
-				})
+				}).Increment()
 				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
 				return disableStCd, refSec.Err
 			}
