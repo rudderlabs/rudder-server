@@ -1988,6 +1988,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	chProc := make(chan []*jobsdb.JobT, bufferSize)
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		nextSleepTime := time.Duration(0)
 
 		var jobIDCursor int64
