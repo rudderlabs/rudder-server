@@ -393,9 +393,11 @@ func (proc *HandleT) Shutdown() {
 
 var (
 	enablePipelining          bool
-	loopSleep                 time.Duration
+	pipelineBufferedItems     int
+	readLoopSleep             time.Duration
 	maxLoopSleep              time.Duration
-	fixedLoopSleep            time.Duration
+	loopSleep                 time.Duration // DEPRECATED: used only on the old mainLoop
+	fixedLoopSleep            time.Duration // DEPRECATED: used only on the old mainLoop
 	maxEventsToProcess        int
 	transformBatchSize        int
 	userTransformBatchSize    int
@@ -419,8 +421,12 @@ var (
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &enablePipelining, false, "Processor.enablePipelining")
+	config.RegisterIntConfigVariable(3, &pipelineBufferedItems, true, 1, "Processor.pipelineBufferedItems")
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
+	config.RegisterDurationConfigVariable(time.Duration(200), &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleepInMS")
+	//DEPRECATED: used only on the old mainLoop:
 	config.RegisterDurationConfigVariable(time.Duration(10), &loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
+	//DEPRECATED: used only on the old mainLoop:
 	config.RegisterDurationConfigVariable(time.Duration(0), &fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep", "Processor.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(100, &transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
@@ -1977,23 +1983,40 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	}
 
 	wg := sync.WaitGroup{}
-	bufferSize := 5
+	bufferSize := pipelineBufferedItems
 
 	chProc := make(chan []*jobsdb.JobT, bufferSize)
 	wg.Add(1)
 	go func() {
-		var jobID int64
+		nextSleepTime := time.Duration(0)
+
+		var jobIDCursor int64
 		defer close(chProc)
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(mainLoopTimeout):
-				jobs, nextID := proc.getJobs(jobID)
+			case <-time.After(nextSleepTime):
+				jobs, nextID := proc.getJobs(jobIDCursor)
 				if len(jobs) == 0 {
+					// no jobs found, double sleep time until maxLoopSleep
+					nextSleepTime = 2 * nextSleepTime
+					if nextSleepTime > maxLoopSleep {
+						nextSleepTime = maxLoopSleep
+					} else if nextSleepTime == 0 {
+						nextSleepTime = readLoopSleep
+					}
 					continue
 				}
-				jobID = nextID
+
+				events := 0
+				for i := range jobs {
+					events += jobs[i].EventCount
+				}
+				// nextSleepTime is dependent on the number of events read in this loop
+				nextSleepTime = time.Duration(1-events/maxEventsToProcess) * readLoopSleep
+
+				jobIDCursor = nextID
 				chProc <- jobs
 			}
 		}
