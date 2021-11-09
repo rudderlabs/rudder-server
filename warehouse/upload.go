@@ -900,8 +900,7 @@ func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error
 	return
 }
 
-func (job *UploadJobT) getTotalCount(tName string) (int64, error) {
-	var total int64
+func (job *UploadJobT) getTotalCount(tName string) (total int64, err error) {
 	operation := func() error {
 		var countErr error
 		total, countErr = job.whManager.GetTotalCountInTable(tName)
@@ -912,10 +911,14 @@ func (job *UploadJobT) getTotalCount(tName string) (int64, error) {
 	expBackoff.RandomizationFactor = 0
 	expBackoff.Reset()
 	backoffWithMaxRetry := backoff.WithMaxRetries(expBackoff, 5)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf(`Error getting total count in table:%s error: %v`, tName, err)
+	retryError := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		err = fmt.Errorf(`Error getting total count in table:%s error: %v`, tName, err)
+		pkgLogger.Error(err)
 	})
-	return total, err
+	if retryError != nil {
+		err = retryError
+	}
+	return
 }
 
 func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
