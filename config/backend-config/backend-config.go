@@ -234,7 +234,7 @@ func loadConfig() {
 	// Secret to be sent in basic auth for supporting multiple workspaces. password by default
 	multiWorkspaceSecret = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
 
-	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "http://localhost:5000")
+	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	workspaceToken = config.GetWorkspaceToken()
 
 	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
