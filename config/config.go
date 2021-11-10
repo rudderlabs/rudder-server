@@ -95,11 +95,16 @@ func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged 
 		case *int:
 			var _value int
 			var isSet bool
-			envVal := GetEnv(TransformKey(key), "")
-			if envVal != "" {
-				isSet = true
-				_value = cast.ToInt(envVal)
-			} else {
+			for _, key := range configVal.keys {
+				envVal := GetEnv(TransformKey(key), "")
+				if envVal != "" {
+					isSet = true
+					_value = cast.ToInt(envVal)
+					break
+				}
+			}
+
+			if !isSet {
 				for _, key := range configVal.keys {
 					if viper.IsSet(key) {
 						isSet = true
@@ -122,11 +127,15 @@ func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged 
 		case *int64:
 			var _value int64
 			var isSet bool
-			envVal := GetEnv(TransformKey(key), "")
-			if envVal != "" {
-				isSet = true
-				_value = cast.ToInt64(envVal)
-			} else {
+			for _, key := range configVal.keys {
+				envVal := GetEnv(TransformKey(key), "")
+				if envVal != "" {
+					isSet = true
+					_value = cast.ToInt64(envVal)
+					break
+				}
+			}
+			if !isSet {
 				for _, key := range configVal.keys {
 					if viper.IsSet(key) {
 						isSet = true
@@ -149,11 +158,15 @@ func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged 
 		case *string:
 			var _value string
 			var isSet bool
-			envVal := GetEnv(TransformKey(key), "")
-			if envVal != "" {
-				isSet = true
-				_value = cast.ToString(envVal)
-			} else {
+			for _, key := range configVal.keys {
+				envVal := GetEnv(TransformKey(key), "")
+				if envVal != "" {
+					isSet = true
+					_value = cast.ToString(envVal)
+					break
+				}
+			}
+			if !isSet {
 				for _, key := range configVal.keys {
 					if viper.IsSet(key) {
 						isSet = true
@@ -175,11 +188,15 @@ func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged 
 		case *time.Duration:
 			var _value time.Duration
 			var isSet bool
-			envVal := GetEnv(TransformKey(key), "")
-			if envVal != "" {
-				isSet = true
-				_value = cast.ToDuration(envVal)
-			} else {
+			for _, key := range configVal.keys {
+				envVal := GetEnv(TransformKey(key), "")
+				if envVal != "" {
+					isSet = true
+					_value = cast.ToDuration(envVal)
+					break
+				}
+			}
+			if !isSet {
 				for _, key := range configVal.keys {
 					if viper.IsSet(key) {
 						isSet = true
@@ -201,11 +218,15 @@ func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged 
 		case *bool:
 			var _value bool
 			var isSet bool
-			envVal := GetEnv(TransformKey(key), "")
-			if envVal != "" {
-				isSet = true
-				_value = cast.ToBool(envVal)
-			} else {
+			for _, key := range configVal.keys {
+				envVal := GetEnv(TransformKey(key), "")
+				if envVal != "" {
+					isSet = true
+					_value = cast.ToBool(envVal)
+					break
+				}
+			}
+			if !isSet {
 				for _, key := range configVal.keys {
 					if viper.IsSet(key) {
 						isSet = true
@@ -227,11 +248,15 @@ func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged 
 		case *float64:
 			var _value float64
 			var isSet bool
-			envVal := GetEnv(TransformKey(key), "")
-			if envVal != "" {
-				isSet = true
-				_value = cast.ToFloat64(envVal)
-			} else {
+			for _, key := range configVal.keys {
+				envVal := GetEnv(TransformKey(key), "")
+				if envVal != "" {
+					isSet = true
+					_value = cast.ToFloat64(envVal)
+					break
+				}
+			}
+			if !isSet {
 				for _, key := range configVal.keys {
 					if viper.IsSet(key) {
 						isSet = true
