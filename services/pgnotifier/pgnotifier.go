@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"strconv"
 	"time"
 
@@ -258,6 +259,23 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 	})
 }
 
+func (notifier *PgNotifierT) updateClaimedEventStats(id int64) {
+	var status string
+	sqlStatement := fmt.Sprintf(`SELECT status FROM "%[1]s" WHERE id = %[2]v`, queueName, id)
+	err := notifier.dbHandle.QueryRow(sqlStatement).Scan(&status)
+	if err != nil {
+		pkgLogger.Errorf(`PG: Error getting status for %s`, queueName)
+	}
+
+	// PG notifier stats for aborted or succeeded state.
+	if status == AbortedState || status == SucceededState {
+		pgNotifierStat := stats.NewTaggedStat("pg_notifier", stats.CountType, stats.Tags{
+			"status": status,
+		})
+		pgNotifierStat.Increment()
+	}
+}
+
 func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT) {
 	rruntime.Go(func() {
 		response := <-ch
@@ -279,7 +297,11 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT
 		if err != nil {
 			// TODO: abort this job or raise metric and alert
 			pkgLogger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
+			return
 		}
+
+		// Updating claimed event stats
+		notifier.updateClaimedEventStats(id)
 	})
 }
 
@@ -367,6 +389,13 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority
 		return
 	}
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(messages), queueName, batchID)
+
+	// PG notifier stats for waiting state.
+	pgNotifierStat := stats.NewTaggedStat("pg_notifier", stats.CountType, stats.Tags{
+		"status": WaitingState,
+	})
+	pgNotifierStat.Count(len(messages))
+
 	notifier.trackBatch(batchID, &ch)
 	return
 }
