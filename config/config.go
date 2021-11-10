@@ -326,7 +326,14 @@ func RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool,
 		nonHotReloadableConfig[keys[0]] = &configVar
 	}
 	for _, key := range keys {
-		if IsSet(key) {
+		if IsTransformedEnvSet(key) {
+			isSet = true
+			*ptr = GetInt(key, defaultValue) * valueScale
+			break
+		}
+	}
+	for _, key := range keys {
+		if viper.IsSet(key) {
 			isSet = true
 			*ptr = GetInt(key, defaultValue) * valueScale
 			break
@@ -353,7 +360,14 @@ func RegisterBoolConfigVariable(defaultValue bool, ptr *bool, isHotReloadable bo
 		nonHotReloadableConfig[keys[0]] = &configVar
 	}
 	for _, key := range keys {
-		if IsSet(key) {
+		if IsTransformedEnvSet(key) {
+			isSet = true
+			*ptr = GetBool(key, defaultValue)
+			break
+		}
+	}
+	for _, key := range keys {
+		if viper.IsSet(key) {
 			isSet = true
 			*ptr = GetBool(key, defaultValue)
 			break
@@ -381,7 +395,14 @@ func RegisterFloat64ConfigVariable(defaultValue float64, ptr *float64, isHotRelo
 		nonHotReloadableConfig[keys[0]] = &configVar
 	}
 	for _, key := range keys {
-		if IsSet(key) {
+		if IsTransformedEnvSet(key) {
+			isSet = true
+			*ptr = GetFloat64(key, defaultValue)
+			break
+		}
+	}
+	for _, key := range keys {
+		if viper.IsSet(key) {
 			isSet = true
 			*ptr = GetFloat64(key, defaultValue)
 			break
@@ -409,7 +430,14 @@ func RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable
 		nonHotReloadableConfig[keys[0]] = &configVar
 	}
 	for _, key := range keys {
-		if IsSet(key) {
+		if IsTransformedEnvSet(key) {
+			isSet = true
+			*ptr = GetInt64(key, defaultValue) * valueScale
+			break
+		}
+	}
+	for _, key := range keys {
+		if viper.IsSet(key) {
 			isSet = true
 			*ptr = GetInt64(key, defaultValue) * valueScale
 			break
@@ -437,7 +465,14 @@ func RegisterDurationConfigVariable(defaultValue time.Duration, ptr *time.Durati
 		nonHotReloadableConfig[keys[0]] = &configVar
 	}
 	for _, key := range keys {
-		if IsSet(key) {
+		if IsTransformedEnvSet(key) {
+			isSet = true
+			*ptr = GetDuration(key, defaultValue, timeScale)
+			break
+		}
+	}
+	for _, key := range keys {
+		if viper.IsSet(key) {
 			isSet = true
 			*ptr = GetDuration(key, defaultValue, timeScale)
 			break
@@ -464,7 +499,14 @@ func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloada
 		nonHotReloadableConfig[keys[0]] = &configVar
 	}
 	for _, key := range keys {
-		if IsSet(key) {
+		if IsTransformedEnvSet(key) {
+			isSet = true
+			*ptr = GetString(key, defaultValue)
+			break
+		}
+	}
+	for _, key := range keys {
+		if viper.IsSet(key) {
 			isSet = true
 			*ptr = GetString(key, defaultValue)
 			break
@@ -556,6 +598,13 @@ func IsSet(key string) bool {
 	}
 
 	return viper.IsSet(key)
+}
+
+func IsTransformedEnvSet(key string) bool {
+	if _, exists := os.LookupEnv(TransformKey(key)); exists {
+		return true
+	}
+	return false
 }
 
 // IsEnvSet checks if an environment variable is set
