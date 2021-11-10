@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -47,25 +48,26 @@ import (
 )
 
 var (
-	hold             bool = true
-	db               *sql.DB
-	rs_db            *sql.DB
-	redisClient      *redis.Client
-	DB_DSN           = "root@tcp(127.0.0.1:3306)/service"
-	httpPort         string
-	httpKafkaPort    string
-	dbHandle         *sql.DB
-	sourceJSON       backendconfig.ConfigT
-	webhookurl       string
-	webhook          *WebhookRecorder
-	address          string
-	runIntegration   bool
-	writeKey         string
-	workspaceID      string
-	redisAddress     string
-	brokerPort       string
-	localhostPort    string
-	localhostPortInt int
+	hold                bool = true
+	db                  *sql.DB
+	rs_db               *sql.DB
+	redisClient         *redis.Client
+	DB_DSN              = "root@tcp(127.0.0.1:3306)/service"
+	httpPort            string
+	httpKafkaPort       string
+	dbHandle            *sql.DB
+	sourceJSON          backendconfig.ConfigT
+	webhookurl          string
+	webhook             *WebhookRecorder
+	address             string
+	runIntegration      bool
+	writeKey            string
+	workspaceID         string
+	redisAddress        string
+	brokerPort          string
+	localhostPort       string
+	localhostPortInt    int
+	reportingserviceURL string
 )
 
 type WebhookRecorder struct {
@@ -419,12 +421,12 @@ func run(m *testing.M) (int, error) {
 		return 0, fmt.Errorf("Could not connect to postgres %q: %w", DB_DSN, err)
 	}
 	log.Println("DB_DSN:", DB_DSN)
-	// Set  timescale DB 
+	// Set  timescale DB
 	// pulls an image, creates a container based on it and runs it
-	database = "rs_postgres"
+	database = "temo"
 	timescaleRes, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "timescale/timescaledb",
-		Tag:          "latest-pg13",
+		Repository: "timescale/timescaledb",
+		Tag:        "latest-pg13",
 		Env: []string{
 			"POSTGRES_USER=postgres",
 			"POSTGRES_DB=" + database,
@@ -440,7 +442,7 @@ func run(m *testing.M) (int, error) {
 		}
 	}()
 	timescaleDB_DSN_Internal := fmt.Sprintf("postgresql://postgres:password@host.docker.internal:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
-	fmt.Println("timesacaleDB_DSN",timescaleDB_DSN_Internal)
+	fmt.Println("timesacaleDB_DSN", timescaleDB_DSN_Internal)
 	timescaleDB_DSN_viaHost := fmt.Sprintf("postgresql://postgres:password@localhost:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
 	if err := pool.Retry(func() error {
 		var err error
@@ -452,7 +454,7 @@ func run(m *testing.M) (int, error) {
 	}); err != nil {
 		return 0, fmt.Errorf("Could not connect to postgres %q: %w", timescaleDB_DSN_viaHost, err)
 	}
-	log.Println("timescaleDB_DSN_1",timescaleDB_DSN_viaHost)
+	log.Println("timescaleDB_DSN_viaHost", timescaleDB_DSN_viaHost)
 
 	// Set  reporting service
 	// pulls an image, creates a container based on it and runs it
@@ -461,7 +463,7 @@ func run(m *testing.M) (int, error) {
 		Tag:          "dedup",
 		ExposedPorts: []string{"5000"},
 		Env: []string{
-			"DATABASE_URL="+timescaleDB_DSN_Internal,
+			"DATABASE_URL=" + timescaleDB_DSN_Internal,
 		},
 	})
 	if err != nil {
@@ -473,8 +475,8 @@ func run(m *testing.M) (int, error) {
 		}
 	}()
 
-	reportingserviceURL := fmt.Sprintf("http://localhost:%s", reportingRes.GetPort("5000/tcp"))
-	fmt.Println("reportingserviceURL",reportingserviceURL)
+	reportingserviceURL = fmt.Sprintf("http://localhost:%s", reportingRes.GetPort("5000/tcp"))
+	fmt.Println("reportingserviceURL", reportingserviceURL)
 	waitUntilReady(
 		context.Background(),
 		fmt.Sprintf("%s/health", reportingserviceURL),
@@ -603,7 +605,7 @@ func run(m *testing.M) (int, error) {
 
 	writeKey = randString(27)
 	workspaceID = randString(27)
-
+	fmt.Println("writeKey", writeKey)
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
@@ -761,16 +763,6 @@ func TestPostgres(t *testing.T) {
 	require.Equal(t, myEvent.count, "1")
 }
 
-// Verify Event in POSTGRES
-func TestReportingService(t *testing.T) {
-	var myEvent Event
-	require.Eventually(t, func() bool {
-		eventSql := "select count (*) from metrics"
-		rs_db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "11"
-	}, 3*time.Minute, 10*time.Millisecond)
-}
-
 // Verify Event in Redis
 func TestRedis(t *testing.T) {
 	conn, err := redigo.Dial("tcp", redisAddress)
@@ -868,6 +860,53 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 	}
 
 	return consumers, errors
+}
+
+// Verify Event in Reporting Service
+func TestReportingService(t *testing.T) {
+	if _, err := os.Stat("enterprise/reporting/reporting.go"); err == nil {
+		fmt.Printf("File exists\n")
+	} else {
+		fmt.Printf("File does not exist\n")
+		t.Skip()
+	}
+	var myEvent Event
+	require.Eventually(t, func() bool {
+		eventSql := "select count (*) from metrics"
+		rs_db.QueryRow(eventSql).Scan(&myEvent.count)
+		return myEvent.count == "11"
+	}, 3*time.Minute, 10*time.Millisecond)
+	url := fmt.Sprintf("%s/totalEvents?sourceId=('%s')&from=2021-09-16&to=2021-12-09", reportingserviceURL, "xxxyyyzzEaEurW247ad9WYZLUyk")
+	fmt.Println("url", url)
+	method := "GET"
+
+	client := &http.Client{}
+	req, err := http.NewRequest(method, url, nil)
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization",
+		fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
+			[]byte(fmt.Sprintf("%s:", writeKey)),
+		)),
+	)
+
+	res, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer res.Body.Close()
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(body))
 }
 
 // TODO: Verify in Live Evets API
