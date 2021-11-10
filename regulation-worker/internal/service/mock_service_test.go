@@ -64,6 +64,44 @@ func (mr *MockAPIClientMockRecorder) UpdateStatus(ctx, status, jobID interface{}
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateStatus", reflect.TypeOf((*MockAPIClient)(nil).UpdateStatus), ctx, status, jobID)
 }
 
+// MockdestDetail is a mock of destDetail interface.
+type MockdestDetail struct {
+	ctrl     *gomock.Controller
+	recorder *MockdestDetailMockRecorder
+}
+
+// MockdestDetailMockRecorder is the mock recorder for MockdestDetail.
+type MockdestDetailMockRecorder struct {
+	mock *MockdestDetail
+}
+
+// NewMockdestDetail creates a new mock instance.
+func NewMockdestDetail(ctrl *gomock.Controller) *MockdestDetail {
+	mock := &MockdestDetail{ctrl: ctrl}
+	mock.recorder = &MockdestDetailMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockdestDetail) EXPECT() *MockdestDetailMockRecorder {
+	return m.recorder
+}
+
+// GetDestDetails mocks base method.
+func (m *MockdestDetail) GetDestDetails(destID string) (model.Destination, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetDestDetails", destID)
+	ret0, _ := ret[0].(model.Destination)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetDestDetails indicates an expected call of GetDestDetails.
+func (mr *MockdestDetailMockRecorder) GetDestDetails(destID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDestDetails", reflect.TypeOf((*MockdestDetail)(nil).GetDestDetails), destID)
+}
+
 // Mockdeleter is a mock of deleter interface.
 type Mockdeleter struct {
 	ctrl     *gomock.Controller

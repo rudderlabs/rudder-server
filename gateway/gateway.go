@@ -434,7 +434,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				continue
 			}
-			gateway.requestSizeStat.SendTiming(time.Duration(len(body)) * time.Millisecond)
+			gateway.requestSizeStat.Observe(float64(len(body)))
 			if req.reqType != "batch" {
 				body, _ = sjson.SetBytes(body, "type", req.reqType)
 				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
@@ -579,7 +579,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		}
 
 		userWebRequestWorker.batchTimeStat.End()
-		gateway.batchSizeStat.SendTiming(time.Duration(len(breq.batchRequest)))
+		gateway.batchSizeStat.Observe(float64(len(breq.batchRequest)))
 		// update stats request wise
 		gateway.updateSourceStats(sourceStats, "gateway.write_key_requests", sourceTagMap)
 		gateway.updateSourceStats(sourceSuccessStats, "gateway.write_key_successful_requests", sourceTagMap)
@@ -1532,8 +1532,8 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.netHandle = client
 
 	//For the lack of better stat type, using TimerType.
-	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.TimerType)
-	gateway.requestSizeStat = gateway.stats.NewStat("gateway.request_size", stats.TimerType)
+	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.HistogramType)
+	gateway.requestSizeStat = gateway.stats.NewStat("gateway.request_size", stats.HistogramType)
 	gateway.dbWritesStat = gateway.stats.NewStat("gateway.db_writes", stats.CountType)
 	gateway.dbWorkersBufferFullStat = gateway.stats.NewStat("gateway.db_workers_buffer_full", stats.CountType)
 	gateway.dbWorkersTimeOutStat = gateway.stats.NewStat("gateway.db_workers_time_out", stats.CountType)
