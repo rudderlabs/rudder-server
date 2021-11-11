@@ -176,7 +176,18 @@ func (sf *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	return
 }
 
+func (sf *HandleT) useSchema() (err error) {
+	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
+	_, err = sf.Db.Exec(sqlStatement)
+	return
+}
+
 func (sf *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+	err = sf.useSchema()
+	if err != nil {
+		return err
+	}
+
 	sqlStatement := fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN "%s" %s`, tableName, columnName, dataTypesMap[columnType])
 	pkgLogger.Infof("SF: Adding column in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
@@ -621,8 +632,7 @@ func (sf *HandleT) CreateSchema() (err error) {
 }
 
 func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
-	_, err = sf.Db.Exec(sqlStatement)
+	err = sf.useSchema()
 	if err != nil {
 		return err
 	}
@@ -631,8 +641,7 @@ func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 }
 
 func (sf *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`USE SCHEMA "%s"`, sf.Namespace)
-	_, err = sf.Db.Exec(sqlStatement)
+	err = sf.useSchema()
 	if err != nil {
 		return err
 	}
