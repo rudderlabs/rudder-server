@@ -39,12 +39,16 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/sjson"
 
+	"github.com/VividCortex/ewma"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
 )
 
 var AppStartTime int64
 var errorStorePath string
+var RouterInMemoryJobCounts map[string]map[string]int
+var routerJobCountMutex sync.RWMutex
+var ProcessorJobsMovingAverages map[string]map[string]ewma.MovingAverage
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -72,12 +76,66 @@ var pkgLogger logger.LoggerI
 func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
 	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
+	RouterInMemoryJobCounts = make(map[string]map[string]int)
+	ProcessorJobsMovingAverages = make(map[string]map[string]ewma.MovingAverage)
 }
 
 func LoadDestinations() ([]string, []string) {
 	batchDestinations := []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "MARKETO_BULK_UPLOAD"}
 	customDestinations := []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	return batchDestinations, customDestinations
+}
+
+func AddToInMemoryCount(customerID string, destinationType string, count int) {
+	customerJobCountMap, ok := RouterInMemoryJobCounts[customerID]
+	if !ok {
+		customerJobCountMap = make(map[string]int)
+	}
+	routerJobCountMutex.Lock()
+	customerJobCountMap[destinationType] += count
+	routerJobCountMutex.Unlock()
+}
+
+func RemoveFromInMemoryCount(customerID string, destinationType string, count int) {
+	customerJobCountMap, ok := RouterInMemoryJobCounts[customerID]
+	if !ok {
+		customerJobCountMap = make(map[string]int)
+	}
+	routerJobCountMutex.Lock()
+	customerJobCountMap[destinationType] += -count
+	routerJobCountMutex.Unlock()
+}
+
+func ReportProcLoopStats(stats map[string]map[string]int, timeTaken time.Duration) {
+	for key := range stats {
+		_, ok := ProcessorJobsMovingAverages[key]
+		if !ok {
+			ProcessorJobsMovingAverages[key] = make(map[string]ewma.MovingAverage)
+		}
+		for destType := range stats[key] {
+			_, ok := ProcessorJobsMovingAverages[key][destType]
+			if !ok {
+				ProcessorJobsMovingAverages[key][destType] = ewma.NewMovingAverage()
+			}
+			ProcessorJobsMovingAverages[key][destType].Add(float64(stats[key][destType] * int(time.Second) / int(timeTaken)))
+			AddToInMemoryCount(key, destType, stats[key][destType])
+		}
+	}
+	for customerKey := range ProcessorJobsMovingAverages {
+		_, ok := stats[customerKey]
+		if !ok {
+			for destType := range stats[customerKey] {
+				ProcessorJobsMovingAverages[customerKey][destType].Add(0)
+			}
+		}
+
+		for destType := range ProcessorJobsMovingAverages[customerKey] {
+			_, ok := stats[customerKey][destType]
+			if !ok {
+				ProcessorJobsMovingAverages[customerKey][destType].Add(0)
+			}
+		}
+	}
 }
 
 func getErrorStore() (ErrorStoreT, error) {
@@ -1273,4 +1331,3 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 	}
 	return "object"
 }
-

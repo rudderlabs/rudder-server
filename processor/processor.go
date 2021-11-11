@@ -1000,7 +1000,7 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 	start := time.Now()
 	defer proc.processJobsTime.Since(start)
-
+	processorLoopStats := make(map[string]map[string]int)
 	proc.statNumRequests.Count(len(jobList))
 
 	var destJobs []*jobsdb.JobT
@@ -1289,11 +1289,21 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	for o := range chOut {
 		for i := range o.destJobs {
 			totalPayloadRouterBytes += len(o.destJobs[i].EventPayload)
+			_, ok := processorLoopStats[o.destJobs[i].Customer]
+			if !ok {
+				processorLoopStats[o.destJobs[i].Customer] = make(map[string]int)
+			}
+			processorLoopStats[o.destJobs[i].Customer][o.destJobs[i].CustomVal] += 1
 		}
 		destJobs = append(destJobs, o.destJobs...)
 
 		for i := range o.batchDestJobs {
 			totalPayloadBatchBytes += len(o.batchDestJobs[i].EventPayload)
+			_, ok := processorLoopStats[o.destJobs[i].Customer]
+			if !ok {
+				processorLoopStats[o.destJobs[i].Customer] = make(map[string]int)
+			}
+			processorLoopStats[o.destJobs[i].Customer][o.destJobs[i].CustomVal] += 1
 		}
 		batchDestJobs = append(batchDestJobs, o.batchDestJobs...)
 
@@ -1374,6 +1384,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
+	misc.ReportProcLoopStats(processorLoopStats, time.Since(start))
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.statDBW.Since(beforeStoreStatus)
