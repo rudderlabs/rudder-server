@@ -75,7 +75,7 @@ func TestDelete(t *testing.T) {
 				DeleteManager: &batch.S3DeleteManager{},
 			}
 
-			delBatch.DeleteManager.Delete(ctx, tt.job.UserAttributes, "latest100_original.json.gz")
+			delBatch.DeleteManager.Delete(ctx, tt.job.UserAttributes, "latest_original.json.gz")
 			// status, err := delBatch.Delete(ctx, tt.job, tt.dest)
 
 			// require.Equal(t, tt.expectedErr, err, "actual error different than expected")

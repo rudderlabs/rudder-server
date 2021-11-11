@@ -116,7 +116,7 @@ func (b *Batch) Delete(ctx context.Context, job model.Job, destDetail model.Dest
 	//since those files are already cleaned.
 	//if statusTracker.txt doesn't exist then create one.
 	if exist {
-		file, err := os.OpenFile(statusTrackerFile, os.O_CREATE|os.O_RDWR, os.FileMode(int(0777)))
+		file, err := os.OpenFile(statusTrackerFile, os.O_CREATE|os.O_RDWR, 0777)
 		// file, err := os.Create(statusTrackerFile)
 		if err != nil {
 			return model.JobStatusFailed, err

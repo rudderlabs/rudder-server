@@ -33,7 +33,7 @@ func decompress(fileName, uncompressedFileName string) {
 	}
 	defer gzipReader.Close()
 
-	outfileWriter, err := os.OpenFile(uncompressedFileName, os.O_CREATE|os.O_RDWR, os.FileMode(int(0777)))
+	outfileWriter, err := os.OpenFile(uncompressedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(int(0777)))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func (dm *S3DeleteManager) Delete(ctx context.Context, userAttributes []model.Us
 			n += len(*userAttributes[i].Phone) + 4
 		}
 	}
-	searchObject := make([]byte,0,n)
+	searchObject := make([]byte, 0, n)
 	// searchObject = append(searchObject, "'"...)
 	for _, users := range userAttributes {
 		searchObject = append(searchObject, "/"...)
@@ -83,25 +83,25 @@ func (dm *S3DeleteManager) Delete(ctx context.Context, userAttributes []model.Us
 			searchObject = append(searchObject, "/d;"...)
 		}
 	}
-	
+
 	// temp := "'"
 	// searchObject[len(searchObject)-1] = []byte(temp)[0]
-	fmt.Println("searchObject=", string(searchObject))
-	// tempSearchObj := "/@Jermaine1473336609491897794707338/d;/@Jermaine1473fdsfsd336609491897794707338/d;"
+	// fmt.Println("searchObject=", string(searchObject))
+	tempSearchObj := "/Jermaine1473336609491897794707338/d;"
 	// fmt.Println(tempSearchObj)
 	// temp := string(searchObject)
-	tempSearchObj := string(searchObject)
+	// tempSearchObj := string(searchObject)
 	// tempSearchObj := "/12/d;/abc@xyz.com/d;/1234567890/d;/13/d;/abcd@xyz.com/d;/14/d;/1111567890/d;"
 	out, err := exec.Command("sed", "-e", tempSearchObj, uncompressedFileName).Output()
 	if err != nil {
 		fmt.Printf("error while running command: %s", err)
 	}
 	fmt.Println("Command Successfully Executed")
-	// cleanedFileName := "cleanedFile.json"
-	// err = os.WriteFile(cleanedFileName, out, 0644)
-	// if err != nil {
-	// 	fmt.Printf("%s", err)
-	// }
+	cleanedFileName := "cleanedFile-1.json"
+	err = os.WriteFile(cleanedFileName, out, 0644)
+	if err != nil {
+		fmt.Printf("%s", err)
+	}
 
 	//gzip the deleted file again
 	compress(fileName, out)
@@ -118,15 +118,15 @@ func compress(fileName string, cleanedBytes []byte) {
 	w.Close() // must close this first to flush the bytes to the buffer.
 
 	//writing compressed file to <fileName>
-	// outfileWriter, err := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR, os.FileMode(int(0777)))
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer outfileWriter.Close()
-	// _, err = outfileWriter.Write(b.Bytes())
-	// if err != nil {
-	// 	fmt.Println("error while writing cleaned & compressed data:", err)
-	// }
-	os.WriteFile(fileName, b.Bytes(), 0644)
+	outfileWriter, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer outfileWriter.Close()
+	_, err = outfileWriter.Write(b.Bytes())
+	if err != nil {
+		fmt.Println("error while writing cleaned & compressed data:", err)
+	}
+
 
 }
