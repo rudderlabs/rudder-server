@@ -150,4 +150,5 @@ func (c runtimeStatsCollector) outputGCStats(m *runtime.MemStats) {
 	c.gaugeFunc("mem.gc.pause_total", m.PauseTotalNs)
 	c.gaugeFunc("mem.gc.pause", m.PauseNs[(m.NumGC+255)%256])
 	c.gaugeFunc("mem.gc.count", uint64(m.NumGC))
+	c.gaugeFunc("mem.gc.cpu_percent", uint64(100*m.GCCPUFraction))
 }

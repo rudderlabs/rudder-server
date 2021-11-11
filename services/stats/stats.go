@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	CountType = "count"
-	TimerType = "timer"
-	GaugeType = "gauge"
+	CountType     = "count"
+	TimerType     = "timer"
+	GaugeType     = "gauge"
+	HistogramType = "histogram"
 )
 
 var client *statsd.Client
@@ -77,7 +78,9 @@ type RudderStats interface {
 	Start()
 	End()
 	DeferredTimer()
+	Observe(value float64)
 	SendTiming(duration time.Duration)
+	Since(start time.Time)
 }
 
 // RudderStatsT is the default implementation of a StatsD stat
@@ -245,11 +248,17 @@ func (rStats *RudderStatsT) End() {
 	rStats.Timing.Send(rStats.Name)
 }
 
+// Deprecated: Use concurrent safe SendTiming() instead
 func (rStats *RudderStatsT) DeferredTimer() {
 	if !statsEnabled || rStats.dontProcess {
 		return
 	}
 	rStats.Client.NewTiming().Send(rStats.Name)
+}
+
+// Since sends the time elapsed since duration start. Only applies to TimerType stats
+func (rStats *RudderStatsT) Since(start time.Time) {
+	rStats.SendTiming(time.Since(start))
 }
 
 // Timing sends a timing for this stat. Only applies to TimerType stats
@@ -261,6 +270,17 @@ func (rStats *RudderStatsT) SendTiming(duration time.Duration) {
 		panic(fmt.Errorf("rStats.StatType:%s is not timer", rStats.StatType))
 	}
 	rStats.Client.Timing(rStats.Name, int(duration/time.Millisecond))
+}
+
+// Timing sends a timing for this stat. Only applies to TimerType stats
+func (rStats *RudderStatsT) Observe(value float64) {
+	if !statsEnabled || rStats.dontProcess {
+		return
+	}
+	if rStats.StatType != HistogramType {
+		panic(fmt.Errorf("rStats.StatType:%s is not histogram", rStats.StatType))
+	}
+	rStats.Client.Histogram(rStats.Name, value)
 }
 
 func collectRuntimeStats(client *statsd.Client) {
