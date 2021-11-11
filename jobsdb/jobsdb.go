@@ -122,6 +122,11 @@ type JobsDB interface {
 	GetJournalEntries(opType string) (entries []JournalEntryT)
 	JournalDeleteEntry(opID int64)
 	JournalMarkStart(opType string, opPayload json.RawMessage) int64
+
+	//union
+	GetUnprocessedUnion(map[string]int, GetQueryParamsT) []*JobT
+	GetProcessedUnion(map[string]int, GetQueryParamsT) []*JobT
+	GetCustomerCounts(int) map[string]int
 }
 
 /*
