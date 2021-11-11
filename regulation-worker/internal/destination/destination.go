@@ -29,7 +29,7 @@ type DestCategory struct {
 //make api call to get json and then parse it to get destination related details
 //like: dest_type, auth details,
 //return destination Type enum{file, api}
-func (d *DestMiddleware) GetDestDetails(destID string) (model.Destination, error) {
+func (d *DestMiddleware) GetDestDetails(destID, workspaceID string) (model.Destination, error) {
 	config, notErr := d.Dest.Get()
 	if !notErr {
 		return model.Destination{}, fmt.Errorf("error while getting destination details")

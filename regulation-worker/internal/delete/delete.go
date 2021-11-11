@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kv_store"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 )
 
 type deleter interface {
@@ -32,7 +33,17 @@ func (d *DeleteSvc) Delete(ctx context.Context, job model.Job, dest model.Destin
 		}
 		return delAPI.DeleteManager.Delete(ctx, job, dest)
 	case "batch":
+		fmFactory := filemanager.FileManagerFactoryT{}
+		fm, err := fmFactory.New(&filemanager.SettingsT{
+			Provider: dest.Name,
+			Config:   dest.Config,
+		})
+		if err != nil {
+			return model.JobStatusFailed, fmt.Errorf("error while creating file manager: %w", err)
+		}
+
 		delBatch := batch.Batch{
+			FileManager:   fm,
 			DeleteManager: &batch.Mock_batchWorker{},
 		}
 		return delBatch.DeleteManager.Delete(ctx, job, dest)
