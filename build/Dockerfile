@@ -1,4 +1,5 @@
 FROM golang:1.16.8-alpine
+RUN apk add --no-cache build-base  
 RUN mkdir /app
 WORKDIR /app
 COPY go.mod .
