@@ -259,6 +259,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 	})
 }
 
+
 func (notifier *PgNotifierT) updateClaimedEventStats(id int64) {
 	var status string
 	sqlStatement := fmt.Sprintf(`SELECT status FROM "%[1]s" WHERE id = %[2]v`, queueName, id)
