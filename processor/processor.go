@@ -1384,7 +1384,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
-	misc.ReportProcLoopStats(processorLoopStats, time.Since(start))
+	misc.ReportProcLoopAddStats(processorLoopStats, time.Since(start))
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.statDBW.Since(beforeStoreStatus)

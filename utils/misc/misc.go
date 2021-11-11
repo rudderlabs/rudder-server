@@ -102,11 +102,11 @@ func RemoveFromInMemoryCount(customerID string, destinationType string, count in
 		customerJobCountMap = make(map[string]int)
 	}
 	routerJobCountMutex.Lock()
-	customerJobCountMap[destinationType] += -count
+	customerJobCountMap[destinationType] += -1 * count
 	routerJobCountMutex.Unlock()
 }
 
-func ReportProcLoopStats(stats map[string]map[string]int, timeTaken time.Duration) {
+func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration) {
 	for key := range stats {
 		_, ok := ProcessorJobsMovingAverages[key]
 		if !ok {

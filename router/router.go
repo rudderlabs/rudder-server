@@ -1242,7 +1242,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
-
+	routerCustomerJobStatusCount := make(map[string]map[string]int)
 	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
@@ -1255,6 +1255,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		//Update metrics maps
 		//REPORTING - ROUTER - START
 		if rt.reporting != nil && rt.reportingEnabled {
+			workspaceID := rt.backendConfig.GetWorkspaceIDForSourceID((parameters.SourceID))
+			_, ok := routerCustomerJobStatusCount[workspaceID]
+			if !ok {
+				routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
+			}
 			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
 			cd, ok := connectionDetailsMap[key]
 			if !ok {
@@ -1273,6 +1278,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				statusDetailsMap[key] = sd
 			}
 			if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 {
+				routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
 				sd.Count++
 			}
 			if resp.status.JobState != jobsdb.Failed.State {
@@ -1321,6 +1327,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 	}
 	//REPORTING - ROUTER - END
+	for customer := range routerCustomerJobStatusCount {
+		for destType := range routerCustomerJobStatusCount[customer] {
+			misc.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType])
+		}
+	}
 
 	if len(statusList) > 0 {
 		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
