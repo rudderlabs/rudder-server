@@ -404,6 +404,7 @@ var (
 	enableEventSchemasFeature bool
 	enableEventSchemasAPIOnly bool
 	enableDedup               bool
+	enableReadCursor          bool
 	transformTimesPQLength    int
 	captureEventNameStats     bool
 	transformerURL            string
@@ -420,6 +421,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 	// Enable dedup of incoming events by default
 	config.RegisterBoolConfigVariable(false, &enableDedup, false, "Dedup.enableDedup")
+	config.RegisterBoolConfigVariable(true, &enableReadCursor, true, "Processor.enableReadCursor")
 	// EventSchemas feature. false by default
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, false, "EventSchemas.enableEventSchemasAPIOnly")
@@ -996,7 +998,6 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) {
 	start := time.Now()
 	defer proc.processJobsTime.Since(start)
-	
 
 	proc.statNumRequests.Count(len(jobList))
 
@@ -1833,6 +1834,9 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 			proc.paused = false
 			if isUnLocked {
 				var found bool
+				if !enableReadCursor {
+					jobIDCursor = 0
+				}
 				found, jobIDCursor = proc.handlePendingGatewayJobs(jobIDCursor)
 				if found {
 					currLoopSleep = time.Duration(0)
