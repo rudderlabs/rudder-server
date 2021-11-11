@@ -116,6 +116,8 @@ type HandleT struct {
 	backgroundCtx    context.Context
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
+
+	unionMap map[string]int
 }
 
 type BatchDestinationDataT struct {
@@ -1385,15 +1387,17 @@ func (worker *workerT) workerProcess() {
 			parameterFilters := worker.constructParameterFilters(batchDest)
 			var combinedList []*jobsdb.JobT
 			if readPerDestination {
-				toQuery := worker.brt.jobQueryBatchSize
+				// toQuery := worker.brt.jobQueryBatchSize
 				if !brt.holdFetchingJobs(parameterFilters) {
 					brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
-					retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
-					toQuery -= len(retryList)
-					unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					retryList := brt.jobsDB.GetProcessedUnion(brt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, StateFilters: []string{jobsdb.Failed.State}, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					// retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					// toQuery -= len(retryList)
+					unprocessedList := brt.jobsDB.GetUnprocessedUnion(brt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					// unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					brtQueryStat.End()
 
 					combinedList = append(retryList, unprocessedList...)
@@ -1723,11 +1727,13 @@ func (brt *HandleT) readAndProcess() {
 		brt.logger.Debugf("BRT: %s: Reading in mainLoop", brt.destType)
 		brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "mainLoop"})
 		brtQueryStat.Start()
-		toQuery := brt.jobQueryBatchSize
+		// toQuery := brt.jobQueryBatchSize
 		if !brt.holdFetchingJobs([]jobsdb.ParameterFilterT{}) {
-			retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
-			toQuery -= len(retryList)
-			unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
+			retryList := brt.jobsDB.GetProcessedUnion(brt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, StateFilters: []string{jobsdb.Failed.State}})
+			// retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
+			// toQuery -= len(retryList)
+			unprocessedList := brt.jobsDB.GetUnprocessedUnion(brt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}})
+			// unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
 			brtQueryStat.End()
 
 			jobs = append(retryList, unprocessedList...)
@@ -1753,6 +1759,7 @@ loop:
 		case <-ctx.Done():
 			break loop
 		case <-time.After(mainLoopSleep):
+			brt.updateUnionMap()
 			brt.readAndProcess()
 		}
 	}
@@ -2071,6 +2078,8 @@ func (brt *HandleT) Start() {
 	ctx := brt.backgroundCtx
 	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		<-brt.backendConfigInitialized
+		brt.unionMap = make(map[string]int)
+		brt.setupUnionMap()
 		brt.mainLoop(ctx)
 
 		return nil
@@ -2151,4 +2160,26 @@ func (brt *HandleT) Resume() {
 	brt.asyncUploadWorkerResumeChannel <- true
 
 	brt.paused = false
+}
+
+func (brt *HandleT) setupUnionMap() {
+	brt.configSubscriberLock.RLock()
+	var customers []string
+	for _, destConfig := range brt.destinationsMap {
+		for _, source := range destConfig.Sources {
+			if !misc.Contains(customers, source.WorkspaceID) {
+				customers = append(customers, source.WorkspaceID)
+			}
+		}
+	}
+	brt.configSubscriberLock.RUnlock()
+
+	for idx := range customers {
+		brt.unionMap[customers[idx]] = int(brt.jobQueryBatchSize / len(customers))
+	}
+}
+
+func (brt *HandleT) updateUnionMap() {
+	//TODO
+	brt.setupUnionMap()
 }
