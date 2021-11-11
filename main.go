@@ -214,6 +214,13 @@ func main() {
 		cancel()
 	}()
 
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, syscall.SIGUSR1)
+		<-c
+		panic("triggered panic")
+	}()
+
 	Run(ctx)
 }
 
