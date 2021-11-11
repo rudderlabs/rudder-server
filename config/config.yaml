@@ -100,6 +100,8 @@ Router:
   maxFailedCountForJob: 3
   retryTimeWindow: 180m
   failedKeysEnabled: false
+  saveDestinationResponseOverride: false
+  responseTransform: false
   MARKETO:
     noOfWorkers: 4
   throttler:
@@ -160,7 +162,6 @@ Processor:
   maxLoopSleep: 5000ms
   fixedLoopSleep: 0ms
   maxLoopProcessEvents: 10000
-  avgEventsInRequest: 1 # DEPRECATED: don't use avgEventsInRequest, rudder-server will automatically adapt
   transformBatchSize: 100
   userTransformBatchSize: 200
   maxConcurrency: 200
@@ -168,6 +169,7 @@ Processor:
   maxHTTPIdleConnections: 50
   maxRetry: 30
   retrySleep: 100ms
+  timeoutDuration: 30s
   errReadLoopSleep: 30s
   errDBReadBatchSize: 1000
   noOfErrStashWorkers: 2
