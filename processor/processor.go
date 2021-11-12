@@ -89,6 +89,9 @@ type HandleT struct {
 	statDBReadRequests             stats.RudderStats
 	statDBReadEvents               stats.RudderStats
 	statDBReadPayloadBytes         stats.RudderStats
+	lastJobID                      int64
+	statDBReadOutOfOrder           stats.RudderStats
+	statDBReadOutOfSequence        stats.RudderStats
 	statDBWriteStatusTime          stats.RudderStats
 	statDBWriteJobsTime            stats.RudderStats
 	statDBWriteRouterPayloadBytes  stats.RudderStats
@@ -304,6 +307,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statDBReadEvents = proc.stats.NewStat("processor.db_read_events", stats.HistogramType)
 	proc.statDBReadPayloadBytes = proc.stats.NewStat("processor.db_read_payload_bytes", stats.HistogramType)
 
+	proc.statDBReadOutOfOrder = proc.stats.NewStat("processor.db_read_out_of_order", stats.CountType)
+	proc.statDBReadOutOfSequence = proc.stats.NewStat("processor.db_read_out_of_sequence", stats.CountType)
+
 	proc.statDBWriteJobsTime = proc.stats.NewStat("processor.db_write_jobs_time", stats.TimerType)
 	proc.statDBWriteStatusTime = proc.stats.NewStat("processor.db_write_status_time", stats.TimerType)
 
@@ -405,6 +411,7 @@ var (
 	enableEventSchemasAPIOnly bool
 	enableDedup               bool
 	enableReadCursor          bool
+	enableEventCount          bool
 	transformTimesPQLength    int
 	captureEventNameStats     bool
 	transformerURL            string
@@ -422,6 +429,7 @@ func loadConfig() {
 	// Enable dedup of incoming events by default
 	config.RegisterBoolConfigVariable(false, &enableDedup, false, "Dedup.enableDedup")
 	config.RegisterBoolConfigVariable(true, &enableReadCursor, true, "Processor.enableReadCursor")
+	config.RegisterBoolConfigVariable(true, &enableEventCount, true, "Processor.enableEventCount")
 	// EventSchemas feature. false by default
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, false, "EventSchemas.enableEventSchemasAPIOnly")
@@ -1762,10 +1770,15 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 	s := time.Now()
 
 	proc.logger.Debugf("Processor DB Read size: %d", maxEventsToProcess)
+
+	eventCount := maxEventsToProcess
+	if !enableEventCount {
+		eventCount = 0
+	}
 	unprocessedList := proc.gatewayDB.GetUnprocessed(jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{GWCustomVal},
 		JobCount:         maxEventsToProcess,
-		EventCount:       maxEventsToProcess,
+		EventCount:       eventCount,
 		AfterJobID:       nextJobID,
 	})
 	totalEvents := 0
@@ -1773,6 +1786,18 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 	for _, job := range unprocessedList {
 		totalEvents += job.EventCount
 		totalPayloadBytes += len(job.EventPayload)
+		if !enableEventCount && totalPayloadBytes > maxEventsToProcess {
+			break
+		}
+
+		if job.JobID <= proc.lastJobID {
+			proc.logger.Warnf("Out of order job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
+			proc.statDBReadOutOfOrder.Count(1)
+		} else if proc.lastJobID != 0 && job.JobID != proc.lastJobID+1 {
+			proc.logger.Warnf("Out of sequence job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
+			proc.statDBReadOutOfSequence.Count(1)
+		}
+		proc.lastJobID = job.JobID
 	}
 	dbReadTime := time.Since(s)
 	defer proc.statDBR.SendTiming(dbReadTime)
@@ -1785,7 +1810,6 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 	}
 
 	eventSchemasStart := time.Now()
-	proc.eventSchemasTime.Start()
 	if enableEventSchemasFeature && !enableEventSchemasAPIOnly {
 		for _, unprocessedJob := range unprocessedList {
 			writeKey := gjson.GetBytes(unprocessedJob.EventPayload, "writeKey").Str
