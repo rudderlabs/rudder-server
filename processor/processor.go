@@ -1780,11 +1780,12 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 	})
 	totalEvents := 0
 	totalPayloadBytes := 0
-	for _, job := range unprocessedList {
+	for i, job := range unprocessedList {
 		totalEvents += job.EventCount
 		totalPayloadBytes += len(job.EventPayload)
 
 		if !enableEventCount && totalEvents > maxEventsToProcess {
+			unprocessedList = unprocessedList[:i]
 			break
 		}
 
