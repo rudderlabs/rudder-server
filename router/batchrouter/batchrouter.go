@@ -1387,17 +1387,17 @@ func (worker *workerT) workerProcess() {
 			parameterFilters := worker.constructParameterFilters(batchDest)
 			var combinedList []*jobsdb.JobT
 			if readPerDestination {
-				// toQuery := worker.brt.jobQueryBatchSize
+				toQuery := worker.brt.jobQueryBatchSize
 				if !brt.holdFetchingJobs(parameterFilters) {
 					brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "workerProcess"})
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
-					retryList := brt.jobsDB.GetProcessedUnion(brt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, StateFilters: []string{jobsdb.Failed.State}, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
-					// retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					// retryList := brt.jobsDB.GetProcessedUnion(brt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, StateFilters: []string{jobsdb.Failed.State}, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					// toQuery -= len(retryList)
-					unprocessedList := brt.jobsDB.GetUnprocessedUnion(brt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
-					// unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					// unprocessedList := brt.jobsDB.GetUnprocessedUnion(brt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					brtQueryStat.End()
 
 					combinedList = append(retryList, unprocessedList...)
