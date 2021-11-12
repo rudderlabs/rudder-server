@@ -966,6 +966,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 		batchJobState string
 		errorResp     []byte
 	)
+	batchRouterCustomerJobStatusCount := make(map[string]map[string]int)
 	jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
 	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
@@ -1070,6 +1071,11 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 			//Update metrics maps
 			errorCode := getBRTErrorCode(jobState)
 			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode))
+			workspaceID := brt.backendConfig.GetWorkspaceIDForSourceID((parameters.SourceID))
+			_, ok := batchRouterCustomerJobStatusCount[workspaceID]
+			if !ok {
+				batchRouterCustomerJobStatusCount[workspaceID] = make(map[string]int)
+			}
 			cd, ok := connectionDetailsMap[key]
 			if !ok {
 				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
@@ -1081,6 +1087,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 				statusDetailsMap[key] = sd
 			}
 			if status.JobState == jobsdb.Failed.State && status.AttemptNum == 1 {
+				batchRouterCustomerJobStatusCount[workspaceID][parameters.DestinationID] += 1
 				sd.Count++
 			}
 			if status.JobState != jobsdb.Failed.State {
@@ -1090,6 +1097,11 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 		//REPORTING - END
 	}
 
+	for customer := range batchRouterCustomerJobStatusCount {
+		for destID := range batchRouterCustomerJobStatusCount[customer] {
+			misc.RemoveFromInMemoryCount(customer, destID, batchRouterCustomerJobStatusCount[customer][destID], "batch_router")
+		}
+	}
 	//tracking batch router errors
 	if diagnostics.EnableDestinationFailuresMetric {
 		if batchJobState == jobsdb.Failed.State {

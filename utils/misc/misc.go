@@ -46,7 +46,7 @@ import (
 
 var AppStartTime int64
 var errorStorePath string
-var RouterInMemoryJobCounts map[string]map[string]int
+var RouterInMemoryJobCounts map[string]map[string]map[string]int
 var routerJobCountMutex sync.RWMutex
 var ProcessorJobsMovingAverages map[string]map[string]map[string]ewma.MovingAverage
 
@@ -76,7 +76,9 @@ var pkgLogger logger.LoggerI
 func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
 	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
-	RouterInMemoryJobCounts = make(map[string]map[string]int)
+	RouterInMemoryJobCounts = make(map[string]map[string]map[string]int)
+	RouterInMemoryJobCounts["router"] = make(map[string]map[string]int)
+	RouterInMemoryJobCounts["batch_router"] = make(map[string]map[string]int)
 	ProcessorJobsMovingAverages = make(map[string]map[string]map[string]ewma.MovingAverage)
 	ProcessorJobsMovingAverages["router"] = make(map[string]map[string]ewma.MovingAverage)
 	ProcessorJobsMovingAverages["batch_router"] = make(map[string]map[string]ewma.MovingAverage)
@@ -88,8 +90,8 @@ func LoadDestinations() ([]string, []string) {
 	return batchDestinations, customDestinations
 }
 
-func AddToInMemoryCount(customerID string, destinationType string, count int) {
-	customerJobCountMap, ok := RouterInMemoryJobCounts[customerID]
+func AddToInMemoryCount(customerID string, destinationType string, count int, tableType string) {
+	customerJobCountMap, ok := RouterInMemoryJobCounts[tableType][customerID]
 	if !ok {
 		customerJobCountMap = make(map[string]int)
 	}
@@ -98,8 +100,8 @@ func AddToInMemoryCount(customerID string, destinationType string, count int) {
 	routerJobCountMutex.Unlock()
 }
 
-func RemoveFromInMemoryCount(customerID string, destinationType string, count int) {
-	customerJobCountMap, ok := RouterInMemoryJobCounts[customerID]
+func RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string) {
+	customerJobCountMap, ok := RouterInMemoryJobCounts[tableType][customerID]
 	if !ok {
 		customerJobCountMap = make(map[string]int)
 	}
@@ -120,7 +122,7 @@ func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Dura
 				ProcessorJobsMovingAverages[tableType][key][destType] = ewma.NewMovingAverage()
 			}
 			ProcessorJobsMovingAverages[tableType][key][destType].Add(float64(stats[key][destType] * int(time.Second) / int(timeTaken)))
-			AddToInMemoryCount(key, destType, stats[key][destType])
+			AddToInMemoryCount(key, destType, stats[key][destType], tableType)
 		}
 	}
 	for customerKey := range ProcessorJobsMovingAverages[tableType] {

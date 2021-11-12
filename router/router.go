@@ -1329,7 +1329,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	//REPORTING - ROUTER - END
 	for customer := range routerCustomerJobStatusCount {
 		for destType := range routerCustomerJobStatusCount[customer] {
-			misc.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType])
+			misc.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router")
 		}
 	}
 
