@@ -22,7 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 )
@@ -116,7 +115,7 @@ type UploadJobT struct {
 	upload              *UploadT
 	dbHandle            *sql.DB
 	warehouse           warehouseutils.WarehouseT
-	whManager           manager.ManagerI
+	whManager           warehouseutils.ManagerI
 	stagingFiles        []*StagingFileT
 	stagingFileIDs      []int64
 	pgNotifier          *pgnotifier.PgNotifierT

@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"os"
 	"regexp"
 	"sort"
@@ -200,11 +201,6 @@ type TableSchemaDiffT struct {
 	ColumnMap                      map[string]string
 	UpdatedSchema                  map[string]string
 	StringColumnsToBeAlteredToText []string
-}
-
-type QueryResult struct {
-	Columns []string
-	Values  [][]string
 }
 
 type PendingEventsRequestT struct {
@@ -703,4 +699,24 @@ func GetTemporaryS3Cred(accessKeyID, accessKey string) (string, string, string, 
 		return "", "", "", err
 	}
 	return *SessionTokenOutput.Credentials.AccessKeyId, *SessionTokenOutput.Credentials.SecretAccessKey, *SessionTokenOutput.Credentials.SessionToken, err
+}
+
+type ManagerI interface {
+	Setup(warehouse WarehouseT, uploader UploaderI) error
+	CrashRecover(warehouse WarehouseT) (err error)
+	FetchSchema(warehouse WarehouseT) (SchemaT, error)
+	CreateSchema() (err error)
+	CreateTable(tableName string, columnMap map[string]string) (err error)
+	AddColumn(tableName string, columnName string, columnType string) (err error)
+	AlterColumn(tableName string, columnName string, columnType string) (err error)
+	LoadTable(tableName string) error
+	LoadUserTables() map[string]error
+	LoadIdentityMergeRulesTable() error
+	LoadIdentityMappingsTable() error
+	Cleanup()
+	IsEmpty(warehouse WarehouseT) (bool, error)
+	TestConnection(warehouse WarehouseT) error
+	DownloadIdentityRules(*misc.GZipWriter) error
+	GetTotalCountInTable(tableName string) (int64, error)
+	Connect(warehouse WarehouseT) (client.Client, error)
 }

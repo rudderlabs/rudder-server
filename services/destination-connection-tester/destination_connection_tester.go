@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/app"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -201,9 +202,9 @@ func TestBatchDestinationConnection(destination backendconfig.DestinationT) stri
 	return error
 }
 
-func TestWarehouseDestinationConnection(destination backendconfig.DestinationT) string {
+func TestWarehouseDestinationConnection(destination backendconfig.DestinationT, application app.Interface) string {
 	provider := destination.DestinationDefinition.Name
-	whManager, err := manager.New(provider)
+	whManager, err := manager.New(provider, application)
 	if err != nil {
 		panic(err)
 	}

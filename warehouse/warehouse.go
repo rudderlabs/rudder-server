@@ -291,7 +291,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				if val, ok := destination.Config["testConnection"].(bool); ok && val {
 					destination := destination
 					rruntime.Go(func() {
-						testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination)
+						testResponse := destinationConnectionTester.TestWarehouseDestinationConnection(destination, application)
 						destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
 					})
 				}
@@ -524,7 +524,7 @@ func setLastProcessedMarker(warehouse warehouseutils.WarehouseT) {
 	lastProcessedMarkerMap[warehouse.Identifier] = time.Now().Unix()
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT, priority int) {
+func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager warehouseutils.ManagerI, stagingFilesList []*StagingFileT, priority int) {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
@@ -573,7 +573,7 @@ func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
 }
 
 func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
-	whManager, err := manager.New(wh.destType)
+	whManager, err := manager.New(wh.destType, application)
 	if err != nil {
 		return err
 	}
@@ -822,7 +822,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
 		}
 
-		whManager, err := manager.New(wh.destType)
+		whManager, err := manager.New(wh.destType, application)
 		if err != nil {
 			return nil, err
 		}
@@ -1659,6 +1659,9 @@ func setupDB(connInfo string) {
 
 func Start(ctx context.Context, app app.Interface) error {
 	application = app
+	if application.Features().DeltaLake != nil {
+		application.Features().DeltaLake.Init()
+	}
 	time.Sleep(1 * time.Second)
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
 	if !isStandAlone() && !db.IsNormalMode() {
@@ -1759,11 +1762,4 @@ func getLoadFileType(wh string) string {
 	default:
 		return warehouseutils.LOAD_FILE_TYPE_CSV
 	}
-}
-
-func GetDeltaLake() (manager.ManagerI, error) {
-	if application.Features().DeltaLake != nil {
-		return application.Features().DeltaLake.GetManager(), nil
-	}
-	return nil, fmt.Errorf("Does not support DeltaLake")
 }

@@ -4,7 +4,7 @@ package app
 
 import (
 	"context"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -105,7 +105,8 @@ Delta Lake Feature
 *********************************/
 
 type DeltaLakeFeature interface {
-	GetManager() manager.ManagerI
+	GetManager() warehouseutils.ManagerI
+	Init()
 }
 
 // DeltaLakeFeatureSetup is a function that initializes a Delta Lake feature

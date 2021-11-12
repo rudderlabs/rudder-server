@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -99,7 +98,7 @@ func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Sch
 	return err
 }
 
-func (sHandle *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
+func (sHandle *SchemaHandleT) fetchSchemaFromWarehouse(whManager warehouseutils.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
 	schemaInWarehouse, err = whManager.FetchSchema(sHandle.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)

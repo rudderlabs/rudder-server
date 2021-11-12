@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/bigquery"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/iterator"
 )
 
@@ -21,7 +20,7 @@ type Client struct {
 	Type string
 }
 
-func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
+func (cl *Client) sqlQuery(statement string) (result QueryResult, err error) {
 	rows, err := cl.SQL.Query(statement)
 	if err != nil && err != sql.ErrNoRows {
 		return result, err
@@ -58,7 +57,7 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 	return result, err
 }
 
-func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, err error) {
+func (cl *Client) bqQuery(statement string) (result QueryResult, err error) {
 	query := cl.BQ.Query(statement)
 	context := context.Background()
 	it, err := query.Read(context)
@@ -88,7 +87,7 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 	return result, nil
 }
 
-func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, err error) {
+func (cl *Client) Query(statement string) (result QueryResult, err error) {
 	switch cl.Type {
 	case BQClient:
 		return cl.bqQuery(statement)
@@ -104,4 +103,9 @@ func (cl *Client) Close() {
 	default:
 		cl.SQL.Close()
 	}
+}
+
+type QueryResult struct {
+	Columns []string
+	Values  [][]string
 }
