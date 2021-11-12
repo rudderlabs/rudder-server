@@ -410,7 +410,6 @@ var (
 	enableEventSchemasFeature bool
 	enableEventSchemasAPIOnly bool
 	enableDedup               bool
-	enableReadCursor          bool
 	enableEventCount          bool
 	transformTimesPQLength    int
 	captureEventNameStats     bool
@@ -428,7 +427,6 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 	// Enable dedup of incoming events by default
 	config.RegisterBoolConfigVariable(false, &enableDedup, false, "Dedup.enableDedup")
-	config.RegisterBoolConfigVariable(true, &enableReadCursor, true, "Processor.enableReadCursor")
 	config.RegisterBoolConfigVariable(true, &enableEventCount, true, "Processor.enableEventCount")
 	// EventSchemas feature. false by default
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
@@ -1779,13 +1777,13 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 		CustomValFilters: []string{GWCustomVal},
 		JobCount:         maxEventsToProcess,
 		EventCount:       eventCount,
-		AfterJobID:       nextJobID,
 	})
 	totalEvents := 0
 	totalPayloadBytes := 0
 	for _, job := range unprocessedList {
 		totalEvents += job.EventCount
 		totalPayloadBytes += len(job.EventPayload)
+
 		if !enableEventCount && totalPayloadBytes > maxEventsToProcess {
 			break
 		}
@@ -1858,9 +1856,6 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 			proc.paused = false
 			if isUnLocked {
 				var found bool
-				if !enableReadCursor {
-					jobIDCursor = 0
-				}
 				found, jobIDCursor = proc.handlePendingGatewayJobs(jobIDCursor)
 				if found {
 					currLoopSleep = time.Duration(0)
