@@ -14,6 +14,9 @@ var (
 	DefaultFileManagerFactory FileManagerFactory
 )
 
+const (
+	InvalidServiceProvider = "service provider not supported"
+)
 type FileManagerFactoryT struct{}
 
 type UploadOutput struct {
@@ -80,7 +83,7 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 			Config: GetDOSpacesConfig(settings.Config),
 		}, nil
 	}
-	return nil, errors.New("No provider configured for FileManager")
+	return nil, errors.New(InvalidServiceProvider)
 }
 
 // GetProviderConfigFromEnv returns the provider config
