@@ -320,9 +320,8 @@ var _ = Describe("Processor", func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: c.dbReadBatchSize, EventCount: c.processEventSize}).Return(emptyJobsList).Times(1)
 
-			didWork, nextJobID := processor.handlePendingGatewayJobs(0)
+			didWork := processor.handlePendingGatewayJobs()
 			Expect(didWork).To(Equal(false))
-			Expect(nextJobID).To(Equal(int64(0)))
 		})
 
 		It("should process Unprocessed jobs to destination without user transformation", func() {
@@ -1627,6 +1626,6 @@ func Setup(processor *HandleT, c *testContext, enableDedup, enableReporting bool
 }
 
 func handlePendingGatewayJobs(processor *HandleT) {
-	didWork, _ := processor.handlePendingGatewayJobs(0)
+	didWork := processor.handlePendingGatewayJobs()
 	Expect(didWork).To(Equal(true))
 }

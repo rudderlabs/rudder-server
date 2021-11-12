@@ -92,6 +92,7 @@ type HandleT struct {
 	lastJobID                      int64
 	statDBReadOutOfOrder           stats.RudderStats
 	statDBReadOutOfSequence        stats.RudderStats
+	statMarkExecuting              stats.RudderStats
 	statDBWriteStatusTime          stats.RudderStats
 	statDBWriteJobsTime            stats.RudderStats
 	statDBWriteRouterPayloadBytes  stats.RudderStats
@@ -291,6 +292,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statDBW = proc.stats.NewStat("processor.gateway_db_write_time", stats.TimerType)
 	proc.statProcErrDBW = proc.stats.NewStat("processor.proc_err_db_write", stats.CountType)
 	proc.statLoopTime = proc.stats.NewStat("processor.loop_time", stats.TimerType)
+	proc.statMarkExecuting = proc.stats.NewStat("processor.mark_executing", stats.TimerType)
 	proc.eventSchemasTime = proc.stats.NewStat("processor.event_schemas_time", stats.TimerType)
 	proc.validateEventsTime = proc.stats.NewStat("processor.validate_events_time", stats.TimerType)
 	proc.processJobsTime = proc.stats.NewStat("processor.process_jobs_time", stats.TimerType)
@@ -312,7 +314,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 
 	proc.statDBWriteJobsTime = proc.stats.NewStat("processor.db_write_jobs_time", stats.TimerType)
 	proc.statDBWriteStatusTime = proc.stats.NewStat("processor.db_write_status_time", stats.TimerType)
-
 	proc.statDBWriteRouterPayloadBytes = proc.stats.NewTaggedStat("processor.db_write_payload_bytes", stats.HistogramType, stats.Tags{
 		"module": "router",
 	})
@@ -1843,7 +1844,7 @@ func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *t
 	}
 }
 
-func (proc *HandleT) getJobs(nextJobID int64) ([]*jobsdb.JobT, int64) {
+func (proc *HandleT) getJobs() []*jobsdb.JobT {
 	s := time.Now()
 
 	proc.logger.Debugf("Processor DB Read size: %d", maxEventsToProcess)
@@ -1884,7 +1885,7 @@ func (proc *HandleT) getJobs(nextJobID int64) ([]*jobsdb.JobT, int64) {
 	if len(unprocessedList) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
 		proc.pStatsDBR.Rate(0, time.Since(s))
-		return nil, nextJobID
+		return nil
 	}
 
 	eventSchemasStart := time.Now()
@@ -1907,18 +1908,44 @@ func (proc *HandleT) getJobs(nextJobID int64) ([]*jobsdb.JobT, int64) {
 
 	proc.pStatsDBR.Print()
 
-	return unprocessedList, unprocessedList[len(unprocessedList)-1].JobID
+	return unprocessedList
+}
+
+func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
+	start := time.Now()
+	defer proc.statMarkExecuting.Since(start)
+
+	statusList := make([]*jobsdb.JobStatusT, len(jobs))
+	for i, job := range jobs {
+		statusList[i] = &jobsdb.JobStatusT{
+			JobID:         job.JobID,
+			AttemptNum:    job.LastJobStatus.AttemptNum,
+			JobState:      jobsdb.Executing.State,
+			ExecTime:      start,
+			RetryTime:     start,
+			ErrorCode:     "",
+			ErrorResponse: []byte(`{}`),
+			Parameters:    []byte(`{}`),
+		}
+	}
+	//Mark the jobs as executing
+	err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
+	if err != nil {
+		return fmt.Errorf("marking jobs as executing: %v", err)
+	}
+
+	return nil
 }
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
 // Returns true if any job is handled, otherwise returns false.
-func (proc *HandleT) handlePendingGatewayJobs(prevJobID int64) (bool, int64) {
+func (proc *HandleT) handlePendingGatewayJobs() bool {
 	s := time.Now()
 
-	unprocessedList, nextID := proc.getJobs(prevJobID)
+	unprocessedList := proc.getJobs()
 
 	if len(unprocessedList) == 0 {
-		return false, nextID
+		return false
 	}
 
 	proc.Store(
@@ -1928,7 +1955,7 @@ func (proc *HandleT) handlePendingGatewayJobs(prevJobID int64) (bool, int64) {
 	)
 	proc.statLoopTime.Since(s)
 
-	return true, nextID
+	return true
 }
 
 // mainLoop: legacy way of handling jobs
@@ -1938,7 +1965,6 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
 	}
 
-	jobIDCursor := int64(0)
 	proc.logger.Info("Processor loop started")
 	currLoopSleep := time.Duration(0)
 	for {
@@ -1954,7 +1980,7 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 			proc.paused = false
 			if isUnLocked {
 				var found bool
-				found, jobIDCursor = proc.handlePendingGatewayJobs(jobIDCursor)
+				found = proc.handlePendingGatewayJobs()
 				if found {
 					currLoopSleep = time.Duration(0)
 				} else {
@@ -2016,14 +2042,13 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 		defer wg.Done()
 		nextSleepTime := time.Duration(0)
 
-		var jobIDCursor int64
 		defer close(chProc)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(nextSleepTime):
-				jobs, nextID := proc.getJobs(jobIDCursor)
+				jobs := proc.getJobs()
 				if len(jobs) == 0 {
 					// no jobs found, double sleep time until maxLoopSleep
 					nextSleepTime = 2 * nextSleepTime
@@ -2035,6 +2060,12 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					continue
 				}
 
+				err := proc.markExecuting(jobs)
+				if err != nil {
+					pkgLogger.Error(err)
+					panic(err)
+				}
+
 				events := 0
 				for i := range jobs {
 					events += jobs[i].EventCount
@@ -2042,7 +2073,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				// nextSleepTime is dependent on the number of events read in this loop
 				nextSleepTime = time.Duration(1-events/maxEventsToProcess) * readLoopSleep
 
-				jobIDCursor = nextID
 				chProc <- jobs
 			}
 		}
