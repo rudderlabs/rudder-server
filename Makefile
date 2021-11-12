@@ -42,6 +42,8 @@ run-dev: prepare-build ## Run rudder-server using go run with 'dev' build tag
 help: ## Show the available commands
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' ./Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
+warehouse-init:
+	@warehouse/scripts/init.sh
 
 # Enterprise version
 
@@ -67,3 +69,4 @@ install-tools:
 	# Try install for go 1.16+, fallback to get
 	go install github.com/golang/mock/mockgen@v1.6.0 || \
 	GO111MODULE=on go get github.com/golang/mock/mockgen@v1.6.0
+

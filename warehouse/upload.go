@@ -22,7 +22,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 )
@@ -116,7 +115,7 @@ type UploadJobT struct {
 	upload              *UploadT
 	dbHandle            *sql.DB
 	warehouse           warehouseutils.WarehouseT
-	whManager           manager.ManagerI
+	whManager           warehouseutils.ManagerI
 	stagingFiles        []*StagingFileT
 	stagingFileIDs      []int64
 	pgNotifier          *pgnotifier.PgNotifierT
@@ -165,6 +164,7 @@ func setMaxParallelLoads() {
 		"MSSQL":      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
 		"SNOWFLAKE":  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
 		"CLICKHOUSE": config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
+		"DELTALAKE":  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
 }
 
@@ -1633,7 +1633,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
 			}
 
-			if job.warehouse.Type == "S3_DATALAKE" {
+			if misc.Contains(timeWindowDestinations, job.warehouse.Type) {
 				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 			}
 

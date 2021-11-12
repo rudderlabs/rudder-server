@@ -3,6 +3,7 @@ package warehouse
 import (
 	"encoding/json"
 	"errors"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -34,7 +35,7 @@ type QueryInput struct {
 }
 
 // Query the underlying warehouse
-func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) error {
+func (wh *WarehouseAdmin) Query(s QueryInput, reply *client.QueryResult) error {
 	if strings.TrimSpace(s.DestID) == "" {
 		return errors.New("Please specify the destination ID to query the warehouse")
 	}
@@ -60,7 +61,7 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 		}
 	}
 
-	whManager, err := manager.New(warehouse.Type)
+	whManager, err := manager.New(warehouse.Type, application)
 	if err != nil {
 		return err
 	}

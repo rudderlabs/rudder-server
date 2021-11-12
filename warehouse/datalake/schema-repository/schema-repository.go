@@ -2,14 +2,13 @@ package schemarepository
 
 import (
 	"fmt"
-
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("s3-datalake").Child("schema-repository")
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("datalake").Child("schema-repository")
 }
 
 const MAX_CHARACTER_LIMIT = 65535

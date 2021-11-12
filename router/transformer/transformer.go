@@ -180,10 +180,10 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 	var respData []byte
 	var respCode int
 	var tempRespData []byte
+	var payload io.Reader
 	url := getResponseTransformURL(destName)
-	payload := strings.NewReader(string(rawJSON))
+	payload = strings.NewReader(string(rawJSON))
 	for {
-		payload.Seek(0, io.SeekStart)
 		req, err := http.NewRequestWithContext(ctx, "POST", url, payload)
 		if err != nil {
 			trans.logger.Error(fmt.Sprintf(`400 Unable to construct POST request for URL : "%s"`, url))
