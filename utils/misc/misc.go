@@ -48,7 +48,7 @@ var AppStartTime int64
 var errorStorePath string
 var RouterInMemoryJobCounts map[string]map[string]int
 var routerJobCountMutex sync.RWMutex
-var ProcessorJobsMovingAverages map[string]map[string]ewma.MovingAverage
+var ProcessorJobsMovingAverages map[string]map[string]map[string]ewma.MovingAverage
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -77,7 +77,9 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
 	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
 	RouterInMemoryJobCounts = make(map[string]map[string]int)
-	ProcessorJobsMovingAverages = make(map[string]map[string]ewma.MovingAverage)
+	ProcessorJobsMovingAverages = make(map[string]map[string]map[string]ewma.MovingAverage)
+	ProcessorJobsMovingAverages["router"] = make(map[string]map[string]ewma.MovingAverage)
+	ProcessorJobsMovingAverages["batch_router"] = make(map[string]map[string]ewma.MovingAverage)
 }
 
 func LoadDestinations() ([]string, []string) {
@@ -106,33 +108,33 @@ func RemoveFromInMemoryCount(customerID string, destinationType string, count in
 	routerJobCountMutex.Unlock()
 }
 
-func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration) {
+func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string) {
 	for key := range stats {
-		_, ok := ProcessorJobsMovingAverages[key]
+		_, ok := ProcessorJobsMovingAverages[tableType][key]
 		if !ok {
-			ProcessorJobsMovingAverages[key] = make(map[string]ewma.MovingAverage)
+			ProcessorJobsMovingAverages[tableType][key] = make(map[string]ewma.MovingAverage)
 		}
 		for destType := range stats[key] {
-			_, ok := ProcessorJobsMovingAverages[key][destType]
+			_, ok := ProcessorJobsMovingAverages[tableType][key][destType]
 			if !ok {
-				ProcessorJobsMovingAverages[key][destType] = ewma.NewMovingAverage()
+				ProcessorJobsMovingAverages[tableType][key][destType] = ewma.NewMovingAverage()
 			}
-			ProcessorJobsMovingAverages[key][destType].Add(float64(stats[key][destType] * int(time.Second) / int(timeTaken)))
+			ProcessorJobsMovingAverages[tableType][key][destType].Add(float64(stats[key][destType] * int(time.Second) / int(timeTaken)))
 			AddToInMemoryCount(key, destType, stats[key][destType])
 		}
 	}
-	for customerKey := range ProcessorJobsMovingAverages {
+	for customerKey := range ProcessorJobsMovingAverages[tableType] {
 		_, ok := stats[customerKey]
 		if !ok {
 			for destType := range stats[customerKey] {
-				ProcessorJobsMovingAverages[customerKey][destType].Add(0)
+				ProcessorJobsMovingAverages[tableType][customerKey][destType].Add(0)
 			}
 		}
 
-		for destType := range ProcessorJobsMovingAverages[customerKey] {
+		for destType := range ProcessorJobsMovingAverages[tableType][customerKey] {
 			_, ok := stats[customerKey][destType]
 			if !ok {
-				ProcessorJobsMovingAverages[customerKey][destType].Add(0)
+				ProcessorJobsMovingAverages[tableType][customerKey][destType].Add(0)
 			}
 		}
 	}
