@@ -1373,6 +1373,10 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
+	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_customer_index on %[1]s (customer);`, newDS.JobTable)
+	_, err = jd.dbHandle.Exec(sqlStatement)
+	jd.assertError(err)
+
 	sqlStatement = fmt.Sprintf(`CREATE TABLE %s (
                                      id BIGSERIAL,
                                      job_id BIGINT REFERENCES %s(job_id),
