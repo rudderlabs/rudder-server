@@ -1,0 +1,4 @@
+{{range .Datasets}}
+    ALTER TABLE {{$.Prefix}}_jobs_{{.}} ADD COLUMN IF NOT EXISTS customer TEXT NOT NULL DEFAULT '';
+    CREATE INDEX IF NOT EXISTS {{$.Prefix}}_jobs_{{.}}_customer_index on {{$.Prefix}}_jobs_{{.}} (customer);
+{{end}}
