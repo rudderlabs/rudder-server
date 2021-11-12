@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/VividCortex/ewma"
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -108,6 +109,7 @@ type HandleT struct {
 	savePayloadOnError                     bool
 	responseTransform                      bool
 	saveDestinationResponseOverride        bool
+	routerLatencyStat                      map[string]ewma.MovingAverage
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -570,7 +572,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					"destType":    worker.rt.destName,
 					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
 				})
+				workspaceID := destinationJob.JobMetadataArray[0].JobT.Customer
 				deliveryLatencyStat.Start()
+				startedAt := time.Now()
 
 				// TODO: remove trackStuckDelivery once we verify it is not needed,
 				//			router_delivery_exceeded_timeout -> goes to zero
@@ -634,6 +638,11 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 				worker.deliveryTimeStat.End()
 				deliveryLatencyStat.End()
+				timeTaken := time.Since(startedAt)
+				if _, ok := worker.rt.routerLatencyStat[workspaceID]; !ok {
+					worker.rt.routerLatencyStat[workspaceID] = ewma.NewMovingAverage()
+				}
+				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken))
 				// END: request to destination endpoint
 
 				if isSuccessStatus(respStatusCode) && !worker.rt.saveDestinationResponseOverride {
@@ -1329,7 +1338,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	//REPORTING - ROUTER - END
 	for customer := range routerCustomerJobStatusCount {
 		for destType := range routerCustomerJobStatusCount[customer] {
-			misc.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router")
+			misc.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router0")
 		}
 	}
 
@@ -1768,6 +1777,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.statusLoopPauseChannel = make(chan *PauseT)
 	rt.statusLoopResumeChannel = make(chan bool)
 	rt.reporting = reporting
+	rt.routerLatencyStat = make(map[string]ewma.MovingAverage)
 	config.RegisterBoolConfigVariable(utilTypes.DEFAULT_REPORTING_ENABLED, &rt.reportingEnabled, false, "Reporting.enabled")
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
