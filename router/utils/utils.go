@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/base64"
 	"strings"
 	"time"
 
@@ -68,4 +69,34 @@ func EnhanceJSON(rawMsg []byte, key, val string) []byte {
 	}
 
 	return resp
+}
+
+func IsNotEmptyString(s string) bool {
+	return len(strings.TrimSpace(s)) > 0
+}
+
+func GetAuthType(dest backendconfig.DestinationT) (authType string) {
+	destConfig := dest.DestinationDefinition.Config
+	var lookupErr error
+	var authValue interface{}
+	if authValue, lookupErr = misc.NestedMapLookup(destConfig, "auth", "type"); lookupErr != nil {
+		// pkgLogger.Infof(`OAuthsupport for %s not supported`, dest.DestinationDefinition.Name)
+		return ""
+	}
+	authType = authValue.(string)
+	return authType
+}
+
+func BasicAuth(username, password string) string {
+	auth := username + ":" + password
+	return base64.StdEncoding.EncodeToString([]byte(auth))
+}
+
+func GetRudderAccountId(destination *backendconfig.DestinationT) string {
+	if rudderAccountIdInterface, found := destination.Config["rudderAccountId"]; found {
+		if rudderAccountId, ok := rudderAccountIdInterface.(string); ok {
+			return rudderAccountId
+		}
+	}
+	return ""
 }

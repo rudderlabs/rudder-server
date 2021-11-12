@@ -49,6 +49,8 @@ type MetadataT struct {
 	RecordID            interface{}                       `json:"recordId"`
 	DestinationType     string                            `json:"destinationType"`
 	MessageID           string                            `json:"messageId"`
+	CpAuthToken         string                            `json:"cpAuthToken"`
+	OAuthAccessToken    string                            `json:"oauthAccessToken"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
 	MessageIDs              []string `json:"messageIds"`
 	RudderID                string   `json:"rudderId"`

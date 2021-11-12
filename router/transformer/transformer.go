@@ -59,7 +59,7 @@ var (
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(30), &timeoutDuration, true, time.Second, []string{"Processor.timeoutDuration", "Processor.timeoutDurationInSecond"}...)
+	config.RegisterDurationConfigVariable(time.Duration(5000), &timeoutDuration, true, time.Second, []string{"Processor.timeoutDuration", "Processor.timeoutDurationInSecond"}...)
 }
 
 func Init() {
@@ -211,11 +211,11 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 			resp.Body.Close()
 		}
 		//Detecting content type of the respBody
-		contentTypeHeader := http.DetectContentType(tempRespData)
+		contentTypeHeader := strings.ToLower(http.DetectContentType(tempRespData))
 		//If content type is not of type "*text*", overriding it with empty string
-		if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
-			strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
-			strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
+		if !(strings.Contains(contentTypeHeader, "text") ||
+			strings.Contains(contentTypeHeader, "application/json") ||
+			strings.Contains(contentTypeHeader, "application/xml")) {
 			tempRespData = []byte("")
 		}
 

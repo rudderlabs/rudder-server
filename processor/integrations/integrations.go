@@ -59,8 +59,9 @@ type PostParametersT struct {
 }
 
 type DeliveryResponseT struct {
-	Status int64  `json:"status"`
-	Body   string `json:"responseBody"`
+	Status  int64           `json:"status"`
+	Body    string          `json:"responseBody"`
+	Payload PostParametersT `json:"payload"`
 }
 
 // This struct represents the datastructure present in Transformer network layer Error builder
@@ -73,6 +74,8 @@ type TransErrorSpecT struct {
 	Metadata                 map[string]interface{} `json:"metadata"`
 	ResponseTransformFailure bool                   `json:"responseTransformFailure"`
 	FailureAt                string                 `json:"failureAt"`
+	AuthErrorCategory        string                 `json:"authErrorCategory"`
+	AccessToken              string                 `json:"accessToken"`
 }
 
 type TransErrorT struct {

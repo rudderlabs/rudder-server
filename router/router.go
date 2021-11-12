@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,6 +34,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -44,6 +46,17 @@ type PauseT struct {
 	respChannel   chan bool
 	wg            *sync.WaitGroup
 	waitForResume bool
+}
+
+type HandleDestOAuthRespParamsT struct {
+	ctx            context.Context
+	val            integrations.PostParametersT
+	destinationJob types.DestinationJobT
+	workerId       int
+	destRespStCd   int
+	trRespStCd     int
+	destResBody    string
+	trRespBody     string
 }
 
 //HandleT is the handle to this module.
@@ -93,6 +106,7 @@ type HandleT struct {
 	batchInputOutputDiffCountStat          stats.RudderStats
 	eventsAbortedStat                      stats.RudderStats
 	drainedJobsStat                        stats.RudderStats
+	routerResponseTransformStat            stats.RudderStats
 	noOfWorkers                            int
 	allowAbortedUserJobsCountForProcessing int
 	throttledUserMap                       map[string]struct{} // used before calling findWorker. A temp storage to save <userid> whose job can be throttled.
@@ -106,13 +120,13 @@ type HandleT struct {
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
 	savePayloadOnError                     bool
+	backgroundGroup                        *errgroup.Group
+	backgroundCtx                          context.Context
+	backgroundCancel                       context.CancelFunc
+	backgroundWait                         func() error
+	oauth                                  oauth.Authorizer
 	responseTransform                      bool
 	saveDestinationResponseOverride        bool
-
-	backgroundGroup  *errgroup.Group
-	backgroundCtx    context.Context
-	backgroundCancel context.CancelFunc
-	backgroundWait   func() error
 }
 
 type jobResponseT struct {
@@ -138,6 +152,8 @@ type JobParametersT struct {
 	SourceCategory          string      `json:"source_category"`
 	RecordID                interface{} `json:"record_id"`
 	MessageID               string      `json:"message_id"`
+	WorkspaceId             string      `json:"workspaceId"`
+	RudderAccountId         string      `json:"rudderAccountId"`
 }
 
 type workerMessageT struct {
@@ -377,6 +393,7 @@ func (worker *workerT) workerProcess() {
 				CreatedAt:        job.CreatedAt.Format(misc.RFC3339Milli),
 				FirstAttemptedAt: firstAttemptedAt,
 				TransformAt:      parameters.TransformAt,
+				WorkspaceId:      parameters.WorkspaceId,
 				JobT:             job}
 
 			worker.rt.configSubscriberLock.RLock()
@@ -396,6 +413,23 @@ func (worker *workerT) workerProcess() {
 				continue
 			}
 			destination := batchDestination.Destination
+			if authType := router_utils.GetAuthType(destination); router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
+				rudderAccountId := router_utils.GetRudderAccountId(&destination)
+				if router_utils.IsNotEmptyString(rudderAccountId) {
+					// Get Access Token Information to send it as part of the event
+					tokenStatusCode, accountSecretInfo := worker.rt.oauth.FetchToken(&oauth.RefreshTokenParams{
+						AccountId:       rudderAccountId,
+						WorkspaceId:     jobMetadata.WorkspaceId,
+						DestDefName:     destination.DestinationDefinition.Name,
+						EventNamePrefix: "fetch_token",
+					})
+					if tokenStatusCode == http.StatusOK {
+						jobMetadata.OAuthAccessToken = accountSecretInfo.Account.AccessToken
+					} else {
+						worker.rt.logger.Infof(`Error in Token Fetch statusCode: %d\t error: %s\n`, tokenStatusCode, accountSecretInfo.Err)
+					}
+				}
+			}
 			worker.rt.configSubscriberLock.RUnlock()
 
 			worker.recordCountsByDestAndUser(destination.ID, userID)
@@ -604,12 +638,33 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							//response transform start
 							if worker.rt.responseTransform {
 								dResponse := integrations.DeliveryResponseT{
-									Status: int64(respStatusCode),
-									Body:   respBodyTemp,
+									Status:  int64(respStatusCode),
+									Body:    respBodyTemp,
+									Payload: val,
 								}
+								// destination response status code
+								destRespStCd := respStatusCode
+								// destination response body
+								destRespBody := respBodyTemp
+
 								rtl_time := time.Now()
 								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(ctx, dResponse, worker.rt.destName)
 								worker.routerResponseTransformStat.SendTiming(time.Since(rtl_time))
+								// Handle OAuth Destinations' Response
+								authType := router_utils.GetAuthType(destinationJob.Destination)
+								if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
+									pkgLogger.Debugf(`Sending for OAuth destination`)
+									respStatusCode, respBodyTemp = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
+										ctx:            ctx,
+										val:            val,
+										destinationJob: destinationJob,
+										workerId:       worker.workerID,
+										destRespStCd:   destRespStCd,
+										destResBody:    destRespBody,
+										trRespStCd:     respStatusCode,
+										trRespBody:     respBodyTemp,
+									})
+								}
 							}
 							// response transform end
 							if isSuccessStatus(respStatusCode) {
@@ -1829,8 +1884,13 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 		"destType": rt.destName,
 	})
 
+	rt.routerResponseTransformStat = stats.NewTaggedStat("response_transform_latency", stats.TimerType, stats.Tags{"destType": rt.destName})
+
 	rt.transformer = transformer.NewTransformer()
 	rt.transformer.Setup()
+
+	rt.oauth = oauth.NewOAuthErrorHandler()
+	rt.oauth.Setup()
 
 	var throttler throttler.HandleT
 	throttler.SetUp(rt.destName)
@@ -2015,6 +2075,94 @@ func (rt *HandleT) Resume() {
 	rt.generatorResumeChannel <- true
 
 	rt.paused = false
+}
+
+func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (int, string) {
+	destResBody := params.destResBody
+	trRespStatusCode := params.trRespStCd
+	trRespBody := params.trRespBody
+	destRespStCd := params.destRespStCd
+	destinationJob := params.destinationJob
+
+	if trRespStatusCode != http.StatusOK {
+		var destErrOutput oauth.ErrorOutput
+		if destError := json.Unmarshal([]byte(trRespBody), &destErrOutput); destError != nil {
+			// Errors like OOM kills of transformer, transformer down etc,.
+			// If destResBody comes out with a plain string, then this will occur
+			return http.StatusInternalServerError, fmt.Sprintf(`{
+				Error: %v, 
+				(trRespStCd, trRespBody): (%v, %v),
+				(destRespStCd, destResBody): (%v, %v)
+			}`, destError, trRespStatusCode, trRespBody, destRespStCd, destResBody)
+		}
+		workspaceId := destinationJob.JobMetadataArray[0].WorkspaceId
+		var errCatStatusCode int
+		destErrDetailed := destErrOutput.Output.ErrorDetailed
+		// stats.NewTaggedStat(destErrDetailed.StatName, stats.CountType, destErrDetailed.StatTags).Increment()
+		// Check the category
+		// Trigger the refresh endpoint/disable endpoint
+		switch destErrDetailed.AuthErrorCategory {
+		case oauth.DISABLE_DEST:
+			return rt.ExecDisableDestination(destinationJob, workspaceId, destResBody)
+		case oauth.REFRESH_TOKEN:
+			rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
+			var refSecret *oauth.AuthResponse
+			refTokenParams := &oauth.RefreshTokenParams{
+				AccessToken:     destErrDetailed.AccessToken,
+				WorkspaceId:     workspaceId,
+				AccountId:       rudderAccountId,
+				DestDefName:     destinationJob.Destination.DestinationDefinition.Name,
+				EventNamePrefix: "refresh_token",
+				WorkerId:        params.workerId,
+			}
+			errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
+			refSec := *refSecret
+			if router_utils.IsNotEmptyString(refSec.Err) && refSec.Err == oauth.INVALID_REFRESH_TOKEN_GRANT {
+				// In-case the refresh token has been revoked, this error comes in
+				// Even trying to refresh the token also doesn't work here. Hence this would be more ideal to Abort Events
+				// As well as to disable destination as well.
+				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
+				disableStCd, _ := rt.ExecDisableDestination(destinationJob, workspaceId, destResBody)
+				stats.NewTaggedStat(oauth.INVALID_REFRESH_TOKEN_GRANT, stats.CountType, stats.Tags{
+					"destinationId": destinationJob.Destination.ID,
+					"worspaceId":    refTokenParams.WorkspaceId,
+					"accountId":     refTokenParams.AccountId,
+					"destName":      refTokenParams.DestDefName,
+				}).Increment()
+				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
+				return disableStCd, refSec.Err
+			}
+			// Error while refreshing the token or Has an error while refreshing or sending empty access token
+			if errCatStatusCode != http.StatusOK || router_utils.IsNotEmptyString(refSec.Err) {
+				return http.StatusTooManyRequests, refSec.Err
+			}
+			// Retry with Refreshed Token by failing with 5xx
+			return http.StatusInternalServerError, trRespBody
+		}
+		// By default send the status code & response from transformed response directly
+		return trRespStatusCode, trRespBody
+	}
+	return http.StatusOK, destResBody
+}
+
+func (rt *HandleT) ExecDisableDestination(destinationJob types.DestinationJobT, workspaceId string, destResBody string) (int, string) {
+	disableDestStatTags := stats.Tags{
+		"id":          destinationJob.Destination.ID,
+		"workspaceId": workspaceId,
+		"success":     "true",
+	}
+	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
+	if errCatStatusCode != http.StatusOK {
+		// Error while disabling a destination
+		// High-Priority notification to rudderstack needs to be sent
+		disableDestStatTags["success"] = "false"
+		stats.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
+		return http.StatusBadRequest, errCatResponse
+	}
+	// High-Priority notification to customer(&rudderstack) needs to be sent
+	stats.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
+	// Abort the jobs as the destination is disable
+	return http.StatusBadRequest, destResBody
 }
 
 func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
