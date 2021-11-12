@@ -1784,7 +1784,7 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 		totalEvents += job.EventCount
 		totalPayloadBytes += len(job.EventPayload)
 
-		if !enableEventCount && totalPayloadBytes > maxEventsToProcess {
+		if !enableEventCount && totalEvents > maxEventsToProcess {
 			break
 		}
 
