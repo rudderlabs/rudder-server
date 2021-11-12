@@ -1790,10 +1790,10 @@ func (proc *HandleT) handlePendingGatewayJobs(nextJobID int64) (bool, int64) {
 		}
 
 		if job.JobID <= proc.lastJobID {
-			proc.logger.Warnf("Out of order job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
+			proc.logger.Debugf("Out of order job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
 			proc.statDBReadOutOfOrder.Count(1)
 		} else if proc.lastJobID != 0 && job.JobID != proc.lastJobID+1 {
-			proc.logger.Warnf("Out of sequence job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
+			proc.logger.Debugf("Out of sequence job_id: prev: %d cur: %d", proc.lastJobID, job.JobID)
 			proc.statDBReadOutOfSequence.Count(1)
 		}
 		proc.lastJobID = job.JobID
