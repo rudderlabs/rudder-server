@@ -18,6 +18,9 @@ const (
 
 	DEFAULT_REPORTING_ENABLED = true
 	DEFAULT_REPLAY_ENABLED    = false
+
+	SINGLE_TENANT = "single"
+	MULTI_TENANT  = "multi"
 )
 
 var (

@@ -185,6 +185,11 @@ func AppendError(callingMethodName string, firstError *error, secondError *error
 	}
 }
 
+func IsMultiTenant() bool {
+	tenancy := config.GetEnv("TENANCY", types.SINGLE_TENANT)
+	return tenancy == types.MULTI_TENANT
+}
+
 //RecordAppError appends the error occured to error_store.json
 func RecordAppError(err error) {
 	if err == nil {

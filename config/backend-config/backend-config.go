@@ -29,6 +29,7 @@ var (
 	backendConfig                         BackendConfig
 	isMultiWorkspace                      bool
 	multiWorkspaceSecret                  string
+	multitenantWorkspaceSecret            string
 	configBackendURL, workspaceToken      string
 	pollInterval, regulationsPollInterval time.Duration
 	configFromFile                        bool
@@ -239,7 +240,7 @@ func loadConfig() {
 	workspaceToken = config.GetWorkspaceToken()
 
 	config.RegisterDurationConfigVariable(time.Duration(5), &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
-
+	multitenantWorkspaceSecret = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "password")
 	config.RegisterDurationConfigVariable(time.Duration(300), &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
 	config.RegisterStringConfigVariable("/etc/rudderstack/workspaceConfig.json", &configJSONPath, false, "BackendConfig.configJSONPath")
 	config.RegisterBoolConfigVariable(false, &configFromFile, false, "BackendConfig.configFromFile")
@@ -446,6 +447,9 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 func Setup(pollRegulations bool, configEnvHandler types.ConfigEnvI) {
 	if isMultiWorkspace {
 		backendConfig = new(MultiWorkspaceConfig)
+	} else if misc.IsMultiTenant() {
+		backendConfig = new(MultiTenantWorkspaceConfig)
+		backendConfig.(*MultiTenantWorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
 	} else {
 		backendConfig = new(WorkspaceConfig)
 		backendConfig.(*WorkspaceConfig).CommonBackendConfig.configEnvHandler = configEnvHandler
