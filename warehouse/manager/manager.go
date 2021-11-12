@@ -2,9 +2,8 @@ package manager
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
@@ -65,8 +64,7 @@ func New(destType string) (ManagerI, error) {
 		var dl datalake.HandleT
 		return &dl, nil
 	case "DELTALAKE":
-		var dl deltalake.HandleT
-		return &dl, nil
+		return warehouse.GetDeltaLake()
 	}
 	return nil, fmt.Errorf("Provider of type %s is not configured for WarehouseManager", destType)
 }

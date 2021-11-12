@@ -30,7 +30,6 @@ phases:
   build:
     commands:
       - export GO111MODULE=on
-      - export ACK_GINKGO_RC=true
       - VERSION="master"
       - DATE=$(date "+%F,%T")
       # Build Open source version

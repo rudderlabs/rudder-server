@@ -32,11 +32,9 @@ phases:
   build:
     commands:
       - export GO111MODULE=on
-      - export ACK_GINKGO_RC=true
       - DATE=$(date "+%F,%T")
       - VERSION=$(echo $CODEBUILD_WEBHOOK_HEAD_REF | sed 's/refs\/heads\///g' | tr "/" .)
       # Build Open source version
-      - make warehouse-init
       - make test
       - go test -v ./docker_test.go -integration -count 1
       - find . -name "profile.out" | while read file;do cat $file >> coverage.txt; echo "" >> coverage.txt;done

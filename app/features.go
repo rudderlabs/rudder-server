@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"github.com/rudderlabs/rudder-server/warehouse/manager"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -99,6 +100,24 @@ func RegisterReplayFeature(f ReplayFeatureSetup) {
 	replayFeatureSetup = f
 }
 
+/*********************************
+Delta Lake Feature
+*********************************/
+
+type DeltaLakeFeature interface {
+	GetManager() manager.ManagerI
+}
+
+// DeltaLakeFeatureSetup is a function that initializes a Delta Lake feature
+type DeltaLakeFeatureSetup func(Interface) DeltaLakeFeature
+
+var deltaLakeFeatureSetup DeltaLakeFeatureSetup
+
+// RegisterDeltaLakeFeature registers a Delta lake implementation
+func RegisterDeltaLakeFeature(f DeltaLakeFeatureSetup) {
+	deltaLakeFeatureSetup = f
+}
+
 // Features contains optional implementations of Enterprise only features.
 type Features struct {
 	Migrator     MigratorFeature
@@ -106,4 +125,5 @@ type Features struct {
 	ConfigEnv    ConfigEnvFeature
 	Reporting    ReportingFeature
 	Replay       ReplayFeature
+	DeltaLake    DeltaLakeFeature
 }

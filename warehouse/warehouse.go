@@ -1760,3 +1760,10 @@ func getLoadFileType(wh string) string {
 		return warehouseutils.LOAD_FILE_TYPE_CSV
 	}
 }
+
+func GetDeltaLake() (manager.ManagerI, error) {
+	if application.Features().DeltaLake != nil {
+		return application.Features().DeltaLake.GetManager(), nil
+	}
+	return nil, fmt.Errorf("Does not support DeltaLake")
+}

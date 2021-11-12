@@ -92,6 +92,10 @@ func (a *App) initEnterpriseFeatures() {
 	if replayFeatureSetup != nil {
 		a.features.Replay = replayFeatureSetup(a)
 	}
+
+	if deltaLakeFeatureSetup != nil {
+		a.features.DeltaLake = deltaLakeFeatureSetup(a)
+	}
 }
 
 // Options returns this application's options
