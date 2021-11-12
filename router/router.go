@@ -1287,11 +1287,13 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				statusDetailsMap[key] = sd
 			}
 			if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 {
-				routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
 				sd.Count++
 			}
 			if resp.status.JobState != jobsdb.Failed.State {
-				sd.Count++
+				if resp.status.JobState == jobsdb.Succeeded.State || resp.status.JobState == jobsdb.Aborted.State {
+					routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
+					sd.Count++
+				}
 			}
 		}
 		//REPORTING - ROUTER - END

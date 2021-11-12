@@ -1087,10 +1087,12 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 				statusDetailsMap[key] = sd
 			}
 			if status.JobState == jobsdb.Failed.State && status.AttemptNum == 1 {
-				batchRouterCustomerJobStatusCount[workspaceID][parameters.DestinationID] += 1
 				sd.Count++
 			}
 			if status.JobState != jobsdb.Failed.State {
+				if status.JobState == jobsdb.Succeeded.State || status.JobState == jobsdb.Aborted.State {
+					batchRouterCustomerJobStatusCount[workspaceID][parameters.DestinationID] += 1
+				}
 				sd.Count++
 			}
 		}
