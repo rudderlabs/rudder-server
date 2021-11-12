@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDelete(t *testing.T) {
@@ -75,11 +76,11 @@ func TestDelete(t *testing.T) {
 				DeleteManager: &batch.S3DeleteManager{},
 			}
 
-			delBatch.DeleteManager.Delete(ctx, tt.job.UserAttributes, "latest_original.json.gz")
-			// status, err := delBatch.Delete(ctx, tt.job, tt.dest)
+			// delBatch.DeleteManager.Delete(ctx, tt.job.UserAttributes, "latest_original.json.gz")
+			status, err := delBatch.Delete(ctx, tt.job, tt.dest)
 
-			// require.Equal(t, tt.expectedErr, err, "actual error different than expected")
-			// require.Equal(t, tt.expectedStatus, status, "actual job status different than expected")
+			require.Equal(t, tt.expectedErr, err, "actual error different than expected")
+			require.Equal(t, tt.expectedStatus, status, "actual job status different than expected")
 
 		})
 	}

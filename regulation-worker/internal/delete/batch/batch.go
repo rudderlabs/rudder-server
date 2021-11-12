@@ -26,10 +26,10 @@ type Batch struct {
 }
 
 //returns list of all .json.gz files and marks exists as true if `statusTrackerFile` is present in the s3 bucket.
-func ListFiles(fm filemanager.FileManager, statusTrackerFile string) ([]*filemanager.FileObject, bool, error) {
+func (b *Batch) listFiles(statusTrackerFile string) ([]*filemanager.FileObject, bool, error) {
 	var maxItem int64 = 1000
 
-	fileObjects, err := fm.ListFilesWithPrefix("", maxItem)
+	fileObjects, err := b.FileManager.ListFilesWithPrefix("", maxItem)
 	if err != nil {
 		return []*filemanager.FileObject{}, false, fmt.Errorf("failed to fetch object list from S3:%w", err)
 	}
@@ -98,6 +98,21 @@ func removeCleanedFiles(files []*filemanager.FileObject, cleanedFiles []string) 
 	return finalFiles
 }
 
+//append <fileName> to <statusTrackerFile> for which deletion has completed.
+func updateStatusTrackerFile(statusTrackerFile, fileName string) error {
+	f, err := os.OpenFile(statusTrackerFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("error while opening statusTrackerFile: %w", err)
+	}
+	if _, err := f.Write([]byte(fileName)); err != nil {
+		return fmt.Errorf("error while writing to statusTrackerFile: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("error while closing statusTrackerFile: %w", err)
+	}
+	return nil
+}
+
 //calls filemanager to download data
 //calls deletemanager to delete users from downloaded data
 //calls filemanager to upload data
@@ -107,7 +122,7 @@ func (b *Batch) Delete(ctx context.Context, job model.Job, destDetail model.Dest
 
 	//TODO: implement a better way of getting prefix & maxItem.
 	statusTrackerFile := "deleteStatusTracker.txt"
-	files, exist, err := ListFiles(b.FileManager, statusTrackerFile)
+	files, exist, err := b.listFiles(statusTrackerFile)
 	if err != nil {
 		return model.JobStatusFailed, err
 	}
@@ -138,8 +153,9 @@ func (b *Batch) Delete(ctx context.Context, job model.Job, destDetail model.Dest
 	}
 
 	for i := 0; i < len(files); i++ {
+		fmt.Printf("cleaning started for file: %s\n", files[i])
 		//download file
-		file, err := os.OpenFile(files[i].Key, os.O_CREATE|os.O_RDWR, 0644)
+		file, err := os.OpenFile(files[i].Key, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 		if err != nil {
 			return model.JobStatusFailed, err
 		}
@@ -152,149 +168,40 @@ func (b *Batch) Delete(ctx context.Context, job model.Job, destDetail model.Dest
 		updateStatusTrackerFile(statusTrackerFile, files[i].Key)
 
 		//replace old json.gz & statusTrackerFile with the new during upload.
-
+		err = b.upload(files[i].Key, statusTrackerFile)
+		if err != nil {
+			return model.JobStatusFailed, fmt.Errorf("error while uploading cleaned file, %w", err)
+		}
 	}
 	return model.JobStatusComplete, nil
 }
 
-func updateStatusTrackerFile(statusTrackerFile, fileName string) error {
-	f, err := os.OpenFile(statusTrackerFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+func (b *Batch) upload(cleanedFile, statusTrackerFile string) error {
+	fmt.Println("upload called")
+	file, err := os.OpenFile(cleanedFile, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(int(0777)))
 	if err != nil {
-		return fmt.Errorf("error while opening statusTrackerFile: %w", err)
+		return fmt.Errorf("error while opening cleaned file for uploading: %w", err)
 	}
-	if _, err := f.Write([]byte(fileName)); err != nil {
-		return fmt.Errorf("error while writing to statusTrackerFile: %w", err)
+
+	_, err = b.FileManager.Upload(file)
+	if err != nil {
+		return fmt.Errorf("error while uploading cleaned file: %w", err)
 	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("error while closing statusTrackerFile: %w", err)
+	file.Close()
+	fmt.Println("upload cleaned file successful")
+
+	file, err = os.OpenFile(statusTrackerFile, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(int(0777)))
+	if err != nil {
+		return fmt.Errorf("error while opening statusTrackerFile file for uploading: %w", err)
 	}
+	defer file.Close()
+
+	_, err = b.FileManager.Upload(file)
+	if err != nil {
+		return fmt.Errorf("error while uploading statusTrackerFile file: %w", err)
+	}
+	fmt.Println("upload statusTrackerFile successful")
+
 	return nil
+
 }
-
-//check if statusTracker.txt exists or not. If not, then create one.
-//if exists, then load it in one array & remove all files in this list from the one loaded before.
-//to do this: sort both files & follow two pointer approach to get the updated list in O(n).
-
-/*
-	for _, s3Object := range fileObjects {
-		// if s3Object.LastModified.Before(startTime) {
-		// 	continue
-		// }
-		jsonPath := "/Users/srikanth/" + "s3-correctness/" + uuid.Must(uuid.NewV4()).String()
-		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
-		jsonFile, err := os.Create(jsonPath)
-		if err != nil {
-			panic(err)
-		}
-
-		err = s3Manager.Download(jsonFile, s3Object.Key)
-		if err != nil {
-			panic(err)
-		}
-		jsonFile.Close()
-		defer os.Remove(jsonPath)
-
-		rawf, err := os.Open(jsonPath)
-		reader, _ := gzip.NewReader(rawf)
-
-		sc := bufio.NewScanner(reader)
-
-		count := 0
-		for sc.Scan() {
-			lineBytes := sc.Bytes()
-			eventID := gjson.GetBytes(lineBytes, "messageId").String()
-			userID := gjson.GetBytes(lineBytes, "anonymousId").String()
-			timeStamp := gjson.GetBytes(lineBytes, "timeStamp").String()
-			pipe.RPush(testName+":"+userID+":dst_list", eventID)
-			pipe.SAdd(redisDestUserSet, userID)
-			pipe.SAdd(redisDestEventSet, eventID)
-			pipe.HSet(redisDestEventTimeHash, eventID, timeStamp)
-			if count%100 == 0 {
-				pipe.Exec()
-			}
-			count++
-		}
-		pipe.Exec()
-		reader.Close()
-	}
-*/
-/*
-	sort.Slice(fileObjects, func(i, j int) bool {
-		return fileObjects[i].LastModified.Before(fileObjects[j].LastModified)
-	})
-
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: redisServer,
-	})
-	pipe := redisClient.Pipeline()
-
-	for _, s3Object := range fileObjects {
-		if s3Object.LastModified.Before(startTime) {
-			continue
-		}
-		jsonPath := "/Users/srikanth/" + "s3-correctness/" + uuid.Must(uuid.NewV4()).String()
-		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
-		jsonFile, err := os.Create(jsonPath)
-		if err != nil {
-			panic(err)
-		}
-
-		err = s3Manager.Download(jsonFile, s3Object.Key)
-		if err != nil {
-			panic(err)
-		}
-		jsonFile.Close()
-		defer os.Remove(jsonPath)
-
-		rawf, err := os.Open(jsonPath)
-		reader, _ := gzip.NewReader(rawf)
-
-		sc := bufio.NewScanner(reader)
-
-		count := 0
-		for sc.Scan() {
-			lineBytes := sc.Bytes()
-			eventID := gjson.GetBytes(lineBytes, "messageId").String()
-			userID := gjson.GetBytes(lineBytes, "anonymousId").String()
-			timeStamp := gjson.GetBytes(lineBytes, "timeStamp").String()
-			pipe.RPush(testName+":"+userID+":dst_list", eventID)
-			pipe.SAdd(redisDestUserSet, userID)
-			pipe.SAdd(redisDestEventSet, eventID)
-			pipe.HSet(redisDestEventTimeHash, eventID, timeStamp)
-			if count%100 == 0 {
-				pipe.Exec()
-			}
-			count++
-		}
-		pipe.Exec()
-		reader.Close()
-	}
-*/
-// data, err := getData(job, dest)
-// if err != nil {
-// 	return model.JobStatusFailed, fmt.Errorf("error while getting deletion data: %w", err)
-// }
-// cleanedData, err := deleteData(job, dest, data)
-// if err != nil {
-// 	return model.JobStatusFailed, fmt.Errorf("error while deleting users from destination data: %w", err)
-// }
-
-// status, err := uploadData(job, dest, cleanedData)
-// if err != nil {
-// 	return model.JobStatusFailed, fmt.Errorf("error while uploading deleted data: %w", err)
-// }
-// return b.DeleteManager.Delete(ctx, job, destDetail)
-
-// }
-
-// func getData(job model.Job, dest model.Destination) (interface{}, error) {
-// 	return nil, nil
-// }
-
-// func deleteData(job model.Job, dest model.Destination, data interface{}) (interface{}, error) {
-// 	return nil, nil
-// }
-
-// func uploadData(job model.Job, dest model.Destination, data interface{}) (model.JobStatus, error) {
-// 	return model.JobStatusComplete, nil
-// }

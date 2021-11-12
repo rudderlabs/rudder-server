@@ -13,39 +13,39 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kv_store"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 )
 
-type deleter interface {
-	Delete(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error)
-}
-type DeleteSvc struct {
-	Deleter deleter
+// type deleter interface {
+// 	Delete(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error)
+// }
+type DeleteFacade struct {
+	// Deleter deleter
 }
 
 //get destType & access credentials from workspaceID & destID
 //call appropriate struct file type or api type based on destType.
-func (d *DeleteSvc) Delete(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error) {
-	switch dest.Type {
+func (d *DeleteFacade) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus, error) {
+	switch destDetail.Type {
 	case "api":
 		delAPI := api.API{
 			DeleteManager: &api.Mock_apiWorker{},
 		}
-		return delAPI.DeleteManager.Delete(ctx, job, dest)
+		return delAPI.DeleteManager.Delete(ctx, job, destDetail)
 	case "batch":
-		fmFactory := filemanager.FileManagerFactoryT{}
-		fm, err := fmFactory.New(&filemanager.SettingsT{
-			Provider: dest.Name,
-			Config:   dest.Config,
-		})
-		if err != nil {
-			return model.JobStatusFailed, fmt.Errorf("error while creating file manager: %w", err)
-		}
+		batch.Batch{}
+		// fmFactory := filemanager.FileManagerFactoryT{}
+		// fm, err := fmFactory.New(&filemanager.SettingsT{
+		// 	Provider: dest.Name,
+		// 	Config:   dest.Config,
+		// })
+		// if err != nil {
+		// 	return model.JobStatusFailed, fmt.Errorf("error while creating file manager: %w", err)
+		// }
 
-		delBatch := batch.Batch{
-			FileManager:   fm,
-			DeleteManager: &batch.Mock_batchWorker{},
-		}
+		// delBatch := batch.Batch{
+		// 	FileManager:   fm,
+		// 	DeleteManager: &batch.Mock_batchWorker{},
+		// }
 		return delBatch.DeleteManager.Delete(ctx, job, dest)
 	case "kv_store":
 		delKVStore := kv_store.KVStore{

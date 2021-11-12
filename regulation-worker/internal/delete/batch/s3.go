@@ -53,6 +53,7 @@ func (dm *S3DeleteManager) Delete(ctx context.Context, userAttributes []model.Us
 	fmt.Println("decompress started")
 	decompress(fileName, uncompressedFileName)
 	fmt.Println("decompress complete")
+
 	//actual delete
 	var n int
 	for i := 0; i < len(userAttributes); i++ {
@@ -64,8 +65,8 @@ func (dm *S3DeleteManager) Delete(ctx context.Context, userAttributes []model.Us
 			n += len(*userAttributes[i].Phone) + 4
 		}
 	}
-	searchObject := make([]byte, 0, n)
 	// searchObject = append(searchObject, "'"...)
+	/*searchObject := make([]byte, 0, n)
 	for _, users := range userAttributes {
 		searchObject = append(searchObject, "/"...)
 		searchObject = append(searchObject, users.UserID...)
@@ -83,25 +84,17 @@ func (dm *S3DeleteManager) Delete(ctx context.Context, userAttributes []model.Us
 			searchObject = append(searchObject, "/d;"...)
 		}
 	}
-
-	// temp := "'"
-	// searchObject[len(searchObject)-1] = []byte(temp)[0]
-	// fmt.Println("searchObject=", string(searchObject))
-	tempSearchObj := "/Jermaine1473336609491897794707338/d;"
-	// fmt.Println(tempSearchObj)
-	// temp := string(searchObject)
-	// tempSearchObj := string(searchObject)
-	// tempSearchObj := "/12/d;/abc@xyz.com/d;/1234567890/d;/13/d;/abcd@xyz.com/d;/14/d;/1111567890/d;"
-	out, err := exec.Command("sed", "-e", tempSearchObj, uncompressedFileName).Output()
+	*/
+	searchObject := "/Jermaine1473336609491897794707338/d"
+	out, err := exec.Command("sed", "-e", string(searchObject), uncompressedFileName).Output()
 	if err != nil {
 		fmt.Printf("error while running command: %s", err)
 	}
-	fmt.Println("Command Successfully Executed")
-	cleanedFileName := "cleanedFile-1.json"
-	err = os.WriteFile(cleanedFileName, out, 0644)
-	if err != nil {
-		fmt.Printf("%s", err)
-	}
+	// cleanedFileName := "cleanedFile-1.json"
+	// err = os.WriteFile(cleanedFileName, out, 0644)
+	// if err != nil {
+	// 	fmt.Printf("%s", err)
+	// }
 
 	//gzip the deleted file again
 	compress(fileName, out)
@@ -127,6 +120,5 @@ func compress(fileName string, cleanedBytes []byte) {
 	if err != nil {
 		fmt.Println("error while writing cleaned & compressed data:", err)
 	}
-
 
 }
