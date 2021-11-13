@@ -78,6 +78,11 @@ type TransErrorSpecT struct {
 type TransErrorT struct {
 	ErrorDetailed TransErrorSpecT `json:"errorDetailed"`
 }
+type TransResponseT struct {
+	Status              int64                  `json:"status"`
+	Message             string                 `json:"message"`
+	DestinationResponse map[string]interface{} `json:"destinationResponse"`
+}
 
 func CollectDestErrorStats(input []byte) {
 	var destinationResponseErr TransErrorT
