@@ -180,7 +180,7 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 	var respCode int
 
 	url := getResponseTransformURL(destName)
-	payload := strings.NewReader(string(rawJSON))
+	payload := []byte(rawJSON)
 
 	operation := func() error {
 		var requestError error
@@ -248,12 +248,10 @@ func (trans *HandleT) Setup() {
 	trans.transformerResponseTransformRequestTime = stats.NewStat("router.transformer_response_transform_time", stats.TimerType)
 }
 
-func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload *strings.Reader) ([]byte, int, error) {
+func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload []byte) ([]byte, int, error) {
 	var respData []byte
 	var respCode int
-	payload.Seek(0, io.SeekStart)
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, payload)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
 	if err != nil {
 		return []byte{}, 400, err
 	}
