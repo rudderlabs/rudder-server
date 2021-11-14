@@ -195,14 +195,22 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 		resp, err = trans.client.Do(req)
 		trans.transformerResponseTransformRequestTime.SendTiming(time.Since(s))
 
+		//Handle for error cases for request to transformer, we expect the transformer to retrun 200
+		//for successful response
 		if err != nil || (resp != nil && resp.StatusCode != http.StatusOK) {
-			if resp != nil && resp.StatusCode == http.StatusNotFound {
-				panic(fmt.Errorf("[Response transform doesnot exist for URL: URL: %v", url))
+			var tStatus string
+			if resp != nil {
+				tStatus = resp.Status
+				if resp.StatusCode == http.StatusNotFound {
+					panic(fmt.Errorf("[Response transform doesnot exist for URL: URL: %v", url))
+				}
+
 			}
-			trans.logger.Errorf("[Transformer Response Transform request failed] :: %+v", err)
+			errStr := fmt.Sprintf("Transformer HTTP connection error: URL: %v Status: %v Error: %+v", url, tStatus, err)
+			trans.logger.Errorf(errStr)
 			requestFailed = true
 			if retryCount > maxRetry {
-				panic(fmt.Errorf("Transformer HTTP connection error: URL: %v Error: %+v", url, err))
+				panic(fmt.Errorf(errStr))
 			}
 			retryCount++
 			time.Sleep(retrySleep)
@@ -213,7 +221,6 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 		if resp != nil && resp.Body != nil {
 			tempRespData, _ = io.ReadAll(resp.Body)
 			resp.Body.Close()
-
 			//Detecting content type of the respBody
 			contentTypeHeader := strings.ToLower(http.DetectContentType(tempRespData))
 			//If content type is not of type "*text*", overriding it with empty string
@@ -222,29 +229,33 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 				strings.Contains(contentTypeHeader, "application/xml")) {
 				tempRespData = []byte("")
 			}
-
-			if resp.StatusCode == http.StatusOK {
-				if requestFailed {
-					trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
-				}
-				// response transform success
-				var transformerResponse integrations.TransResponseT
-				respData = []byte(gjson.GetBytes(tempRespData, "output").Raw)
+			if requestFailed {
+				trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
+			}
+			// response transform success
+			var transformerResponse integrations.TransResponseT
+			respData = []byte(gjson.GetBytes(tempRespData, "output").Raw)
+			integrations.CollectDestErrorStats(respData)
+			err = json.Unmarshal(respData, &transformerResponse)
+			// unmarshal failure
+			if err != nil {
+				errStr := string(respData) + " [Error at Response Transform, Unmarshaling::]" + err.Error()
+				trans.logger.Errorf(errStr)
+				respData = []byte(errStr)
 				respCode = http.StatusBadRequest
-				integrations.CollectDestErrorStats(respData)
-				err = json.Unmarshal(respData, &transformerResponse)
-				if err == nil {
-					respData, err = json.Marshal(transformerResponse)
-					if err != nil {
-						panic(err)
-					}
-					respCode = int(transformerResponse.Status)
-				}
 				break
 			}
+			// unmarshal success
+			respData, err = json.Marshal(transformerResponse)
+			if err != nil {
+				panic(fmt.Errorf("[Response transform:: failed to Marshal transformer response : %+v", err))
+			}
+			respCode = int(transformerResponse.Status)
+			break
 
 		}
 
+		// fallback if both resp and err are nil
 		if resp == nil && err == nil {
 			panic(fmt.Errorf(`[Response Transform] Client returned nil response and nil error`))
 		}
