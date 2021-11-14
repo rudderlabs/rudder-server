@@ -6,16 +6,16 @@ DECLARE
 table_record           RECORD;
     column_record          RECORD;
     source_tables          varchar(max) := '';
-    table_name             text;
-    source_table_name      text;
-    destination_table_name text;
+    table_name             varchar(max);
+    source_table_name      varchar(max);
+    destination_table_name varchar(max);
     tables_count           int          := 0;
     i                      int          := 1;
     columns                varchar(max);
-    insert_query           text;
-    create_table_query     text;
-    table_delimiter        text         = '~~';
-    column_delimiter       text         = ',';
+    insert_query           varchar(max);
+    create_table_query     varchar(max);
+    table_delimiter        varchar(max) = '~~';
+    column_delimiter       varchar(max) = ',';
 BEGIN
     /* Getting the source tables */
 FOR table_record IN SELECT *
