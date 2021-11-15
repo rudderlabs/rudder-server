@@ -55,21 +55,13 @@ func (jd *HandleT) getSingleCustomerUnprocessedQueryString(customer string, coun
 	parameterFilters := params.ParameterFilters
 	var sqlStatement string
 
-	if useJoinForUnprocessed {
-		// event_count default 1, number of items in payload
-		sqlStatement = fmt.Sprintf(
-			selectQuery+
-				`FROM %[1]s AS jobs `+
-				`LEFT JOIN %[2]s AS job_status ON jobs.job_id=job_status.job_id `+
-				`WHERE job_status.job_id is NULL AND customer='%[3]s'`,
-			ds.JobTable, ds.JobStatusTable, customer)
-	} else {
-		sqlStatement = fmt.Sprintf(
-			selectQuery+
-				` FROM %[1]s AS jobs `+
-				`WHERE customer='%[3]s' AND jobs.job_id NOT IN (SELECT DISTINCT(job_status.job_id) FROM %[2]s AS job_status)`,
-			ds.JobTable, ds.JobStatusTable, customer)
-	}
+	// event_count default 1, number of items in payload
+	sqlStatement = fmt.Sprintf(
+		selectQuery+
+			`FROM %[1]s AS jobs `+
+			`LEFT JOIN %[2]s AS job_status ON jobs.job_id=job_status.job_id `+
+			`WHERE job_status.job_id is NULL AND customer='%[3]s'`,
+		ds.JobTable, ds.JobStatusTable, customer)
 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
 		sqlStatement += " AND " + constructQuery(jd, "jobs.custom_val", customValFilters, "OR")
