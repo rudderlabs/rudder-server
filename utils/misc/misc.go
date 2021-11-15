@@ -45,6 +45,7 @@ import (
 
 var AppStartTime int64
 var errorStorePath string
+var jobQueryBatchSize int
 var RouterInMemoryJobCounts map[string]map[string]map[string]int
 var routerJobCountMutex sync.RWMutex
 var ProcessorJobsMovingAverages map[string]map[string]map[string]MovingAverage
@@ -81,6 +82,7 @@ func Init() {
 	ProcessorJobsMovingAverages = make(map[string]map[string]map[string]MovingAverage)
 	ProcessorJobsMovingAverages["router"] = make(map[string]map[string]MovingAverage)
 	ProcessorJobsMovingAverages["batch_router"] = make(map[string]map[string]MovingAverage)
+	config.RegisterIntConfigVariable(10000, &jobQueryBatchSize, true, 1, "Router.jobQueryBatchSize")
 }
 
 func LoadDestinations() ([]string, []string) {
@@ -145,8 +147,19 @@ func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Dura
 	}
 }
 
-func GetRouterPickupJobs(destType string) (map[string]map[string]map[string]MovingAverage, map[string]map[string]map[string]int) {
-	return ProcessorJobsMovingAverages, RouterInMemoryJobCounts
+func GetRouterPickupJobs(destType string) map[string]int {
+	customerLiveCount := make(map[string]float64)
+	customerPickUpCount := make(map[string]int)
+	totalCount := 0.0
+	for customerKey := range ProcessorJobsMovingAverages["router"] {
+		customerLiveCount[customerKey] = ProcessorJobsMovingAverages["router"][customerKey][destType].Value()
+		totalCount += customerLiveCount[customerKey]
+	}
+	for customerKey := range ProcessorJobsMovingAverages["router"] {
+		customerPickUpCount[customerKey] = int(10000*(customerLiveCount[customerKey]/totalCount)) + 1
+		/// Need to add a check if the current workspaceID is part of Active Configuration
+	}
+	return customerPickUpCount
 }
 
 func getErrorStore() (ErrorStoreT, error) {
