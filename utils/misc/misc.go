@@ -306,7 +306,7 @@ func GetTempFolders() (tempFolders []string) {
 	}
 
 	tempFolders = []string{
-		fmt.Sprintf("%s", tmpDirPath),
+		tmpDirPath,
 		fmt.Sprintf("%s/%s", tmpDirPath, "rudder-async-destination-logs"),
 		fmt.Sprintf("%s/%s", tmpDirPath, "rudder-archives"),
 		fmt.Sprintf("%s/%s", tmpDirPath, "rudder-warehouse-staging-uploads"),
