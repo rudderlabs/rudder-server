@@ -114,7 +114,7 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
-	unionMap map[string]int
+	customerCount map[string]int
 }
 
 type jobResponseT struct {
@@ -1598,11 +1598,11 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	// toQuery := jobQueryBatchSize
-	rt.updateUnionMap() //to implement this
-	retryList := rt.jobsDB.GetProcessedUnion(rt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Failed.State}})
-	throttledList := rt.jobsDB.GetProcessedUnion(rt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Throttled.State}})
-	waitList := rt.jobsDB.GetProcessedUnion(rt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State}})
-	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}})
+	rt.updateCustomerCount() //to implement this
+	retryList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Failed.State}})
+	throttledList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Throttled.State}})
+	waitList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State}})
+	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}})
 
 	combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
 
@@ -1871,8 +1871,8 @@ func (rt *HandleT) Start() {
 	ctx := rt.backgroundCtx
 	rt.backgroundGroup.Go(func() error {
 		<-rt.backendConfigInitialized
-		rt.unionMap = make(map[string]int)
-		rt.setupUnionMap()
+		rt.customerCount = make(map[string]int)
+		rt.setupCustomerCount()
 		rt.generatorLoop(ctx)
 		return nil
 	})
@@ -2032,11 +2032,11 @@ func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAborted
 	jobRunIDAbortedEventsMap[taskRunID] = append(jobRunIDAbortedEventsMap[taskRunID], &FailedEventRowT{DestinationID: destinationID, RecordID: recordID})
 }
 
-func (rt *HandleT) setupUnionMap() {
+func (rt *HandleT) setupCustomerCount() {
 	// query router table and try to proportion query count based on the count we get
 	// for now not distinguishing un/processed jobs, just treating them equal
 
-	//rt.unionMap = rt.jobsDB.GetCustomerCounts(jobQueryBatchSize)
+	//rt.customerCount = rt.jobsDB.GetCustomerCounts(jobQueryBatchSize)
 	//the above funcitonality can be done during crashRecovery
 	//for now let's just get all the customers this pod serves and give equal jobs to them
 	//TODO!!!
@@ -2052,12 +2052,12 @@ func (rt *HandleT) setupUnionMap() {
 	rt.configSubscriberLock.RUnlock()
 
 	for idx := range customers {
-		rt.unionMap[customers[idx]] = int(jobQueryBatchSize / len(customers))
+		rt.customerCount[customers[idx]] = int(jobQueryBatchSize / len(customers))
 	}
 }
 
-func (rt *HandleT) updateUnionMap() {
+func (rt *HandleT) updateCustomerCount() {
 	//update pickup count per customer based on some stats
 	//just initializing again for now: have to change this
-	rt.setupUnionMap()
+	rt.setupCustomerCount()
 }

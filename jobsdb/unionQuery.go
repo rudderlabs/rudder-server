@@ -12,7 +12,7 @@ const (
 
 //used to get pickup-counts during server start-up
 func (jd *HandleT) GetCustomerCounts(defaultBatchSize int) map[string]int {
-	unionMap := make(map[string]int)
+	customerCount := make(map[string]int)
 	//just using first DS here
 	//get all jobs all over DSs and then calculate
 	//use DSListLock also
@@ -29,20 +29,20 @@ func (jd *HandleT) GetCustomerCounts(defaultBatchSize int) map[string]int {
 		var count int
 		err := rows.Scan(&customer, &count)
 		jd.assertError(err)
-		unionMap[customer] = count
+		customerCount[customer] = count
 	}
 	if err = rows.Err(); err != nil {
 		jd.assertError(err)
 	}
-	return unionMap
+	return customerCount
 }
 
 //Unprocessed
 
-func (jd *HandleT) getUnprocessedUnionQuerystring(unionMap map[string]int, ds dataSetT, params GetQueryParamsT) string {
+func (jd *HandleT) getUnprocessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) string {
 	var queries []string
 
-	for customer, count := range unionMap {
+	for customer, count := range customerCount {
 		//do cache stuff here
 		queries = append(queries, jd.getSingleCustomerUnprocessedQueryString(customer, count, ds, params, true))
 	}
@@ -100,10 +100,7 @@ func (jd *HandleT) getSingleCustomerUnprocessedQueryString(customer string, coun
 	return sqlStatement
 }
 
-func (jd *HandleT) GetUnprocessedUnion(unionMap map[string]int, params GetQueryParamsT) []*JobT {
-	// if params.JobCount == 0 { //how do we use this check..? is it required anymore
-	// 	return []*JobT{}
-	// }
+func (jd *HandleT) GetUnprocessedUnion(customerCount map[string]int, params GetQueryParamsT) []*JobT {
 
 	//add stats
 
@@ -121,19 +118,18 @@ func (jd *HandleT) GetUnprocessedUnion(unionMap map[string]int, params GetQueryP
 	//removed count assert, because that params.count is not used..?
 
 	for _, ds := range dsList {
-		jobs := jd.getUnprocessedUnionDS(ds, unionMap, params)
+		jobs := jd.getUnprocessedUnionDS(ds, customerCount, params)
 		outJobs = append(outJobs, jobs...)
-		// count -= len(jobs) //this is not necessary anymore right?
-
-		//we could further limit jobs by eventCount - ignoring that for now
-		// just focusing on getting so many rows of jobs for now
+		if len(customerCount) == 0 {
+			break
+		}
 	}
 
 	return outJobs
 }
 
-func (jd *HandleT) getUnprocessedUnionDS(ds dataSetT, unionMap map[string]int, params GetQueryParamsT) []*JobT {
-	queryString := jd.getUnprocessedUnionQuerystring(unionMap, ds, params)
+func (jd *HandleT) getUnprocessedUnionDS(ds dataSetT, customerCount map[string]int, params GetQueryParamsT) []*JobT {
+	queryString := jd.getUnprocessedUnionQuerystring(customerCount, ds, params)
 
 	var rows *sql.Rows
 	var err error
@@ -152,9 +148,9 @@ func (jd *HandleT) getUnprocessedUnionDS(ds dataSetT, unionMap map[string]int, p
 		jd.assertError(err)
 		jobList = append(jobList, &job)
 
-		unionMap[job.Customer] -= 1
-		if unionMap[job.Customer] == 0 {
-			delete(unionMap, job.Customer)
+		customerCount[job.Customer] -= 1
+		if customerCount[job.Customer] == 0 {
+			delete(customerCount, job.Customer)
 		}
 	}
 	if err = rows.Err(); err != nil {
@@ -168,7 +164,7 @@ func (jd *HandleT) getUnprocessedUnionDS(ds dataSetT, unionMap map[string]int, p
 
 //Processed
 
-func (jd *HandleT) GetProcessedUnion(unionMap map[string]int, params GetQueryParamsT) []*JobT {
+func (jd *HandleT) GetProcessedUnion(customerCount map[string]int, params GetQueryParamsT) []*JobT {
 
 	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
@@ -182,15 +178,18 @@ func (jd *HandleT) GetProcessedUnion(unionMap map[string]int, params GetQueryPar
 	outJobs := make([]*JobT, 0)
 
 	for _, ds := range dsList {
-		jobs := jd.getProcessedUnionDS(ds, unionMap, params)
+		jobs := jd.getProcessedUnionDS(ds, customerCount, params)
 		outJobs = append(outJobs, jobs...)
+		if len(customerCount) == 0 {
+			break
+		}
 	}
 
 	return outJobs
 }
 
-func (jd *HandleT) getProcessedUnionDS(ds dataSetT, unionMap map[string]int, params GetQueryParamsT) []*JobT {
-	queryString := jd.getProcessedUnionQuerystring(unionMap, ds, params)
+func (jd *HandleT) getProcessedUnionDS(ds dataSetT, customerCount map[string]int, params GetQueryParamsT) []*JobT {
+	queryString := jd.getProcessedUnionQuerystring(customerCount, ds, params)
 
 	var rows *sql.Rows
 	var err error
@@ -212,9 +211,9 @@ func (jd *HandleT) getProcessedUnionDS(ds dataSetT, unionMap map[string]int, par
 		jd.assertError(err)
 		jobList = append(jobList, &job)
 
-		unionMap[job.Customer] -= 1
-		if unionMap[job.Customer] == 0 {
-			delete(unionMap, job.Customer)
+		customerCount[job.Customer] -= 1
+		if customerCount[job.Customer] == 0 {
+			delete(customerCount, job.Customer)
 		}
 	}
 	if err = rows.Err(); err != nil {
@@ -226,10 +225,10 @@ func (jd *HandleT) getProcessedUnionDS(ds dataSetT, unionMap map[string]int, par
 	return jobList
 }
 
-func (jd *HandleT) getProcessedUnionQuerystring(unionMap map[string]int, ds dataSetT, params GetQueryParamsT) string {
+func (jd *HandleT) getProcessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) string {
 	var queries []string
 
-	for customer, count := range unionMap {
+	for customer, count := range customerCount {
 		//do cache stuff here
 		queries = append(queries, jd.getSingleCustomerProcessedQueryString(customer, count, ds, params, true))
 	}
