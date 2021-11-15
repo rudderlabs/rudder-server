@@ -47,6 +47,18 @@ import (
 )
 
 var (
+	pool             *dockertest.Pool
+	err              error
+	z                *dockertest.Resource
+	resourceKafka    *dockertest.Resource
+	resourceRedis	 *dockertest.Resource
+	transformerRes   *dockertest.Resource
+	resource         *dockertest.Resource
+	network          *dc.Network
+	resourcePostgres *dockertest.Resource
+	transformURL     string
+	minioEndpoint    string
+	minioBucketName  string
 	hold             bool = true
 	db               *sql.DB
 	redisClient      *redis.Client
@@ -60,6 +72,7 @@ var (
 	address          string
 	runIntegration   bool
 	writeKey         string
+	webhookEventWriteKey string
 	workspaceID      string
 	redisAddress     string
 	brokerPort       string
@@ -195,9 +208,9 @@ func blockOnHold() {
 	<-c
 }
 
-func SendEvent(payload *strings.Reader) {
-	log.Println("Sending Track Event")
-	url := fmt.Sprintf("http://localhost:%s/v1/identify", httpPort)
+func SendEvent(payload *strings.Reader, call_type string) {
+	log.Println(fmt.Sprintf("Sending %s Event", call_type))
+	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, call_type)
 	method := "POST"
 	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
@@ -231,6 +244,49 @@ func SendEvent(payload *strings.Reader) {
 	log.Println("Event Sent Successfully")
 }
 
+func SendWebhookEvent() {
+	log.Println(fmt.Sprintf("Sending Webhook Event"))
+	url := fmt.Sprintf("http://localhost:%s/v1/webhook?writeKey=%s", httpPort, webhookEventWriteKey)
+	method := "POST"
+  
+	payload := strings.NewReader(`{
+	"data": {
+	  "customer_id": "abcd-1234"  
+	},
+	"object_type": "email"
+  }`)
+  
+	client := &http.Client {
+	}
+	req, err := http.NewRequest(method, url, payload)
+  
+	if err != nil {
+	  log.Println(err)
+	  return
+	}
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization",
+		fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
+			[]byte(fmt.Sprintf("%s:", writeKey)),
+		)),
+	)
+  
+	res, err := client.Do(req)
+	if err != nil {
+	  log.Println(err)
+	  return
+	}
+	defer res.Body.Close()
+  
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+	  log.Println(err)
+	  return
+	}
+	log.Println(string(body))
+	log.Println("Webhook Event Sent Successfully")
+}
+
 func TestMain(m *testing.M) {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
 	flag.BoolVar(&runIntegration, "integration", false, "run integration level tests")
@@ -261,136 +317,46 @@ func run(m *testing.M) (int, error) {
 		}
 	}()
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
-	pool, err := dockertest.NewPool("")
+	pool, err = dockertest.NewPool("")
 	if err != nil {
 		return 0, fmt.Errorf("could not connect to docker: %w", err)
 	}
-
-	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
-	if err != nil {
-		log.Fatalf("Could not create docker network: %s", err)
-	}
-	zookeeperPortInt, err := freeport.GetFreePort()
-	if err != nil {
-		log.Panic(err)
-	}
-	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
-	zookeeperclientPort := fmt.Sprintf("ZOOKEEPER_CLIENT_PORT=%s", strconv.Itoa(zookeeperPortInt))
-	log.Println("zookeeper Port:", zookeeperPort)
-	log.Println("zookeeper client Port :", zookeeperclientPort)
-
-	z, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "confluentinc/cp-zookeeper",
-		Tag:        "latest",
-		NetworkID:  network.ID,
-		Hostname:   "zookeeper",
-		PortBindings: map[dc.Port][]dc.PortBinding{
-			"2181/tcp": {{HostIP: "zookeeper", HostPort: zookeeperPort}},
-		},
-		Env: []string{"ZOOKEEPER_CLIENT_PORT=2181"},
-	})
-	if err != nil {
-		log.Panic(err)
-	}
+	SetZookeeper()
 	defer func() {
 		if err := pool.Purge(z); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-
-	// Set Kafka: pulls an image, creates a container based on it and runs it
-	KAFKA_ZOOKEEPER_CONNECT := fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
-	log.Println("KAFKA_ZOOKEEPER_CONNECT:", KAFKA_ZOOKEEPER_CONNECT)
-
-	brokerPortInt, err := freeport.GetFreePort()
-	if err != nil {
-		log.Panic(err)
-	}
-	brokerPort = fmt.Sprintf("%s/tcp", strconv.Itoa(brokerPortInt))
-	log.Println("broker Port:", brokerPort)
-
-	localhostPortInt, err = freeport.GetFreePort()
-	if err != nil {
-		log.Panic(err)
-	}
-	localhostPort = fmt.Sprintf("%s/tcp", strconv.Itoa(localhostPortInt))
-	log.Println("localhost Port:", localhostPort)
-
-	KAFKA_ADVERTISED_LISTENERS := fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%s", strconv.Itoa(localhostPortInt))
-	KAFKA_LISTENERS := "KAFKA_LISTENERS=INTERNAL://broker:9090,EXTERNAL://:9092"
-
-	log.Println("KAFKA_ADVERTISED_LISTENERS", KAFKA_ADVERTISED_LISTENERS)
-
-	resourceKafka, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "confluentinc/cp-kafka",
-		Tag:        "latest",
-		NetworkID:  network.ID,
-		Hostname:   "broker",
-		PortBindings: map[dc.Port][]dc.PortBinding{
-			"29092/tcp": {{HostIP: "broker", HostPort: brokerPort}},
-			"9092/tcp":  {{HostIP: "localhost", HostPort: localhostPort}},
-		},
-		Env: []string{
-			"KAFKA_BROKER_ID=1",
-			"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT",
-			KAFKA_ADVERTISED_LISTENERS,
-			KAFKA_LISTENERS,
-			"KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181",
-			"KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL",
-		},
-	})
-	if err != nil {
-		log.Panic(err)
-	}
-	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
+	SetKafka()
 	defer func() {
 		if err := pool.Purge(resourceKafka); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-
-	// pulls an redis image, creates a container based on it and runs it
-	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
-	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
-	}
+	SetRedis()
 	defer func() {
 		if err := pool.Purge(resourceRedis); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	redisAddress = fmt.Sprintf("localhost:%s", resourceRedis.GetPort("6379/tcp"))
-	if err := pool.Retry(func() error {
-		redisClient = redis.NewClient(&redis.Options{
-			Addr:     redisAddress,
-			Password: "",
-			DB:       0,
-		})
-
-		_, err := redisClient.Ping().Result()
-		return err
-	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
-
-	database := "jobsdb"
-	// pulls an image, creates a container based on it and runs it
-	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
-		"POSTGRES_PASSWORD=password",
-		"POSTGRES_DB=" + database,
-		"POSTGRES_USER=rudder",
-	})
-	if err != nil {
-		return 0, fmt.Errorf("Could not start resource Postgres: %w", err)
-	}
+	SetJobsDB()
 	defer func() {
-		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
+	if err := pool.Purge(resourcePostgres); err != nil {
+		log.Printf("Could not purge resource: %s \n", err)
+	}
 	}()
-
-	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
+	SetTransformer()
+	defer func() {
+	if err := pool.Purge(transformerRes); err != nil {
+		log.Printf("Could not purge resource: %s \n", err)
+	}
+	}()
+	SetMINIO()
+	defer func() {
+	if err := pool.Purge(resource); err != nil {
+		log.Printf("Could not purge resource: %s \n", err)
+	}
+	}()
 
 	os.Setenv("JOBS_DB_HOST", "localhost")
 	os.Setenv("JOBS_DB_NAME", "jobsdb")
@@ -399,60 +365,16 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("JOBS_DB_PASSWORD", "password")
 	os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
 	os.Setenv("JOBS_DB_SSL_MODE", "disable")
-
 	os.Setenv("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	os.Setenv("WAREHOUSE_JOBS_DB_NAME", "jobsdb")
 	os.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", "jobsdb")
 	os.Setenv("WAREHOUSE_JOBS_DB_USER", "rudder")
 	os.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", "password")
 	os.Setenv("WAREHOUSE_JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		var err error
-		db, err = sql.Open("postgres", DB_DSN)
-		if err != nil {
-			return err
-		}
-		return db.Ping()
-	}); err != nil {
-		return 0, fmt.Errorf("Could not connect to postgres %q: %w", DB_DSN, err)
-	}
-	fmt.Println("DB_DSN:", DB_DSN)
-	// ----------
-	// Set Rudder Transformer
-	// pulls an image, creates a container based on it and runs it
-	transformerRes, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "rudderlabs/rudder-transformer",
-		Tag:          "latest",
-		ExposedPorts: []string{"9090"},
-		Env: []string{
-			"CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com",
-		},
-	})
-	if err != nil {
-		return 0, fmt.Errorf("Could not start resource transformer: %w", err)
-	}
-	defer func() {
-		if err := pool.Purge(transformerRes); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-
-	transformURL := fmt.Sprintf("http://localhost:%s", transformerRes.GetPort("9090/tcp"))
-	waitUntilReady(
-		context.Background(),
-		fmt.Sprintf("%s/health", transformURL),
-		time.Minute,
-		time.Second,
-	)
 	os.Setenv("DEST_TRANSFORM_URL", transformURL)
-
 	os.Setenv("RUDDER_ADMIN_PASSWORD", "password")
-
 	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
-
 	os.Setenv("WORKSPACE_TOKEN", "1vLbwltztKUgpuFxmJlSe1esX8c")
-
 	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
 
 	httpPortInt, err := freeport.GetFreePort()
@@ -474,78 +396,15 @@ func run(m *testing.M) (int, error) {
 	webhookurl = webhook.Server.URL
 	log.Println("webhookurl", webhookurl)
 
-	minioPortInt, err := freeport.GetFreePort()
-	if err != nil {
-		log.Panic(err)
-	}
-	minioPort := fmt.Sprintf("%s/tcp", strconv.Itoa(minioPortInt))
-	log.Println("minioPort:", minioPort)
-
-	// Setup MINIO
-	var minioClient *minio.Client
-
-	options := &dockertest.RunOptions{
-		Repository: "minio/minio",
-		Tag:        "latest",
-		Cmd:        []string{"server", "/data"},
-		PortBindings: map[dc.Port][]dc.PortBinding{
-			"9000/tcp": []dc.PortBinding{{HostPort: strconv.Itoa(minioPortInt)}},
-		},
-		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
-	}
-
-	resource, err := pool.RunWithOptions(options)
-	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
-	}
-	defer func() {
-		if err := pool.Purge(resource); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-
-	minioEndpoint := fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
-
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	// the minio client does not do service discovery for you (i.e. it does not check if connection can be established), so we have to use the health check
-	if err := pool.Retry(func() error {
-		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
-		resp, err := http.Get(url)
-		if err != nil {
-			return err
-		}
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("status code not OK")
-		}
-		return nil
-	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
-	// now we can instantiate minio client
-	minioClient, err = minio.New(minioEndpoint, "MYACCESSKEY", "MYSECRETKEY", false)
-	if err != nil {
-		log.Println("Failed to create minio client:", err)
-		panic(err)
-	}
-	log.Printf("%#v\n", minioClient) // minioClient is now set up
-
-	// Create bucket for MINIO
-	// Create a bucket at region 'us-east-1' with object locking enabled.
-	minioBucketName := "devintegrationtest"
-	err = minioClient.MakeBucket(minioBucketName, "us-east-1")
-	if err != nil {
-		log.Println(err)
-		panic(err)
-	}
-
 	writeKey = randString(27)
 	workspaceID = randString(27)
-
+	webhookEventWriteKey = randString(27)
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
 			"webhookUrl":      webhookurl,
 			"writeKey":        writeKey,
+			"webhookEventWriteKey": webhookEventWriteKey,
 			"workspaceId":     workspaceID,
 			"postgresPort":    resourcePostgres.GetPort("5432/tcp"),
 			"address":         redisAddress,
@@ -567,10 +426,6 @@ func run(m *testing.M) (int, error) {
 	}
 	defer os.RemoveAll(rudderTmpDir)
 	os.Setenv("RUDDER_TMPDIR", rudderTmpDir)
-	fmt.Println("RUDDER_TMPDIR:", rudderTmpDir)
-
-	fmt.Printf("--- Setup done (%s)\n", time.Since(setupStart))
-
 	os.Setenv("CONFIG_PATH", "./config/config.yaml")
 	os.Setenv("TEST_SINK_URL", "http://localhost:8181")
 	os.Setenv("GO_ENV", "production")
@@ -591,6 +446,8 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
 	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10s")
 
+	fmt.Printf("--- Setup done (%s)\n", time.Since(setupStart))
+
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := make(chan struct{})
 	go func() {
@@ -606,6 +463,7 @@ func run(m *testing.M) (int, error) {
 		time.Minute,
 		time.Second,
 	)
+
 	code := m.Run()
 	blockOnHold()
 
@@ -614,6 +472,7 @@ func run(m *testing.M) (int, error) {
 	<-svcDone
 
 	tearDownStart = time.Now()
+	
 	return code, nil
 }
 
@@ -644,7 +503,7 @@ func TestWebhook(t *testing.T) {
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	  }`)
-	SendEvent(payload_1)
+	SendEvent(payload_1, "identify")
 	payload_2 := strings.NewReader(`{
 		"userId": "identified user id",
 		"anonymousId":"anonymousId_1",
@@ -661,9 +520,63 @@ func TestWebhook(t *testing.T) {
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	  }`)
-	SendEvent(payload_2) //sending duplicate event to check dedup
+	SendEvent(payload_2, "identify") //sending duplicate event to check dedup
+	// Sending Batch event
+	payload_Batch := strings.NewReader(`{
+		"batch":
+		[
+			{
+				"userId": "identified user id",
+			   "anonymousId":"anonymousId_1",
+			   "messageId":"messageId_1"
+			}
+		]
+	}`)
+	SendEvent(payload_Batch, "batch")
+
+	// Sending track event
+	payload_track := strings.NewReader(`{
+		"userId": "identified user id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1"
+	  }`)
+	SendEvent(payload_track, "track")
+
+	// Sending page event
+	payload_page := strings.NewReader(`{
+		"userId": "identified user id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1"
+	  }`)
+	SendEvent(payload_page, "page")
+
+	// Sending screen event
+	payload_screen := strings.NewReader(`{
+		"userId": "identified user id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1"
+	  }`)
+	SendEvent(payload_screen, "screen")
+
+	// Sending alias event
+	payload_alias := strings.NewReader(`{
+		"userId": "identified user id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1"
+	}`)
+	SendEvent(payload_alias, "alias")
+
+	// Sending group event
+	payload_group := strings.NewReader(`{
+		"userId": "identified user id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1"
+	}`)
+	SendEvent(payload_group, "group")
+	SendWebhookEvent()
+
 	require.Eventually(t, func() bool {
-		return len(webhook.Requests()) == 2
+		return len(webhook.Requests()) == 9
 	}, time.Minute, 10*time.Millisecond)
 
 	req := webhook.Requests()[0]
@@ -692,9 +605,42 @@ func TestPostgres(t *testing.T) {
 		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
 		return myEvent.anonymous_id == "anonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
-	eventSql := "select count(*) from dev_integration_test_1.identifies"
-	db.QueryRow(eventSql).Scan(&myEvent.count)
-	require.Equal(t, myEvent.count, "1")
+
+	require.Eventually(t, func() bool {
+		eventSql := "select count(*) from dev_integration_test_1.aliases"
+		db.QueryRow(eventSql).Scan(&myEvent.count)
+		return myEvent.count == "1"
+	}, time.Minute, 10*time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		eventSql := "select count(*) from dev_integration_test_1.groups"
+		db.QueryRow(eventSql).Scan(&myEvent.count)
+		return myEvent.count == "1"
+	}, time.Minute, 10*time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		eventSql := "select count(*) from dev_integration_test_1.identifies"
+		db.QueryRow(eventSql).Scan(&myEvent.count)
+		return myEvent.count == "1"
+	}, time.Minute, 10*time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		eventSql := "select count(*) from dev_integration_test_1.pages"
+		db.QueryRow(eventSql).Scan(&myEvent.count)
+		return myEvent.count == "1"
+	}, time.Minute, 10*time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		eventSql := "select count(*) from dev_integration_test_1.screens"
+		db.QueryRow(eventSql).Scan(&myEvent.count)
+		return myEvent.count == "1"
+	}, time.Minute, 10*time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		eventSql := "select count(*) from dev_integration_test_1.tracks"
+		db.QueryRow(eventSql).Scan(&myEvent.count)
+		return myEvent.count == "1"
+	}, time.Minute, 10*time.Millisecond)
 }
 
 // Verify Event in Redis
@@ -740,7 +686,7 @@ func TestKafka(t *testing.T) {
 	// Count how many message processed
 	msgCount := 0
 	// Get signnal for finish
-	expectedCount := 1
+	expectedCount := 8
 out:
 	for {
 		select {
@@ -748,7 +694,7 @@ out:
 			msgCount++
 			t.Log("Received messages", string(msg.Key), string(msg.Value))
 			require.Equal(t, "identified user id", string(msg.Key))
-			require.Contains(t, string(msg.Value), "new-val")
+			// require.Contains(t, string(msg.Value), "new-val")
 			require.Contains(t, string(msg.Value), "identified user id")
 			if msgCount == expectedCount {
 				break out
@@ -796,4 +742,214 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 	return consumers, errors
 }
 
-// TODO: Verify in Live Evets API
+func SetZookeeper() {
+	network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
+	if err != nil {
+		log.Fatalf("Could not create docker network: %s", err)
+	}
+	zookeeperPortInt, err := freeport.GetFreePort()
+	if err != nil {
+		log.Panic(err)
+	}
+	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
+	zookeeperclientPort := fmt.Sprintf("ZOOKEEPER_CLIENT_PORT=%s", strconv.Itoa(zookeeperPortInt))
+	log.Println("zookeeper Port:", zookeeperPort)
+	log.Println("zookeeper client Port :", zookeeperclientPort)
+
+	z, err = pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "confluentinc/cp-zookeeper",
+		Tag:        "latest",
+		NetworkID:  network.ID,
+		Hostname:   "zookeeper",
+		PortBindings: map[dc.Port][]dc.PortBinding{
+			"2181/tcp": {{HostIP: "zookeeper", HostPort: zookeeperPort}},
+		},
+		Env: []string{"ZOOKEEPER_CLIENT_PORT=2181"},
+	})
+	if err != nil {
+		log.Panic(err)
+	}
+	
+}
+
+func SetKafka() {
+	// Set Kafka: pulls an image, creates a container based on it and runs it
+	KAFKA_ZOOKEEPER_CONNECT := fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
+	log.Println("KAFKA_ZOOKEEPER_CONNECT:", KAFKA_ZOOKEEPER_CONNECT)
+
+	brokerPortInt, err := freeport.GetFreePort()
+	if err != nil {
+		log.Panic(err)
+	}
+	brokerPort = fmt.Sprintf("%s/tcp", strconv.Itoa(brokerPortInt))
+	log.Println("broker Port:", brokerPort)
+
+	localhostPortInt, err = freeport.GetFreePort()
+	if err != nil {
+		log.Panic(err)
+	}
+	localhostPort = fmt.Sprintf("%s/tcp", strconv.Itoa(localhostPortInt))
+	log.Println("localhost Port:", localhostPort)
+
+	KAFKA_ADVERTISED_LISTENERS := fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%s", strconv.Itoa(localhostPortInt))
+	KAFKA_LISTENERS := "KAFKA_LISTENERS=INTERNAL://broker:9090,EXTERNAL://:9092"
+
+	log.Println("KAFKA_ADVERTISED_LISTENERS", KAFKA_ADVERTISED_LISTENERS)
+
+	resourceKafka, err = pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "confluentinc/cp-kafka",
+		Tag:        "latest",
+		NetworkID:  network.ID,
+		Hostname:   "broker",
+		PortBindings: map[dc.Port][]dc.PortBinding{
+			"29092/tcp": {{HostIP: "broker", HostPort: brokerPort}},
+			"9092/tcp":  {{HostIP: "localhost", HostPort: localhostPort}},
+		},
+		Env: []string{
+			"KAFKA_BROKER_ID=1",
+			"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT",
+			KAFKA_ADVERTISED_LISTENERS,
+			KAFKA_LISTENERS,
+			"KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181",
+			"KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL",
+		},
+	})
+	if err != nil {
+		log.Panic(err)
+	}
+	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
+}
+
+func SetRedis() {
+	// pulls an redis image, creates a container based on it and runs it
+	resourceRedis, err = pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
+	if err != nil {
+		log.Fatalf("Could not start resource: %s", err)
+	}
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	redisAddress = fmt.Sprintf("localhost:%s", resourceRedis.GetPort("6379/tcp"))
+	if err := pool.Retry(func() error {
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:     redisAddress,
+			Password: "",
+			DB:       0,
+		})
+
+		_, err := redisClient.Ping().Result()
+		return err
+	}); err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+}
+
+func SetJobsDB() {
+	database := "jobsdb"
+	// pulls an image, creates a container based on it and runs it
+	resourcePostgres, err = pool.Run("postgres", "11-alpine", []string{
+		"POSTGRES_PASSWORD=password",
+		"POSTGRES_DB=" + database,
+		"POSTGRES_USER=rudder",
+	})
+	if err != nil {
+		log.Println("Could not start resource Postgres: %w", err)
+	}
+	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	if err := pool.Retry(func() error {
+		var err error
+		db, err = sql.Open("postgres", DB_DSN)
+		if err != nil {
+			return err
+		}
+		return db.Ping()
+	}); err != nil {
+		log.Println("Could not connect to postgres", DB_DSN, err)
+	}
+	fmt.Println("DB_DSN:", DB_DSN)
+}
+
+func SetTransformer() {
+	// Set Rudder Transformer
+	// pulls an image, creates a container based on it and runs it
+	transformerRes, err = pool.RunWithOptions(&dockertest.RunOptions{
+		Repository:   "rudderlabs/rudder-transformer",
+		Tag:          "latest",
+		ExposedPorts: []string{"9090"},
+		Env: []string{
+			"CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com",
+		},
+	})
+	if err != nil {
+		log.Println("Could not start resource transformer: %w", err)
+	}
+
+	transformURL = fmt.Sprintf("http://localhost:%s", transformerRes.GetPort("9090/tcp"))
+	waitUntilReady(
+		context.Background(),
+		fmt.Sprintf("%s/health", transformURL),
+		time.Minute,
+		time.Second,
+	)
+}
+
+func SetMINIO() {
+	minioPortInt, err := freeport.GetFreePort()
+	if err != nil {
+		log.Panic(err)
+	}
+	minioPort := fmt.Sprintf("%s/tcp", strconv.Itoa(minioPortInt))
+	log.Println("minioPort:", minioPort)
+	// Setup MINIO
+	var minioClient *minio.Client
+
+	options := &dockertest.RunOptions{
+		Repository: "minio/minio",
+		Tag:        "latest",
+		Cmd:        []string{"server", "/data"},
+		PortBindings: map[dc.Port][]dc.PortBinding{
+			"9000/tcp": []dc.PortBinding{{HostPort: strconv.Itoa(minioPortInt)}},
+		},
+		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
+	}
+
+	resource, err = pool.RunWithOptions(options)
+	if err != nil {
+		log.Println("Could not start resource:", err)
+	}
+
+	minioEndpoint = fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
+
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	// the minio client does not do service discovery for you (i.e. it does not check if connection can be established), so we have to use the health check
+	if err := pool.Retry(func() error {
+		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
+		resp, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("status code not OK")
+		}
+		return nil
+	}); err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+	// now we can instantiate minio client
+	minioClient, err = minio.New(minioEndpoint, "MYACCESSKEY", "MYSECRETKEY", false)
+	if err != nil {
+		log.Println("Failed to create minio client:", err)
+		panic(err)
+	}
+	log.Printf("%#v\n", minioClient) // minioClient is now set up
+
+	// Create bucket for MINIO
+	// Create a bucket at region 'us-east-1' with object locking enabled.
+	minioBucketName = "devintegrationtest"
+	err = minioClient.MakeBucket(minioBucketName, "us-east-1")
+	if err != nil {
+		log.Println(err)
+		panic(err)
+	}
+}
+
+// TODO: Verify in Live Events API
