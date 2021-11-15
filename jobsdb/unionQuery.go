@@ -31,9 +31,9 @@ func (jd *HandleT) GetCustomerCounts(defaultBatchSize int) map[string]int {
 		jd.assertError(err)
 		unionMap[customer] = count
 	}
-    if err = rows.Err(); err != nil {
-        jd.assertError(err)
-    }
+	if err = rows.Err(); err != nil {
+		jd.assertError(err)
+	}
 	return unionMap
 }
 
@@ -157,6 +157,9 @@ func (jd *HandleT) getUnprocessedUnionDS(ds dataSetT, unionMap map[string]int, p
 			delete(unionMap, job.Customer)
 		}
 	}
+	if err = rows.Err(); err != nil {
+		jd.assertError(err)
+	}
 
 	//do cache stuff here
 
@@ -213,6 +216,9 @@ func (jd *HandleT) getProcessedUnionDS(ds dataSetT, unionMap map[string]int, par
 		if unionMap[job.Customer] == 0 {
 			delete(unionMap, job.Customer)
 		}
+	}
+	if err = rows.Err(); err != nil {
+		jd.assertError(err)
 	}
 
 	//do cache stuff here
