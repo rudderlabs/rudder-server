@@ -704,6 +704,7 @@ func TestRedis(t *testing.T) {
 	}, time.Minute, 10*time.Millisecond)
 
 }
+// Verify Event in Kafka
 func TestKafka(t *testing.T) {
 
 	config := sarama.NewConfig()
