@@ -31,7 +31,9 @@ func (jd *HandleT) GetCustomerCounts(defaultBatchSize int) map[string]int {
 		jd.assertError(err)
 		unionMap[customer] = count
 	}
-
+    if err = rows.Err(); err != nil {
+        jd.assertError(err)
+    }
 	return unionMap
 }
 
