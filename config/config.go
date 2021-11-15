@@ -192,7 +192,7 @@ func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged 
 				envVal := GetEnv(TransformKey(key), "")
 				if envVal != "" {
 					isSet = true
-					_value = cast.ToDuration(envVal)
+					_value = GetDuration(key, configVal.defaultValue.(time.Duration), configVal.multiplier.(time.Duration))
 					break
 				}
 			}
