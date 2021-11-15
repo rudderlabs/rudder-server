@@ -45,6 +45,7 @@ import (
 
 var AppStartTime int64
 var errorStorePath string
+var tempFolders []string
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -72,6 +73,7 @@ var pkgLogger logger.LoggerI
 func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
 	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
+	tempFolders = GetTempFolders()
 }
 
 func LoadDestinations() ([]string, []string) {
@@ -296,12 +298,35 @@ func RemoveFilePaths(filePaths ...string) {
 	}
 }
 
+// GetTempFolders returns all temporary folders.
+func GetTempFolders() (tempFolders []string) {
+	tmpDirPath, err := CreateTMPDIR()
+	if err != nil {
+		return
+	}
+
+	tempFolders = []string{
+		fmt.Sprintf("%s", tmpDirPath),
+		fmt.Sprintf("%s/%s", tmpDirPath, "rudder-async-destination-logs"),
+		fmt.Sprintf("%s/%s", tmpDirPath, "rudder-archives"),
+		fmt.Sprintf("%s/%s", tmpDirPath, "rudder-warehouse-staging-uploads"),
+		fmt.Sprintf("%s/%s", tmpDirPath, "rudder-raw-data-destination-logs"),
+		fmt.Sprintf("%s/%s", tmpDirPath, "rudder-warehouse-load-uploads-tmp"),
+		fmt.Sprintf("%s/%s", tmpDirPath, "rudder-identity-merge-rules-tmp"),
+		fmt.Sprintf("%s/%s", tmpDirPath, "rudder-identity-mappings-tmp"),
+		fmt.Sprintf("%s/%s", tmpDirPath, "rudder-redshift-manifests"),
+		fmt.Sprintf("%s/%s", tmpDirPath, "rudder-warehouse-json-uploads-tmp"),
+		fmt.Sprintf("%s/%s", tmpDirPath, config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload")),
+	}
+	return
+}
+
 // RemoveEmptyFolderStructureForFilePath recursively cleans up everything till it reaches the stage where the folders are not empty or parent.
 func RemoveEmptyFolderStructureForFilePath(fp string) {
 	if fp == "" {
 		return
 	}
-	for currDir := filepath.Dir(fp); currDir != "/" && currDir != "."; {
+	for currDir := filepath.Dir(fp); currDir != "/" && currDir != "." && !Contains(tempFolders, currDir); {
 		parentDir := filepath.Dir(currDir)
 		err := syscall.Rmdir(currDir)
 		if err != nil {
@@ -1273,4 +1298,3 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 	}
 	return "object"
 }
-
