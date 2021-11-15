@@ -1617,12 +1617,6 @@ func (rt *HandleT) readAndProcess() int {
 		rt.toClearFailJobIDMutex.Unlock()
 		//End of #JobOrder
 	}
-	resA, resB := misc.GetRouterPickupJobs(rt.destName)
-	fmt.Println("*************************************")
-	fmt.Println(resA)
-	fmt.Println("*************************************")
-	fmt.Println(resB)
-	fmt.Println("*************************************")
 	toQuery := jobQueryBatchSize
 	retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 	toQuery -= len(retryList)

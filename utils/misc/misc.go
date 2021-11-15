@@ -90,23 +90,23 @@ func LoadDestinations() ([]string, []string) {
 }
 
 func AddToInMemoryCount(customerID string, destinationType string, count int, tableType string) {
-	customerJobCountMap, ok := RouterInMemoryJobCounts[tableType][customerID]
+	_, ok := RouterInMemoryJobCounts[tableType][customerID]
 	if !ok {
 		routerJobCountMutex.Lock()
-		customerJobCountMap = make(map[string]int)
+		RouterInMemoryJobCounts[tableType][customerID] = make(map[string]int)
 		routerJobCountMutex.Unlock()
 	}
-	customerJobCountMap[destinationType] += count
+	RouterInMemoryJobCounts[tableType][customerID][destinationType] += count
 }
 
 func RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string) {
-	customerJobCountMap, ok := RouterInMemoryJobCounts[tableType][customerID]
+	_, ok := RouterInMemoryJobCounts[tableType][customerID]
 	if !ok {
 		routerJobCountMutex.Lock()
-		customerJobCountMap = make(map[string]int)
+		RouterInMemoryJobCounts[tableType][customerID] = make(map[string]int)
 		routerJobCountMutex.Unlock()
 	}
-	customerJobCountMap[destinationType] += -1 * count
+	RouterInMemoryJobCounts[tableType][customerID][destinationType] += -1 * count
 }
 
 func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string) {
