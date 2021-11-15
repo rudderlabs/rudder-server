@@ -60,7 +60,7 @@ var (
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(600), &timeoutDuration, true, time.Second, []string{"Processor.timeoutDuration", "Processor.timeoutDurationInSecond"}...)
+	config.RegisterDurationConfigVariable(time.Duration(30), &timeoutDuration, true, time.Second, []string{"Processor.timeoutDuration", "Processor.timeoutDurationInSecond"}...)
 }
 
 func Init() {
@@ -217,7 +217,11 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 		}
 	*/
 	// response transform success extract the value of output, marshal to TransResponseT Type
-	var transformerResponse integrations.TransResponseT
+
+	transformerResponse := integrations.TransResponseT{
+		Status:  http.StatusBadRequest,
+		Message: "[Response Trasnform]:: Default Message TransResponseT",
+	}
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
 	integrations.CollectDestErrorStats(respData)
 	err = json.Unmarshal(respData, &transformerResponse)
@@ -227,6 +231,7 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 		trans.logger.Errorf(errStr)
 		respData = []byte(errStr)
 		respCode = http.StatusBadRequest
+		return respCode, string(respData)
 	}
 	// unmarshal success
 	respData, err = json.Marshal(transformerResponse)
