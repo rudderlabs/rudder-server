@@ -117,7 +117,7 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
-	unionMap map[string]int
+	customerCount map[string]int
 }
 
 type BatchDestinationDataT struct {
@@ -1393,10 +1393,10 @@ func (worker *workerT) workerProcess() {
 					brtQueryStat.Start()
 					brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 
-					// retryList := brt.jobsDB.GetProcessedUnion(brt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, StateFilters: []string{jobsdb.Failed.State}, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					// retryList := brt.jobsDB.GetProcessedUnion(brt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, StateFilters: []string{jobsdb.Failed.State}, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					// toQuery -= len(retryList)
-					// unprocessedList := brt.jobsDB.GetUnprocessedUnion(brt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
+					// unprocessedList := brt.jobsDB.GetUnprocessedUnion(brt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery, ParameterFilters: parameterFilters, IgnoreCustomValFiltersInQuery: true})
 					brtQueryStat.End()
 
@@ -1729,10 +1729,10 @@ func (brt *HandleT) readAndProcess() {
 		brtQueryStat.Start()
 		// toQuery := brt.jobQueryBatchSize
 		if !brt.holdFetchingJobs([]jobsdb.ParameterFilterT{}) {
-			retryList := brt.jobsDB.GetProcessedUnion(brt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, StateFilters: []string{jobsdb.Failed.State}})
+			retryList := brt.jobsDB.GetProcessedUnion(brt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, StateFilters: []string{jobsdb.Failed.State}})
 			// retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
 			// toQuery -= len(retryList)
-			unprocessedList := brt.jobsDB.GetUnprocessedUnion(brt.unionMap, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}})
+			unprocessedList := brt.jobsDB.GetUnprocessedUnion(brt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}})
 			// unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
 			brtQueryStat.End()
 
@@ -1759,7 +1759,7 @@ loop:
 		case <-ctx.Done():
 			break loop
 		case <-time.After(mainLoopSleep):
-			brt.updateUnionMap()
+			brt.updateCustomerCount()
 			brt.readAndProcess()
 		}
 	}
@@ -2078,8 +2078,8 @@ func (brt *HandleT) Start() {
 	ctx := brt.backgroundCtx
 	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		<-brt.backendConfigInitialized
-		brt.unionMap = make(map[string]int)
-		brt.setupUnionMap()
+		brt.customerCount = make(map[string]int)
+		brt.setupCustomerCount()
 		brt.mainLoop(ctx)
 
 		return nil
@@ -2162,7 +2162,7 @@ func (brt *HandleT) Resume() {
 	brt.paused = false
 }
 
-func (brt *HandleT) setupUnionMap() {
+func (brt *HandleT) setupCustomerCount() {
 	brt.configSubscriberLock.RLock()
 	var customers []string
 	for _, destConfig := range brt.destinationsMap {
@@ -2175,11 +2175,11 @@ func (brt *HandleT) setupUnionMap() {
 	brt.configSubscriberLock.RUnlock()
 
 	for idx := range customers {
-		brt.unionMap[customers[idx]] = int(brt.jobQueryBatchSize / len(customers))
+		brt.customerCount[customers[idx]] = int(brt.jobQueryBatchSize / len(customers))
 	}
 }
 
-func (brt *HandleT) updateUnionMap() {
+func (brt *HandleT) updateCustomerCount() {
 	//TODO
-	brt.setupUnionMap()
+	brt.setupCustomerCount()
 }
