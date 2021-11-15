@@ -75,7 +75,7 @@ type HandleT struct {
 	connectionWHNamespaceMap       map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
 	netHandle                      *http.Client
 	processQ                       chan *BatchDestinationDataT
-	jobsDB                         jobsdb.JobsDB
+	jobsDB                         jobsdb.MultiTenantJobsDB
 	errorDB                        jobsdb.JobsDB
 	isEnabled                      bool
 	batchRequestsMetricLock        sync.RWMutex
@@ -1996,7 +1996,7 @@ func setQueryFilters() {
 }
 
 //Setup initializes this module
-func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI) {
+func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI) {
 	brt.isBackendConfigInitialized = false
 	brt.backendConfigInitialized = make(chan bool)
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory

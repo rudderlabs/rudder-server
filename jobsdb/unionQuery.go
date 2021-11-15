@@ -2,6 +2,7 @@ package jobsdb
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -10,47 +11,76 @@ const (
 	selectQuery = `SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.customer, sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `
 )
 
+type MultiTenantHandleT struct {
+	HandleT
+}
+
+type MultiTenantJobsDB interface {
+	GetToRetry(params GetQueryParamsT) []*JobT
+	GetUnprocessed(params GetQueryParamsT) []*JobT
+
+	GetUnprocessedUnion(map[string]int, GetQueryParamsT) []*JobT
+	GetProcessedUnion(map[string]int, GetQueryParamsT) []*JobT
+	GetCustomerCounts(int) map[string]int
+
+	GetImportingList(params GetQueryParamsT) []*JobT
+
+	BeginGlobalTransaction() *sql.Tx
+	CommitTransaction(*sql.Tx)
+	AcquireUpdateJobStatusLocks()
+	ReleaseUpdateJobStatusLocks()
+
+	UpdateJobStatusInTxn(txHandler *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+
+	DeleteExecuting(params GetQueryParamsT)
+
+	GetJournalEntries(opType string) (entries []JournalEntryT)
+	JournalMarkStart(opType string, opPayload json.RawMessage) int64
+	JournalDeleteEntry(opID int64)
+}
+
 //used to get pickup-counts during server start-up
-func (jd *HandleT) GetCustomerCounts(defaultBatchSize int) map[string]int {
+func (mj *MultiTenantHandleT) GetCustomerCounts(defaultBatchSize int) map[string]int {
 	customerCount := make(map[string]int)
 	//just using first DS here
 	//get all jobs all over DSs and then calculate
 	//use DSListLock also
 
-	// jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
-	// defer jd.dsMigrationLock.RUnlock()
-	defer jd.dsListLock.RUnlock()
-	rows, err := jd.dbHandle.Query(fmt.Sprintf(`select customer, count(job_id) from %s group by customer;`, jd.getDSList(false)[0].JobTable))
-	jd.assertError(err)
+	mj.dsMigrationLock.RLock()
+	mj.dsListLock.RLock()
+	defer mj.dsMigrationLock.RUnlock()
+	defer mj.dsListLock.RUnlock()
+	rows, err := mj.dbHandle.Query(fmt.Sprintf(`select customer, count(job_id) from %s group by customer;`, mj.getDSList(false)[0].JobTable))
+	mj.assertError(err)
 
 	for rows.Next() {
 		var customer string
 		var count int
 		err := rows.Scan(&customer, &count)
-		jd.assertError(err)
+		mj.assertError(err)
 		customerCount[customer] = count
 	}
 	if err = rows.Err(); err != nil {
-		jd.assertError(err)
+		mj.assertError(err)
 	}
 	return customerCount
 }
 
 //Unprocessed
 
-func (jd *HandleT) getUnprocessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) string {
+func (mj *MultiTenantHandleT) getUnprocessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) string {
 	var queries []string
 
 	for customer, count := range customerCount {
 		//do cache stuff here
-		queries = append(queries, jd.getSingleCustomerUnprocessedQueryString(customer, count, ds, params, true))
+		queries = append(queries, mj.getSingleCustomerUnprocessedQueryString(customer, count, ds, params, true))
 	}
 
 	return `(` + strings.Join(queries, `) UNION (`) + `)`
 }
 
-func (jd *HandleT) getSingleCustomerUnprocessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
+func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 	var sqlStatement string
@@ -64,7 +94,7 @@ func (jd *HandleT) getSingleCustomerUnprocessedQueryString(customer string, coun
 		ds.JobTable, ds.JobStatusTable, customer)
 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
-		sqlStatement += " AND " + constructQuery(jd, "jobs.custom_val", customValFilters, "OR")
+		sqlStatement += " AND " + constructQuery(mj, "jobs.custom_val", customValFilters, "OR")
 	}
 
 	if len(parameterFilters) > 0 {
@@ -92,25 +122,25 @@ func (jd *HandleT) getSingleCustomerUnprocessedQueryString(customer string, coun
 	return sqlStatement
 }
 
-func (jd *HandleT) GetUnprocessedUnion(customerCount map[string]int, params GetQueryParamsT) []*JobT {
+func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, params GetQueryParamsT) []*JobT {
 
 	//add stats
 
 	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
-	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
-	defer jd.dsMigrationLock.RUnlock()
-	defer jd.dsListLock.RUnlock()
+	mj.dsMigrationLock.RLock()
+	mj.dsListLock.RLock()
+	defer mj.dsMigrationLock.RUnlock()
+	defer mj.dsListLock.RUnlock()
 
-	dsList := jd.getDSList(false)
+	dsList := mj.getDSList(false)
 	outJobs := make([]*JobT, 0)
 
 	//removed count assert, because that params.count is not used..?
 
 	for _, ds := range dsList {
-		jobs := jd.getUnprocessedUnionDS(ds, customerCount, params)
+		jobs := mj.getUnprocessedUnionDS(ds, customerCount, params)
 		outJobs = append(outJobs, jobs...)
 		if len(customerCount) == 0 {
 			break
@@ -120,14 +150,14 @@ func (jd *HandleT) GetUnprocessedUnion(customerCount map[string]int, params GetQ
 	return outJobs
 }
 
-func (jd *HandleT) getUnprocessedUnionDS(ds dataSetT, customerCount map[string]int, params GetQueryParamsT) []*JobT {
-	queryString := jd.getUnprocessedUnionQuerystring(customerCount, ds, params)
+func (mj *MultiTenantHandleT) getUnprocessedUnionDS(ds dataSetT, customerCount map[string]int, params GetQueryParamsT) []*JobT {
+	queryString := mj.getUnprocessedUnionQuerystring(customerCount, ds, params)
 
 	var rows *sql.Rows
 	var err error
 
-	rows, err = jd.dbHandle.Query(queryString)
-	jd.assertError(err)
+	rows, err = mj.dbHandle.Query(queryString)
+	mj.assertError(err)
 
 	defer rows.Close()
 
@@ -137,7 +167,7 @@ func (jd *HandleT) getUnprocessedUnionDS(ds dataSetT, customerCount map[string]i
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
 			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.Customer, &_null)
-		jd.assertError(err)
+		mj.assertError(err)
 		jobList = append(jobList, &job)
 
 		customerCount[job.Customer] -= 1
@@ -146,7 +176,7 @@ func (jd *HandleT) getUnprocessedUnionDS(ds dataSetT, customerCount map[string]i
 		}
 	}
 	if err = rows.Err(); err != nil {
-		jd.assertError(err)
+		mj.assertError(err)
 	}
 
 	//do cache stuff here
@@ -156,21 +186,21 @@ func (jd *HandleT) getUnprocessedUnionDS(ds dataSetT, customerCount map[string]i
 
 //Processed
 
-func (jd *HandleT) GetProcessedUnion(customerCount map[string]int, params GetQueryParamsT) []*JobT {
+func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, params GetQueryParamsT) []*JobT {
 
 	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
 	//deadlocks
-	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
-	defer jd.dsMigrationLock.RUnlock()
-	defer jd.dsListLock.RUnlock()
+	mj.dsMigrationLock.RLock()
+	mj.dsListLock.RLock()
+	defer mj.dsMigrationLock.RUnlock()
+	defer mj.dsListLock.RUnlock()
 
-	dsList := jd.getDSList(false)
+	dsList := mj.getDSList(false)
 	outJobs := make([]*JobT, 0)
 
 	for _, ds := range dsList {
-		jobs := jd.getProcessedUnionDS(ds, customerCount, params)
+		jobs := mj.getProcessedUnionDS(ds, customerCount, params)
 		outJobs = append(outJobs, jobs...)
 		if len(customerCount) == 0 {
 			break
@@ -180,18 +210,18 @@ func (jd *HandleT) GetProcessedUnion(customerCount map[string]int, params GetQue
 	return outJobs
 }
 
-func (jd *HandleT) getProcessedUnionDS(ds dataSetT, customerCount map[string]int, params GetQueryParamsT) []*JobT {
-	queryString := jd.getProcessedUnionQuerystring(customerCount, ds, params)
+func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map[string]int, params GetQueryParamsT) []*JobT {
+	queryString := mj.getProcessedUnionQuerystring(customerCount, ds, params)
 
 	var rows *sql.Rows
 	var err error
 
-	stmt, err := jd.dbHandle.Prepare(queryString)
-	jd.assertError(err)
+	stmt, err := mj.dbHandle.Prepare(queryString)
+	mj.assertError(err)
 	defer stmt.Close()
 
 	rows, err = stmt.Query(getTimeNowFunc())
-	jd.assertError(err)
+	mj.assertError(err)
 	defer rows.Close()
 
 	var jobList []*JobT
@@ -200,7 +230,7 @@ func (jd *HandleT) getProcessedUnionDS(ds dataSetT, customerCount map[string]int
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
 			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.Customer, &_null)
-		jd.assertError(err)
+		mj.assertError(err)
 		jobList = append(jobList, &job)
 
 		customerCount[job.Customer] -= 1
@@ -209,7 +239,7 @@ func (jd *HandleT) getProcessedUnionDS(ds dataSetT, customerCount map[string]int
 		}
 	}
 	if err = rows.Err(); err != nil {
-		jd.assertError(err)
+		mj.assertError(err)
 	}
 
 	//do cache stuff here
@@ -217,18 +247,18 @@ func (jd *HandleT) getProcessedUnionDS(ds dataSetT, customerCount map[string]int
 	return jobList
 }
 
-func (jd *HandleT) getProcessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) string {
+func (mj *MultiTenantHandleT) getProcessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) string {
 	var queries []string
 
 	for customer, count := range customerCount {
 		//do cache stuff here
-		queries = append(queries, jd.getSingleCustomerProcessedQueryString(customer, count, ds, params, true))
+		queries = append(queries, mj.getSingleCustomerProcessedQueryString(customer, count, ds, params, true))
 	}
 
 	return `(` + strings.Join(queries, `) UNION (`) + `)`
 }
 
-func (jd *HandleT) getSingleCustomerProcessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
+func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
@@ -239,21 +269,21 @@ func (jd *HandleT) getSingleCustomerProcessedQueryString(customer string, count 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
 	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQuery(jd, "job_state", stateFilters, "OR")
+		stateQuery = " AND " + constructQuery(mj, "job_state", stateFilters, "OR")
 	} else {
 		stateQuery = ""
 	}
 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
-		// jd.assert(!getAll, "getAll is true")
+		// mj.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
-			constructQuery(jd, "jobs.custom_val", customValFilters, "OR")
+			constructQuery(mj, "jobs.custom_val", customValFilters, "OR")
 	} else {
 		customValQuery = ""
 	}
 
 	if len(parameterFilters) > 0 {
-		// jd.assert(!getAll, "getAll is true")
+		// mj.assert(!getAll, "getAll is true")
 		sourceQuery += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
 	} else {
 		sourceQuery = ""
