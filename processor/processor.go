@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -107,6 +108,8 @@ type HandleT struct {
 	reporting                      types.ReportingI
 	reportingEnabled               bool
 	transformerFeatures            json.RawMessage
+	readLoopSleep                  time.Duration
+	maxLoopSleep                   time.Duration
 
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
@@ -271,6 +274,9 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.backendConfig = backendConfig
 	proc.stats = stats.DefaultStats
 
+	proc.readLoopSleep = readLoopSleep
+	proc.maxLoopSleep = maxLoopSleep
+
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
@@ -376,6 +382,7 @@ func (proc *HandleT) Start(ctx context.Context) {
 			return err
 		}
 		if enablePipelining {
+			fmt.Print("pipeline")
 			proc.pipelineWithPause(ctx, proc.mainPipeline)
 		} else {
 			proc.mainLoop(ctx)
@@ -2008,7 +2015,6 @@ func (proc *HandleT) pipelineWithPause(ctx context.Context, fn func(ctx context.
 			cancel()
 		}()
 		fn(ctxPausable)
-
 		// stop due to parent context cancellation
 		if ctx.Err() != nil {
 			return
@@ -2032,7 +2038,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	if proc.reporting != nil && proc.reportingEnabled {
 		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
 	}
-
+	fmt.Println("mainPipeline")
 	wg := sync.WaitGroup{}
 	bufferSize := pipelineBufferedItems
 
@@ -2040,22 +2046,28 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer close(chProc)
+
 		nextSleepTime := time.Duration(0)
 
-		defer close(chProc)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(nextSleepTime):
+				if !isUnLocked {
+					nextSleepTime = proc.maxLoopSleep
+					continue
+				}
+
 				jobs := proc.getJobs()
 				if len(jobs) == 0 {
 					// no jobs found, double sleep time until maxLoopSleep
 					nextSleepTime = 2 * nextSleepTime
-					if nextSleepTime > maxLoopSleep {
-						nextSleepTime = maxLoopSleep
+					if nextSleepTime > proc.maxLoopSleep {
+						nextSleepTime = proc.maxLoopSleep
 					} else if nextSleepTime == 0 {
-						nextSleepTime = readLoopSleep
+						nextSleepTime = proc.readLoopSleep
 					}
 					continue
 				}
@@ -2071,7 +2083,8 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 					events += jobs[i].EventCount
 				}
 				// nextSleepTime is dependent on the number of events read in this loop
-				nextSleepTime = time.Duration(1-events/maxEventsToProcess) * readLoopSleep
+				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(maxEventsToProcess))
+				nextSleepTime = time.Duration(emptyRatio * float64(proc.readLoopSleep))
 
 				chProc <- jobs
 			}
@@ -2147,6 +2160,7 @@ func (proc *HandleT) Resume() {
 	if !proc.paused {
 		return
 	}
+	proc.paused = false
 
 	proc.resumeChannel <- true
 }
