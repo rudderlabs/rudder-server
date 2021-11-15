@@ -68,7 +68,9 @@ var (
 	dbHandle         *sql.DB
 	sourceJSON       backendconfig.ConfigT
 	webhookurl       string
+	webhookDestinationurl string
 	webhook          *WebhookRecorder
+	webhookDestination *WebhookRecorder
 	address          string
 	runIntegration   bool
 	writeKey         string
@@ -396,6 +398,11 @@ func run(m *testing.M) (int, error) {
 	webhookurl = webhook.Server.URL
 	log.Println("webhookurl", webhookurl)
 
+	webhookDestination = NewWebhook()
+	defer webhookDestination.Close()
+	webhookDestinationurl = webhookDestination.Server.URL
+	log.Println("webhookurl", webhookDestinationurl)
+
 	writeKey = randString(27)
 	workspaceID = randString(27)
 	webhookEventWriteKey = randString(27)
@@ -403,6 +410,7 @@ func run(m *testing.M) (int, error) {
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
 			"webhookUrl":      webhookurl,
+			"webhookDestinationurl":webhookDestinationurl,
 			"writeKey":        writeKey,
 			"webhookEventWriteKey": webhookEventWriteKey,
 			"workspaceId":     workspaceID,
@@ -576,7 +584,11 @@ func TestWebhook(t *testing.T) {
 	SendWebhookEvent()
 
 	require.Eventually(t, func() bool {
-		return len(webhook.Requests()) == 9
+		return len(webhook.Requests()) == 8
+	}, time.Minute, 10*time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		return len(webhookDestination.Requests()) == 1
 	}, time.Minute, 10*time.Millisecond)
 
 	req := webhook.Requests()[0]
@@ -595,6 +607,18 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
 
+
+	req = webhookDestination.Requests()[0]
+	body, err = io.ReadAll(req.Body)
+
+	require.NoError(t, err)
+	require.Equal(t, "POST", req.Method)
+	require.Equal(t, "/", req.URL.Path)
+	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
+	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
+
+	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "")
+	require.NotEqual(t, gjson.GetBytes(body, "messageId").Str, "")
 }
 
 // Verify Event in POSTGRES
