@@ -248,7 +248,7 @@ func SendEvent(payload *strings.Reader, call_type string) (string, error){
 }
 
 func SendWebhookEvent() {
-	log.Println(fmt.Sprintf("Sending Webhook Event"))
+	log.Println("Sending Webhook Event")
 	url := fmt.Sprintf("http://localhost:%s/v1/webhook?writeKey=%s", httpPort, webhookEventWriteKey)
 	method := "POST"
   
@@ -793,11 +793,11 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 func SetZookeeper() {
 	network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
 	if err != nil {
-		log.Fatalf("Could not create docker network: %s", err)
+		log.Println("Could not create docker network: %s", err)
 	}
 	zookeeperPortInt, err := freeport.GetFreePort()
 	if err != nil {
-		log.Panic(err)
+		log.Println(err)
 	}
 	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
 	zookeeperclientPort := fmt.Sprintf("ZOOKEEPER_CLIENT_PORT=%s", strconv.Itoa(zookeeperPortInt))
@@ -815,7 +815,7 @@ func SetZookeeper() {
 		Env: []string{"ZOOKEEPER_CLIENT_PORT=2181"},
 	})
 	if err != nil {
-		log.Panic(err)
+		log.Println(err)
 	}
 	
 }
@@ -827,14 +827,14 @@ func SetKafka() {
 
 	brokerPortInt, err := freeport.GetFreePort()
 	if err != nil {
-		log.Panic(err)
+		log.Println(err)
 	}
 	brokerPort = fmt.Sprintf("%s/tcp", strconv.Itoa(brokerPortInt))
 	log.Println("broker Port:", brokerPort)
 
 	localhostPortInt, err = freeport.GetFreePort()
 	if err != nil {
-		log.Panic(err)
+		log.Println(err)
 	}
 	localhostPort = fmt.Sprintf("%s/tcp", strconv.Itoa(localhostPortInt))
 	log.Println("localhost Port:", localhostPort)
@@ -863,7 +863,7 @@ func SetKafka() {
 		},
 	})
 	if err != nil {
-		log.Panic(err)
+		log.Println(err)
 	}
 	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
 }
@@ -872,7 +872,7 @@ func SetRedis() {
 	// pulls an redis image, creates a container based on it and runs it
 	resourceRedis, err = pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		log.Println("Could not start resource: %s", err)
 	}
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	redisAddress = fmt.Sprintf("localhost:%s", resourceRedis.GetPort("6379/tcp"))
@@ -886,7 +886,7 @@ func SetRedis() {
 		_, err := redisClient.Ping().Result()
 		return err
 	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Println("Could not connect to docker: %s", err)
 	}
 }
 
@@ -943,7 +943,7 @@ func SetTransformer() {
 func SetMINIO() {
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
-		log.Panic(err)
+		log.Println(err)
 	}
 	minioPort := fmt.Sprintf("%s/tcp", strconv.Itoa(minioPortInt))
 	log.Println("minioPort:", minioPort)
@@ -980,7 +980,7 @@ func SetMINIO() {
 		}
 		return nil
 	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Println("Could not connect to docker: %s", err)
 	}
 	// now we can instantiate minio client
 	minioClient, err = minio.New(minioEndpoint, "MYACCESSKEY", "MYSECRETKEY", false)
