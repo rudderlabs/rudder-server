@@ -57,7 +57,7 @@ type HandleT struct {
 	statusLoopResumeChannel                chan bool
 	requestQ                               chan *jobsdb.JobT
 	responseQ                              chan jobResponseT
-	jobsDB                                 jobsdb.JobsDB
+	jobsDB                                 jobsdb.MultiTenantJobsDB
 	errorDB                                jobsdb.JobsDB
 	netHandle                              NetHandleI
 	destName                               string
@@ -1749,7 +1749,7 @@ func Init() {
 }
 
 //Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
+func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
 
 	rt.backendConfig = backendConfig
 	rt.generatorPauseChannel = make(chan *PauseT)

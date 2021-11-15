@@ -58,8 +58,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}
 
 	var gatewayDB jobsdb.HandleT
-	var routerDB jobsdb.HandleT
-	var batchRouterDB jobsdb.HandleT
+	var routerDB jobsdb.MultiTenantHandleT
+	var batchRouterDB jobsdb.MultiTenantHandleT
 	var procErrorDB jobsdb.HandleT
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
@@ -114,7 +114,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			embedded.App.Features().Migrator.PrepareJobsdbsForImport(&gatewayDB, &routerDB, &batchRouterDB)
 
 			g.Go(func() error {
-				embedded.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+				embedded.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB.HandleT, &batchRouterDB.HandleT, startProcessorFunc, startRouterFunc) //TODO
 				return nil
 			})
 		}
