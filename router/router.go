@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/VividCortex/ewma"
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -109,7 +108,7 @@ type HandleT struct {
 	savePayloadOnError                     bool
 	responseTransform                      bool
 	saveDestinationResponseOverride        bool
-	routerLatencyStat                      map[string]ewma.MovingAverage
+	routerLatencyStat                      map[string]misc.MovingAverage
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -640,9 +639,11 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				deliveryLatencyStat.End()
 				timeTaken := time.Since(startedAt)
 				if _, ok := worker.rt.routerLatencyStat[workspaceID]; !ok {
-					worker.rt.routerLatencyStat[workspaceID] = ewma.NewMovingAverage()
+					worker.rt.routerLatencyStat[workspaceID] = misc.NewMovingAverage()
 				}
 				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken))
+				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken))
+
 				// END: request to destination endpoint
 
 				if isSuccessStatus(respStatusCode) && !worker.rt.saveDestinationResponseOverride {
@@ -1616,7 +1617,12 @@ func (rt *HandleT) readAndProcess() int {
 		rt.toClearFailJobIDMutex.Unlock()
 		//End of #JobOrder
 	}
-
+	resA, resB := misc.GetRouterPickupJobs(rt.destName)
+	fmt.Println("*************************************")
+	fmt.Println(resA)
+	fmt.Println("*************************************")
+	fmt.Println(resB)
+	fmt.Println("*************************************")
 	toQuery := jobQueryBatchSize
 	retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 	toQuery -= len(retryList)
@@ -1779,7 +1785,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.statusLoopPauseChannel = make(chan *PauseT)
 	rt.statusLoopResumeChannel = make(chan bool)
 	rt.reporting = reporting
-	rt.routerLatencyStat = make(map[string]ewma.MovingAverage)
+	rt.routerLatencyStat = make(map[string]misc.MovingAverage)
 	config.RegisterBoolConfigVariable(utilTypes.DEFAULT_REPORTING_ENABLED, &rt.reportingEnabled, false, "Reporting.enabled")
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)

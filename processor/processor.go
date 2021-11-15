@@ -1300,12 +1300,12 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 		for i := range o.batchDestJobs {
 			totalPayloadBatchBytes += len(o.batchDestJobs[i].EventPayload)
-			_, ok := processorLoopStats["batch_router"][o.destJobs[i].Customer]
+			_, ok := processorLoopStats["batch_router"][o.batchDestJobs[i].Customer]
 			if !ok {
-				processorLoopStats["batch_router"][o.destJobs[i].Customer] = make(map[string]int)
+				processorLoopStats["batch_router"][o.batchDestJobs[i].Customer] = make(map[string]int)
 			}
-			destination_id := gjson.Get(string(o.destJobs[i].Parameters), "destination_id").String()
-			processorLoopStats["batch_router"][o.destJobs[i].Customer][destination_id] += 1
+			destination_id := gjson.Get(string(o.batchDestJobs[i].Parameters), "destination_id").String()
+			processorLoopStats["batch_router"][o.batchDestJobs[i].Customer][destination_id] += 1
 		}
 		batchDestJobs = append(batchDestJobs, o.batchDestJobs...)
 

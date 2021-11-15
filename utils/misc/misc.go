@@ -39,7 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/tidwall/sjson"
 
-	"github.com/VividCortex/ewma"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
 )
@@ -48,7 +47,7 @@ var AppStartTime int64
 var errorStorePath string
 var RouterInMemoryJobCounts map[string]map[string]map[string]int
 var routerJobCountMutex sync.RWMutex
-var ProcessorJobsMovingAverages map[string]map[string]map[string]ewma.MovingAverage
+var ProcessorJobsMovingAverages map[string]map[string]map[string]MovingAverage
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -79,9 +78,9 @@ func Init() {
 	RouterInMemoryJobCounts = make(map[string]map[string]map[string]int)
 	RouterInMemoryJobCounts["router"] = make(map[string]map[string]int)
 	RouterInMemoryJobCounts["batch_router"] = make(map[string]map[string]int)
-	ProcessorJobsMovingAverages = make(map[string]map[string]map[string]ewma.MovingAverage)
-	ProcessorJobsMovingAverages["router"] = make(map[string]map[string]ewma.MovingAverage)
-	ProcessorJobsMovingAverages["batch_router"] = make(map[string]map[string]ewma.MovingAverage)
+	ProcessorJobsMovingAverages = make(map[string]map[string]map[string]MovingAverage)
+	ProcessorJobsMovingAverages["router"] = make(map[string]map[string]MovingAverage)
+	ProcessorJobsMovingAverages["batch_router"] = make(map[string]map[string]MovingAverage)
 }
 
 func LoadDestinations() ([]string, []string) {
@@ -93,35 +92,39 @@ func LoadDestinations() ([]string, []string) {
 func AddToInMemoryCount(customerID string, destinationType string, count int, tableType string) {
 	customerJobCountMap, ok := RouterInMemoryJobCounts[tableType][customerID]
 	if !ok {
+		routerJobCountMutex.Lock()
 		customerJobCountMap = make(map[string]int)
+		routerJobCountMutex.Unlock()
 	}
-	routerJobCountMutex.Lock()
 	customerJobCountMap[destinationType] += count
-	routerJobCountMutex.Unlock()
 }
 
 func RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string) {
 	customerJobCountMap, ok := RouterInMemoryJobCounts[tableType][customerID]
 	if !ok {
+		routerJobCountMutex.Lock()
 		customerJobCountMap = make(map[string]int)
+		routerJobCountMutex.Unlock()
 	}
-	routerJobCountMutex.Lock()
 	customerJobCountMap[destinationType] += -1 * count
-	routerJobCountMutex.Unlock()
 }
 
 func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string) {
 	for key := range stats {
 		_, ok := ProcessorJobsMovingAverages[tableType][key]
 		if !ok {
-			ProcessorJobsMovingAverages[tableType][key] = make(map[string]ewma.MovingAverage)
+			routerJobCountMutex.Lock()
+			ProcessorJobsMovingAverages[tableType][key] = make(map[string]MovingAverage)
+			routerJobCountMutex.Unlock()
 		}
 		for destType := range stats[key] {
 			_, ok := ProcessorJobsMovingAverages[tableType][key][destType]
 			if !ok {
-				ProcessorJobsMovingAverages[tableType][key][destType] = ewma.NewMovingAverage()
+				routerJobCountMutex.Lock()
+				ProcessorJobsMovingAverages[tableType][key][destType] = NewMovingAverage()
+				routerJobCountMutex.Unlock()
 			}
-			ProcessorJobsMovingAverages[tableType][key][destType].Add(float64(stats[key][destType] * int(time.Second) / int(timeTaken)))
+			ProcessorJobsMovingAverages[tableType][key][destType].Add(float64(stats[key][destType]) * float64(time.Second) / float64(timeTaken))
 			AddToInMemoryCount(key, destType, stats[key][destType], tableType)
 		}
 	}
@@ -140,6 +143,10 @@ func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Dura
 			}
 		}
 	}
+}
+
+func GetRouterPickupJobs(destType string) (map[string]map[string]map[string]MovingAverage, map[string]map[string]map[string]int) {
+	return ProcessorJobsMovingAverages, RouterInMemoryJobCounts
 }
 
 func getErrorStore() (ErrorStoreT, error) {
