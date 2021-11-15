@@ -210,7 +210,7 @@ func blockOnHold() {
 	<-c
 }
 
-func SendEvent(payload *strings.Reader, call_type string) {
+func SendEvent(payload *strings.Reader, call_type string) (string, error){
 	log.Println(fmt.Sprintf("Sending %s Event", call_type))
 	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, call_type)
 	method := "POST"
@@ -219,7 +219,7 @@ func SendEvent(payload *strings.Reader, call_type string) {
 
 	if err != nil {
 		log.Println(err)
-		return
+		return "" , err
 
 	}
 
@@ -233,17 +233,18 @@ func SendEvent(payload *strings.Reader, call_type string) {
 	res, err := client.Do(req)
 	if err != nil {
 		log.Println(err)
-		return
+		return  "" , err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		log.Println(err)
-		return
+		return "" , err
 	}
 	log.Println(string(body))
 	log.Println("Event Sent Successfully")
+	return string(body) ,err
 }
 
 func SendWebhookEvent() {
@@ -256,7 +257,7 @@ func SendWebhookEvent() {
 	  "customer_id": "abcd-1234"  
 	},
 	"object_type": "email"
-  }`)
+ 	 }`)
   
 	client := &http.Client {
 	}
@@ -267,11 +268,6 @@ func SendWebhookEvent() {
 	  return
 	}
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization",
-		fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
-			[]byte(fmt.Sprintf("%s:", writeKey)),
-		)),
-	)
   
 	res, err := client.Do(req)
 	if err != nil {
@@ -406,6 +402,7 @@ func run(m *testing.M) (int, error) {
 	writeKey = randString(27)
 	workspaceID = randString(27)
 	webhookEventWriteKey = randString(27)
+
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
@@ -665,6 +662,32 @@ func TestPostgres(t *testing.T) {
 		db.QueryRow(eventSql).Scan(&myEvent.count)
 		return myEvent.count == "1"
 	}, time.Minute, 10*time.Millisecond)
+}
+
+// Verify Audience List EndPoint 
+func TestAudiencelist(t *testing.T) {
+	payload := strings.NewReader(`{
+		"type": "audiencelist",
+		"properties": {
+			"listData": {
+			"add": [
+				{
+				"EMAIL": "xyz@rudderstack.com",
+				"MM": "02"
+				}
+			],
+			"remove": [
+				{
+				"EMAIL": "abc@rudderstack.com",
+				"MM": "02"
+				}
+			]
+			}
+		},
+		"userId": "user123"
+		}`)
+	resbody, _ :=SendEvent(payload, "audiencelist")
+	require.Equal(t, resbody, "OK")
 }
 
 // Verify Event in Redis
