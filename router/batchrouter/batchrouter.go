@@ -598,7 +598,6 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 
 	brt.logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
 	useRudderStorage := isWarehouse && misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
-	provider = "random"
 	uploader, err := brt.fileManagerFactory.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
@@ -951,13 +950,13 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 
 	jsonPayload, err := json.Marshal(&payload)
 	if err != nil {
-		brt.logger.Errorf("BRT: Failed to marshal WH staging file payload rterror:%v", err)
+		brt.logger.Errorf("BRT: Failed to marshal WH staging file payload error:%v", err)
 	}
 	uri := fmt.Sprintf(`%s/v1/process`, warehouseURL)
 	_, err = brt.netHandle.Post(uri, "application/json; charset=utf-8",
 		bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, rterror:%v", uri, err)
+		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
 	} else {
 		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
 	}
