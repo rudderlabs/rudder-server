@@ -51,16 +51,18 @@ func NewTransformer() *HandleT {
 }
 
 var (
-	maxRetry        int
-	retrySleep      time.Duration
-	timeoutDuration time.Duration
-	pkgLogger       logger.LoggerI
+	maxRetry              int
+	retrySleep            time.Duration
+	timeoutDuration       time.Duration
+	retryWithBackoffCount int64
+	pkgLogger             logger.LoggerI
 )
 
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(30), &timeoutDuration, true, time.Second, []string{"Processor.timeoutDuration", "Processor.timeoutDurationInSecond"}...)
+	config.RegisterInt64ConfigVariable(5, &retryWithBackoffCount, true, 1, "Router.responseTransformRetryCount")
 }
 
 func Init() {
@@ -188,7 +190,7 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 		return requestError
 	}
 
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(retryWithBackoffCount))
 	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("[Response Transform] Request for response transform to URL:: %v, Error:: %+v retrying after:: %v,", url, err, t)
 	})

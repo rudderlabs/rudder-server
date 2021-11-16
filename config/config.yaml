@@ -104,6 +104,7 @@ Router:
   failedKeysEnabled: false
   saveDestinationResponseOverride: false
   responseTransform: false
+  responseTransformRetryCount: 5
   MARKETO:
     noOfWorkers: 4
   throttler:

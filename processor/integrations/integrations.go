@@ -75,8 +75,8 @@ type TransErrorSpecT struct {
 	FailureAt                string                 `json:"failureAt"`
 }
 
-type TransErrorT struct {
-	ErrorDetailed TransErrorSpecT `json:"errorDetailed"`
+type TransStatsT struct {
+	StatTags map[string]string `json:"statTags"`
 }
 type TransResponseT struct {
 	Status              int64       `json:"status"`
@@ -85,22 +85,22 @@ type TransResponseT struct {
 }
 
 func CollectDestErrorStats(input []byte) {
-	var destinationResponseErr TransErrorT
-	err := json.Unmarshal(input, &destinationResponseErr)
+	var integrationStat TransStatsT
+	err := json.Unmarshal(input, &integrationStat)
 	if err == nil {
-		if len(destinationResponseErr.ErrorDetailed.StatTags) > 0 {
-			stats.NewTaggedStat("integration.failure_detailed", stats.CountType, destinationResponseErr.ErrorDetailed.StatTags).Increment()
+		if len(integrationStat.StatTags) > 0 {
+			stats.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
 		}
 	}
 }
 
 func CollectIntgTransformErrorStats(input []byte) {
-	var transErrors []TransErrorT
-	err := json.Unmarshal(input, &transErrors)
+	var integrationStats []TransStatsT
+	err := json.Unmarshal(input, &integrationStats)
 	if err == nil {
-		for _, transError := range transErrors {
-			if len(transError.ErrorDetailed.StatTags) > 0 {
-				stats.NewTaggedStat("integration.failure_detailed", stats.CountType, transError.ErrorDetailed.StatTags).Increment()
+		for _, integrationStat := range integrationStats {
+			if len(integrationStat.StatTags) > 0 {
+				stats.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
 			}
 		}
 	}
