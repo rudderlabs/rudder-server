@@ -18,6 +18,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"golang.org/x/sync/errgroup"
 
 	uuid "github.com/gofrs/uuid"
@@ -1386,8 +1387,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
-	misc.ReportProcLoopAddStats(processorLoopStats["router"], time.Since(start), "router")
-	misc.ReportProcLoopAddStats(processorLoopStats["batch_router"], time.Since(start), "batch_router")
+	multitenant.ReportProcLoopAddStats(processorLoopStats["router"], time.Since(start), "router")
+	multitenant.ReportProcLoopAddStats(processorLoopStats["batch_router"], time.Since(start), "batch_router")
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.statDBW.Since(beforeStoreStatus)

@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
 	"golang.org/x/sync/errgroup"
@@ -1101,7 +1102,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 
 	for customer := range batchRouterCustomerJobStatusCount {
 		for destID := range batchRouterCustomerJobStatusCount[customer] {
-			misc.RemoveFromInMemoryCount(customer, destID, batchRouterCustomerJobStatusCount[customer][destID], "batch_router")
+			multitenant.RemoveFromInMemoryCount(customer, destID, batchRouterCustomerJobStatusCount[customer][destID], "batch_router")
 		}
 	}
 	//tracking batch router errors

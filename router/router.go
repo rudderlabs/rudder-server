@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
@@ -1341,7 +1342,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	//REPORTING - ROUTER - END
 	for customer := range routerCustomerJobStatusCount {
 		for destType := range routerCustomerJobStatusCount[customer] {
-			misc.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router0")
+			multitenant.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router0")
 		}
 	}
 

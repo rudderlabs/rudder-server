@@ -45,10 +45,6 @@ import (
 
 var AppStartTime int64
 var errorStorePath string
-var jobQueryBatchSize int
-var RouterInMemoryJobCounts map[string]map[string]map[string]int
-var routerJobCountMutex sync.RWMutex
-var ProcessorJobsMovingAverages map[string]map[string]map[string]MovingAverage
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -76,109 +72,12 @@ var pkgLogger logger.LoggerI
 func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
 	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
-	RouterInMemoryJobCounts = make(map[string]map[string]map[string]int)
-	RouterInMemoryJobCounts["router"] = make(map[string]map[string]int)
-	RouterInMemoryJobCounts["batch_router"] = make(map[string]map[string]int)
-	ProcessorJobsMovingAverages = make(map[string]map[string]map[string]MovingAverage)
-	ProcessorJobsMovingAverages["router"] = make(map[string]map[string]MovingAverage)
-	ProcessorJobsMovingAverages["batch_router"] = make(map[string]map[string]MovingAverage)
-	config.RegisterIntConfigVariable(10000, &jobQueryBatchSize, true, 1, "Router.jobQueryBatchSize")
 }
 
 func LoadDestinations() ([]string, []string) {
 	batchDestinations := []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "MARKETO_BULK_UPLOAD"}
 	customDestinations := []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	return batchDestinations, customDestinations
-}
-
-func AddToInMemoryCount(customerID string, destinationType string, count int, tableType string) {
-	_, ok := RouterInMemoryJobCounts[tableType][customerID]
-	if !ok {
-		routerJobCountMutex.Lock()
-		RouterInMemoryJobCounts[tableType][customerID] = make(map[string]int)
-		routerJobCountMutex.Unlock()
-	}
-	RouterInMemoryJobCounts[tableType][customerID][destinationType] += count
-}
-
-func RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string) {
-	_, ok := RouterInMemoryJobCounts[tableType][customerID]
-	if !ok {
-		routerJobCountMutex.Lock()
-		RouterInMemoryJobCounts[tableType][customerID] = make(map[string]int)
-		routerJobCountMutex.Unlock()
-	}
-	RouterInMemoryJobCounts[tableType][customerID][destinationType] += -1 * count
-}
-
-func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string) {
-	for key := range stats {
-		_, ok := ProcessorJobsMovingAverages[tableType][key]
-		if !ok {
-			routerJobCountMutex.Lock()
-			ProcessorJobsMovingAverages[tableType][key] = make(map[string]MovingAverage)
-			routerJobCountMutex.Unlock()
-		}
-		for destType := range stats[key] {
-			_, ok := ProcessorJobsMovingAverages[tableType][key][destType]
-			if !ok {
-				routerJobCountMutex.Lock()
-				ProcessorJobsMovingAverages[tableType][key][destType] = NewMovingAverage()
-				routerJobCountMutex.Unlock()
-			}
-			ProcessorJobsMovingAverages[tableType][key][destType].Add(float64(stats[key][destType]) * float64(time.Second) / float64(timeTaken))
-			AddToInMemoryCount(key, destType, stats[key][destType], tableType)
-		}
-	}
-	for customerKey := range ProcessorJobsMovingAverages[tableType] {
-		_, ok := stats[customerKey]
-		if !ok {
-			for destType := range stats[customerKey] {
-				ProcessorJobsMovingAverages[tableType][customerKey][destType].Add(0)
-			}
-		}
-
-		for destType := range ProcessorJobsMovingAverages[tableType][customerKey] {
-			_, ok := stats[customerKey][destType]
-			if !ok {
-				ProcessorJobsMovingAverages[tableType][customerKey][destType].Add(0)
-			}
-		}
-	}
-}
-
-func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time) map[string]int {
-	customerLiveCount := make(map[string]float64)
-	customerPickUpCount := make(map[string]int)
-	totalCount := 0.0
-	runningCounter := jobQueryBatchSize
-	routerJobCountMutex.RLock()
-	defer routerJobCountMutex.RUnlock()
-	for customerKey := range ProcessorJobsMovingAverages["router"] {
-		customerLiveCount[customerKey] = ProcessorJobsMovingAverages["router"][customerKey][destType].Value()
-		totalCount += customerLiveCount[customerKey]
-	}
-
-	for customerKey := range ProcessorJobsMovingAverages["router"] {
-		customerPickUpCount[customerKey] = int(float64(jobQueryBatchSize)*(customerLiveCount[customerKey]/totalCount)) + 1
-		/// Need to add a check if the current workspaceID is part of Active Configuration
-		if customerPickUpCount[customerKey] > RouterInMemoryJobCounts["router"][customerKey][destType] {
-			customerPickUpCount[customerKey] = RouterInMemoryJobCounts["router"][customerKey][destType]
-		}
-		runningCounter = runningCounter - customerPickUpCount[customerKey]
-	}
-	if runningCounter <= 0 {
-		return customerPickUpCount
-	}
-	totalCount = 0.0
-	for customerKey := range RouterInMemoryJobCounts["router"] {
-		totalCount += float64(int(time.Second)*RouterInMemoryJobCounts["router"][customerKey][destType]) / float64(time.Since(earliestJobMap[customerKey]))
-	}
-	for customerKey := range RouterInMemoryJobCounts["router"] {
-		customerPickUpCount[customerKey] += int(float64(runningCounter)*(customerLiveCount[customerKey]/totalCount)) + 1
-		/// Need to add a check if the current workspaceID is part of Active Configuration
-	}
-	return customerPickUpCount
 }
 
 func getErrorStore() (ErrorStoreT, error) {
