@@ -382,7 +382,6 @@ func (proc *HandleT) Start(ctx context.Context) {
 			return err
 		}
 		if enablePipelining {
-			fmt.Print("pipeline")
 			proc.pipelineWithPause(ctx, proc.mainPipeline)
 		} else {
 			proc.mainLoop(ctx)
@@ -2041,7 +2040,6 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	if proc.reporting != nil && proc.reportingEnabled {
 		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
 	}
-	fmt.Println("mainPipeline")
 	wg := sync.WaitGroup{}
 	bufferSize := pipelineBufferedItems
 
