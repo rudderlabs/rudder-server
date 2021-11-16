@@ -78,6 +78,8 @@ JobsDB:
     batch_rt:
       enabled: false
       failedOnly: false
+  gw:
+    enableWriterQueue: false
 Router:
   jobQueryBatchSize: 10000
   updateStatusBatchSize: 1000
@@ -174,6 +176,7 @@ Processor:
   errDBReadBatchSize: 1000
   noOfErrStashWorkers: 2
   maxFailedCountForErrJob: 3
+  enableEventCount: true
   Stats:
     captureEventName: false
 Dedup:
