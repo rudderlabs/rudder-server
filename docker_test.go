@@ -290,39 +290,41 @@ func SendPixelEvents(){
 	log.Println("Sending pixel/v1/page Event")
 	url := fmt.Sprintf("http://localhost:%s/pixel/v1/page?writeKey=%s&anonymousId=identified_user_id", httpPort, writeKey)
 	method := "GET"
-	GetEvent(url, method)
+	resBody, _ := GetEvent(url, method)
+	log.Println(resBody)
 	log.Println("pixel/v1/page Event Sent Successfully")
 
 	// Send pixel/v1/track
 	log.Println("Sending pixel/v1/track Event")
 	url = fmt.Sprintf("http://localhost:%s/pixel/v1/track?writeKey=%s&anonymousId=identified_user_id&event=product_reviewed_again", httpPort, writeKey)
 	method = "GET"
-	GetEvent(url, method)
+	resBody, _ = GetEvent(url, method)
+	log.Println(resBody)
 	log.Println("pixel/v1/track Event Sent Successfully")
 }
 
-func GetEvent(url string, method string){
+func GetEvent(url string, method string)(string, error){
 	client := &http.Client {
 	}
 	req, err := http.NewRequest(method, url, nil)
 
 	if err != nil {
 		fmt.Println(err)
-		return
+		return "" , err
 	}
 	res, err := client.Do(req)
 	if err != nil {
 		fmt.Println(err)
-		return
+		return "" , err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		fmt.Println(err)
-		return
+		return "" , err
 	}
-	fmt.Println(string(body))
+	return string(body) , err
 }
 
 func TestMain(m *testing.M) {
