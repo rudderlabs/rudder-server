@@ -285,6 +285,46 @@ func SendWebhookEvent() {
 	log.Println("Webhook Event Sent Successfully")
 }
 
+func SendPixelEvents(){
+	// Send pixel/v1/page
+	log.Println("Sending pixel/v1/page Event")
+	url := fmt.Sprintf("http://localhost:%s/pixel/v1/page?writeKey=%s&anonymousId=identified_user_id", httpPort, writeKey)
+	method := "GET"
+	GetEvent(url, method)
+	log.Println("pixel/v1/page Event Sent Successfully")
+
+	// Send pixel/v1/track
+	log.Println("Sending pixel/v1/track Event")
+	url = fmt.Sprintf("http://localhost:%s/pixel/v1/track?writeKey=%s&anonymousId=identified_user_id&event=product_reviewed_again", httpPort, writeKey)
+	method = "GET"
+	GetEvent(url, method)
+	log.Println("pixel/v1/track Event Sent Successfully")
+}
+
+func GetEvent(url string, method string){
+	client := &http.Client {
+	}
+	req, err := http.NewRequest(method, url, nil)
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(body))
+}
+
 func TestMain(m *testing.M) {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
 	flag.BoolVar(&runIntegration, "integration", false, "run integration level tests")
@@ -449,7 +489,8 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("MINIO_SSL", "false")
 	os.Setenv("WAREHOUSE_URL", "http://localhost:8082")
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
-	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10s")
+	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE","true")
+	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
 
 	fmt.Printf("--- Setup done (%s)\n", time.Since(setupStart))
 
@@ -493,7 +534,7 @@ func TestWebhook(t *testing.T) {
 
 	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
 	payload_1 := strings.NewReader(`{
-		"userId": "identified user id",
+		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"eventOrderNo":"1",
@@ -510,7 +551,7 @@ func TestWebhook(t *testing.T) {
 	  }`)
 	SendEvent(payload_1, "identify")
 	payload_2 := strings.NewReader(`{
-		"userId": "identified user id",
+		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"eventOrderNo":"2",
@@ -531,7 +572,7 @@ func TestWebhook(t *testing.T) {
 		"batch":
 		[
 			{
-				"userId": "identified user id",
+				"userId": "identified_user_id",
 			   "anonymousId":"anonymousId_1",
 			   "messageId":"messageId_1"
 			}
@@ -541,7 +582,7 @@ func TestWebhook(t *testing.T) {
 
 	// Sending track event
 	payload_track := strings.NewReader(`{
-		"userId": "identified user id",
+		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"type": "track",
@@ -557,7 +598,7 @@ func TestWebhook(t *testing.T) {
 
 	// Sending page event
 	payload_page := strings.NewReader(`{
-		"userId": "identified user id",
+		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"type": "page",
@@ -571,7 +612,7 @@ func TestWebhook(t *testing.T) {
 
 	// Sending screen event
 	payload_screen := strings.NewReader(`{
-		"userId": "identified user id",
+		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"type": "screen",
@@ -584,7 +625,7 @@ func TestWebhook(t *testing.T) {
 
 	// Sending alias event
 	payload_alias := strings.NewReader(`{
-		"userId": "identified user id",
+		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"type": "alias",
@@ -595,7 +636,7 @@ func TestWebhook(t *testing.T) {
 
 	// Sending group event
 	payload_group := strings.NewReader(`{
-		"userId": "identified user id",
+		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
 		"type": "group",
@@ -609,17 +650,25 @@ func TestWebhook(t *testing.T) {
 	  }`)
 	SendEvent(payload_group, "group")
 	SendWebhookEvent()
+	SendPixelEvents()
 
 	require.Eventually(t, func() bool {
-		// fmt.Println(len(webhook.Requests()) )
-		return len(webhook.Requests()) == 8
+		return len(webhook.Requests()) == 10
 	}, time.Minute, 10*time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		return len(webhookDestination.Requests()) == 1
 	}, time.Minute, 10*time.Millisecond)
 
-	req := webhook.Requests()[0]
+    i :=-1
+	require.Eventually(t, func() bool {
+		i=i+1
+		req := webhook.Requests()[i]
+		body, _ := io.ReadAll(req.Body)
+		return gjson.GetBytes(body, "anonymousId").Str == "anonymousId_1"
+	}, time.Minute, 10*time.Millisecond)
+
+	req := webhook.Requests()[i]
 	body, err := io.ReadAll(req.Body)
 
 	require.NoError(t, err)
@@ -631,8 +680,8 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anonymousId_1")
 	require.Equal(t, gjson.GetBytes(body, "messageId").Str, "messageId_1")
 	require.Equal(t, gjson.GetBytes(body, "eventOrderNo").Str, "1")
-	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified user id")
-	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
+	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified_user_id")
+	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "e4cab80e-2f0e-4fa2-87e0-3a4af182634c")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
 
 
@@ -679,7 +728,7 @@ func TestPostgres(t *testing.T) {
 	require.Eventually(t, func() bool {
 		eventSql := "select count(*) from dev_integration_test_1.pages"
 		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
+		return myEvent.count == "2"
 	}, time.Minute, 10*time.Millisecond)
 
 	require.Eventually(t, func() bool {
@@ -691,7 +740,7 @@ func TestPostgres(t *testing.T) {
 	require.Eventually(t, func() bool {
 		eventSql := "select count(*) from dev_integration_test_1.tracks"
 		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
+		return myEvent.count == "2"
 	}, time.Minute, 10*time.Millisecond)
 }
 
@@ -730,7 +779,7 @@ func TestRedis(t *testing.T) {
 	defer conn.Close()
 	require.Eventually(t, func() bool {
 		// Similarly, get the trait1 and convert it to a string.
-		event, _ := redigo.String(conn.Do("HGET", "user:identified user id", "trait1"))
+		event, _ := redigo.String(conn.Do("HGET", "user:identified_user_id", "trait1"))
 		return event == "new-val"
 	}, time.Minute, 10*time.Millisecond)
 
@@ -765,16 +814,16 @@ func TestKafka(t *testing.T) {
 	// Count how many message processed
 	msgCount := 0
 	// Get signnal for finish
-	expectedCount := 8
+	expectedCount := 10
 out:
 	for {
 		select {
 		case msg := <-consumer:
 			msgCount++
 			t.Log("Received messages", string(msg.Key), string(msg.Value))
-			require.Equal(t, "identified user id", string(msg.Key))
+			require.Equal(t, "identified_user_id", string(msg.Key))
 			// require.Contains(t, string(msg.Value), "new-val")
-			require.Contains(t, string(msg.Value), "identified user id")
+			require.Contains(t, string(msg.Value), "identified_user_id")
 			if msgCount == expectedCount {
 				break out
 			}
