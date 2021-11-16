@@ -399,12 +399,14 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					}
 				default:
 					finalColumnValues = append(finalColumnValues, value)
+					pkgLogger.Debugf("MS: Default section finalColumnValues type %v value %v", valueType, value)
 				}
 			}
 
 			_, err = stmt.Exec(finalColumnValues...)
 			if err != nil {
 				pkgLogger.Errorf("MS: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
+				pkgLogger.Errorf("MS: Error in exec statement finalColumnValues: %v", finalColumnValues...)
 				txn.Rollback()
 				return
 			}
