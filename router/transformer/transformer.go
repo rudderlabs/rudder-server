@@ -260,14 +260,14 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 	var respCode int
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
 	if err != nil {
-		return []byte{}, 400, err
+		return []byte{}, http.StatusBadRequest, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := trans.client.Do(req)
 
 	if err != nil {
-		return []byte{}, 400, err
+		return []byte{}, http.StatusBadRequest, err
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
@@ -277,7 +277,7 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 	// error handling if body is missing
 	if resp.Body == nil {
 		respData = []byte("[Response Transform] :: transformer returned empty response body")
-		respCode = 400
+		respCode = http.StatusBadRequest
 		return respData, respCode, fmt.Errorf("[Response Transform] :: transformer returned empty response body")
 	}
 
@@ -286,7 +286,7 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 	// error handling while reading from resp.Body
 	if err != nil {
 		respData = []byte(fmt.Sprintf(`[Response Transform] :: failed to read response body, Error:: %+v`, err))
-		respCode = 400
+		respCode = http.StatusBadRequest
 		return respData, respCode, err
 	}
 
