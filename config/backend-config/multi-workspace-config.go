@@ -69,12 +69,17 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceLibrariesForWorksp
 
 //Get returns sources from all hosted workspaces
 func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
-	url := fmt.Sprintf("%s/cachedHostedWorkspaceConfig?fetchAll=true", configBackendURL)
-	initializedLock.RLock()
-	if initialized {
-		url += fmt.Sprintf("&updatedAfter=%s", successfulQueryTimeStamp.UTC().Format(misc.RFC3339Milli))
+	var url string
+	if useCacheForHostedConfig {
+		url = fmt.Sprintf("%s/cachedHostedWorkspaceConfig?fetchAll=true", configBackendURL)
+		initializedLock.RLock()
+		if initialized {
+			url += fmt.Sprintf("&updatedAfter=%s", successfulQueryTimeStamp.UTC().Format(misc.RFC3339Milli))
+		}
+		initializedLock.RUnlock()
+	} else {
+		url = fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 	}
-	initializedLock.RUnlock()
 
 	var respBody []byte
 	var statusCode int
@@ -94,7 +99,9 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 		pkgLogger.Error("Error sending request to the server", err)
 		return ConfigT{}, false
 	}
-	if string(respBody) == `{}` {
+
+	//if fetching data from cachedEndpoint and response is empty, handle it.
+	if useCacheForHostedConfig && string(respBody) == `{}` {
 		return ConfigT{}, true
 	}
 

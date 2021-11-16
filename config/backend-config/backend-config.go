@@ -45,6 +45,7 @@ var (
 	maxRegulationsPerRequest              int
 	configEnvReplacementEnabled           bool
 	successfulQueryTimeStamp              time.Time
+	useCacheForHostedConfig               bool
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
@@ -225,6 +226,7 @@ type BackendConfig interface {
 	WaitForConfig(ctx context.Context) error
 	Subscribe(channel chan utils.DataEvent, topic Topic)
 	PatchConfig(ConfigT)
+	ConfigChanged() bool
 }
 type CommonBackendConfig struct {
 	configEnvHandler types.ConfigEnvI
@@ -246,6 +248,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &configFromFile, false, "BackendConfig.configFromFile")
 	config.RegisterIntConfigVariable(1000, &maxRegulationsPerRequest, true, 1, "BackendConfig.maxRegulationsPerRequest")
 	config.RegisterBoolConfigVariable(true, &configEnvReplacementEnabled, false, "BackendConfig.envReplacementEnabled")
+	config.RegisterBoolConfigVariable(true, &useCacheForHostedConfig, false, "BackendConfig.useCacheForHostedConfig")
 }
 
 func Init() {
@@ -443,7 +446,6 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 
 // Setup backend config
 func Setup(pollRegulations bool, configEnvHandler types.ConfigEnvI) {
-	successfulQueryTimeStamp = time.Now()
 	if isMultiWorkspace {
 		backendConfig = new(MultiWorkspaceConfig)
 	} else {

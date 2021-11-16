@@ -183,6 +183,7 @@ Dedup:
   enableDedup: false
   dedupWindow: 3600s
 BackendConfig:
+  useCacheForHostedConfig: true
   configFromFile: false
   configJSONPath: /etc/rudderstack/workspaceConfig.json
   pollInterval: 5s
