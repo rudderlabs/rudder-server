@@ -147,16 +147,35 @@ func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Dura
 	}
 }
 
-func GetRouterPickupJobs(destType string) map[string]int {
+func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time) map[string]int {
 	customerLiveCount := make(map[string]float64)
 	customerPickUpCount := make(map[string]int)
 	totalCount := 0.0
+	runningCounter := jobQueryBatchSize
+	routerJobCountMutex.RLock()
+	defer routerJobCountMutex.RUnlock()
 	for customerKey := range ProcessorJobsMovingAverages["router"] {
 		customerLiveCount[customerKey] = ProcessorJobsMovingAverages["router"][customerKey][destType].Value()
 		totalCount += customerLiveCount[customerKey]
 	}
+
 	for customerKey := range ProcessorJobsMovingAverages["router"] {
-		customerPickUpCount[customerKey] = int(10000*(customerLiveCount[customerKey]/totalCount)) + 1
+		customerPickUpCount[customerKey] = int(float64(jobQueryBatchSize)*(customerLiveCount[customerKey]/totalCount)) + 1
+		/// Need to add a check if the current workspaceID is part of Active Configuration
+		if customerPickUpCount[customerKey] > RouterInMemoryJobCounts["router"][customerKey][destType] {
+			customerPickUpCount[customerKey] = RouterInMemoryJobCounts["router"][customerKey][destType]
+		}
+		runningCounter = runningCounter - customerPickUpCount[customerKey]
+	}
+	if runningCounter <= 0 {
+		return customerPickUpCount
+	}
+	totalCount = 0.0
+	for customerKey := range RouterInMemoryJobCounts["router"] {
+		totalCount += float64(int(time.Second)*RouterInMemoryJobCounts["router"][customerKey][destType]) / float64(time.Since(earliestJobMap[customerKey]))
+	}
+	for customerKey := range RouterInMemoryJobCounts["router"] {
+		customerPickUpCount[customerKey] += int(float64(runningCounter)*(customerLiveCount[customerKey]/totalCount)) + 1
 		/// Need to add a check if the current workspaceID is part of Active Configuration
 	}
 	return customerPickUpCount
