@@ -436,7 +436,7 @@ var (
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &enablePipelining, false, "Processor.enablePipelining")
-	config.RegisterIntConfigVariable(3, &pipelineBufferedItems, true, 1, "Processor.pipelineBufferedItems")
+	config.RegisterIntConfigVariable(1, &pipelineBufferedItems, true, 1, "Processor.pipelineBufferedItems")
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(200), &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	//DEPRECATED: used only on the old mainLoop:
@@ -464,7 +464,7 @@ func loadConfig() {
 }
 
 // syncTransformerFeatureJson polls the transformer feature json endpoint,
-//	updates the transformer feature map. 
+//	updates the transformer feature map.
 // It will set isUnLocked to true if it successfully fetches the transformer feature json at least once.
 func (proc *HandleT) syncTransformerFeatureJson(ctx context.Context) {
 	for {
@@ -499,8 +499,8 @@ func (proc *HandleT) syncTransformerFeatureJson(ctx context.Context) {
 				res.Body.Close()
 				time.Sleep(200 * time.Millisecond)
 				continue
-				
-			} 
+
+			}
 			if res.StatusCode == 404 {
 				proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 				break
