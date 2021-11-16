@@ -171,7 +171,7 @@ type SourceIDT string
 const USER_TRANSFORMATION = "USER_TRANSFORMATION"
 const DEST_TRANSFORMATION = "DEST_TRANSFORMATION"
 
-func (proc *HandleT) buildStatTags(sourceID, workspaceID string, destination backendconfig.DestinationT, transformationType string) map[string]string {
+func buildStatTags(sourceID, workspaceID string, destination backendconfig.DestinationT, transformationType string) map[string]string {
 	var module = "router"
 	if batchrouter.IsObjectStorageDestination(destination.DestinationDefinition.Name) {
 		module = "batch_router"
@@ -191,7 +191,7 @@ func (proc *HandleT) buildStatTags(sourceID, workspaceID string, destination bac
 }
 
 func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, destination backendconfig.DestinationT) *DestStatT {
-	tags := proc.buildStatTags(sourceID, workspaceID, destination, USER_TRANSFORMATION)
+	tags := buildStatTags(sourceID, workspaceID, destination, USER_TRANSFORMATION)
 
 	tags["transformation_id"] = destination.Transformations[0].ID
 	tags["transformation_version_id"] = destination.Transformations[0].VersionID
@@ -210,7 +210,7 @@ func (proc *HandleT) newUserTransformationStat(sourceID, workspaceID string, des
 }
 
 func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, transformAt string, destination backendconfig.DestinationT) *DestStatT {
-	tags := proc.buildStatTags(sourceID, workspaceID, destination, DEST_TRANSFORMATION)
+	tags := buildStatTags(sourceID, workspaceID, destination, DEST_TRANSFORMATION)
 
 	tags["transform_at"] = transformAt
 
@@ -359,7 +359,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	})
 
 	g.Go(misc.WithBugsnag(func() error {
-		proc.getTransformerFeatureJson(ctx)
+		proc.syncTransformerFeatureJson(ctx)
 		return nil
 	}))
 
@@ -463,7 +463,10 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
 }
 
-func (proc *HandleT) getTransformerFeatureJson(ctx context.Context) {
+// syncTransformerFeatureJson polls the transformer feature json endpoint,
+//	updates the transformer feature map. 
+// It will set isUnLocked to true if it successfully fetches the transformer feature json at least once.
+func (proc *HandleT) syncTransformerFeatureJson(ctx context.Context) {
 	for {
 		for i := 0; i < featuresRetryMaxAttempts; i++ {
 			if ctx.Err() != nil {
@@ -492,12 +495,13 @@ func (proc *HandleT) getTransformerFeatureJson(ctx context.Context) {
 					proc.transformerFeatures = json.RawMessage(body)
 					res.Body.Close()
 					break
-				} else {
-					res.Body.Close()
-					time.Sleep(200 * time.Millisecond)
-					continue
 				}
-			} else if res.StatusCode == 404 {
+				res.Body.Close()
+				time.Sleep(200 * time.Millisecond)
+				continue
+				
+			} 
+			if res.StatusCode == 404 {
 				proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 				break
 			}
@@ -1986,8 +1990,7 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 		case <-time.After(mainLoopTimeout):
 			proc.paused = false
 			if isUnLocked {
-				var found bool
-				found = proc.handlePendingGatewayJobs()
+				found := proc.handlePendingGatewayJobs()
 				if found {
 					currLoopSleep = time.Duration(0)
 				} else {
