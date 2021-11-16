@@ -18,6 +18,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
+	"github.com/rudderlabs/rudder-server/router/rterror"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/thoas/go-funk"
@@ -63,11 +64,6 @@ var (
 	dateFormatLayouts                  map[string]string // string -> string
 	dateFormatMap                      map[string]string // (sourceId:destinationId) -> dateFormat
 	dateFormatMapLock                  sync.RWMutex
-)
-
-const (
-	DisabledEgress         = "200: outgoing disabled"
-	InvalidServiceProvider = "service provider not supported"
 )
 
 type HandleT struct {
@@ -501,7 +497,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 
 func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
 	if disableEgress {
-		return StorageUploadOutput{Error: errors.New(DisabledEgress)}
+		return StorageUploadOutput{Error: rterror.DisabledEgress}
 	}
 
 	var localTmpDirName string
@@ -602,6 +598,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 
 	brt.logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
 	useRudderStorage := isWarehouse && misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
+	provider = "random"
 	uploader, err := brt.fileManagerFactory.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
@@ -691,7 +688,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		out := asyncdestinationmanager.AsyncUploadOutput{}
 		for _, job := range batchJobs.Jobs {
 			out.SucceededJobIDs = append(out.SucceededJobIDs, job.JobID)
-			out.SuccessResponse = fmt.Sprintf(`{"error":"%s"`, DisabledEgress)
+			out.SuccessResponse = fmt.Sprintf(`{"error":"%s"`, rterror.DisabledEgress.Error())
 		}
 		brt.setMultipleJobStatus(out)
 		return
@@ -954,13 +951,13 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 
 	jsonPayload, err := json.Marshal(&payload)
 	if err != nil {
-		brt.logger.Errorf("BRT: Failed to marshal WH staging file payload error:%v", err)
+		brt.logger.Errorf("BRT: Failed to marshal WH staging file payload rterror:%v", err)
 	}
 	uri := fmt.Sprintf(`%s/v1/process`, warehouseURL)
 	_, err = brt.netHandle.Post(uri, "application/json; charset=utf-8",
 		bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
+		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, rterror:%v", uri, err)
 	} else {
 		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
 	}
@@ -976,15 +973,18 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
 	if err != nil {
-		switch err.Error() {
-		case DisabledEgress:
-			brt.logger.Debugf("BRT: Outgoing traffic disabled : %v at %v", batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
+		switch {
+		case errors.Is(err, rterror.DisabledEgress):
+			brt.logger.Debugf("BRT: Outgoing traffic disabled : %v at %v", batchJobs.BatchDestination.Source.ID,
+				time.Now().Format("01-02-2006"))
 			batchJobState = jobsdb.Succeeded.State
-			errorResp = []byte(fmt.Sprintf(`{"success":"%s"}`, DisabledEgress))
-		case InvalidServiceProvider:
-			brt.logger.Debugf("BRT: Destination service provider not supported : %v at %v", batchJobs.BatchDestination.Source.ID, time.Now().Format("01-02-2006"))
+			errorResp = []byte(fmt.Sprintf(`{"success":"%s"}`, err.Error()))
+		case errors.Is(err, rterror.InvalidServiceProvider):
+			brt.logger.Warnf("BRT: Destination %s : %s at %v",
+				batchJobs.BatchDestination.Destination.DestinationDefinition.DisplayName, err.Error(),
+				batchJobs.BatchDestination.Destination.ID, time.Now().Format("01-02-2006"))
 			batchJobState = jobsdb.Aborted.State
-			errorResp = []byte(fmt.Sprintf(`{"success":"%s"}`, InvalidServiceProvider))
+			errorResp = []byte(fmt.Sprintf(`{"success":"%s"}`, err.Error()))
 		default:
 			brt.logger.Errorf("BRT: Error uploading to object storage: %v %v", err, batchJobs.BatchDestination.Source.ID)
 			batchJobState = jobsdb.Failed.State
@@ -1045,12 +1045,14 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 		timeElapsed := time.Since(firstAttemptedAt)
 		switch jobState {
 		case jobsdb.Failed.State:
-			if timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.maxFailedCountForJob && !postToWarehouseErr {
+			if !postToWarehouseErr && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.
+				maxFailedCountForJob {
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 				abortedEvents = append(abortedEvents, job)
 				router.PrepareJobRunIdAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 				jobState = jobsdb.Aborted.State
-			} else if isWarehouse && postToWarehouseErr {
+			}
+			if postToWarehouseErr && isWarehouse {
 				// change job state to abort state after warehouse service is continuously failing more than warehouseServiceMaxRetryTimeinHr time
 				warehouseServiceFailedTimeLock.RLock()
 				if time.Since(warehouseServiceFailedTime) > warehouseServiceMaxRetryTime {
