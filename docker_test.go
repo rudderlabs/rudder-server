@@ -543,7 +543,15 @@ func TestWebhook(t *testing.T) {
 	payload_track := strings.NewReader(`{
 		"userId": "identified user id",
 		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1"
+		"messageId":"messageId_1",
+		"type": "track",
+		"event": "Product Reviewed",
+		"properties": {
+		  "review_id": "12345",
+		  "product_id" : "123",
+		  "rating" : 3.0,
+		  "review_body" : "Average product, expected much more."
+		}
 	  }`)
 	SendEvent(payload_track, "track")
 
@@ -551,7 +559,13 @@ func TestWebhook(t *testing.T) {
 	payload_page := strings.NewReader(`{
 		"userId": "identified user id",
 		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1"
+		"messageId":"messageId_1",
+		"type": "page",
+		"name": "Home",
+		"properties": {
+		  "title": "Home | RudderStack",
+		  "url": "http://www.rudderstack.com"
+		}
 	  }`)
 	SendEvent(payload_page, "page")
 
@@ -559,7 +573,12 @@ func TestWebhook(t *testing.T) {
 	payload_screen := strings.NewReader(`{
 		"userId": "identified user id",
 		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1"
+		"messageId":"messageId_1",
+		"type": "screen",
+		"name": "Main",
+		"properties": {
+		  "prop_key": "prop_value"
+		}
 	  }`)
 	SendEvent(payload_screen, "screen")
 
@@ -567,20 +586,32 @@ func TestWebhook(t *testing.T) {
 	payload_alias := strings.NewReader(`{
 		"userId": "identified user id",
 		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1"
-	}`)
+		"messageId":"messageId_1",
+		"type": "alias",
+		"previousId": "name@surname.com",
+		"userId": "12345"
+	  }`)
 	SendEvent(payload_alias, "alias")
 
 	// Sending group event
 	payload_group := strings.NewReader(`{
 		"userId": "identified user id",
 		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1"
-	}`)
+		"messageId":"messageId_1",
+		"type": "group",
+		"groupId": "12345",
+		"traits": {
+		  "name": "MyGroup",
+		  "industry": "IT",
+		  "employees": 450,
+		  "plan": "basic"
+		}
+	  }`)
 	SendEvent(payload_group, "group")
 	SendWebhookEvent()
 
 	require.Eventually(t, func() bool {
+		// fmt.Println(len(webhook.Requests()) )
 		return len(webhook.Requests()) == 8
 	}, time.Minute, 10*time.Millisecond)
 
