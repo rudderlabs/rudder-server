@@ -12,15 +12,21 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 )
 
 const statusTrackerFile = "deleteStatusTracker.txt"
 const listMaxItem int64 = 1000
+
+var maxGoRoutine = int64(runtime.NumCPU()) * 8
 
 type deleteManager interface {
 	Delete(ctx context.Context, userAttributes []model.UserAttribute, fileName string) ([]byte, error)
@@ -139,6 +145,7 @@ func updateStatusTrackerFile(fileName string) error {
 }
 
 //downloads `fileName` locally
+//Note: download happens concurrently in 5 go routine by default
 func (b *Batch) download(ctx context.Context, fileName string) error {
 	fileNamePrefix := strings.Split(fileName, "/")
 	filePtr, err := os.OpenFile(fileNamePrefix[len(fileNamePrefix)-1], os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
@@ -210,7 +217,7 @@ func compress(fileName string, cleanedBytes []byte) error {
 // delete users corresponding to `userAttributes` from `fileName` available locally
 func (b *Batch) delete(ctx context.Context, userAttributes []model.UserAttribute, fileName string) error {
 
-	decompressedFileName := "decompressedFile.json"
+	decompressedFileName := "decompressed_" + fileName
 	err := decompress(fileName, decompressedFileName)
 	if err != nil {
 		return fmt.Errorf("error while decompressing file: %w", err)
@@ -221,6 +228,8 @@ func (b *Batch) delete(ctx context.Context, userAttributes []model.UserAttribute
 		return fmt.Errorf("error while cleaning object, %w", err)
 	}
 
+	os.Remove(decompressedFileName)
+
 	err = compress(fileName, out)
 	if err != nil {
 		return fmt.Errorf("error while compressing file: %w", err)
@@ -228,20 +237,44 @@ func (b *Batch) delete(ctx context.Context, userAttributes []model.UserAttribute
 	return nil
 }
 
+func withExpBackoff(fu func(context.Context, string) error, ctx context.Context, fileName string) error {
+
+	maxWait := time.Minute * 10
+	bo := backoff.NewExponentialBackOff()
+	boCtx := backoff.WithContext(bo, ctx)
+	bo.MaxInterval = time.Minute
+	bo.MaxElapsedTime = maxWait
+
+	if err := backoff.Retry(func() error {
+		err := fu(ctx, fileName)
+		return err
+	}, boCtx); err != nil {
+		if bo.NextBackOff() == backoff.Stop {
+			return err
+		}
+
+	}
+	return nil
+}
+
 //replace old json.gz & statusTrackerFile with the new during upload.
-func (b *Batch) upload(ctx context.Context, cleanedFile string, fileNamePrefix ...string) error {
-	fmt.Println("upload called")
+//Note: upload happens concurrently in 5 go routine by default
+func (b *Batch) upload(ctx context.Context, fileName string) error {
+
+	fileNamePrefix := strings.Split(fileName, "/")
+	cleanedFile := fileNamePrefix[len(fileNamePrefix)-1]
+	fileNamePrefix = fileNamePrefix[:len(fileNamePrefix)-1]
+
 	file, err := os.OpenFile(cleanedFile, os.O_RDONLY, os.FileMode(int(0777)))
 	if err != nil {
 		return fmt.Errorf("error while opening cleaned file for uploading: %w", err)
 	}
-	file.Name()
+
 	_, err = b.FM.Upload(file, fileNamePrefix...)
 	if err != nil {
 		return fmt.Errorf("error while uploading cleaned file: %w", err)
 	}
 	file.Close()
-	fmt.Println("upload cleaned file successful")
 
 	file, err = os.OpenFile(statusTrackerFile, os.O_RDONLY, os.FileMode(int(0777)))
 	if err != nil {
@@ -253,7 +286,6 @@ func (b *Batch) upload(ctx context.Context, cleanedFile string, fileNamePrefix .
 	if err != nil {
 		return fmt.Errorf("error while uploading statusTrackerFile file: %w", err)
 	}
-	fmt.Println("upload statusTrackerFile successful")
 
 	return nil
 }
@@ -305,10 +337,10 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 		files = removeCleanedFiles(files, cleanedFiles)
 
 	}
-
+	mutex := sync.Mutex{}
 	for i := 0; i < len(files); i++ {
 		fmt.Printf("cleaning started for file: %s\n", files[i])
-		err = batch.download(ctx, files[i].Key)
+		err = withExpBackoff(batch.download, ctx, files[i].Key)
 		if err != nil {
 			return err
 		}
@@ -318,14 +350,13 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 		if err != nil {
 			return fmt.Errorf("error while deleting object, %w", err)
 		}
-
+		mutex.Lock()
 		err = updateStatusTrackerFile(files[i].Key)
 		if err != nil {
 			return fmt.Errorf("error while updating status tracker file, %w", err)
 		}
-
-		//TODO: add retry mechanism, if fails
-		err = batch.upload(ctx, fileNamePrefix[len(fileNamePrefix)-1], fileNamePrefix[:len(fileNamePrefix)-1]...)
+		mutex.Unlock()
+		err = withExpBackoff(batch.upload, ctx, files[i].Key)
 		if err != nil {
 			return fmt.Errorf("error while uploading cleaned file, %w", err)
 		}
