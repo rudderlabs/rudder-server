@@ -69,7 +69,7 @@ func (b *Batch) listFilesAndCheckTrackerFile(ctx context.Context) ([]*filemanage
 	for i := 0; i < len(fileObjects); i++ {
 		if regexRequiredSuffix.Match([]byte(fileObjects[i].Key)) {
 			gzFileObjects[index] = fileObjects[i]
-			// fmt.Println(gzFileObjects[index].Key)
+			fmt.Println(gzFileObjects[index].Key)
 			index++
 		}
 	}
@@ -88,10 +88,9 @@ func removeCleanedFiles(files []*filemanager.FileObject, cleanedFiles []string) 
 		return files[i].Key < files[j].Key
 	})
 
-	finalFiles := make([]*filemanager.FileObject, len(files)-len(cleanedFiles))
 	i := 0
 	j := 0
-	fmt.Println("len of finalFiles=", len(finalFiles))
+	presentCount := 0
 	present := make([]bool, len(files))
 	for j < len(cleanedFiles) {
 
@@ -101,11 +100,15 @@ func removeCleanedFiles(files []*filemanager.FileObject, cleanedFiles []string) 
 			j++
 		} else {
 			present[i] = true
+			presentCount++
 			i++
 			j++
 		}
 	}
 	j = 0
+	finalFiles := make([]*filemanager.FileObject, len(files)-presentCount)
+	fmt.Println("len of finalFiles=", len(finalFiles))
+
 	fmt.Println("uncleaned files are")
 	for i := 0; i < len(files); i++ {
 		if !present[i] {
@@ -136,8 +139,9 @@ func updateStatusTrackerFile(fileName string) error {
 }
 
 //downloads `fileName` locally
-func (b *Batch) Download(ctx context.Context, fileName string) error {
-	filePtr, err := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+func (b *Batch) download(ctx context.Context, fileName string) error {
+	fileNamePrefix := strings.Split(fileName, "/")
+	filePtr, err := os.OpenFile(fileNamePrefix[len(fileNamePrefix)-1], os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("error while opening file, %w", err)
 	}
@@ -225,21 +229,21 @@ func (b *Batch) delete(ctx context.Context, userAttributes []model.UserAttribute
 }
 
 //replace old json.gz & statusTrackerFile with the new during upload.
-func (b *Batch) upload(ctx context.Context, cleanedFile string) error {
+func (b *Batch) upload(ctx context.Context, cleanedFile string, fileNamePrefix ...string) error {
 	fmt.Println("upload called")
-	file, err := os.OpenFile(cleanedFile, os.O_CREATE|os.O_RDWR, os.FileMode(int(0777)))
+	file, err := os.OpenFile(cleanedFile, os.O_RDONLY, os.FileMode(int(0777)))
 	if err != nil {
 		return fmt.Errorf("error while opening cleaned file for uploading: %w", err)
 	}
 	file.Name()
-	_, err = b.FM.Upload(file)
+	_, err = b.FM.Upload(file, fileNamePrefix...)
 	if err != nil {
 		return fmt.Errorf("error while uploading cleaned file: %w", err)
 	}
 	file.Close()
 	fmt.Println("upload cleaned file successful")
 
-	file, err = os.OpenFile(statusTrackerFile, os.O_CREATE|os.O_RDWR, os.FileMode(int(0777)))
+	file, err = os.OpenFile(statusTrackerFile, os.O_RDONLY, os.FileMode(int(0777)))
 	if err != nil {
 		return fmt.Errorf("error while opening statusTrackerFile file for uploading: %w", err)
 	}
@@ -286,7 +290,7 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 	//since those files are already cleaned.
 	if exist {
 
-		err = batch.Download(ctx, statusTrackerFile)
+		err = batch.download(ctx, statusTrackerFile)
 		if err != nil {
 			return fmt.Errorf("error while downloading statusTrackerFile:%w", err)
 		}
@@ -304,13 +308,13 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 
 	for i := 0; i < len(files); i++ {
 		fmt.Printf("cleaning started for file: %s\n", files[i])
-
-		err = batch.Download(ctx, files[i].Key)
+		err = batch.download(ctx, files[i].Key)
 		if err != nil {
 			return err
 		}
 
-		err := batch.delete(ctx, job.UserAttributes, files[i].Key)
+		fileNamePrefix := strings.Split(files[i].Key, "/")
+		err := batch.delete(ctx, job.UserAttributes, fileNamePrefix[len(fileNamePrefix)-1])
 		if err != nil {
 			return fmt.Errorf("error while deleting object, %w", err)
 		}
@@ -321,7 +325,7 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 		}
 
 		//TODO: add retry mechanism, if fails
-		err = batch.upload(ctx, files[i].Key)
+		err = batch.upload(ctx, fileNamePrefix[len(fileNamePrefix)-1], fileNamePrefix[:len(fileNamePrefix)-1]...)
 		if err != nil {
 			return fmt.Errorf("error while uploading cleaned file, %w", err)
 		}

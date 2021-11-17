@@ -125,17 +125,17 @@ func (m *Mockdeleter) EXPECT() *MockdeleterMockRecorder {
 	return m.recorder
 }
 
-// DeleteJob mocks base method.
-func (m *Mockdeleter) DeleteJob(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error) {
+// Delete mocks base method.
+func (m *Mockdeleter) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteJob", ctx, job, dest)
+	ret := m.ctrl.Call(m, "Delete", ctx, job, destDetail)
 	ret0, _ := ret[0].(model.JobStatus)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// DeleteJob indicates an expected call of DeleteJob.
-func (mr *MockdeleterMockRecorder) DeleteJob(ctx, job, dest interface{}) *gomock.Call {
+// Delete indicates an expected call of Delete.
+func (mr *MockdeleterMockRecorder) Delete(ctx, job, destDetail interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteJob", reflect.TypeOf((*Mockdeleter)(nil).DeleteJob), ctx, job, dest)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*Mockdeleter)(nil).Delete), ctx, job, destDetail)
 }

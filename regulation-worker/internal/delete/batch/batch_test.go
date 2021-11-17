@@ -50,8 +50,8 @@ func TestDelete(t *testing.T) {
 			dest: model.Destination{
 				Config: map[string]interface{}{
 					"bucketName":  "regulation-test-data",
-					"accessKeyID": "xyz",
-					"accessKey":   "abc",
+					"accessKeyID": "abc",
+					"accessKey":   "xyz",
 					"enableSSE":   false,
 				},
 				Name: "S3",

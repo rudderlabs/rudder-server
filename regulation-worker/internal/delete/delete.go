@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kv_store"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"golang.org/x/tools/0.20210802203754-9b21a8868e16/go/analysis/passes/nilfunc"
 )
 
 // type deleter interface {
@@ -21,6 +20,7 @@ import (
 // }
 type DeleteFacade struct {
 }
+
 
 //get destType & access credentials from workspaceID & destID
 //call appropriate struct file type or api type based on destType.
@@ -32,21 +32,21 @@ func (d *DeleteFacade) Delete(ctx context.Context, job model.Job, destDetail mod
 		}
 		return delAPI.DeleteManager.Delete(ctx, job, destDetail)
 	case "batch":
-		err:=batch.Delete(ctx,job,destDetail.Config,destDetail.Name)
-		if err!=nil{
+		err := batch.Delete(ctx, job, destDetail.Config, destDetail.Name)
+		if err != nil {
 			return model.JobStatusFailed, err
-		} else{
-			return model.JobStatusComplete,nil
+		} else {
+			return model.JobStatusComplete, nil
 		}
 	case "kv_store":
 		delKVStore := kv_store.KVStore{
 			DeleteManager: &kv_store.Mock_KVStoreWorker{},
 		}
-		return delKVStore.DeleteManager.Delete(ctx, job, dest)
+		return delKVStore.DeleteManager.Delete(ctx, job, destDetail)
 
 	default:
 		fmt.Println("default called")
-		return model.JobStatusFailed, fmt.Errorf("deletion feature not available for %s destination type", dest.Type)
+		return model.JobStatusFailed, fmt.Errorf("deletion feature not available for %s destination type", destDetail.Type)
 
 	}
 }
