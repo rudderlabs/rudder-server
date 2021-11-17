@@ -11,7 +11,7 @@ import (
 	"context"
 	"database/sql"
 	b64 "encoding/base64"
-	_ "encoding/json"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"html/template"
@@ -80,6 +80,8 @@ var (
 	brokerPort       string
 	localhostPort    string
 	localhostPortInt int
+	EventID string
+	VersionID string
 )
 
 type WebhookRecorder struct {
@@ -312,6 +314,7 @@ func GetEvent(url string, method string)(string, error){
 		fmt.Println(err)
 		return "" , err
 	}
+	req.Header.Add("Authorization", "Basic cnVkZGVyOnBhc3N3b3Jk")
 	res, err := client.Do(req)
 	if err != nil {
 		fmt.Println(err)
@@ -414,7 +417,7 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("DEST_TRANSFORM_URL", transformURL)
 	os.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
-	os.Setenv("WORKSPACE_TOKEN", "1vLbwltztKUgpuFxmJlSe1esX8c")
+	// os.Setenv("WORKSPACE_TOKEN", "1vLbwltztKUgpuFxmJlSe1esX8c")
 	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
 
 	httpPortInt, err := freeport.GetFreePort()
@@ -493,6 +496,8 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
 	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE","true")
 	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
+	os.Setenv("RSERVER_EVENT_SCHEMAS_ENABLE_EVENT_SCHEMAS_FEATURE", "true")
+	os.Setenv("RSERVER_EVENT_SCHEMAS_SYNC_INTERVAL","15")
 
 	fmt.Printf("--- Setup done (%s)\n", time.Since(setupStart))
 
@@ -768,8 +773,123 @@ func TestAudiencelist(t *testing.T) {
 		},
 		"userId": "user123"
 		}`)
-	resbody, _ :=SendEvent(payload, "audiencelist")
-	require.Equal(t, resbody, "OK")
+	resBody, _ :=SendEvent(payload, "audiencelist")
+	require.Equal(t, resBody, "OK")
+}
+
+type eventSchemasObject struct {
+	EventID string
+	EventType string
+	VersionID string
+
+  }
+
+
+// Verify Event Models EndPoint 
+func TestEventModels(t *testing.T) {
+	// GET /schemas/event-models
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-models", httpPort)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Eventually(t, func() bool {
+		// Similarly, pole until the Event Schema Tables are updated
+		resBody, _ = GetEvent(url, method)
+		return resBody != "[]"
+	}, time.Minute, 10*time.Millisecond)
+	// log.Println(resBody)
+	require.NotEqual(t, resBody, "[]")
+	b := []byte(resBody)
+	var eventSchemas []eventSchemasObject
+
+	err := json.Unmarshal(b, &eventSchemas)
+	if err != nil {
+		fmt.Println("error:", err)
+	}
+	fmt.Println( "// loop over array of structs of shipObject" )
+	for k := range eventSchemas {
+		if eventSchemas[k].EventType == "page" {
+			EventID = eventSchemas[k].EventID
+		}
+  	}
+	if EventID == "" {
+		fmt.Println("error: Page type EventID not found")
+	}
+	log.Println("Test Schemas Event ID", EventID)
+}
+
+// Verify Event Versions EndPoint 
+func TestEventVersions(t *testing.T) {
+	// GET /schemas/event-versions
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-versions?EventID=%s", httpPort,EventID)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Contains(t, resBody, EventID)
+
+	b := []byte(resBody)
+	var eventSchemas []eventSchemasObject
+
+	err := json.Unmarshal(b, &eventSchemas)
+	if err != nil {
+		fmt.Println("error:", err)
+	}
+	VersionID = eventSchemas[0].VersionID
+	log.Println("Test Schemas Event ID's VersionID: ", VersionID)
+}
+
+// Verify schemas/event-model/{EventID}/key-counts EndPoint 
+func TestEventModelKeyCounts(t *testing.T) {
+	// GET schemas/event-model/{EventID}/key-counts
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/key-counts", httpPort,EventID)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Contains(t, resBody, "messageId")
+}
+
+// Verify /schemas/event-model/{EventID}/metadata EndPoint 
+func TestEventModelMetadata(t *testing.T) {
+	// GET /schemas/event-model/{EventID}/metadata
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/metadata", httpPort,EventID)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Contains(t, resBody, "messageId")
+}
+
+// Verify /schemas/event-version/{VersionID}/metadata EndPoint 
+func TestEventVersionMetadata(t *testing.T) {
+	// GET /schemas/event-version/{VersionID}/metadata
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/metadata", httpPort, VersionID)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Contains(t, resBody, "messageId")
+}
+
+// Verify /schemas/event-version/{VersionID}/missing-keys EndPoint 
+func TestEventVersionMissingKeys(t *testing.T) {
+	// GET /schemas/event-version/{VersionID}/metadata
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/missing-keys", httpPort, VersionID)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	log.Println("EventID", EventID)
+	log.Println("VersionID", VersionID)
+	log.Println(resBody)
+	require.Contains(t, resBody, "originalTimestamp")
+	require.Contains(t, resBody, "sentAt" )
+	require.Contains(t, resBody, "channel" )
+	require.Contains(t, resBody, "integrations.All" )
+}
+
+// Verify /schemas/event-models/json-schemas EndPoint
+func TestEventModelsJsonSchemas(t *testing.T) {
+	// GET /schemas/event-models/json-schemas
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-models/json-schemas", httpPort)
+	method := "GET"
+	resBody, _ := GetEvent(url, method)
+	require.Eventually(t, func() bool {
+		// Similarly, pole until the Event Schema Tables are updated
+		resBody, _ = GetEvent(url, method)
+		return resBody != "[]"
+	}, time.Minute, 10*time.Millisecond)
+	require.NotEqual(t, resBody, "[]")
 }
 
 // Verify Event in Redis
@@ -822,7 +942,7 @@ out:
 		select {
 		case msg := <-consumer:
 			msgCount++
-			t.Log("Received messages", string(msg.Key), string(msg.Value))
+			// t.Log("Received messages", string(msg.Key), string(msg.Value))
 			require.Equal(t, "identified_user_id", string(msg.Key))
 			// require.Contains(t, string(msg.Value), "new-val")
 			require.Contains(t, string(msg.Value), "identified_user_id")
@@ -863,7 +983,7 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 
 				case msg := <-consumer.Messages():
 					consumers <- msg
-					log.Println("Got message on topic ", topic, msg.Value)
+					// log.Println("Got message on topic ", topic, msg.Value)
 				}
 			}
 		}(topic, consumer)
