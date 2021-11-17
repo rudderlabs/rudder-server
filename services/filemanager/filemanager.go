@@ -15,9 +15,6 @@ var (
 	DefaultFileManagerFactory FileManagerFactory
 )
 
-const (
-	InvalidServiceProvider = "service provider not supported"
-)
 type FileManagerFactoryT struct{}
 
 type UploadOutput struct {
