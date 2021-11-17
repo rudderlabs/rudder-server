@@ -405,11 +405,11 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			}
 
 			pkgLogger.Debugf("MS: sorted column keys: %v", sortedColumnKeys)
+			pkgLogger.Debugf("MS: Final column values: %v", finalColumnValues...)
+			pkgLogger.Debugf("MS: Record Interface: %v", recordInterface)
 			_, err = stmt.Exec(finalColumnValues...)
 			if err != nil {
 				pkgLogger.Errorf("MS: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
-				pkgLogger.Errorf("MS: Error in exec statement finalColumnValues: %v", finalColumnValues...)
-				pkgLogger.Errorf("MS: Error in exec statement recordInterface: %v", recordInterface)
 				txn.Rollback()
 				return
 			}
