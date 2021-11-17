@@ -21,7 +21,7 @@ type destDetail interface {
 	GetDestDetails(destID string) (model.Destination, error)
 }
 type deleter interface {
-	DeleteJob(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error)
+	Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus, error)
 }
 
 type JobSvc struct {
@@ -49,12 +49,12 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	}
 
 	//executing deletion
-	dest, err := js.DestDetail.GetDestDetails(job.DestinationID)
+	destDetail, err := js.DestDetail.GetDestDetails(job.DestinationID)
 	if err != nil {
 		return fmt.Errorf("error while getting destination details: %w", err)
 	}
 
-	status, err = js.Deleter.DeleteJob(ctx, job, dest)
+	status, err = js.Deleter.Delete(ctx, job, destDetail)
 	if err != nil {
 		return err
 	}

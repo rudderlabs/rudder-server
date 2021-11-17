@@ -1,12 +1,8 @@
 package batch
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
-	"io"
-	"log"
 	"os"
 	"os/exec"
 
@@ -20,39 +16,9 @@ import (
 type S3DeleteManager struct {
 }
 
-func decompress(fileName, uncompressedFileName string) {
-
-	gzipFile, err := os.Open(fileName)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	gzipReader, err := gzip.NewReader(gzipFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer gzipReader.Close()
-
-	outfileWriter, err := os.OpenFile(uncompressedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(int(0777)))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer outfileWriter.Close()
-
-	_, err = io.Copy(outfileWriter, gzipReader)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
 //reason behind using sed: https://www.rtuin.nl/2012/01/fast-search-and-replace-in-large-files-with-sed/
-func (dm *S3DeleteManager) Delete(ctx context.Context, userAttributes []model.UserAttribute, fileName string) (model.JobStatus, error) {
-
-	//unzip
-	uncompressedFileName := "uncompressedFile2.json"
-	fmt.Println("decompress started")
-	decompress(fileName, uncompressedFileName)
-	fmt.Println("decompress complete")
+//Delete user details corresponding to `userAttributes` from `uncompressedFileName` & delete `uncompuressedFileName`
+func (dm *S3DeleteManager) Delete(ctx context.Context, userAttributes []model.UserAttribute, uncompressedFileName string) ([]byte, error) {
 
 	//actual delete
 	var n int
@@ -65,8 +31,8 @@ func (dm *S3DeleteManager) Delete(ctx context.Context, userAttributes []model.Us
 			n += len(*userAttributes[i].Phone) + 4
 		}
 	}
-	// searchObject = append(searchObject, "'"...)
-	/*searchObject := make([]byte, 0, n)
+
+	searchObject := make([]byte, 0, n)
 	for _, users := range userAttributes {
 		searchObject = append(searchObject, "/"...)
 		searchObject = append(searchObject, users.UserID...)
@@ -84,11 +50,10 @@ func (dm *S3DeleteManager) Delete(ctx context.Context, userAttributes []model.Us
 			searchObject = append(searchObject, "/d;"...)
 		}
 	}
-	*/
-	searchObject := "/Jermaine1473336609491897794707338/d"
+
 	out, err := exec.Command("sed", "-e", string(searchObject), uncompressedFileName).Output()
 	if err != nil {
-		fmt.Printf("error while running command: %s", err)
+		return nil, fmt.Errorf("error while running sed command: %s", err)
 	}
 	// cleanedFileName := "cleanedFile-1.json"
 	// err = os.WriteFile(cleanedFileName, out, 0644)
@@ -96,29 +61,7 @@ func (dm *S3DeleteManager) Delete(ctx context.Context, userAttributes []model.Us
 	// 	fmt.Printf("%s", err)
 	// }
 
-	//gzip the deleted file again
-	compress(fileName, out)
+	os.Remove(uncompressedFileName)
 
-	return model.JobStatusComplete, nil
-}
-
-func compress(fileName string, cleanedBytes []byte) {
-
-	//compressing
-	var b bytes.Buffer
-	w := gzip.NewWriter(&b)
-	w.Write([]byte(cleanedBytes))
-	w.Close() // must close this first to flush the bytes to the buffer.
-
-	//writing compressed file to <fileName>
-	outfileWriter, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer outfileWriter.Close()
-	_, err = outfileWriter.Write(b.Bytes())
-	if err != nil {
-		fmt.Println("error while writing cleaned & compressed data:", err)
-	}
-
+	return out, nil
 }

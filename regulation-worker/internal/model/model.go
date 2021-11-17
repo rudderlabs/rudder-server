@@ -6,9 +6,10 @@ import (
 )
 
 var (
-	ErrDestTypeNotFound = errors.New("destination type not found for the destination ID")
-	ErrDestDetail       = errors.New("error while getting destination details")
-	ErrNoRunnableJob    = errors.New("no runnable job found")
+	ErrDestTypeNotFound   = errors.New("destination type not found for the destination ID")
+	ErrDestDetail         = errors.New("error while getting destination details")
+	ErrNoRunnableJob      = errors.New("no runnable job found")
+	ErrDestNotImplemented = errors.New("job deletion not implemented for the destination")
 )
 
 type JobStatus string

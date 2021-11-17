@@ -13,13 +13,13 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kv_store"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"golang.org/x/tools/0.20210802203754-9b21a8868e16/go/analysis/passes/nilfunc"
 )
 
 // type deleter interface {
 // 	Delete(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error)
 // }
 type DeleteFacade struct {
-	// Deleter deleter
 }
 
 //get destType & access credentials from workspaceID & destID
@@ -32,21 +32,12 @@ func (d *DeleteFacade) Delete(ctx context.Context, job model.Job, destDetail mod
 		}
 		return delAPI.DeleteManager.Delete(ctx, job, destDetail)
 	case "batch":
-		batch.Batch{}
-		// fmFactory := filemanager.FileManagerFactoryT{}
-		// fm, err := fmFactory.New(&filemanager.SettingsT{
-		// 	Provider: dest.Name,
-		// 	Config:   dest.Config,
-		// })
-		// if err != nil {
-		// 	return model.JobStatusFailed, fmt.Errorf("error while creating file manager: %w", err)
-		// }
-
-		// delBatch := batch.Batch{
-		// 	FileManager:   fm,
-		// 	DeleteManager: &batch.Mock_batchWorker{},
-		// }
-		return delBatch.DeleteManager.Delete(ctx, job, dest)
+		err:=batch.Delete(ctx,job,destDetail.Config,destDetail.Name)
+		if err!=nil{
+			return model.JobStatusFailed, err
+		} else{
+			return model.JobStatusComplete,nil
+		}
 	case "kv_store":
 		delKVStore := kv_store.KVStore{
 			DeleteManager: &kv_store.Mock_KVStoreWorker{},
