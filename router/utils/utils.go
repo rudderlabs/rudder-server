@@ -31,7 +31,7 @@ func Init() {
 }
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(24), &JobRetention, true, time.Hour, "Router.jobRetention")
+	config.RegisterDurationConfigVariable(time.Duration(720), &JobRetention, true, time.Hour, "Router.jobRetention")
 }
 
 func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) (bool, string) {
