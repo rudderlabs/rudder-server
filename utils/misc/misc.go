@@ -338,7 +338,12 @@ func RemoveEmptyFolderStructureForFilePath(fp string) {
 	if fp == "" {
 		return
 	}
-	for currDir := filepath.Dir(fp); currDir != "/" && currDir != "." && !Contains(tempFolders, currDir); {
+	for currDir := filepath.Dir(fp); currDir != "/" && currDir != "."; {
+		// Checking if the currDir is present in the temporary folders or not
+		// If present we should stop at that point.
+		if _, ok := tempFolders[currDir]; ok {
+			break
+		}
 		parentDir := filepath.Dir(currDir)
 		err := syscall.Rmdir(currDir)
 		if err != nil {
