@@ -598,6 +598,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 
 	brt.logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
 	useRudderStorage := isWarehouse && misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
+	provider = "random"
 	uploader, err := brt.fileManagerFactory.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
@@ -979,7 +980,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 			batchJobState = jobsdb.Succeeded.State
 			errorResp = []byte(fmt.Sprintf(`{"success":"%s"}`, err.Error()))
 		case errors.Is(err, rterror.InvalidServiceProvider):
-			brt.logger.Warnf("BRT: Destination %s : %s at %v",
+			brt.logger.Warnf("BRT: Destination %s : %s for destination ID : %v at %v",
 				batchJobs.BatchDestination.Destination.DestinationDefinition.DisplayName, err.Error(),
 				batchJobs.BatchDestination.Destination.ID, time.Now().Format("01-02-2006"))
 			batchJobState = jobsdb.Aborted.State
