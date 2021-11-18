@@ -642,8 +642,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				if _, ok := worker.rt.routerLatencyStat[workspaceID]; !ok {
 					worker.rt.routerLatencyStat[workspaceID] = misc.NewMovingAverage()
 				}
-				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken))
-				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken))
+				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken / time.Millisecond))
 
 				// END: request to destination endpoint
 
@@ -1342,7 +1341,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	//REPORTING - ROUTER - END
 	for customer := range routerCustomerJobStatusCount {
 		for destType := range routerCustomerJobStatusCount[customer] {
-			multitenant.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router0")
+			multitenant.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router")
 		}
 	}
 
@@ -1781,6 +1780,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	rt.statusLoopResumeChannel = make(chan bool)
 	rt.reporting = reporting
 	rt.routerLatencyStat = make(map[string]misc.MovingAverage)
+
 	config.RegisterBoolConfigVariable(utilTypes.DEFAULT_REPORTING_ENABLED, &rt.reportingEnabled, false, "Reporting.enabled")
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)

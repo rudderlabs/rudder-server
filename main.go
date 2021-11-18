@@ -50,6 +50,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/db"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -201,6 +202,7 @@ func runAllInit() {
 	rruntime.Init()
 	integrations.Init()
 	alert.Init()
+	multitenant.Init()
 	Init()
 
 }

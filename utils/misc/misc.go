@@ -67,6 +67,17 @@ type RudderError struct {
 	Code              int
 }
 
+type Pair struct {
+	Key   string
+	Value int
+}
+
+type PairList []Pair
+
+func (p PairList) Len() int           { return len(p) }
+func (p PairList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+func (p PairList) Less(i, j int) bool { return p[i].Value < p[j].Value }
+
 var pkgLogger logger.LoggerI
 
 func Init() {
@@ -1272,4 +1283,22 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 		return "boolean"
 	}
 	return "object"
+}
+
+func sortMap(inputMap map[string]int) map[string]int {
+	p := make(PairList, len(inputMap))
+
+	i := 0
+	for k, v := range inputMap {
+		p[i] = Pair{k, v}
+		i++
+	}
+
+	sort.Sort(p)
+	//p is sorted
+	outMap := make(map[string]int)
+	for _, k := range p {
+		outMap[k.Key] = k.Value
+	}
+	return outMap
 }

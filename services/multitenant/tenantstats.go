@@ -1,6 +1,9 @@
 package multitenant
 
 import (
+	"bytes"
+	"encoding/gob"
+	"os"
 	"sync"
 	"time"
 
@@ -20,10 +23,45 @@ func Init() {
 	RouterInMemoryJobCounts = make(map[string]map[string]map[string]int)
 	RouterInMemoryJobCounts["router"] = make(map[string]map[string]int)
 	RouterInMemoryJobCounts["batch_router"] = make(map[string]map[string]int)
+	prePopulateRouterPileUpCounts()
 	ProcessorJobsMovingAverages = make(map[string]map[string]map[string]misc.MovingAverage)
 	ProcessorJobsMovingAverages["router"] = make(map[string]map[string]misc.MovingAverage)
 	ProcessorJobsMovingAverages["batch_router"] = make(map[string]map[string]misc.MovingAverage)
 	config.RegisterIntConfigVariable(10000, &jobQueryBatchSize, true, 1, "Router.jobQueryBatchSize")
+	go writerouterPileUpStatsEncodedToFile()
+}
+
+func writerouterPileUpStatsEncodedToFile() {
+	for {
+		file, _ := os.Create("router_pile_up_stat_persist.txt")
+		buf := new(bytes.Buffer)
+		encoder := gob.NewEncoder(buf)
+		err := encoder.Encode(RouterInMemoryJobCounts)
+		if err != nil {
+			panic(err)
+		}
+		_, err = file.Write(buf.Bytes())
+		if err != nil {
+			panic(err)
+		}
+		time.Sleep(60 * time.Second)
+	}
+}
+
+func prePopulateRouterPileUpCounts() {
+	byteData, err := os.ReadFile("router_pile_up_stat_persist.txt")
+	if err != nil {
+		panic(err)
+	}
+	if len(byteData) == 0 {
+		return
+	}
+	bufferedData := bytes.NewBuffer(byteData)
+	decoder := gob.NewDecoder(bufferedData)
+	err = decoder.Decode(&RouterInMemoryJobCounts)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func AddToInMemoryCount(customerID string, destinationType string, count int, tableType string) {
