@@ -69,15 +69,19 @@ func (mj *MultiTenantHandleT) GetCustomerCounts(defaultBatchSize int) map[string
 
 //Unprocessed
 
-func (mj *MultiTenantHandleT) getUnprocessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) string {
-	var queries []string
+func (mj *MultiTenantHandleT) getUnprocessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) (string, []string) {
+	var queries, customersToQuery []string
 
 	for customer, count := range customerCount {
 		//do cache stuff here
+		if mj.isEmptyResult(ds, customer, []string{NotProcessed.State}, params.CustomValFilters, params.ParameterFilters) {
+			continue
+		}
 		queries = append(queries, mj.getSingleCustomerUnprocessedQueryString(customer, count, ds, params, true))
+		customersToQuery = append(customersToQuery, customer)
 	}
 
-	return `(` + strings.Join(queries, `) UNION (`) + `)`
+	return `(` + strings.Join(queries, `) UNION (`) + `)`, customersToQuery
 }
 
 func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
@@ -151,7 +155,20 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 }
 
 func (mj *MultiTenantHandleT) getUnprocessedUnionDS(ds dataSetT, customerCount map[string]int, params GetQueryParamsT) []*JobT {
-	queryString := mj.getUnprocessedUnionQuerystring(customerCount, ds, params)
+	var jobList []*JobT
+	queryString, customersToQuery := mj.getUnprocessedUnionQuerystring(customerCount, ds, params)
+	if len(customersToQuery) == 0 {
+		return jobList
+	}
+
+	for _, customer := range customersToQuery {
+		mj.markClearEmptyResult(ds, customer, []string{NotProcessed.State}, params.CustomValFilters, params.ParameterFilters, willTryToSet, nil)
+	}
+
+	cacheUpdateByCustomer := make(map[string]string)
+	for _, customer := range customersToQuery {
+		cacheUpdateByCustomer[customer] = string(noJobs)
+	}
 
 	var rows *sql.Rows
 	var err error
@@ -161,7 +178,6 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionDS(ds dataSetT, customerCount m
 
 	defer rows.Close()
 
-	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
 		var _null int
@@ -174,12 +190,18 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionDS(ds dataSetT, customerCount m
 		if customerCount[job.Customer] == 0 {
 			delete(customerCount, job.Customer)
 		}
+
+		cacheUpdateByCustomer[job.Customer] = string(hasJobs)
 	}
 	if err = rows.Err(); err != nil {
 		mj.assertError(err)
 	}
 
 	//do cache stuff here
+	_willTryToSet := willTryToSet
+	for customer, cacheUpdate := range cacheUpdateByCustomer {
+		mj.markClearEmptyResult(ds, customer, []string{NotProcessed.State}, params.CustomValFilters, params.ParameterFilters, cacheValue(cacheUpdate), &_willTryToSet)
+	}
 
 	return jobList
 }
@@ -211,7 +233,21 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 }
 
 func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map[string]int, params GetQueryParamsT) []*JobT {
-	queryString := mj.getProcessedUnionQuerystring(customerCount, ds, params)
+	var jobList []*JobT
+	queryString, customersToQuery := mj.getProcessedUnionQuerystring(customerCount, ds, params)
+
+	if len(customersToQuery) == 0 {
+		return jobList
+	}
+
+	for _, customer := range customersToQuery {
+		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters, willTryToSet, nil)
+	}
+
+	cacheUpdateByCustomer := make(map[string]string)
+	for _, customer := range customersToQuery {
+		cacheUpdateByCustomer[customer] = string(noJobs)
+	}
 
 	var rows *sql.Rows
 	var err error
@@ -224,7 +260,6 @@ func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map
 	mj.assertError(err)
 	defer rows.Close()
 
-	var jobList []*JobT
 	for rows.Next() {
 		var job JobT
 		var _null int
@@ -237,25 +272,35 @@ func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map
 		if customerCount[job.Customer] == 0 {
 			delete(customerCount, job.Customer)
 		}
+
+		cacheUpdateByCustomer[job.Customer] = string(hasJobs)
 	}
 	if err = rows.Err(); err != nil {
 		mj.assertError(err)
 	}
 
 	//do cache stuff here
+	_willTryToSet := willTryToSet
+	for customer, cacheUpdate := range cacheUpdateByCustomer {
+		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters, cacheValue(cacheUpdate), &_willTryToSet)
+	}
 
 	return jobList
 }
 
-func (mj *MultiTenantHandleT) getProcessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) string {
-	var queries []string
+func (mj *MultiTenantHandleT) getProcessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) (string, []string) {
+	var queries, customersToQuery []string
 
 	for customer, count := range customerCount {
 		//do cache stuff here
+		if mj.isEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters) {
+			continue
+		}
 		queries = append(queries, mj.getSingleCustomerProcessedQueryString(customer, count, ds, params, true))
+		customersToQuery = append(customersToQuery, customer)
 	}
 
-	return `(` + strings.Join(queries, `) UNION (`) + `)`
+	return `(` + strings.Join(queries, `) UNION (`) + `)`, customersToQuery
 }
 
 func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {

@@ -351,6 +351,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 											ErrorCode:     "",
 											ErrorResponse: []byte(`{}`),
 											Parameters:    []byte(`{}`),
+											Customer:      job.Customer,
 										}
 										statusList = append(statusList, &status)
 									}
@@ -395,6 +396,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 												ErrorCode:     strconv.Itoa(statusCode),
 												ErrorResponse: []byte(`{}`),
 												Parameters:    []byte(`{}`),
+												Customer:      job.Customer,
 											}
 											statusList = append(statusList, status)
 										}
@@ -420,6 +422,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 												ErrorCode:     "200",
 												ErrorResponse: []byte(`{}`),
 												Parameters:    []byte(`{}`),
+												Customer:      job.Customer,
 											}
 										} else if misc.Contains(failedKeys, job.JobID) {
 											errorResp, _ := json.Marshal(ErrorResponseT{Error: gjson.GetBytes(failedBodyBytes, fmt.Sprintf("metadata.failedReasons.%v", job.JobID)).String()})
@@ -431,6 +434,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 												ErrorCode:     "",
 												ErrorResponse: errorResp,
 												Parameters:    []byte(`{}`),
+												Customer:      job.Customer,
 											}
 										}
 										statusList = append(statusList, status)
@@ -458,6 +462,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 											ErrorCode:     "",
 											ErrorResponse: []byte(`{}`),
 											Parameters:    []byte(`{}`),
+											Customer:      job.Customer,
 										}
 										statusList = append(statusList, &status)
 									}
@@ -471,6 +476,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 											ErrorCode:     "",
 											ErrorResponse: []byte(`{}`),
 											Parameters:    []byte(`{}`),
+											Customer:      job.Customer,
 										}
 										statusList = append(statusList, &status)
 									}
@@ -1060,6 +1066,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 			ErrorCode:     "",
 			ErrorResponse: errorResp,
 			Parameters:    []byte(`{}`),
+			Customer:      job.Customer,
 		}
 		statusList = append(statusList, &status)
 		if jobStateCounts[jobState] == nil {
@@ -1165,7 +1172,18 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 	sendDestStatusStats(batchJobs.BatchDestination, jobStateCounts, brt.destType, isWarehouse)
 }
 
+func (brt *HandleT) GetWorkspaceIDForDestID(destID string) string {
+	var workspaceID string
+
+	brt.configSubscriberLock.RLock()
+	defer brt.configSubscriberLock.RUnlock()
+	workspaceID = brt.destinationsMap[destID].Sources[0].WorkspaceID
+
+	return workspaceID
+}
+
 func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.AsyncUploadOutput) {
+	customer := brt.GetWorkspaceIDForDestID(asyncOutput.DestinationID)
 	var statusList []*jobsdb.JobStatusT
 	if len(asyncOutput.ImportingJobIDs) > 0 {
 		for _, jobId := range asyncOutput.ImportingJobIDs {
@@ -1177,6 +1195,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "200",
 				ErrorResponse: []byte(`{}`),
 				Parameters:    asyncOutput.ImportingParameters,
+				Customer:      customer,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -1191,6 +1210,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "200",
 				ErrorResponse: json.RawMessage(asyncOutput.SuccessResponse),
 				Parameters:    []byte(`{}`),
+				Customer:      customer,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -1205,6 +1225,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "500",
 				ErrorResponse: json.RawMessage(asyncOutput.FailedReason),
 				Parameters:    []byte(`{}`),
+				Customer:      customer,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -1219,6 +1240,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "400",
 				ErrorResponse: json.RawMessage(asyncOutput.AbortReason),
 				Parameters:    []byte(`{}`),
+				Customer:      customer,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -1228,15 +1250,12 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 		return
 	}
 
-	var parameterFilters []jobsdb.ParameterFilterT
-	if readPerDestination {
-		parameterFilters = []jobsdb.ParameterFilterT{
-			{
-				Name:     "destination_id",
-				Value:    asyncOutput.DestinationID,
-				Optional: false,
-			},
-		}
+	parameterFilters := []jobsdb.ParameterFilterT{
+		{
+			Name:     "destination_id",
+			Value:    asyncOutput.DestinationID,
+			Optional: false,
+		},
 	}
 
 	//Mark the status of the jobs
@@ -1450,6 +1469,7 @@ func (worker *workerT) workerProcess() {
 						ErrorCode:     "",
 						ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 						Parameters:    []byte(`{}`), // check
+						Customer:      job.Customer,
 					}
 					//Enhancing job parameter with the drain reason.
 					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", "batch_router")
@@ -1482,6 +1502,7 @@ func (worker *workerT) workerProcess() {
 						ErrorCode:     "",
 						ErrorResponse: []byte(`{}`), // check
 						Parameters:    []byte(`{}`), // check
+						Customer:      job.Customer,
 					}
 					statusList = append(statusList, &status)
 				}
