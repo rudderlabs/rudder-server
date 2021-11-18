@@ -874,6 +874,10 @@ func GetStorageDateFormat(manager filemanager.FileManager, destination *Destinat
 	}
 
 	for idx := range fileObjects {
+		if fileObjects[idx] == nil {
+			pkgLogger.Errorf("[BRT]: nil occurred in file objects for '%T' filemanager of destination ID : %s", manager, destination.Destination.ID)
+			continue
+		}
 		key := fileObjects[idx].Key
 		replacedKey := strings.Replace(key, fullPrefix, "", 1)
 		splittedKeys := strings.Split(replacedKey, "/")
