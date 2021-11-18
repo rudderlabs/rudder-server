@@ -225,7 +225,6 @@ func SendEvent(payload *strings.Reader, call_type string) (string, error){
 	if err != nil {
 		log.Println(err)
 		return "" , err
-
 	}
 
 	req.Header.Add("Content-Type", "application/json")
