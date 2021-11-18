@@ -803,7 +803,7 @@ func (manager *EventSchemaManagerT) reloadModel(offloadedModel *OffloadedModelT)
 }
 
 func (manager *EventSchemaManagerT) reloadSchemaVersion(offloadedVersion *OffloadedSchemaVersionT) error {
-	pkgLogger.Infof("reloading schema vesion from db: %s\n", offloadedVersion.UUID)
+	pkgLogger.Debugf("reloading schema vesion from db: %s\n", offloadedVersion.UUID)
 	err := manager.populateSchemaVersion(offloadedVersion)
 	if err != nil {
 		return err

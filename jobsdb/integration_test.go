@@ -242,20 +242,6 @@ func TestJobsDB(t *testing.T) {
 		require.Equal(t, 20, len(eventLimitListRepeat))
 		require.Equal(t, eventLimitList, eventLimitListRepeat)
 
-		t.Log("Use cursor")
-		afterJobID := eventLimitList[len(eventLimitList)-1].JobID
-		eventLimitListCursor := jobDB.GetUnprocessed(jobsdb.GetQueryParamsT{
-			CustomValFilters: []string{customVal},
-			JobCount:         100,
-			EventCount:       eventsPerJob * 10,
-			ParameterFilters: []jobsdb.ParameterFilterT{},
-			AfterJobID:       afterJobID,
-		})
-		require.Equal(t, 10, len(eventLimitListCursor))
-		for _, e := range eventLimitListCursor {
-			require.Greater(t, e.JobID, afterJobID)
-		}
-
 		statuses := make([]*jobsdb.JobStatusT, len(JobLimitList))
 
 		n := time.Now().Add(time.Hour * -1)
