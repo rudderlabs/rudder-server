@@ -69,7 +69,7 @@ type RudderError struct {
 
 type Pair struct {
 	Key   string
-	Value int
+	Value float64
 }
 
 type PairList []Pair
@@ -1285,20 +1285,21 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 	return "object"
 }
 
-func sortMap(inputMap map[string]int) map[string]int {
-	p := make(PairList, len(inputMap))
+func SortMap(inputMap map[string]MovingAverage) []string {
+	pairArr := make(PairList, len(inputMap))
 
 	i := 0
 	for k, v := range inputMap {
-		p[i] = Pair{k, v}
+		pairArr[i] = Pair{k, v.Value()}
 		i++
 	}
 
-	sort.Sort(p)
+	sort.Sort(pairArr)
+	var sortedCustomerList []string
 	//p is sorted
-	outMap := make(map[string]int)
-	for _, k := range p {
-		outMap[k.Key] = k.Value
+	for _, k := range pairArr {
+		//Workspace ID - RS Check
+		sortedCustomerList = append(sortedCustomerList, k.Key)
 	}
-	return outMap
+	return sortedCustomerList
 }

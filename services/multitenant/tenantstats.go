@@ -3,6 +3,7 @@ package multitenant
 import (
 	"bytes"
 	"encoding/gob"
+	"math"
 	"os"
 	"sync"
 	"time"
@@ -15,7 +16,7 @@ import (
 var jobQueryBatchSize int
 var RouterInMemoryJobCounts map[string]map[string]map[string]int
 var routerJobCountMutex sync.RWMutex
-var ProcessorJobsMovingAverages map[string]map[string]map[string]misc.MovingAverage
+var RouterInputRates map[string]map[string]map[string]misc.MovingAverage
 var pkgLogger logger.LoggerI
 
 func Init() {
@@ -24,9 +25,9 @@ func Init() {
 	RouterInMemoryJobCounts["router"] = make(map[string]map[string]int)
 	RouterInMemoryJobCounts["batch_router"] = make(map[string]map[string]int)
 	prePopulateRouterPileUpCounts()
-	ProcessorJobsMovingAverages = make(map[string]map[string]map[string]misc.MovingAverage)
-	ProcessorJobsMovingAverages["router"] = make(map[string]map[string]misc.MovingAverage)
-	ProcessorJobsMovingAverages["batch_router"] = make(map[string]map[string]misc.MovingAverage)
+	RouterInputRates = make(map[string]map[string]map[string]misc.MovingAverage)
+	RouterInputRates["router"] = make(map[string]map[string]misc.MovingAverage)
+	RouterInputRates["batch_router"] = make(map[string]map[string]misc.MovingAverage)
 	config.RegisterIntConfigVariable(10000, &jobQueryBatchSize, true, 1, "Router.jobQueryBatchSize")
 	go writerouterPileUpStatsEncodedToFile()
 }
@@ -95,81 +96,98 @@ func RemoveFromInMemoryCount(customerID string, destinationType string, count in
 func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string) {
 	for key := range stats {
 		routerJobCountMutex.RLock()
-		_, ok := ProcessorJobsMovingAverages[tableType][key]
+		_, ok := RouterInputRates[tableType][key]
 		if !ok {
 			routerJobCountMutex.RUnlock()
 			routerJobCountMutex.Lock()
-			ProcessorJobsMovingAverages[tableType][key] = make(map[string]misc.MovingAverage)
+			RouterInputRates[tableType][key] = make(map[string]misc.MovingAverage)
 			routerJobCountMutex.Unlock()
 			routerJobCountMutex.RLock()
 		}
 		routerJobCountMutex.RUnlock()
 		for destType := range stats[key] {
 			routerJobCountMutex.RLock()
-			_, ok := ProcessorJobsMovingAverages[tableType][key][destType]
+			_, ok := RouterInputRates[tableType][key][destType]
 			if !ok {
 				routerJobCountMutex.RUnlock()
 				routerJobCountMutex.Lock()
-				ProcessorJobsMovingAverages[tableType][key][destType] = misc.NewMovingAverage()
+				RouterInputRates[tableType][key][destType] = misc.NewMovingAverage()
 				routerJobCountMutex.Unlock()
 				routerJobCountMutex.RLock()
 			}
 			routerJobCountMutex.RUnlock()
-			ProcessorJobsMovingAverages[tableType][key][destType].Add(float64(stats[key][destType]) * float64(time.Second) / float64(timeTaken))
+			RouterInputRates[tableType][key][destType].Add(float64(stats[key][destType]) * float64(time.Second) / float64(timeTaken))
 			AddToInMemoryCount(key, destType, stats[key][destType], tableType)
 		}
 	}
-	for customerKey := range ProcessorJobsMovingAverages[tableType] {
+	for customerKey := range RouterInputRates[tableType] {
 		_, ok := stats[customerKey]
 		if !ok {
 			for destType := range stats[customerKey] {
 				routerJobCountMutex.Lock()
-				ProcessorJobsMovingAverages[tableType][customerKey][destType].Add(0)
+				RouterInputRates[tableType][customerKey][destType].Add(0)
 				routerJobCountMutex.Unlock()
 			}
 		}
 
-		for destType := range ProcessorJobsMovingAverages[tableType][customerKey] {
+		for destType := range RouterInputRates[tableType][customerKey] {
 			_, ok := stats[customerKey][destType]
 			if !ok {
 				routerJobCountMutex.Lock()
-				ProcessorJobsMovingAverages[tableType][customerKey][destType].Add(0)
+				RouterInputRates[tableType][customerKey][destType].Add(0)
 				routerJobCountMutex.Unlock()
 			}
 		}
 	}
 }
 
-func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time) map[string]int {
-	customerLiveCount := make(map[string]float64)
+func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage) map[string]int {
 	customerPickUpCount := make(map[string]int)
-	totalCount := 0.0
-	runningCounter := jobQueryBatchSize
+	runningTimeCounter := float64(noOfWorkers) * float64(routerTimeOut/time.Second)
 	routerJobCountMutex.RLock()
 	defer routerJobCountMutex.RUnlock()
-	for customerKey := range ProcessorJobsMovingAverages["router"] {
-		customerLiveCount[customerKey] = ProcessorJobsMovingAverages["router"][customerKey][destType].Value()
-		totalCount += customerLiveCount[customerKey]
-	}
+	runningJobCount := jobQueryBatchSize
 
-	for customerKey := range ProcessorJobsMovingAverages["router"] {
-		customerPickUpCount[customerKey] = int(float64(jobQueryBatchSize)*(customerLiveCount[customerKey]/totalCount)) + 1
-		/// Need to add a check if the current workspaceID is part of Active Configuration
+	for _, customerKey := range sortedLatencyList {
+		timeRequired := float64(latencyMap[customerKey].Value() * RouterInputRates["router"][customerKey][destType].Value() * float64(routerTimeOut/time.Second))
+		///int(float64(jobQueryBatchSize)*(customerLiveCount[customerKey]/totalCount)) + 1
+		customerPickUpCount[customerKey] = int(math.Min(timeRequired, runningTimeCounter) / latencyMap[customerKey].Value())
+		if RouterInMemoryJobCounts["router"][customerKey][destType] > 0 {
+			customerPickUpCount[customerKey] = customerPickUpCount[customerKey] + 1
+		}
 		if customerPickUpCount[customerKey] > RouterInMemoryJobCounts["router"][customerKey][destType] {
 			customerPickUpCount[customerKey] = RouterInMemoryJobCounts["router"][customerKey][destType]
+			timeRequired = latencyMap[customerKey].Value() * float64(RouterInMemoryJobCounts["router"][customerKey][destType]) * float64(routerTimeOut/time.Second)
 		}
-		runningCounter = runningCounter - customerPickUpCount[customerKey]
+		//modify time required
+		runningTimeCounter = runningTimeCounter - timeRequired
+		runningJobCount = runningJobCount - customerPickUpCount[customerKey]
+		//runningJobCount should be a number large enough to ensure fairness but small enough to not cause OOM Issues
+		if runningJobCount <= 0 {
+			pkgLogger.Infof(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize`)
+			return customerPickUpCount
+		}
 	}
-	if runningCounter <= 0 {
+
+	if runningTimeCounter <= 0 {
 		return customerPickUpCount
 	}
-	totalCount = 0.0
-	for customerKey := range RouterInMemoryJobCounts["router"] {
-		totalCount += float64(int(time.Second)*RouterInMemoryJobCounts["router"][customerKey][destType]) / float64(time.Since(earliestJobMap[customerKey]))
+
+	for _, customerKey := range sortedLatencyList {
+		if RouterInMemoryJobCounts["router"][customerKey][destType] == 0 {
+			continue
+		}
+		timeRequired := latencyMap[customerKey].Value() * float64(RouterInMemoryJobCounts["router"][customerKey][destType]) * float64(routerTimeOut/time.Second)
+		if timeRequired < runningTimeCounter {
+			customerPickUpCount[customerKey] += int(timeRequired / latencyMap[customerKey].Value())
+			runningTimeCounter = runningTimeCounter - timeRequired
+			runningJobCount = runningJobCount - int(timeRequired/latencyMap[customerKey].Value())
+			if runningJobCount <= 0 {
+				pkgLogger.Infof(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize after picking pileUp`)
+				return customerPickUpCount
+			}
+		}
 	}
-	for customerKey := range RouterInMemoryJobCounts["router"] {
-		customerPickUpCount[customerKey] += int(float64(runningCounter)*(customerLiveCount[customerKey]/totalCount)) + 1
-		/// Need to add a check if the current workspaceID is part of Active Configuration
-	}
+
 	return customerPickUpCount
 }

@@ -102,6 +102,7 @@ type HandleT struct {
 	backendConfigInitialized               chan bool
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
+	routerTimeout                          time.Duration
 	destinationResponseHandler             ResponseHandlerI
 	saveDestinationResponse                bool
 	reporting                              utilTypes.ReportingI
@@ -642,7 +643,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				if _, ok := worker.rt.routerLatencyStat[workspaceID]; !ok {
 					worker.rt.routerLatencyStat[workspaceID] = misc.NewMovingAverage()
 				}
-				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken / time.Millisecond))
+				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken / time.Second))
 
 				// END: request to destination endpoint
 
@@ -1617,6 +1618,9 @@ func (rt *HandleT) readAndProcess() int {
 		rt.toClearFailJobIDMutex.Unlock()
 		//End of #JobOrder
 	}
+
+	//sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
+	//multitenant.GetRouterPickupJobs(rt.destName, earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat)
 	toQuery := jobQueryBatchSize
 	retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 	toQuery -= len(retryList)
@@ -1827,6 +1831,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	responseTransformKeys := []string{"Router." + rt.destName + "." + "responseTransform", "Router." + "responseTransform"}
 	saveDestinationResponseOverrideKeys := []string{"Router." + rt.destName + "." + "saveDestinationResponseOverride", "Router." + "saveDestinationResponseOverride"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
+	routerTimeoutKeys := []string{"Router." + rt.destName + "." + "routerTimeout", "Router." + "routerTimeout"}
+	config.RegisterDurationConfigVariable(10, &rt.routerTimeout, true, time.Second, routerTimeoutKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
