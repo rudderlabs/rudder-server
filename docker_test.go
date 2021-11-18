@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -47,39 +48,42 @@ import (
 )
 
 var (
-	pool             *dockertest.Pool
-	err              error
-	z                *dockertest.Resource
-	resourceKafka    *dockertest.Resource
-	resourceRedis	 *dockertest.Resource
-	transformerRes   *dockertest.Resource
-	resource         *dockertest.Resource
-	network          *dc.Network
-	resourcePostgres *dockertest.Resource
-	transformURL     string
-	minioEndpoint    string
-	minioBucketName  string
-	hold             bool = true
-	db               *sql.DB
-	redisClient      *redis.Client
-	DB_DSN           = "root@tcp(127.0.0.1:3306)/service"
-	httpPort         string
-	httpKafkaPort    string
-	dbHandle         *sql.DB
-	sourceJSON       backendconfig.ConfigT
-	webhookurl       string
-	webhookDestinationurl string
-	webhook          *WebhookRecorder
-	webhookDestination *WebhookRecorder
-	address          string
-	runIntegration   bool
-	writeKey         string
-	webhookEventWriteKey string
-	workspaceID      string
-	redisAddress     string
-	brokerPort       string
-	localhostPort    string
-	localhostPortInt int
+	pool                     *dockertest.Pool
+	err                      error
+	z                        *dockertest.Resource
+	resourceKafka            *dockertest.Resource
+	resourceRedis            *dockertest.Resource
+	transformerRes           *dockertest.Resource
+	resource                 *dockertest.Resource
+	network                  *dc.Network
+	resourcePostgres         *dockertest.Resource
+	rwhPostgresDestination   *dockertest.Resource
+	rwhClickHouseDestination *dockertest.Resource
+	rwhMSSqlDestination      *dockertest.Resource
+	transformURL             string
+	minioEndpoint            string
+	minioBucketName          string
+	hold                     bool = true
+	db                       *sql.DB
+	redisClient              *redis.Client
+	DB_DSN                   = "root@tcp(127.0.0.1:3306)/service"
+	httpPort                 string
+	httpKafkaPort            string
+	dbHandle                 *sql.DB
+	sourceJSON               backendconfig.ConfigT
+	webhookurl               string
+	webhookDestinationurl    string
+	webhook                  *WebhookRecorder
+	webhookDestination       *WebhookRecorder
+	address                  string
+	runIntegration           bool
+	writeKey                 string
+	webhookEventWriteKey     string
+	workspaceID              string
+	redisAddress             string
+	brokerPort               string
+	localhostPort            string
+	localhostPortInt         int
 )
 
 type WebhookRecorder struct {
@@ -126,6 +130,7 @@ func (whr *WebhookRecorder) Requests() []*http.Request {
 func (whr *WebhookRecorder) Close() {
 	whr.Server.Close()
 }
+
 func randString(n int) string {
 	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
@@ -210,7 +215,7 @@ func blockOnHold() {
 	<-c
 }
 
-func SendEvent(payload *strings.Reader, call_type string) (string, error){
+func SendEvent(payload *strings.Reader, call_type string) (string, error) {
 	log.Println(fmt.Sprintf("Sending %s Event", call_type))
 	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, call_type)
 	method := "POST"
@@ -219,7 +224,7 @@ func SendEvent(payload *strings.Reader, call_type string) (string, error){
 
 	if err != nil {
 		log.Println(err)
-		return "" , err
+		return "", err
 
 	}
 
@@ -233,53 +238,52 @@ func SendEvent(payload *strings.Reader, call_type string) (string, error){
 	res, err := client.Do(req)
 	if err != nil {
 		log.Println(err)
-		return  "" , err
+		return "", err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		log.Println(err)
-		return "" , err
+		return "", err
 	}
 	log.Println(string(body))
 	log.Println("Event Sent Successfully")
-	return string(body) ,err
+	return string(body), err
 }
 
 func SendWebhookEvent() {
 	log.Println("Sending Webhook Event")
 	url := fmt.Sprintf("http://localhost:%s/v1/webhook?writeKey=%s", httpPort, webhookEventWriteKey)
 	method := "POST"
-  
+
 	payload := strings.NewReader(`{
 	"data": {
-	  "customer_id": "abcd-1234"  
+	  "customer_id": "abcd-1234"
 	},
 	"object_type": "email"
  	 }`)
-  
-	client := &http.Client {
-	}
+
+	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
-  
+
 	if err != nil {
-	  log.Println(err)
-	  return
+		log.Println(err)
+		return
 	}
 	req.Header.Add("Content-Type", "application/json")
-  
+
 	res, err := client.Do(req)
 	if err != nil {
-	  log.Println(err)
-	  return
+		log.Println(err)
+		return
 	}
 	defer res.Body.Close()
-  
+
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-	  log.Println(err)
-	  return
+		log.Println(err)
+		return
 	}
 	log.Println(string(body))
 	log.Println("Webhook Event Sent Successfully")
@@ -339,21 +343,39 @@ func run(m *testing.M) (int, error) {
 	}()
 	SetJobsDB()
 	defer func() {
-	if err := pool.Purge(resourcePostgres); err != nil {
-		log.Printf("Could not purge resource: %s \n", err)
-	}
+		if err := pool.Purge(resourcePostgres); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
 	}()
 	SetTransformer()
 	defer func() {
-	if err := pool.Purge(transformerRes); err != nil {
-		log.Printf("Could not purge resource: %s \n", err)
-	}
+		if err := pool.Purge(transformerRes); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
 	}()
 	SetMINIO()
 	defer func() {
-	if err := pool.Purge(resource); err != nil {
-		log.Printf("Could not purge resource: %s \n", err)
-	}
+		if err := pool.Purge(resource); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	setWhPostgresDestination()
+	defer func() {
+		if err := pool.Purge(rwhPostgresDestination); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	setWhClickHouseDestination()
+	defer func() {
+		if err := pool.Purge(rwhClickHouseDestination); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	setWhMSSqlDestination()
+	defer func() {
+		if err := pool.Purge(rwhMSSqlDestination); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
 	}()
 
 	os.Setenv("JOBS_DB_HOST", "localhost")
@@ -406,16 +428,16 @@ func run(m *testing.M) (int, error) {
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":      webhookurl,
-			"webhookDestinationurl":webhookDestinationurl,
-			"writeKey":        writeKey,
-			"webhookEventWriteKey": webhookEventWriteKey,
-			"workspaceId":     workspaceID,
-			"postgresPort":    resourcePostgres.GetPort("5432/tcp"),
-			"address":         redisAddress,
-			"minioEndpoint":   minioEndpoint,
-			"minioBucketName": minioBucketName,
-			"kafkaPort":       strconv.Itoa(localhostPortInt),
+			"webhookUrl":            webhookurl,
+			"webhookDestinationurl": webhookDestinationurl,
+			"writeKey":              writeKey,
+			"webhookEventWriteKey":  webhookEventWriteKey,
+			"workspaceId":           workspaceID,
+			"postgresPort":          resourcePostgres.GetPort("5432/tcp"),
+			"address":               redisAddress,
+			"minioEndpoint":         minioEndpoint,
+			"minioBucketName":       minioBucketName,
+			"kafkaPort":             strconv.Itoa(localhostPortInt),
 		},
 	)
 	defer func() {
@@ -477,8 +499,165 @@ func run(m *testing.M) (int, error) {
 	<-svcDone
 
 	tearDownStart = time.Now()
-	
+
 	return code, nil
+}
+
+func setWhMSSqlDestination() {
+	// Configs
+	MSSqlDb := "TestDB"
+	MSSqlPassword := "reallyStrongPwd123"
+	MSSqlUser := "SA"
+	MSSqlHost := "localhost"
+	MSSqlSslMode := "disable"
+
+	// pulls an image, creates a container based on it and runs it
+	rwhClickHouseDestination, err = pool.Run("mcr.microsoft.com/mssql/server", "2019-latest", []string{
+		fmt.Sprintf("ACCEPT_EULA=%s", "Y"),
+		fmt.Sprintf("SA_DB=%s", MSSqlDb),
+		fmt.Sprintf("SA_PASSWORD=%s", MSSqlPassword),
+		fmt.Sprintf("SA_USER=%s", MSSqlUser),
+	})
+	if err != nil {
+		log.Println("Could not start resource ClickHouse: %w", err)
+		return
+	}
+
+	// Getting at which port the container is running
+	MSSqlPort := rwhClickHouseDestination.GetPort("1433/tcp")
+
+	// 16 -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=reallyStrongPwd123' -p 1434:1433 mcr.microsoft.com/mssql/server:2016-latest
+	query := url.Values{}
+	query.Add("database", MSSqlDb)
+	query.Add("encrypt", MSSqlSslMode)
+	query.Add("TrustServerCertificate", "true")
+	whMSSqlUrl := &url.URL{
+		Scheme:   "sqlserver",
+		User:     url.UserPassword(MSSqlUser, MSSqlPassword),
+		Host:     fmt.Sprintf("%s:%s", MSSqlHost, MSSqlPort),
+		RawQuery: query.Encode(),
+	}
+	fmt.Println("whMSSqlUrl:", whMSSqlUrl.String())
+
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	if err := pool.Retry(func() error {
+		var err error
+		db, err = sql.Open("sqlserver", whMSSqlUrl.String())
+		if err != nil {
+			return err
+		}
+		return db.Ping()
+	}); err != nil {
+		log.Println("Could not connect to MSSql", whMSSqlUrl, err)
+	}
+}
+
+func setWhClickHouseDestination() {
+	// Configs
+	ClickHouseHost := "localhost"
+	ClickHouseUser := "rudder"
+	ClickHousePassword := "rudder-password"
+	ClickHouseDb := "rudderdb"
+	ClickHouseBlockSize := "1000000"
+	ClickHousePoolSize := "100"
+	ClickHouseQueryDebugLogs := "false"
+	ClickHouseReadTimeout := "300"
+	ClickHouseWriteTimeout := "1800"
+	ClickHouseCompress := "true"
+	ClickHouseSecure := "false"
+	ClickHouseSkipVerify := "true"
+	ClickHouseTlsConfigName := ""
+
+	// pulls an image, creates a container based on it and runs it
+	rwhClickHouseDestination, err = pool.Run("yandex/clickhouse-server", "21-alpine", []string{
+		fmt.Sprintf("CLICKHOUSE_DB=%s", ClickHouseDb),
+		fmt.Sprintf("CLICKHOUSE_PASSWORD=%s", ClickHousePassword),
+		fmt.Sprintf("CLICKHOUSE_USER=%s", ClickHouseUser),
+	})
+	if err != nil {
+		log.Println("Could not start resource ClickHouse: %w", err)
+		return
+	}
+
+	// Getting at which port the container is running
+	ClickHousePort := rwhClickHouseDestination.GetPort("9000/tcp")
+
+	// Creating url string for connection
+	whClickHouseUrl := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&read_timeout=%s&write_timeout=%s&compress=%s",
+		ClickHouseHost,
+		ClickHousePort,
+		ClickHouseUser,
+		ClickHousePassword,
+		ClickHouseDb,
+		ClickHouseBlockSize,
+		ClickHousePoolSize,
+		ClickHouseQueryDebugLogs,
+		ClickHouseSecure,
+		ClickHouseSkipVerify,
+		ClickHouseTlsConfigName,
+		ClickHouseReadTimeout,
+		ClickHouseWriteTimeout,
+		ClickHouseCompress,
+	)
+	fmt.Println("whClickHouseUrl:", whClickHouseUrl)
+
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	if err := pool.Retry(func() error {
+		var err error
+		db, err = sql.Open("clickhouse", whClickHouseUrl)
+		if err != nil {
+			return err
+		}
+		return db.Ping()
+	}); err != nil {
+		log.Println("Could not connect to postgres", whClickHouseUrl, err)
+	}
+}
+
+func setWhPostgresDestination() {
+	// Configs
+	PostgresDb := "rudderdb"
+	PostgresPassword := "rudder-password"
+	PostgresUser := "rudder"
+	PostgresHost := "localhost"
+	PostgresSslMode := "disable"
+
+	// pulls an image, creates a container based on it and runs it
+	rwhPostgresDestination, err = pool.Run("postgres", "11-alpine", []string{
+		fmt.Sprintf("POSTGRES_DB=%s", PostgresDb),
+		fmt.Sprintf("POSTGRES_PASSWORD=%s", PostgresPassword),
+		fmt.Sprintf("POSTGRES_USER=%s", PostgresUser),
+	})
+	if err != nil {
+		log.Println("Could not start resource Postgres: %w", err)
+		return
+	}
+
+	// Getting at which port the container is running
+	PostgresPort := rwhPostgresDestination.GetPort("5432/tcp")
+
+	// Creating url string for connection
+	whPostgresUrl := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
+		PostgresUser,
+		PostgresPassword,
+		PostgresHost,
+		PostgresPort,
+		PostgresDb,
+		PostgresSslMode,
+	)
+	fmt.Println("whPostgresUrl:", whPostgresUrl)
+
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	if err := pool.Retry(func() error {
+		var err error
+		db, err = sql.Open("postgres", whPostgresUrl)
+		if err != nil {
+			return err
+		}
+		return db.Ping()
+	}); err != nil {
+		log.Println("Could not connect to postgres", whPostgresUrl, err)
+	}
 }
 
 func TestWebhook(t *testing.T) {
@@ -635,7 +814,6 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
 
-
 	req = webhookDestination.Requests()[0]
 	body, err = io.ReadAll(req.Body)
 
@@ -695,7 +873,7 @@ func TestPostgres(t *testing.T) {
 	}, time.Minute, 10*time.Millisecond)
 }
 
-// Verify Audience List EndPoint 
+// Verify Audience List EndPoint
 func TestAudiencelist(t *testing.T) {
 	payload := strings.NewReader(`{
 		"type": "audiencelist",
@@ -717,7 +895,7 @@ func TestAudiencelist(t *testing.T) {
 		},
 		"userId": "user123"
 		}`)
-	resbody, _ :=SendEvent(payload, "audiencelist")
+	resbody, _ := SendEvent(payload, "audiencelist")
 	require.Equal(t, resbody, "OK")
 }
 
@@ -735,6 +913,7 @@ func TestRedis(t *testing.T) {
 	}, time.Minute, 10*time.Millisecond)
 
 }
+
 // Verify Event in Kafka
 func TestKafka(t *testing.T) {
 
@@ -789,6 +968,7 @@ out:
 	log.Println("Processed", msgCount, "messages")
 
 }
+
 func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
 	consumers := make(chan *sarama.ConsumerMessage)
 	errors := make(chan *sarama.ConsumerError)
@@ -848,7 +1028,7 @@ func SetZookeeper() {
 	if err != nil {
 		fmt.Println(err)
 	}
-	
+
 }
 
 func SetKafka() {
