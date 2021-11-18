@@ -2,19 +2,21 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
-	destination "github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 )
 
 func main() {
-
+	defer cleanup()
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -25,7 +27,6 @@ func main() {
 		cancel()
 		close(c)
 	}()
-
 	Run(ctx)
 
 }
@@ -36,7 +37,7 @@ func Run(ctx context.Context) {
 			WorkspaceID: getEnv("workspaceID", "1001"),
 			URLPrefix:   getEnv("urlPrefix", "http://localhost:35359"),
 		},
-		Deleter: &delete.Deleter{},
+		Deleter: &delete.DeleteFacade{},
 		DestDetail: &destination.DestMiddleware{
 			Dest:    &backendconfig.WorkspaceConfig{},
 			DestCat: &destination.DestCategory{},
@@ -63,4 +64,24 @@ func withLoop(svc service.JobSvc) *service.Looper {
 	return &service.Looper{
 		Svc: svc,
 	}
+}
+
+//read all in the present directory
+//filter those with extension .json or .json.gz and delete each of them.
+func cleanup() error {
+	files, err := os.ReadDir("./../internal/delete/batch")
+	if err != nil {
+		return fmt.Errorf("error while cleanup: %w", err)
+	}
+
+	for _, f := range files {
+		if filepath.Ext(f.Name()) == ".json" || filepath.Ext(f.Name()) == ".gz" || filepath.Ext(f.Name()) == ".txt" {
+			path := fmt.Sprintf("./../internal/delete/batch/%s", f.Name())
+			err := os.Remove(path)
+			if err != nil {
+				return fmt.Errorf("error while deleting file during cleanup: %w", err)
+			}
+		}
+	}
+	return nil
 }

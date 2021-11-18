@@ -18,7 +18,7 @@ type APIClient interface {
 }
 
 type destDetail interface {
-	GetDestDetails(destID string) (model.Destination, error)
+	GetDestDetails(destID, workspaceID string) (model.Destination, error)
 }
 type deleter interface {
 	Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus, error)

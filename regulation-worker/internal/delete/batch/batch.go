@@ -21,6 +21,7 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"golang.org/x/sync/errgroup"
 )
 
 const statusTrackerFile = "deleteStatusTracker.txt"
@@ -33,8 +34,9 @@ type deleteManager interface {
 }
 
 type Batch struct {
-	FM filemanager.FileManager
-	DM deleteManager
+	mutex sync.Mutex
+	FM    filemanager.FileManager
+	DM    deleteManager
 }
 
 //return appropriate deleteManger based on destination Name
@@ -276,6 +278,12 @@ func (b *Batch) upload(ctx context.Context, fileName string) error {
 	}
 	file.Close()
 
+	b.mutex.Lock()
+	err = updateStatusTrackerFile(fileName)
+	if err != nil {
+		return fmt.Errorf("error while updating status tracker file, %w", err)
+	}
+
 	file, err = os.OpenFile(statusTrackerFile, os.O_RDONLY, os.FileMode(int(0777)))
 	if err != nil {
 		return fmt.Errorf("error while opening statusTrackerFile file for uploading: %w", err)
@@ -286,6 +294,7 @@ func (b *Batch) upload(ctx context.Context, fileName string) error {
 	if err != nil {
 		return fmt.Errorf("error while uploading statusTrackerFile file: %w", err)
 	}
+	b.mutex.Unlock()
 
 	return nil
 }
@@ -337,29 +346,35 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 		files = removeCleanedFiles(files, cleanedFiles)
 
 	}
-	mutex := sync.Mutex{}
+	g, gCtx := errgroup.WithContext(ctx)
+	goRoutineCount := make(chan bool, maxGoRoutine)
+	defer close(goRoutineCount)
 	for i := 0; i < len(files); i++ {
-		fmt.Printf("cleaning started for file: %s\n", files[i])
-		err = withExpBackoff(batch.download, ctx, files[i].Key)
-		if err != nil {
-			return err
-		}
+		goRoutineCount <- true
+		g.Go(func() error {
+			err = withExpBackoff(batch.download, gCtx, files[i].Key)
+			if err != nil {
+				return err
+			}
 
-		fileNamePrefix := strings.Split(files[i].Key, "/")
-		err := batch.delete(ctx, job.UserAttributes, fileNamePrefix[len(fileNamePrefix)-1])
-		if err != nil {
-			return fmt.Errorf("error while deleting object, %w", err)
-		}
-		mutex.Lock()
-		err = updateStatusTrackerFile(files[i].Key)
-		if err != nil {
-			return fmt.Errorf("error while updating status tracker file, %w", err)
-		}
-		mutex.Unlock()
-		err = withExpBackoff(batch.upload, ctx, files[i].Key)
-		if err != nil {
-			return fmt.Errorf("error while uploading cleaned file, %w", err)
-		}
+			fileNamePrefix := strings.Split(files[i].Key, "/")
+			err := batch.delete(gCtx, job.UserAttributes, fileNamePrefix[len(fileNamePrefix)-1])
+			if err != nil {
+				return fmt.Errorf("error while deleting object, %w", err)
+			}
+
+			err = withExpBackoff(batch.upload, gCtx, files[i].Key)
+			if err != nil {
+				return fmt.Errorf("error while uploading cleaned file, %w", err)
+			}
+
+			<-goRoutineCount
+			return nil
+		})
+	}
+	err = g.Wait()
+	if err != nil {
+		return err
 	}
 	return nil
 }
