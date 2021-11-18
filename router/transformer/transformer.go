@@ -62,7 +62,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(30), &timeoutDuration, true, time.Second, []string{"Processor.timeoutDuration", "Processor.timeoutDurationInSecond"}...)
-	config.RegisterInt64ConfigVariable(5, &retryWithBackoffCount, true, 1, "Router.responseTransformRetryCount")
+	config.RegisterInt64ConfigVariable(11, &retryWithBackoffCount, true, 1, "Router.responseTransformRetryCount")
 }
 
 func Init() {
