@@ -193,6 +193,7 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(retryWithBackoffCount))
 	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("[Response Transform] Request for response transform to URL:: %v, Error:: %+v retrying after:: %v,", url, err, t)
+		stats.NewStat("responnse_transformer.retry_metric", stats.CountType).Increment()
 	})
 
 	if err != nil {
