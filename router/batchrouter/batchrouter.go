@@ -983,7 +983,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 				batchJobs.BatchDestination.Destination.DestinationDefinition.DisplayName, err.Error(),
 				batchJobs.BatchDestination.Destination.ID, time.Now().Format("01-02-2006"))
 			batchJobState = jobsdb.Aborted.State
-			errorResp = []byte(fmt.Sprintf(`{"success":"%s"}`, err.Error()))
+			errorResp = []byte(fmt.Sprintf(`{"reason":"%s"}`, err.Error()))
 		default:
 			brt.logger.Errorf("BRT: Error uploading to object storage: %v %v", err, batchJobs.BatchDestination.Source.ID)
 			batchJobState = jobsdb.Failed.State
