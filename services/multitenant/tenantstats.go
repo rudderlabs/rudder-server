@@ -57,7 +57,8 @@ func writerouterPileUpStatsEncodedToFile() {
 func prePopulateRouterPileUpCounts() {
 	byteData, err := os.ReadFile("router_pile_up_stat_persist.txt")
 	if err != nil {
-		panic(err)
+		//TODO : Build Stats with CrashRecover Query If file not found
+		return
 	}
 	if len(byteData) == 0 {
 		return
