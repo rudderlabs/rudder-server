@@ -214,7 +214,10 @@ func blockOnHold() {
 
 func SendEvent(payload *strings.Reader, call_type string) (string, error){
 	log.Println(fmt.Sprintf("Sending %s Event", call_type))
-	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, call_type)
+	url := ""
+	if call_type != "beacon" {
+		url = fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, call_type)
+	} else{url = fmt.Sprintf("http://localhost:%s/beacon/v1/batch?writeKey=%s", httpPort, writeKey)}
 	method := "POST"
 	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
@@ -960,6 +963,24 @@ out:
 	log.Println("Processed", msgCount, "messages")
 
 }
+
+// Verify beacon  EndPoint 
+func TestBeaconBatch(t *testing.T) {
+	payload := strings.NewReader(`{
+		"batch":
+		[
+			{
+			   "userId": "identified_user_id",
+			   "anonymousId":"anonymousId_1",
+			   "messageId":"messageId_1"
+			}
+		]
+	}`)
+	resBody, _ :=SendEvent(payload, "beacon")
+	require.Equal(t, resBody, "OK")
+}
+
+
 func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
 	consumers := make(chan *sarama.ConsumerMessage)
 	errors := make(chan *sarama.ConsumerError)
