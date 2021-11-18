@@ -31,7 +31,6 @@ type DestCategory struct {
 //return destination Type enum{file, api}
 func (d *DestMiddleware) GetDestDetails(destID, workspaceID string) (model.Destination, error) {
 	config, notErr := d.Dest.Get()
-	fmt.Println(config)
 	if !notErr {
 		return model.Destination{}, fmt.Errorf("error while getting destination details")
 	}
