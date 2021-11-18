@@ -1162,6 +1162,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
+			//Add Customer Here
 		}
 		statusList = append(statusList, &newStatus)
 	}

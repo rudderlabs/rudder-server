@@ -393,6 +393,7 @@ func (worker *workerT) workerProcess() {
 					ErrorCode:     "",
 					ErrorResponse: []byte(`{"reason": "Aborted because destination is not available in the config" }`),
 					Parameters:    []byte(`{}`),
+					Customer:      job.Customer,
 				}
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				continue
@@ -683,6 +684,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				ErrorCode:     strconv.Itoa(respStatusCode),
 				ErrorResponse: []byte(`{}`),
 				Parameters:    []byte(`{}`),
+				Customer:      destinationJobMetadata.JobT.Customer,
 			}
 
 			worker.postStatusOnResponseQ(respStatusCode, respBody, destinationJob.Message, &destinationJobMetadata, &status)
@@ -721,6 +723,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				ErrorCode:     strconv.Itoa(500),
 				ErrorResponse: []byte(`{}`),
 				Parameters:    []byte(`{}`),
+				Customer:      routerJob.JobMetadata.JobT.Customer,
 			}
 
 			worker.postStatusOnResponseQ(500, "transformer failed to handle this job", nil, &routerJob.JobMetadata, &status)
@@ -1013,6 +1016,7 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 			JobState:      jobsdb.Waiting.State,
 			ErrorResponse: []byte(resp), // check
 			Parameters:    []byte(`{}`),
+			Customer:      job.Customer,
 		}
 		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 		return true
@@ -1654,6 +1658,7 @@ func (rt *HandleT) readAndProcess() int {
 				ErrorCode:     "",
 				Parameters:    []byte(`{}`),
 				ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
+				Customer:      job.Customer,
 			}
 			//Enhancing job parameter with the drain reason.
 			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", "router")
@@ -1683,6 +1688,7 @@ func (rt *HandleT) readAndProcess() int {
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check
 				Parameters:    []byte(`{}`),
+				Customer:      job.Customer,
 			}
 			statusList = append(statusList, &status)
 			toProcess = append(toProcess, workerJobT{worker: w, job: job})
