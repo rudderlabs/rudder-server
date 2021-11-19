@@ -6,6 +6,5 @@ ADD build/wait-for-go/wait-for-go /
 ADD build/docker-entrypoint.sh /
 ADD warehouse/scripts/init.sh /
 RUN bash init.sh
-RUN chmod +x docker-entrypoint.sh
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["/rudder-server"]

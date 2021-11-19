@@ -30,8 +30,8 @@ build: prepare-build ## Build rudder-server binary
 ifeq ($(RACE_ENABLED), TRUE)
 	$(eval BUILD_OPTIONS = $(BUILD_OPTIONS) -race -o rudder-server-with-race)
 endif
-	$(GO) build -buildmode=c-shared $(BUILD_OPTIONS) -a -installsuffix cgo -ldflags="$(LDFLAGS)"
-	$(GO) build -buildmode=c-shared -o build/wait-for-go/wait-for-go build/wait-for-go/wait-for.go
+	$(GO) build $(BUILD_OPTIONS) -a -installsuffix cgo -ldflags="$(LDFLAGS)"
+	$(GO) build -o build/wait-for-go/wait-for-go build/wait-for-go/wait-for.go
 
 run: prepare-build ## Run rudder-server using go run
 	$(GO) run main.go
