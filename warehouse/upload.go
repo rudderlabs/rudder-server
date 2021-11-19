@@ -1774,7 +1774,7 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 			txn.Rollback()
 			panic(fmt.Errorf("[WH]: Empty load file generated in slave for tablename: %v", loadFile.TableName))
 		}
-		metadata := json.RawMessage(fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength))
+		metadata := fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength)
 		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for loadFules: %v Error: %v`, loadFile, err)
@@ -1786,6 +1786,7 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 	_, err = stmt.Exec()
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error creating load file records: %v", err)
+		txn.Rollback()
 		return
 	}
 	err = txn.Commit()

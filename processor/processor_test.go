@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -243,6 +244,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 func initProcessor() {
 	config.Load()
 	logger.Init()
+	stash.Init()
 	admin.Init()
 	dedup.Init()
 	misc.Init()
@@ -320,9 +322,8 @@ var _ = Describe("Processor", func() {
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: c.dbReadBatchSize, EventCount: c.processEventSize}).Return(emptyJobsList).Times(1)
 
-			didWork, nextJobID := processor.handlePendingGatewayJobs(0)
+			didWork := processor.handlePendingGatewayJobs()
 			Expect(didWork).To(Equal(false))
-			Expect(nextJobID).To(Equal(int64(0)))
 		})
 
 		It("should process Unprocessed jobs to destination without user transformation", func() {
@@ -729,13 +730,13 @@ var _ = Describe("Processor", func() {
 
 			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
-					UUID:          uuid.Must(uuid.NewV4()),
-					JobID:         1010,
-					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
-					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
-					CustomVal:     gatewayCustomVal[0],
-					EventPayload:  createBatchPayloadWithSameMessageId(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{
-						messages["message-some-id-2"], 
+					UUID:      uuid.Must(uuid.NewV4()),
+					JobID:     1010,
+					CreatedAt: time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					ExpireAt:  time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					CustomVal: gatewayCustomVal[0],
+					EventPayload: createBatchPayloadWithSameMessageId(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{
+						messages["message-some-id-2"],
 						messages["message-some-id-1"],
 					}),
 					EventCount:    2,
@@ -743,15 +744,15 @@ var _ = Describe("Processor", func() {
 					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
-					JobID:        2010,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					CustomVal:    gatewayCustomVal[0],
+					UUID:      uuid.Must(uuid.NewV4()),
+					JobID:     2010,
+					CreatedAt: time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					ExpireAt:  time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CustomVal: gatewayCustomVal[0],
 					EventPayload: createBatchPayloadWithSameMessageId(WriteKeyEnabled, "2002-01-02T02:23:45.000Z", []mockEventData{
 						messages["message-some-id-3"],
 					}),
-					EventCount:   1,
+					EventCount: 1,
 					Parameters: createBatchParameters(SourceIDEnabled),
 				},
 			}
@@ -1166,6 +1167,85 @@ var _ = Describe("Processor", func() {
 		})
 	})
 
+	Context("ProcessorLoop Tests", func() {
+		var clearDB = false
+		It("Should be Pause and Resume", func() {
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			var processor *HandleT = &HandleT{
+				transformer: mockTransformer,
+			}
+
+			// crash recover returns empty list
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
+
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			defer processor.Shutdown()
+
+			processor.readLoopSleep = time.Millisecond
+
+			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
+			c.mockProcErrorsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any()).AnyTimes()
+			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any()).AnyTimes()
+
+			SetIsUnlocked(true)
+			defer SetIsUnlocked(false)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() {
+				processor.Start(ctx)
+				close(done)
+			}()
+
+			processor.Pause()
+			Expect(processor.paused).To(BeTrue())
+
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any()).DoAndReturn(
+				func(queryParams jobsdb.GetQueryParamsT) ([]jobsdb.JobT, error) {
+					cancel()
+
+					return []jobsdb.JobT{}, nil
+				}).Times(1)
+
+			processor.Resume()
+			Expect(processor.paused).To(BeFalse())
+
+			<-done
+		})
+
+		It("Should not handle jobs when transformer features are not set", func() {
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			var processor *HandleT = &HandleT{
+				transformer: mockTransformer,
+			}
+
+			// crash recover returns empty list
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
+			SetFeaturesRetryAttempts(0)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
+			defer processor.Shutdown()
+			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
+
+			processor.readLoopSleep = time.Millisecond
+
+			c.mockProcErrorsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{JobCount: -1})
+			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any()).Return(nil).AnyTimes()
+			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any()).Return(nil).AnyTimes()
+			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
+
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any()).Times(0)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+			defer cancel()
+
+			processor.Start(ctx)
+		})
+	})
 })
 
 var _ = Describe("Static Function Tests", func() {
@@ -1627,6 +1707,6 @@ func Setup(processor *HandleT, c *testContext, enableDedup, enableReporting bool
 }
 
 func handlePendingGatewayJobs(processor *HandleT) {
-	didWork, _ := processor.handlePendingGatewayJobs(0)
+	didWork := processor.handlePendingGatewayJobs()
 	Expect(didWork).To(Equal(true))
 }

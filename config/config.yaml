@@ -78,6 +78,8 @@ JobsDB:
     batch_rt:
       enabled: false
       failedOnly: false
+  gw:
+    enableWriterQueue: false
 Router:
   jobQueryBatchSize: 10000
   updateStatusBatchSize: 1000
@@ -102,6 +104,7 @@ Router:
   failedKeysEnabled: false
   saveDestinationResponseOverride: false
   responseTransform: false
+  responseTransformRetryCount: 15
   MARKETO:
     noOfWorkers: 4
   throttler:
@@ -112,6 +115,8 @@ Router:
     forceHTTP1: true
     httpTimeout: 120s
     httpMaxIdleConnsPerHost: 32
+  BQSTREAM:
+    responseTransform: true
 BatchRouter:
   mainLoopSleep: 2s
   jobQueryBatchSize: 100000
@@ -174,6 +179,7 @@ Processor:
   errDBReadBatchSize: 1000
   noOfErrStashWorkers: 2
   maxFailedCountForErrJob: 3
+  enableEventCount: true
   Stats:
     captureEventName: false
 Dedup:
