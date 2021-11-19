@@ -33,7 +33,6 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis"
-	redigo "github.com/gomodule/redigo/redis"
 	_ "github.com/lib/pq"
 	"github.com/minio/minio-go"
 	"github.com/ory/dockertest"
@@ -42,9 +41,6 @@ import (
 	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 var (
@@ -79,6 +75,7 @@ var (
 	runIntegration           bool
 	writeKey                 string
 	webhookEventWriteKey     string
+	postgresEventWriteKey    string
 	workspaceID              string
 	redisAddress             string
 	brokerPort               string
@@ -215,7 +212,7 @@ func blockOnHold() {
 	<-c
 }
 
-func SendEvent(payload *strings.Reader, call_type string) (string, error) {
+func SendEvent(payload *strings.Reader, call_type string, writeKey string) (string, error) {
 	log.Println(fmt.Sprintf("Sending %s Event", call_type))
 	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, call_type)
 	method := "POST"
@@ -323,24 +320,24 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("could not connect to docker: %w", err)
 	}
-	SetZookeeper()
-	defer func() {
-		if err := pool.Purge(z); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-	SetKafka()
-	defer func() {
-		if err := pool.Purge(resourceKafka); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-	SetRedis()
-	defer func() {
-		if err := pool.Purge(resourceRedis); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
+	//SetZookeeper()
+	//defer func() {
+	//	if err := pool.Purge(z); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
+	//SetKafka()
+	//defer func() {
+	//	if err := pool.Purge(resourceKafka); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
+	//SetRedis()
+	//defer func() {
+	//	if err := pool.Purge(resourceRedis); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
 	SetJobsDB()
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
@@ -365,18 +362,18 @@ func run(m *testing.M) (int, error) {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	setWhClickHouseDestination()
-	defer func() {
-		if err := pool.Purge(rwhClickHouseDestination); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-	setWhMSSqlDestination()
-	defer func() {
-		if err := pool.Purge(rwhMSSqlDestination); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
+	//setWhClickHouseDestination()
+	//defer func() {
+	//	if err := pool.Purge(rwhClickHouseDestination); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
+	//setWhMSSqlDestination()
+	//defer func() {
+	//	if err := pool.Purge(rwhMSSqlDestination); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
 
 	os.Setenv("JOBS_DB_HOST", "localhost")
 	os.Setenv("JOBS_DB_NAME", "jobsdb")
@@ -424,20 +421,23 @@ func run(m *testing.M) (int, error) {
 	writeKey = randString(27)
 	workspaceID = randString(27)
 	webhookEventWriteKey = randString(27)
+	postgresEventWriteKey = randString(27)
 
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":            webhookurl,
-			"webhookDestinationurl": webhookDestinationurl,
-			"writeKey":              writeKey,
-			"webhookEventWriteKey":  webhookEventWriteKey,
-			"workspaceId":           workspaceID,
-			"postgresPort":          resourcePostgres.GetPort("5432/tcp"),
-			"address":               redisAddress,
-			"minioEndpoint":         minioEndpoint,
-			"minioBucketName":       minioBucketName,
-			"kafkaPort":             strconv.Itoa(localhostPortInt),
+			"webhookUrl":                 webhookurl,
+			"webhookDestinationurl":      webhookDestinationurl,
+			"writeKey":                   writeKey,
+			"webhookEventWriteKey":       webhookEventWriteKey,
+			"postgresEventWriteKey":      postgresEventWriteKey,
+			"workspaceId":                workspaceID,
+			"postgresPort":               resourcePostgres.GetPort("5432/tcp"),
+			"rwhPostgresDestinationPort": rwhPostgresDestination.GetPort("5432/tcp"),
+			"address":                    redisAddress,
+			"minioEndpoint":              minioEndpoint,
+			"minioBucketName":            minioBucketName,
+			"kafkaPort":                  strconv.Itoa(localhostPortInt),
 		},
 	)
 	defer func() {
@@ -512,7 +512,7 @@ func setWhMSSqlDestination() {
 	MSSqlSslMode := "disable"
 
 	// pulls an image, creates a container based on it and runs it
-	rwhClickHouseDestination, err = pool.Run("mcr.microsoft.com/mssql/server", "2019-latest", []string{
+	rwhMSSqlDestination, err = pool.Run("mcr.microsoft.com/mssql/server", "2019-latest", []string{
 		fmt.Sprintf("ACCEPT_EULA=%s", "Y"),
 		fmt.Sprintf("SA_DB=%s", MSSqlDb),
 		fmt.Sprintf("SA_PASSWORD=%s", MSSqlPassword),
@@ -524,7 +524,7 @@ func setWhMSSqlDestination() {
 	}
 
 	// Getting at which port the container is running
-	MSSqlPort := rwhClickHouseDestination.GetPort("1433/tcp")
+	MSSqlPort := rwhMSSqlDestination.GetPort("1433/tcp")
 
 	// 16 -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=reallyStrongPwd123' -p 1434:1433 mcr.microsoft.com/mssql/server:2016-latest
 	query := url.Values{}
@@ -542,11 +542,11 @@ func setWhMSSqlDestination() {
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		var err error
-		db, err = sql.Open("sqlserver", whMSSqlUrl.String())
+		sqlDb, err := sql.Open("sqlserver", whMSSqlUrl.String())
 		if err != nil {
 			return err
 		}
-		return db.Ping()
+		return sqlDb.Ping()
 	}); err != nil {
 		log.Println("Could not connect to MSSql", whMSSqlUrl, err)
 	}
@@ -604,11 +604,11 @@ func setWhClickHouseDestination() {
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		var err error
-		db, err = sql.Open("clickhouse", whClickHouseUrl)
+		chDb, err := sql.Open("clickhouse", whClickHouseUrl)
 		if err != nil {
 			return err
 		}
-		return db.Ping()
+		return chDb.Ping()
 	}); err != nil {
 		log.Println("Could not connect to postgres", whClickHouseUrl, err)
 	}
@@ -649,324 +649,356 @@ func setWhPostgresDestination() {
 
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
+		//CREATE OR REPLACE PROCEDURE events_count(event_type varchar, user_id varchar)
+		//    LANGUAGE plpgsql
+		//AS
+		//$$
+		//DECLARE
+		//    table_record RECORD;
+		//    events_count int := 0;
+		//BEGIN
+		//    FOR table_record IN SELECT * FROM gw_jobs_1
+		//        LOOP
+		//            RAISE NOTICE '%', table_record.event_payload;
+		//        END LOOP;
+		//END;
+		//$$
 		var err error
-		db, err = sql.Open("postgres", whPostgresUrl)
+		pgDb, err := sql.Open("postgres", whPostgresUrl)
 		if err != nil {
 			return err
 		}
-		return db.Ping()
+		return pgDb.Ping()
 	}); err != nil {
 		log.Println("Could not connect to postgres", whPostgresUrl, err)
 	}
 }
 
-func TestWebhook(t *testing.T) {
-	var err error
-	psqlInfo := jobsdb.GetConnectionString()
-	dbHandle, err = sql.Open("postgres", psqlInfo)
-	if err != nil {
-		panic(err)
-	}
-	// Pulling config form workspaceConfig.json
-	sourceJSON = getWorkspaceConfig()
+//func TestWebhook(t *testing.T) {
+//	var err error
+//	psqlInfo := jobsdb.GetConnectionString()
+//	dbHandle, err = sql.Open("postgres", psqlInfo)
+//	if err != nil {
+//		panic(err)
+//	}
+//	// Pulling config form workspaceConfig.json
+//	sourceJSON = getWorkspaceConfig()
+//
+//	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
+//	payload_1 := strings.NewReader(`{
+//		"userId": "identified user id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"eventOrderNo":"1",
+//		"context": {
+//		  "traits": {
+//			 "trait1": "new-val"
+//		  },
+//		  "ip": "14.5.67.21",
+//		  "library": {
+//			  "name": "http"
+//		  }
+//		},
+//		"timestamp": "2020-02-02T00:23:09.544Z"
+//	  }`)
+//	SendEvent(payload_1, "identify")
+//	payload_2 := strings.NewReader(`{
+//		"userId": "identified user id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"eventOrderNo":"2",
+//		"context": {
+//		  "traits": {
+//			 "trait1": "new-val"
+//		  },
+//		  "ip": "14.5.67.21",
+//		  "library": {
+//			  "name": "http"
+//		  }
+//		},
+//		"timestamp": "2020-02-02T00:23:09.544Z"
+//	  }`)
+//	SendEvent(payload_2, "identify") //sending duplicate event to check dedup
+//	// Sending Batch event
+//	payload_Batch := strings.NewReader(`{
+//		"batch":
+//		[
+//			{
+//				"userId": "identified user id",
+//			   "anonymousId":"anonymousId_1",
+//			   "messageId":"messageId_1"
+//			}
+//		]
+//	}`)
+//	SendEvent(payload_Batch, "batch")
+//
+//	// Sending track event
+//	payload_track := strings.NewReader(`{
+//		"userId": "identified user id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"type": "track",
+//		"event": "Product Reviewed",
+//		"properties": {
+//		  "review_id": "12345",
+//		  "product_id" : "123",
+//		  "rating" : 3.0,
+//		  "review_body" : "Average product, expected much more."
+//		}
+//	  }`)
+//	SendEvent(payload_track, "track")
+//
+//	// Sending page event
+//	payload_page := strings.NewReader(`{
+//		"userId": "identified user id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"type": "page",
+//		"name": "Home",
+//		"properties": {
+//		  "title": "Home | RudderStack",
+//		  "url": "http://www.rudderstack.com"
+//		}
+//	  }`)
+//	SendEvent(payload_page, "page")
+//
+//	// Sending screen event
+//	payload_screen := strings.NewReader(`{
+//		"userId": "identified user id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"type": "screen",
+//		"name": "Main",
+//		"properties": {
+//		  "prop_key": "prop_value"
+//		}
+//	  }`)
+//	SendEvent(payload_screen, "screen")
+//
+//	// Sending alias event
+//	payload_alias := strings.NewReader(`{
+//		"userId": "identified user id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"type": "alias",
+//		"previousId": "name@surname.com",
+//		"userId": "12345"
+//	  }`)
+//	SendEvent(payload_alias, "alias")
+//
+//	// Sending group event
+//	payload_group := strings.NewReader(`{
+//		"userId": "identified user id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"type": "group",
+//		"groupId": "12345",
+//		"traits": {
+//		  "name": "MyGroup",
+//		  "industry": "IT",
+//		  "employees": 450,
+//		  "plan": "basic"
+//		}
+//	  }`)
+//	SendEvent(payload_group, "group")
+//	SendWebhookEvent()
+//
+//	require.Eventually(t, func() bool {
+//		// fmt.Println(len(webhook.Requests()) )
+//		return len(webhook.Requests()) == 8
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		return len(webhookDestination.Requests()) == 1
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	req := webhook.Requests()[0]
+//	body, err := io.ReadAll(req.Body)
+//
+//	require.NoError(t, err)
+//	require.Equal(t, "POST", req.Method)
+//	require.Equal(t, "/", req.URL.Path)
+//	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
+//	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
+//
+//	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anonymousId_1")
+//	require.Equal(t, gjson.GetBytes(body, "messageId").Str, "messageId_1")
+//	require.Equal(t, gjson.GetBytes(body, "eventOrderNo").Str, "1")
+//	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified user id")
+//	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
+//	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
+//
+//	req = webhookDestination.Requests()[0]
+//	body, err = io.ReadAll(req.Body)
+//
+//	require.NoError(t, err)
+//	require.Equal(t, "POST", req.Method)
+//	require.Equal(t, "/", req.URL.Path)
+//	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
+//	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
+//
+//	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "")
+//	require.NotEqual(t, gjson.GetBytes(body, "messageId").Str, "")
+//}
+//
+//// Verify Event in POSTGRES
+//func TestPostgres(t *testing.T) {
+//	var myEvent Event
+//	require.Eventually(t, func() bool {
+//		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
+//		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
+//		return myEvent.anonymous_id == "anonymousId_1"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		eventSql := "select count(*) from dev_integration_test_1.aliases"
+//		db.QueryRow(eventSql).Scan(&myEvent.count)
+//		return myEvent.count == "1"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		eventSql := "select count(*) from dev_integration_test_1.groups"
+//		db.QueryRow(eventSql).Scan(&myEvent.count)
+//		return myEvent.count == "1"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		eventSql := "select count(*) from dev_integration_test_1.identifies"
+//		db.QueryRow(eventSql).Scan(&myEvent.count)
+//		return myEvent.count == "1"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		eventSql := "select count(*) from dev_integration_test_1.pages"
+//		db.QueryRow(eventSql).Scan(&myEvent.count)
+//		return myEvent.count == "1"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		eventSql := "select count(*) from dev_integration_test_1.screens"
+//		db.QueryRow(eventSql).Scan(&myEvent.count)
+//		return myEvent.count == "1"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		eventSql := "select count(*) from dev_integration_test_1.tracks"
+//		db.QueryRow(eventSql).Scan(&myEvent.count)
+//		return myEvent.count == "1"
+//	}, time.Minute, 10*time.Millisecond)
+//}
+//
+//// Verify Audience List EndPoint
+//func TestAudiencelist(t *testing.T) {
+//	payload := strings.NewReader(`{
+//		"type": "audiencelist",
+//		"properties": {
+//			"listData": {
+//			"add": [
+//				{
+//				"EMAIL": "xyz@rudderstack.com",
+//				"MM": "02"
+//				}
+//			],
+//			"remove": [
+//				{
+//				"EMAIL": "abc@rudderstack.com",
+//				"MM": "02"
+//				}
+//			]
+//			}
+//		},
+//		"userId": "user123"
+//		}`)
+//	resbody, _ := SendEvent(payload, "audiencelist")
+//	require.Equal(t, resbody, "OK")
+//}
+//
+//// Verify Event in Redis
+//func TestRedis(t *testing.T) {
+//	conn, err := redigo.Dial("tcp", redisAddress)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer conn.Close()
+//	require.Eventually(t, func() bool {
+//		// Similarly, get the trait1 and convert it to a string.
+//		event, _ := redigo.String(conn.Do("HGET", "user:identified user id", "trait1"))
+//		return event == "new-val"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//}
+// Verify Event in Kafka
+//func TestKafka(t *testing.T) {
+//
+//	config := sarama.NewConfig()
+//	config.ClientID = "go-kafka-consumer"
+//	config.Consumer.Return.Errors = true
+//
+//	kafkaEndpoint := fmt.Sprintf("localhost:%s", strconv.Itoa(localhostPortInt))
+//	brokers := []string{kafkaEndpoint}
+//
+//	// Create new consumer
+//	master, err := sarama.NewConsumer(brokers, config)
+//	if err != nil {
+//		panic(err)
+//	}
+//	topics, _ := master.Topics()
+//
+//	consumer, errors := consume(topics, master)
+//	defer func() {
+//		if err := master.Close(); err != nil {
+//			panic(err)
+//		}
+//	}()
+//
+//	signals := make(chan os.Signal, 1)
+//	signal.Notify(signals, os.Interrupt)
+//
+//	// Count how many message processed
+//	msgCount := 0
+//	// Get signnal for finish
+//	expectedCount := 8
+//out:
+//	for {
+//		select {
+//		case msg := <-consumer:
+//			msgCount++
+//			t.Log("Received messages", string(msg.Key), string(msg.Value))
+//			require.Equal(t, "identified user id", string(msg.Key))
+//			// require.Contains(t, string(msg.Value), "new-val")
+//			require.Contains(t, string(msg.Value), "identified user id")
+//			if msgCount == expectedCount {
+//				break out
+//			}
+//		case consumerError := <-errors:
+//			msgCount++
+//			log.Println("Received consumerError ", string(consumerError.Topic), string(consumerError.Partition), consumerError.Err)
+//			// Required
+//		case <-time.After(time.Minute):
+//			panic("timeout waiting on kafka message")
+//		}
+//	}
+//	log.Println("Processed", msgCount, "messages")
+//
+//}
 
-	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
-	payload_1 := strings.NewReader(`{
-		"userId": "identified user id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"eventOrderNo":"1",
-		"context": {
-		  "traits": {
-			 "trait1": "new-val"
-		  },
-		  "ip": "14.5.67.21",
-		  "library": {
-			  "name": "http"
-		  }
-		},
-		"timestamp": "2020-02-02T00:23:09.544Z"
-	  }`)
-	SendEvent(payload_1, "identify")
-	payload_2 := strings.NewReader(`{
-		"userId": "identified user id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"eventOrderNo":"2",
-		"context": {
-		  "traits": {
-			 "trait1": "new-val"
-		  },
-		  "ip": "14.5.67.21",
-		  "library": {
-			  "name": "http"
-		  }
-		},
-		"timestamp": "2020-02-02T00:23:09.544Z"
-	  }`)
-	SendEvent(payload_2, "identify") //sending duplicate event to check dedup
-	// Sending Batch event
-	payload_Batch := strings.NewReader(`{
-		"batch":
-		[
-			{
-				"userId": "identified user id",
-			   "anonymousId":"anonymousId_1",
-			   "messageId":"messageId_1"
-			}
-		]
-	}`)
-	SendEvent(payload_Batch, "batch")
-
+// Testing Postgres destination
+func TestWhPostgresDestination(t *testing.T) {
 	// Sending track event
 	payload_track := strings.NewReader(`{
-		"userId": "identified user id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"type": "track",
-		"event": "Product Reviewed",
-		"properties": {
-		  "review_id": "12345",
-		  "product_id" : "123",
-		  "rating" : 3.0,
-		  "review_body" : "Average product, expected much more."
-		}
-	  }`)
-	SendEvent(payload_track, "track")
-
-	// Sending page event
-	payload_page := strings.NewReader(`{
-		"userId": "identified user id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"type": "page",
-		"name": "Home",
-		"properties": {
-		  "title": "Home | RudderStack",
-		  "url": "http://www.rudderstack.com"
-		}
-	  }`)
-	SendEvent(payload_page, "page")
-
-	// Sending screen event
-	payload_screen := strings.NewReader(`{
-		"userId": "identified user id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"type": "screen",
-		"name": "Main",
-		"properties": {
-		  "prop_key": "prop_value"
-		}
-	  }`)
-	SendEvent(payload_screen, "screen")
-
-	// Sending alias event
-	payload_alias := strings.NewReader(`{
-		"userId": "identified user id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"type": "alias",
-		"previousId": "name@surname.com",
-		"userId": "12345"
-	  }`)
-	SendEvent(payload_alias, "alias")
-
-	// Sending group event
-	payload_group := strings.NewReader(`{
-		"userId": "identified user id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"type": "group",
-		"groupId": "12345",
-		"traits": {
-		  "name": "MyGroup",
-		  "industry": "IT",
-		  "employees": 450,
-		  "plan": "basic"
-		}
-	  }`)
-	SendEvent(payload_group, "group")
-	SendWebhookEvent()
-
-	require.Eventually(t, func() bool {
-		// fmt.Println(len(webhook.Requests()) )
-		return len(webhook.Requests()) == 8
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		return len(webhookDestination.Requests()) == 1
-	}, time.Minute, 10*time.Millisecond)
-
-	req := webhook.Requests()[0]
-	body, err := io.ReadAll(req.Body)
-
-	require.NoError(t, err)
-	require.Equal(t, "POST", req.Method)
-	require.Equal(t, "/", req.URL.Path)
-	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
-	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
-
-	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anonymousId_1")
-	require.Equal(t, gjson.GetBytes(body, "messageId").Str, "messageId_1")
-	require.Equal(t, gjson.GetBytes(body, "eventOrderNo").Str, "1")
-	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified user id")
-	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
-	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
-
-	req = webhookDestination.Requests()[0]
-	body, err = io.ReadAll(req.Body)
-
-	require.NoError(t, err)
-	require.Equal(t, "POST", req.Method)
-	require.Equal(t, "/", req.URL.Path)
-	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
-	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
-
-	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "")
-	require.NotEqual(t, gjson.GetBytes(body, "messageId").Str, "")
-}
-
-// Verify Event in POSTGRES
-func TestPostgres(t *testing.T) {
-	var myEvent Event
-	require.Eventually(t, func() bool {
-		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
-		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
-		return myEvent.anonymous_id == "anonymousId_1"
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		eventSql := "select count(*) from dev_integration_test_1.aliases"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		eventSql := "select count(*) from dev_integration_test_1.groups"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		eventSql := "select count(*) from dev_integration_test_1.identifies"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		eventSql := "select count(*) from dev_integration_test_1.pages"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		eventSql := "select count(*) from dev_integration_test_1.screens"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		eventSql := "select count(*) from dev_integration_test_1.tracks"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
-	}, time.Minute, 10*time.Millisecond)
-}
-
-// Verify Audience List EndPoint
-func TestAudiencelist(t *testing.T) {
-	payload := strings.NewReader(`{
-		"type": "audiencelist",
-		"properties": {
-			"listData": {
-			"add": [
-				{
-				"EMAIL": "xyz@rudderstack.com",
-				"MM": "02"
-				}
-			],
-			"remove": [
-				{
-				"EMAIL": "abc@rudderstack.com",
-				"MM": "02"
-				}
-			]
+			"userId": "user id",
+			"anonymousId":"anonymousId",
+			"messageId":"messageId_1",
+			"type": "track",
+			"event": "Product Reviewed",
+			"properties": {
+			  "review_id": "12345",
+			  "product_id" : "123",
+			  "rating" : 3.0,
+			  "review_body" : "Average product, expected much more."
 			}
-		},
-		"userId": "user123"
-		}`)
-	resbody, _ := SendEvent(payload, "audiencelist")
-	require.Equal(t, resbody, "OK")
-}
-
-// Verify Event in Redis
-func TestRedis(t *testing.T) {
-	conn, err := redigo.Dial("tcp", redisAddress)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-	require.Eventually(t, func() bool {
-		// Similarly, get the trait1 and convert it to a string.
-		event, _ := redigo.String(conn.Do("HGET", "user:identified user id", "trait1"))
-		return event == "new-val"
-	}, time.Minute, 10*time.Millisecond)
-
-}
-
-// Verify Event in Kafka
-func TestKafka(t *testing.T) {
-
-	config := sarama.NewConfig()
-	config.ClientID = "go-kafka-consumer"
-	config.Consumer.Return.Errors = true
-
-	kafkaEndpoint := fmt.Sprintf("localhost:%s", strconv.Itoa(localhostPortInt))
-	brokers := []string{kafkaEndpoint}
-
-	// Create new consumer
-	master, err := sarama.NewConsumer(brokers, config)
-	if err != nil {
-		panic(err)
-	}
-	topics, _ := master.Topics()
-
-	consumer, errors := consume(topics, master)
-	defer func() {
-		if err := master.Close(); err != nil {
-			panic(err)
-		}
-	}()
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt)
-
-	// Count how many message processed
-	msgCount := 0
-	// Get signnal for finish
-	expectedCount := 8
-out:
-	for {
-		select {
-		case msg := <-consumer:
-			msgCount++
-			t.Log("Received messages", string(msg.Key), string(msg.Value))
-			require.Equal(t, "identified user id", string(msg.Key))
-			// require.Contains(t, string(msg.Value), "new-val")
-			require.Contains(t, string(msg.Value), "identified user id")
-			if msgCount == expectedCount {
-				break out
-			}
-		case consumerError := <-errors:
-			msgCount++
-			log.Println("Received consumerError ", string(consumerError.Topic), string(consumerError.Partition), consumerError.Err)
-			// Required
-		case <-time.After(time.Minute):
-			panic("timeout waiting on kafka message")
-		}
-	}
-	log.Println("Processed", msgCount, "messages")
-
+		  }`)
+	SendEvent(payload_track, "track", postgresEventWriteKey)
 }
 
 func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
