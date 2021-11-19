@@ -59,9 +59,8 @@ type PostParametersT struct {
 }
 
 type DeliveryResponseT struct {
-	Status  int64           `json:"status"`
-	Body    string          `json:"responseBody"`
-	Payload PostParametersT `json:"payload"`
+	Status int64  `json:"status"`
+	Body   string `json:"responseBody"`
 }
 
 // This struct represents the datastructure present in Transformer network layer Error builder
@@ -86,7 +85,6 @@ type TransResponseT struct {
 	Message             string      `json:"message"`
 	DestinationResponse interface{} `json:"destinationResponse"`
 	AuthErrorCategory   string      `json:"authErrorCategory"`
-	AccessToken         string      `json:"accessToken"`
 }
 
 func CollectDestErrorStats(input []byte) {
