@@ -13,7 +13,6 @@ import (
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/processor/integrations"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -81,6 +80,7 @@ type ControlPlaneRequestT struct {
 	Url         string
 	Method      string
 	destName    string
+	RequestType string // This is to add more refined stat tags
 }
 
 // This function creates a new OauthErrorResponseHandler
@@ -100,11 +100,6 @@ const (
 	REFRESH_TOKEN               = "REFRESH_TOKEN"
 	INVALID_REFRESH_TOKEN_GRANT = "refresh_token_invalid_grant"
 )
-
-// The response from the transformer network layer will be sent with a output property(in case of an error)
-type ErrorOutput struct {
-	Output integrations.TransErrorT `json:"output"`
-}
 
 type RefreshTokenBodyParams struct {
 	HasExpired   bool   `json:"hasExpired"`
@@ -195,7 +190,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 		accountMutex.Unlock()
 		if refVal != nil {
 			token := refVal.Account.AccessToken
-			authErrHandler.logger.Debugf("[%s request] [Active Refresh Request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, token)
+			authErrHandler.logger.Debugf("[%s request] [Active] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, token)
 			return http.StatusOK, refVal
 		}
 		// Empty Response(valid while many GetToken calls are happening)
@@ -208,17 +203,17 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	}
 	// Refresh will start
 	authErrHandler.refreshActiveMap[refTokenParams.AccountId] = true
-	authErrHandler.logger.Debugf("[%s request] [rt-worker-%v] :: Refresh request is active!", loggerNm, refTokenParams.WorkerId)
+	authErrHandler.logger.Debugf("[%s request] [rt-worker-%v] :: %v request is active!", loggerNm, logTypeName, refTokenParams.WorkerId)
 	accountMutex.Unlock()
 
 	defer func() {
 		accountMutex.Lock()
 		authErrHandler.refreshActiveMap[refTokenParams.AccountId] = false
-		authErrHandler.logger.Debugf("[%s request] [rt-worker-%v]:: Refresh request is inactive!", loggerNm, refTokenParams.WorkerId)
+		authErrHandler.logger.Debugf("[%s request] [rt-worker-%v]:: %v request is inactive!", loggerNm, logTypeName, refTokenParams.WorkerId)
 		accountMutex.Unlock()
 	}()
 
-	authErrHandler.logger.Debugf("[%s] Refresh Lock Acquired by rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
+	authErrHandler.logger.Debugf("[%s] [%v request] Lock Acquired by rt-worker-%d\n", loggerNm, logTypeName, refTokenParams.WorkerId)
 
 	errHandlerReqTimeStart := time.Now()
 	defer func() {
@@ -246,6 +241,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 		ContentType: "application/json; charset=utf-8",
 		Body:        string(res),
 		destName:    refTokenParams.DestDefName,
+		RequestType: logTypeName,
 	}
 	var accountSecret AccountSecret
 	// Stat for counting number of Refresh Token endpoint calls
@@ -273,7 +269,6 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 			Err:     "Empty token",
 		}
 		authErrHandler.logger.Debugf("[%s request] :: Empty %s response received(rt-worker-%d) : %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
-		// authErrHandler.logger.Debugf("[%s request] :: Refresh token response received : %s", loggerNm, response)
 		return http.StatusInternalServerError
 	}
 
@@ -311,6 +306,7 @@ func getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (mess
 		// Some problem with AccountSecret unmarshalling
 		message = err.Error()
 	} else if gjson.Get(response, "body.code").String() == INVALID_REFRESH_TOKEN_GRANT {
+		// User (or) AccessToken (or) RefreshToken has been revoked
 		message = INVALID_REFRESH_TOKEN_GRANT
 	} else if !router_utils.IsNotEmptyString(accountSecret.AccessToken) {
 		// Status is 200, but no accesstoken is sent
@@ -386,9 +382,10 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 
 	disableURL := fmt.Sprintf("%s/workspaces/%s/destinations/%s/disable", configBEURL, workspaceId, destinationId)
 	disableCpReq := &ControlPlaneRequestT{
-		Url:      disableURL,
-		Method:   http.MethodDelete,
-		destName: destination.DestinationDefinition.Name,
+		Url:         disableURL,
+		Method:      http.MethodDelete,
+		destName:    destination.DestinationDefinition.Name,
+		RequestType: "Disable destination",
 	}
 
 	disableDestStats.statName = "disable_destination_request_sent"
@@ -468,12 +465,13 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		req.Header.Set("Content-Type", cpReq.ContentType)
 	}
 
-	authErrHandlerTimeStart := time.Now()
+	cpApiDoTimeStart := time.Now()
 	res, doErr := authErrHandler.client.Do(req)
 	stats.NewTaggedStat("cp_request_latency", stats.TimerType, stats.Tags{
 		"url":         cpReq.Url,
 		"destination": cpReq.destName,
-	}).SendTiming(time.Since(authErrHandlerTimeStart))
+		"requestType": cpReq.RequestType,
+	}).SendTiming(time.Since(cpApiDoTimeStart))
 	authErrHandler.logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
 	if res.Body != nil {
 		defer res.Body.Close()

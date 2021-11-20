@@ -88,6 +88,16 @@ You can also set up RudderStack on your platform of choice with these two easy s
 
 Once you have installed RudderStack, [**send test events**](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/sending-test-events/) to verify the setup.
 
+## Architecture
+
+RudderStack is an independent, stand-alone system with a dependency only on the database (PostgreSQL). Its backend is written in **Go** with a rich UI written in **React.js**.
+
+A high-level view of RudderStack’s architecture is shown below:
+
+![Architecture](https://user-images.githubusercontent.com/59817155/141984012-2fa29268-7144-47c0-864c-74d6af61b9a5.png)
+
+For more details on the various architectural components, refer to our [**documentation**](https://rudderstack.com/docs/get-started/rudderstack-architecture/).
+
 ## Contribute
 
 We would love to see you contribute to RudderStack. Get more information on how to contribute [**here**](https://github.com/rudderlabs/rudder-server/blob/master/CONTRIBUTING.md).

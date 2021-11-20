@@ -50,13 +50,13 @@ type PauseT struct {
 
 type HandleDestOAuthRespParamsT struct {
 	ctx            context.Context
-	val            integrations.PostParametersT
 	destinationJob types.DestinationJobT
 	workerId       int
 	destRespStCd   int
 	trRespStCd     int
 	destResBody    string
 	trRespBody     string
+	accessToken    string
 }
 
 //HandleT is the handle to this module.
@@ -637,10 +637,10 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
 							//response transform start
 							if worker.rt.responseTransform {
+
 								dResponse := integrations.DeliveryResponseT{
-									Status:  int64(respStatusCode),
-									Body:    respBodyTemp,
-									Payload: val,
+									Status: int64(respStatusCode),
+									Body:   respBodyTemp,
 								}
 								// destination response status code
 								destRespStCd := respStatusCode
@@ -654,15 +654,17 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								authType := router_utils.GetAuthType(destinationJob.Destination)
 								if router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 									pkgLogger.Debugf(`Sending for OAuth destination`)
+									// Token from header of the request
+									token := getTokenFromHeader(val.Headers)
 									respStatusCode, respBodyTemp = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
 										ctx:            ctx,
-										val:            val,
 										destinationJob: destinationJob,
 										workerId:       worker.workerID,
 										destRespStCd:   destRespStCd,
 										destResBody:    destRespBody,
 										trRespStCd:     respStatusCode,
 										trRespBody:     respBodyTemp,
+										accessToken:    token,
 									})
 								}
 							}
@@ -2085,7 +2087,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 	destinationJob := params.destinationJob
 
 	if trRespStatusCode != http.StatusOK {
-		var destErrOutput oauth.ErrorOutput
+		var destErrOutput integrations.TransResponseT
 		if destError := json.Unmarshal([]byte(trRespBody), &destErrOutput); destError != nil {
 			// Errors like OOM kills of transformer, transformer down etc,.
 			// If destResBody comes out with a plain string, then this will occur
@@ -2097,18 +2099,17 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 		}
 		workspaceId := destinationJob.JobMetadataArray[0].WorkspaceId
 		var errCatStatusCode int
-		destErrDetailed := destErrOutput.Output.ErrorDetailed
-		// stats.NewTaggedStat(destErrDetailed.StatName, stats.CountType, destErrDetailed.StatTags).Increment()
+		// destErrDetailed := destErrOutput.Output
 		// Check the category
 		// Trigger the refresh endpoint/disable endpoint
-		switch destErrDetailed.AuthErrorCategory {
+		switch destErrOutput.AuthErrorCategory {
 		case oauth.DISABLE_DEST:
 			return rt.ExecDisableDestination(destinationJob, workspaceId, destResBody)
 		case oauth.REFRESH_TOKEN:
 			rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
-				AccessToken:     destErrDetailed.AccessToken,
+				AccessToken:     params.accessToken,
 				WorkspaceId:     workspaceId,
 				AccountId:       rudderAccountId,
 				DestDefName:     destinationJob.Destination.DestinationDefinition.Name,
@@ -2176,4 +2177,13 @@ func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAborted
 		jobRunIDAbortedEventsMap[taskRunID] = []*FailedEventRowT{}
 	}
 	jobRunIDAbortedEventsMap[taskRunID] = append(jobRunIDAbortedEventsMap[taskRunID], &FailedEventRowT{DestinationID: destinationID, RecordID: recordID})
+}
+
+func getTokenFromHeader(headers map[string]interface{}) string {
+	authHeader, ok := headers["Authorization"]
+	if !ok {
+		return ""
+	}
+	authArr := strings.Split(authHeader.(string), " ")
+	return strings.TrimSpace(authArr[1])
 }
