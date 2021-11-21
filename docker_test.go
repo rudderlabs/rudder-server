@@ -14,6 +14,7 @@ import (
 	_ "encoding/json"
 	"flag"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"html/template"
 	"io"
 	"log"
@@ -43,44 +44,68 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 )
 
+type PostgresTestT struct {
+	resource *dockertest.Resource
+	db       *sql.DB
+	writeKey string
+}
+
+type ClickHouseTestT struct {
+	resource *dockertest.Resource
+	db       *sql.DB
+	writeKey string
+}
+
+type MSSqlTestT struct {
+	resource *dockertest.Resource
+	db       *sql.DB
+	writeKey string
+}
+
+type WareHouseTestT struct {
+	pgTestT                PostgresTestT
+	chTestT                ClickHouseTestT
+	mssqlTestT             MSSqlTestT
+	gwJobsSqlFunction      string
+	batchRtJobsSqlFunction string
+	sqlFunctionsAdded      bool
+}
+
 var (
-	pool                     *dockertest.Pool
-	err                      error
-	z                        *dockertest.Resource
-	resourceKafka            *dockertest.Resource
-	resourceRedis            *dockertest.Resource
-	transformerRes           *dockertest.Resource
-	resource                 *dockertest.Resource
-	network                  *dc.Network
-	resourcePostgres         *dockertest.Resource
-	rwhPostgresDestination   *dockertest.Resource
-	rwhClickHouseDestination *dockertest.Resource
-	rwhMSSqlDestination      *dockertest.Resource
-	transformURL             string
-	minioEndpoint            string
-	minioBucketName          string
-	hold                     bool = true
-	db                       *sql.DB
-	redisClient              *redis.Client
-	DB_DSN                   = "root@tcp(127.0.0.1:3306)/service"
-	httpPort                 string
-	httpKafkaPort            string
-	dbHandle                 *sql.DB
-	sourceJSON               backendconfig.ConfigT
-	webhookurl               string
-	webhookDestinationurl    string
-	webhook                  *WebhookRecorder
-	webhookDestination       *WebhookRecorder
-	address                  string
-	runIntegration           bool
-	writeKey                 string
-	webhookEventWriteKey     string
-	postgresEventWriteKey    string
-	workspaceID              string
-	redisAddress             string
-	brokerPort               string
-	localhostPort            string
-	localhostPortInt         int
+	pool                  *dockertest.Pool
+	err                   error
+	z                     *dockertest.Resource
+	resourceKafka         *dockertest.Resource
+	resourceRedis         *dockertest.Resource
+	transformerRes        *dockertest.Resource
+	resource              *dockertest.Resource
+	network               *dc.Network
+	resourcePostgres      *dockertest.Resource
+	transformURL          string
+	minioEndpoint         string
+	minioBucketName       string
+	hold                  bool = true
+	db                    *sql.DB
+	redisClient           *redis.Client
+	DB_DSN                = "root@tcp(127.0.0.1:3306)/service"
+	httpPort              string
+	httpKafkaPort         string
+	dbHandle              *sql.DB
+	sourceJSON            backendconfig.ConfigT
+	webhookurl            string
+	webhookDestinationurl string
+	webhook               *WebhookRecorder
+	webhookDestination    *WebhookRecorder
+	address               string
+	runIntegration        bool
+	writeKey              string
+	webhookEventWriteKey  string
+	workspaceID           string
+	redisAddress          string
+	brokerPort            string
+	localhostPort         string
+	localhostPortInt      int
+	whTest                WareHouseTestT
 )
 
 type WebhookRecorder struct {
@@ -356,24 +381,36 @@ func run(m *testing.M) (int, error) {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
+
+	// Initialize warehouse config
+	initWhConfig()
+
+	// Setting postgres destination
 	setWhPostgresDestination()
 	defer func() {
-		if err := pool.Purge(rwhPostgresDestination); err != nil {
+		if err := pool.Purge(whTest.pgTestT.resource); err != nil {
+			log.Printf("Could not purge warehouse postgres resource: %s \n", err)
+		}
+	}()
+
+	// Setting clickhouse destination
+	setWhClickHouseDestination()
+	defer func() {
+		if err := pool.Purge(whTest.chTestT.resource); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	//setWhClickHouseDestination()
-	//defer func() {
-	//	if err := pool.Purge(rwhClickHouseDestination); err != nil {
-	//		log.Printf("Could not purge resource: %s \n", err)
-	//	}
-	//}()
-	//setWhMSSqlDestination()
-	//defer func() {
-	//	if err := pool.Purge(rwhMSSqlDestination); err != nil {
-	//		log.Printf("Could not purge resource: %s \n", err)
-	//	}
-	//}()
+
+	// Setting mssql destination
+	setWhMSSqlDestination()
+	defer func() {
+		if err := pool.Purge(whTest.mssqlTestT.resource); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+
+	// Adding necessary sql functions which needs to be used during warehouse testing
+	addSqlFunctionsToJobsDb()
 
 	os.Setenv("JOBS_DB_HOST", "localhost")
 	os.Setenv("JOBS_DB_NAME", "jobsdb")
@@ -421,23 +458,29 @@ func run(m *testing.M) (int, error) {
 	writeKey = randString(27)
 	workspaceID = randString(27)
 	webhookEventWriteKey = randString(27)
-	postgresEventWriteKey = randString(27)
+	whTest.pgTestT.writeKey = randString(27)
+	whTest.chTestT.writeKey = randString(27)
+	whTest.mssqlTestT.writeKey = randString(27)
 
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":                 webhookurl,
-			"webhookDestinationurl":      webhookDestinationurl,
-			"writeKey":                   writeKey,
-			"webhookEventWriteKey":       webhookEventWriteKey,
-			"postgresEventWriteKey":      postgresEventWriteKey,
-			"workspaceId":                workspaceID,
-			"postgresPort":               resourcePostgres.GetPort("5432/tcp"),
-			"rwhPostgresDestinationPort": rwhPostgresDestination.GetPort("5432/tcp"),
-			"address":                    redisAddress,
-			"minioEndpoint":              minioEndpoint,
-			"minioBucketName":            minioBucketName,
-			"kafkaPort":                  strconv.Itoa(localhostPortInt),
+			"webhookUrl":                   webhookurl,
+			"webhookDestinationurl":        webhookDestinationurl,
+			"writeKey":                     writeKey,
+			"webhookEventWriteKey":         webhookEventWriteKey,
+			"postgresEventWriteKey":        whTest.pgTestT.writeKey,
+			"clickHouseEventWriteKey":      whTest.chTestT.writeKey,
+			"mssqlEventWriteKey":           whTest.mssqlTestT.writeKey,
+			"workspaceId":                  workspaceID,
+			"postgresPort":                 resourcePostgres.GetPort("5432/tcp"),
+			"rwhPostgresDestinationPort":   whTest.pgTestT.resource.GetPort("5432/tcp"),
+			"rwhClickHouseDestinationPort": whTest.chTestT.resource.GetPort("9000/tcp"),
+			"rwhMSSqlDestinationPort":      whTest.mssqlTestT.resource.GetPort("1433/tcp"),
+			"address":                      redisAddress,
+			"minioEndpoint":                minioEndpoint,
+			"minioBucketName":              minioBucketName,
+			"kafkaPort":                    strconv.Itoa(localhostPortInt),
 		},
 	)
 	defer func() {
@@ -501,177 +544,6 @@ func run(m *testing.M) (int, error) {
 	tearDownStart = time.Now()
 
 	return code, nil
-}
-
-func setWhMSSqlDestination() {
-	// Configs
-	MSSqlDb := "TestDB"
-	MSSqlPassword := "reallyStrongPwd123"
-	MSSqlUser := "SA"
-	MSSqlHost := "localhost"
-	MSSqlSslMode := "disable"
-
-	// pulls an image, creates a container based on it and runs it
-	rwhMSSqlDestination, err = pool.Run("mcr.microsoft.com/mssql/server", "2019-latest", []string{
-		fmt.Sprintf("ACCEPT_EULA=%s", "Y"),
-		fmt.Sprintf("SA_DB=%s", MSSqlDb),
-		fmt.Sprintf("SA_PASSWORD=%s", MSSqlPassword),
-		fmt.Sprintf("SA_USER=%s", MSSqlUser),
-	})
-	if err != nil {
-		log.Println("Could not start resource ClickHouse: %w", err)
-		return
-	}
-
-	// Getting at which port the container is running
-	MSSqlPort := rwhMSSqlDestination.GetPort("1433/tcp")
-
-	// 16 -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=reallyStrongPwd123' -p 1434:1433 mcr.microsoft.com/mssql/server:2016-latest
-	query := url.Values{}
-	query.Add("database", MSSqlDb)
-	query.Add("encrypt", MSSqlSslMode)
-	query.Add("TrustServerCertificate", "true")
-	whMSSqlUrl := &url.URL{
-		Scheme:   "sqlserver",
-		User:     url.UserPassword(MSSqlUser, MSSqlPassword),
-		Host:     fmt.Sprintf("%s:%s", MSSqlHost, MSSqlPort),
-		RawQuery: query.Encode(),
-	}
-	fmt.Println("whMSSqlUrl:", whMSSqlUrl.String())
-
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		var err error
-		sqlDb, err := sql.Open("sqlserver", whMSSqlUrl.String())
-		if err != nil {
-			return err
-		}
-		return sqlDb.Ping()
-	}); err != nil {
-		log.Println("Could not connect to MSSql", whMSSqlUrl, err)
-	}
-}
-
-func setWhClickHouseDestination() {
-	// Configs
-	ClickHouseHost := "localhost"
-	ClickHouseUser := "rudder"
-	ClickHousePassword := "rudder-password"
-	ClickHouseDb := "rudderdb"
-	ClickHouseBlockSize := "1000000"
-	ClickHousePoolSize := "100"
-	ClickHouseQueryDebugLogs := "false"
-	ClickHouseReadTimeout := "300"
-	ClickHouseWriteTimeout := "1800"
-	ClickHouseCompress := "true"
-	ClickHouseSecure := "false"
-	ClickHouseSkipVerify := "true"
-	ClickHouseTlsConfigName := ""
-
-	// pulls an image, creates a container based on it and runs it
-	rwhClickHouseDestination, err = pool.Run("yandex/clickhouse-server", "21-alpine", []string{
-		fmt.Sprintf("CLICKHOUSE_DB=%s", ClickHouseDb),
-		fmt.Sprintf("CLICKHOUSE_PASSWORD=%s", ClickHousePassword),
-		fmt.Sprintf("CLICKHOUSE_USER=%s", ClickHouseUser),
-	})
-	if err != nil {
-		log.Println("Could not start resource ClickHouse: %w", err)
-		return
-	}
-
-	// Getting at which port the container is running
-	ClickHousePort := rwhClickHouseDestination.GetPort("9000/tcp")
-
-	// Creating url string for connection
-	whClickHouseUrl := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&read_timeout=%s&write_timeout=%s&compress=%s",
-		ClickHouseHost,
-		ClickHousePort,
-		ClickHouseUser,
-		ClickHousePassword,
-		ClickHouseDb,
-		ClickHouseBlockSize,
-		ClickHousePoolSize,
-		ClickHouseQueryDebugLogs,
-		ClickHouseSecure,
-		ClickHouseSkipVerify,
-		ClickHouseTlsConfigName,
-		ClickHouseReadTimeout,
-		ClickHouseWriteTimeout,
-		ClickHouseCompress,
-	)
-	fmt.Println("whClickHouseUrl:", whClickHouseUrl)
-
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		var err error
-		chDb, err := sql.Open("clickhouse", whClickHouseUrl)
-		if err != nil {
-			return err
-		}
-		return chDb.Ping()
-	}); err != nil {
-		log.Println("Could not connect to postgres", whClickHouseUrl, err)
-	}
-}
-
-func setWhPostgresDestination() {
-	// Configs
-	PostgresDb := "rudderdb"
-	PostgresPassword := "rudder-password"
-	PostgresUser := "rudder"
-	PostgresHost := "localhost"
-	PostgresSslMode := "disable"
-
-	// pulls an image, creates a container based on it and runs it
-	rwhPostgresDestination, err = pool.Run("postgres", "11-alpine", []string{
-		fmt.Sprintf("POSTGRES_DB=%s", PostgresDb),
-		fmt.Sprintf("POSTGRES_PASSWORD=%s", PostgresPassword),
-		fmt.Sprintf("POSTGRES_USER=%s", PostgresUser),
-	})
-	if err != nil {
-		log.Println("Could not start resource Postgres: %w", err)
-		return
-	}
-
-	// Getting at which port the container is running
-	PostgresPort := rwhPostgresDestination.GetPort("5432/tcp")
-
-	// Creating url string for connection
-	whPostgresUrl := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
-		PostgresUser,
-		PostgresPassword,
-		PostgresHost,
-		PostgresPort,
-		PostgresDb,
-		PostgresSslMode,
-	)
-	fmt.Println("whPostgresUrl:", whPostgresUrl)
-
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		//CREATE OR REPLACE PROCEDURE events_count(event_type varchar, user_id varchar)
-		//    LANGUAGE plpgsql
-		//AS
-		//$$
-		//DECLARE
-		//    table_record RECORD;
-		//    events_count int := 0;
-		//BEGIN
-		//    FOR table_record IN SELECT * FROM gw_jobs_1
-		//        LOOP
-		//            RAISE NOTICE '%', table_record.event_payload;
-		//        END LOOP;
-		//END;
-		//$$
-		var err error
-		pgDb, err := sql.Open("postgres", whPostgresUrl)
-		if err != nil {
-			return err
-		}
-		return pgDb.Ping()
-	}); err != nil {
-		log.Println("Could not connect to postgres", whPostgresUrl, err)
-	}
 }
 
 //func TestWebhook(t *testing.T) {
@@ -982,23 +854,267 @@ func setWhPostgresDestination() {
 //
 //}
 
-// Testing Postgres destination
 func TestWhPostgresDestination(t *testing.T) {
+	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(2), int64(1), int64(1), int64(1), int64(1), int64(1)
+	userId := "userId_postgres"
+	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
+	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
+
+	// Sending warehouse events
+	sendWareHouseEvents(whTest.pgTestT.writeKey, userId)
+
+	// Checking for gateway jobs
+	testGWForWareHouseDestination(t, whTest.pgTestT.writeKey, userId, totalGwEvents)
+
+	// Checking for batch router jobs
+	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
+
+	// Checking for tracks table
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from postgres_wh_integration.tracks")
+		_ = whTest.pgTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == trackeventsCount
+	}, time.Minute, 10*time.Millisecond)
+
+	// Checking product reviewed table
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from postgres_wh_integration.product_track")
+		_ = whTest.pgTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == trackeventsCount
+	}, time.Minute, 10*time.Millisecond)
+}
+
+func TestWhClickHouseDestination(t *testing.T) {
+	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(2), int64(1), int64(1), int64(1), int64(1), int64(1)
+	userId := "userId_clickhouse"
+	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
+	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
+
+	// Sending warehouse events
+	sendWareHouseEvents(whTest.chTestT.writeKey, userId)
+
+	// Checking for gateway jobs
+	testGWForWareHouseDestination(t, whTest.chTestT.writeKey, userId, totalGwEvents)
+
+	// Checking for batch router jobs
+	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
+
+	// Checking for tracks table
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.tracks")
+		_ = whTest.chTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == trackeventsCount
+	}, time.Minute, 10*time.Millisecond)
+
+	// Checking product reviewed table
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.product_track")
+		_ = whTest.chTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == trackeventsCount
+	}, time.Minute, 10*time.Millisecond)
+}
+
+func TestWhMsSqlDestination(t *testing.T) {
+	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(2), int64(1), int64(1), int64(1), int64(1), int64(1)
+	userId := "userId_mssql"
+	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
+	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
+
+	// Sending warehouse events
+	sendWareHouseEvents(whTest.mssqlTestT.writeKey, userId)
+
+	// Checking for gateway jobs
+	testGWForWareHouseDestination(t, whTest.mssqlTestT.writeKey, userId, totalGwEvents)
+
+	// Checking for batch router jobs
+	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
+
+	// Checking for tracks table
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from mssql_wh_integration.tracks")
+		_ = whTest.mssqlTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == trackeventsCount
+	}, time.Minute, 10*time.Millisecond)
+
+	// Checking product reviewed table
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from mssql_wh_integration.product_track")
+		_ = whTest.mssqlTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == trackeventsCount
+	}, time.Minute, 10*time.Millisecond)
+}
+
+func sendWareHouseEvents(writeKey string, userId string) {
+	// Sending identify event
+	// Also checking for de-dup
+	payloadIdentify1 := strings.NewReader(fmt.Sprintf(`{
+			"userId": "%s",
+			"messageId":"messageId_identify_1",
+			"eventOrderNo":"1",
+			"context": {
+			  "traits": {
+				 "trait1": "new-val"
+			  },
+			  "ip": "14.5.67.21",
+			  "library": {
+				  "name": "http"
+			  }
+			},
+			"timestamp": "2020-02-02T00:23:09.544Z"
+		  }`, userId))
+	payloadIdentify2 := strings.NewReader(fmt.Sprintf(`{
+			"userId": "%s",
+			"messageId":"messageId_identify_2",
+			"eventOrderNo":"2",
+			"context": {
+			  "traits": {
+				 "trait1": "new-val"
+			  },
+			  "ip": "14.5.67.21",
+			  "library": {
+				  "name": "http"
+			  }
+			},
+			"timestamp": "2020-02-02T00:23:09.544Z"
+		  }`, userId))
+	_, _ = SendEvent(payloadIdentify1, "identify", writeKey)
+	_, _ = SendEvent(payloadIdentify2, "identify", writeKey)
+
 	// Sending track event
-	payload_track := strings.NewReader(`{
-			"userId": "user id",
-			"anonymousId":"anonymousId",
-			"messageId":"messageId_1",
+	payloadTrack := strings.NewReader(fmt.Sprintf(`{
+			"userId": "%s",
+			"messageId":"messageId_track",
 			"type": "track",
-			"event": "Product Reviewed",
+			"event": "Product Track",
 			"properties": {
 			  "review_id": "12345",
 			  "product_id" : "123",
 			  "rating" : 3.0,
 			  "review_body" : "Average product, expected much more."
 			}
-		  }`)
-	SendEvent(payload_track, "track", postgresEventWriteKey)
+		  }`, userId))
+	_, _ = SendEvent(payloadTrack, "track", writeKey)
+
+	// Sending page event
+	payloadPage := strings.NewReader(fmt.Sprintf(`{
+			"userId": "%s",
+			"messageId":"messageId_page",
+			"type": "page",
+			"name": "Home",
+			"properties": {
+			  "title": "Home | RudderStack",
+			  "url": "http://www.rudderstack.com"
+			}
+		  }`, userId))
+	_, _ = SendEvent(payloadPage, "page", writeKey)
+
+	// Sending screen event
+	payloadScreen := strings.NewReader(fmt.Sprintf(`{
+			"userId": "%s",
+			"messageId":"messageId_screen",
+			"type": "screen",
+			"name": "Main",
+			"properties": {
+			  "prop_key": "prop_value"
+			}
+		  }`, userId))
+	_, _ = SendEvent(payloadScreen, "screen", writeKey)
+
+	// Sending alias event
+	payloadAlias := strings.NewReader(fmt.Sprintf(`{
+			"userId": "%s",
+			"messageId":"messageId_alias",
+			"type": "alias",
+			"previousId": "name@surname.com",
+			"userId": "12345"
+		  }`, userId))
+	_, _ = SendEvent(payloadAlias, "alias", writeKey)
+
+	// Sending group event
+	payloadGroup := strings.NewReader(fmt.Sprintf(`{
+			"userId": "%s",
+			"messageId":"messageId_group",
+			"type": "group",
+			"groupId": "groupId",
+			"traits": {
+			  "name": "MyGroup",
+			  "industry": "IT",
+			  "employees": 450,
+			  "plan": "basic"
+			}
+		  }`, userId))
+	_, _ = SendEvent(payloadGroup, "group", writeKey)
+}
+
+func testGWForWareHouseDestination(t *testing.T, writeKey string, userId string, eventsCount int64) {
+	// Getting gateway job ids
+	var jobIds []string
+	require.Eventually(t, func() bool {
+		jobIds = make([]string, 0)
+		jobSqlStatement := fmt.Sprintf(`select * from gw_jobs('%s', '%s') as job_ids`, writeKey, userId)
+		var rows *sql.Rows
+		var err error
+		rows, err = db.Query(jobSqlStatement)
+		if err != nil {
+			return false
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var jobId int64
+			err = rows.Scan(&jobId)
+			if err != nil {
+				return false
+			}
+			jobIds = append(jobIds, fmt.Sprint(jobId))
+		}
+		return int(eventsCount) == len(jobIds)
+	}, time.Minute, 10*time.Millisecond)
+
+	// Checking for the gateway jobs state
+	require.Eventually(t, func() bool {
+		var count int64
+		jobsSqlStatement := fmt.Sprintf("select count(*) from gw_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
+		_ = db.QueryRow(jobsSqlStatement).Scan(&count)
+		return count == eventsCount
+	}, time.Minute, 10*time.Millisecond)
+}
+
+func testBatchRouterForWareHouseDestination(t *testing.T, userId string, eventsCount int64) {
+	// Getting batch router job ids
+	var jobIds []string
+	require.Eventually(t, func() bool {
+		jobIds = make([]string, 0)
+		jobSqlStatement := fmt.Sprintf(`select * from batch_rt_jobs('%s') as job_ids`, userId)
+		var rows *sql.Rows
+		var err error
+		rows, err = db.Query(jobSqlStatement)
+		if err != nil {
+			return false
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var jobId int64
+			err = rows.Scan(&jobId)
+			if err != nil {
+				return false
+			}
+			jobIds = append(jobIds, fmt.Sprint(jobId))
+		}
+		return int(eventsCount) == len(jobIds)
+	}, time.Minute, 10*time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		var count int64
+		jobsSqlStatement := fmt.Sprintf("select count(*) from batch_rt_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
+		_ = db.QueryRow(jobsSqlStatement).Scan(&count)
+		return count == eventsCount
+	}, time.Minute, 10*time.Millisecond)
 }
 
 func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
@@ -1241,6 +1357,234 @@ func SetMINIO() {
 		log.Println(err)
 		panic(err)
 	}
+}
+
+func initWhConfig() {
+	whTest = WareHouseTestT{}
+	whTest.gwJobsSqlFunction = `CREATE OR REPLACE FUNCTION gw_jobs(write_key varchar, user_id varchar)
+									RETURNS TABLE
+											(
+												job_id varchar
+											)
+								AS
+								$$
+								DECLARE
+									table_record RECORD;
+									batch_record jsonb;
+								BEGIN
+									FOR table_record IN SELECT * FROM gw_jobs_1 where (event_payload ->> 'writeKey') = write_key
+										LOOP
+											FOR batch_record IN SELECT * FROM jsonb_array_elements((table_record.event_payload ->> 'batch')::jsonb)
+												LOOP
+													if batch_record ->> 'userId' != user_id THEN
+														CONTINUE;
+													END IF;
+													job_id := table_record.job_id;
+													RETURN NEXT;
+													EXIT;
+												END LOOP;
+										END LOOP;
+								END;
+								$$ LANGUAGE plpgsql`
+	whTest.batchRtJobsSqlFunction = `CREATE OR REPLACE FUNCTION batch_rt_jobs(user_id varchar)
+										RETURNS TABLE
+												(
+													job_id varchar
+												)
+									AS
+									$$
+									DECLARE
+										table_record  RECORD;
+										event_payload jsonb;
+									BEGIN
+										FOR table_record IN SELECT * FROM batch_rt_jobs_1
+											LOOP
+												event_payload = (table_record.event_payload ->> 'data')::jsonb;
+												if event_payload ->> 'user_id' = user_id Or event_payload ->> 'id' = user_id THEN
+													job_id := table_record.job_id;
+													RETURN NEXT;
+												END IF;
+											END LOOP;
+									END ;
+									$$ LANGUAGE plpgsql`
+}
+
+func setWhPostgresDestination() {
+	// Configs
+	PostgresDb := "rudderdb"
+	PostgresPassword := "rudder-password"
+	PostgresUser := "rudder"
+	PostgresHost := "localhost"
+	PostgresSslMode := "disable"
+
+	// pulls an image, creates a container based on it and runs it
+	whTest.pgTestT.resource, err = pool.Run("postgres", "11-alpine", []string{
+		fmt.Sprintf("POSTGRES_DB=%s", PostgresDb),
+		fmt.Sprintf("POSTGRES_PASSWORD=%s", PostgresPassword),
+		fmt.Sprintf("POSTGRES_USER=%s", PostgresUser),
+	})
+	if err != nil {
+		log.Printf("Could not start resource WareHouse Postgres: %v\n", err)
+		return
+	}
+
+	// Getting at which port the container is running
+	PostgresPort := whTest.pgTestT.resource.GetPort("5432/tcp")
+
+	// Creating url string for connection
+	whPostgresUrl := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
+		PostgresUser,
+		PostgresPassword,
+		PostgresHost,
+		PostgresPort,
+		PostgresDb,
+		PostgresSslMode,
+	)
+	fmt.Println("whPostgresUrl:", whPostgresUrl)
+
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	if err := pool.Retry(func() error {
+		var err error
+		whTest.pgTestT.db, err = sql.Open("postgres", whPostgresUrl)
+		if err != nil {
+			return err
+		}
+		return whTest.pgTestT.db.Ping()
+	}); err != nil {
+		log.Printf("Could not connect to warehouse postgres url: %v, with error: %v\n", whPostgresUrl, err)
+	}
+}
+
+func setWhClickHouseDestination() {
+	// Configs
+	ClickHouseHost := "localhost"
+	ClickHouseUser := "rudder"
+	ClickHousePassword := "rudder-password"
+	ClickHouseDb := "rudderdb"
+	ClickHouseBlockSize := "1000000"
+	ClickHousePoolSize := "100"
+	ClickHouseQueryDebugLogs := "false"
+	ClickHouseReadTimeout := "300"
+	ClickHouseWriteTimeout := "1800"
+	ClickHouseCompress := "true"
+	ClickHouseSecure := "false"
+	ClickHouseSkipVerify := "true"
+	ClickHouseTlsConfigName := ""
+
+	// pulls an image, creates a container based on it and runs it
+	whTest.chTestT.resource, err = pool.Run("yandex/clickhouse-server", "21-alpine", []string{
+		fmt.Sprintf("CLICKHOUSE_DB=%s", ClickHouseDb),
+		fmt.Sprintf("CLICKHOUSE_PASSWORD=%s", ClickHousePassword),
+		fmt.Sprintf("CLICKHOUSE_USER=%s", ClickHouseUser),
+	})
+	if err != nil {
+		log.Println("Could not start resource ClickHouse: %w", err)
+		return
+	}
+
+	// Getting at which port the container is running
+	ClickHousePort := whTest.chTestT.resource.GetPort("9000/tcp")
+
+	// Creating url string for connection
+	whClickHouseUrl := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&read_timeout=%s&write_timeout=%s&compress=%s",
+		ClickHouseHost,
+		ClickHousePort,
+		ClickHouseUser,
+		ClickHousePassword,
+		ClickHouseDb,
+		ClickHouseBlockSize,
+		ClickHousePoolSize,
+		ClickHouseQueryDebugLogs,
+		ClickHouseSecure,
+		ClickHouseSkipVerify,
+		ClickHouseTlsConfigName,
+		ClickHouseReadTimeout,
+		ClickHouseWriteTimeout,
+		ClickHouseCompress,
+	)
+	fmt.Println("whClickHouseUrl:", whClickHouseUrl)
+
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	if err := pool.Retry(func() error {
+		var err error
+		whTest.chTestT.db, err = sql.Open("clickhouse", whClickHouseUrl)
+		if err != nil {
+			return err
+		}
+		return whTest.chTestT.db.Ping()
+	}); err != nil {
+		log.Println("Could not connect to postgres", whClickHouseUrl, err)
+	}
+}
+
+func setWhMSSqlDestination() {
+	// Configs
+	MSSqlDb := "master"
+	MSSqlPassword := "reallyStrongPwd123"
+	MSSqlUser := "SA"
+	MSSqlHost := "localhost"
+	MSSqlSslMode := "disable"
+
+	// pulls an image, creates a container based on it and runs it
+	whTest.mssqlTestT.resource, err = pool.Run("mcr.microsoft.com/mssql/server", "2019-latest", []string{
+		fmt.Sprintf("ACCEPT_EULA=%s", "Y"),
+		fmt.Sprintf("SA_PASSWORD=%s", MSSqlPassword),
+		fmt.Sprintf("SA_DB=%s", MSSqlDb),
+		fmt.Sprintf("SA_USER=%s", MSSqlUser),
+	})
+	if err != nil {
+		log.Println("Could not start resource ClickHouse: %w", err)
+		return
+	}
+
+	// Getting at which port the container is running
+	MSSqlPort := whTest.mssqlTestT.resource.GetPort("1433/tcp")
+
+	query := url.Values{}
+	query.Add("database", MSSqlDb)
+	query.Add("encrypt", MSSqlSslMode)
+	query.Add("TrustServerCertificate", "true")
+	whMSSqlUrl := &url.URL{
+		Scheme:   "sqlserver",
+		User:     url.UserPassword(MSSqlUser, MSSqlPassword),
+		Host:     fmt.Sprintf("%s:%s", MSSqlHost, MSSqlPort),
+		RawQuery: query.Encode(),
+	}
+	fmt.Println("whMSSqlUrl:", whMSSqlUrl.String())
+
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	if err := pool.Retry(func() error {
+		var err error
+		whTest.mssqlTestT.db, err = sql.Open("sqlserver", whMSSqlUrl.String())
+		if err != nil {
+			return err
+		}
+		return whTest.mssqlTestT.db.Ping()
+	}); err != nil {
+		log.Println("Could not connect to MSSql", whMSSqlUrl, err)
+	}
+}
+
+func addSqlFunctionsToJobsDb() {
+	if db == nil {
+		return
+	}
+
+	// Running fetching gateway jobs function
+	_, err = db.Exec(whTest.gwJobsSqlFunction)
+	if err != nil {
+		log.Printf("Error occurred with executing prepared statement for events count with err %v\n", err)
+		return
+	}
+
+	// Running fetching batch router jobs function
+	_, err = db.Exec(whTest.batchRtJobsSqlFunction)
+	if err != nil {
+		log.Printf("Error occurred with executing prepared statement for events count with err %v\n", err)
+		return
+	}
+
+	whTest.sqlFunctionsAdded = true
 }
 
 // TODO: Verify in Live Events API
