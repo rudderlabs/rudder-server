@@ -3,10 +3,11 @@ package filemanager
 import (
 	"context"
 	"fmt"
-	"google.golang.org/api/iterator"
 	"io"
 	"os"
 	"strings"
+
+	"google.golang.org/api/iterator"
 
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/option"
@@ -58,8 +59,8 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 	}
 	return UploadOutput{Location: objectURL(attrs), ObjectName: fileName}, err
 }
-
-func (manager *GCSManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+//TODO: continuationToken & startAfter variables are dummy here to satisfy filemanager interface. Need to implement them to support pagination.
+func (manager *GCSManager) ListFilesWithPrefix(prefix string, maxItems int64, continuationToken *string, startAfter string) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 	ctx := context.Background()
 

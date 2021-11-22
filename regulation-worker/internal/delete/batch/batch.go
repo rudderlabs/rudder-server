@@ -51,9 +51,8 @@ func getDeleteManager(destName string) (*S3DeleteManager, error) {
 
 //returns list of all .json.gz files and marks exists as true if `statusTrackerFile` is present in the destination.
 //NOTE: assuming that all of batch destination have same file system as S3, i.e. flat.
-func (b *Batch) listFilesAndCheckTrackerFile(ctx context.Context) ([]*filemanager.FileObject, bool, error) {
-
-	fileObjects, err := b.FM.ListFilesWithPrefix("", listMaxItem)
+func (b *Batch) listFilesAndCheckTrackerFile(ctx context.Context, continuationToken *string, startAfter string) ([]*filemanager.FileObject, bool, error) {
+	fileObjects, err := b.FM.ListFilesWithPrefix("", listMaxItem, continuationToken, startAfter)
 	if err != nil {
 		return []*filemanager.FileObject{}, false, fmt.Errorf("failed to fetch object list from S3:%w", err)
 	}
@@ -177,7 +176,7 @@ func decompress(fileName, uncompressedFileName string) error {
 		return fmt.Errorf("error while writing uncompressed file: %w", err)
 	}
 
-	// os.Remove(fileName)
+	os.Remove(fileName)
 	return nil
 }
 
@@ -220,7 +219,7 @@ func (b *Batch) delete(ctx context.Context, userAttributes []model.UserAttribute
 		return fmt.Errorf("error while cleaning object, %w", err)
 	}
 
-	// os.Remove(decompressedFileName)
+	os.Remove(decompressedFileName)
 
 	err = compress(fileName, out)
 	if err != nil {
@@ -286,7 +285,7 @@ func (b *Batch) upload(ctx context.Context, fileName string) error {
 		return fmt.Errorf("error while uploading statusTrackerFile file: %w", err)
 	}
 	b.mutex.Unlock()
-	// os.Remove(cleanedFile)
+	os.Remove(cleanedFile)
 	return nil
 }
 
@@ -312,65 +311,74 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 		DM: dm,
 	}
 	defer batch.cleanup(destConfig["prefix"].(string))
-	files, exist, err := batch.listFilesAndCheckTrackerFile(ctx)
-	if err != nil {
-		return err
-	}
-	//if statusTracker.txt exists then read it & remove all those files name from above gzFilesObjects,
-	//since those files are already cleaned.
-	if exist {
 
-		err = batch.download(ctx, statusTrackerFile)
+	var continuationToken *string
+	startAfter := ""
+
+	for {
+		files, exist, err := batch.listFilesAndCheckTrackerFile(ctx, continuationToken, startAfter)
 		if err != nil {
-			return fmt.Errorf("error while downloading statusTrackerFile:%w", err)
+			return err
 		}
+		//if statusTracker.txt exists then read it & remove all those files name from above gzFilesObjects,
+		//since those files are already cleaned.
+		if exist {
 
-		data, err := os.ReadFile(statusTrackerFile)
-		if err != nil {
-			return fmt.Errorf("error while reading statusTracker.txt:%w", err)
-		}
-
-		cleanedFiles := strings.Split(string(data), "\n")
-		cleanedFiles = cleanedFiles[:len(cleanedFiles)-1]
-		files = removeCleanedFiles(files, cleanedFiles)
-
-	} else {
-		filePtr, err := os.Create(statusTrackerFile)
-		if err != nil {
-			return fmt.Errorf("error while creating statusTrackerFile:%w", err)
-		}
-		filePtr.Close()
-	}
-	g, gCtx := errgroup.WithContext(ctx)
-	goRoutineCount := make(chan bool, maxGoRoutine)
-	defer close(goRoutineCount)
-	for i := 0; i < len(files); i++ {
-		_i := i
-		goRoutineCount <- true
-		g.Go(func() error {
-			err = withExpBackoff(batch.download, gCtx, files[_i].Key)
+			err = batch.download(ctx, statusTrackerFile)
 			if err != nil {
-				return err
+				return fmt.Errorf("error while downloading statusTrackerFile:%w", err)
 			}
 
-			fileNamePrefix := strings.Split(files[_i].Key, "/")
-			err := batch.delete(gCtx, job.UserAttributes, fileNamePrefix[len(fileNamePrefix)-1])
+			data, err := os.ReadFile(statusTrackerFile)
 			if err != nil {
-				return fmt.Errorf("error while deleting object, %w", err)
+				return fmt.Errorf("error while reading statusTracker.txt:%w", err)
 			}
 
-			err = withExpBackoff(batch.upload, gCtx, files[_i].Key)
-			if err != nil {
-				return fmt.Errorf("error while uploading cleaned file, %w", err)
-			}
+			cleanedFiles := strings.Split(string(data), "\n")
+			cleanedFiles = cleanedFiles[:len(cleanedFiles)-1]
+			files = removeCleanedFiles(files, cleanedFiles)
 
-			<-goRoutineCount
-			return nil
-		})
-	}
-	err = g.Wait()
-	if err != nil {
-		return err
+		} else {
+			filePtr, err := os.Create(statusTrackerFile)
+			if err != nil {
+				return fmt.Errorf("error while creating statusTrackerFile:%w", err)
+			}
+			filePtr.Close()
+		}
+		g, gCtx := errgroup.WithContext(ctx)
+		goRoutineCount := make(chan bool, maxGoRoutine)
+		defer close(goRoutineCount)
+		if len(files) == 0 {
+			break
+		}
+		for i := 0; i < len(files); i++ {
+			_i := i
+			goRoutineCount <- true
+			g.Go(func() error {
+				err = withExpBackoff(batch.download, gCtx, files[_i].Key)
+				if err != nil {
+					return err
+				}
+
+				fileNamePrefix := strings.Split(files[_i].Key, "/")
+				err := batch.delete(gCtx, job.UserAttributes, fileNamePrefix[len(fileNamePrefix)-1])
+				if err != nil {
+					return fmt.Errorf("error while deleting object, %w", err)
+				}
+
+				err = withExpBackoff(batch.upload, gCtx, files[_i].Key)
+				if err != nil {
+					return fmt.Errorf("error while uploading cleaned file, %w", err)
+				}
+
+				<-goRoutineCount
+				return nil
+			})
+		}
+		err = g.Wait()
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

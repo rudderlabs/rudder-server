@@ -192,7 +192,7 @@ func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, er
 	return strings.TrimPrefix(path, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 }
 
-func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64, continuationToken *string, startAfter string) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
 	getRegionSession := session.Must(session.NewSession())
@@ -219,14 +219,22 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fi
 
 	// Create S3 service client
 	svc := s3.New(sess)
-
-	// Get the list of items
-	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{
+	listObjectsV2Input := s3.ListObjectsV2Input{
 		Bucket:  aws.String(manager.Config.Bucket),
 		Prefix:  aws.String(prefix),
 		MaxKeys: &maxItems,
 		// Delimiter: aws.String("/"),
-	})
+	}
+	//startAfter is to resume a paused task.
+	if startAfter != "" {
+		listObjectsV2Input.StartAfter = aws.String(startAfter)
+	}
+
+	if continuationToken != nil {
+		listObjectsV2Input.ContinuationToken = continuationToken
+	}
+	// Get the list of items
+	resp, err := svc.ListObjectsV2(&listObjectsV2Input)
 	if err != nil {
 		return
 	}

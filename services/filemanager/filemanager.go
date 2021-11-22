@@ -37,7 +37,7 @@ type FileManager interface {
 	GetObjectNameFromLocation(string) (string, error)
 	GetDownloadKeyFromFileLocation(location string) string
 	DeleteObjects(locations []string) error
-	ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error)
+	ListFilesWithPrefix(prefix string, maxItems int64, continuationToken *string, startAfter string) (fileObjects []*FileObject, err error)
 	GetConfiguredPrefix() string
 }
 
@@ -80,7 +80,7 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 			Config: GetDOSpacesConfig(settings.Config),
 		}, nil
 	}
-	return nil, errors.New("No provider configured for FileManager")
+	return nil, errors.New("no provider configured for FileManager")
 }
 
 // GetProviderConfigFromEnv returns the provider config
