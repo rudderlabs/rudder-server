@@ -154,7 +154,7 @@ func (b *Batch) download(ctx context.Context, fileName string) error {
 }
 
 //decompresses .json.gzip files to .json & remove corresponding .json.gzip file
-func decompress(fileName, uncompressedFileName string) error {
+func decompress(fileName, decompressedFileName string) error {
 	gzipFile, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("error while opening compressed file: %w", err)
@@ -166,7 +166,7 @@ func decompress(fileName, uncompressedFileName string) error {
 	}
 	defer gzipReader.Close()
 
-	outfileWriter, err := os.OpenFile(uncompressedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+	outfileWriter, err := os.OpenFile(decompressedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("error while opening uncompressed file: %w", err)
 	}
@@ -177,7 +177,7 @@ func decompress(fileName, uncompressedFileName string) error {
 		return fmt.Errorf("error while writing uncompressed file: %w", err)
 	}
 
-	// os.Remove(fileName)
+	os.Remove(fileName)
 	return nil
 }
 
@@ -219,8 +219,6 @@ func (b *Batch) delete(ctx context.Context, userAttributes []model.UserAttribute
 	if err != nil {
 		return fmt.Errorf("error while cleaning object, %w", err)
 	}
-
-	// os.Remove(decompressedFileName)
 
 	err = compress(fileName, out)
 	if err != nil {
@@ -286,7 +284,7 @@ func (b *Batch) upload(ctx context.Context, fileName string) error {
 		return fmt.Errorf("error while uploading statusTrackerFile file: %w", err)
 	}
 	b.mutex.Unlock()
-	// os.Remove(cleanedFile)
+	os.Remove(cleanedFile)
 	return nil
 }
 
@@ -352,18 +350,15 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 			if err != nil {
 				return err
 			}
-
 			fileNamePrefix := strings.Split(files[_i].Key, "/")
 			err := batch.delete(gCtx, job.UserAttributes, fileNamePrefix[len(fileNamePrefix)-1])
 			if err != nil {
 				return fmt.Errorf("error while deleting object, %w", err)
 			}
-
 			err = withExpBackoff(batch.upload, gCtx, files[_i].Key)
 			if err != nil {
 				return fmt.Errorf("error while uploading cleaned file, %w", err)
 			}
-
 			<-goRoutineCount
 			return nil
 		})
@@ -377,8 +372,8 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 
 func (b *Batch) cleanup(prefix string) {
 
-	os.Remove(prefix + "/" + statusTrackerFile)
-	err := b.FM.DeleteObjects([]string{statusTrackerFile})
+	// os.Remove(statusTrackerFile)
+	err := b.FM.DeleteObjects([]string{prefix + "/" + statusTrackerFile})
 	if err != nil {
 		fmt.Println("error during cleanup: %w", err)
 	}
