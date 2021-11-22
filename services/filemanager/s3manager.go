@@ -193,6 +193,9 @@ func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, er
 }
 
 func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	if !manager.Config.IsTruncated {
+		return
+	}
 	fileObjects = make([]*FileObject, 0)
 
 	getRegionSession := session.Must(session.NewSession())
@@ -229,16 +232,14 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fi
 	if manager.Config.StartAfter != "" {
 		listObjectsV2Input.StartAfter = aws.String(manager.Config.StartAfter)
 	}
-
 	listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
 	// Get the list of items
 	resp, err := svc.ListObjectsV2(&listObjectsV2Input)
 	if err != nil {
 		return
 	}
-
+	manager.Config.IsTruncated = *resp.IsTruncated
 	manager.Config.ContinuationToken = resp.NextContinuationToken
-
 	for _, item := range resp.Contents {
 		fileObjects = append(fileObjects, &FileObject{*item.Key, *item.LastModified})
 	}
@@ -274,9 +275,9 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 	if config["startAfter"] != nil {
 		startAfter = config["startAfter"].(string)
 	}
-	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
 
-	return &S3Config{Bucket: bucketName, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey, EnableSSE: enableSSE, RegionHint: regionHint, ContinuationToken: continuationToken, StartAfter: startAfter}
+	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
+	return &S3Config{Bucket: bucketName, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey, EnableSSE: enableSSE, RegionHint: regionHint, ContinuationToken: continuationToken, StartAfter: startAfter, IsTruncated: true}
 }
 
 type S3Config struct {
@@ -288,6 +289,7 @@ type S3Config struct {
 	RegionHint        string
 	ContinuationToken *string
 	StartAfter        string
+	IsTruncated       bool
 }
 
 func (manager *S3Manager) GetConfiguredPrefix() string {

@@ -56,6 +56,9 @@ func (b *Batch) listFilesAndCheckTrackerFile(ctx context.Context) ([]*filemanage
 	if err != nil {
 		return []*filemanager.FileObject{}, false, fmt.Errorf("failed to fetch object list from S3:%w", err)
 	}
+	if len(fileObjects) == 0 {
+		return nil, false, nil
+	}
 
 	//since everything is stored as a file in S3, above fileObjects list also has directory & not just *.json.gz files. So, need to remove those.
 	count := 0
@@ -345,8 +348,6 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 		g, gCtx := errgroup.WithContext(ctx)
 		goRoutineCount := make(chan bool, maxGoRoutine)
 		defer close(goRoutineCount)
-		fmt.Println("len of files=", len(files))
-		fmt.Println("files=", files)
 		if len(files) == 0 {
 			break
 		}
@@ -384,6 +385,6 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 
 func (b *Batch) cleanup(prefix string) {
 
-	os.Remove(prefix + "/" + statusTrackerFile)
-	b.FM.DeleteObjects([]string{statusTrackerFile})
+	os.Remove(statusTrackerFile)
+	b.FM.DeleteObjects([]string{prefix + "/" + statusTrackerFile})
 }
