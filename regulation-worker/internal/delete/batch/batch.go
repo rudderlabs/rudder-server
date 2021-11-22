@@ -348,6 +348,8 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 		g, gCtx := errgroup.WithContext(ctx)
 		goRoutineCount := make(chan bool, maxGoRoutine)
 		defer close(goRoutineCount)
+		fmt.Println("len of files=", len(files))
+		fmt.Println("files=", files)
 		if len(files) == 0 {
 			break
 		}
