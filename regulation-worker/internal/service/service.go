@@ -35,6 +35,7 @@ type JobSvc struct {
 //calls api-client to get new job with workspaceID, which returns jobID.
 func (js *JobSvc) JobSvc(ctx context.Context) error {
 	//API request to get new job
+
 	job, err := js.API.Get(ctx)
 
 	if err != nil {
@@ -49,16 +50,14 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	}
 
 	//executing deletion
-	destDetail, err := js.DestDetail.GetDestDetails(job.DestinationID)
+	destDetail, err := js.DestDetail.GetDestDetails(job.DestinationID, job.WorkspaceID)
 	if err != nil {
 		return fmt.Errorf("error while getting destination details: %w", err)
 	}
-
 	status, err = js.Deleter.Delete(ctx, job, destDetail)
 	if err != nil {
 		return err
 	}
-
 	err = js.updateStatus(ctx, status, job.ID)
 	if err != nil {
 		return err

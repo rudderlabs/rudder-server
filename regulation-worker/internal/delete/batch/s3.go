@@ -9,16 +9,12 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
-//Given (data,[]userAttributes)
-//delete users info from `data` for all users in []userAttributes
-//return remaining data.
-
 type S3DeleteManager struct {
 }
 
 //reason behind using sed: https://www.rtuin.nl/2012/01/fast-search-and-replace-in-large-files-with-sed/
 //Delete user details corresponding to `userAttributes` from `uncompressedFileName` & delete `uncompuressedFileName`
-func (dm *S3DeleteManager) Delete(ctx context.Context, userAttributes []model.UserAttribute, uncompressedFileName string) ([]byte, error) {
+func (dm *S3DeleteManager) delete(ctx context.Context, userAttributes []model.UserAttribute, uncompressedFileName string) ([]byte, error) {
 
 	//actual delete
 	var n int
@@ -55,11 +51,6 @@ func (dm *S3DeleteManager) Delete(ctx context.Context, userAttributes []model.Us
 	if err != nil {
 		return nil, fmt.Errorf("error while running sed command: %s", err)
 	}
-	// cleanedFileName := "cleanedFile-1.json"
-	// err = os.WriteFile(cleanedFileName, out, 0644)
-	// if err != nil {
-	// 	fmt.Printf("%s", err)
-	// }
 
 	os.Remove(uncompressedFileName)
 

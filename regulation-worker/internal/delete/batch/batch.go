@@ -30,7 +30,7 @@ const listMaxItem int64 = 1000
 var maxGoRoutine = int64(runtime.NumCPU()) * 8
 
 type deleteManager interface {
-	Delete(ctx context.Context, userAttributes []model.UserAttribute, fileName string) ([]byte, error)
+	delete(ctx context.Context, userAttributes []model.UserAttribute, fileName string) ([]byte, error)
 }
 
 type Batch struct {
@@ -68,7 +68,6 @@ func (b *Batch) listFilesAndCheckTrackerFile(ctx context.Context) ([]*filemanage
 		}
 		if fileObjects[i].Key == statusTrackerFile {
 			exist = true
-			// fmt.Println("statusTrackerFile exists")
 		}
 	}
 	//list of only .gz files
@@ -77,23 +76,19 @@ func (b *Batch) listFilesAndCheckTrackerFile(ctx context.Context) ([]*filemanage
 	for i := 0; i < len(fileObjects); i++ {
 		if regexRequiredSuffix.Match([]byte(fileObjects[i].Key)) {
 			gzFileObjects[index] = fileObjects[i]
-			fmt.Println(gzFileObjects[index].Key)
 			index++
 		}
 	}
-	// fmt.Println("exists=", exist)
 	return gzFileObjects, exist, nil
 }
 
 //two pointer algorithm implementation to remove all the files from which users are already deleted.
 func removeCleanedFiles(files []*filemanager.FileObject, cleanedFiles []string) []*filemanager.FileObject {
-
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].Key < files[j].Key
 	})
-
 	sort.Slice(cleanedFiles, func(i, j int) bool {
-		return files[i].Key < files[j].Key
+		return cleanedFiles[i] < cleanedFiles[j]
 	})
 
 	i := 0
@@ -101,7 +96,6 @@ func removeCleanedFiles(files []*filemanager.FileObject, cleanedFiles []string) 
 	presentCount := 0
 	present := make([]bool, len(files))
 	for j < len(cleanedFiles) {
-
 		if files[i].Key < cleanedFiles[j] {
 			i++
 		} else if files[i].Key > cleanedFiles[j] {
@@ -115,12 +109,9 @@ func removeCleanedFiles(files []*filemanager.FileObject, cleanedFiles []string) 
 	}
 	j = 0
 	finalFiles := make([]*filemanager.FileObject, len(files)-presentCount)
-	fmt.Println("len of finalFiles=", len(finalFiles))
 
-	fmt.Println("uncleaned files are")
 	for i := 0; i < len(files); i++ {
 		if !present[i] {
-			fmt.Println(files[i].Key)
 			finalFiles[j] = files[i]
 			j++
 		}
@@ -130,14 +121,14 @@ func removeCleanedFiles(files []*filemanager.FileObject, cleanedFiles []string) 
 
 //append <fileName> to <statusTrackerFile> locally for which deletion has completed.
 func updateStatusTrackerFile(fileName string) error {
-	f, err := os.OpenFile(statusTrackerFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(statusTrackerFile, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("error while opening statusTrackerFile: %w", err)
 	}
-	if _, err := f.Write([]byte("\n")); err != nil {
+	if _, err := f.Write([]byte(fileName)); err != nil {
 		return fmt.Errorf("error while writing to statusTrackerFile: %w", err)
 	}
-	if _, err := f.Write([]byte(fileName)); err != nil {
+	if _, err := f.Write([]byte("\n")); err != nil {
 		return fmt.Errorf("error while writing to statusTrackerFile: %w", err)
 	}
 	if err := f.Close(); err != nil {
@@ -164,8 +155,7 @@ func (b *Batch) download(ctx context.Context, fileName string) error {
 
 //decompresses .json.gzip files to .json & remove corresponding .json.gzip file
 func decompress(fileName, uncompressedFileName string) error {
-
-	gzipFile, err := os.Open(fileName)
+	gzipFile, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("error while opening compressed file: %w", err)
 	}
@@ -176,7 +166,7 @@ func decompress(fileName, uncompressedFileName string) error {
 	}
 	defer gzipReader.Close()
 
-	outfileWriter, err := os.OpenFile(uncompressedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(int(0777)))
+	outfileWriter, err := os.OpenFile(uncompressedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("error while opening uncompressed file: %w", err)
 	}
@@ -187,7 +177,7 @@ func decompress(fileName, uncompressedFileName string) error {
 		return fmt.Errorf("error while writing uncompressed file: %w", err)
 	}
 
-	os.Remove(fileName)
+	// os.Remove(fileName)
 	return nil
 }
 
@@ -204,7 +194,7 @@ func compress(fileName string, cleanedBytes []byte) error {
 	w.Close() // must close this first to flush the bytes to the buffer.
 
 	//writing compressed file to <fileName>
-	outfileWriter, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+	outfileWriter, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("error while opening file: %w", err)
 	}
@@ -225,12 +215,12 @@ func (b *Batch) delete(ctx context.Context, userAttributes []model.UserAttribute
 		return fmt.Errorf("error while decompressing file: %w", err)
 	}
 
-	out, err := b.DM.Delete(ctx, userAttributes, decompressedFileName)
+	out, err := b.DM.delete(ctx, userAttributes, decompressedFileName)
 	if err != nil {
 		return fmt.Errorf("error while cleaning object, %w", err)
 	}
 
-	os.Remove(decompressedFileName)
+	// os.Remove(decompressedFileName)
 
 	err = compress(fileName, out)
 	if err != nil {
@@ -265,7 +255,8 @@ func (b *Batch) upload(ctx context.Context, fileName string) error {
 
 	fileNamePrefix := strings.Split(fileName, "/")
 	cleanedFile := fileNamePrefix[len(fileNamePrefix)-1]
-	fileNamePrefix = fileNamePrefix[:len(fileNamePrefix)-1]
+	//as 0th index is correspondnig to `manager.Config.Prefix`
+	fileNamePrefix = fileNamePrefix[1 : len(fileNamePrefix)-1]
 
 	file, err := os.OpenFile(cleanedFile, os.O_RDONLY, os.FileMode(int(0777)))
 	if err != nil {
@@ -295,14 +286,13 @@ func (b *Batch) upload(ctx context.Context, fileName string) error {
 		return fmt.Errorf("error while uploading statusTrackerFile file: %w", err)
 	}
 	b.mutex.Unlock()
-
+	// os.Remove(cleanedFile)
 	return nil
 }
 
 //TODO: aws s3 ListObject allows listing of at max 1000 object at a time. So, implement paginatin.
 //Delete users corresponding to input userAttributes from a given batch destination
 func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) error {
-
 	fmFactory := filemanager.FileManagerFactoryT{}
 	fm, err := fmFactory.New(&filemanager.SettingsT{
 		Provider: destName,
@@ -321,12 +311,11 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 		FM: fm,
 		DM: dm,
 	}
-
+	defer batch.cleanup(destConfig["prefix"].(string))
 	files, exist, err := batch.listFilesAndCheckTrackerFile(ctx)
 	if err != nil {
 		return err
 	}
-
 	//if statusTracker.txt exists then read it & remove all those files name from above gzFilesObjects,
 	//since those files are already cleaned.
 	if exist {
@@ -342,28 +331,35 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 		}
 
 		cleanedFiles := strings.Split(string(data), "\n")
-		// fmt.Println("Cleaned files list=", cleanedFiles)
+		cleanedFiles = cleanedFiles[:len(cleanedFiles)-1]
 		files = removeCleanedFiles(files, cleanedFiles)
 
+	} else {
+		filePtr, err := os.Create(statusTrackerFile)
+		if err != nil {
+			return fmt.Errorf("error while creating statusTrackerFile:%w", err)
+		}
+		filePtr.Close()
 	}
 	g, gCtx := errgroup.WithContext(ctx)
 	goRoutineCount := make(chan bool, maxGoRoutine)
 	defer close(goRoutineCount)
 	for i := 0; i < len(files); i++ {
+		_i := i
 		goRoutineCount <- true
 		g.Go(func() error {
-			err = withExpBackoff(batch.download, gCtx, files[i].Key)
+			err = withExpBackoff(batch.download, gCtx, files[_i].Key)
 			if err != nil {
 				return err
 			}
 
-			fileNamePrefix := strings.Split(files[i].Key, "/")
+			fileNamePrefix := strings.Split(files[_i].Key, "/")
 			err := batch.delete(gCtx, job.UserAttributes, fileNamePrefix[len(fileNamePrefix)-1])
 			if err != nil {
 				return fmt.Errorf("error while deleting object, %w", err)
 			}
 
-			err = withExpBackoff(batch.upload, gCtx, files[i].Key)
+			err = withExpBackoff(batch.upload, gCtx, files[_i].Key)
 			if err != nil {
 				return fmt.Errorf("error while uploading cleaned file, %w", err)
 			}
@@ -377,4 +373,10 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 		return err
 	}
 	return nil
+}
+
+func (b *Batch) cleanup(prefix string) {
+
+	os.Remove(prefix + "/" + statusTrackerFile)
+	b.FM.DeleteObjects([]string{statusTrackerFile})
 }

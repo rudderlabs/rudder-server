@@ -58,6 +58,7 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 			fileName = manager.Config.Prefix + "/" + fileName
 		}
 	}
+
 	uploadInput := &awsS3Manager.UploadInput{
 		ACL:    aws.String("bucket-owner-full-control"),
 		Bucket: aws.String(manager.Config.Bucket),
@@ -96,7 +97,7 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 func (manager *S3Manager) DeleteObjects(keys []string) (err error) {
 	sess, err := manager.getSession()
 	if err != nil {
-		return fmt.Errorf(`Error starting S3 session: %v`, err)
+		return fmt.Errorf(`error starting S3 session: %v`, err)
 	}
 
 	var objects []*s3.ObjectIdentifier

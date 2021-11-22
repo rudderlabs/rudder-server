@@ -21,7 +21,6 @@ import (
 type DeleteFacade struct {
 }
 
-
 //get destType & access credentials from workspaceID & destID
 //call appropriate struct file type or api type based on destType.
 func (d *DeleteFacade) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus, error) {
@@ -32,8 +31,10 @@ func (d *DeleteFacade) Delete(ctx context.Context, job model.Job, destDetail mod
 		}
 		return delAPI.DeleteManager.Delete(ctx, job, destDetail)
 	case "batch":
+		fmt.Println("it's batch type")
 		err := batch.Delete(ctx, job, destDetail.Config, destDetail.Name)
 		if err != nil {
+			fmt.Println("DELETE RETURNED WITH ERROR FACADE: ", err)
 			return model.JobStatusFailed, err
 		} else {
 			return model.JobStatusComplete, nil

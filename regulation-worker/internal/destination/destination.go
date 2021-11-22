@@ -31,7 +31,6 @@ type DestCategory struct {
 //return destination Type enum{file, api}
 func (d *DestMiddleware) GetDestDetails(destID, workspaceID string) (model.Destination, error) {
 	config, notErr := d.Dest.Get()
-	fmt.Println(config)
 	if !notErr {
 		return model.Destination{}, fmt.Errorf("error while getting destination details")
 	}
@@ -48,7 +47,6 @@ func (d *DestMiddleware) GetDestDetails(destID, workspaceID string) (model.Desti
 	}
 	batchDestinations := d.DestCat.LoadBatchList()
 	destDetail.Type = d.DestCat.DestType(batchDestinations, destDetail.Name)
-
 	return destDetail, nil
 }
 
@@ -58,7 +56,6 @@ func (dc *DestCategory) LoadBatchList() []string {
 }
 
 func (dc *DestCategory) DestType(batchdest []string, destName string) string {
-
 	if misc.Contains(batchdest, destName) {
 		return "batch"
 	} else {

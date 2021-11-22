@@ -3,7 +3,6 @@ package main_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,7 +15,9 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,7 +43,7 @@ func handler() http.Handler {
 func run(m *testing.M) int {
 	svr := httptest.NewServer(handler())
 	defer svr.Close()
-	workspaceID := "1zzAn8ZshcdkLN5TvP86VqLMT90"
+	workspaceID := "216Co97d9So9TkqphM0cxBzRxc3"
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -53,9 +54,10 @@ func run(m *testing.M) int {
 		svcCancel()
 	}()
 	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
-	os.Setenv("WORKSPACE_TOKEN", "1zzAnCvbknUuGogjQIBhkST0O4K")
+	os.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
 	os.Setenv("CONFIG_PATH", "./test_config.yaml")
 	config.Load()
+	logger.Init()
 	backendconfig.Init()
 	code := m.Run()
 
@@ -73,26 +75,10 @@ func TestFlow(t *testing.T) {
 	t.Run("TestFlow", func(t *testing.T) {
 		testData = []test{
 			{
-				respBody:          `{"jobId":"1","destinationId":"1zzK2ZRgKofS6nxfcJ2nthi0Cme","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"}]}`,
+				respBody:          `{"jobId":"1","destinationId":"216GUF0fW9z6JfRhW3pvGBEQpyQ","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"}]}`,
 				getJobRespCode:    200,
 				updateJobRespCode: 201,
 				status:            "pending",
-			},
-			{
-				respBody:          `{"jobId":"2","destinationId":"1zzK2ZRgKofS6nxfcJ2nthi0Cme","userAttributes":[{"userId":"3","phone":"555-555-666"},{"userId":"4","email":"johnny@example.com"}]}`,
-				getJobRespCode:    200,
-				updateJobRespCode: 201,
-				status:            "pending",
-			},
-			{
-				respBody:          `{"jobId":"3","destinationId":"1zzK2ZRgKofS6nxfcJ2nthi0Cme","userAttributes":[{"userId":"3","phone":"555-555-666"},{"userId":"4","email":"johnny@example.com"}]}`,
-				getJobRespCode:    200,
-				updateJobRespCode: 201,
-				status:            "pending",
-			},
-			{
-				getJobRespCode: 404,
-				status:         "pending",
 			},
 		}
 
@@ -101,13 +87,13 @@ func TestFlow(t *testing.T) {
 				mu.Lock()
 				status := test.status
 				mu.Unlock()
-				if status == "pending " && test.getJobRespCode == 200 {
+				if status == "pending" && test.getJobRespCode == 200 {
+
 					return false
 				}
 			}
 			return true
-
-		}, time.Minute, time.Second*2)
+		}, time.Minute*3, time.Second*2)
 		c <- os.Interrupt
 	})
 }
@@ -130,16 +116,14 @@ func getJob(w http.ResponseWriter, r *http.Request) {
 func updateJobStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	jobID, _ := strconv.Atoi(mux.Vars(r)["job_id"])
-	var status model.JobStatus
+	var status client.StatusJobSchema
 	if err := json.NewDecoder(r.Body).Decode(&status); err != nil {
 		return
 	}
-
-	if status == "complete" {
+	if status.Status == "complete" {
 		mu.Lock()
 		testData[jobID-1].status = "complete"
 		mu.Unlock()
-		fmt.Println("testData[jobID-1].Status=", "complete", "jobID-1=", jobID-1)
 	}
 	w.WriteHeader(testData[jobID-1].updateJobRespCode)
 

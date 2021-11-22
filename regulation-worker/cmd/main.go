@@ -43,7 +43,7 @@ func Run(ctx context.Context) {
 			DestCat: &destination.DestCategory{},
 		},
 	}
-
+	fmt.Println("starting loop")
 	l := withLoop(svc)
 	err := l.Loop(ctx)
 	if err != nil {
