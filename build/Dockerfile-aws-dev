@@ -1,5 +1,4 @@
 FROM ubuntu:20.04
-RUN apt-get -y update & apt-get -y install ca-certificates postgresql-client curl
 ADD rudder-server /
 ADD rudder-server-with-race /
 ADD ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
