@@ -156,7 +156,7 @@ func (b *Batch) download(ctx context.Context, fileName string) error {
 }
 
 //decompresses .json.gzip files to .json & remove corresponding .json.gzip file
-func decompress(fileName, uncompressedFileName string) error {
+func decompress(fileName, decompressedFileName string) error {
 	gzipFile, err := os.OpenFile(fileName, os.O_RDONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("error while opening compressed file: %w", err)
@@ -168,7 +168,7 @@ func decompress(fileName, uncompressedFileName string) error {
 	}
 	defer gzipReader.Close()
 
-	outfileWriter, err := os.OpenFile(uncompressedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+	outfileWriter, err := os.OpenFile(decompressedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("error while opening uncompressed file: %w", err)
 	}
@@ -221,8 +221,6 @@ func (b *Batch) delete(ctx context.Context, userAttributes []model.UserAttribute
 	if err != nil {
 		return fmt.Errorf("error while cleaning object, %w", err)
 	}
-
-	os.Remove(decompressedFileName)
 
 	err = compress(fileName, out)
 	if err != nil {
@@ -385,6 +383,8 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 
 func (b *Batch) cleanup(prefix string) {
 
-	os.Remove(statusTrackerFile)
-	b.FM.DeleteObjects([]string{prefix + "/" + statusTrackerFile})
+	err := b.FM.DeleteObjects([]string{prefix + "/" + statusTrackerFile})
+	if err != nil {
+		fmt.Println("error during cleanup: %w", err)
+	}
 }

@@ -73,9 +73,10 @@ type test struct {
 
 func TestFlow(t *testing.T) {
 	t.Run("TestFlow", func(t *testing.T) {
+		defer main.Cleanup()
 		testData = []test{
 			{
-				respBody:          `{"jobId":"1","destinationId":"216GUF0fW9z6JfRhW3pvGBEQpyQ","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"}]}`,
+				respBody:          `{"jobId":"1","destinationId":"216GUF0fW9z6JfRhW3pvGBEQpyQ","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
 				getJobRespCode:    200,
 				updateJobRespCode: 201,
 				status:            "pending",
@@ -95,6 +96,7 @@ func TestFlow(t *testing.T) {
 			return true
 		}, time.Minute*3, time.Second*2)
 		c <- os.Interrupt
+
 	})
 }
 

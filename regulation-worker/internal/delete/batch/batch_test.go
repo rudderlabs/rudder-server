@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/config"
+	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -61,6 +62,7 @@ func TestDelete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			defer main.Cleanup()
 			err := batch.Delete(ctx, tt.job, tt.dest.Config, tt.dest.Name)
 			require.NoError(t, err, "expected no error")
 		})
