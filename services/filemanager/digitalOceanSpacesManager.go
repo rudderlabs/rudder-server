@@ -103,8 +103,7 @@ func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (stri
 	return strings.TrimPrefix(path, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 }
 
-//TODO: continuationToken & startAfter variables are dummy here to satisfy filemanager interface. Need to implement them to support pagination.
-func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string, maxItems int64, continuationToken *string, startAfter string) (fileObjects []*FileObject, err error) {
+func (manager *DOSpacesManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
 	region := misc.GetSpacesLocation(manager.Config.EndPoint)

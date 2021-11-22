@@ -37,7 +37,7 @@ type FileManager interface {
 	GetObjectNameFromLocation(string) (string, error)
 	GetDownloadKeyFromFileLocation(location string) string
 	DeleteObjects(locations []string) error
-	ListFilesWithPrefix(prefix string, maxItems int64, continuationToken *string, startAfter string) (fileObjects []*FileObject, err error)
+	ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error)
 	GetConfiguredPrefix() string
 }
 

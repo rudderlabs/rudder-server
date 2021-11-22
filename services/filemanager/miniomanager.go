@@ -133,8 +133,7 @@ type MinioConfig struct {
 	UseSSL          bool
 }
 
-//TODO: continuationToken & startAfter variables are dummy here to satisfy filemanager interface. Need to implement them to support pagination.
-func (manager *MinioManager) ListFilesWithPrefix(prefix string, maxItems int64, continuationToken *string, startAfter string) (fileObjects []*FileObject, err error) {
+func (manager *MinioManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
 	// Created minio core

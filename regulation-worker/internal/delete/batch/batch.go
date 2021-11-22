@@ -51,8 +51,8 @@ func getDeleteManager(destName string) (*S3DeleteManager, error) {
 
 //returns list of all .json.gz files and marks exists as true if `statusTrackerFile` is present in the destination.
 //NOTE: assuming that all of batch destination have same file system as S3, i.e. flat.
-func (b *Batch) listFilesAndCheckTrackerFile(ctx context.Context, continuationToken *string, startAfter string) ([]*filemanager.FileObject, bool, error) {
-	fileObjects, err := b.FM.ListFilesWithPrefix("", listMaxItem, continuationToken, startAfter)
+func (b *Batch) listFilesAndCheckTrackerFile(ctx context.Context) ([]*filemanager.FileObject, bool, error) {
+	fileObjects, err := b.FM.ListFilesWithPrefix("", listMaxItem)
 	if err != nil {
 		return []*filemanager.FileObject{}, false, fmt.Errorf("failed to fetch object list from S3:%w", err)
 	}
@@ -312,11 +312,8 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 	}
 	defer batch.cleanup(destConfig["prefix"].(string))
 
-	var continuationToken *string
-	startAfter := ""
-
 	for {
-		files, exist, err := batch.listFilesAndCheckTrackerFile(ctx, continuationToken, startAfter)
+		files, exist, err := batch.listFilesAndCheckTrackerFile(ctx)
 		if err != nil {
 			return err
 		}

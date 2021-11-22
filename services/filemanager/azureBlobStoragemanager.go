@@ -100,8 +100,7 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 	return UploadOutput{Location: blobURL.String(), ObjectName: fileName}, nil
 }
 
-//TODO: continuationToken & startAfter variables are dummy here to satisfy filemanager interface. Need to implement them to support pagination.
-func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxItems int64, continuationToken *string, startAfter string) (fileObjects []*FileObject, err error) {
+func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	ctx := context.Background()
 	marker := string("")
 
