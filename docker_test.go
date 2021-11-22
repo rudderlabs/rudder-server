@@ -59,6 +59,15 @@ type ClickHouseTestT struct {
 	writeKey string
 }
 
+type ClickHouseClusterTestT struct {
+	network      *dc.Network
+	zookeeper    *dockertest.Resource
+	clickhouse01 *dockertest.Resource
+	clickhouse02 *dockertest.Resource
+	clickhouse03 *dockertest.Resource
+	clickhouse04 *dockertest.Resource
+}
+
 type MSSqlTestT struct {
 	resource *dockertest.Resource
 	db       *sql.DB
@@ -68,6 +77,7 @@ type MSSqlTestT struct {
 type WareHouseTestT struct {
 	pgTestT                PostgresTestT
 	chTestT                ClickHouseTestT
+	chClusterTestT         ClickHouseClusterTestT
 	mssqlTestT             MSSqlTestT
 	gwJobsSqlFunction      string
 	batchRtJobsSqlFunction string
@@ -348,61 +358,64 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("could not connect to docker: %w", err)
 	}
-	SetZookeeper()
-	defer func() {
-		if err := pool.Purge(z); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-	SetKafka()
-	defer func() {
-		if err := pool.Purge(resourceKafka); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-	SetRedis()
-	defer func() {
-		if err := pool.Purge(resourceRedis); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-	SetJobsDB()
-	defer func() {
-		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-	SetTransformer()
-	defer func() {
-		if err := pool.Purge(transformerRes); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-	SetMINIO()
-	defer func() {
-		if err := pool.Purge(resource); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
+	//SetZookeeper()
+	//defer func() {
+	//	if err := pool.Purge(z); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
+	//SetKafka()
+	//defer func() {
+	//	if err := pool.Purge(resourceKafka); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
+	//SetRedis()
+	//defer func() {
+	//	if err := pool.Purge(resourceRedis); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
+	//SetJobsDB()
+	//defer func() {
+	//	if err := pool.Purge(resourcePostgres); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
+	//SetTransformer()
+	//defer func() {
+	//	if err := pool.Purge(transformerRes); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
+	//SetMINIO()
+	//defer func() {
+	//	if err := pool.Purge(resource); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
+	//
+	//// Initialize warehouse config
+	//initWhConfig()
+	//
+	//// Setting postgres destination
+	//setWhPostgresDestination()
+	//defer func() {
+	//	if err := pool.Purge(whTest.pgTestT.resource); err != nil {
+	//		log.Printf("Could not purge warehouse postgres resource: %s \n", err)
+	//	}
+	//}()
+	//
+	//// Setting clickhouse destination
+	//setWhClickHouseDestination()
+	//defer func() {
+	//	if err := pool.Purge(whTest.chTestT.resource); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
 
-	// Initialize warehouse config
-	initWhConfig()
-
-	// Setting postgres destination
-	setWhPostgresDestination()
-	defer func() {
-		if err := pool.Purge(whTest.pgTestT.resource); err != nil {
-			log.Printf("Could not purge warehouse postgres resource: %s \n", err)
-		}
-	}()
-
-	// Setting clickhouse destination
-	setWhClickHouseDestination()
-	defer func() {
-		if err := pool.Purge(whTest.chTestT.resource); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
+	// Setting clickhouse cluster destination
+	setWhClickHouseClusterDestination()
 
 	// Setting mssql destination
 	setWhMSSqlDestination()
@@ -1521,6 +1534,78 @@ func setWhClickHouseDestination() {
 		return whTest.chTestT.db.Ping()
 	}); err != nil {
 		log.Println("Could not connect to postgres", whClickHouseUrl, err)
+	}
+}
+
+func setWhClickHouseClusterDestination() {
+	whTest.chClusterTestT.network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{
+		Name: "clickhouse-network",
+		IPAM: &dc.IPAMOptions{
+			Config: []dc.IPAMConfig{
+				{
+					Subnet: "172.23.0.0/24",
+				},
+			},
+		},
+	})
+	if err != nil {
+		log.Fatalf("could not create a network to zookeeper and kafka: %s", err)
+	}
+	whTest.chClusterTestT.zookeeper, err = pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "zookeeper",
+		Tag:        "3.5",
+		Hostname:   "zookeeper",
+		Name:       "zookeeper",
+		NetworkID:  "172.23.0.10",
+	})
+	whTest.chClusterTestT.clickhouse01, err = pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "yandex/clickhouse-server",
+		Tag:        "20.4",
+		Hostname:   "clickhouse01",
+		Name:       "clickhouse01",
+		NetworkID:  "172.23.0.11",
+		PortBindings: map[dc.Port][]dc.PortBinding{
+			"8123": {{HostIP: "127.0.0.1", HostPort: "8123"}},
+			"9000": {{HostIP: "127.0.0.1", HostPort: "9000"}},
+		},
+		WorkingDir:   "/etc/clickhouse-server",
+		ExposedPorts: []string{"8123", "9000"},
+		Mounts:       []string{"warehouse/clickhouse/cluster/config1.xml", "warehouse/clickhouse/cluster/users.xml"},
+		Links:        []string{"zookeeper"},
+	})
+	whTest.chClusterTestT.clickhouse02, err = pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "yandex/clickhouse-server",
+		Tag:        "20.4",
+		Hostname:   "clickhouse02",
+		Name:       "clickhouse02",
+		NetworkID:  "172.23.0.12",
+		WorkingDir: "/etc/clickhouse-server",
+		Mounts:     []string{"warehouse/clickhouse/cluster/config3.xml", "warehouse/clickhouse/cluster/users.xml"},
+		Links:      []string{"zookeeper"},
+	})
+	whTest.chClusterTestT.clickhouse03, err = pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "yandex/clickhouse-server",
+		Tag:        "20.4",
+		Hostname:   "clickhouse03",
+		Name:       "clickhouse03",
+		NetworkID:  "172.23.0.13",
+		WorkingDir: "/etc/clickhouse-server",
+		Mounts:     []string{"warehouse/clickhouse/cluster/config3.xml", "warehouse/clickhouse/cluster/users.xml"},
+		Links:      []string{"zookeeper"},
+	})
+	whTest.chClusterTestT.clickhouse04, err = pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "yandex/clickhouse-server",
+		Tag:        "20.4",
+		Hostname:   "clickhouse04",
+		Name:       "clickhouse04",
+		NetworkID:  "172.23.0.14",
+		WorkingDir: "/etc/clickhouse-server",
+		Mounts:     []string{"warehouse/clickhouse/cluster/config4.xml", "warehouse/clickhouse/cluster/users.xml"},
+		Links:      []string{"zookeeper"},
+	})
+	if err != nil {
+		log.Println("Could not start resource ClickHouse: %w", err)
+		return
 	}
 }
 
