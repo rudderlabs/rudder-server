@@ -378,5 +378,8 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 func (b *Batch) cleanup(prefix string) {
 
 	os.Remove(prefix + "/" + statusTrackerFile)
-	b.FM.DeleteObjects([]string{statusTrackerFile})
+	err := b.FM.DeleteObjects([]string{statusTrackerFile})
+	if err != nil {
+		fmt.Println("error during cleanup: %w", err)
+	}
 }

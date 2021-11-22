@@ -68,10 +68,10 @@ func withLoop(svc service.JobSvc) *service.Looper {
 
 //read all in the present directory
 //filter those with extension .json or .json.gz and delete each of them.
-func cleanup() error {
+func cleanup() {
 	files, err := os.ReadDir("./../internal/delete/batch")
 	if err != nil {
-		return fmt.Errorf("error while cleanup: %w", err)
+		fmt.Println("error while cleanup: %w", err)
 	}
 
 	for _, f := range files {
@@ -79,9 +79,8 @@ func cleanup() error {
 			path := fmt.Sprintf("./../internal/delete/batch/%s", f.Name())
 			err := os.Remove(path)
 			if err != nil {
-				return fmt.Errorf("error while deleting file during cleanup: %w", err)
+				fmt.Println("error while deleting file during cleanup: %w", err)
 			}
 		}
 	}
-	return nil
 }
