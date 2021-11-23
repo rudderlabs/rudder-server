@@ -26,10 +26,11 @@ type DeleteFacade struct {
 func (d *DeleteFacade) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus, error) {
 	switch destDetail.Type {
 	case "api":
-		delAPI := api.API{
-			DeleteManager: &api.Mock_apiWorker{},
+		err:=api.Delete(ctx, job, destDetail.Config, destDetail.Name)
+		if err!=nil{
+			return model.JobStatusFailed, err
 		}
-		return delAPI.DeleteManager.Delete(ctx, job, destDetail)
+		return model.JobStatusComplete, nil
 	case "batch":
 		fmt.Println("it's batch type")
 		err := batch.Delete(ctx, job, destDetail.Config, destDetail.Name)
