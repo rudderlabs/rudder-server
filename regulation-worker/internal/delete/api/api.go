@@ -11,51 +11,55 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
 //prepares payload based on (job,destDetail) & make an API call to transformer.
 //gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
-func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) error {
+func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 
 	method := "DELETE"
-
-	url := "d-transformer/delete-users"
+	endpoint := "/d-transformer/delete-users"
+	destTransformURL := config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	url := fmt.Sprint(destTransformURL, endpoint)
 
 	bodySchema := mapJobToPayload(job, destName, destConfig)
 
 	reqBody, err := json.Marshal(bodySchema)
 	if err != nil {
-		return fmt.Errorf("error while preparing API deletion request body: %w", err)
+		return model.JobStatusFailed
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(reqBody))
 	if err != nil {
-		return err
+		return model.JobStatusFailed
 	}
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return model.JobStatusFailed
 	}
 
-	var jobResp jobRespSchema
+	var jobResp JobRespSchema
 	if err := json.NewDecoder(resp.Body).Decode(&jobResp); err != nil {
-		return fmt.Errorf("error while decoding API deletion response: %w", err)
+		return model.JobStatusFailed
 	}
 
-	if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("invalid format/credentials: %w", jobResp.Error)
+	if resp.StatusCode == http.StatusBadRequest {
+		return model.JobStatusInvalidFormat
+	} else if resp.StatusCode == http.StatusUnauthorized {
+		return model.JobStatusInvalidCredential
 	} else if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
-		return fmt.Errorf("deletion not supported: %w", jobResp.Error)
+		return model.JobStatusNotSupported
 	} else if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusRequestTimeout || (resp.StatusCode >= 500 && resp.StatusCode < 600) {
-		return fmt.Errorf("failed")
+		return model.JobStatusFailed
 	}
-	return nil
+	return model.JobStatusComplete
 }
 
-func mapJobToPayload(job model.Job, destName string, destConfig map[string]interface{}) apiDeletionPayloadSchema {
+func mapJobToPayload(job model.Job, destName string, destConfig map[string]interface{}) []apiDeletionPayloadSchema {
 	uas := make([]userAttributesSchema, len(job.UserAttributes))
 	for i, ua := range job.UserAttributes {
 		uas[i] = userAttributesSchema{
@@ -66,10 +70,12 @@ func mapJobToPayload(job model.Job, destName string, destConfig map[string]inter
 		}
 	}
 
-	return apiDeletionPayloadSchema{
-		JobID:          fmt.Sprintf("%d", job.ID),
-		DestType:       destName,
-		Config:         destConfig,
-		UserAttributes: uas,
+	return []apiDeletionPayloadSchema{
+		{
+			JobID:          fmt.Sprintf("%d", job.ID),
+			DestType:       destName,
+			Config:         destConfig,
+			UserAttributes: uas,
+		},
 	}
 }

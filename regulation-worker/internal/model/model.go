@@ -15,11 +15,14 @@ var (
 type JobStatus string
 
 const (
-	JobStatusUndefined JobStatus = ""
-	JobStatusPending   JobStatus = "pending"
-	JobStatusRunning   JobStatus = "running"
-	JobStatusComplete  JobStatus = "complete"
-	JobStatusFailed    JobStatus = "failed"
+	JobStatusUndefined         JobStatus = ""
+	JobStatusPending           JobStatus = "pending"
+	JobStatusRunning           JobStatus = "running"
+	JobStatusComplete          JobStatus = "complete"
+	JobStatusFailed            JobStatus = "failed"
+	JobStatusNotSupported      JobStatus = "not supported"
+	JobStatusInvalidFormat     JobStatus = "invalid format"
+	JobStatusInvalidCredential JobStatus = "invalid credential"
 )
 
 type Job struct {

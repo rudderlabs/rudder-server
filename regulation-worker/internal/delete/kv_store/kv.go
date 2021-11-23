@@ -12,7 +12,7 @@ import (
 )
 
 type deleteManager interface {
-	Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus, error)
+	Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus)
 }
 
 type KVStore struct {
@@ -23,7 +23,7 @@ type KVStore struct {
 //calls KVStoreManager to download data
 //calls deletemanager to delete users from downloaded data
 //calls KVStoreManager to upload data
-func (kv *KVStore) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (status model.JobStatus, err error) {
+func (kv *KVStore) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (status model.JobStatus) {
 
 	return kv.DeleteManager.Delete(ctx, job, destDetail)
 }

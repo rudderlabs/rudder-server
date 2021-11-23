@@ -9,6 +9,6 @@ import (
 type Mock_KVStoreWorker struct {
 }
 
-func (d *Mock_KVStoreWorker) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus, error) {
-	return model.JobStatusComplete, nil
+func (d *Mock_KVStoreWorker) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
+	return model.JobStatusComplete
 }
