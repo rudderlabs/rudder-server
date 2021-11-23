@@ -215,6 +215,12 @@ func main() {
 		<-c
 		cancel()
 	}()
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt, syscall.SIGPIPE)
+		<-c
+		pkgLogger.Errorf("Error occurred while fetching signal.")
+	}()
 
 	Run(ctx)
 }
