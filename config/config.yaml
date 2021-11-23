@@ -47,10 +47,13 @@ Debugger:
   retrySleep: 100ms
 SourceDebugger:
   disableEventUploads: false
+  maxEventsCacheSize: 3
 DestinationDebugger:
   disableEventDeliveryStatusUploads: false
+  maxEventsCacheSize: 3
 TransformationDebugger:
   disableTransformationStatusUploads: false
+  maxTransformationsCacheSize: 3
 Archiver:
   backupRowsBatchSize: 100
 JobsDB:

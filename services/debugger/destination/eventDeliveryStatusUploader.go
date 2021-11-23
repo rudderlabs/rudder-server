@@ -35,6 +35,9 @@ var uploader debugger.UploaderI
 var (
 	configBackendURL                  string
 	disableEventDeliveryStatusUploads bool
+	eventsDeliveryCacheMap            map[string][]*DeliveryStatusT
+	eventsCacheMapLock                sync.RWMutex
+	maxEventsCacheSize  int
 )
 
 var pkgLogger logger.LoggerI
@@ -42,14 +45,31 @@ var pkgLogger logger.LoggerI
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("debugger").Child("destination")
+	eventsDeliveryCacheMap = make(map[string][]*DeliveryStatusT)
 }
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
+	config.RegisterIntConfigVariable(2, &maxEventsCacheSize, true, 1, "DestinationDebugger.maxEventsCacheSize")
 }
 
 type EventDeliveryStatusUploader struct {
+}
+
+func populateEventsCache(cache map[string][]*DeliveryStatusT, destinationID string, deliveryStatus *DeliveryStatusT) {
+	eventsCacheMapLock.Lock()
+	defer eventsCacheMapLock.Unlock()
+
+	if _, ok := cache[destinationID]; !ok {
+		cache[destinationID] = make([]*DeliveryStatusT, 0, maxEventsCacheSize)
+	}
+	eventsCache := cache[destinationID]
+	eventsCache = append(eventsCache, deliveryStatus)
+	if len(eventsCache) > maxEventsCacheSize {
+		eventsCache = eventsCache[len(eventsCache)-maxEventsCacheSize:]
+	}
+	cache[destinationID] = eventsCache
 }
 
 //RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
@@ -60,8 +80,11 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 		return false
 	}
 
-	// Check if destinationID part of enabled destinations
+	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
 	if !HasUploadEnabled(destinationID) {
+		populateEventsCache(eventsDeliveryCacheMap, destinationID, deliveryStatus)
 		return false
 	}
 
@@ -116,15 +139,18 @@ func (eventDeliveryStatusUploader *EventDeliveryStatusUploader) Transform(data i
 func updateConfig(sources backendconfig.ConfigT) {
 	configSubscriberLock.Lock()
 	uploadEnabledDestinationIDs = make(map[string]bool)
+	var uploadEnabledDestinationIdsList []string
 	for _, source := range sources.Sources {
 		for _, destination := range source.Destinations {
 			if destination.Config != nil {
 				if destination.Enabled && destination.Config["eventDelivery"] == true {
+					uploadEnabledDestinationIdsList = append(uploadEnabledDestinationIdsList, destination.ID)
 					uploadEnabledDestinationIDs[destination.ID] = true
 				}
 			}
 		}
 	}
+	recordHistoricEventsDelivery(uploadEnabledDestinationIdsList)
 	configSubscriberLock.Unlock()
 }
 
@@ -133,5 +159,20 @@ func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	backendConfig.Subscribe(configChannel, "backendConfig")
 	for config := range configChannel {
 		updateConfig(config.Data.(backendconfig.ConfigT))
+	}
+}
+
+func recordHistoricEventsDelivery(destinationIDs []string) {
+	for _, destinationID := range destinationIDs {
+		var historicEventsDelivery []*DeliveryStatusT
+		eventsCacheMapLock.Lock()
+		if deliveryStatus, ok := eventsDeliveryCacheMap[destinationID]; ok {
+			historicEventsDelivery = deliveryStatus
+			delete(eventsDeliveryCacheMap, destinationID)
+		}
+		eventsCacheMapLock.Unlock()
+		for _, event := range historicEventsDelivery {
+			uploader.RecordEvent(event)
+		}
 	}
 }

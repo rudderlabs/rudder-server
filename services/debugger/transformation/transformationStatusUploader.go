@@ -68,6 +68,9 @@ var (
 	configBackendURL             string
 	disableTransformationUploads bool
 	pkgLogger                    logger.LoggerI
+	transformationCacheMap       map[string][]*TransformationStatusT
+	transformationCacheMapLock   sync.RWMutex
+	maxTransformationCacheSize   int
 )
 
 var uploadEnabledTransformations map[string]bool
@@ -76,11 +79,13 @@ var configSubscriberLock sync.RWMutex
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("debugger").Child("transformation")
+	transformationCacheMap = make(map[string][]*TransformationStatusT)
 }
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
+	config.RegisterIntConfigVariable(2, &maxTransformationCacheSize, true, 1, "TransformationDebugger.maxTransformationsCacheSize")
 }
 
 type TransformationStatusUploader struct {
@@ -133,16 +138,19 @@ func (transformationStatusUploader *TransformationStatusUploader) Transform(data
 func updateConfig(sources backendconfig.ConfigT) {
 	configSubscriberLock.Lock()
 	uploadEnabledTransformations = make(map[string]bool)
+	var uploadEnabledTransformationsIDs []string
 	for _, source := range sources.Sources {
 		for _, destination := range source.Destinations {
 			for _, transformation := range destination.Transformations {
 				eventTransform, ok := transformation.Config["eventTransform"].(bool)
 				if ok && eventTransform {
 					uploadEnabledTransformations[transformation.ID] = true
+					uploadEnabledTransformationsIDs = append(uploadEnabledTransformationsIDs, transformation.ID)
 				}
 			}
 		}
 	}
+	recordHistoricTransformations(uploadEnabledTransformationsIDs)
 	configSubscriberLock.Unlock()
 }
 
@@ -170,93 +178,14 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 
 	for _, transformation := range tStatus.Destination.Transformations {
 		if IsUploadEnabled(transformation.ID) {
-			reportedMessageIDs := make(map[string]struct{})
-			eventBeforeMap := make(map[string]*EventBeforeTransform)
-			eventAfterMap := make(map[string]*EventsAfterTransform)
-			for _, userTransformerEvent := range tStatus.UserTransformedEvents {
-				if userTransformerEvent.Metadata.MessageID != "" {
-					reportedMessageIDs[userTransformerEvent.Metadata.MessageID] = struct{}{}
-					singularEventWithReceivedAt := tStatus.EventsByMessageID[userTransformerEvent.Metadata.MessageID]
-					if _, ok := eventBeforeMap[userTransformerEvent.Metadata.MessageID]; !ok {
-						eventBeforeMap[userTransformerEvent.Metadata.MessageID] = getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
-					}
-
-					if _, ok := eventAfterMap[userTransformerEvent.Metadata.MessageID]; !ok {
-						eventAfterMap[userTransformerEvent.Metadata.MessageID] = getEventsAfterTransform(userTransformerEvent.Message, time.Now())
-					} else {
-						payloadArr := eventAfterMap[userTransformerEvent.Metadata.MessageID].EventPayloads
-						payloadArr = append(payloadArr, getEventAfterTransform(userTransformerEvent.Message))
-						eventAfterMap[userTransformerEvent.Metadata.MessageID].EventPayloads = payloadArr
-					}
-				}
-			}
-
-			for k := range eventBeforeMap {
-				RecordTransformationStatus(&TransformStatusT{TransformationID: transformation.ID,
-					SourceID:      tStatus.SourceID,
-					DestinationID: tStatus.DestID,
-					EventBefore:   eventBeforeMap[k],
-					EventsAfter:   eventAfterMap[k],
-					IsError:       false})
-			}
-
-			for _, failedEvent := range tStatus.FailedEvents {
-				if len(failedEvent.Metadata.MessageIDs) > 0 {
-					for _, msgID := range failedEvent.Metadata.MessageIDs {
-						reportedMessageIDs[msgID] = struct{}{}
-						singularEventWithReceivedAt := tStatus.EventsByMessageID[msgID]
-						eventBefore := getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
-						eventAfter := &EventsAfterTransform{
-							Error:      failedEvent.Error,
-							ReceivedAt: time.Now().Format(misc.RFC3339Milli),
-							StatusCode: failedEvent.StatusCode,
-						}
-
-						RecordTransformationStatus(&TransformStatusT{TransformationID: transformation.ID,
-							SourceID:      tStatus.SourceID,
-							DestinationID: tStatus.DestID,
-							EventBefore:   eventBefore,
-							EventsAfter:   eventAfter,
-							IsError:       true})
-					}
-				} else if failedEvent.Metadata.MessageID != "" {
-					reportedMessageIDs[failedEvent.Metadata.MessageID] = struct{}{}
-					singularEventWithReceivedAt := tStatus.EventsByMessageID[failedEvent.Metadata.MessageID]
-					eventBefore := getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
-					eventAfter := &EventsAfterTransform{
-						Error:      failedEvent.Error,
-						ReceivedAt: time.Now().Format(misc.RFC3339Milli),
-						StatusCode: failedEvent.StatusCode,
-					}
-
-					RecordTransformationStatus(&TransformStatusT{TransformationID: transformation.ID,
-						SourceID:      tStatus.SourceID,
-						DestinationID: tStatus.DestID,
-						EventBefore:   eventBefore,
-						EventsAfter:   eventAfter,
-						IsError:       true})
-				}
-			}
-
-			for msgID := range tStatus.UniqueMessageIds {
-				if _, ok := reportedMessageIDs[msgID]; !ok {
-					singularEventWithReceivedAt := tStatus.EventsByMessageID[msgID]
-					eventBefore := getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
-					eventAfter := &EventsAfterTransform{
-						ReceivedAt: time.Now().Format(misc.RFC3339Milli),
-						IsDropped:  true,
-					}
-
-					RecordTransformationStatus(&TransformStatusT{TransformationID: transformation.ID,
-						SourceID:      tStatus.SourceID,
-						DestinationID: tStatus.DestID,
-						EventBefore:   eventBefore,
-						EventsAfter:   eventAfter,
-						IsError:       false})
-				}
-			}
+			processRecordTransformationStatus(tStatus, transformation.ID)
+		} else {
+			tStatusUpdated := *tStatus
+			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
+			populateEventsCache(transformationCacheMap, transformation.ID, &tStatusUpdated)
 		}
 	}
+
 }
 
 func getEventBeforeTransform(singularEvent types.SingularEventT, receivedAt time.Time) *EventBeforeTransform {
@@ -293,5 +222,124 @@ func getEventsAfterTransform(singularEvent types.SingularEventT, receivedAt time
 		ReceivedAt:    receivedAt.Format(misc.RFC3339Milli),
 		StatusCode:    200,
 		EventPayloads: []*EventPayloadAfterTransform{getEventAfterTransform(singularEvent)},
+	}
+}
+
+func recordHistoricTransformations(tIDs []string) {
+	for _, tID := range tIDs {
+		var tStatuses []*TransformationStatusT
+		transformationCacheMapLock.Lock()
+		if _, ok := transformationCacheMap[tID]; ok {
+			tStatuses = transformationCacheMap[tID]
+			delete(transformationCacheMap, tID)
+		}
+		transformationCacheMapLock.Unlock()
+		for _, tStatus := range tStatuses {
+			processRecordTransformationStatus(tStatus, tID)
+		}
+	}
+}
+
+func populateEventsCache(cache map[string][]*TransformationStatusT, transformationID string,
+	transformation *TransformationStatusT) {
+	transformationCacheMapLock.Lock()
+	defer transformationCacheMapLock.Unlock()
+
+	if _, ok := cache[transformationID]; !ok {
+		cache[transformationID] = make([]*TransformationStatusT, 0, maxTransformationCacheSize)
+	}
+	eventsCache := cache[transformationID]
+	eventsCache = append(eventsCache, transformation)
+	if len(eventsCache) > maxTransformationCacheSize {
+		eventsCache = eventsCache[len(eventsCache)-maxTransformationCacheSize:]
+	}
+	cache[transformationID] = eventsCache
+}
+
+func processRecordTransformationStatus(tStatus *TransformationStatusT, tID string) {
+	reportedMessageIDs := make(map[string]struct{})
+	eventBeforeMap := make(map[string]*EventBeforeTransform)
+	eventAfterMap := make(map[string]*EventsAfterTransform)
+	for _, userTransformerEvent := range tStatus.UserTransformedEvents {
+		if userTransformerEvent.Metadata.MessageID != "" {
+			reportedMessageIDs[userTransformerEvent.Metadata.MessageID] = struct{}{}
+			singularEventWithReceivedAt := tStatus.EventsByMessageID[userTransformerEvent.Metadata.MessageID]
+			if _, ok := eventBeforeMap[userTransformerEvent.Metadata.MessageID]; !ok {
+				eventBeforeMap[userTransformerEvent.Metadata.MessageID] = getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
+			}
+
+			if _, ok := eventAfterMap[userTransformerEvent.Metadata.MessageID]; !ok {
+				eventAfterMap[userTransformerEvent.Metadata.MessageID] = getEventsAfterTransform(userTransformerEvent.Message, time.Now())
+			} else {
+				payloadArr := eventAfterMap[userTransformerEvent.Metadata.MessageID].EventPayloads
+				payloadArr = append(payloadArr, getEventAfterTransform(userTransformerEvent.Message))
+				eventAfterMap[userTransformerEvent.Metadata.MessageID].EventPayloads = payloadArr
+			}
+		}
+	}
+
+	for k := range eventBeforeMap {
+		RecordTransformationStatus(&TransformStatusT{TransformationID: tID,
+			SourceID:      tStatus.SourceID,
+			DestinationID: tStatus.DestID,
+			EventBefore:   eventBeforeMap[k],
+			EventsAfter:   eventAfterMap[k],
+			IsError:       false})
+	}
+
+	for _, failedEvent := range tStatus.FailedEvents {
+		if len(failedEvent.Metadata.MessageIDs) > 0 {
+			for _, msgID := range failedEvent.Metadata.MessageIDs {
+				reportedMessageIDs[msgID] = struct{}{}
+				singularEventWithReceivedAt := tStatus.EventsByMessageID[msgID]
+				eventBefore := getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
+				eventAfter := &EventsAfterTransform{
+					Error:      failedEvent.Error,
+					ReceivedAt: time.Now().Format(misc.RFC3339Milli),
+					StatusCode: failedEvent.StatusCode,
+				}
+
+				RecordTransformationStatus(&TransformStatusT{TransformationID: tID,
+					SourceID:      tStatus.SourceID,
+					DestinationID: tStatus.DestID,
+					EventBefore:   eventBefore,
+					EventsAfter:   eventAfter,
+					IsError:       true})
+			}
+		} else if failedEvent.Metadata.MessageID != "" {
+			reportedMessageIDs[failedEvent.Metadata.MessageID] = struct{}{}
+			singularEventWithReceivedAt := tStatus.EventsByMessageID[failedEvent.Metadata.MessageID]
+			eventBefore := getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
+			eventAfter := &EventsAfterTransform{
+				Error:      failedEvent.Error,
+				ReceivedAt: time.Now().Format(misc.RFC3339Milli),
+				StatusCode: failedEvent.StatusCode,
+			}
+
+			RecordTransformationStatus(&TransformStatusT{TransformationID: tID,
+				SourceID:      tStatus.SourceID,
+				DestinationID: tStatus.DestID,
+				EventBefore:   eventBefore,
+				EventsAfter:   eventAfter,
+				IsError:       true})
+		}
+	}
+
+	for msgID := range tStatus.UniqueMessageIds {
+		if _, ok := reportedMessageIDs[msgID]; !ok {
+			singularEventWithReceivedAt := tStatus.EventsByMessageID[msgID]
+			eventBefore := getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
+			eventAfter := &EventsAfterTransform{
+				ReceivedAt: time.Now().Format(misc.RFC3339Milli),
+				IsDropped:  true,
+			}
+
+			RecordTransformationStatus(&TransformStatusT{TransformationID: tID,
+				SourceID:      tStatus.SourceID,
+				DestinationID: tStatus.DestID,
+				EventBefore:   eventBefore,
+				EventsAfter:   eventAfter,
+				IsError:       false})
+		}
 	}
 }
