@@ -26,6 +26,7 @@ var (
 	pkgLogger                             logger.LoggerI
 	setUsersLoadPartitionFirstEventFilter bool
 	stagingTablePrefix                    string
+	isUsersTableDedupEnabled              bool
 )
 
 type HandleT struct {
@@ -207,6 +208,13 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
+func (bq *HandleT) deleteTable(tableName string) (err error) {
+	pkgLogger.Infof("BQ: Deleting table: %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
+	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
+	err = tableRef.Delete(bq.BQContext)
+	return
+}
+
 func partitionedTable(tableName string, partitionDate string) string {
 	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
 }
@@ -313,7 +321,6 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", partitionDate)
 	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
 	sqlStatement := fmt.Sprintf(`SELECT DISTINCT * FROM (
 			SELECT id, %[1]s FROM (
 				(
@@ -330,7 +337,38 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		bqUsersView,                      // 3
 		identifiesFrom,                   // 4
 	)
+	loadUserTable := func() {
+		pkgLogger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
+		partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
+		query := bq.Db.Query(sqlStatement)
+		query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(partitionedUsersTable)
+		query.WriteDisposition = bigquery.WriteAppend
 
+		job, err := query.Run(bq.BQContext)
+		if err != nil {
+			pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
+			errorMap[warehouseutils.UsersTable] = err
+			return
+		}
+		status, err := job.Wait(bq.BQContext)
+		if err != nil {
+			pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
+			errorMap[warehouseutils.UsersTable] = err
+			return
+		}
+
+		if status.Err() != nil {
+			errorMap[warehouseutils.UsersTable] = status.Err()
+			return
+		}
+	}
+
+	if !isUsersTableDedupEnabled {
+		loadUserTable()
+		return
+	}
+
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
 	pkgLogger.Infof(`BQ: Creating staging table for users: %v`, sqlStatement)
 	query := bq.Db.Query(sqlStatement)
 	query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(stagingTableName)
@@ -375,24 +413,31 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	pkgLogger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
 	// partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
 	q := bq.Db.Query(sqlStatement)
-
-	it, err := q.Run(bq.BQContext)
+	job, err = q.Run(bq.BQContext)
 	if err != nil {
-		pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
+		pkgLogger.Errorf("BQ: Error initiating merge load job: %v\n", err)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
-	stat, err := it.Wait(bq.BQContext)
+	status, err = job.Wait(bq.BQContext)
 	if err != nil {
-		pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
+		pkgLogger.Errorf("BQ: Error running merge load job: %v\n", err)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
-	if stat.Err() != nil {
+	if status.Err() != nil {
 		errorMap[warehouseutils.UsersTable] = status.Err()
 		return
 	}
+
+	err = bq.deleteTable(stagingTableName)
+	if err != nil {
+		pkgLogger.Errorf("BQ: Error deleting staging table %v: %v\n", stagingTableName, err)
+		errorMap[warehouseutils.UsersTable] = err
+		return
+	}
+
 	return errorMap
 }
 
@@ -412,6 +457,7 @@ func loadConfig() {
 	partitionExpiryUpdated = make(map[string]bool)
 	stagingTablePrefix = "RUDDER_STAGING_"
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
+	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled")
 
 }
 
