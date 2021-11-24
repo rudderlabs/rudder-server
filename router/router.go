@@ -1575,7 +1575,7 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 			}
 			generatorStat.Start()
 
-			processCount := rt.readAndProcess()
+			processCount, _ := rt.readAndProcess() //earliestJobMap
 
 			countStat.Count(processCount)
 			generatorStat.End()
@@ -1584,7 +1584,7 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 	}
 }
 
-func (rt *HandleT) readAndProcess() int {
+func (rt *HandleT) readAndProcess() (int, map[string]time.Time) {
 	if rt.guaranteeUserEventOrder {
 		//#JobOrder (See comment marked #JobOrder
 		rt.toClearFailJobIDMutex.Lock()
@@ -1609,11 +1609,12 @@ func (rt *HandleT) readAndProcess() int {
 	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}})
 
 	combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
+	earliestJobMap := make(map[string]time.Time)
 
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
 		time.Sleep(readSleep)
-		return 0
+		return 0, earliestJobMap
 	}
 
 	rt.logger.Debugf("RT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", rt.destName, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
@@ -1644,6 +1645,14 @@ func (rt *HandleT) readAndProcess() int {
 	throttledAtTime := time.Now()
 	//Identify jobs which can be processed
 	for _, job := range combinedList {
+		//populating earliestJobMap
+		if _, ok := earliestJobMap[job.Customer]; !ok {
+			earliestJobMap[job.Customer] = job.CreatedAt
+		}
+		if job.CreatedAt.Before(earliestJobMap[job.Customer]) {
+			earliestJobMap[job.Customer] = job.CreatedAt
+		}
+
 		destID := destinationID(job)
 		rt.configSubscriberLock.RLock()
 		drain, reason := router_utils.ToBeDrained(job, destID, toAbortDestinationIDs, rt.destinationsMap)
@@ -1733,10 +1742,10 @@ func (rt *HandleT) readAndProcess() int {
 	if len(toProcess) == 0 {
 		rt.logger.Debugf("RT: No workers found for the jobs. Sleeping. Destination: %s", rt.destName)
 		time.Sleep(readSleep)
-		return 0
+		return 0, earliestJobMap
 	}
 
-	return len(toProcess)
+	return len(toProcess), earliestJobMap
 }
 
 func destinationID(job *jobsdb.JobT) string {
