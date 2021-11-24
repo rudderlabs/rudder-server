@@ -817,7 +817,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	var errorMessage string
 
 	if !gateway.application.Options().NormalMode {
-		errorMessage = "pod not in normal mode"
+		errorMessage = "server not in normal mode"
 		defer http.Error(w, errorMessage, 500)
 		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 500, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
 		return
@@ -967,7 +967,7 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 	atomic.AddUint64(&gateway.recvCount, 1)
 
 	if !gateway.application.Options().NormalMode {
-		errorMessage := "pod not in normal mode"
+		errorMessage := "server not in normal mode"
 		defer http.Error(w, errorMessage, 500)
 		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 500, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
 		return
