@@ -919,7 +919,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	pendingEventsResponse := totalPendingTillNow
-	if whPending || pendingEventsResponse > 0 {
+	if whPending {
 		pendingEventsResponse = 1
 	}
 
