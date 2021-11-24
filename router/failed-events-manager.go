@@ -64,11 +64,13 @@ func (fem *FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap ma
 		created_at TIMESTAMP NOT NULL);`, table)
 		_, err := txn.Exec(sqlStatement)
 		if err != nil {
+			txn.Rollback()
 			panic(err)
 		}
 		insertQuery := fmt.Sprintf(`INSERT INTO %s VALUES($1, $2, $3);`, table)
 		stmt, err := txn.Prepare(insertQuery)
 		if err != nil {
+			txn.Rollback()
 			panic(err)
 		}
 		createdAt := time.Now()
