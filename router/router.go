@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
@@ -101,6 +102,7 @@ type HandleT struct {
 	backendConfigInitialized               chan bool
 	maxFailedCountForJob                   int
 	retryTimeWindow                        time.Duration
+	routerTimeout                          time.Duration
 	destinationResponseHandler             ResponseHandlerI
 	saveDestinationResponse                bool
 	reporting                              utilTypes.ReportingI
@@ -108,6 +110,7 @@ type HandleT struct {
 	savePayloadOnError                     bool
 	responseTransform                      bool
 	saveDestinationResponseOverride        bool
+	routerLatencyStat                      map[string]misc.MovingAverage
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -573,7 +576,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					"destType":    worker.rt.destName,
 					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
 				})
+				workspaceID := destinationJob.JobMetadataArray[0].JobT.Customer
 				deliveryLatencyStat.Start()
+				startedAt := time.Now()
 
 				// TODO: remove trackStuckDelivery once we verify it is not needed,
 				//			router_delivery_exceeded_timeout -> goes to zero
@@ -637,6 +642,12 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 				worker.deliveryTimeStat.End()
 				deliveryLatencyStat.End()
+				timeTaken := time.Since(startedAt)
+				if _, ok := worker.rt.routerLatencyStat[workspaceID]; !ok {
+					worker.rt.routerLatencyStat[workspaceID] = misc.NewMovingAverage()
+				}
+				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken / time.Second))
+
 				// END: request to destination endpoint
 
 				if isSuccessStatus(respStatusCode) && !worker.rt.saveDestinationResponseOverride {
@@ -1248,7 +1259,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
-
+	routerCustomerJobStatusCount := make(map[string]map[string]int)
 	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
@@ -1261,6 +1272,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		//Update metrics maps
 		//REPORTING - ROUTER - START
 		if rt.reporting != nil && rt.reportingEnabled {
+			workspaceID := rt.backendConfig.GetWorkspaceIDForSourceID((parameters.SourceID))
+			_, ok := routerCustomerJobStatusCount[workspaceID]
+			if !ok {
+				routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
+			}
 			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
 			cd, ok := connectionDetailsMap[key]
 			if !ok {
@@ -1282,7 +1298,10 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				sd.Count++
 			}
 			if resp.status.JobState != jobsdb.Failed.State {
-				sd.Count++
+				if resp.status.JobState == jobsdb.Succeeded.State || resp.status.JobState == jobsdb.Aborted.State {
+					routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
+					sd.Count++
+				}
 			}
 		}
 		//REPORTING - ROUTER - END
@@ -1327,6 +1346,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 	}
 	//REPORTING - ROUTER - END
+	for customer := range routerCustomerJobStatusCount {
+		for destType := range routerCustomerJobStatusCount[customer] {
+			multitenant.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router")
+		}
+	}
 
 	if len(statusList) > 0 {
 		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
@@ -1601,7 +1625,8 @@ func (rt *HandleT) readAndProcess() (int, map[string]time.Time) {
 		//End of #JobOrder
 	}
 
-	// toQuery := jobQueryBatchSize
+	//sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
+	//multitenant.GetRouterPickupJobs(rt.destName, earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat)
 	rt.updateCustomerCount() //to implement this
 	retryList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Failed.State}})
 	throttledList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Throttled.State}})
@@ -1772,6 +1797,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.statusLoopPauseChannel = make(chan *PauseT)
 	rt.statusLoopResumeChannel = make(chan bool)
 	rt.reporting = reporting
+	rt.routerLatencyStat = make(map[string]misc.MovingAverage)
+
 	config.RegisterBoolConfigVariable(utilTypes.DEFAULT_REPORTING_ENABLED, &rt.reportingEnabled, false, "Reporting.enabled")
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
@@ -1818,6 +1845,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	responseTransformKeys := []string{"Router." + rt.destName + "." + "responseTransform", "Router." + "responseTransform"}
 	saveDestinationResponseOverrideKeys := []string{"Router." + rt.destName + "." + "saveDestinationResponseOverride", "Router." + "saveDestinationResponseOverride"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
+	routerTimeoutKeys := []string{"Router." + rt.destName + "." + "routerTimeout", "Router." + "routerTimeout"}
+	config.RegisterDurationConfigVariable(10, &rt.routerTimeout, true, time.Second, routerTimeoutKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
