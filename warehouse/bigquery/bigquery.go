@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -24,6 +25,7 @@ var (
 	partitionExpiryUpdatedLock            sync.RWMutex
 	pkgLogger                             logger.LoggerI
 	setUsersLoadPartitionFirstEventFilter bool
+	stagingTablePrefix                    string
 )
 
 type HandleT struct {
@@ -311,6 +313,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
 	partition := fmt.Sprintf("TIMESTAMP('%s')", partitionDate)
 	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
 	sqlStatement := fmt.Sprintf(`SELECT DISTINCT * FROM (
 			SELECT id, %[1]s FROM (
 				(
@@ -328,26 +331,65 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		identifiesFrom,                   // 4
 	)
 
-	pkgLogger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
-	partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
+	pkgLogger.Infof(`BQ: Creating staging table for users: %v`, sqlStatement)
 	query := bq.Db.Query(sqlStatement)
-	query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(partitionedUsersTable)
+	query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(stagingTableName)
 	query.WriteDisposition = bigquery.WriteAppend
-
 	job, err := query.Run(bq.BQContext)
+	if err != nil {
+		pkgLogger.Errorf("BQ: Error initiating staging table for users : %v\n", err)
+		errorMap[warehouseutils.UsersTable] = err
+		return
+	}
+	status, err := job.Wait(bq.BQContext)
+	if err != nil {
+		pkgLogger.Errorf("BQ: Error initiating staging table for users %v\n", err)
+		errorMap[warehouseutils.UsersTable] = err
+		return
+	}
+
+	primaryKey := `ID`
+	columnNames := append([]string{`ID`}, userColNames...)
+	columnNamesStr := strings.Join(columnNames, ",")
+	var columnsWithValues, stagingColumnValues string
+	for idx, colName := range columnNames {
+		columnsWithValues += fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName)
+		stagingColumnValues += fmt.Sprintf(`staging.%s`, colName)
+		if idx != len(columnNames)-1 {
+			columnsWithValues += `,`
+			stagingColumnValues += `,`
+		}
+	}
+
+	sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
+									USING (
+										SELECT %[3]s FROM %[2]s
+									) AS staging
+									ON (original.%[4]s = staging.%[4]s)
+									WHEN MATCHED THEN
+									UPDATE SET %[5]s
+									WHEN NOT MATCHED THEN
+									INSERT (%[3]s) VALUES (%[6]s)`, bqTable(warehouseutils.UsersTable), bqTable(stagingTableName), columnNamesStr, primaryKey, columnsWithValues, stagingColumnValues)
+	pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+
+	pkgLogger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
+	// partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
+	q := bq.Db.Query(sqlStatement)
+
+	it, err := q.Run(bq.BQContext)
 	if err != nil {
 		pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
-	status, err := job.Wait(bq.BQContext)
+	stat, err := it.Wait(bq.BQContext)
 	if err != nil {
 		pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
-	if status.Err() != nil {
+	if stat.Err() != nil {
 		errorMap[warehouseutils.UsersTable] = status.Err()
 		return
 	}
@@ -368,6 +410,7 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 
 func loadConfig() {
 	partitionExpiryUpdated = make(map[string]bool)
+	stagingTablePrefix = "RUDDER_STAGING_"
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 
 }
