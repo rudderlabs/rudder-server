@@ -114,7 +114,8 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
-	customerCount map[string]int
+	customerCount  map[string]int
+	earliestJobMap map[string]time.Time
 }
 
 type jobResponseT struct {
@@ -1575,7 +1576,7 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 			}
 			generatorStat.Start()
 
-			processCount, _ := rt.readAndProcess() //earliestJobMap
+			processCount := rt.readAndProcess()
 
 			countStat.Count(processCount)
 			generatorStat.End()
@@ -1584,7 +1585,7 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 	}
 }
 
-func (rt *HandleT) readAndProcess() (int, map[string]time.Time) {
+func (rt *HandleT) readAndProcess() int {
 	if rt.guaranteeUserEventOrder {
 		//#JobOrder (See comment marked #JobOrder
 		rt.toClearFailJobIDMutex.Lock()
@@ -1601,7 +1602,8 @@ func (rt *HandleT) readAndProcess() (int, map[string]time.Time) {
 		//End of #JobOrder
 	}
 
-	// toQuery := jobQueryBatchSize
+	//sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
+	// multitenant.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat)
 	rt.updateCustomerCount() //to implement this
 	retryList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Failed.State}})
 	throttledList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Throttled.State}})
@@ -1609,12 +1611,12 @@ func (rt *HandleT) readAndProcess() (int, map[string]time.Time) {
 	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}})
 
 	combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
-	earliestJobMap := make(map[string]time.Time)
+	rt.earliestJobMap = make(map[string]time.Time)
 
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
 		time.Sleep(readSleep)
-		return 0, earliestJobMap
+		return 0
 	}
 
 	rt.logger.Debugf("RT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", rt.destName, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
@@ -1646,11 +1648,8 @@ func (rt *HandleT) readAndProcess() (int, map[string]time.Time) {
 	//Identify jobs which can be processed
 	for _, job := range combinedList {
 		//populating earliestJobMap
-		if _, ok := earliestJobMap[job.Customer]; !ok {
-			earliestJobMap[job.Customer] = job.CreatedAt
-		}
-		if job.CreatedAt.Before(earliestJobMap[job.Customer]) {
-			earliestJobMap[job.Customer] = job.CreatedAt
+		if _, ok := rt.earliestJobMap[job.Customer]; !ok {
+			rt.earliestJobMap[job.Customer] = job.CreatedAt
 		}
 
 		destID := destinationID(job)
@@ -1742,10 +1741,10 @@ func (rt *HandleT) readAndProcess() (int, map[string]time.Time) {
 	if len(toProcess) == 0 {
 		rt.logger.Debugf("RT: No workers found for the jobs. Sleeping. Destination: %s", rt.destName)
 		time.Sleep(readSleep)
-		return 0, earliestJobMap
+		return 0
 	}
 
-	return len(toProcess), earliestJobMap
+	return len(toProcess)
 }
 
 func destinationID(job *jobsdb.JobT) string {
