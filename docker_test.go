@@ -1104,7 +1104,6 @@ func SetRedis() {
 			Password: "",
 			DB:       0,
 		})
-
 		_, err := redisClient.Ping().Result()
 		return err
 	}); err != nil {
