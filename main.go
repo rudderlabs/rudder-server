@@ -221,6 +221,11 @@ func main() {
 		<-c
 		pkgLogger.Errorf("Error occurred while fetching signal.")
 	}()
+	go func() {
+		pkgLogger.Errorf("Ignoring sigpipe signals")
+		signal.Ignore(syscall.SIGPIPE)
+		pkgLogger.Errorf("Ignored sigpipe signals")
+	}()
 
 	Run(ctx)
 }
