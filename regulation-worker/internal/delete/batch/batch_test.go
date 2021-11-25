@@ -64,6 +64,7 @@ func TestDelete(t *testing.T) {
 			err := batch.Delete(ctx, tt.job, tt.dest.Config, tt.dest.Name)
 			require.NoError(t, err, "expected no error")
 		})
+
 	}
 }
 

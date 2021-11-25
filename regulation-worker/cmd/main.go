@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -32,7 +30,6 @@ func main() {
 }
 
 func Run(ctx context.Context) {
-	defer Cleanup()
 	svc := service.JobSvc{
 		API: &client.JobAPI{
 			WorkspaceID: getEnv("workspaceID", "1001"),
@@ -63,22 +60,5 @@ func withLoop(svc service.JobSvc) *service.Looper {
 
 	return &service.Looper{
 		Svc: svc,
-	}
-}
-
-//read all in the present directory
-//filter those with extension .json or .json.gz and delete each of them.
-func Cleanup() {
-	files, err := os.ReadDir(".")
-	if err != nil {
-		fmt.Println("error while cleanup: %w", err)
-	}
-	for _, f := range files {
-		if filepath.Ext(f.Name()) == ".json" || filepath.Ext(f.Name()) == ".gz" || filepath.Ext(f.Name()) == ".txt" {
-			err := os.Remove(f.Name())
-			if err != nil {
-				fmt.Println("error while deleting file during cleanup: %w", err)
-			}
-		}
 	}
 }
