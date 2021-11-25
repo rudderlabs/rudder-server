@@ -5,7 +5,7 @@ wget https://databricks-bi-artifacts.s3.us-east-2.amazonaws.com/simbaspark-drive
 wget ftp://ftp.unixodbc.org/pub/unixODBC/unixODBC-2.3.9.tar.gz
 tar xvzf unixODBC-2.3.9.tar.gz
 cd unixODBC-2.3.9/
-./configure --prefix=/usr/local/unixODBC
+./configure --prefix=/usr --sysconfdir=/etc/unixODBC
 make
 make install
 cd ..
