@@ -463,7 +463,10 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			result.ForEach(func(_, vjson gjson.Result) bool {
 				anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
 				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
-				builtUserID = anonIDFromReq + DELIMITER + userIDFromReq
+				if builtUserID == "" {
+					builtUserID = anonIDFromReq + DELIMITER + userIDFromReq
+				}
+
 				eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
 
 				if anonIDFromReq == "" {
