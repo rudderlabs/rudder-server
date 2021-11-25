@@ -497,6 +497,9 @@ func (bq *HandleT) removePartitionExpiry() (err error) {
 }
 
 func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+	if !isUsersTableDedupEnabled {
+		return
+	}
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
