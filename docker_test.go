@@ -419,7 +419,6 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("DEST_TRANSFORM_URL", transformURL)
 	os.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	os.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
-	// os.Setenv("WORKSPACE_TOKEN", "1vLbwltztKUgpuFxmJlSe1esX8c")
 	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
 
 	httpPortInt, err := freeport.GetFreePort()
@@ -449,6 +448,7 @@ func run(m *testing.M) (int, error) {
 	writeKey = randString(27)
 	workspaceID = randString(27)
 	webhookEventWriteKey = randString(27)
+	fmt.Println("writeKey",writeKey)
 
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
