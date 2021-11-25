@@ -435,7 +435,7 @@ var (
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &enablePipelining, false, "Processor.enablePipelining")
-	config.RegisterIntConfigVariable(1, &pipelineBufferedItems, true, 1, "Processor.pipelineBufferedItems")
+	config.RegisterIntConfigVariable(1, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
 	config.RegisterDurationConfigVariable(time.Duration(5000), &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(200), &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	//DEPRECATED: used only on the old mainLoop:
@@ -1324,7 +1324,6 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 	var destJobs []*jobsdb.JobT
 
 	destProcStart := time.Now()
-	proc.logger.Debug("[Processor: processJobsForDest] calling transformations")
 
 	chOut := make(chan transformSrcDestOutput, 1)
 	wg := sync.WaitGroup{}
@@ -1895,7 +1894,7 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 	if len(unprocessedList) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
 		proc.pStatsDBR.Rate(0, time.Since(s))
-		return nil
+		return unprocessedList
 	}
 
 	eventSchemasStart := time.Now()
@@ -1941,7 +1940,7 @@ func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 	//Mark the jobs as executing
 	err := proc.gatewayDB.UpdateJobStatus(statusList, []string{GWCustomVal}, nil)
 	if err != nil {
-		return fmt.Errorf("marking jobs as executing: %v", err)
+		return fmt.Errorf("marking jobs as executing: %w", err)
 	}
 
 	return nil
