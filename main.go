@@ -216,11 +216,12 @@ func GoSigPipeSignal() {
 		pkgLogger.Infof(`Signal received: %s`, time.Now().String())
 		pkgLogger.Infof(`Signal printing: %s`, time.Now().String())
 		for c := range ch {
-			fmt.Println("Info: ")
+			fmt.Println("Signal Info: ")
 			fmt.Println(c)
 		}
+		close(ch)
 		time.Sleep(time.Minute * 2)
-		pkgLogger.Infof(`Sleep terminated %s`, time.Now().String())
+		pkgLogger.Infof(`Signal terminated %s`, time.Now().String())
 		GoSigPipeSignal()
 	}()
 }
