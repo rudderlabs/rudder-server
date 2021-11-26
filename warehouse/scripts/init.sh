@@ -1,6 +1,6 @@
 #!/bin/sh
 apt-get -y update
-apt-get -y install build-essential wget unzip libsasl2-modules-gssapi-mit netcat dpkg ca-certificates postgresql-client curl
+apt-get -y install build-essential wget unzip libsasl2-modules-gssapi-mit netcat dpkg ca-certificates postgresql-client curl strace
 wget https://databricks-bi-artifacts.s3.us-east-2.amazonaws.com/simbaspark-drivers/odbc/2.6.19/SimbaSparkODBC-2.6.19.1033-Debian-64bit.zip
 wget ftp://ftp.unixodbc.org/pub/unixODBC/unixODBC-2.3.9.tar.gz
 tar xvzf unixODBC-2.3.9.tar.gz

@@ -213,18 +213,8 @@ func main() {
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 		<-c
+		time.Sleep(time.Minute * 2)
 		cancel()
-	}()
-	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt, syscall.SIGPIPE)
-		<-c
-		pkgLogger.Errorf("Error occurred while fetching signal.")
-	}()
-	go func() {
-		pkgLogger.Errorf("Ignoring sigpipe signals")
-		signal.Ignore(syscall.SIGPIPE)
-		pkgLogger.Errorf("Ignored sigpipe signals")
 	}()
 
 	Run(ctx)
