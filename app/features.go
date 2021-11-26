@@ -86,7 +86,7 @@ Replay Feature
 
 // ReplayFeature handles inserting of failed jobs into repsective gw/rt jobsdb
 type ReplayFeature interface {
-	Setup(replayDB *jobsdb.HandleT, gwDB *jobsdb.HandleT, routerDB *jobsdb.HandleT)
+	Setup(replayDB *jobsdb.HandleT, gwDB *jobsdb.HandleT, routerDB *jobsdb.HandleT, batchRouterDB *jobsdb.HandleT)
 }
 
 // ReplayFeatureSetup is a function that initializes a Replay feature
