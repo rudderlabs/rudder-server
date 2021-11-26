@@ -213,7 +213,11 @@ func main() {
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt, syscall.SIGPIPE)
 		<-c
+		pkgLogger.Infof(`Signal received: %s`, time.Now().String())
+		pkgLogger.Infof(`Sleep started %s`, time.Now().String())
 		time.Sleep(time.Minute * 2)
+		pkgLogger.Infof(`Sleep finished %s`, time.Now().String())
+		pkgLogger.Infof(`Cancelling context %s`, time.Now().String())
 		cancel()
 	}()
 
