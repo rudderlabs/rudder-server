@@ -207,19 +207,33 @@ func runAllInit() {
 
 }
 
+func GoSigPipeSignal() {
+	go func() {
+		pkgLogger.Infof(`Signal setup: %s`, time.Now().String())
+		ch := make(chan os.Signal, 1)
+		signal.Notify(ch, os.Interrupt, syscall.SIGPIPE)
+		<-ch
+		pkgLogger.Infof(`Signal received: %s`, time.Now().String())
+		pkgLogger.Infof(`Signal printing: %s`, time.Now().String())
+		for c := range ch {
+			fmt.Println("Info: ")
+			fmt.Println(c)
+		}
+		time.Sleep(time.Minute * 2)
+		pkgLogger.Infof(`Sleep terminated %s`, time.Now().String())
+		GoSigPipeSignal()
+	}()
+}
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt, syscall.SIGPIPE)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 		<-c
-		pkgLogger.Infof(`Signal received: %s`, time.Now().String())
-		pkgLogger.Infof(`Sleep started %s`, time.Now().String())
-		time.Sleep(time.Minute * 2)
-		pkgLogger.Infof(`Sleep finished %s`, time.Now().String())
-		pkgLogger.Infof(`Cancelling context %s`, time.Now().String())
 		cancel()
 	}()
+	GoSigPipeSignal()
 
 	Run(ctx)
 }
