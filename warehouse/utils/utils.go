@@ -30,6 +30,7 @@ const (
 	CLICKHOUSE    = "CLICKHOUSE"
 	MSSQL         = "MSSQL"
 	AZURE_SYNAPSE = "AZURE_SYNAPSE"
+	DELTALAKE     = "DELTALAKE"
 )
 
 const (
@@ -80,9 +81,12 @@ var (
 )
 
 var ObjectStorageMap = map[string]string{
-	"RS":          "S3",
-	"S3_DATALAKE": "S3",
-	"BQ":          "GCS",
+	"RS":             "S3",
+	"S3_DATALAKE":    "S3",
+	"BQ":             "GCS",
+	"GCS_DATALAKE":   "GCS",
+	"AZURE_DATALAKE": "AZURE_BLOB",
+	"DELTALAKE":      "S3",
 }
 
 var SnowflakeStorageMap = map[string]string{
@@ -566,7 +570,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	if useRudderStorage {
 		return "S3"
 	}
-	if destType == "RS" || destType == "BQ" || destType == "S3_DATALAKE" {
+	if misc.Contains(ObjectStorageMap, destType) {
 		return ObjectStorageMap[destType]
 	}
 	if destType == "SNOWFLAKE" {
@@ -673,4 +677,13 @@ func GetTimeWindow(ts time.Time) time.Time {
 // for location - "s3://testbucket/rudder-datalake/namespace/tableName/" - it returns "rudder-datalake/namespace/tableName"
 func GetTablePathInObjectStorage(namespace string, tableName string) string {
 	return fmt.Sprintf("%s/%s/%s", config.GetEnv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), namespace, tableName)
+}
+
+// JoinWithFormatting returns joined string for keys with the provided formatting function.
+func JoinWithFormatting(keys []string, format func(idx int, str string) string, separator string) string {
+	output := make([]string, len(keys))
+	for idx, str := range keys {
+		output[idx] += format(idx, str)
+	}
+	return strings.Join(output, separator)
 }
