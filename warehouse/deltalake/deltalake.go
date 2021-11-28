@@ -153,6 +153,7 @@ func (dl *HandleT) connect(cred databricks.CredentialsT) (dbHandleT *databricks.
 		Port:           dbHandleT.Cred.Port,
 		Pwd:            dbHandleT.Cred.Token,
 		HttpPath:       dbHandleT.Cred.Path,
+		Identifier:     dbHandleT.CredIdentifier,
 		UserAgentEntry: "RudderStack",
 	})
 	if err != nil {
