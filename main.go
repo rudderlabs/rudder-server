@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -174,6 +175,7 @@ func runAllInit() {
 	postgres.Init()
 	redshift.Init()
 	snowflake.Init()
+	deltalake.Init()
 	transformer.Init()
 	webhook.Init()
 	batchrouter.Init()
