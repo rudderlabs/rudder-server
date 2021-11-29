@@ -48,18 +48,44 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 )
 
+type PostgresDestConfig struct {
+	PostgresDb       string
+	PostgresPassword string
+	PostgresUser     string
+	PostgresHost     string
+	PostgresSslMode  string
+}
+
 type PostgresTestT struct {
-	resource  *dockertest.Resource
-	db        *sql.DB
-	writeKey  string
-	setupDone bool
+	resource   *dockertest.Resource
+	destConfig *PostgresDestConfig
+	db         *sql.DB
+	writeKey   string
+	setupDone  bool
+}
+
+type ClickHouseDestConfig struct {
+	ClickHouseHost           string
+	ClickHouseUser           string
+	ClickHousePassword       string
+	ClickHouseDb             string
+	ClickHouseBlockSize      string
+	ClickHousePoolSize       string
+	ClickHouseQueryDebugLogs string
+	ClickHouseReadTimeout    string
+	ClickHouseWriteTimeout   string
+	ClickHouseCompress       string
+	ClickHouseSecure         string
+	ClickHouseSkipVerify     string
+	ClickHouseTlsConfigName  string
 }
 
 type ClickHouseTestT struct {
-	resource  *dockertest.Resource
-	db        *sql.DB
-	writeKey  string
-	setupDone bool
+	resource   *dockertest.Resource
+	destConfig *ClickHouseDestConfig
+	db         *sql.DB
+	writeKey   string
+	setupDone  bool
 }
 
 type ClickHouseClusterTestT struct {
@@ -70,22 +96,43 @@ type ClickHouseClusterTestT struct {
 	clickhouse03 *dockertest.Resource
 	clickhouse04 *dockertest.Resource
 	db           *sql.DB
+	destConfig   *ClickHouseDestConfig
 	writeKey     string
 	setupDone    bool
 }
 
+type MSSqlDestConfig struct {
+	MSSqlDb       string
+	MSSqlPassword string
+	MSSqlUser     string
+	MSSqlHost     string
+	MSSqlSslMode  string
+}
+
 type MSSqlTestT struct {
-	resource  *dockertest.Resource
-	db        *sql.DB
-	writeKey  string
-	setupDone bool
+	resource   *dockertest.Resource
+	db         *sql.DB
+	destConfig *MSSqlDestConfig
+	writeKey   string
+	setupDone  bool
+}
+
+type WareHouseEventsCount struct {
+	identify int64
+	track    int64
+	page     int64
+	screen   int64
+	alias    int64
+	group    int64
+	gateway  int64
+	batchRT  int64
 }
 
 type WareHouseTestT struct {
-	pgTestT                PostgresTestT
-	chTestT                ClickHouseTestT
-	chClusterTestT         ClickHouseClusterTestT
-	mssqlTestT             MSSqlTestT
+	pgTestT                *PostgresTestT
+	chTestT                *ClickHouseTestT
+	chClusterTestT         *ClickHouseClusterTestT
+	mssqlTestT             *MSSqlTestT
 	gwJobsSqlFunction      string
 	batchRtJobsSqlFunction string
 	sqlFunctionsAdded      bool
@@ -125,7 +172,7 @@ var (
 	brokerPort            string
 	localhostPort         string
 	localhostPortInt      int
-	whTest                WareHouseTestT
+	whTest                *WareHouseTestT
 	EventID               string
 	VersionID             string
 )
@@ -252,11 +299,11 @@ func blockOnHold() {
 	<-c
 }
 
-func SendEvent(payload *strings.Reader, call_type string, writeKey string) (string, error) {
-	log.Println(fmt.Sprintf("Sending %s Event", call_type))
+func SendEvent(payload *strings.Reader, callType string, writeKey string) (string, error) {
+	log.Println(fmt.Sprintf("Sending %s Event", callType))
 	url := ""
-	if call_type != "beacon" {
-		url = fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, call_type)
+	if callType != "beacon" {
+		url = fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, callType)
 	} else {
 		url = fmt.Sprintf("http://localhost:%s/beacon/v1/batch?writeKey=%s", httpPort, writeKey)
 	}
@@ -447,7 +494,7 @@ func run(m *testing.M) (int, error) {
 	initWhConfig()
 
 	// Setting postgres destination
-	setWhPostgresDestination()
+	SetWhPostgresDestination()
 	defer func() {
 		if err := pool.Purge(whTest.pgTestT.resource); err != nil {
 			log.Printf("Could not purge warehouse postgres resource: %s \n", err)
@@ -455,7 +502,7 @@ func run(m *testing.M) (int, error) {
 	}()
 
 	// Setting clickhouse destination
-	setWhClickHouseDestination()
+	SetWhClickHouseDestination()
 	defer func() {
 		if err := pool.Purge(whTest.chTestT.resource); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
@@ -463,42 +510,43 @@ func run(m *testing.M) (int, error) {
 	}()
 
 	// Setting clickhouse cluster destination
-	setWhClickHouseClusterDestination()
+	SetWhClickHouseClusterDestination()
 	defer func() {
-		if whTest.chClusterTestT.zookeeper != nil {
-			if err := pool.Purge(whTest.chClusterTestT.zookeeper); err != nil {
+		chClusterTestT := whTest.chClusterTestT
+		if chClusterTestT.zookeeper != nil {
+			if err := pool.Purge(chClusterTestT.zookeeper); err != nil {
 				log.Printf("Could not purge resource: %s \n", err)
 			}
 		}
-		if whTest.chClusterTestT.clickhouse01 != nil {
-			if err := pool.Purge(whTest.chClusterTestT.clickhouse01); err != nil {
+		if chClusterTestT.clickhouse01 != nil {
+			if err := pool.Purge(chClusterTestT.clickhouse01); err != nil {
 				log.Printf("Could not purge resource: %s \n", err)
 			}
 		}
-		if whTest.chClusterTestT.clickhouse02 != nil {
-			if err := pool.Purge(whTest.chClusterTestT.clickhouse02); err != nil {
+		if chClusterTestT.clickhouse02 != nil {
+			if err := pool.Purge(chClusterTestT.clickhouse02); err != nil {
 				log.Printf("Could not purge resource: %s \n", err)
 			}
 		}
-		if whTest.chClusterTestT.clickhouse03 != nil {
-			if err := pool.Purge(whTest.chClusterTestT.clickhouse03); err != nil {
+		if chClusterTestT.clickhouse03 != nil {
+			if err := pool.Purge(chClusterTestT.clickhouse03); err != nil {
 				log.Printf("Could not purge resource: %s \n", err)
 			}
 		}
-		if whTest.chClusterTestT.clickhouse04 != nil {
-			if err := pool.Purge(whTest.chClusterTestT.clickhouse04); err != nil {
+		if chClusterTestT.clickhouse04 != nil {
+			if err := pool.Purge(chClusterTestT.clickhouse04); err != nil {
 				log.Printf("Could not purge resource: %s \n", err)
 			}
 		}
-		if whTest.chClusterTestT.network != nil {
-			if err := pool.Client.RemoveNetwork(whTest.chClusterTestT.network.ID); err != nil {
+		if chClusterTestT.network != nil {
+			if err := pool.Client.RemoveNetwork(chClusterTestT.network.ID); err != nil {
 				log.Printf("Could not remove network: %s \n", err)
 			}
 		}
 	}()
 
 	// Setting mssql destination
-	setWhMSSqlDestination()
+	SetWhMSSqlDestination()
 	defer func() {
 		if err := pool.Purge(whTest.mssqlTestT.resource); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
@@ -506,7 +554,7 @@ func run(m *testing.M) (int, error) {
 	}()
 
 	// Adding necessary sql functions which needs to be used during warehouse testing
-	addSqlFunctionsToJobsDb()
+	AddSqlFunctionsToJobsDb()
 
 	os.Setenv("JOBS_DB_HOST", "localhost")
 	os.Setenv("JOBS_DB_NAME", "jobsdb")
@@ -554,8 +602,6 @@ func run(m *testing.M) (int, error) {
 	workspaceID = randString(27)
 	webhookEventWriteKey = randString(27)
 	fmt.Println("writeKey", writeKey)
-
-	CreateWHWriteKeys()
 
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
@@ -1093,205 +1139,195 @@ func TestBeaconBatch(t *testing.T) {
 
 // Verify Event in WareHouse Postgres
 func TestWhPostgresDestination(t *testing.T) {
-	if !whTest.pgTestT.setupDone {
+	pgTest := whTest.pgTestT
+	if !pgTest.setupDone {
 		log.Println("Setup not initialized for postgres destination")
 		return
 	}
-	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(1), int64(1), int64(1), int64(1), int64(1), int64(1)
 	userId := "userId_postgres"
-	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
-	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
 
 	// Sending warehouse events
-	sendWHEvents(whTest.pgTestT.writeKey, userId)
+	whEventsCount := sendWHEvents(pgTest.writeKey, userId)
 
 	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, whTest.pgTestT.writeKey, userId, totalGwEvents)
+	testGWForWareHouseDestination(t, pgTest.writeKey, userId, whEventsCount.gateway)
 
 	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
+	testBatchRouterForWareHouseDestination(t, userId, whEventsCount.batchRT)
 
 	// Checking for tracks table
 	require.Eventually(t, func() bool {
 		var count int64
 		sqlStatement := fmt.Sprintf("select count(*) from postgres_wh_integration.tracks")
-		_ = whTest.pgTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == trackeventsCount
+		_ = pgTest.db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.track
 	}, time.Minute, 10*time.Millisecond)
 
 	// Checking product reviewed table
 	require.Eventually(t, func() bool {
 		var count int64
 		sqlStatement := fmt.Sprintf("select count(*) from postgres_wh_integration.product_track")
-		_ = whTest.pgTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == trackeventsCount
+		_ = pgTest.db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.track
 	}, time.Minute, 10*time.Millisecond)
 }
 
 // Verify Event in WareHouse ClickHouse
 func TestWhClickHouseDestination(t *testing.T) {
-	if !whTest.chTestT.setupDone {
+	chTestT := whTest.chTestT
+	if !chTestT.setupDone {
 		log.Println("Setup not initialized for clickhouse destination")
 		return
 	}
 
-	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(1), int64(1), int64(1), int64(1), int64(1), int64(1)
 	userId := "userId_clickhouse"
-	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
-	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
 
 	// Sending warehouse events
-	sendWHEvents(whTest.chTestT.writeKey, userId)
+	whEventsCount := sendWHEvents(chTestT.writeKey, userId)
 
 	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, whTest.chTestT.writeKey, userId, totalGwEvents)
+	testGWForWareHouseDestination(t, chTestT.writeKey, userId, whEventsCount.gateway)
 
 	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
+	testBatchRouterForWareHouseDestination(t, userId, whEventsCount.batchRT)
 
 	// Checking for tracks table
 	require.Eventually(t, func() bool {
 		var count int64
 		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.tracks")
-		_ = whTest.chTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == trackeventsCount
+		_ = chTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.track
 	}, time.Minute, 10*time.Millisecond)
 
 	// Checking product reviewed table
 	require.Eventually(t, func() bool {
 		var count int64
 		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.product_track")
-		_ = whTest.chTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == trackeventsCount
+		_ = chTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.track
 	}, time.Minute, 10*time.Millisecond)
 }
 
 // Verify Event in WareHouse ClickHouse Cluster
 func TestWhClickHouseClusterDestination(t *testing.T) {
-	if !whTest.chClusterTestT.setupDone {
+	chClusterTestT := whTest.chClusterTestT
+	if !chClusterTestT.setupDone {
 		log.Println("Setup not initialized for clickhouse cluster destination")
 		return
 	}
 
-	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(1), int64(1), int64(1), int64(1), int64(1), int64(1)
 	userId := "userId_clickhouse_cluster"
-	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
-	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
 
 	// Sending warehouse events
-	sendWHEvents(whTest.chClusterTestT.writeKey, userId)
+	whEventsCount := sendWHEvents(chClusterTestT.writeKey, userId)
 
 	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, whTest.chClusterTestT.writeKey, userId, totalGwEvents)
+	testGWForWareHouseDestination(t, chClusterTestT.writeKey, userId, whEventsCount.gateway)
 
 	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
+	testBatchRouterForWareHouseDestination(t, userId, whEventsCount.batchRT)
 
 	// Checking for tracks table
 	require.Eventually(t, func() bool {
 		var count int64
 		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.tracks")
-		_ = whTest.chClusterTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == trackeventsCount
+		_ = chClusterTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.track
 	}, time.Minute, 10*time.Millisecond)
 
 	// Checking product reviewed table
 	require.Eventually(t, func() bool {
 		var count int64
 		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.product_track")
-		_ = whTest.chClusterTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == trackeventsCount
+		_ = chClusterTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.track
 	}, time.Minute, 10*time.Millisecond)
 
 	// Making changes for distribution views.
 	var sqlStatement string
 	sqlStatement = fmt.Sprint("rename table tracks to tracks_shard on cluster rudder_cluster;")
-	_, err = whTest.chClusterTestT.db.Exec(sqlStatement)
+	_, err = chClusterTestT.db.Exec(sqlStatement)
 	require.Equal(t, err, nil)
 
 	sqlStatement = fmt.Sprint("rename table product_track to product_track_shard on cluster rudder_cluster;")
-	_, err = whTest.chClusterTestT.db.Exec(sqlStatement)
+	_, err = chClusterTestT.db.Exec(sqlStatement)
 	require.Equal(t, err, nil)
 
 	sqlStatement = fmt.Sprint("CREATE TABLE rudderdb.tracks ON CLUSTER 'rudder_cluster' AS rudderdb.tracks_shard ENGINE = Distributed('rudder_cluster', rudderdb, tracks_shard, cityHash64(id));")
-	_, err = whTest.chClusterTestT.db.Exec(sqlStatement)
+	_, err = chClusterTestT.db.Exec(sqlStatement)
 	require.Equal(t, err, nil)
 
 	sqlStatement = fmt.Sprint("CREATE TABLE rudderdb.product_track ON CLUSTER 'rudder_cluster' AS rudderdb.product_track_shard ENGINE = Distributed('rudder_cluster', rudderdb, product_track_shard, cityHash64(id));")
-	_, err = whTest.chClusterTestT.db.Exec(sqlStatement)
+	_, err = chClusterTestT.db.Exec(sqlStatement)
 	require.Equal(t, err, nil)
 
 	// Sending warehouse events
 	clusterEventCount := int64(6)
 	for i := 0; i < int(clusterEventCount); i++ {
-		sendWHEvents(whTest.chClusterTestT.writeKey, userId)
+		sendWHEvents(chClusterTestT.writeKey, userId)
 	}
 
 	// Checking for tracks table
 	require.Eventually(t, func() bool {
 		var count int64
 		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.tracks")
-		_ = whTest.chClusterTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == 2*(trackeventsCount+clusterEventCount)
+		_ = chClusterTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == 2*(whEventsCount.track+clusterEventCount)
 	}, 2*time.Minute, 100*time.Millisecond)
 
 	// Checking product reviewed table
 	require.Eventually(t, func() bool {
 		var count int64
 		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.product_track")
-		_ = whTest.chClusterTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == 2*(trackeventsCount+clusterEventCount)
+		_ = chClusterTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == 2*(whEventsCount.track+clusterEventCount)
 	}, 2*time.Minute, 100*time.Millisecond)
 }
 
 // Verify Event in WareHouse MSSQL
 func TestWhMsSqlDestination(t *testing.T) {
-	if !whTest.mssqlTestT.setupDone {
+	mssqlTestT := whTest.mssqlTestT
+	if !mssqlTestT.setupDone {
 		log.Println("Setup not initialized for mssql destination")
 		return
 	}
 
-	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(1), int64(1), int64(1), int64(1), int64(1), int64(1)
 	userId := "userId_mssql"
-	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
-	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
 
 	// Sending warehouse events
-	sendWHEvents(whTest.mssqlTestT.writeKey, userId)
+	whEventsCount := sendWHEvents(mssqlTestT.writeKey, userId)
 
 	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, whTest.mssqlTestT.writeKey, userId, totalGwEvents)
+	testGWForWareHouseDestination(t, mssqlTestT.writeKey, userId, whEventsCount.gateway)
 
 	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
+	testBatchRouterForWareHouseDestination(t, userId, whEventsCount.batchRT)
 
 	// Checking for tracks table
 	require.Eventually(t, func() bool {
 		var count int64
 		sqlStatement := fmt.Sprintf("select count(*) from mssql_wh_integration.tracks")
-		_ = whTest.mssqlTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == trackeventsCount
+		_ = mssqlTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.track
 	}, time.Minute, 10*time.Millisecond)
 
 	// Checking product reviewed table
 	require.Eventually(t, func() bool {
 		var count int64
 		sqlStatement := fmt.Sprintf("select count(*) from mssql_wh_integration.product_track")
-		_ = whTest.mssqlTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == trackeventsCount
+		_ = mssqlTestT.db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.track
 	}, time.Minute, 10*time.Millisecond)
 }
 
-func CreateWHWriteKeys() {
-	whTest.pgTestT.writeKey = randString(27)
-	whTest.chTestT.writeKey = randString(27)
-	whTest.chClusterTestT.writeKey = randString(27)
-	whTest.mssqlTestT.writeKey = randString(27)
-}
+func sendWHEvents(writeKey string, userId string) *WareHouseEventsCount {
+	identifyEventsCount, tracksEventsCount, pageEventsCount, screenEventsCount, aliasEventsCount, groupEventsCount := 1, 1, 1, 1, 1, 1
+	gwEventsCount := identifyEventsCount + tracksEventsCount + pageEventsCount + screenEventsCount + aliasEventsCount + groupEventsCount
+	batchRtEventsCountEvents := 2*identifyEventsCount + 2*tracksEventsCount + pageEventsCount + screenEventsCount + aliasEventsCount + groupEventsCount
 
-func sendWHEvents(writeKey string, userId string) {
 	// Sending identify event
-	payloadIdentify := strings.NewReader(fmt.Sprintf(`{
+	for i := 0; i < identifyEventsCount; i++ {
+		payloadIdentify := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"eventOrderNo":"1",
@@ -1306,10 +1342,12 @@ func sendWHEvents(writeKey string, userId string) {
 			},
 			"timestamp": "2020-02-02T00:23:09.544Z"
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-	_, _ = SendEvent(payloadIdentify, "identify", writeKey)
+		_, _ = SendEvent(payloadIdentify, "identify", writeKey)
+	}
 
 	// Sending track event
-	payloadTrack := strings.NewReader(fmt.Sprintf(`{
+	for i := 0; i < tracksEventsCount; i++ {
+		payloadTrack := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "track",
@@ -1321,10 +1359,12 @@ func sendWHEvents(writeKey string, userId string) {
 			  "review_body" : "Average product, expected much more."
 			}
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-	_, _ = SendEvent(payloadTrack, "track", writeKey)
+		_, _ = SendEvent(payloadTrack, "track", writeKey)
+	}
 
 	// Sending page event
-	payloadPage := strings.NewReader(fmt.Sprintf(`{
+	for i := 0; i < pageEventsCount; i++ {
+		payloadPage := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "page",
@@ -1334,10 +1374,12 @@ func sendWHEvents(writeKey string, userId string) {
 			  "url": "http://www.rudderstack.com"
 			}
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-	_, _ = SendEvent(payloadPage, "page", writeKey)
+		_, _ = SendEvent(payloadPage, "page", writeKey)
+	}
 
 	// Sending screen event
-	payloadScreen := strings.NewReader(fmt.Sprintf(`{
+	for i := 0; i < screenEventsCount; i++ {
+		payloadScreen := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "screen",
@@ -1346,20 +1388,24 @@ func sendWHEvents(writeKey string, userId string) {
 			  "prop_key": "prop_value"
 			}
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-	_, _ = SendEvent(payloadScreen, "screen", writeKey)
+		_, _ = SendEvent(payloadScreen, "screen", writeKey)
+	}
 
 	// Sending alias event
-	payloadAlias := strings.NewReader(fmt.Sprintf(`{
+	for i := 0; i < aliasEventsCount; i++ {
+		payloadAlias := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "alias",
 			"previousId": "name@surname.com",
 			"userId": "12345"
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-	_, _ = SendEvent(payloadAlias, "alias", writeKey)
+		_, _ = SendEvent(payloadAlias, "alias", writeKey)
+	}
 
 	// Sending group event
-	payloadGroup := strings.NewReader(fmt.Sprintf(`{
+	for i := 0; i < groupEventsCount; i++ {
+		payloadGroup := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "group",
@@ -1371,10 +1417,26 @@ func sendWHEvents(writeKey string, userId string) {
 			  "plan": "basic"
 			}
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-	_, _ = SendEvent(payloadGroup, "group", writeKey)
+		_, _ = SendEvent(payloadGroup, "group", writeKey)
+	}
+
+	return &WareHouseEventsCount{
+		identify: int64(identifyEventsCount),
+		track:    int64(tracksEventsCount),
+		page:     int64(pageEventsCount),
+		screen:   int64(screenEventsCount),
+		alias:    int64(aliasEventsCount),
+		group:    int64(groupEventsCount),
+		gateway:  int64(gwEventsCount),
+		batchRT:  int64(batchRtEventsCountEvents),
+	}
 }
 
 func testGWForWareHouseDestination(t *testing.T, writeKey string, userId string, eventsCount int64) {
+	if !whTest.sqlFunctionsAdded {
+		log.Println("WareHouse sqlFunctionsAdded not set")
+		return
+	}
 	// Getting gateway job ids
 	var jobIds []string
 	require.Eventually(t, func() bool {
@@ -1408,6 +1470,11 @@ func testGWForWareHouseDestination(t *testing.T, writeKey string, userId string,
 }
 
 func testBatchRouterForWareHouseDestination(t *testing.T, userId string, eventsCount int64) {
+	if !whTest.sqlFunctionsAdded {
+		log.Println("WareHouse sqlFunctionsAdded not set")
+		return
+	}
+
 	// Getting batch router job ids
 	var jobIds []string
 	require.Eventually(t, func() bool {
@@ -1681,7 +1748,7 @@ func SetMINIO() {
 }
 
 func initWhConfig() {
-	whTest = WareHouseTestT{}
+	whTest = &WareHouseTestT{}
 	whTest.gwJobsSqlFunction = `CREATE OR REPLACE FUNCTION gw_jobs(write_key varchar, user_id varchar)
 									RETURNS TABLE
 											(
@@ -1728,21 +1795,73 @@ func initWhConfig() {
 											END LOOP;
 									END ;
 									$$ LANGUAGE plpgsql`
+
+	whTest.pgTestT = &PostgresTestT{
+		writeKey: randString(27),
+		destConfig: &PostgresDestConfig{
+			PostgresDb:       "rudderdb",
+			PostgresPassword: "rudder-password",
+			PostgresUser:     "rudder",
+			PostgresHost:     "localhost",
+			PostgresSslMode:  "disable",
+		},
+	}
+	whTest.chTestT = &ClickHouseTestT{
+		writeKey: randString(27),
+		destConfig: &ClickHouseDestConfig{
+			ClickHouseHost:           "localhost",
+			ClickHouseUser:           "rudder",
+			ClickHousePassword:       "rudder-password",
+			ClickHouseDb:             "rudderdb",
+			ClickHouseBlockSize:      "1000000",
+			ClickHousePoolSize:       "100",
+			ClickHouseQueryDebugLogs: "false",
+			ClickHouseReadTimeout:    "300",
+			ClickHouseWriteTimeout:   "1800",
+			ClickHouseCompress:       "true",
+			ClickHouseSecure:         "false",
+			ClickHouseSkipVerify:     "true",
+			ClickHouseTlsConfigName:  "",
+		},
+	}
+	whTest.chClusterTestT = &ClickHouseClusterTestT{
+		writeKey: randString(27),
+		destConfig: &ClickHouseDestConfig{
+			ClickHouseHost:           "localhost",
+			ClickHouseUser:           "rudder",
+			ClickHousePassword:       "rudder-password",
+			ClickHouseDb:             "rudderdb",
+			ClickHouseBlockSize:      "1000000",
+			ClickHousePoolSize:       "100",
+			ClickHouseQueryDebugLogs: "false",
+			ClickHouseReadTimeout:    "300",
+			ClickHouseWriteTimeout:   "1800",
+			ClickHouseCompress:       "true",
+			ClickHouseSecure:         "false",
+			ClickHouseSkipVerify:     "true",
+			ClickHouseTlsConfigName:  "",
+		},
+	}
+	whTest.mssqlTestT = &MSSqlTestT{
+		writeKey: randString(27),
+		destConfig: &MSSqlDestConfig{
+			MSSqlDb:       "master",
+			MSSqlPassword: "reallyStrongPwd123",
+			MSSqlUser:     "SA",
+			MSSqlHost:     "localhost",
+			MSSqlSslMode:  "disable",
+		},
+	}
 }
 
-func setWhPostgresDestination() {
-	// Configs
-	PostgresDb := "rudderdb"
-	PostgresPassword := "rudder-password"
-	PostgresUser := "rudder"
-	PostgresHost := "localhost"
-	PostgresSslMode := "disable"
+func SetWhPostgresDestination() {
+	pgTest := whTest.pgTestT
+	destConfig := pgTest.destConfig
 
-	// pulls an image, creates a container based on it and runs it
-	whTest.pgTestT.resource, err = pool.Run("postgres", "11-alpine", []string{
-		fmt.Sprintf("POSTGRES_DB=%s", PostgresDb),
-		fmt.Sprintf("POSTGRES_PASSWORD=%s", PostgresPassword),
-		fmt.Sprintf("POSTGRES_USER=%s", PostgresUser),
+	pgTest.resource, err = pool.Run("postgres", "11-alpine", []string{
+		fmt.Sprintf("POSTGRES_DB=%s", destConfig.PostgresDb),
+		fmt.Sprintf("POSTGRES_PASSWORD=%s", destConfig.PostgresPassword),
+		fmt.Sprintf("POSTGRES_USER=%s", destConfig.PostgresUser),
 	})
 	if err != nil {
 		log.Printf("Could not start resource WareHouse Postgres: %v\n", err)
@@ -1750,58 +1869,45 @@ func setWhPostgresDestination() {
 	}
 
 	// Getting at which port the container is running
-	PostgresPort := whTest.pgTestT.resource.GetPort("5432/tcp")
+	PostgresPort := pgTest.resource.GetPort("5432/tcp")
 
 	// Creating url string for connection
 	whPostgresUrl := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
-		PostgresUser,
-		PostgresPassword,
-		PostgresHost,
+		destConfig.PostgresUser,
+		destConfig.PostgresPassword,
+		destConfig.PostgresHost,
 		PostgresPort,
-		PostgresDb,
-		PostgresSslMode,
+		destConfig.PostgresDb,
+		destConfig.PostgresSslMode,
 	)
 	fmt.Println("whPostgresUrl:", whPostgresUrl)
 
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		var err error
-		whTest.pgTestT.db, err = sql.Open("postgres", whPostgresUrl)
+		pgTest.db, err = sql.Open("postgres", whPostgresUrl)
 		if err != nil {
 			return err
 		}
-		return whTest.pgTestT.db.Ping()
+		return pgTest.db.Ping()
 	}); err != nil {
 		log.Printf("Could not connect to warehouse postgres url: %v, with error: %v\n", whPostgresUrl, err)
 	}
-
 	if err != nil {
 		return
 	}
-	whTest.pgTestT.setupDone = true
+
+	pgTest.setupDone = true
 }
 
-func setWhClickHouseDestination() {
-	// Configs
-	ClickHouseHost := "localhost"
-	ClickHouseUser := "rudder"
-	ClickHousePassword := "rudder-password"
-	ClickHouseDb := "rudderdb"
-	ClickHouseBlockSize := "1000000"
-	ClickHousePoolSize := "100"
-	ClickHouseQueryDebugLogs := "false"
-	ClickHouseReadTimeout := "300"
-	ClickHouseWriteTimeout := "1800"
-	ClickHouseCompress := "true"
-	ClickHouseSecure := "false"
-	ClickHouseSkipVerify := "true"
-	ClickHouseTlsConfigName := ""
+func SetWhClickHouseDestination() {
+	chTestT := whTest.chTestT
+	destConfig := chTestT.destConfig
 
-	// pulls an image, creates a container based on it and runs it
-	whTest.chTestT.resource, err = pool.Run("yandex/clickhouse-server", "21-alpine", []string{
-		fmt.Sprintf("CLICKHOUSE_DB=%s", ClickHouseDb),
-		fmt.Sprintf("CLICKHOUSE_PASSWORD=%s", ClickHousePassword),
-		fmt.Sprintf("CLICKHOUSE_USER=%s", ClickHouseUser),
+	chTestT.resource, err = pool.Run("yandex/clickhouse-server", "21-alpine", []string{
+		fmt.Sprintf("CLICKHOUSE_DB=%s", destConfig.ClickHouseDb),
+		fmt.Sprintf("CLICKHOUSE_PASSWORD=%s", destConfig.ClickHousePassword),
+		fmt.Sprintf("CLICKHOUSE_USER=%s", destConfig.ClickHouseUser),
 	})
 	if err != nil {
 		log.Println("Could not start resource ClickHouse: %w", err)
@@ -1809,60 +1915,48 @@ func setWhClickHouseDestination() {
 	}
 
 	// Getting at which port the container is running
-	ClickHousePort := whTest.chTestT.resource.GetPort("9000/tcp")
+	ClickHousePort := chTestT.resource.GetPort("9000/tcp")
 
 	// Creating url string for connection
 	whClickHouseUrl := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&read_timeout=%s&write_timeout=%s&compress=%s",
-		ClickHouseHost,
+		destConfig.ClickHouseHost,
 		ClickHousePort,
-		ClickHouseUser,
-		ClickHousePassword,
-		ClickHouseDb,
-		ClickHouseBlockSize,
-		ClickHousePoolSize,
-		ClickHouseQueryDebugLogs,
-		ClickHouseSecure,
-		ClickHouseSkipVerify,
-		ClickHouseTlsConfigName,
-		ClickHouseReadTimeout,
-		ClickHouseWriteTimeout,
-		ClickHouseCompress,
+		destConfig.ClickHouseUser,
+		destConfig.ClickHousePassword,
+		destConfig.ClickHouseDb,
+		destConfig.ClickHouseBlockSize,
+		destConfig.ClickHousePoolSize,
+		destConfig.ClickHouseQueryDebugLogs,
+		destConfig.ClickHouseSecure,
+		destConfig.ClickHouseSkipVerify,
+		destConfig.ClickHouseTlsConfigName,
+		destConfig.ClickHouseReadTimeout,
+		destConfig.ClickHouseWriteTimeout,
+		destConfig.ClickHouseCompress,
 	)
 	fmt.Println("whClickHouseUrl:", whClickHouseUrl)
 
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		var err error
-		whTest.chTestT.db, err = sql.Open("clickhouse", whClickHouseUrl)
+		chTestT.db, err = sql.Open("clickhouse", whClickHouseUrl)
 		if err != nil {
 			return err
 		}
-		return whTest.chTestT.db.Ping()
+		return chTestT.db.Ping()
 	}); err != nil {
 		log.Println("Could not connect to postgres", whClickHouseUrl, err)
 	}
-
 	if err != nil {
 		return
 	}
-	whTest.chTestT.setupDone = true
+
+	chTestT.setupDone = true
 }
 
-func setWhClickHouseClusterDestination() {
-	// Configs
-	ClickHouseHost := "localhost"
-	ClickHouseUser := "rudder"
-	ClickHousePassword := "rudder-password"
-	ClickHouseDb := "rudderdb"
-	ClickHouseBlockSize := "1000000"
-	ClickHousePoolSize := "100"
-	ClickHouseQueryDebugLogs := "false"
-	ClickHouseReadTimeout := "300"
-	ClickHouseWriteTimeout := "1800"
-	ClickHouseCompress := "true"
-	ClickHouseSecure := "false"
-	ClickHouseSkipVerify := "true"
-	ClickHouseTlsConfigName := ""
+func SetWhClickHouseClusterDestination() {
+	chClusterTestT := whTest.chClusterTestT
+	destConfig := chClusterTestT.destConfig
 
 	pwd, err := os.Getwd()
 	if err != nil {
@@ -1870,7 +1964,7 @@ func setWhClickHouseClusterDestination() {
 		return
 	}
 
-	if whTest.chClusterTestT.network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{
+	if chClusterTestT.network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{
 		Name: "clickhouse-network",
 		IPAM: &dc.IPAMOptions{
 			Config: []dc.IPAMConfig{
@@ -1884,7 +1978,7 @@ func setWhClickHouseClusterDestination() {
 		return
 	}
 
-	if whTest.chClusterTestT.zookeeper, err = pool.RunWithOptions(&dockertest.RunOptions{
+	if chClusterTestT.zookeeper, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "zookeeper",
 		Tag:        "3.5",
 		Hostname:   "clickhouse-zookeeper",
@@ -1894,7 +1988,7 @@ func setWhClickHouseClusterDestination() {
 		return
 	}
 
-	if whTest.chClusterTestT.clickhouse01, err = pool.RunWithOptions(&dockertest.RunOptions{
+	if chClusterTestT.clickhouse01, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "yandex/clickhouse-server",
 		Tag:        "21-alpine",
 		Hostname:   "clickhouse01",
@@ -1911,7 +2005,7 @@ func setWhClickHouseClusterDestination() {
 		return
 	}
 
-	if whTest.chClusterTestT.clickhouse02, err = pool.RunWithOptions(&dockertest.RunOptions{
+	if chClusterTestT.clickhouse02, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "yandex/clickhouse-server",
 		Tag:        "21-alpine",
 		Hostname:   "clickhouse02",
@@ -1923,7 +2017,7 @@ func setWhClickHouseClusterDestination() {
 		return
 	}
 
-	if whTest.chClusterTestT.clickhouse03, err = pool.RunWithOptions(&dockertest.RunOptions{
+	if chClusterTestT.clickhouse03, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "yandex/clickhouse-server",
 		Tag:        "21-alpine",
 		Hostname:   "clickhouse03",
@@ -1935,7 +2029,7 @@ func setWhClickHouseClusterDestination() {
 		return
 	}
 
-	if whTest.chClusterTestT.clickhouse04, err = pool.RunWithOptions(&dockertest.RunOptions{
+	if chClusterTestT.clickhouse04, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "yandex/clickhouse-server",
 		Tag:        "21-alpine",
 		Hostname:   "clickhouse04",
@@ -1947,8 +2041,8 @@ func setWhClickHouseClusterDestination() {
 		return
 	}
 
-	if err = pool.Client.ConnectNetwork(whTest.chClusterTestT.network.ID, dc.NetworkConnectionOptions{
-		Container: whTest.chClusterTestT.zookeeper.Container.Name,
+	if err = pool.Client.ConnectNetwork(chClusterTestT.network.ID, dc.NetworkConnectionOptions{
+		Container: chClusterTestT.zookeeper.Container.Name,
 		EndpointConfig: &dc.EndpointConfig{
 			IPAddress: "172.23.0.10",
 		},
@@ -1957,8 +2051,8 @@ func setWhClickHouseClusterDestination() {
 		return
 	}
 
-	if err = pool.Client.ConnectNetwork(whTest.chClusterTestT.network.ID, dc.NetworkConnectionOptions{
-		Container: whTest.chClusterTestT.clickhouse01.Container.Name,
+	if err = pool.Client.ConnectNetwork(chClusterTestT.network.ID, dc.NetworkConnectionOptions{
+		Container: chClusterTestT.clickhouse01.Container.Name,
 		EndpointConfig: &dc.EndpointConfig{
 			IPAddress: "172.23.0.11",
 		},
@@ -1967,8 +2061,8 @@ func setWhClickHouseClusterDestination() {
 		return
 	}
 
-	if err = pool.Client.ConnectNetwork(whTest.chClusterTestT.network.ID, dc.NetworkConnectionOptions{
-		Container: whTest.chClusterTestT.clickhouse02.Container.Name,
+	if err = pool.Client.ConnectNetwork(chClusterTestT.network.ID, dc.NetworkConnectionOptions{
+		Container: chClusterTestT.clickhouse02.Container.Name,
 		EndpointConfig: &dc.EndpointConfig{
 			IPAddress: "172.23.0.12",
 		},
@@ -1977,8 +2071,8 @@ func setWhClickHouseClusterDestination() {
 		return
 	}
 
-	if err = pool.Client.ConnectNetwork(whTest.chClusterTestT.network.ID, dc.NetworkConnectionOptions{
-		Container: whTest.chClusterTestT.clickhouse03.Container.Name,
+	if err = pool.Client.ConnectNetwork(chClusterTestT.network.ID, dc.NetworkConnectionOptions{
+		Container: chClusterTestT.clickhouse03.Container.Name,
 		EndpointConfig: &dc.EndpointConfig{
 			IPAddress: "172.23.0.13",
 		},
@@ -1987,8 +2081,8 @@ func setWhClickHouseClusterDestination() {
 		return
 	}
 
-	if err = pool.Client.ConnectNetwork(whTest.chClusterTestT.network.ID, dc.NetworkConnectionOptions{
-		Container: whTest.chClusterTestT.clickhouse04.Container.Name,
+	if err = pool.Client.ConnectNetwork(chClusterTestT.network.ID, dc.NetworkConnectionOptions{
+		Container: chClusterTestT.clickhouse04.Container.Name,
 		EndpointConfig: &dc.EndpointConfig{
 			IPAddress: "172.23.0.14",
 		},
@@ -1998,59 +2092,54 @@ func setWhClickHouseClusterDestination() {
 	}
 
 	// Getting at which port the container is running
-	ClickHousePort := whTest.chClusterTestT.clickhouse01.GetPort("9000/tcp")
+	ClickHousePort := chClusterTestT.clickhouse01.GetPort("9000/tcp")
 
 	// Creating url string for connection
 	whClickHouseClusterUrl := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&read_timeout=%s&write_timeout=%s&compress=%s",
-		ClickHouseHost,
+		destConfig.ClickHouseHost,
 		ClickHousePort,
-		ClickHouseUser,
-		ClickHousePassword,
-		ClickHouseDb,
-		ClickHouseBlockSize,
-		ClickHousePoolSize,
-		ClickHouseQueryDebugLogs,
-		ClickHouseSecure,
-		ClickHouseSkipVerify,
-		ClickHouseTlsConfigName,
-		ClickHouseReadTimeout,
-		ClickHouseWriteTimeout,
-		ClickHouseCompress,
+		destConfig.ClickHouseUser,
+		destConfig.ClickHousePassword,
+		destConfig.ClickHouseDb,
+		destConfig.ClickHouseBlockSize,
+		destConfig.ClickHousePoolSize,
+		destConfig.ClickHouseQueryDebugLogs,
+		destConfig.ClickHouseSecure,
+		destConfig.ClickHouseSkipVerify,
+		destConfig.ClickHouseTlsConfigName,
+		destConfig.ClickHouseReadTimeout,
+		destConfig.ClickHouseWriteTimeout,
+		destConfig.ClickHouseCompress,
 	)
 	fmt.Println("whClickHouseClusterUrl:", whClickHouseClusterUrl)
 
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		var err error
-		whTest.chClusterTestT.db, err = sql.Open("clickhouse", whClickHouseClusterUrl)
+		chClusterTestT.db, err = sql.Open("clickhouse", whClickHouseClusterUrl)
 		if err != nil {
 			return err
 		}
-		return whTest.chClusterTestT.db.Ping()
+		return chClusterTestT.db.Ping()
 	}); err != nil {
 		log.Println("Could not connect to clickhouse", whClickHouseClusterUrl, err)
 	}
-
 	if err != nil {
 		return
 	}
-	whTest.chClusterTestT.setupDone = true
+
+	chClusterTestT.setupDone = true
 }
 
-func setWhMSSqlDestination() {
-	// Configs
-	MSSqlDb := "master"
-	MSSqlPassword := "reallyStrongPwd123"
-	MSSqlUser := "SA"
-	MSSqlHost := "localhost"
-	MSSqlSslMode := "disable"
+func SetWhMSSqlDestination() {
+	mssqlTestT := whTest.mssqlTestT
+	destConfig := mssqlTestT.destConfig
 
-	// pulls an image, creates a container based on it and runs it
-	whTest.mssqlTestT.resource, err = pool.Run("mcr.microsoft.com/mssql/server", "2019-latest", []string{
+	mssqlTestT.resource, err = pool.Run("mcr.microsoft.com/mssql/server", "2019-latest", []string{
 		fmt.Sprintf("ACCEPT_EULA=%s", "Y"),
-		fmt.Sprintf("SA_PASSWORD=%s", MSSqlPassword),
-		fmt.Sprintf("SA_DB=%s", MSSqlDb),
-		fmt.Sprintf("SA_USER=%s", MSSqlUser),
+		fmt.Sprintf("SA_PASSWORD=%s", destConfig.MSSqlPassword),
+		fmt.Sprintf("SA_DB=%s", destConfig.MSSqlDb),
+		fmt.Sprintf("SA_USER=%s", destConfig.MSSqlUser),
 	})
 	if err != nil {
 		log.Println("Could not start resource ClickHouse: %w", err)
@@ -2058,16 +2147,16 @@ func setWhMSSqlDestination() {
 	}
 
 	// Getting at which port the container is running
-	MSSqlPort := whTest.mssqlTestT.resource.GetPort("1433/tcp")
+	MSSqlPort := mssqlTestT.resource.GetPort("1433/tcp")
 
 	query := url.Values{}
-	query.Add("database", MSSqlDb)
-	query.Add("encrypt", MSSqlSslMode)
+	query.Add("database", destConfig.MSSqlDb)
+	query.Add("encrypt", destConfig.MSSqlSslMode)
 	query.Add("TrustServerCertificate", "true")
 	whMSSqlUrl := &url.URL{
 		Scheme:   "sqlserver",
-		User:     url.UserPassword(MSSqlUser, MSSqlPassword),
-		Host:     fmt.Sprintf("%s:%s", MSSqlHost, MSSqlPort),
+		User:     url.UserPassword(destConfig.MSSqlUser, destConfig.MSSqlPassword),
+		Host:     fmt.Sprintf("%s:%s", destConfig.MSSqlHost, MSSqlPort),
 		RawQuery: query.Encode(),
 	}
 	fmt.Println("whMSSqlUrl:", whMSSqlUrl.String())
@@ -2075,22 +2164,22 @@ func setWhMSSqlDestination() {
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		var err error
-		whTest.mssqlTestT.db, err = sql.Open("sqlserver", whMSSqlUrl.String())
+		mssqlTestT.db, err = sql.Open("sqlserver", whMSSqlUrl.String())
 		if err != nil {
 			return err
 		}
-		return whTest.mssqlTestT.db.Ping()
+		return mssqlTestT.db.Ping()
 	}); err != nil {
 		log.Println("Could not connect to MSSql", whMSSqlUrl, err)
 	}
-
 	if err != nil {
 		return
 	}
-	whTest.mssqlTestT.setupDone = true
+
+	mssqlTestT.setupDone = true
 }
 
-func addSqlFunctionsToJobsDb() {
+func AddSqlFunctionsToJobsDb() {
 	if db == nil {
 		return
 	}
