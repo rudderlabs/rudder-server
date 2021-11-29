@@ -9,6 +9,6 @@ import (
 type Mock_apiWorker struct {
 }
 
-func (d *Mock_apiWorker) Delete(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error) {
-	return model.JobStatusComplete, nil
+func (d *Mock_apiWorker) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
+	return model.JobStatusComplete
 }

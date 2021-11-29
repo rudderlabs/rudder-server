@@ -82,7 +82,7 @@ func TestJobSvc(t *testing.T) {
 			mockAPIClient.EXPECT().UpdateStatus(ctx, tt.deleteJobStatus, jobID).Return(tt.updateStatusErrAfter).Times(tt.updateStatusAfterCallCount)
 
 			mockDeleter := service.NewMockdeleter(mockCtrl)
-			mockDeleter.EXPECT().Delete(ctx, tt.job, tt.dest).Return(tt.deleteJobStatus, tt.deleteJobErr).Times(tt.deleteJobCallCount)
+			mockDeleter.EXPECT().Delete(ctx, tt.job, tt.dest).Return(tt.deleteJobStatus).Times(tt.deleteJobCallCount)
 
 			mockDestDetail := service.NewMockdestDetail(mockCtrl)
 			mockDestDetail.EXPECT().GetDestDetails(tt.job.DestinationID, tt.job.WorkspaceID).Return(tt.dest, nil).Times(tt.getDestDetailsCount)

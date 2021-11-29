@@ -3,6 +3,7 @@ package main_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,7 +23,7 @@ import (
 )
 
 var (
-	c        = make(chan os.Signal, 1)
+	c        = make(chan string)
 	testData []test
 	mu       sync.Mutex
 )
@@ -50,8 +51,7 @@ func run(m *testing.M) int {
 		_ = os.Setenv("workspaceID", workspaceID)
 		_ = os.Setenv("urlPrefix", svr.URL)
 		main.Run(svcCtx)
-		<-c
-		svcCancel()
+		c <- "done"
 	}()
 	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
 	os.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
@@ -60,7 +60,11 @@ func run(m *testing.M) int {
 	logger.Init()
 	backendconfig.Init()
 	code := m.Run()
-
+	fmt.Println("test flow returned with code:", code)
+	svcCancel()
+	fmt.Println("svccancel called ")
+	<-c
+	fmt.Println()
 	return code
 }
 
@@ -73,7 +77,6 @@ type test struct {
 
 func TestFlow(t *testing.T) {
 	t.Run("TestFlow", func(t *testing.T) {
-		defer main.Cleanup()
 		testData = []test{
 			{
 				respBody:          `{"jobId":"1","destinationId":"216GUF0fW9z6JfRhW3pvGBEQpyQ","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
@@ -95,13 +98,12 @@ func TestFlow(t *testing.T) {
 			}
 			return true
 		}, time.Minute*3, time.Second*2)
-		c <- os.Interrupt
 
 	})
 }
 
 func getJob(w http.ResponseWriter, r *http.Request) {
-
+	fmt.Println("getjob status called")
 	w.Header().Set("Content-Type", "application/json")
 	for i, test := range testData {
 		status := test.status
@@ -116,6 +118,7 @@ func getJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateJobStatus(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("update status called")
 	w.Header().Set("Content-Type", "application/json")
 	jobID, _ := strconv.Atoi(mux.Vars(r)["job_id"])
 	var status client.StatusJobSchema

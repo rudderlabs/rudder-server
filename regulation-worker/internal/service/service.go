@@ -21,7 +21,7 @@ type destDetail interface {
 	GetDestDetails(destID, workspaceID string) (model.Destination, error)
 }
 type deleter interface {
-	Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus, error)
+	Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus
 }
 
 type JobSvc struct {
@@ -35,29 +35,29 @@ type JobSvc struct {
 //calls api-client to get new job with workspaceID, which returns jobID.
 func (js *JobSvc) JobSvc(ctx context.Context) error {
 	//API request to get new job
-
+	fmt.Println("get api called ")
 	job, err := js.API.Get(ctx)
 
 	if err != nil {
 		return err
 	}
-
+	fmt.Println("update status api called")
 	//once job is successfully received, calling updatestatus API to update the status of job to running.
 	status := model.JobStatusRunning
 	err = js.updateStatus(ctx, status, job.ID)
 	if err != nil {
 		return err
 	}
-
+	fmt.Println("getdest detail called")
 	//executing deletion
 	destDetail, err := js.DestDetail.GetDestDetails(job.DestinationID, job.WorkspaceID)
 	if err != nil {
 		return fmt.Errorf("error while getting destination details: %w", err)
 	}
-	status, err = js.Deleter.Delete(ctx, job, destDetail)
-	if err != nil {
-		return err
-	}
+	fmt.Println("deleter called")
+	status = js.Deleter.Delete(ctx, job, destDetail)
+
+	fmt.Println("update status after delete called ")
 	err = js.updateStatus(ctx, status, job.ID)
 	if err != nil {
 		return err

@@ -9,8 +9,9 @@ import (
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
+
 type deleteManager interface {
-	Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus, error)
+	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
 }
 type API struct {
 	DeleteManager deleteManager
@@ -18,7 +19,7 @@ type API struct {
 
 //prepares payload based on (job,destDetail) & make an API call to transformer.
 //gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
-func (api *API) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (status model.JobStatus, err error) {
-	
-	return api.DeleteManager.Delete(ctx,job,destDetail)
+func (api *API) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
+
+	return api.DeleteManager.Delete(ctx, job, destConfig, destName)
 }
