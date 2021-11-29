@@ -496,16 +496,22 @@ func run(m *testing.M) (int, error) {
 	// Setting postgres destination
 	SetWhPostgresDestination()
 	defer func() {
-		if err := pool.Purge(whTest.pgTestT.resource); err != nil {
-			log.Printf("Could not purge warehouse postgres resource: %s \n", err)
+		pgTestT := whTest.pgTestT
+		if pgTestT.resource != nil {
+			if err := pool.Purge(pgTestT.resource); err != nil {
+				log.Printf("Could not purge warehouse postgres resource: %s \n", err)
+			}
 		}
 	}()
 
 	// Setting clickhouse destination
 	SetWhClickHouseDestination()
 	defer func() {
-		if err := pool.Purge(whTest.chTestT.resource); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+		chTestT := whTest.chTestT
+		if chTestT.resource != nil {
+			if err := pool.Purge(chTestT.resource); err != nil {
+				log.Printf("Could not purge resource: %s \n", err)
+			}
 		}
 	}()
 
@@ -548,8 +554,11 @@ func run(m *testing.M) (int, error) {
 	// Setting mssql destination
 	SetWhMSSqlDestination()
 	defer func() {
-		if err := pool.Purge(whTest.mssqlTestT.resource); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+		mssqlTestT := whTest.mssqlTestT
+		if mssqlTestT.resource != nil {
+			if err := pool.Purge(mssqlTestT.resource); err != nil {
+				log.Printf("Could not purge resource: %s \n", err)
+			}
 		}
 	}()
 
@@ -1155,21 +1164,8 @@ func TestWhPostgresDestination(t *testing.T) {
 	// Checking for batch router jobs
 	testBatchRouterForWareHouseDestination(t, userId, whEventsCount.batchRT)
 
-	// Checking for tracks table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from postgres_wh_integration.tracks")
-		_ = pgTest.db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.track
-	}, time.Minute, 10*time.Millisecond)
-
-	// Checking product reviewed table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from postgres_wh_integration.product_track")
-		_ = pgTest.db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.track
-	}, time.Minute, 10*time.Millisecond)
+	// Checking for warehouse
+	testWareHouseForWareHouseDestination(t, pgTest.db, "postgres_wh_integration", whEventsCount)
 }
 
 // Verify Event in WareHouse ClickHouse
@@ -1191,21 +1187,8 @@ func TestWhClickHouseDestination(t *testing.T) {
 	// Checking for batch router jobs
 	testBatchRouterForWareHouseDestination(t, userId, whEventsCount.batchRT)
 
-	// Checking for tracks table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.tracks")
-		_ = chTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.track
-	}, time.Minute, 10*time.Millisecond)
-
-	// Checking product reviewed table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.product_track")
-		_ = chTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.track
-	}, time.Minute, 10*time.Millisecond)
+	// Checking for warehouse
+	testWareHouseForWareHouseDestination(t, chTestT.db, "rudderdb", whEventsCount)
 }
 
 // Verify Event in WareHouse ClickHouse Cluster
@@ -1227,21 +1210,8 @@ func TestWhClickHouseClusterDestination(t *testing.T) {
 	// Checking for batch router jobs
 	testBatchRouterForWareHouseDestination(t, userId, whEventsCount.batchRT)
 
-	// Checking for tracks table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.tracks")
-		_ = chClusterTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.track
-	}, time.Minute, 10*time.Millisecond)
-
-	// Checking product reviewed table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.product_track")
-		_ = chClusterTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.track
-	}, time.Minute, 10*time.Millisecond)
+	// Checking for warehouse
+	testWareHouseForWareHouseDestination(t, chClusterTestT.db, "rudderdb", whEventsCount)
 
 	// Making changes for distribution views.
 	var sqlStatement string
@@ -1303,21 +1273,8 @@ func TestWhMsSqlDestination(t *testing.T) {
 	// Checking for batch router jobs
 	testBatchRouterForWareHouseDestination(t, userId, whEventsCount.batchRT)
 
-	// Checking for tracks table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from mssql_wh_integration.tracks")
-		_ = mssqlTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.track
-	}, time.Minute, 10*time.Millisecond)
-
-	// Checking product reviewed table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from mssql_wh_integration.product_track")
-		_ = mssqlTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.track
-	}, time.Minute, 10*time.Millisecond)
+	// Checking for warehouse
+	testWareHouseForWareHouseDestination(t, mssqlTestT.db, "mssql_wh_integration", whEventsCount)
 }
 
 func sendWHEvents(writeKey string, userId string) *WareHouseEventsCount {
@@ -1437,6 +1394,7 @@ func testGWForWareHouseDestination(t *testing.T, writeKey string, userId string,
 		log.Println("WareHouse sqlFunctionsAdded not set")
 		return
 	}
+
 	// Getting gateway job ids
 	var jobIds []string
 	require.Eventually(t, func() bool {
@@ -1496,14 +1454,70 @@ func testBatchRouterForWareHouseDestination(t *testing.T, userId string, eventsC
 			jobIds = append(jobIds, fmt.Sprint(jobId))
 		}
 		return int(eventsCount) == len(jobIds)
-	}, time.Minute, 10*time.Millisecond)
+	}, 2*time.Minute, 100*time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		var count int64
 		jobsSqlStatement := fmt.Sprintf("select count(*) from batch_rt_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
 		_ = db.QueryRow(jobsSqlStatement).Scan(&count)
 		return count == eventsCount
-	}, time.Minute, 10*time.Millisecond)
+	}, 2*time.Minute, 100*time.Millisecond)
+}
+
+func testWareHouseForWareHouseDestination(t *testing.T, db *sql.DB, schema string, whEventsCount *WareHouseEventsCount) {
+	// Checking identify table
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from %s.identify", schema)
+		_ = db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.identify
+	}, 5*time.Minute, 100*time.Millisecond)
+
+	// Checking for tracks table
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from %s.tracks", schema)
+		_ = db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.track
+	}, 5*time.Minute, 100*time.Millisecond)
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from %s.product_track", schema)
+		_ = db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.track
+	}, 5*time.Minute, 100*time.Millisecond)
+
+	// Checking page table
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from %s.page", schema)
+		_ = db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.page
+	}, 5*time.Minute, 100*time.Millisecond)
+
+	// Checking screen table
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from %s.screen", schema)
+		_ = db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.screen
+	}, 5*time.Minute, 100*time.Millisecond)
+
+	// Checking alias table
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from %s.alias", schema)
+		_ = db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.alias
+	}, 5*time.Minute, 100*time.Millisecond)
+
+	// Checking group table
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from %s.group", schema)
+		_ = db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.group
+	}, 5*time.Minute, 100*time.Millisecond)
 }
 
 func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
