@@ -7,18 +7,26 @@ package delete
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kv_store"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
-// type deleter interface {
-// 	Delete(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error)
-// }
+type apiManager interface {
+	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
+}
+
+type batchManager interface {
+	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
+}
+
+type customManager interface {
+	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
+}
+
 type DeleteFacade struct {
+	AM apiManager
+	BM batchManager
+	CM customManager
 }
 
 //get destType & access credentials from workspaceID & destID
@@ -26,23 +34,13 @@ type DeleteFacade struct {
 func (d *DeleteFacade) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
 	switch destDetail.Type {
 	case "api":
-		return api.Delete(ctx, job, destDetail.Config, destDetail.Name)
+		return d.AM.Delete(ctx, job, destDetail.Config, destDetail.Name)
 	case "batch":
-		err := batch.Delete(ctx, job, destDetail.Config, destDetail.Name)
-		if err != nil {
-			return model.JobStatusFailed
-		} else {
-			return model.JobStatusComplete
-		}
-	case "kv_store":
-		delKVStore := kv_store.KVStore{
-			DeleteManager: &kv_store.Mock_KVStoreWorker{},
-		}
-		return delKVStore.DeleteManager.Delete(ctx, job, destDetail)
+		return d.BM.Delete(ctx, job, destDetail.Config, destDetail.Name)
+	case "custom":
+		return d.CM.Delete(ctx, job, destDetail.Config, destDetail.Name)
 
 	default:
-		fmt.Println("default called")
 		return model.JobStatusFailed
-
 	}
 }

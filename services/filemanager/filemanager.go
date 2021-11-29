@@ -12,6 +12,7 @@ import (
 
 var (
 	DefaultFileManagerFactory FileManagerFactory
+	ErrKeyNotFound               = errors.New("NoSuchKey")
 )
 
 type FileManagerFactoryT struct{}

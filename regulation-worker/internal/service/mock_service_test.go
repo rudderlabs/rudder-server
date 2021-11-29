@@ -126,12 +126,11 @@ func (m *Mockdeleter) EXPECT() *MockdeleterMockRecorder {
 }
 
 // Delete mocks base method.
-func (m *Mockdeleter) Delete(ctx context.Context, job model.Job, destDetail model.Destination) (model.JobStatus, error) {
+func (m *Mockdeleter) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Delete", ctx, job, destDetail)
 	ret0, _ := ret[0].(model.JobStatus)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	return ret0
 }
 
 // Delete indicates an expected call of Delete.

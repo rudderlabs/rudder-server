@@ -15,9 +15,16 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
+type deleteManager interface {
+	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
+}
+type API struct {
+	DeleteManager deleteManager
+}
+
 //prepares payload based on (job,destDetail) & make an API call to transformer.
 //gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
-func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
+func (api *API) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 
 	method := "DELETE"
 	endpoint := "/d-transformer/delete-users"

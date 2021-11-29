@@ -69,19 +69,13 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 		uploadInput.ServerSideEncryption = aws.String("AES256")
 	}
 	output, err := s3manager.Upload(uploadInput)
-	if err != nil {
-		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {
-			err = errors.New(fmt.Sprintf(`Bucket '%s' not found.`, manager.Config.Bucket))
-		}
-		return UploadOutput{}, err
-	}
 	return UploadOutput{Location: output.Location, ObjectName: fileName}, err
 }
 
 func (manager *S3Manager) Download(output *os.File, key string) error {
 	sess, err := manager.getSession()
 	if err != nil {
-		return fmt.Errorf(`Error starting S3 session: %v`, err)
+		return fmt.Errorf(`error starting S3 session: %v`, err)
 	}
 
 	downloader := s3manager.NewDownloader(sess)
@@ -91,7 +85,13 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
 		})
-	return err
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == ErrKeyNotFound.Error() {
+			return ErrKeyNotFound
+		}
+		return err
+	}
+	return nil
 }
 
 func (manager *S3Manager) DeleteObjects(keys []string) (err error) {

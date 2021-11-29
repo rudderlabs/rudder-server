@@ -1,4 +1,4 @@
-package kv_store
+package custom
 
 import (
 	"context"
@@ -9,6 +9,6 @@ import (
 type Mock_KVStoreWorker struct {
 }
 
-func (d *Mock_KVStoreWorker) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
+func (d *Mock_KVStoreWorker) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 	return model.JobStatusComplete
 }
