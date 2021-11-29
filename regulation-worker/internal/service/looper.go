@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	backoff "github.com/cenkalti/backoff/v4"
@@ -16,20 +15,23 @@ type Looper struct {
 
 func (l *Looper) Loop(ctx context.Context) error {
 	for {
-		fmt.Println("loop new iterator")
 		err := l.Svc.JobSvc(ctx)
 		if err == model.ErrNoRunnableJob {
-			sleepContext(ctx, 10*time.Minute)
-			time.Sleep(10 * time.Minute)
+			isContextCanceled := sleepContext(ctx, 10*time.Minute)
+			if isContextCanceled {
+				return nil
+			}
 		} else if err != nil {
 			return err
 		}
 	}
 }
 
-func sleepContext(ctx context.Context, delay time.Duration) {
+func sleepContext(ctx context.Context, delay time.Duration) bool {
 	select {
 	case <-ctx.Done():
+		return true
 	case <-time.After(delay):
+		return false
 	}
 }
