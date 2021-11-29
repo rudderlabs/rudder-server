@@ -1,0 +1,60 @@
+syntax = "proto3";
+package proto;
+option go_package = ".;proto";
+
+service Databricks {
+  rpc Connect(ConnectionRequest) returns (ConnectionResponse) {}
+  rpc Close(ConnectionRequest) returns (ConnectionResponse) {}
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse) {}
+  rpc FetchSchemas(ExecuteRequest) returns (FetchSchemasResponse) {}
+  rpc FetchTables(ExecuteRequest) returns (FetchTablesResponse) {}
+  rpc FetchTableAttributes(ExecuteRequest) returns (FetchTableAttributesResponse) {}
+  rpc FetchTotalCountInTable(ExecuteRequest) returns (FetchTotalCountInTableResponse) {}
+}
+
+message ConnectionRequest {
+  string host = 1;
+  string port = 2;
+  string pwd = 3;
+  string httpPath = 4;
+  string userAgentEntry = 5;
+  string identifier = 6;
+}
+
+message ConnectionResponse{
+  string error = 1;
+}
+
+message ExecuteRequest {
+  string sqlStatement = 1;
+  string identifier = 2;
+}
+
+message ExecuteResponse {
+  string error = 1;
+}
+
+message FetchSchemasResponse {
+  repeated string databases = 1;
+  string error = 2;
+}
+
+message FetchTablesResponse {
+  repeated string tables = 1;
+  string error = 2;
+}
+
+message ItemAttribute {
+  string colName = 1;
+  string dataType = 2;
+}
+
+message FetchTableAttributesResponse {
+  repeated ItemAttribute attributes = 1;
+  string error = 2;
+}
+
+message FetchTotalCountInTableResponse {
+  int64 count = 1;
+  string error = 2;
+}
