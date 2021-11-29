@@ -1512,7 +1512,7 @@ func testWareHouseForWareHouseDestination(t *testing.T, db *sql.DB, schema strin
 	// Checking alias table
 	require.Eventually(t, func() bool {
 		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.alias", schema)
+		sqlStatement := fmt.Sprintf("select count(*) from %s.aliases", schema)
 		_ = db.QueryRow(sqlStatement).Scan(&count)
 		return count == whEventsCount.alias
 	}, 5*time.Minute, 100*time.Millisecond)
