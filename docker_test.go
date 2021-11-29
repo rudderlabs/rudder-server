@@ -207,19 +207,15 @@ func createWorkspaceConfig(templatePath string, values map[string]string) string
 	if err != nil {
 		panic(err)
 	}
-
 	f, err := os.CreateTemp("", "workspaceConfig.*.json")
 	if err != nil {
 		panic(err)
 	}
-
 	err = t.Execute(f, values)
 	if err != nil {
 		panic(err)
 	}
-
 	f.Close()
-
 	return f.Name()
 }
 
@@ -249,13 +245,10 @@ func blockOnHold() {
 	if !hold {
 		return
 	}
-
 	log.Println("Test on hold, before cleanup")
 	log.Println("Press Ctrl+C to exit")
-
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
 	<-c
 }
 
