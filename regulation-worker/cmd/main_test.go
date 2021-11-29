@@ -50,6 +50,7 @@ func run(m *testing.M) int {
 		os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
 		os.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
 		os.Setenv("CONFIG_PATH", "./test_config.yaml")
+		os.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
 		config.Load()
 		logger.Init()
 		backendconfig.Init()

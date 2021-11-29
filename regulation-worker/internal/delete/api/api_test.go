@@ -131,7 +131,10 @@ func TestDelete(t *testing.T) {
 
 			defer svr.Close()
 			os.Setenv("DEST_TRANSFORM_URL", svr.URL)
-			api := api.API{}
+			api := api.API{
+				Client:           &http.Client{},
+				DestTransformURL: svr.URL,
+			}
 			status := api.Delete(ctx, tt.job, tt.destConfig, tt.destName)
 			require.Equal(t, tt.expectedDeleteStatus, status)
 			require.Equal(t, tt.expectedPayload, d.payload)
