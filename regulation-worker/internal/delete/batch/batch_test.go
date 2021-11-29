@@ -58,11 +58,11 @@ func TestDelete(t *testing.T) {
 			},
 		},
 	}
-
+	bm := batch.BatchManager{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := batch.Delete(ctx, tt.job, tt.dest.Config, tt.dest.Name)
-			require.NoError(t, err, "expected no error")
+			status := bm.Delete(ctx, tt.job, tt.dest.Config, tt.dest.Name)
+			require.Equal(t, model.JobStatusComplete, status)
 		})
 
 	}

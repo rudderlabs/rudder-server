@@ -308,7 +308,7 @@ func (b *Batch) upload(ctx context.Context, uploadFileAbsPath, actualFileName, a
 	}
 
 	b.mu.Lock()
-
+	defer b.mu.Unlock()
 	err = b.updateStatusTrackerFile(absStatusTrackerFileName, actualFileName)
 	if err != nil {
 		return fmt.Errorf("error while updating status tracker file, %w", err)
@@ -324,8 +324,6 @@ func (b *Batch) upload(ctx context.Context, uploadFileAbsPath, actualFileName, a
 	if err != nil {
 		return fmt.Errorf("error while uploading statusTrackerFile file: %w", err)
 	}
-
-	b.mu.Unlock()
 
 	return nil
 }
@@ -379,9 +377,12 @@ func (b *Batch) createPatternFile(userAttributes []model.UserAttribute) (string,
 	return absPatternFile, err
 }
 
+type BatchManager struct {
+}
+
 //TODO: aws s3 ListObject allows listing of at max 1000 object at a time. So, implement paginatin.
 //Delete users corresponding to input userAttributes from a given batch destination
-func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) error {
+func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 
 	fmFactory := filemanager.FileManagerFactoryT{}
 	fm, err := fmFactory.New(&filemanager.SettingsT{
@@ -389,18 +390,20 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 		Config:   destConfig,
 	})
 	if err != nil {
-		return fmt.Errorf("error while creating file manager: %w", err)
+		return model.JobStatusFailed
 	}
 
 	dm, err := getDeleteManager(destName)
 	if err != nil {
-		return fmt.Errorf("failed to get appropriate deleteManager, %w", err)
+		//TODO: log error: failed to get appropriate deleteManager
+		return model.JobStatusFailed
 	}
 
 	//parent directory of all the temporary files created/downloaded in the process of deletion.
 	tmpDirPath, err := os.MkdirTemp("", "")
 	if err != nil {
-		return fmt.Errorf("error while creating temporary directory: %w", err)
+		//log error: error while creating temporary directory
+		return model.JobStatusFailed
 	}
 
 	batch := Batch{
@@ -412,7 +415,7 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 
 	files, err := batch.listFiles(ctx)
 	if err != nil {
-		return err
+		return model.JobStatusFailed
 	}
 
 	//if statusTracker.txt exists then read it & remove all those files name from above gzFilesObjects,
@@ -472,7 +475,8 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 		return absPath, err
 	}()
 	if err != nil {
-		return err
+		//log error: err
+		return model.JobStatusFailed
 	}
 	if len(cleanedFiles) != 0 {
 		files = removeCleanedFiles(files, cleanedFiles)
@@ -481,14 +485,16 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 	//file with pattern to be searched & deleted from all downloaded files.
 	absPatternFile, err := batch.createPatternFile(job.UserAttributes)
 	if err != nil {
-		return fmt.Errorf("error while creating ")
+		//log error: "error while creating "
+		return model.JobStatusFailed
 	}
 
 	g, gCtx := errgroup.WithContext(ctx)
 
 	procAllocated, err := strconv.Atoi(config.GetEnv("GOMAXPROCS", "32"))
 	if err != nil {
-		return fmt.Errorf("error while getting env GOMAXPROCS: %w", err)
+		//log error: error while getting env GOMAXPROCS
+		return model.JobStatusFailed
 	}
 	maxGoRoutine := 8 * procAllocated
 	goRoutineCount := make(chan bool, maxGoRoutine)
@@ -522,9 +528,10 @@ func Delete(ctx context.Context, job model.Job, destConfig map[string]interface{
 	}
 	err = g.Wait()
 	if err != nil {
-		return err
+		//log error
+		return model.JobStatusFailed
 	}
-	return nil
+	return model.JobStatusComplete
 }
 
 func (b *Batch) cleanup(prefix string) {

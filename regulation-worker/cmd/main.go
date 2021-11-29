@@ -9,6 +9,9 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/custom"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 )
@@ -35,7 +38,11 @@ func Run(ctx context.Context) {
 			WorkspaceID: getEnv("workspaceID", "1001"),
 			URLPrefix:   getEnv("urlPrefix", "http://localhost:35359"),
 		},
-		Deleter: &delete.DeleteFacade{},
+		Deleter: &delete.DeleteFacade{
+			AM: &api.Mock_apiWorker{},
+			BM: &batch.BatchManager{},
+			CM: &custom.Mock_KVStoreWorker{},
+		},
 		DestDetail: &destination.DestMiddleware{
 			Dest:    &backendconfig.WorkspaceConfig{},
 			DestCat: &destination.DestCategory{},

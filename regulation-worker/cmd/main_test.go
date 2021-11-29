@@ -3,6 +3,7 @@ package main_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -59,8 +60,11 @@ func run(m *testing.M) int {
 	logger.Init()
 	backendconfig.Init()
 	code := m.Run()
+	fmt.Println("test flow returned with code:", code)
 	svcCancel()
+	fmt.Println("svccancel called ")
 	<-c
+	fmt.Println()
 	return code
 }
 
@@ -99,7 +103,7 @@ func TestFlow(t *testing.T) {
 }
 
 func getJob(w http.ResponseWriter, r *http.Request) {
-
+	fmt.Println("getjob status called")
 	w.Header().Set("Content-Type", "application/json")
 	for i, test := range testData {
 		status := test.status
@@ -114,6 +118,7 @@ func getJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateJobStatus(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("update status called")
 	w.Header().Set("Content-Type", "application/json")
 	jobID, _ := strconv.Atoi(mux.Vars(r)["job_id"])
 	var status client.StatusJobSchema
