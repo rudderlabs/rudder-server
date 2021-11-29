@@ -200,7 +200,7 @@ func (dl *HandleT) ExecuteSQL(sqlStatement string) (err error) {
 
 // schemaExists checks it schema exists or not.
 func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
-	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s'`, schemaName)
+	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
 	fetchSchemasResponse, err := dl.dbHandleT.Client.FetchSchemas(dl.dbHandleT.Context, &proto.ExecuteRequest{
 		SqlStatement: sqlStatement,
 		Identifier:   dl.dbHandleT.CredIdentifier,
@@ -218,7 +218,7 @@ func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 
 // createSchema creates schema
 func (dl *HandleT) createSchema() (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, dl.Namespace)
+	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, dl.Namespace)
 	pkgLogger.Infof("%s Creating schema in delta lake with SQL:%v", dl.GetLogIdentifier(), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement)
 	return
@@ -228,7 +228,7 @@ func (dl *HandleT) createSchema() (err error) {
 func (dl *HandleT) dropStagingTables(tableNames []string) {
 	for _, stagingTableName := range tableNames {
 		pkgLogger.Infof("%s Dropping table %+v\n", dl.GetLogIdentifier(), stagingTableName)
-		sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s`, dl.Namespace, stagingTableName)
+		sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, dl.Namespace, stagingTableName)
 		dropTableResponse, err := dl.dbHandleT.Client.Execute(dl.dbHandleT.Context, &proto.ExecuteRequest{
 			SqlStatement: sqlStatement,
 			Identifier:   dl.dbHandleT.CredIdentifier,
@@ -307,7 +307,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			"FILEFORMAT = PARQUET "+
 			"PATTERN = '*.parquet' "+
 			"COPY_OPTIONS ('force' = 'true') "+
-			"%s",
+			"%s;",
 			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, credentialsStr)
 	} else {
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
@@ -315,7 +315,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			"PATTERN = '*.gz' "+
 			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"' ) "+
 			"COPY_OPTIONS ('force' = 'true') "+
-			"%s",
+			"%s;",
 			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, credentialsStr)
 	}
 
@@ -346,7 +346,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
                                        USING ( SELECT * FROM ( SELECT *, row_number() OVER (PARTITION BY %[4]s ORDER BY RECEIVED_AT DESC) AS _rudder_staging_row_number FROM %[1]s.%[3]s ) AS q WHERE _rudder_staging_row_number = 1) AS STAGING
 									   ON MAIN.%[4]s = STAGING.%[4]s
 									   WHEN MATCHED THEN UPDATE SET %[5]s
-									   WHEN NOT MATCHED THEN INSERT (%[6]s) VALUES (%[7]s)`,
+									   WHEN NOT MATCHED THEN INSERT (%[6]s) VALUES (%[7]s);`,
 		dl.Namespace,
 		tableName,
 		stagingTableName,
@@ -417,7 +417,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 												)
 											)
 										)
-									) `,
+									);`,
 		dl.Namespace,
 		stagingTableName,
 		strings.Join(firstValProps, ","),
@@ -449,7 +449,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 									   USING ( SELECT %[5]s FROM %[1]s.%[3]s ) AS STAGING
 									   ON MAIN.%[4]s = STAGING.%[4]s
 									   WHEN MATCHED THEN UPDATE SET %[6]s
-									   WHEN NOT MATCHED THEN INSERT (%[5]s) VALUES (%[7]s)`,
+									   WHEN NOT MATCHED THEN INSERT (%[5]s) VALUES (%[7]s);`,
 		dl.Namespace,
 		warehouseutils.UsersTable,
 		stagingTableName,
@@ -496,7 +496,7 @@ func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
 // CreateTable creates tables with table name and columns
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA`, name, columnsWithDataTypes(columns, ""))
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) USING DELTA;`, name, columnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement)
 	return
@@ -505,7 +505,7 @@ func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err
 // AddColumn adds column for column name and type
 func (dl *HandleT) AddColumn(name string, columnName string, columnType string) (err error) {
 	tableName := fmt.Sprintf(`%s.%s`, dl.Namespace, name)
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMNS ( %s %s )`, tableName, columnName, getDeltaLakeDataType(columnType))
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMNS ( %s %s );`, tableName, columnName, getDeltaLakeDataType(columnType))
 	pkgLogger.Infof("%s Adding column in delta lake with SQL:%v", dl.GetLogIdentifier(tableName, columnName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement)
 	return
@@ -548,7 +548,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	schema = make(warehouseutils.SchemaT)
 
 	// Creating show tables sql statement to get the tables associated with the namespace
-	sqlStatement := fmt.Sprintf(`SHOW TABLES FROM %s`, dl.Namespace)
+	sqlStatement := fmt.Sprintf(`SHOW TABLES FROM %s;`, dl.Namespace)
 
 	// Fetching the tables
 	tableNames, err := dl.fetchTables(dbHandle, sqlStatement)
@@ -569,7 +569,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	// For each table we are generating schema
 	for _, tableName := range filteredTablesNames {
 		// Creating describe sql statement for table
-		ttSqlStatement := fmt.Sprintf(`SELECT * FROM %s.%s LIMIT 1`, dl.Namespace, tableName)
+		ttSqlStatement := fmt.Sprintf(`SELECT * FROM %s.%s LIMIT 1;`, dl.Namespace, tableName)
 		fetchTableAttributesResponse, err := dl.dbHandleT.Client.FetchTableAttributes(dl.dbHandleT.Context, &proto.ExecuteRequest{
 			SqlStatement: ttSqlStatement,
 			Identifier:   dl.dbHandleT.CredIdentifier,
@@ -578,7 +578,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 			return schema, fmt.Errorf("%s Error while fetching table attributes: %v", dl.GetLogIdentifier(), err)
 		}
 		if len(fetchTableAttributesResponse.GetError()) != 0 && !strings.Contains(fetchTableAttributesResponse.GetError(), tableOrViewNotFound) {
-			return schema, fmt.Errorf("%s Error while fetching schemas with response: %v", dl.GetLogIdentifier(), fetchTableAttributesResponse.GetError())
+			return schema, fmt.Errorf("%s Error while fetching table attributes with response: %v", dl.GetLogIdentifier(), fetchTableAttributesResponse.GetError())
 		}
 
 		// Populating the schema for the table
@@ -666,7 +666,7 @@ func (dl *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 
 // GetTotalCountInTable returns total count in tables.
 func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s`, dl.Namespace, tableName)
+	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s;`, dl.Namespace, tableName)
 	fetchTotalCountInTableResponse, err := dl.dbHandleT.Client.FetchTotalCountInTable(dl.dbHandleT.Context, &proto.ExecuteRequest{
 		SqlStatement: sqlStatement,
 		Identifier:   dl.dbHandleT.CredIdentifier,
@@ -676,7 +676,7 @@ func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 		return
 	}
 	if len(fetchTotalCountInTableResponse.GetError()) != 0 && !strings.Contains(fetchTotalCountInTableResponse.GetError(), tableOrViewNotFound) {
-		err = fmt.Errorf("%s Error while fetching schemas with response: %v", dl.GetLogIdentifier(), fetchTotalCountInTableResponse.GetError())
+		err = fmt.Errorf("%s Error while fetching table count with response: %v", dl.GetLogIdentifier(), fetchTotalCountInTableResponse.GetError())
 		return
 	}
 	total = fetchTotalCountInTableResponse.GetCount()
