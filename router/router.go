@@ -271,6 +271,7 @@ func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJ
 
 	destinationJobs := worker.rt.transformer.Transform(transformer.BATCH, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
 	worker.rt.batchOutputCountStat.Count(len(destinationJobs))
+	// iterate over destinationJobs and then log the stats
 
 	var totalJobMetadataCount int
 	for _, destinationJob := range destinationJobs {
@@ -502,6 +503,7 @@ func getIterableStruct(payload []byte, transformAt string) []integrations.PostPa
 func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	worker.batchTimeStat.Start()
 
+	var respContentType string
 	var respStatusCode, prevRespStatusCode int
 	var respBody string
 	var respBodyTemp string
@@ -598,7 +600,8 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 							defer cancel()
 							rdl_time := time.Now()
-							respStatusCode, respBodyTemp = worker.rt.netHandle.SendPost(sendCtx, val)
+							resp := worker.rt.netHandle.SendPost(sendCtx, val)
+							respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
 							// stat end
 							worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
 							//response transform start
@@ -683,7 +686,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				Parameters:    []byte(`{}`),
 			}
 
-			worker.postStatusOnResponseQ(respStatusCode, respBody, destinationJob.Message, &destinationJobMetadata, &status)
+			worker.postStatusOnResponseQ(respStatusCode, respBody, destinationJob.Message, respContentType, &destinationJobMetadata, &status)
 
 			worker.sendEventDeliveryStat(&destinationJobMetadata, &status, &destinationJob.Destination)
 
@@ -721,7 +724,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				Parameters:    []byte(`{}`),
 			}
 
-			worker.postStatusOnResponseQ(500, "transformer failed to handle this job", nil, &routerJob.JobMetadata, &status)
+			worker.postStatusOnResponseQ(500, "transformer failed to handle this job", nil, "", &routerJob.JobMetadata, &status)
 		}
 	}
 
@@ -821,7 +824,8 @@ func (worker *workerT) updateAbortedMetrics(destinationID, statusCode string) {
 	worker.rt.eventsAbortedStat.Increment()
 }
 
-func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
+func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, payload json.RawMessage,
+	destContentType string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
 	//Enhancing status.ErrorResponse with firstAttemptedAt
 	firstAttemptedAtTime := time.Now()
 	if destinationJobMetadata.FirstAttemptedAt != "" {
@@ -833,9 +837,8 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	}
 
 	status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
-	if respBody != "" {
-		status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "response", respBody)
-	}
+	status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "response", respBody)
+	status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "content-type", destContentType)
 
 	if isSuccessStatus(respStatusCode) {
 		atomic.AddUint64(&worker.rt.successCount, 1)
