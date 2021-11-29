@@ -11,12 +11,9 @@ import (
 	"context"
 	"database/sql"
 	b64 "encoding/base64"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 	"html/template"
 	"io"
 	"log"
@@ -36,7 +33,6 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis"
-	redigo "github.com/gomodule/redigo/redis"
 	_ "github.com/lib/pq"
 	"github.com/minio/minio-go"
 	"github.com/ory/dockertest"
@@ -66,6 +62,8 @@ type ClickHouseClusterTestT struct {
 	clickhouse02 *dockertest.Resource
 	clickhouse03 *dockertest.Resource
 	clickhouse04 *dockertest.Resource
+	db           *sql.DB
+	writeKey     string
 }
 
 type MSSqlTestT struct {
@@ -119,8 +117,8 @@ var (
 	localhostPort         string
 	localhostPortInt      int
 	whTest                WareHouseTestT
-	EventID string
-	VersionID string
+	EventID               string
+	VersionID             string
 )
 
 type WebhookRecorder struct {
@@ -257,7 +255,9 @@ func SendEvent(payload *strings.Reader, call_type string, writeKey string) (stri
 	url := ""
 	if call_type != "beacon" {
 		url = fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, call_type)
-	} else{url = fmt.Sprintf("http://localhost:%s/beacon/v1/batch?writeKey=%s", httpPort, writeKey)}
+	} else {
+		url = fmt.Sprintf("http://localhost:%s/beacon/v1/batch?writeKey=%s", httpPort, writeKey)
+	}
 	method := "POST"
 	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
@@ -328,7 +328,7 @@ func SendWebhookEvent() {
 	log.Println("Webhook Event Sent Successfully")
 }
 
-func SendPixelEvents(){
+func SendPixelEvents() {
 	// Send pixel/v1/page
 	log.Println("Sending pixel/v1/page Event")
 	url := fmt.Sprintf("http://localhost:%s/pixel/v1/page?writeKey=%s&anonymousId=identified_user_id", httpPort, writeKey)
@@ -346,29 +346,28 @@ func SendPixelEvents(){
 	log.Println("pixel/v1/track Event Sent Successfully")
 }
 
-func GetEvent(url string, method string)(string, error){
-	client := &http.Client {
-	}
+func GetEvent(url string, method string) (string, error) {
+	client := &http.Client{}
 	req, err := http.NewRequest(method, url, nil)
 
 	if err != nil {
 		fmt.Println(err)
-		return "" , err
+		return "", err
 	}
 	req.Header.Add("Authorization", "Basic cnVkZGVyOnBhc3N3b3Jk")
 	res, err := client.Do(req)
 	if err != nil {
 		fmt.Println(err)
-		return "" , err
+		return "", err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		fmt.Println(err)
-		return "" , err
+		return "", err
 	}
-	return string(body) , err
+	return string(body), err
 }
 
 func TestMain(m *testing.M) {
@@ -423,27 +422,27 @@ func run(m *testing.M) (int, error) {
 	//		log.Printf("Could not purge resource: %s \n", err)
 	//	}
 	//}()
-	//SetJobsDB()
-	//defer func() {
-	//	if err := pool.Purge(resourcePostgres); err != nil {
-	//		log.Printf("Could not purge resource: %s \n", err)
-	//	}
-	//}()
-	//SetTransformer()
-	//defer func() {
-	//	if err := pool.Purge(transformerRes); err != nil {
-	//		log.Printf("Could not purge resource: %s \n", err)
-	//	}
-	//}()
-	//SetMINIO()
-	//defer func() {
-	//	if err := pool.Purge(resource); err != nil {
-	//		log.Printf("Could not purge resource: %s \n", err)
-	//	}
-	//}()
-	//
-	//// Initialize warehouse config
-	//initWhConfig()
+	SetJobsDB()
+	defer func() {
+		if err := pool.Purge(resourcePostgres); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	SetTransformer()
+	defer func() {
+		if err := pool.Purge(transformerRes); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	SetMINIO()
+	defer func() {
+		if err := pool.Purge(resource); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+
+	// Initialize warehouse config
+	initWhConfig()
 	//
 	//// Setting postgres destination
 	//setWhPostgresDestination()
@@ -463,14 +462,46 @@ func run(m *testing.M) (int, error) {
 
 	// Setting clickhouse cluster destination
 	setWhClickHouseClusterDestination()
-
-	// Setting mssql destination
-	setWhMSSqlDestination()
 	defer func() {
-		if err := pool.Purge(whTest.mssqlTestT.resource); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
+		if whTest.chClusterTestT.zookeeper != nil {
+			if err := pool.Purge(whTest.chClusterTestT.zookeeper); err != nil {
+				log.Printf("Could not purge resource: %s \n", err)
+			}
+		}
+		if whTest.chClusterTestT.clickhouse01 != nil {
+			if err := pool.Purge(whTest.chClusterTestT.clickhouse01); err != nil {
+				log.Printf("Could not purge resource: %s \n", err)
+			}
+		}
+		if whTest.chClusterTestT.clickhouse02 != nil {
+			if err := pool.Purge(whTest.chClusterTestT.clickhouse02); err != nil {
+				log.Printf("Could not purge resource: %s \n", err)
+			}
+		}
+		if whTest.chClusterTestT.clickhouse03 != nil {
+			if err := pool.Purge(whTest.chClusterTestT.clickhouse03); err != nil {
+				log.Printf("Could not purge resource: %s \n", err)
+			}
+		}
+		if whTest.chClusterTestT.clickhouse04 != nil {
+			if err := pool.Purge(whTest.chClusterTestT.clickhouse04); err != nil {
+				log.Printf("Could not purge resource: %s \n", err)
+			}
+		}
+		if whTest.chClusterTestT.network != nil {
+			if err := pool.Client.RemoveNetwork(whTest.chClusterTestT.network.ID); err != nil {
+				log.Printf("Could not remove network: %s \n", err)
+			}
 		}
 	}()
+
+	// Setting mssql destination
+	//setWhMSSqlDestination()
+	//defer func() {
+	//	if err := pool.Purge(whTest.mssqlTestT.resource); err != nil {
+	//		log.Printf("Could not purge resource: %s \n", err)
+	//	}
+	//}()
 
 	// Adding necessary sql functions which needs to be used during warehouse testing
 	addSqlFunctionsToJobsDb()
@@ -520,30 +551,31 @@ func run(m *testing.M) (int, error) {
 	writeKey = randString(27)
 	workspaceID = randString(27)
 	webhookEventWriteKey = randString(27)
-	fmt.Println("writeKey",writeKey)
-	whTest.pgTestT.writeKey = randString(27)
-	whTest.chTestT.writeKey = randString(27)
-	whTest.mssqlTestT.writeKey = randString(27)
+	fmt.Println("writeKey", writeKey)
+
+	CreateWHWriteKeys()
 
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":                   webhookurl,
-			"webhookDestinationurl":        webhookDestinationurl,
-			"writeKey":                     writeKey,
-			"webhookEventWriteKey":         webhookEventWriteKey,
-			"postgresEventWriteKey":        whTest.pgTestT.writeKey,
-			"clickHouseEventWriteKey":      whTest.chTestT.writeKey,
-			"mssqlEventWriteKey":           whTest.mssqlTestT.writeKey,
-			"workspaceId":                  workspaceID,
-			"postgresPort":                 resourcePostgres.GetPort("5432/tcp"),
-			"rwhPostgresDestinationPort":   whTest.pgTestT.resource.GetPort("5432/tcp"),
-			"rwhClickHouseDestinationPort": whTest.chTestT.resource.GetPort("9000/tcp"),
-			"rwhMSSqlDestinationPort":      whTest.mssqlTestT.resource.GetPort("1433/tcp"),
-			"address":                      redisAddress,
-			"minioEndpoint":                minioEndpoint,
-			"minioBucketName":              minioBucketName,
-			"kafkaPort":                    strconv.Itoa(localhostPortInt),
+			"webhookUrl":                     webhookurl,
+			"webhookDestinationurl":          webhookDestinationurl,
+			"writeKey":                       writeKey,
+			"webhookEventWriteKey":           webhookEventWriteKey,
+			"postgresEventWriteKey":          whTest.pgTestT.writeKey,
+			"clickHouseEventWriteKey":        whTest.chTestT.writeKey,
+			"clickHouseClusterEventWriteKey": whTest.chClusterTestT.writeKey,
+			"mssqlEventWriteKey":             whTest.mssqlTestT.writeKey,
+			"workspaceId":                    workspaceID,
+			"postgresPort":                   resourcePostgres.GetPort("5432/tcp"),
+			//"rwhPostgresDestinationPort":          whTest.pgTestT.resource.GetPort("5432/tcp"),
+			//"rwhClickHouseDestinationPort":        whTest.chTestT.resource.GetPort("9000/tcp"),
+			"rwhClickHouseClusterDestinationPort": whTest.chClusterTestT.clickhouse01.GetPort("9000/tcp"),
+			//"rwhMSSqlDestinationPort":             whTest.mssqlTestT.resource.GetPort("1433/tcp"),
+			"address":         redisAddress,
+			"minioEndpoint":   minioEndpoint,
+			"minioBucketName": minioBucketName,
+			"kafkaPort":       strconv.Itoa(localhostPortInt),
 		},
 	)
 	defer func() {
@@ -577,10 +609,10 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("MINIO_SSL", "false")
 	os.Setenv("WAREHOUSE_URL", "http://localhost:8082")
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
-	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE","true")
+	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
 	os.Setenv("RSERVER_EVENT_SCHEMAS_ENABLE_EVENT_SCHEMAS_FEATURE", "true")
-	os.Setenv("RSERVER_EVENT_SCHEMAS_SYNC_INTERVAL","15")
+	os.Setenv("RSERVER_EVENT_SCHEMAS_SYNC_INTERVAL", "15")
 
 	fmt.Printf("--- Setup done (%s)\n", time.Since(setupStart))
 
@@ -612,501 +644,537 @@ func run(m *testing.M) (int, error) {
 	return code, nil
 }
 
-func TestWebhook(t *testing.T) {
-	var err error
-	psqlInfo := jobsdb.GetConnectionString()
-	dbHandle, err = sql.Open("postgres", psqlInfo)
-	if err != nil {
-		panic(err)
-	}
-	// Pulling config form workspaceConfig.json
-	sourceJSON = getWorkspaceConfig()
-
-	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
-	payload_1 := strings.NewReader(`{
-		"userId": "identified_user_id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"eventOrderNo":"1",
-		"context": {
-		  "traits": {
-			 "trait1": "new-val"
-		  },
-		  "ip": "14.5.67.21",
-		  "library": {
-			  "name": "http"
-		  }
-		},
-		"timestamp": "2020-02-02T00:23:09.544Z"
-	  }`)
-	SendEvent(payload_1, "identify", writeKey)
-	payload_2 := strings.NewReader(`{
-		"userId": "identified_user_id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"eventOrderNo":"2",
-		"context": {
-		  "traits": {
-			 "trait1": "new-val"
-		  },
-		  "ip": "14.5.67.21",
-		  "library": {
-			  "name": "http"
-		  }
-		},
-		"timestamp": "2020-02-02T00:23:09.544Z"
-	  }`)
-	SendEvent(payload_2, "identify", writeKey) //sending duplicate event to check dedup
-	// Sending Batch event
-	payload_Batch := strings.NewReader(`{
-		"batch":
-		[
-			{
-				"userId": "identified_user_id",
-			   "anonymousId":"anonymousId_1",
-			   "messageId":"messageId_1"
-			}
-		]
-	}`)
-	SendEvent(payload_Batch, "batch", writeKey)
-
-	// Sending track event
-	payload_track := strings.NewReader(`{
-		"userId": "identified_user_id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"type": "track",
-		"event": "Product Reviewed",
-		"properties": {
-		  "review_id": "12345",
-		  "product_id" : "123",
-		  "rating" : 3.0,
-		  "review_body" : "Average product, expected much more."
-		}
-	  }`)
-	SendEvent(payload_track, "track", writeKey)
-
-	// Sending page event
-	payload_page := strings.NewReader(`{
-		"userId": "identified_user_id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"type": "page",
-		"name": "Home",
-		"properties": {
-		  "title": "Home | RudderStack",
-		  "url": "http://www.rudderstack.com"
-		}
-	  }`)
-	SendEvent(payload_page, "page", writeKey)
-
-	// Sending screen event
-	payload_screen := strings.NewReader(`{
-		"userId": "identified_user_id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"type": "screen",
-		"name": "Main",
-		"properties": {
-		  "prop_key": "prop_value"
-		}
-	  }`)
-	SendEvent(payload_screen, "screen", writeKey)
-
-	// Sending alias event
-	payload_alias := strings.NewReader(`{
-		"userId": "identified_user_id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"type": "alias",
-		"previousId": "name@surname.com",
-		"userId": "12345"
-	  }`)
-	SendEvent(payload_alias, "alias", writeKey)
-
-	// Sending group event
-	payload_group := strings.NewReader(`{
-		"userId": "identified_user_id",
-		"anonymousId":"anonymousId_1",
-		"messageId":"messageId_1",
-		"type": "group",
-		"groupId": "12345",
-		"traits": {
-		  "name": "MyGroup",
-		  "industry": "IT",
-		  "employees": 450,
-		  "plan": "basic"
-		}
-	  }`)
-	SendEvent(payload_group, "group", writeKey)
-	SendWebhookEvent()
-	SendPixelEvents()
-
-	require.Eventually(t, func() bool {
-		return len(webhook.Requests()) == 10
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		return len(webhookDestination.Requests()) == 1
-	}, time.Minute, 10*time.Millisecond)
-
-    i :=-1
-	require.Eventually(t, func() bool {
-		i=i+1
-		req := webhook.Requests()[i]
-		body, _ := io.ReadAll(req.Body)
-		return gjson.GetBytes(body, "anonymousId").Str == "anonymousId_1"
-	}, time.Minute, 10*time.Millisecond)
-
-	req := webhook.Requests()[i]
-	body, err := io.ReadAll(req.Body)
-
-	require.NoError(t, err)
-	require.Equal(t, "POST", req.Method)
-	require.Equal(t, "/", req.URL.Path)
-	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
-	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
-
-	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anonymousId_1")
-	require.Equal(t, gjson.GetBytes(body, "messageId").Str, "messageId_1")
-	require.Equal(t, gjson.GetBytes(body, "eventOrderNo").Str, "1")
-	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified_user_id")
-	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "e4cab80e-2f0e-4fa2-87e0-3a4af182634c")
-	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
-
-	req = webhookDestination.Requests()[0]
-	body, err = io.ReadAll(req.Body)
-
-	require.NoError(t, err)
-	require.Equal(t, "POST", req.Method)
-	require.Equal(t, "/", req.URL.Path)
-	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
-	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
-
-	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "")
-	require.NotEqual(t, gjson.GetBytes(body, "messageId").Str, "")
+func CreateWHWriteKeys() {
+	whTest.pgTestT.writeKey = randString(27)
+	whTest.chTestT.writeKey = randString(27)
+	whTest.chClusterTestT.writeKey = randString(27)
+	whTest.mssqlTestT.writeKey = randString(27)
 }
+
+//func TestWebhook(t *testing.T) {
+//	var err error
+//	psqlInfo := jobsdb.GetConnectionString()
+//	dbHandle, err = sql.Open("postgres", psqlInfo)
+//	if err != nil {
+//		panic(err)
+//	}
+//	// Pulling config form workspaceConfig.json
+//	sourceJSON = getWorkspaceConfig()
+//
+//	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
+//	payload_1 := strings.NewReader(`{
+//		"userId": "identified_user_id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"eventOrderNo":"1",
+//		"context": {
+//		  "traits": {
+//			 "trait1": "new-val"
+//		  },
+//		  "ip": "14.5.67.21",
+//		  "library": {
+//			  "name": "http"
+//		  }
+//		},
+//		"timestamp": "2020-02-02T00:23:09.544Z"
+//	  }`)
+//	SendEvent(payload_1, "identify", writeKey)
+//	payload_2 := strings.NewReader(`{
+//		"userId": "identified_user_id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"eventOrderNo":"2",
+//		"context": {
+//		  "traits": {
+//			 "trait1": "new-val"
+//		  },
+//		  "ip": "14.5.67.21",
+//		  "library": {
+//			  "name": "http"
+//		  }
+//		},
+//		"timestamp": "2020-02-02T00:23:09.544Z"
+//	  }`)
+//	SendEvent(payload_2, "identify", writeKey) //sending duplicate event to check dedup
+//	// Sending Batch event
+//	payload_Batch := strings.NewReader(`{
+//		"batch":
+//		[
+//			{
+//				"userId": "identified_user_id",
+//			   "anonymousId":"anonymousId_1",
+//			   "messageId":"messageId_1"
+//			}
+//		]
+//	}`)
+//	SendEvent(payload_Batch, "batch", writeKey)
+//
+//	// Sending track event
+//	payload_track := strings.NewReader(`{
+//		"userId": "identified_user_id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"type": "track",
+//		"event": "Product Reviewed",
+//		"properties": {
+//		  "review_id": "12345",
+//		  "product_id" : "123",
+//		  "rating" : 3.0,
+//		  "review_body" : "Average product, expected much more."
+//		}
+//	  }`)
+//	SendEvent(payload_track, "track", writeKey)
+//
+//	// Sending page event
+//	payload_page := strings.NewReader(`{
+//		"userId": "identified_user_id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"type": "page",
+//		"name": "Home",
+//		"properties": {
+//		  "title": "Home | RudderStack",
+//		  "url": "http://www.rudderstack.com"
+//		}
+//	  }`)
+//	SendEvent(payload_page, "page", writeKey)
+//
+//	// Sending screen event
+//	payload_screen := strings.NewReader(`{
+//		"userId": "identified_user_id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"type": "screen",
+//		"name": "Main",
+//		"properties": {
+//		  "prop_key": "prop_value"
+//		}
+//	  }`)
+//	SendEvent(payload_screen, "screen", writeKey)
+//
+//	// Sending alias event
+//	payload_alias := strings.NewReader(`{
+//		"userId": "identified_user_id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"type": "alias",
+//		"previousId": "name@surname.com",
+//		"userId": "12345"
+//	  }`)
+//	SendEvent(payload_alias, "alias", writeKey)
+//
+//	// Sending group event
+//	payload_group := strings.NewReader(`{
+//		"userId": "identified_user_id",
+//		"anonymousId":"anonymousId_1",
+//		"messageId":"messageId_1",
+//		"type": "group",
+//		"groupId": "12345",
+//		"traits": {
+//		  "name": "MyGroup",
+//		  "industry": "IT",
+//		  "employees": 450,
+//		  "plan": "basic"
+//		}
+//	  }`)
+//	SendEvent(payload_group, "group", writeKey)
+//	SendWebhookEvent()
+//	SendPixelEvents()
+//
+//	require.Eventually(t, func() bool {
+//		return len(webhook.Requests()) == 10
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		return len(webhookDestination.Requests()) == 1
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	i := -1
+//	require.Eventually(t, func() bool {
+//		i = i + 1
+//		req := webhook.Requests()[i]
+//		body, _ := io.ReadAll(req.Body)
+//		return gjson.GetBytes(body, "anonymousId").Str == "anonymousId_1"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	req := webhook.Requests()[i]
+//	body, err := io.ReadAll(req.Body)
+//
+//	require.NoError(t, err)
+//	require.Equal(t, "POST", req.Method)
+//	require.Equal(t, "/", req.URL.Path)
+//	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
+//	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
+//
+//	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anonymousId_1")
+//	require.Equal(t, gjson.GetBytes(body, "messageId").Str, "messageId_1")
+//	require.Equal(t, gjson.GetBytes(body, "eventOrderNo").Str, "1")
+//	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified_user_id")
+//	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "e4cab80e-2f0e-4fa2-87e0-3a4af182634c")
+//	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
+//
+//	req = webhookDestination.Requests()[0]
+//	body, err = io.ReadAll(req.Body)
+//
+//	require.NoError(t, err)
+//	require.Equal(t, "POST", req.Method)
+//	require.Equal(t, "/", req.URL.Path)
+//	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
+//	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
+//
+//	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "")
+//	require.NotEqual(t, gjson.GetBytes(body, "messageId").Str, "")
+//}
 
 // Verify Event in POSTGRES
-func TestPostgres(t *testing.T) {
-	var myEvent Event
-	require.Eventually(t, func() bool {
-		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
-		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
-		return myEvent.anonymous_id == "anonymousId_1"
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		eventSql := "select count(*) from dev_integration_test_1.aliases"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		eventSql := "select count(*) from dev_integration_test_1.groups"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		eventSql := "select count(*) from dev_integration_test_1.identifies"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		eventSql := "select count(*) from dev_integration_test_1.pages"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "2"
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		eventSql := "select count(*) from dev_integration_test_1.screens"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
-	}, time.Minute, 10*time.Millisecond)
-
-	require.Eventually(t, func() bool {
-		eventSql := "select count(*) from dev_integration_test_1.tracks"
-		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "2"
-	}, time.Minute, 10*time.Millisecond)
-}
+//func TestPostgres(t *testing.T) {
+//	var myEvent Event
+//	require.Eventually(t, func() bool {
+//		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
+//		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
+//		return myEvent.anonymous_id == "anonymousId_1"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		eventSql := "select count(*) from dev_integration_test_1.aliases"
+//		db.QueryRow(eventSql).Scan(&myEvent.count)
+//		return myEvent.count == "1"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		eventSql := "select count(*) from dev_integration_test_1.groups"
+//		db.QueryRow(eventSql).Scan(&myEvent.count)
+//		return myEvent.count == "1"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		eventSql := "select count(*) from dev_integration_test_1.identifies"
+//		db.QueryRow(eventSql).Scan(&myEvent.count)
+//		return myEvent.count == "1"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		eventSql := "select count(*) from dev_integration_test_1.pages"
+//		db.QueryRow(eventSql).Scan(&myEvent.count)
+//		return myEvent.count == "2"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		eventSql := "select count(*) from dev_integration_test_1.screens"
+//		db.QueryRow(eventSql).Scan(&myEvent.count)
+//		return myEvent.count == "1"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	require.Eventually(t, func() bool {
+//		eventSql := "select count(*) from dev_integration_test_1.tracks"
+//		db.QueryRow(eventSql).Scan(&myEvent.count)
+//		return myEvent.count == "2"
+//	}, time.Minute, 10*time.Millisecond)
+//}
 
 // Verify Audience List EndPoint
-func TestAudiencelist(t *testing.T) {
-	payload := strings.NewReader(`{
-		"type": "audiencelist",
-		"properties": {
-			"listData": {
-			"add": [
-				{
-				"EMAIL": "xyz@rudderstack.com",
-				"MM": "02"
-				}
-			],
-			"remove": [
-				{
-				"EMAIL": "abc@rudderstack.com",
-				"MM": "02"
-				}
-			]
-			}
-		},
-		"userId": "user123"
-		}`)
-	resBody, _ :=SendEvent(payload, "audiencelist", writeKey)
-	require.Equal(t, resBody, "OK")
-}
+//func TestAudiencelist(t *testing.T) {
+//	payload := strings.NewReader(`{
+//		"type": "audiencelist",
+//		"properties": {
+//			"listData": {
+//			"add": [
+//				{
+//				"EMAIL": "xyz@rudderstack.com",
+//				"MM": "02"
+//				}
+//			],
+//			"remove": [
+//				{
+//				"EMAIL": "abc@rudderstack.com",
+//				"MM": "02"
+//				}
+//			]
+//			}
+//		},
+//		"userId": "user123"
+//		}`)
+//	resBody, _ := SendEvent(payload, "audiencelist", writeKey)
+//	require.Equal(t, resBody, "OK")
+//}
 
 type eventSchemasObject struct {
-	EventID string
+	EventID   string
 	EventType string
 	VersionID string
-
-  }
-
+}
 
 // Verify Event Models EndPoint
-func TestEventModels(t *testing.T) {
-	// GET /schemas/event-models
-	url := fmt.Sprintf("http://localhost:%s/schemas/event-models", httpPort)
-	method := "GET"
-	resBody, _ := GetEvent(url, method)
-	require.Eventually(t, func() bool {
-		// Similarly, pole until the Event Schema Tables are updated
-		resBody, _ = GetEvent(url, method)
-		return resBody != "[]"
-	}, time.Minute, 10*time.Millisecond)
-	// log.Println(resBody)
-	require.NotEqual(t, resBody, "[]")
-	b := []byte(resBody)
-	var eventSchemas []eventSchemasObject
-
-	err := json.Unmarshal(b, &eventSchemas)
-	if err != nil {
-		fmt.Println("error:", err)
-	}
-	fmt.Println( "// loop over array of structs of shipObject" )
-	for k := range eventSchemas {
-		if eventSchemas[k].EventType == "page" {
-			EventID = eventSchemas[k].EventID
-		}
-  	}
-	if EventID == "" {
-		fmt.Println("error: Page type EventID not found")
-	}
-	log.Println("Test Schemas Event ID", EventID)
-}
+//func TestEventModels(t *testing.T) {
+//	// GET /schemas/event-models
+//	url := fmt.Sprintf("http://localhost:%s/schemas/event-models", httpPort)
+//	method := "GET"
+//	resBody, _ := GetEvent(url, method)
+//	require.Eventually(t, func() bool {
+//		// Similarly, pole until the Event Schema Tables are updated
+//		resBody, _ = GetEvent(url, method)
+//		return resBody != "[]"
+//	}, time.Minute, 10*time.Millisecond)
+//	// log.Println(resBody)
+//	require.NotEqual(t, resBody, "[]")
+//	b := []byte(resBody)
+//	var eventSchemas []eventSchemasObject
+//
+//	err := json.Unmarshal(b, &eventSchemas)
+//	if err != nil {
+//		fmt.Println("error:", err)
+//	}
+//	fmt.Println("// loop over array of structs of shipObject")
+//	for k := range eventSchemas {
+//		if eventSchemas[k].EventType == "page" {
+//			EventID = eventSchemas[k].EventID
+//		}
+//	}
+//	if EventID == "" {
+//		fmt.Println("error: Page type EventID not found")
+//	}
+//	log.Println("Test Schemas Event ID", EventID)
+//}
 
 // Verify Event Versions EndPoint
-func TestEventVersions(t *testing.T) {
-	// GET /schemas/event-versions
-	url := fmt.Sprintf("http://localhost:%s/schemas/event-versions?EventID=%s", httpPort,EventID)
-	method := "GET"
-	resBody, _ := GetEvent(url, method)
-	require.Contains(t, resBody, EventID)
-
-	b := []byte(resBody)
-	var eventSchemas []eventSchemasObject
-
-	err := json.Unmarshal(b, &eventSchemas)
-	if err != nil {
-		fmt.Println("error:", err)
-	}
-	VersionID = eventSchemas[0].VersionID
-	log.Println("Test Schemas Event ID's VersionID: ", VersionID)
-}
+//func TestEventVersions(t *testing.T) {
+//	// GET /schemas/event-versions
+//	url := fmt.Sprintf("http://localhost:%s/schemas/event-versions?EventID=%s", httpPort, EventID)
+//	method := "GET"
+//	resBody, _ := GetEvent(url, method)
+//	require.Contains(t, resBody, EventID)
+//
+//	b := []byte(resBody)
+//	var eventSchemas []eventSchemasObject
+//
+//	err := json.Unmarshal(b, &eventSchemas)
+//	if err != nil {
+//		fmt.Println("error:", err)
+//	}
+//	VersionID = eventSchemas[0].VersionID
+//	log.Println("Test Schemas Event ID's VersionID: ", VersionID)
+//}
 
 // Verify schemas/event-model/{EventID}/key-counts EndPoint
-func TestEventModelKeyCounts(t *testing.T) {
-	// GET schemas/event-model/{EventID}/key-counts
-	url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/key-counts", httpPort,EventID)
-	method := "GET"
-	resBody, _ := GetEvent(url, method)
-	require.Contains(t, resBody, "messageId")
-}
+//func TestEventModelKeyCounts(t *testing.T) {
+//	// GET schemas/event-model/{EventID}/key-counts
+//	url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/key-counts", httpPort, EventID)
+//	method := "GET"
+//	resBody, _ := GetEvent(url, method)
+//	require.Contains(t, resBody, "messageId")
+//}
 
 // Verify /schemas/event-model/{EventID}/metadata EndPoint
-func TestEventModelMetadata(t *testing.T) {
-	// GET /schemas/event-model/{EventID}/metadata
-	url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/metadata", httpPort,EventID)
-	method := "GET"
-	resBody, _ := GetEvent(url, method)
-	require.Contains(t, resBody, "messageId")
-}
+//func TestEventModelMetadata(t *testing.T) {
+//	// GET /schemas/event-model/{EventID}/metadata
+//	url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/metadata", httpPort, EventID)
+//	method := "GET"
+//	resBody, _ := GetEvent(url, method)
+//	require.Contains(t, resBody, "messageId")
+//}
 
 // Verify /schemas/event-version/{VersionID}/metadata EndPoint
-func TestEventVersionMetadata(t *testing.T) {
-	// GET /schemas/event-version/{VersionID}/metadata
-	url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/metadata", httpPort, VersionID)
-	method := "GET"
-	resBody, _ := GetEvent(url, method)
-	require.Contains(t, resBody, "messageId")
-}
+//func TestEventVersionMetadata(t *testing.T) {
+//	// GET /schemas/event-version/{VersionID}/metadata
+//	url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/metadata", httpPort, VersionID)
+//	method := "GET"
+//	resBody, _ := GetEvent(url, method)
+//	require.Contains(t, resBody, "messageId")
+//}
 
 // Verify /schemas/event-version/{VersionID}/missing-keys EndPoint
-func TestEventVersionMissingKeys(t *testing.T) {
-	// GET /schemas/event-version/{VersionID}/metadata
-	url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/missing-keys", httpPort, VersionID)
-	method := "GET"
-	resBody, _ := GetEvent(url, method)
-	log.Println("EventID", EventID)
-	log.Println("VersionID", VersionID)
-	log.Println(resBody)
-	require.Contains(t, resBody, "originalTimestamp")
-	require.Contains(t, resBody, "sentAt" )
-	require.Contains(t, resBody, "channel" )
-	require.Contains(t, resBody, "integrations.All" )
-}
+//func TestEventVersionMissingKeys(t *testing.T) {
+//	// GET /schemas/event-version/{VersionID}/metadata
+//	url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/missing-keys", httpPort, VersionID)
+//	method := "GET"
+//	resBody, _ := GetEvent(url, method)
+//	log.Println("EventID", EventID)
+//	log.Println("VersionID", VersionID)
+//	log.Println(resBody)
+//	require.Contains(t, resBody, "originalTimestamp")
+//	require.Contains(t, resBody, "sentAt")
+//	require.Contains(t, resBody, "channel")
+//	require.Contains(t, resBody, "integrations.All")
+//}
 
 // Verify /schemas/event-models/json-schemas EndPoint
-func TestEventModelsJsonSchemas(t *testing.T) {
-	// GET /schemas/event-models/json-schemas
-	url := fmt.Sprintf("http://localhost:%s/schemas/event-models/json-schemas", httpPort)
-	method := "GET"
-	resBody, _ := GetEvent(url, method)
-	require.Eventually(t, func() bool {
-		// Similarly, pole until the Event Schema Tables are updated
-		resBody, _ = GetEvent(url, method)
-		return resBody != "[]"
-	}, time.Minute, 10*time.Millisecond)
-	require.NotEqual(t, resBody, "[]")
-}
+//func TestEventModelsJsonSchemas(t *testing.T) {
+//	// GET /schemas/event-models/json-schemas
+//	url := fmt.Sprintf("http://localhost:%s/schemas/event-models/json-schemas", httpPort)
+//	method := "GET"
+//	resBody, _ := GetEvent(url, method)
+//	require.Eventually(t, func() bool {
+//		// Similarly, pole until the Event Schema Tables are updated
+//		resBody, _ = GetEvent(url, method)
+//		return resBody != "[]"
+//	}, time.Minute, 10*time.Millisecond)
+//	require.NotEqual(t, resBody, "[]")
+//}
 
 // Verify Event in Redis
-func TestRedis(t *testing.T) {
-	conn, err := redigo.Dial("tcp", redisAddress)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-	require.Eventually(t, func() bool {
-		// Similarly, get the trait1 and convert it to a string.
-		event, _ := redigo.String(conn.Do("HGET", "user:identified_user_id", "trait1"))
-		return event == "new-val"
-	}, time.Minute, 10*time.Millisecond)
-
-}
+//func TestRedis(t *testing.T) {
+//	conn, err := redigo.Dial("tcp", redisAddress)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer conn.Close()
+//	require.Eventually(t, func() bool {
+//		// Similarly, get the trait1 and convert it to a string.
+//		event, _ := redigo.String(conn.Do("HGET", "user:identified_user_id", "trait1"))
+//		return event == "new-val"
+//	}, time.Minute, 10*time.Millisecond)
+//
+//}
 
 // Verify Event in Kafka
-func TestKafka(t *testing.T) {
-
-	config := sarama.NewConfig()
-	config.ClientID = "go-kafka-consumer"
-	config.Consumer.Return.Errors = true
-
-	kafkaEndpoint := fmt.Sprintf("localhost:%s", strconv.Itoa(localhostPortInt))
-	brokers := []string{kafkaEndpoint}
-
-	// Create new consumer
-	master, err := sarama.NewConsumer(brokers, config)
-	if err != nil {
-		panic(err)
-	}
-	topics, _ := master.Topics()
-
-	consumer, errors := consume(topics, master)
-	defer func() {
-		if err := master.Close(); err != nil {
-			panic(err)
-		}
-	}()
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt)
-
-	// Count how many message processed
-	msgCount := 0
-	// Get signnal for finish
-	expectedCount := 10
-out:
-	for {
-		select {
-		case msg := <-consumer:
-			msgCount++
-			// t.Log("Received messages", string(msg.Key), string(msg.Value))
-			require.Equal(t, "identified_user_id", string(msg.Key))
-			// require.Contains(t, string(msg.Value), "new-val")
-			require.Contains(t, string(msg.Value), "identified_user_id")
-			if msgCount == expectedCount {
-				break out
-			}
-		case consumerError := <-errors:
-			msgCount++
-			log.Println("Received consumerError ", string(consumerError.Topic), string(consumerError.Partition), consumerError.Err)
-			// Required
-		case <-time.After(time.Minute):
-			panic("timeout waiting on kafka message")
-		}
-	}
-	log.Println("Processed", msgCount, "messages")
-
-}
+//func TestKafka(t *testing.T) {
+//
+//	config := sarama.NewConfig()
+//	config.ClientID = "go-kafka-consumer"
+//	config.Consumer.Return.Errors = true
+//
+//	kafkaEndpoint := fmt.Sprintf("localhost:%s", strconv.Itoa(localhostPortInt))
+//	brokers := []string{kafkaEndpoint}
+//
+//	// Create new consumer
+//	master, err := sarama.NewConsumer(brokers, config)
+//	if err != nil {
+//		panic(err)
+//	}
+//	topics, _ := master.Topics()
+//
+//	consumer, errors := consume(topics, master)
+//	defer func() {
+//		if err := master.Close(); err != nil {
+//			panic(err)
+//		}
+//	}()
+//
+//	signals := make(chan os.Signal, 1)
+//	signal.Notify(signals, os.Interrupt)
+//
+//	// Count how many message processed
+//	msgCount := 0
+//	// Get signnal for finish
+//	expectedCount := 10
+//out:
+//	for {
+//		select {
+//		case msg := <-consumer:
+//			msgCount++
+//			// t.Log("Received messages", string(msg.Key), string(msg.Value))
+//			require.Equal(t, "identified_user_id", string(msg.Key))
+//			// require.Contains(t, string(msg.Value), "new-val")
+//			require.Contains(t, string(msg.Value), "identified_user_id")
+//			if msgCount == expectedCount {
+//				break out
+//			}
+//		case consumerError := <-errors:
+//			msgCount++
+//			log.Println("Received consumerError ", string(consumerError.Topic), string(consumerError.Partition), consumerError.Err)
+//			// Required
+//		case <-time.After(time.Minute):
+//			panic("timeout waiting on kafka message")
+//		}
+//	}
+//	log.Println("Processed", msgCount, "messages")
+//
+//}
 
 // Verify beacon  EndPoint
-func TestBeaconBatch(t *testing.T) {
-	payload := strings.NewReader(`{
-		"batch":
-		[
-			{
-			   "userId": "identified_user_id",
-			   "anonymousId":"anonymousId_1",
-			   "messageId":"messageId_1"
-			}
-		]
-	}`)
-	resBody, _ :=SendEvent(payload, "beacon", writeKey)
-	require.Equal(t, resBody, "OK")
-}
-
-
+//func TestBeaconBatch(t *testing.T) {
+//	payload := strings.NewReader(`{
+//		"batch":
+//		[
+//			{
+//			   "userId": "identified_user_id",
+//			   "anonymousId":"anonymousId_1",
+//			   "messageId":"messageId_1"
+//			}
+//		]
+//	}`)
+//	resBody, _ := SendEvent(payload, "beacon", writeKey)
+//	require.Equal(t, resBody, "OK")
+//}
 
 // Verify Event in WareHouse Postgres
-func TestWhPostgresDestination(t *testing.T) {
-	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(2), int64(1), int64(1), int64(1), int64(1), int64(1)
-	userId := "userId_postgres"
-	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
-	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
-
-	// Sending warehouse events
-	sendWareHouseEvents(whTest.pgTestT.writeKey, userId)
-
-	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, whTest.pgTestT.writeKey, userId, totalGwEvents)
-
-	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
-
-	// Checking for tracks table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from postgres_wh_integration.tracks")
-		_ = whTest.pgTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == trackeventsCount
-	}, time.Minute, 10*time.Millisecond)
-
-	// Checking product reviewed table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from postgres_wh_integration.product_track")
-		_ = whTest.pgTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == trackeventsCount
-	}, time.Minute, 10*time.Millisecond)
-}
+//func TestWhPostgresDestination(t *testing.T) {
+//	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(2), int64(1), int64(1), int64(1), int64(1), int64(1)
+//	userId := "userId_postgres"
+//	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
+//	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
+//
+//	// Sending warehouse events
+//	sendWareHouseEvents(whTest.pgTestT.writeKey, userId)
+//
+//	// Checking for gateway jobs
+//	testGWForWareHouseDestination(t, whTest.pgTestT.writeKey, userId, totalGwEvents)
+//
+//	// Checking for batch router jobs
+//	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
+//
+//	// Checking for tracks table
+//	require.Eventually(t, func() bool {
+//		var count int64
+//		sqlStatement := fmt.Sprintf("select count(*) from postgres_wh_integration.tracks")
+//		_ = whTest.pgTestT.db.QueryRow(sqlStatement).Scan(&count)
+//		return count == trackeventsCount
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	// Checking product reviewed table
+//	require.Eventually(t, func() bool {
+//		var count int64
+//		sqlStatement := fmt.Sprintf("select count(*) from postgres_wh_integration.product_track")
+//		_ = whTest.pgTestT.db.QueryRow(sqlStatement).Scan(&count)
+//		return count == trackeventsCount
+//	}, time.Minute, 10*time.Millisecond)
+//}
 
 // Verify Event in WareHouse ClickHouse
-func TestWhClickHouseDestination(t *testing.T) {
+//func TestWhClickHouseDestination(t *testing.T) {
+//	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(2), int64(1), int64(1), int64(1), int64(1), int64(1)
+//	userId := "userId_clickhouse"
+//	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
+//	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
+//
+//	// Sending warehouse events
+//	sendWareHouseEvents(whTest.chTestT.writeKey, userId)
+//
+//	// Checking for gateway jobs
+//	testGWForWareHouseDestination(t, whTest.chTestT.writeKey, userId, totalGwEvents)
+//
+//	// Checking for batch router jobs
+//	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
+//
+//	// Checking for tracks table
+//	require.Eventually(t, func() bool {
+//		var count int64
+//		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.tracks")
+//		_ = whTest.chTestT.db.QueryRow(sqlStatement).Scan(&count)
+//		return count == trackeventsCount
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	// Checking product reviewed table
+//	require.Eventually(t, func() bool {
+//		var count int64
+//		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.product_track")
+//		_ = whTest.chTestT.db.QueryRow(sqlStatement).Scan(&count)
+//		return count == trackeventsCount
+//	}, time.Minute, 10*time.Millisecond)
+//}
+
+// Verify Event in WareHouse ClickHouse Cluster
+func TestWhClickHouseClusterDestination(t *testing.T) {
 	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(2), int64(1), int64(1), int64(1), int64(1), int64(1)
-	userId := "userId_clickhouse"
+	userId := "userId_clickhouse_cluster"
 	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
 	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
 
 	// Sending warehouse events
-	sendWareHouseEvents(whTest.chTestT.writeKey, userId)
+	sendWareHouseEvents(whTest.chClusterTestT.writeKey, userId)
 
 	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, whTest.chTestT.writeKey, userId, totalGwEvents)
+	testGWForWareHouseDestination(t, whTest.chClusterTestT.writeKey, userId, totalGwEvents)
 
 	// Checking for batch router jobs
 	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
@@ -1115,7 +1183,7 @@ func TestWhClickHouseDestination(t *testing.T) {
 	require.Eventually(t, func() bool {
 		var count int64
 		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.tracks")
-		_ = whTest.chTestT.db.QueryRow(sqlStatement).Scan(&count)
+		_ = whTest.chClusterTestT.db.QueryRow(sqlStatement).Scan(&count)
 		return count == trackeventsCount
 	}, time.Minute, 10*time.Millisecond)
 
@@ -1123,43 +1191,43 @@ func TestWhClickHouseDestination(t *testing.T) {
 	require.Eventually(t, func() bool {
 		var count int64
 		sqlStatement := fmt.Sprintf("select count(*) from rudderdb.product_track")
-		_ = whTest.chTestT.db.QueryRow(sqlStatement).Scan(&count)
+		_ = whTest.chClusterTestT.db.QueryRow(sqlStatement).Scan(&count)
 		return count == trackeventsCount
 	}, time.Minute, 10*time.Millisecond)
 }
 
 // Verify Event in WareHouse MSSQL
-func TestWhMsSqlDestination(t *testing.T) {
-	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(2), int64(1), int64(1), int64(1), int64(1), int64(1)
-	userId := "userId_mssql"
-	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
-	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
-
-	// Sending warehouse events
-	sendWareHouseEvents(whTest.mssqlTestT.writeKey, userId)
-
-	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, whTest.mssqlTestT.writeKey, userId, totalGwEvents)
-
-	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
-
-	// Checking for tracks table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from mssql_wh_integration.tracks")
-		_ = whTest.mssqlTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == trackeventsCount
-	}, time.Minute, 10*time.Millisecond)
-
-	// Checking product reviewed table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from mssql_wh_integration.product_track")
-		_ = whTest.mssqlTestT.db.QueryRow(sqlStatement).Scan(&count)
-		return count == trackeventsCount
-	}, time.Minute, 10*time.Millisecond)
-}
+//func TestWhMsSqlDestination(t *testing.T) {
+//	identifyEventsCount, trackeventsCount, pageEventCount, screenEventCount, aliasEventCount, groupeventCount := int64(2), int64(1), int64(1), int64(1), int64(1), int64(1)
+//	userId := "userId_mssql"
+//	totalGwEvents := identifyEventsCount + trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
+//	totalBatchRtEvents := 2*identifyEventsCount + 2*trackeventsCount + pageEventCount + screenEventCount + aliasEventCount + groupeventCount
+//
+//	// Sending warehouse events
+//	sendWareHouseEvents(whTest.mssqlTestT.writeKey, userId)
+//
+//	// Checking for gateway jobs
+//	testGWForWareHouseDestination(t, whTest.mssqlTestT.writeKey, userId, totalGwEvents)
+//
+//	// Checking for batch router jobs
+//	testBatchRouterForWareHouseDestination(t, userId, totalBatchRtEvents)
+//
+//	// Checking for tracks table
+//	require.Eventually(t, func() bool {
+//		var count int64
+//		sqlStatement := fmt.Sprintf("select count(*) from mssql_wh_integration.tracks")
+//		_ = whTest.mssqlTestT.db.QueryRow(sqlStatement).Scan(&count)
+//		return count == trackeventsCount
+//	}, time.Minute, 10*time.Millisecond)
+//
+//	// Checking product reviewed table
+//	require.Eventually(t, func() bool {
+//		var count int64
+//		sqlStatement := fmt.Sprintf("select count(*) from mssql_wh_integration.product_track")
+//		_ = whTest.mssqlTestT.db.QueryRow(sqlStatement).Scan(&count)
+//		return count == trackeventsCount
+//	}, time.Minute, 10*time.Millisecond)
+//}
 
 func sendWareHouseEvents(writeKey string, userId string) {
 	// Sending identify event
@@ -1728,7 +1796,27 @@ func setWhClickHouseDestination() {
 }
 
 func setWhClickHouseClusterDestination() {
-	whTest.chClusterTestT.network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{
+	// Configs
+	ClickHouseHost := "localhost"
+	ClickHouseUser := "rudder"
+	ClickHousePassword := "rudder-password"
+	ClickHouseDb := "rudderdb"
+	ClickHouseBlockSize := "1000000"
+	ClickHousePoolSize := "100"
+	ClickHouseQueryDebugLogs := "false"
+	ClickHouseReadTimeout := "300"
+	ClickHouseWriteTimeout := "1800"
+	ClickHouseCompress := "true"
+	ClickHouseSecure := "false"
+	ClickHouseSkipVerify := "true"
+	ClickHouseTlsConfigName := ""
+
+	pwd, err := os.Getwd()
+	if err != nil {
+		log.Println("Could not get working directory: %w", err)
+		return
+	}
+	if whTest.chClusterTestT.network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{
 		Name: "clickhouse-network",
 		IPAM: &dc.IPAMOptions{
 			Config: []dc.IPAMConfig{
@@ -1737,65 +1825,156 @@ func setWhClickHouseClusterDestination() {
 				},
 			},
 		},
-	})
-	if err != nil {
-		log.Fatalf("could not create a network to zookeeper and kafka: %s", err)
+	}); err != nil {
+		log.Println("Could not create clickhouse cluster network: %w", err)
+		return
 	}
-	whTest.chClusterTestT.zookeeper, err = pool.RunWithOptions(&dockertest.RunOptions{
+
+	if whTest.chClusterTestT.zookeeper, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "zookeeper",
 		Tag:        "3.5",
-		Hostname:   "zookeeper",
-		Name:       "zookeeper",
-		NetworkID:  "172.23.0.10",
-	})
-	whTest.chClusterTestT.clickhouse01, err = pool.RunWithOptions(&dockertest.RunOptions{
+		Hostname:   "clickhouse-zookeeper",
+		Name:       "clickhouse-zookeeper",
+	}); err != nil {
+		log.Println("Could not create clickhouse cluster zookeeper: %w", err)
+		return
+	}
+
+	if whTest.chClusterTestT.clickhouse01, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "yandex/clickhouse-server",
-		Tag:        "20.4",
+		Tag:        "21-alpine",
 		Hostname:   "clickhouse01",
 		Name:       "clickhouse01",
-		NetworkID:  "172.23.0.11",
 		PortBindings: map[dc.Port][]dc.PortBinding{
 			"8123": {{HostIP: "127.0.0.1", HostPort: "8123"}},
 			"9000": {{HostIP: "127.0.0.1", HostPort: "9000"}},
 		},
-		WorkingDir:   "/etc/clickhouse-server",
 		ExposedPorts: []string{"8123", "9000"},
-		Mounts:       []string{"warehouse/clickhouse/cluster/config1.xml", "warehouse/clickhouse/cluster/users.xml"},
-		Links:        []string{"zookeeper"},
-	})
-	whTest.chClusterTestT.clickhouse02, err = pool.RunWithOptions(&dockertest.RunOptions{
+		Mounts:       []string{fmt.Sprintf(`%s/warehouse/clickhouse/cluster/clickhouse01:/etc/clickhouse-server`, pwd)},
+		Links:        []string{"clickhouse-zookeeper"},
+	}); err != nil {
+		log.Println("Could not create clickhouse cluster 1: %w", err)
+		return
+	}
+
+	if whTest.chClusterTestT.clickhouse02, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "yandex/clickhouse-server",
-		Tag:        "20.4",
+		Tag:        "21-alpine",
 		Hostname:   "clickhouse02",
 		Name:       "clickhouse02",
-		NetworkID:  "172.23.0.12",
-		WorkingDir: "/etc/clickhouse-server",
-		Mounts:     []string{"warehouse/clickhouse/cluster/config3.xml", "warehouse/clickhouse/cluster/users.xml"},
-		Links:      []string{"zookeeper"},
-	})
-	whTest.chClusterTestT.clickhouse03, err = pool.RunWithOptions(&dockertest.RunOptions{
+		Mounts:     []string{fmt.Sprintf(`%s/warehouse/clickhouse/cluster/clickhouse02:/etc/clickhouse-server`, pwd)},
+		Links:      []string{"clickhouse-zookeeper"},
+	}); err != nil {
+		log.Println("Could not create clickhouse cluster 2: %w", err)
+		return
+	}
+
+	if whTest.chClusterTestT.clickhouse03, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "yandex/clickhouse-server",
-		Tag:        "20.4",
+		Tag:        "21-alpine",
 		Hostname:   "clickhouse03",
 		Name:       "clickhouse03",
-		NetworkID:  "172.23.0.13",
-		WorkingDir: "/etc/clickhouse-server",
-		Mounts:     []string{"warehouse/clickhouse/cluster/config3.xml", "warehouse/clickhouse/cluster/users.xml"},
-		Links:      []string{"zookeeper"},
-	})
-	whTest.chClusterTestT.clickhouse04, err = pool.RunWithOptions(&dockertest.RunOptions{
+		Mounts:     []string{fmt.Sprintf(`%s/warehouse/clickhouse/cluster/clickhouse03:/etc/clickhouse-server`, pwd)},
+		Links:      []string{"clickhouse-zookeeper"},
+	}); err != nil {
+		log.Println("Could not create clickhouse cluster 3: %w", err)
+		return
+	}
+
+	if whTest.chClusterTestT.clickhouse04, err = pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "yandex/clickhouse-server",
-		Tag:        "20.4",
+		Tag:        "21-alpine",
 		Hostname:   "clickhouse04",
 		Name:       "clickhouse04",
-		NetworkID:  "172.23.0.14",
-		WorkingDir: "/etc/clickhouse-server",
-		Mounts:     []string{"warehouse/clickhouse/cluster/config4.xml", "warehouse/clickhouse/cluster/users.xml"},
-		Links:      []string{"zookeeper"},
-	})
-	if err != nil {
-		log.Println("Could not start resource ClickHouse: %w", err)
+		Mounts:     []string{fmt.Sprintf(`%s/warehouse/clickhouse/cluster/clickhouse04:/etc/clickhouse-server`, pwd)},
+		Links:      []string{"clickhouse-zookeeper"},
+	}); err != nil {
+		log.Println("Could not create clickhouse cluster 4: %w", err)
 		return
+	}
+
+	if err = pool.Client.ConnectNetwork(whTest.chClusterTestT.network.ID, dc.NetworkConnectionOptions{
+		Container: whTest.chClusterTestT.zookeeper.Container.Name,
+		EndpointConfig: &dc.EndpointConfig{
+			IPAddress: "172.23.0.10",
+		},
+	}); err != nil {
+		log.Println("Could not configure clickhouse zookeeper network: %w", err)
+		return
+	}
+
+	if err = pool.Client.ConnectNetwork(whTest.chClusterTestT.network.ID, dc.NetworkConnectionOptions{
+		Container: whTest.chClusterTestT.clickhouse01.Container.Name,
+		EndpointConfig: &dc.EndpointConfig{
+			IPAddress: "172.23.0.11",
+		},
+	}); err != nil {
+		log.Println("Could not configure clickhouse cluster network 1: %w", err)
+		return
+	}
+
+	if err = pool.Client.ConnectNetwork(whTest.chClusterTestT.network.ID, dc.NetworkConnectionOptions{
+		Container: whTest.chClusterTestT.clickhouse02.Container.Name,
+		EndpointConfig: &dc.EndpointConfig{
+			IPAddress: "172.23.0.12",
+		},
+	}); err != nil {
+		log.Println("Could not configure clickhouse cluster network 2: %w", err)
+		return
+	}
+
+	if err = pool.Client.ConnectNetwork(whTest.chClusterTestT.network.ID, dc.NetworkConnectionOptions{
+		Container: whTest.chClusterTestT.clickhouse03.Container.Name,
+		EndpointConfig: &dc.EndpointConfig{
+			IPAddress: "172.23.0.13",
+		},
+	}); err != nil {
+		log.Println("Could not configure clickhouse cluster network 3: %w", err)
+		return
+	}
+
+	if err = pool.Client.ConnectNetwork(whTest.chClusterTestT.network.ID, dc.NetworkConnectionOptions{
+		Container: whTest.chClusterTestT.clickhouse04.Container.Name,
+		EndpointConfig: &dc.EndpointConfig{
+			IPAddress: "172.23.0.14",
+		},
+	}); err != nil {
+		log.Println("Could not configure clickhouse cluster network 4: %w", err)
+		return
+	}
+
+	// Getting at which port the container is running
+	ClickHousePort := whTest.chClusterTestT.clickhouse01.GetPort("9000/tcp")
+
+	// Creating url string for connection
+	whClickHouseClusterUrl := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&database=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&read_timeout=%s&write_timeout=%s&compress=%s",
+		ClickHouseHost,
+		ClickHousePort,
+		ClickHouseUser,
+		ClickHousePassword,
+		ClickHouseDb,
+		ClickHouseBlockSize,
+		ClickHousePoolSize,
+		ClickHouseQueryDebugLogs,
+		ClickHouseSecure,
+		ClickHouseSkipVerify,
+		ClickHouseTlsConfigName,
+		ClickHouseReadTimeout,
+		ClickHouseWriteTimeout,
+		ClickHouseCompress,
+	)
+	fmt.Println("whClickHouseClusterUrl:", whClickHouseClusterUrl)
+
+	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	if err := pool.Retry(func() error {
+		var err error
+		whTest.chClusterTestT.db, err = sql.Open("clickhouse", whClickHouseClusterUrl)
+		if err != nil {
+			return err
+		}
+		return whTest.chClusterTestT.db.Ping()
+	}); err != nil {
+		log.Println("Could not connect to clickhouse", whClickHouseClusterUrl, err)
 	}
 }
 
