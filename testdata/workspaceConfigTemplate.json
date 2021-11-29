@@ -1486,7 +1486,7 @@
           "config": {
             "host": "localhost",
             "database": "rudderdb",
-            "cluster": "",
+            "cluster": "rudder_cluster",
             "user": "rudder",
             "password": "rudder-password",
             "port": "{{.rwhClickHouseClusterDestinationPort}}",
