@@ -1468,7 +1468,13 @@ func testWareHouseForWareHouseDestination(t *testing.T, db *sql.DB, schema strin
 	// Checking identify table
 	require.Eventually(t, func() bool {
 		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.identify", schema)
+		sqlStatement := fmt.Sprintf("select count(*) from %s.identifies", schema)
+		_ = db.QueryRow(sqlStatement).Scan(&count)
+		return count == whEventsCount.identify
+	}, 5*time.Minute, 100*time.Millisecond)
+	require.Eventually(t, func() bool {
+		var count int64
+		sqlStatement := fmt.Sprintf("select count(*) from %s.users", schema)
 		_ = db.QueryRow(sqlStatement).Scan(&count)
 		return count == whEventsCount.identify
 	}, 5*time.Minute, 100*time.Millisecond)
@@ -1490,7 +1496,7 @@ func testWareHouseForWareHouseDestination(t *testing.T, db *sql.DB, schema strin
 	// Checking page table
 	require.Eventually(t, func() bool {
 		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.page", schema)
+		sqlStatement := fmt.Sprintf("select count(*) from %s.pages", schema)
 		_ = db.QueryRow(sqlStatement).Scan(&count)
 		return count == whEventsCount.page
 	}, 5*time.Minute, 100*time.Millisecond)
@@ -1498,7 +1504,7 @@ func testWareHouseForWareHouseDestination(t *testing.T, db *sql.DB, schema strin
 	// Checking screen table
 	require.Eventually(t, func() bool {
 		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.screen", schema)
+		sqlStatement := fmt.Sprintf("select count(*) from %s.screens", schema)
 		_ = db.QueryRow(sqlStatement).Scan(&count)
 		return count == whEventsCount.screen
 	}, 5*time.Minute, 100*time.Millisecond)
@@ -1514,7 +1520,7 @@ func testWareHouseForWareHouseDestination(t *testing.T, db *sql.DB, schema strin
 	// Checking group table
 	require.Eventually(t, func() bool {
 		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.group", schema)
+		sqlStatement := fmt.Sprintf("select count(*) from %s.groups", schema)
 		_ = db.QueryRow(sqlStatement).Scan(&count)
 		return count == whEventsCount.group
 	}, 5*time.Minute, 100*time.Millisecond)
