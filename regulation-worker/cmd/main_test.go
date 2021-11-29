@@ -3,7 +3,6 @@ package main_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,7 +22,6 @@ import (
 )
 
 var (
-	c        = make(chan string)
 	testData []test
 	mu       sync.Mutex
 )
@@ -46,26 +44,24 @@ func run(m *testing.M) int {
 	defer svr.Close()
 	workspaceID := "216Co97d9So9TkqphM0cxBzRxc3"
 	svcCtx, svcCancel := context.WithCancel(context.Background())
-
+	code := make(chan int)
 	go func() {
-		_ = os.Setenv("workspaceID", workspaceID)
-		_ = os.Setenv("urlPrefix", svr.URL)
-		main.Run(svcCtx)
-		c <- "done"
+
+		os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
+		os.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
+		os.Setenv("CONFIG_PATH", "./test_config.yaml")
+		config.Load()
+		logger.Init()
+		backendconfig.Init()
+		code <- m.Run()
+		svcCancel()
+
 	}()
-	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
-	os.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
-	os.Setenv("CONFIG_PATH", "./test_config.yaml")
-	config.Load()
-	logger.Init()
-	backendconfig.Init()
-	code := m.Run()
-	fmt.Println("test flow returned with code:", code)
-	svcCancel()
-	fmt.Println("svccancel called ")
-	<-c
-	fmt.Println()
-	return code
+	_ = os.Setenv("workspaceID", workspaceID)
+	_ = os.Setenv("urlPrefix", svr.URL)
+	main.Run(svcCtx)
+	statusCode := <-code
+	return statusCode
 }
 
 type test struct {
@@ -103,7 +99,6 @@ func TestFlow(t *testing.T) {
 }
 
 func getJob(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("getjob status called")
 	w.Header().Set("Content-Type", "application/json")
 	for i, test := range testData {
 		status := test.status
@@ -118,7 +113,6 @@ func getJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateJobStatus(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("update status called")
 	w.Header().Set("Content-Type", "application/json")
 	jobID, _ := strconv.Atoi(mux.Vars(r)["job_id"])
 	var status client.StatusJobSchema
