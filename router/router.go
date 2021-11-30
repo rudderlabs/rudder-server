@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -257,10 +258,24 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 	return ch
 }
 
+
+func (worker *workerT) recordStatsForFailedTransforms(transformedJobs *[]types.DestinationJobT) {
+	failedTransformationJobCount := 0
+	for _, destJob := range *transformedJobs {
+		if destJob.StatusCode != http.StatusOK {
+			failedTransformationJobCount += 1
+		}
+	}
+	if failedTransformationJobCount > 0 {
+		worker.rt.batchOutputCountStat.Count(failedTransformationJobCount)
+	}
+}
+
 func (worker *workerT) routerTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
 	worker.rt.batchInputCountStat.Count(len(routerJobs))
 	destinationJobs := worker.rt.transformer.Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
 	worker.rt.batchOutputCountStat.Count(len(destinationJobs))
+	worker.recordStatsForFailedTransforms(&destinationJobs)
 	return destinationJobs
 }
 
@@ -271,7 +286,7 @@ func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJ
 
 	destinationJobs := worker.rt.transformer.Transform(transformer.BATCH, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
 	worker.rt.batchOutputCountStat.Count(len(destinationJobs))
-	// iterate over destinationJobs and then log the stats
+	worker.recordStatsForFailedTransforms(&destinationJobs)
 
 	var totalJobMetadataCount int
 	for _, destinationJob := range destinationJobs {
