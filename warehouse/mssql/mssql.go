@@ -57,7 +57,7 @@ var rudderDataTypesMapToMssql = map[string]string{
 	"string":   "nvarchar(512)",
 	"datetime": "datetimeoffset",
 	"boolean":  "bit",
-	"json":     "jsonb",
+	"json":     "nvarchar(max)",
 }
 
 var mssqlDataTypesMapToRudder = map[string]string{
@@ -81,7 +81,7 @@ var mssqlDataTypesMapToRudder = map[string]string{
 	"datetime2":                "datetime",
 	"timestamp with time zone": "datetime",
 	"timestamp":                "datetime",
-	"jsonb":                    "json",
+	"nvarchar(max)":            "json",
 	"bit":                      "boolean",
 }
 
