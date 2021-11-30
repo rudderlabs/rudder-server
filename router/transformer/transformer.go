@@ -181,7 +181,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	var respData []byte
 	var respCode int
 
-	url := getTransformerProxyURL(destName)
+	url := getProxyURL(destName)
 	payload := []byte(rawJSON)
 
 	operation := func() error {
@@ -209,18 +209,6 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 		respData = []byte("")
 	}
 
-	/*
-		Response Transsformer Response payload:
-		{
-			output: {
-				status: [destination status compatible with server]
-				message: [ generic message for jobs_db payload]
-				destinationResponse: [actual response payload from destination]
-			}
-		}
-	*/
-	// response transform success extract the value of output, marshal to TransResponseT Type
-
 	transformerResponse := integrations.TransResponseT{
 		Message: "[Transformer Proxy]:: Default Message TransResponseT",
 	}
@@ -229,7 +217,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	err = json.Unmarshal(respData, &transformerResponse)
 	// unmarshal failure
 	if err != nil {
-		errStr := string(respData) + " [Transformer Proxy Unmarshaling::]" + err.Error()
+		errStr := string(respData) + " [Transformer Proxy Unmarshaling]::" + err.Error()
 		trans.logger.Errorf(errStr)
 		respData = []byte(errStr)
 		respCode = http.StatusBadRequest
@@ -238,7 +226,7 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 	// unmarshal success
 	respData, err = json.Marshal(transformerResponse)
 	if err != nil {
-		panic(fmt.Errorf("[Transformer Proxy:: failed to Marshal proxy response : %+v", err))
+		panic(fmt.Errorf("[Transformer Proxy]:: failed to Marshal proxy response : %+v", err))
 	}
 
 	return respCode, string(respData)
@@ -296,6 +284,6 @@ func getRouterTransformURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
 }
 
-func getTransformerProxyURL(destName string) string {
-	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
+func getProxyURL(destName string) string {
+	return strings.TrimSuffix(config.GetEnv("PROXY_URL", "http://localhost:9091"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
 }
