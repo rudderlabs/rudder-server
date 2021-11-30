@@ -58,11 +58,6 @@ type PostParametersT struct {
 	Files       map[string]interface{} `json:"files"`
 }
 
-type DeliveryResponseT struct {
-	Status int64  `json:"status"`
-	Body   string `json:"responseBody"`
-}
-
 // This struct represents the datastructure present in Transformer network layer Error builder
 type TransErrorSpecT struct {
 	Message                  string                 `json:"message"`
@@ -79,7 +74,6 @@ type TransStatsT struct {
 	StatTags map[string]string `json:"statTags"`
 }
 type TransResponseT struct {
-	Status              int64       `json:"status"`
 	Message             string      `json:"message"`
 	DestinationResponse interface{} `json:"destinationResponse"`
 }
