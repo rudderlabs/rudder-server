@@ -117,15 +117,14 @@ type MSSqlTestT struct {
 	setupDone  bool
 }
 
-type WareHouseEventsCount struct {
-	identify int64
-	track    int64
-	page     int64
-	screen   int64
-	alias    int64
-	group    int64
-	gateway  int64
-	batchRT  int64
+type WareHouseEventsCount map[string]int
+
+type WareHouseDestinationTest struct {
+	writeKey      string
+	userId        string
+	whEventsCount WareHouseEventsCount
+	db            *sql.DB
+	schema        string
 }
 
 type WareHouseTestT struct {
@@ -1149,29 +1148,36 @@ func TestBeaconBatch(t *testing.T) {
 // Verify Event in WareHouse Postgres
 func TestWhPostgresDestination(t *testing.T) {
 	pgTest := whTest.pgTestT
-	if !pgTest.setupDone || true {
+	if !pgTest.setupDone {
 		log.Println("Setup not initialized for postgres destination")
 		return
 	}
 
-	userId := "userId_postgres"
-	// Sending warehouse events
-	whEventsCount := sendWHEvents(pgTest.writeKey, userId)
-	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, pgTest.writeKey, userId, whEventsCount.gateway)
-	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId, whEventsCount.batchRT)
-	// Checking for warehouse
-	testWareHouseForWareHouseDestination(t, pgTest.db, "postgres_wh_integration", userId, whEventsCount)
+	whDestTest := &WareHouseDestinationTest{
+		writeKey: pgTest.writeKey,
+		userId:   "userId_postgres",
+		schema:   "postgres_wh_integration",
+		db:       pgTest.db,
+		whEventsCount: WareHouseEventsCount{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+			"gateway":       6,
+			"batchRT":       8,
+		},
+	}
+	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
+	warehouseDestinationTest(t, whDestTest)
 
-	userId1 := "userId_postgres_1"
-	whEventsCount1 := sendUpdatedWHEvents(pgTest.writeKey, userId1)
-	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, pgTest.writeKey, userId1, whEventsCount1.gateway)
-	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId1, whEventsCount1.batchRT)
-	// Checking for warehouse
-	testWareHouseForWareHouseDestination(t, pgTest.db, "postgres_wh_integration", userId1, whEventsCount1)
+	whDestTest.userId = "userId_postgres_1"
+	sendUpdatedWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
+	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
+	warehouseDestinationTest(t, whDestTest)
 }
 
 // Verify Event in WareHouse ClickHouse
@@ -1182,79 +1188,65 @@ func TestWhClickHouseDestination(t *testing.T) {
 		return
 	}
 
-	userId := "userId_clickhouse"
-	// Sending warehouse events
-	whEventsCount := sendWHEvents(chTestT.writeKey, userId)
-	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, chTestT.writeKey, userId, whEventsCount.gateway)
-	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId, whEventsCount.batchRT)
-	// Checking for warehouse
-	testWareHouseForWareHouseDestination(t, chTestT.db, "rudderdb", userId, whEventsCount)
+	whDestTest := &WareHouseDestinationTest{
+		writeKey: chTestT.writeKey,
+		userId:   "userId_clickhouse",
+		schema:   "rudderdb",
+		db:       chTestT.db,
+		whEventsCount: WareHouseEventsCount{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+		},
+	}
+	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
+	warehouseDestinationTest(t, whDestTest)
 
-	userId1 := "userId_clickhouse_1"
-	// Sending warehouse events
-	whEventsCount1 := sendWHEvents(chTestT.writeKey, userId1)
-	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, chTestT.writeKey, userId1, whEventsCount1.gateway)
-	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId1, whEventsCount1.batchRT)
-	// Checking for warehouse
-	testWareHouseForWareHouseDestination(t, chTestT.db, "rudderdb", userId1, whEventsCount1)
+	whDestTest.userId = "userId_clickhouse_1"
+	sendUpdatedWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
+	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
+	warehouseDestinationTest(t, whDestTest)
 }
 
 // Verify Event in WareHouse ClickHouse Cluster
 func TestWhClickHouseClusterDestination(t *testing.T) {
 	chClusterTestT := whTest.chClusterTestT
-	if !chClusterTestT.setupDone {
+	if !chClusterTestT.setupDone || true {
 		log.Println("Setup not initialized for clickhouse cluster destination")
 		return
 	}
 
-	userId := "userId_clickhouse_cluster"
-	// Sending warehouse events
-	whEventsCount := sendWHEvents(chClusterTestT.writeKey, userId)
-	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, chClusterTestT.writeKey, userId, whEventsCount.gateway)
-	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId, whEventsCount.batchRT)
-	// Checking for warehouse
-	testWareHouseForWareHouseDestination(t, chClusterTestT.db, "rudderdb", userId, whEventsCount)
+	whDestTest := &WareHouseDestinationTest{
+		writeKey: chClusterTestT.writeKey,
+		userId:   "userId_clickhouse_cluster",
+		schema:   "rudderdb",
+		db:       chClusterTestT.db,
+		whEventsCount: WareHouseEventsCount{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+		},
+	}
+	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
+	warehouseDestinationTest(t, whDestTest)
 
 	// Initialize cluster mode setup
 	initWHClickHouseClusterModeSetup(t)
 
-	userId1 := "userId_clickhouse_cluster_1"
-	// Sending warehouse events
-	whEventsCount1 := sendWHClusterEvents(chClusterTestT.writeKey, userId1)
-	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, chClusterTestT.writeKey, userId1, whEventsCount1.gateway)
-	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId1, whEventsCount.batchRT)
-	// Checking for warehouse
-	testWareHouseForWareHouseDestination(t, chClusterTestT.db, "rudderdb", userId1, whEventsCount1)
-}
-
-//
-func initWHClickHouseClusterModeSetup(t *testing.T) {
-	chClusterTestT := whTest.chClusterTestT
-	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
-	// Rename tables to tables_shard
-	for table := range tables {
-		var sqlStatement string
-		sqlStatement = fmt.Sprintf("rename table %[1]s to %[1]s_shard on cluster rudder_cluster;", table)
-		_, err = chClusterTestT.db.Exec(sqlStatement)
-		require.Equal(t, err, nil)
-	}
-
-	// Create distribution views for tables
-	for table := range tables {
-		var sqlStatement string
-		sqlStatement = fmt.Sprintf("CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed('rudder_cluster', rudderdb, %[1]s_shard, cityHash64(id));", table)
-		_, err = chClusterTestT.db.Exec(sqlStatement)
-		require.Equal(t, err, nil)
-	}
+	whDestTest.userId = "userId_clickhouse_1"
+	sendUpdatedWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
+	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
+	warehouseDestinationTest(t, whDestTest)
 }
 
 // Verify Event in WareHouse MSSQL
@@ -1265,35 +1257,36 @@ func TestWhMsSqlDestination(t *testing.T) {
 		return
 	}
 
-	userId := "userId_mssql"
-	// Sending warehouse events
-	whEventsCount := sendWHEvents(mssqlTestT.writeKey, userId)
-	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, mssqlTestT.writeKey, userId, whEventsCount.gateway)
-	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId, whEventsCount.batchRT)
-	// Checking for warehouse
-	testWareHouseForWareHouseDestination(t, mssqlTestT.db, "mssql_wh_integration", userId, whEventsCount)
+	whDestTest := &WareHouseDestinationTest{
+		writeKey: mssqlTestT.writeKey,
+		userId:   "userId_mssql",
+		schema:   "rudderdb",
+		db:       mssqlTestT.db,
+		whEventsCount: WareHouseEventsCount{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+		},
+	}
+	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
+	warehouseDestinationTest(t, whDestTest)
 
-	userId1 := "userId_mssql_1"
-	// Sending warehouse events
-	whEventsCount1 := sendWHEvents(mssqlTestT.writeKey, userId1)
-	// Checking for gateway jobs
-	testGWForWareHouseDestination(t, mssqlTestT.writeKey, userId1, whEventsCount1.gateway)
-	// Checking for batch router jobs
-	testBatchRouterForWareHouseDestination(t, userId1, whEventsCount1.batchRT)
-	// Checking for warehouse
-	testWareHouseForWareHouseDestination(t, mssqlTestT.db, "mssql_wh_integration", userId1, whEventsCount1)
+	whDestTest.userId = "userId_mssql_1"
+	sendUpdatedWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
+	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
+	warehouseDestinationTest(t, whDestTest)
 }
 
-func sendWHEvents(writeKey string, userId string) *WareHouseEventsCount {
-	identifyEventsCount, tracksEventsCount, pageEventsCount, screenEventsCount, aliasEventsCount, groupEventsCount := 1, 1, 1, 1, 1, 1
-	gwEventsCount := identifyEventsCount + tracksEventsCount + pageEventsCount + screenEventsCount + aliasEventsCount + groupEventsCount
-	batchRtEventsCountEvents := 2*identifyEventsCount + 2*tracksEventsCount + pageEventsCount + screenEventsCount + aliasEventsCount + groupEventsCount
-
+func sendWHEvents(writeKey string, userId string, whEventCount WareHouseEventsCount) {
 	// Sending identify event
-	for i := 0; i < identifyEventsCount; i++ {
-		payloadIdentify := strings.NewReader(fmt.Sprintf(`{
+	if identify, exists := whEventCount["identifies"]; exists {
+		for i := 0; i < identify; i++ {
+			payloadIdentify := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "identify",
@@ -1309,12 +1302,14 @@ func sendWHEvents(writeKey string, userId string) *WareHouseEventsCount {
 			},
 			"timestamp": "2020-02-02T00:23:09.544Z"
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-		_, _ = SendEvent(payloadIdentify, "identify", writeKey)
+			_, _ = SendEvent(payloadIdentify, "identify", writeKey)
+		}
 	}
 
 	// Sending track event
-	for i := 0; i < tracksEventsCount; i++ {
-		payloadTrack := strings.NewReader(fmt.Sprintf(`{
+	if track, exists := whEventCount["tracks"]; exists {
+		for i := 0; i < track; i++ {
+			payloadTrack := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "track",
@@ -1326,12 +1321,14 @@ func sendWHEvents(writeKey string, userId string) *WareHouseEventsCount {
 			  "review_body" : "Average product, expected much more."
 			}
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-		_, _ = SendEvent(payloadTrack, "track", writeKey)
+			_, _ = SendEvent(payloadTrack, "track", writeKey)
+		}
 	}
 
 	// Sending page event
-	for i := 0; i < pageEventsCount; i++ {
-		payloadPage := strings.NewReader(fmt.Sprintf(`{
+	if page, exists := whEventCount["pages"]; exists {
+		for i := 0; i < page; i++ {
+			payloadPage := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "page",
@@ -1341,12 +1338,14 @@ func sendWHEvents(writeKey string, userId string) *WareHouseEventsCount {
 			  "url": "http://www.rudderstack.com"
 			}
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-		_, _ = SendEvent(payloadPage, "page", writeKey)
+			_, _ = SendEvent(payloadPage, "page", writeKey)
+		}
 	}
 
 	// Sending screen event
-	for i := 0; i < screenEventsCount; i++ {
-		payloadScreen := strings.NewReader(fmt.Sprintf(`{
+	if screen, exists := whEventCount["screens"]; exists {
+		for i := 0; i < screen; i++ {
+			payloadScreen := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "screen",
@@ -1355,24 +1354,28 @@ func sendWHEvents(writeKey string, userId string) *WareHouseEventsCount {
 			  "prop_key": "prop_value"
 			}
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-		_, _ = SendEvent(payloadScreen, "screen", writeKey)
+			_, _ = SendEvent(payloadScreen, "screen", writeKey)
+		}
 	}
 
 	// Sending alias event
-	for i := 0; i < aliasEventsCount; i++ {
-		payloadAlias := strings.NewReader(fmt.Sprintf(`{
+	if alias, exists := whEventCount["aliases"]; exists {
+		for i := 0; i < alias; i++ {
+			payloadAlias := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "alias",
 			"previousId": "name@surname.com",
 			"userId": "12345"
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-		_, _ = SendEvent(payloadAlias, "alias", writeKey)
+			_, _ = SendEvent(payloadAlias, "alias", writeKey)
+		}
 	}
 
 	// Sending group event
-	for i := 0; i < groupEventsCount; i++ {
-		payloadGroup := strings.NewReader(fmt.Sprintf(`{
+	if group, exists := whEventCount["groups"]; exists {
+		for i := 0; i < group; i++ {
+			payloadGroup := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "group",
@@ -1384,37 +1387,16 @@ func sendWHEvents(writeKey string, userId string) *WareHouseEventsCount {
 			  "plan": "basic"
 			}
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-		_, _ = SendEvent(payloadGroup, "group", writeKey)
-	}
-
-	return &WareHouseEventsCount{
-		identify: int64(identifyEventsCount),
-		track:    int64(tracksEventsCount),
-		page:     int64(pageEventsCount),
-		screen:   int64(screenEventsCount),
-		alias:    int64(aliasEventsCount),
-		group:    int64(groupEventsCount),
-		gateway:  int64(gwEventsCount),
-		batchRT:  int64(batchRtEventsCountEvents),
+			_, _ = SendEvent(payloadGroup, "group", writeKey)
+		}
 	}
 }
 
-func sendWHClusterEvents(writeKey string, userId string) *WareHouseEventsCount {
-	clusterEventCount := int64(6)
-	for i := 0; i < int(clusterEventCount); i++ {
-		//sendWHEvents(chClusterTestT.writeKey, userId)
-	}
-	return &WareHouseEventsCount{}
-}
-
-func sendUpdatedWHEvents(writeKey string, userId string) *WareHouseEventsCount {
-	identifyEventsCount, tracksEventsCount, pageEventsCount, screenEventsCount, aliasEventsCount, groupEventsCount := 1, 1, 1, 1, 1, 1
-	gwEventsCount := identifyEventsCount + tracksEventsCount + pageEventsCount + screenEventsCount + aliasEventsCount + groupEventsCount
-	batchRtEventsCountEvents := 2*identifyEventsCount + 2*tracksEventsCount + pageEventsCount + screenEventsCount + aliasEventsCount + groupEventsCount
-
+func sendUpdatedWHEvents(writeKey string, userId string, whEventCount WareHouseEventsCount) {
 	// Sending identify event
-	for i := 0; i < identifyEventsCount; i++ {
-		payloadIdentify := strings.NewReader(fmt.Sprintf(`{
+	if identify, exists := whEventCount["identifies"]; exists {
+		for i := 0; i < identify; i++ {
+			payloadIdentify := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 		    "channel": "web",
@@ -1457,12 +1439,14 @@ func sendUpdatedWHEvents(writeKey string, userId string) *WareHouseEventsCount {
     		"sentAt": "2020-01-24T06:29:02.363Z",
 			"timestamp": "2020-02-02T00:23:09.544Z"
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-		_, _ = SendEvent(payloadIdentify, "identify", writeKey)
+			_, _ = SendEvent(payloadIdentify, "identify", writeKey)
+		}
 	}
 
 	// Sending track event
-	for i := 0; i < tracksEventsCount; i++ {
-		payloadTrack := strings.NewReader(fmt.Sprintf(`{
+	if track, exists := whEventCount["tracks"]; exists {
+		for i := 0; i < track; i++ {
+			payloadTrack := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "track",
@@ -1478,12 +1462,14 @@ func sendUpdatedWHEvents(writeKey string, userId string) *WareHouseEventsCount {
 				"ip": "14.5.67.21"
 			}
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-		_, _ = SendEvent(payloadTrack, "track", writeKey)
+			_, _ = SendEvent(payloadTrack, "track", writeKey)
+		}
 	}
 
 	// Sending page event
-	for i := 0; i < pageEventsCount; i++ {
-		payloadPage := strings.NewReader(fmt.Sprintf(`{
+	if page, exists := whEventCount["pages"]; exists {
+		for i := 0; i < page; i++ {
+			payloadPage := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "page",
@@ -1499,12 +1485,14 @@ func sendUpdatedWHEvents(writeKey string, userId string) *WareHouseEventsCount {
 				}
 			  }
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-		_, _ = SendEvent(payloadPage, "page", writeKey)
+			_, _ = SendEvent(payloadPage, "page", writeKey)
+		}
 	}
 
 	// Sending screen event
-	for i := 0; i < screenEventsCount; i++ {
-		payloadScreen := strings.NewReader(fmt.Sprintf(`{
+	if screen, exists := whEventCount["screens"]; exists {
+		for i := 0; i < screen; i++ {
+			payloadScreen := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "screen",
@@ -1519,12 +1507,14 @@ func sendUpdatedWHEvents(writeKey string, userId string) *WareHouseEventsCount {
 				}
 			  }
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-		_, _ = SendEvent(payloadScreen, "screen", writeKey)
+			_, _ = SendEvent(payloadScreen, "screen", writeKey)
+		}
 	}
 
 	// Sending alias event
-	for i := 0; i < aliasEventsCount; i++ {
-		payloadAlias := strings.NewReader(fmt.Sprintf(`{
+	if alias, exists := whEventCount["aliases"]; exists {
+		for i := 0; i < alias; i++ {
+			payloadAlias := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "alias",
@@ -1540,12 +1530,14 @@ func sendUpdatedWHEvents(writeKey string, userId string) *WareHouseEventsCount {
 				}
             }
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-		_, _ = SendEvent(payloadAlias, "alias", writeKey)
+			_, _ = SendEvent(payloadAlias, "alias", writeKey)
+		}
 	}
 
 	// Sending group event
-	for i := 0; i < groupEventsCount; i++ {
-		payloadGroup := strings.NewReader(fmt.Sprintf(`{
+	if group, exists := whEventCount["groups"]; exists {
+		for i := 0; i < group; i++ {
+			payloadGroup := strings.NewReader(fmt.Sprintf(`{
 			"userId": "%s",
 			"messageId":"%s",
 			"type": "group",
@@ -1566,26 +1558,31 @@ func sendUpdatedWHEvents(writeKey string, userId string) *WareHouseEventsCount {
 				}
 			}
 		  }`, userId, uuid.Must(uuid.NewV4()).String()))
-		_, _ = SendEvent(payloadGroup, "group", writeKey)
-	}
-
-	return &WareHouseEventsCount{
-		identify: int64(identifyEventsCount),
-		track:    int64(tracksEventsCount),
-		page:     int64(pageEventsCount),
-		screen:   int64(screenEventsCount),
-		alias:    int64(aliasEventsCount),
-		group:    int64(groupEventsCount),
-		gateway:  int64(gwEventsCount),
-		batchRT:  int64(batchRtEventsCountEvents),
+			_, _ = SendEvent(payloadGroup, "group", writeKey)
+		}
 	}
 }
 
-func testGWForWareHouseDestination(t *testing.T, writeKey string, userId string, eventsCount int64) {
+func warehouseDestinationTest(t *testing.T, dt *WareHouseDestinationTest) {
+	// Checking for gateway jobs
+	whGatewayTest(t, dt.writeKey, dt.userId, dt.whEventsCount)
+	// Checking for batch router jobs
+	whBatchRouterTest(t, dt.userId, dt.whEventsCount)
+	// Checking warehouse
+	whWareHouseTest(t, dt.db, dt.schema, dt.userId, dt.whEventsCount)
+}
+
+func whGatewayTest(t *testing.T, writeKey string, userId string, whEventCount WareHouseEventsCount) {
 	if !whTest.sqlFunctionsAdded {
 		log.Println("WareHouse sqlFunctionsAdded not set")
 		return
 	}
+
+	if _, exists := whEventCount["gateway"]; !exists {
+		log.Println("WareHouse gateway count not set")
+		return
+	}
+	gwEvents := whEventCount["gateway"]
 
 	// Getting gateway job ids
 	var jobIds []string
@@ -1607,7 +1604,7 @@ func testGWForWareHouseDestination(t *testing.T, writeKey string, userId string,
 			}
 			jobIds = append(jobIds, fmt.Sprint(jobId))
 		}
-		return int(eventsCount) == len(jobIds)
+		return gwEvents == len(jobIds)
 	}, time.Minute, 10*time.Millisecond)
 
 	// Checking for the gateway jobs state
@@ -1615,15 +1612,21 @@ func testGWForWareHouseDestination(t *testing.T, writeKey string, userId string,
 		var count int64
 		jobsSqlStatement := fmt.Sprintf("select count(*) from gw_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
 		_ = db.QueryRow(jobsSqlStatement).Scan(&count)
-		return count == eventsCount
+		return count == int64(gwEvents)
 	}, time.Minute, 10*time.Millisecond)
 }
 
-func testBatchRouterForWareHouseDestination(t *testing.T, userId string, eventsCount int64) {
+func whBatchRouterTest(t *testing.T, userId string, whEventCount WareHouseEventsCount) {
 	if !whTest.sqlFunctionsAdded {
 		log.Println("WareHouse sqlFunctionsAdded not set")
 		return
 	}
+
+	if _, exists := whEventCount["batchRT"]; !exists {
+		log.Println("WareHouse batch router count not set")
+		return
+	}
+	batchRT := whEventCount["batchRT"]
 
 	// Getting batch router job ids
 	var jobIds []string
@@ -1645,77 +1648,54 @@ func testBatchRouterForWareHouseDestination(t *testing.T, userId string, eventsC
 			}
 			jobIds = append(jobIds, fmt.Sprint(jobId))
 		}
-		return int(eventsCount) == len(jobIds)
+		return int(batchRT) == len(jobIds)
 	}, 2*time.Minute, 100*time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		var count int64
 		jobsSqlStatement := fmt.Sprintf("select count(*) from batch_rt_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
 		_ = db.QueryRow(jobsSqlStatement).Scan(&count)
-		return count == eventsCount
+		return count == int64(batchRT)
 	}, 2*time.Minute, 100*time.Millisecond)
 }
 
-func testWareHouseForWareHouseDestination(t *testing.T, db *sql.DB, schema string, userId string, whEventsCount *WareHouseEventsCount) {
-	// Checking identify and users table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.identifies where user_id = '%s'", schema, userId)
-		_ = db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.identify
-	}, 5*time.Minute, 100*time.Millisecond)
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.users where id = '%s'", schema, userId)
-		_ = db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.identify
-	}, 5*time.Minute, 100*time.Millisecond)
+func whWareHouseTest(t *testing.T, db *sql.DB, schema string, userId string, whEventCount WareHouseEventsCount) {
+	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+	primaryKeys := []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
+	for idx, table := range tables {
+		if _, exists := whEventCount[table]; !exists {
+			log.Printf("WareHouse %s table count not set\n", table)
+			return
+		}
+		tableCount := whEventCount["table"]
+		require.Eventually(t, func() bool {
+			var count int64
+			sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", schema, table, primaryKeys[idx], userId)
+			_ = db.QueryRow(sqlStatement).Scan(&count)
+			return count == int64(tableCount)
+		}, 5*time.Minute, 100*time.Millisecond)
+	}
+}
 
-	// Checking for tracks and product_track table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.tracks where user_id = '%s'", schema, userId)
-		_ = db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.track
-	}, 5*time.Minute, 100*time.Millisecond)
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.product_track where user_id = '%s'", schema, userId)
-		_ = db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.track
-	}, 5*time.Minute, 100*time.Millisecond)
+func initWHClickHouseClusterModeSetup(t *testing.T) {
+	chClusterTestT := whTest.chClusterTestT
+	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
-	// Checking page table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.pages where user_id = '%s'", schema, userId)
-		_ = db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.page
-	}, 5*time.Minute, 100*time.Millisecond)
+	// Rename tables to tables_shard
+	for _, table := range tables {
+		var sqlStatement string
+		sqlStatement = fmt.Sprintf("rename table %[1]s to %[1]s_shard on cluster rudder_cluster;", table)
+		_, err = chClusterTestT.db.Exec(sqlStatement)
+		require.Equal(t, err, nil)
+	}
 
-	// Checking screen table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.screens where user_id = '%s'", schema, userId)
-		_ = db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.screen
-	}, 5*time.Minute, 100*time.Millisecond)
-
-	// Checking alias table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.aliases where user_id = '%s'", schema, userId)
-		_ = db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.alias
-	}, 5*time.Minute, 100*time.Millisecond)
-
-	// Checking group table
-	require.Eventually(t, func() bool {
-		var count int64
-		sqlStatement := fmt.Sprintf("select count(*) from %s.groups where user_id = '%s'", schema, userId)
-		_ = db.QueryRow(sqlStatement).Scan(&count)
-		return count == whEventsCount.group
-	}, 5*time.Minute, 100*time.Millisecond)
+	// Create distribution views for tables
+	for _, table := range tables {
+		var sqlStatement string
+		sqlStatement = fmt.Sprintf("CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed('rudder_cluster', rudderdb, %[1]s_shard, cityHash64(id));", table)
+		_, err = chClusterTestT.db.Exec(sqlStatement)
+		require.Equal(t, err, nil)
+	}
 }
 
 func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
