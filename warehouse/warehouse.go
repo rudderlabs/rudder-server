@@ -1056,6 +1056,7 @@ func (wh *HandleT) resetInProgressJobs() {
 	}
 }
 
+
 func getLoadFileFormat(whType string) string {
 	switch whType {
 	case "BQ":
