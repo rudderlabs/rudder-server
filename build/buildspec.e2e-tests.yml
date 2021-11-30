@@ -23,7 +23,7 @@ phases:
       - docker pull minio/minio:latest
       - docker pull redis:alpine3.14
       - docker pull postgres:11-alpine
-      - docker pull rudderlabs/rudder-transformer:latest
+      - docker pull rudderlabs/develop-rudder-transformer:proxy
   build:
     commands:
       - export GO111MODULE=on

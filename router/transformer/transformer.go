@@ -285,5 +285,5 @@ func getRouterTransformURL() string {
 }
 
 func getProxyURL(destName string) string {
-	return strings.TrimSuffix(config.GetEnv("PROXY_URL", "http://localhost:9091"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
+	return strings.TrimSuffix(config.GetEnv("PROXY_URL", "http://localhost:9090"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
 }
