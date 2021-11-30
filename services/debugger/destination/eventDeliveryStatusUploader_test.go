@@ -181,7 +181,7 @@ func initEventDeliveryStatusUploader() {
 	Init()
 }
 
-var _ = Describe("eventDesliveryStatusUploader", func() {
+var _ = Describe("eventDeliveryStatusUploader", func() {
 	initEventDeliveryStatusUploader()
 
 	var (
@@ -243,6 +243,7 @@ var _ = Describe("eventDesliveryStatusUploader", func() {
 
 			time.Sleep(1 * time.Second)
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledB, &deliveryStatus)).To(BeFalse())
+			Expect(len(eventsDeliveryCache.CacheMap)).To(Equal(1))
 		})
 
 		It("records events", func() {
@@ -298,6 +299,127 @@ var _ = Describe("eventDesliveryStatusUploader", func() {
 			rawJSON, err := edsUploader.Transform([]interface{}{&faultyData})
 			Expect(err.Error()).To(ContainSubstring("error calling MarshalJSON"))
 			Expect(rawJSON).To(BeNil())
+		})
+
+		It("test initialization of event delivery cache", func() {
+			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
+					// on Subscribe, emulate a backend configuration event
+					go func() {
+						channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+						c.configInitialised = true
+						close(channel)
+					}()
+				}).
+				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
+
+			time.Sleep(1 * time.Second)
+			Expect(len(eventsDeliveryCache.CacheMap)).To(Equal(0))
+			Expect(eventsDeliveryCache.MaxSize).To(Equal(2))
+		})
+
+		It("test updateDataInCache for event delivery cache", func() {
+			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
+					// on Subscribe, emulate a backend configuration event
+					go func() {
+						channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+						c.configInitialised = true
+						close(channel)
+					}()
+				}).
+				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
+
+			time.Sleep(1 * time.Second)
+			tempKey := "test_destination_key"
+			tempVal := &DeliveryStatusT{
+				DestinationID: "test_dest",
+				SourceID:      "test_src",
+			}
+			eventsDeliveryCache.updateDataInCache(tempKey, tempVal)
+			Expect(len(eventsDeliveryCache.CacheMap)).To(Equal(1))
+			val, ok := eventsDeliveryCache.CacheMap[tempKey]
+			Expect(ok).To(BeTrue())
+			Expect(len(val)).To(Equal(1))
+			Expect(val).To(Equal([]*DeliveryStatusT{tempVal}))
+		})
+
+		It("test max capacity restriction for event delivery cache", func() {
+			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
+					// on Subscribe, emulate a backend configuration event
+					go func() {
+						channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+						c.configInitialised = true
+						close(channel)
+					}()
+				}).
+				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
+
+			time.Sleep(1 * time.Second)
+			tempKey := "test_destination_key1"
+			tempVal1 := &DeliveryStatusT{
+				DestinationID: "test_dest",
+				SourceID:      "test_src",
+			}
+			tempVal2 := &DeliveryStatusT{
+				DestinationID: "test_dest",
+				SourceID:      "test_src",
+			}
+			tempVal3 := &DeliveryStatusT{
+				DestinationID: "test_dest",
+				SourceID:      "test_src",
+			}
+			eventsDeliveryCache.updateDataInCache(tempKey, tempVal1)
+			eventsDeliveryCache.updateDataInCache(tempKey, tempVal2)
+			eventsDeliveryCache.updateDataInCache(tempKey, tempVal3)
+
+			Expect(len(eventsDeliveryCache.CacheMap)).To(Equal(1))
+
+			val, ok := eventsDeliveryCache.CacheMap[tempKey]
+			Expect(ok).To(BeTrue())
+			Expect(len(val)).To(Equal(2))
+			Expect(val).To(Equal([]*DeliveryStatusT{tempVal2, tempVal3}))
+		})
+
+		It("test readAndPopDataFromCache for event delivery cache", func() {
+			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
+					// on Subscribe, emulate a backend configuration event
+					go func() {
+						channel <- utils.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+						c.configInitialised = true
+						close(channel)
+					}()
+				}).
+				Do(c.asyncHelper.ExpectAndNotifyCallback()).Return().Times(1)
+
+			time.Sleep(1 * time.Second)
+			tempKey1 := "test_destination_key1"
+			tempVal1 := &DeliveryStatusT{
+				DestinationID: "test_dest",
+				SourceID:      "test_src",
+			}
+			tempKey2 := "test_destination_key2"
+			tempVal2 := &DeliveryStatusT{
+				DestinationID: "test_dest",
+				SourceID:      "test_src",
+			}
+			eventsDeliveryCache.updateDataInCache(tempKey1, tempVal1)
+			eventsDeliveryCache.updateDataInCache(tempKey2, tempVal2)
+
+			Expect(len(eventsDeliveryCache.CacheMap)).To(Equal(2))
+
+			val, ok := eventsDeliveryCache.CacheMap[tempKey1]
+			Expect(ok).To(BeTrue())
+			Expect(val).To(Equal([]*DeliveryStatusT{tempVal1}))
+
+			eventsDeliveryCache.readAndPopDataFromCache(tempKey1)
+			Expect(len(eventsDeliveryCache.CacheMap)).To(Equal(1))
+
+			val, ok = eventsDeliveryCache.CacheMap[tempKey1]
+			Expect(ok).To(BeFalse())
+			Expect(val).To(BeNil())
 		})
 	})
 })

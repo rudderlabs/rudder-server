@@ -27,6 +27,53 @@ type DeliveryStatusT struct {
 	EventType     string          `json:"eventType"`
 }
 
+type EventDeliveryCache struct {
+	CacheLock sync.RWMutex
+	MaxSize   int
+	CacheMap  map[string][]*DeliveryStatusT
+}
+
+func (c *EventDeliveryCache) initInMemCache() {
+	c.CacheMap = make(map[string][]*DeliveryStatusT)
+	config.RegisterIntConfigVariable(2, &c.MaxSize, true, 1, "DestinationDebugger.maxEventsCacheSize")
+}
+
+func (c *EventDeliveryCache) updateDataInCache(key string, value *DeliveryStatusT) {
+	c.CacheLock.Lock()
+	defer c.CacheLock.Unlock()
+
+	if _, ok := c.CacheMap[key]; !ok {
+		c.CacheMap[key] = make([]*DeliveryStatusT, 0, c.MaxSize)
+	}
+	tempCacheElement := c.CacheMap[key]
+	tempCacheElement = append(tempCacheElement, value)
+	if len(tempCacheElement) > c.MaxSize {
+		tempCacheElement = tempCacheElement[len(tempCacheElement)-c.MaxSize:]
+	}
+	c.CacheMap[key] = tempCacheElement
+}
+
+func (c *EventDeliveryCache) readAndPopDataFromCache(key string) []*DeliveryStatusT {
+	var historicEventsDelivery []*DeliveryStatusT
+	eventsDeliveryCache.CacheLock.Lock()
+	if deliveryStatus, ok := eventsDeliveryCache.CacheMap[key]; ok {
+		historicEventsDelivery = deliveryStatus
+		delete(eventsDeliveryCache.CacheMap, key)
+	}
+	eventsDeliveryCache.CacheLock.Unlock()
+	return historicEventsDelivery
+}
+
+func (c *EventDeliveryCache) readDataFromCache(key string) []*DeliveryStatusT {
+	var historicEventsDelivery []*DeliveryStatusT
+	eventsDeliveryCache.CacheLock.Lock()
+	if deliveryStatus, ok := eventsDeliveryCache.CacheMap[key]; ok {
+		historicEventsDelivery = deliveryStatus
+	}
+	eventsDeliveryCache.CacheLock.Unlock()
+	return historicEventsDelivery
+}
+
 var uploadEnabledDestinationIDs map[string]bool
 var configSubscriberLock sync.RWMutex
 
@@ -35,9 +82,7 @@ var uploader debugger.UploaderI
 var (
 	configBackendURL                  string
 	disableEventDeliveryStatusUploads bool
-	eventsDeliveryCacheMap            map[string][]*DeliveryStatusT
-	eventsCacheMapLock                sync.RWMutex
-	maxEventsCacheSize  int
+	eventsDeliveryCache               EventDeliveryCache
 )
 
 var pkgLogger logger.LoggerI
@@ -45,31 +90,15 @@ var pkgLogger logger.LoggerI
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("debugger").Child("destination")
-	eventsDeliveryCacheMap = make(map[string][]*DeliveryStatusT)
+	eventsDeliveryCache.initInMemCache()
 }
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
-	config.RegisterIntConfigVariable(2, &maxEventsCacheSize, true, 1, "DestinationDebugger.maxEventsCacheSize")
 }
 
 type EventDeliveryStatusUploader struct {
-}
-
-func populateEventsCache(cache map[string][]*DeliveryStatusT, destinationID string, deliveryStatus *DeliveryStatusT) {
-	eventsCacheMapLock.Lock()
-	defer eventsCacheMapLock.Unlock()
-
-	if _, ok := cache[destinationID]; !ok {
-		cache[destinationID] = make([]*DeliveryStatusT, 0, maxEventsCacheSize)
-	}
-	eventsCache := cache[destinationID]
-	eventsCache = append(eventsCache, deliveryStatus)
-	if len(eventsCache) > maxEventsCacheSize {
-		eventsCache = eventsCache[len(eventsCache)-maxEventsCacheSize:]
-	}
-	cache[destinationID] = eventsCache
 }
 
 //RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
@@ -84,7 +113,7 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !HasUploadEnabled(destinationID) {
-		populateEventsCache(eventsDeliveryCacheMap, destinationID, deliveryStatus)
+		eventsDeliveryCache.updateDataInCache(destinationID, deliveryStatus)
 		return false
 	}
 
@@ -164,13 +193,7 @@ func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 
 func recordHistoricEventsDelivery(destinationIDs []string) {
 	for _, destinationID := range destinationIDs {
-		var historicEventsDelivery []*DeliveryStatusT
-		eventsCacheMapLock.Lock()
-		if deliveryStatus, ok := eventsDeliveryCacheMap[destinationID]; ok {
-			historicEventsDelivery = deliveryStatus
-			delete(eventsDeliveryCacheMap, destinationID)
-		}
-		eventsCacheMapLock.Unlock()
+		historicEventsDelivery := eventsDeliveryCache.readAndPopDataFromCache(destinationID)
 		for _, event := range historicEventsDelivery {
 			uploader.RecordEvent(event)
 		}
