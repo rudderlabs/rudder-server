@@ -62,15 +62,82 @@ type UploadT struct {
 	Payload []interface{} `json:"payload"`
 }
 
+type cacheItem struct {
+	objs       []*TransformationStatusT
+	lastAccess int64
+}
+
+type TransformationCache struct {
+	CacheLock sync.RWMutex
+	MaxSize   int
+	KeyTTL int64
+	CacheMap  map[string]*cacheItem
+}
+
+func (c *TransformationCache) initInMemCache() {
+	var ttl int
+	config.RegisterIntConfigVariable(2, &c.MaxSize, true, 1, "TransformationDebugger.maxTransformationsCacheSize")
+	config.RegisterIntConfigVariable(1296000, &ttl, true, 1, "TransformationDebugger.maxTransformationsCacheTTL")
+	c.CacheMap = make(map[string]*cacheItem, c.MaxSize)
+	c.KeyTTL = int64(ttl)
+	go func() {
+		for now := range time.Tick(time.Second) {
+			c.CacheLock.Lock()
+			for k, v := range c.CacheMap {
+				if now.Unix() - v.lastAccess > c.KeyTTL {
+					delete(c.CacheMap, k)
+				}
+			}
+			c.CacheLock.Unlock()
+		}
+	}()
+}
+
+func (c *TransformationCache) updateDataInCache(key string, value *TransformationStatusT) {
+	c.CacheLock.Lock()
+	defer c.CacheLock.Unlock()
+
+	if _, ok := c.CacheMap[key]; !ok {
+		c.CacheMap[key] = &cacheItem{objs: make([]*TransformationStatusT, 0, c.MaxSize)}
+	}
+	tempCacheElement := c.CacheMap[key].objs
+	tempCacheElement = append(tempCacheElement, value)
+	if len(tempCacheElement) > c.MaxSize {
+		tempCacheElement = tempCacheElement[len(tempCacheElement)-c.MaxSize:]
+	}
+	c.CacheMap[key].objs = tempCacheElement
+	c.CacheMap[key].lastAccess = time.Now().Unix()
+}
+
+func (c *TransformationCache) readAndPopDataFromCache(key string) []*TransformationStatusT {
+	var historicEventsDelivery []*TransformationStatusT
+	c.CacheLock.Lock()
+	if deliveryStatus, ok := c.CacheMap[key]; ok {
+		historicEventsDelivery = deliveryStatus.objs
+		delete(c.CacheMap, key)
+	}
+	c.CacheLock.Unlock()
+	return historicEventsDelivery
+}
+
+func (c *TransformationCache) readDataFromCache(key string) []*TransformationStatusT {
+	var historicEventsDelivery []*TransformationStatusT
+	c.CacheLock.Lock()
+	if deliveryStatus, ok := c.CacheMap[key]; ok {
+		historicEventsDelivery = deliveryStatus.objs
+		c.CacheMap[key].lastAccess = time.Now().Unix()
+	}
+	c.CacheLock.Unlock()
+	return historicEventsDelivery
+}
+
 var uploader debugger.UploaderI
 
 var (
 	configBackendURL             string
 	disableTransformationUploads bool
 	pkgLogger                    logger.LoggerI
-	transformationCacheMap       map[string][]*TransformationStatusT
-	transformationCacheMapLock   sync.RWMutex
-	maxTransformationCacheSize   int
+	transformationCacheMap       TransformationCache
 )
 
 var uploadEnabledTransformations map[string]bool
@@ -79,13 +146,12 @@ var configSubscriberLock sync.RWMutex
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("debugger").Child("transformation")
-	transformationCacheMap = make(map[string][]*TransformationStatusT)
+	transformationCacheMap.initInMemCache()
 }
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
-	config.RegisterIntConfigVariable(2, &maxTransformationCacheSize, true, 1, "TransformationDebugger.maxTransformationsCacheSize")
 }
 
 type TransformationStatusUploader struct {
@@ -182,7 +248,7 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 		} else {
 			tStatusUpdated := *tStatus
 			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
-			populateEventsCache(transformationCacheMap, transformation.ID, &tStatusUpdated)
+			transformationCacheMap.updateDataInCache(transformation.ID, &tStatusUpdated)
 		}
 	}
 
@@ -227,33 +293,11 @@ func getEventsAfterTransform(singularEvent types.SingularEventT, receivedAt time
 
 func recordHistoricTransformations(tIDs []string) {
 	for _, tID := range tIDs {
-		var tStatuses []*TransformationStatusT
-		transformationCacheMapLock.Lock()
-		if _, ok := transformationCacheMap[tID]; ok {
-			tStatuses = transformationCacheMap[tID]
-			delete(transformationCacheMap, tID)
-		}
-		transformationCacheMapLock.Unlock()
+		tStatuses := transformationCacheMap.readAndPopDataFromCache(tID)
 		for _, tStatus := range tStatuses {
 			processRecordTransformationStatus(tStatus, tID)
 		}
 	}
-}
-
-func populateEventsCache(cache map[string][]*TransformationStatusT, transformationID string,
-	transformation *TransformationStatusT) {
-	transformationCacheMapLock.Lock()
-	defer transformationCacheMapLock.Unlock()
-
-	if _, ok := cache[transformationID]; !ok {
-		cache[transformationID] = make([]*TransformationStatusT, 0, maxTransformationCacheSize)
-	}
-	eventsCache := cache[transformationID]
-	eventsCache = append(eventsCache, transformation)
-	if len(eventsCache) > maxTransformationCacheSize {
-		eventsCache = eventsCache[len(eventsCache)-maxTransformationCacheSize:]
-	}
-	cache[transformationID] = eventsCache
 }
 
 func processRecordTransformationStatus(tStatus *TransformationStatusT, tID string) {

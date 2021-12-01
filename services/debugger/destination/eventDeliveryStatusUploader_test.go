@@ -300,7 +300,9 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			Expect(err.Error()).To(ContainSubstring("error calling MarshalJSON"))
 			Expect(rawJSON).To(BeNil())
 		})
+	})
 
+	Context("EventDeliveryCache", func() {
 		It("test initialization of event delivery cache", func() {
 			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {

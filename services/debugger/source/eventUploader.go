@@ -31,6 +31,89 @@ type EventUploadBatchT struct {
 	Batch      []EventUploadT
 }
 
+type cacheItem struct {
+	objs       []string
+	lastAccess int64
+}
+
+type EventCache struct {
+	CacheLock sync.RWMutex
+	MaxSize int
+	KeyTTL int64
+	CacheMap map[string]*cacheItem
+}
+
+func (c *EventCache) initInMemCache() {
+	var ttl int
+	config.RegisterIntConfigVariable(2, &c.MaxSize, true, 1, "SourceDebugger.maxEventsCacheSize")
+	config.RegisterIntConfigVariable(1296000, &ttl, true, 1, "SourceDebugger.maxEventsCacheTTL") // default TTL 15 days
+	c.CacheMap = make(map[string]*cacheItem, c.MaxSize)
+	c.KeyTTL = int64(ttl)
+	go func() {
+		for now := range time.Tick(time.Second) {
+			c.CacheLock.Lock()
+			for k, v := range c.CacheMap {
+				if now.Unix() - v.lastAccess > c.KeyTTL {
+					delete(c.CacheMap, k)
+				}
+			}
+			c.CacheLock.Unlock()
+		}
+	}()
+}
+
+func (c *EventCache) updateDataInCache(key string, value string) {
+	c.CacheLock.Lock()
+	defer c.CacheLock.Unlock()
+
+	if _, ok := c.CacheMap[key]; !ok {
+		c.CacheMap[key] = &cacheItem{objs: make([]string, 0, c.MaxSize)}
+	}
+	tempCacheElement := c.CacheMap[key].objs
+	tempCacheElement = append(tempCacheElement, value)
+	if len(tempCacheElement) > c.MaxSize {
+		tempCacheElement = tempCacheElement[len(tempCacheElement)-c.MaxSize:]
+	}
+	c.CacheMap[key].objs = tempCacheElement
+	c.CacheMap[key].lastAccess = time.Now().Unix()
+}
+
+func (c *EventCache) readAndPopDataFromCache(key string) []string {
+	var historicEventsDelivery []string
+	c.CacheLock.Lock()
+	if deliveryStatus, ok := c.CacheMap[key]; ok {
+		historicEventsDelivery = deliveryStatus.objs
+		delete(c.CacheMap, key)
+	}
+	c.CacheLock.Unlock()
+	return historicEventsDelivery
+}
+
+func (c *EventCache) readDataFromCache(key string) []string {
+	var historicEventsDelivery []string
+	c.CacheLock.Lock()
+	if deliveryStatus, ok := c.CacheMap[key]; ok {
+		historicEventsDelivery = deliveryStatus.objs
+		c.CacheMap[key].lastAccess = time.Now().Unix()
+	}
+	c.CacheLock.Unlock()
+	return historicEventsDelivery
+}
+
+func (c *EventCache) printEventCache() {
+	for {
+		time.Sleep(time.Second * 5)
+		fmt.Println("*******************")
+		for k, v := range c.CacheMap {
+			fmt.Println("key: ", k)
+			for _, e := range v.objs {
+				fmt.Printf(e + " ")
+			}
+			fmt.Println("")
+		}
+	}
+}
+
 var uploadEnabledWriteKeys []string
 var configSubscriberLock sync.RWMutex
 
@@ -40,21 +123,18 @@ var (
 	configBackendURL    string
 	disableEventUploads bool
 	pkgLogger           logger.LoggerI
-	eventsCacheMap      map[string][]string
-	eventsCacheMapLock  sync.RWMutex
-	maxEventsCacheSize  int
+	eventsCacheMap EventCache
 )
 
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("debugger").Child("source")
-	eventsCacheMap = make(map[string][]string)
+	eventsCacheMap.initInMemCache()
 }
 
 func loadConfig() {
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableEventUploads, true, "SourceDebugger.disableEventUploads")
-	config.RegisterIntConfigVariable(2, &maxEventsCacheSize, true, 1, "SourceDebugger.maxEventsCacheSize")
 }
 
 type EventUploader struct {
@@ -71,37 +151,8 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 		backendConfigSubscriber(backendConfig)
 	})
 	rruntime.Go(func() {
-		printEventCache()
+		eventsCacheMap.printEventCache()
 	})
-}
-
-func printEventCache() {
-	for {
-		time.Sleep(time.Second * 5)
-		fmt.Println("*******************")
-		for k, v := range eventsCacheMap {
-			fmt.Println("key: ", k)
-			for _, e := range v {
-				fmt.Printf(e + " ")
-			}
-			fmt.Println("")
-		}
-	}
-}
-
-func populateEventsCache(cache map[string][]string, writeKey, eventBatch string) {
-	eventsCacheMapLock.Lock()
-	defer eventsCacheMapLock.Unlock()
-
-	if _, ok := cache[writeKey]; !ok {
-		cache[writeKey] = make([]string, 0, maxEventsCacheSize)
-	}
-	eventsCache := cache[writeKey]
-	eventsCache = append(eventsCache, eventBatch)
-	if len(eventsCache) > maxEventsCacheSize {
-		eventsCache = eventsCache[len(eventsCache)-maxEventsCacheSize:]
-	}
-	cache[writeKey] = eventsCache
 }
 
 //recordHistoricEvents sends the events collected in cache as live events.
@@ -109,14 +160,7 @@ func populateEventsCache(cache map[string][]string, writeKey, eventBatch string)
 //IMP: The function must be called before releasing configSubscriberLock lock to ensure the order of RecordEvent call
 func recordHistoricEvents(writeKeys []string) {
 	for _, writeKey := range writeKeys {
-		var historicEvents []string
-		eventsCacheMapLock.Lock()
-		if _, ok := eventsCacheMap[writeKey]; ok {
-			historicEvents = eventsCacheMap[writeKey]
-			delete(eventsCacheMap, writeKey)
-		}
-		eventsCacheMapLock.Unlock()
-
+		historicEvents := eventsCacheMap.readAndPopDataFromCache(writeKey)
 		for _, eventBatch := range historicEvents {
 			uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatch})
 		}
@@ -135,7 +179,7 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !misc.ContainsString(uploadEnabledWriteKeys, writeKey) {
-		populateEventsCache(eventsCacheMap, writeKey, eventBatch)
+		eventsCacheMap.updateDataInCache(writeKey, eventBatch)
 		return false
 	}
 

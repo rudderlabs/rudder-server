@@ -48,12 +48,15 @@ Debugger:
 SourceDebugger:
   disableEventUploads: false
   maxEventsCacheSize: 3
+  maxEventsCacheTTL: 86400
 DestinationDebugger:
   disableEventDeliveryStatusUploads: false
   maxEventsCacheSize: 3
+  maxEventsCacheTTL: 86400
 TransformationDebugger:
   disableTransformationStatusUploads: false
   maxTransformationsCacheSize: 3
+  maxTransformationsCacheTTL: 86400
 Archiver:
   backupRowsBatchSize: 100
 JobsDB:
