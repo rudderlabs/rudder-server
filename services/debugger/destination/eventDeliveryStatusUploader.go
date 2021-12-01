@@ -3,15 +3,13 @@ package destinationdebugger
 import (
 	"encoding/json"
 	"fmt"
-	"sync"
-	"time"
-
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"sync"
 )
 
 //DeliveryStatusT is a structure to hold everything related to event delivery
@@ -28,89 +26,6 @@ type DeliveryStatusT struct {
 	EventType     string          `json:"eventType"`
 }
 
-type cacheItem struct {
-	objs       []*DeliveryStatusT
-	lastAccess int64
-}
-
-type EventDeliveryCache struct {
-	CacheLock sync.RWMutex
-	MaxSize   int
-	KeyTTL int64
-	CacheMap  map[string]*cacheItem
-}
-
-func (c *EventDeliveryCache) initInMemCache() {
-	var ttl int
-	config.RegisterIntConfigVariable(2, &c.MaxSize, true, 1, "DestinationDebugger.maxEventsCacheSize")
-	config.RegisterIntConfigVariable(1296000, &ttl, true, 1, "DestinationDebugger.maxEventsCacheTTL")
-	c.CacheMap = make(map[string]*cacheItem, c.MaxSize)
-	c.KeyTTL = int64(ttl)
-	go func() {
-		for now := range time.Tick(time.Second) {
-			c.CacheLock.Lock()
-			for k, v := range c.CacheMap {
-				if now.Unix() - v.lastAccess > c.KeyTTL {
-					delete(c.CacheMap, k)
-				}
-			}
-			c.CacheLock.Unlock()
-		}
-	}()
-}
-
-func (c *EventDeliveryCache) updateDataInCache(key string, value *DeliveryStatusT) {
-	c.CacheLock.Lock()
-	defer c.CacheLock.Unlock()
-
-	if _, ok := c.CacheMap[key]; !ok {
-		c.CacheMap[key] = &cacheItem{objs: make([]*DeliveryStatusT, 0, c.MaxSize)}
-	}
-	tempCacheElement := c.CacheMap[key].objs
-	tempCacheElement = append(tempCacheElement, value)
-	if len(tempCacheElement) > c.MaxSize {
-		tempCacheElement = tempCacheElement[len(tempCacheElement)-c.MaxSize:]
-	}
-	c.CacheMap[key].objs = tempCacheElement
-	c.CacheMap[key].lastAccess = time.Now().Unix()
-}
-
-func (c *EventDeliveryCache) readAndPopDataFromCache(key string) []*DeliveryStatusT {
-	var historicEventsDeliveryStatus []*DeliveryStatusT
-	c.CacheLock.Lock()
-	if deliveryStatus, ok := c.CacheMap[key]; ok {
-		historicEventsDeliveryStatus = deliveryStatus.objs
-		delete(c.CacheMap, key)
-	}
-	c.CacheLock.Unlock()
-	return historicEventsDeliveryStatus
-}
-
-func (c *EventDeliveryCache) readDataFromCache(key string) []*DeliveryStatusT {
-	var historicEventsDelivery []*DeliveryStatusT
-	c.CacheLock.Lock()
-	if deliveryStatus, ok := c.CacheMap[key]; ok {
-		historicEventsDelivery = deliveryStatus.objs
-		c.CacheMap[key].lastAccess = time.Now().Unix()
-	}
-	c.CacheLock.Unlock()
-	return historicEventsDelivery
-}
-
-func (c *EventDeliveryCache) printEventCache() {
-	for {
-		time.Sleep(time.Second * 5)
-		fmt.Println("*******************")
-		for k, v := range c.CacheMap {
-			fmt.Println("key: ", k)
-			for _, e := range v.objs {
-				fmt.Printf(e.SourceID + " ")
-			}
-			fmt.Println("")
-		}
-	}
-}
-
 var uploadEnabledDestinationIDs map[string]bool
 var configSubscriberLock sync.RWMutex
 
@@ -119,7 +34,7 @@ var uploader debugger.UploaderI
 var (
 	configBackendURL                  string
 	disableEventDeliveryStatusUploads bool
-	eventsDeliveryCache               EventDeliveryCache
+	eventsDeliveryCache               Cache
 )
 
 var pkgLogger logger.LoggerI
@@ -127,10 +42,10 @@ var pkgLogger logger.LoggerI
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("debugger").Child("destination")
-	eventsDeliveryCache.initInMemCache()
 }
 
 func loadConfig() {
+	loadCacheConfig()
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
 }
@@ -150,7 +65,7 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !HasUploadEnabled(destinationID) {
-		eventsDeliveryCache.updateDataInCache(destinationID, deliveryStatus)
+		eventsDeliveryCache.update(destinationID, deliveryStatus)
 		return false
 	}
 
@@ -177,7 +92,7 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 	})
 
 	rruntime.Go(func() {
-		eventsDeliveryCache.printEventCache()
+		eventsDeliveryCache.printCache()
 	})
 }
 
@@ -234,7 +149,7 @@ func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 
 func recordHistoricEventsDelivery(destinationIDs []string) {
 	for _, destinationID := range destinationIDs {
-		historicEventsDelivery := eventsDeliveryCache.readAndPopDataFromCache(destinationID)
+		historicEventsDelivery := eventsDeliveryCache.readAndPopData(destinationID)
 		for _, event := range historicEventsDelivery {
 			uploader.RecordEvent(event)
 		}
