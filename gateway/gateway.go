@@ -815,6 +815,8 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
+	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", 1)))
+	return
 	defer func() {
 		if errorMessage != "" {
 			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))

@@ -1860,7 +1860,7 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 }
 
 func (proc *HandleT) crashRecover() {
-	proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, JobCount: -1})
+	// proc.gatewayDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{GWCustomVal}, JobCount: -1})
 }
 
 func (proc *HandleT) updateSourceStats(sourceStats map[string]int, bucket string) {
