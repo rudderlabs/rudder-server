@@ -3602,7 +3602,10 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 		limitByEventCount = true
 	}
 
-	for _, ds := range dsList {
+	for i, ds := range dsList {
+		if i > maxDSQuerySize {
+			break
+		}
 		//count==0 means return all which we don't want
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 		jobs := jd.getProcessedJobsDS(ds, false, count, params)
