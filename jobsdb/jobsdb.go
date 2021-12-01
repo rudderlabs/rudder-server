@@ -527,7 +527,6 @@ var (
 var (
 	maxDSSize, maxMigrateOnce, maxMigrateDSProbe int
 	maxTableSize                                 int64
-	maxDSQuerySize                               int
 	jobDoneMigrateThres, jobStatusMigrateThres   float64
 	migrateDSLoopSleepDuration                   time.Duration
 	addNewDSLoopSleepDuration                    time.Duration
@@ -582,7 +581,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(60), &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 	config.RegisterBoolConfigVariable(true, &useNewCacheBurst, true, "JobsDB.useNewCacheBurst")
-	config.RegisterIntConfigVariable(10, &maxDSQuerySize, true, 1, "JobsDB.maxDSQuerySize")
 }
 
 func Init2() {
@@ -2187,7 +2185,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
 	}
 
-
 	if params.UseTimeFilter {
 		sqlStatement += fmt.Sprintf(" AND created_at < $%d", len(args)+1)
 		args = append(args, params.Before)
@@ -3366,10 +3363,7 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 		limitByEventCount = true
 	}
 
-	for i, ds := range dsList {
-		if i > maxDSQuerySize {
-			break
-		}
+	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("cannot receive negative job count: %d", count))
 		jobs := jd.getUnprocessedJobsDS(ds, true, count, params)
 		outJobs = append(outJobs, jobs...)
@@ -3604,10 +3598,7 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 		limitByEventCount = true
 	}
 
-	for i, ds := range dsList {
-		if i > maxDSQuerySize {
-			break
-		}
+	for _, ds := range dsList {
 		//count==0 means return all which we don't want
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 		jobs := jd.getProcessedJobsDS(ds, false, count, params)

@@ -1888,11 +1888,11 @@ func IsAsyncDestination(destType string) bool {
 }
 
 func (brt *HandleT) crashRecover() {
-	// brt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: -1})
+	brt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: -1})
 
-	if misc.Contains(objectStorageDestinations, brt.destType) {
+	/*if misc.Contains(objectStorageDestinations, brt.destType) {
 		brt.dedupRawDataDestJobsOnCrash()
-	}
+	}*/
 }
 
 func IsObjectStorageDestination(destType string) bool {

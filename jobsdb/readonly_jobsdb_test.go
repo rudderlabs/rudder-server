@@ -103,14 +103,14 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectCommit()
 
 			ds = dsListInDB[1]
-			c.mock.ExpectBegin()
+			/*c.mock.ExpectBegin()
 			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
 			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
 											 WHERE %[2]s.job_id is NULL AND ((%[1]s.custom_val='MOCKDS')) AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())
-			c.mock.ExpectCommit()
+			c.mock.ExpectCommit()*/
 
-			Expect(jd.GetUnprocessedCount(customValFilters, parameterFilters)).To(Equal(int64(2 * len(mockJobs))))
+			Expect(jd.GetUnprocessedCount(customValFilters, parameterFilters)).To(Equal(int64(len(mockJobs))))
 
 			if err := c.mock.ExpectationsWereMet(); err != nil {
 				ginkgo.Fail(err.Error())
@@ -227,14 +227,14 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectCommit()
 
 			ds = gwDSListInDB[1]
-			c.mock.ExpectBegin()
+			/*c.mock.ExpectBegin()
 			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
 			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
 			c.mock.ExpectQuery(fmt.Sprintf(`select sum(jsonb_array_length(batch)) from (SELECT event_payload->'batch' as batch FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
 			WHERE %[2]s.job_id is NULL AND ((%[1]s.custom_val='MOCKDS')) AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )) t`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())
-			c.mock.ExpectCommit()
+			c.mock.ExpectCommit()*/
 
-			Expect(jd.GetUnprocessedCount(customValFilters, parameterFilters)).To(Equal(int64(2 * len(mockJobs))))
+			Expect(jd.GetUnprocessedCount(customValFilters, parameterFilters)).To(Equal(int64(len(mockJobs))))
 
 			if err := c.mock.ExpectationsWereMet(); err != nil {
 				ginkgo.Fail(err.Error())
@@ -361,18 +361,18 @@ var _ = Describe("readonly_jobsdb", func() {
 		  AND job_latest_state.retry_time < $1`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())
 
 			ds = dsListInDB[1]
-			c.mock.ExpectBegin()
-			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
-			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
-			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
-			%[1]s,
-			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
-			AS job_latest_state
-		 WHERE %[1]s.job_id=job_latest_state.job_id
-		   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
-		  AND job_latest_state.retry_time < $1`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())
-			Expect(jd.getNonSucceededJobsCount(customValFilters, parameterFilters)).To(Equal(int64(2 * len(mockJobs))))
+			/*c.mock.ExpectBegin()
+				c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
+				c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
+				c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
+				%[1]s,
+				(SELECT job_id, retry_time FROM %[2]s WHERE id IN
+					(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
+				AS job_latest_state
+			 WHERE %[1]s.job_id=job_latest_state.job_id
+			   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
+			  AND job_latest_state.retry_time < $1`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())*/
+			Expect(jd.getNonSucceededJobsCount(customValFilters, parameterFilters)).To(Equal(int64(len(mockJobs))))
 
 			if err := c.mock.ExpectationsWereMet(); err != nil {
 				ginkgo.Fail(err.Error())
@@ -400,19 +400,19 @@ var _ = Describe("readonly_jobsdb", func() {
 		  AND job_latest_state.retry_time < $1) t`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())
 
 			ds = gwDSListInDB[1]
-			c.mock.ExpectBegin()
-			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
-			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
-			c.mock.ExpectQuery(fmt.Sprintf(`select sum(jsonb_array_length(batch)) from (SELECT %[1]s.event_payload->'batch' as batch FROM
-		  %[1]s,
-		  (SELECT job_id, retry_time FROM %[2]s WHERE id IN
-			  (SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
-		  AS job_latest_state
-	   WHERE %[1]s.job_id=job_latest_state.job_id
+			/*c.mock.ExpectBegin()
+					c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
+					c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
+					c.mock.ExpectQuery(fmt.Sprintf(`select sum(jsonb_array_length(batch)) from (SELECT %[1]s.event_payload->'batch' as batch FROM
+				  %[1]s,
+				  (SELECT job_id, retry_time FROM %[2]s WHERE id IN
+					  (SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
+				  AS job_latest_state
+			   WHERE %[1]s.job_id=job_latest_state.job_id
 
-		AND job_latest_state.retry_time < $1) t`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())
+				AND job_latest_state.retry_time < $1) t`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())*/
 
-			Expect(jd.getNonSucceededJobsCount([]string{}, []ParameterFilterT{})).To(Equal(int64(2 * len(mockJobs))))
+			Expect(jd.getNonSucceededJobsCount([]string{}, []ParameterFilterT{})).To(Equal(int64(len(mockJobs))))
 
 			if err := c.mock.ExpectationsWereMet(); err != nil {
 				ginkgo.Fail(err.Error())
@@ -1515,45 +1515,45 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectCommit()
 
 			ds = dsListInDB[1]
-			c.mock.ExpectBegin()
-			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
-			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
-			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
-											 WHERE %[2]s.job_id is NULL AND ((%[1]s.custom_val='MOCKDS')) AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())
-			c.mock.ExpectCommit()
+			/*c.mock.ExpectBegin()
+				c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
+				c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
+				c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
+												 WHERE %[2]s.job_id is NULL AND ((%[1]s.custom_val='MOCKDS')) AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())
+				c.mock.ExpectCommit()
 
-			c.mock.ExpectPrepare(`SELECT tablename
-				FROM pg_catalog.pg_tables
-				WHERE schemaname != 'pg_catalog' AND
-				schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(mockRows())
+				c.mock.ExpectPrepare(`SELECT tablename
+					FROM pg_catalog.pg_tables
+					WHERE schemaname != 'pg_catalog' AND
+					schemaname != 'information_schema'`).ExpectQuery().WillReturnRows(mockRows())
 
-			ds = dsListInDB[0]
-			c.mock.ExpectBegin()
-			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
-			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
-			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
-			%[1]s,
-			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
-			AS job_latest_state
-		 WHERE %[1]s.job_id=job_latest_state.job_id
-		   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
-		  AND job_latest_state.retry_time < $1`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())
+				ds = dsListInDB[0]
+				c.mock.ExpectBegin()
+				c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
+				c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
+				c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
+				%[1]s,
+				(SELECT job_id, retry_time FROM %[2]s WHERE id IN
+					(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
+				AS job_latest_state
+			 WHERE %[1]s.job_id=job_latest_state.job_id
+			   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
+			  AND job_latest_state.retry_time < $1`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())
 
-			ds = dsListInDB[1]
-			c.mock.ExpectBegin()
-			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
-			c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
-			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
-			%[1]s,
-			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
-			AS job_latest_state
-		 WHERE %[1]s.job_id=job_latest_state.job_id
-		   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
-		  AND job_latest_state.retry_time < $1`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())
+				ds = dsListInDB[1]
+				c.mock.ExpectBegin()
+					c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
+					c.mock.ExpectPrepare(fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)).ExpectExec().WillReturnResult(sqlmock.NewResult(0, 1))
+					c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
+					%[1]s,
+					(SELECT job_id, retry_time FROM %[2]s WHERE id IN
+						(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
+					AS job_latest_state
+				 WHERE %[1]s.job_id=job_latest_state.job_id
+				   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
+				  AND job_latest_state.retry_time < $1`, ds.JobTable, ds.JobStatusTable)).WillReturnRows(mockCountRows())*/
 
-			Expect(jd.GetPendingJobsCount(customValFilters, 0, parameterFilters)).To(Equal(int64(4 * len(mockJobs))))
+			Expect(jd.GetPendingJobsCount(customValFilters, 0, parameterFilters)).To(Equal(int64(len(mockJobs))))
 			if err := c.mock.ExpectationsWereMet(); err != nil {
 				ginkgo.Fail(err.Error())
 			}

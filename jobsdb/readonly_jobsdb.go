@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"time"
@@ -139,6 +140,9 @@ those whose jobs don't have a state or whose jobs status is neither succeeded no
 */
 func (jd *ReadonlyHandleT) GetPendingJobsCount(customValFilters []string, count int, parameterFilters []ParameterFilterT) int64 {
 	unProcessedCount := jd.GetUnprocessedCount(customValFilters, parameterFilters)
+	if unProcessedCount > 0 {
+		return unProcessedCount
+	}
 	nonSucceededCount := jd.getNonSucceededJobsCount(customValFilters, parameterFilters)
 	return unProcessedCount + nonSucceededCount
 }
@@ -159,8 +163,17 @@ func (jd *ReadonlyHandleT) GetUnprocessedCount(customValFilters []string, parame
 
 	dsList := jd.getDSList()
 	var totalCount int64
+
+	//HACK: to prevent table query
+	if len(dsList) > config.GetInt("JobsDB.ThresholdSizeForPendingCount", 5) {
+		return 1
+	}
+
 	for _, ds := range dsList {
 		count := jd.getUnprocessedJobsDSCount(ds, customValFilters, parameterFilters)
+		if count > 0 && config.GetBool("JobsDB.PreemptCounting", true) {
+			return count
+		}
 		totalCount += count
 	}
 
@@ -288,8 +301,17 @@ func (jd *ReadonlyHandleT) getProcessedCount(stateFilter []string, customValFilt
 
 	dsList := jd.getDSList()
 	var totalCount int64
+
+	//HACK: to prevent table query
+	if len(dsList) > config.GetInt("JobsDB.ThresholdSizeForPendingCount", 5) {
+		return 1
+	}
+
 	for _, ds := range dsList {
 		count := jd.getProcessedJobsDSCount(ds, stateFilter, customValFilters, parameterFilters)
+		if count > 0 && config.GetBool("JobsDB.PreemptCounting", true) {
+			return count
+		}
 		totalCount += count
 	}
 
