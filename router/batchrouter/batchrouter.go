@@ -502,9 +502,9 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 
 	var localTmpDirName string
 	if isWarehouse {
-		localTmpDirName = "/rudder-warehouse-staging-uploads/"
+		localTmpDirName = fmt.Sprintf(`/%s/`, misc.RudderWarehouseStagingUploads)
 	} else {
-		localTmpDirName = "/rudder-raw-data-destination-logs/"
+		localTmpDirName = fmt.Sprintf(`/%s/`, misc.RudderRawDataDestinationLogs)
 	}
 
 	uuid := uuid.Must(uuid.NewV4())
@@ -795,7 +795,7 @@ func (brt *HandleT) asyncUploadWorker(ctx context.Context) {
 }
 
 func (brt *HandleT) asyncStructSetup(sourceID, destinationID string) {
-	localTmpDirName := "/rudder-async-destination-logs/"
+	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.Must(uuid.NewV4())
 
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -875,6 +875,10 @@ func GetStorageDateFormat(manager filemanager.FileManager, destination *Destinat
 	}
 
 	for idx := range fileObjects {
+		if fileObjects[idx] == nil {
+			pkgLogger.Errorf("[BRT]: nil occurred in file objects for '%T' filemanager of destination ID : %s", manager, destination.Destination.ID)
+			continue
+		}
 		key := fileObjects[idx].Key
 		replacedKey := strings.Replace(key, fullPrefix, "", 1)
 		splittedKeys := strings.Split(replacedKey, "/")

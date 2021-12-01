@@ -67,7 +67,7 @@ func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHan
 		pkgLogger.Errorf("[Archiver]: Failed to create tmp DIR")
 		return
 	}
-	backupPathDirName := "/rudder-archives/"
+	backupPathDirName := fmt.Sprintf(`/%s/`, misc.RudderArchives)
 	pathPrefix := strcase.ToKebab(tableName)
 
 	path := fmt.Sprintf(`%v%v.%v.%v.%v.json.gz`,
