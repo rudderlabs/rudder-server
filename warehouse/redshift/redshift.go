@@ -209,7 +209,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	pkgLogger.Infof("RS: Generated manifest for table:%s", tableName)
 	manifestJSON, _ := json.Marshal(&manifest)
 
-	manifestFolder := "rudder-redshift-manifests"
+	manifestFolder := misc.RudderRedshiftManifests
 	dirName := "/" + manifestFolder + "/"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {

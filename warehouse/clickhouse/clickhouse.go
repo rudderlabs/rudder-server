@@ -381,7 +381,7 @@ func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName 
 		return
 	}
 
-	dirName := "/rudder-warehouse-load-uploads-tmp/"
+	dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseLoadUploadsTmp)
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		pkgLogger.Errorf("%s Error in getting tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
