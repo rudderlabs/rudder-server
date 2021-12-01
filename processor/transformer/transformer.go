@@ -70,12 +70,11 @@ type TransformerEventT struct {
 
 //HandleT is the handle for this class
 type HandleT struct {
-	perfStats                 *misc.PerfStats
-	sentStat                  stats.RudderStats
-	receivedStat              stats.RudderStats
-	failedStat                stats.RudderStats
-	transformTimerStat        stats.RudderStats
-	transformRequestTimerStat stats.RudderStats
+	perfStats          *misc.PerfStats
+	sentStat           stats.RudderStats
+	receivedStat       stats.RudderStats
+	failedStat         stats.RudderStats
+	transformTimerStat stats.RudderStats
 
 	logger logger.LoggerI
 
@@ -138,7 +137,6 @@ func (trans *HandleT) Setup() {
 	trans.receivedStat = stats.NewStat("processor.transformer_received", stats.CountType)
 	trans.failedStat = stats.NewStat("processor.transformer_failed", stats.CountType)
 	trans.transformTimerStat = stats.NewStat("processor.transformation_time", stats.TimerType)
-	trans.transformRequestTimerStat = stats.NewStat("processor.transformer_request_time", stats.TimerType)
 
 	trans.guardConcurrency = make(chan struct{}, maxConcurrency)
 	trans.perfStats = &misc.PerfStats{}
@@ -192,15 +190,30 @@ func GetVersion() (transformerBuildVersion string) {
 func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	url string, batchSize int) ResponseT {
 
+	if len(clientEvents) == 0 {
+		return ResponseT{}
+	}
+
+	sTags := statsTags(clientEvents[0])
+
 	s := time.Now()
-	defer func() {
-		trans.transformTimerStat.SendTiming(time.Since(s))
-	}()
+	defer stats.NewTaggedStat(
+		"processor.transformation_time",
+		stats.TimerType,
+		sTags,
+	).Since(s)
 
 	batchCount := len(clientEvents) / batchSize
 	if len(clientEvents)%batchSize != 0 {
 		batchCount += 1
 	}
+
+	stats.NewTaggedStat(
+		"processor.transformer_request_batch_count",
+		stats.HistogramType,
+		sTags,
+	).Observe(float64(batchCount))
+
 	transformResponse := make([][]TransformerResponseT, batchCount)
 
 	wg := sync.WaitGroup{}
@@ -256,6 +269,18 @@ func (trans *HandleT) Validate(clientEvents []TransformerEventT,
 	return trans.Transform(clientEvents, url, batchSize)
 }
 
+func (trans *HandleT) requestTime(s stats.Tags, d time.Duration) {
+	stats.NewTaggedStat("processor.transformer_request_time", stats.TimerType, s).SendTiming(d)
+}
+
+func statsTags(event TransformerEventT) stats.Tags {
+	return stats.Tags{
+		"dest_type": event.Destination.DestinationDefinition.Name,
+		"dest_id":   event.Destination.ID,
+		"src_id":    event.Metadata.SourceID,
+	}
+}
+
 func (trans *HandleT) request(url string, data []TransformerEventT) []TransformerResponseT {
 	//Call remote transformation
 	rawJSON, err := json.Marshal(data)
@@ -267,6 +292,12 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 	var respData []byte
 	//We should rarely have error communicating with our JS
 	reqFailed := false
+
+	if len(data) == 0 {
+		return nil
+	}
+
+	// assume that the first event is representative
 
 	for {
 		s := time.Now()
@@ -280,7 +311,7 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 		}
 
 		if err != nil {
-			trans.transformRequestTimerStat.SendTiming(time.Since(s))
+			trans.requestTime(statsTags(data[0]), time.Since(s))
 			reqFailed = true
 			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
 			if retryCount > maxRetry {
@@ -307,7 +338,7 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 			}
 		}
 
-		trans.transformRequestTimerStat.SendTiming(time.Since(s))
+		trans.requestTime(statsTags(data[0]), time.Since(s))
 		break
 	}
 
@@ -321,6 +352,7 @@ func (trans *HandleT) request(url string, data []TransformerEventT) []Transforme
 
 	var transformerResponses []TransformerResponseT
 	if resp.StatusCode == http.StatusOK {
+		integrations.CollectIntgTransformErrorStats(respData)
 		err = json.Unmarshal(respData, &transformerResponses)
 		//This is returned by our JS engine so should  be parsable
 		//but still handling it

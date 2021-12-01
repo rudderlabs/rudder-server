@@ -434,7 +434,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				continue
 			}
-			gateway.requestSizeStat.SendTiming(time.Duration(len(body)) * time.Millisecond)
+			gateway.requestSizeStat.Observe(float64(len(body)))
 			if req.reqType != "batch" {
 				body, _ = sjson.SetBytes(body, "type", req.reqType)
 				body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
@@ -579,7 +579,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		}
 
 		userWebRequestWorker.batchTimeStat.End()
-		gateway.batchSizeStat.SendTiming(time.Duration(len(breq.batchRequest)))
+		gateway.batchSizeStat.Observe(float64(len(breq.batchRequest)))
 		// update stats request wise
 		gateway.updateSourceStats(sourceStats, "gateway.write_key_requests", sourceTagMap)
 		gateway.updateSourceStats(sourceSuccessStats, "gateway.write_key_successful_requests", sourceTagMap)
@@ -817,6 +817,12 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	var errorMessage string
 	w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", 1)))
 	return
+	if !gateway.application.Options().NormalMode {
+		errorMessage = "server not in normal mode"
+		defer http.Error(w, errorMessage, 500)
+		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 500, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
+		return
+	}
 	defer func() {
 		if errorMessage != "" {
 			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
@@ -959,6 +965,14 @@ func (gateway *HandleT) clearFailedEventsHandler(w http.ResponseWriter, r *http.
 func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Request, reqType string) {
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
+
+	if !gateway.application.Options().NormalMode {
+		errorMessage := "server not in normal mode"
+		defer http.Error(w, errorMessage, 500)
+		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 500, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
+		return
+	}
+
 	var err error
 	var payload []byte
 	defer func() {
@@ -1534,8 +1548,8 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.netHandle = client
 
 	//For the lack of better stat type, using TimerType.
-	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.TimerType)
-	gateway.requestSizeStat = gateway.stats.NewStat("gateway.request_size", stats.TimerType)
+	gateway.batchSizeStat = gateway.stats.NewStat("gateway.batch_size", stats.HistogramType)
+	gateway.requestSizeStat = gateway.stats.NewStat("gateway.request_size", stats.HistogramType)
 	gateway.dbWritesStat = gateway.stats.NewStat("gateway.db_writes", stats.CountType)
 	gateway.dbWorkersBufferFullStat = gateway.stats.NewStat("gateway.db_workers_buffer_full", stats.CountType)
 	gateway.dbWorkersTimeOutStat = gateway.stats.NewStat("gateway.db_workers_time_out", stats.CountType)

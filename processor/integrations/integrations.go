@@ -8,6 +8,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse"
@@ -55,6 +56,55 @@ type PostParametersT struct {
 	QueryParams map[string]interface{} `json:"params"`
 	Body        map[string]interface{} `json:"body"`
 	Files       map[string]interface{} `json:"files"`
+}
+
+type DeliveryResponseT struct {
+	Status int64  `json:"status"`
+	Body   string `json:"responseBody"`
+}
+
+// This struct represents the datastructure present in Transformer network layer Error builder
+type TransErrorSpecT struct {
+	Message                  string                 `json:"message"`
+	Status                   int                    `json:"status"`
+	StatTags                 map[string]string      `json:"statTags"`
+	DestinationResponse      map[string]interface{} `json:"destinationResponse"`
+	ApiLimit                 map[string]interface{} `json:"apiLimit"`
+	Metadata                 map[string]interface{} `json:"metadata"`
+	ResponseTransformFailure bool                   `json:"responseTransformFailure"`
+	FailureAt                string                 `json:"failureAt"`
+}
+
+type TransStatsT struct {
+	StatTags map[string]string `json:"statTags"`
+}
+type TransResponseT struct {
+	Status              int64       `json:"status"`
+	Message             string      `json:"message"`
+	DestinationResponse interface{} `json:"destinationResponse"`
+}
+
+func CollectDestErrorStats(input []byte) {
+	var integrationStat TransStatsT
+	err := json.Unmarshal(input, &integrationStat)
+	if err == nil {
+		if len(integrationStat.StatTags) > 0 {
+			stats.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
+		}
+	}
+}
+
+func CollectIntgTransformErrorStats(input []byte) {
+	var integrationStats []TransStatsT
+	err := json.Unmarshal(input, &integrationStats)
+	if err == nil {
+		for _, integrationStat := range integrationStats {
+			if len(integrationStat.StatTags) > 0 {
+				stats.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
+			}
+		}
+	}
+
 }
 
 // GetPostInfo parses the transformer response

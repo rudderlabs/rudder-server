@@ -1373,7 +1373,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	jd.assertError(err)
 
 	sqlStatement = fmt.Sprintf(`CREATE TABLE %s (
-                                     id BIGSERIAL PRIMARY KEY,
+                                     id BIGSERIAL,
                                      job_id BIGINT REFERENCES %s(job_id),
                                      job_state VARCHAR(64),
                                      attempt SMALLINT,
@@ -1381,7 +1381,8 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
                                      retry_time TIMESTAMP,
                                      error_code VARCHAR(32),
                                      error_response JSONB DEFAULT '{}'::JSONB,
-									 parameters JSONB DEFAULT '{}'::JSONB);`, newDS.JobStatusTable, newDS.JobTable)
+									 parameters JSONB DEFAULT '{}'::JSONB,
+									 PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable, newDS.JobTable)
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
@@ -2185,6 +2186,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	if len(parameterFilters) > 0 {
 		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
 	}
+
 
 	if params.UseTimeFilter {
 		sqlStatement += fmt.Sprintf(" AND created_at < $%d", len(args)+1)
