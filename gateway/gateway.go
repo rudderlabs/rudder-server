@@ -79,6 +79,7 @@ var (
 	userWebRequestBatchTimeout, dbBatchWriteTimeout                           time.Duration
 	enabledWriteKeysSourceMap                                                 map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                                 map[string]string
+	enabledWriteKeyWorkspaceMap                                               map[string]string
 	sourceIDToNameMap                                                         map[string]string
 	configSubscriberLock                                                      sync.RWMutex
 	maxReqSize                                                                int
@@ -546,7 +547,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 				EventCount:   totalEventsInReq,
-				Customer:     gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey),
+				Customer:     enabledWriteKeyWorkspaceMap[writeKey],
 			}
 			jobList = append(jobList, &newJob)
 
@@ -1452,6 +1453,7 @@ func (gateway *HandleT) backendConfigSubscriber() {
 			sourceIDToNameMap[source.ID] = source.Name
 			if source.Enabled {
 				enabledWriteKeysSourceMap[source.WriteKey] = source
+				enabledWriteKeyWorkspaceMap[source.WriteKey] = source.WorkspaceID
 				if source.SourceDefinition.Category == "webhook" {
 					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
 					gateway.webhookHandler.Register(source.SourceDefinition.Name)
