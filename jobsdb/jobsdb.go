@@ -3362,7 +3362,12 @@ func (jd *HandleT) getUnprocessed(params GetQueryParamsT) []*JobT {
 		limitByEventCount = true
 	}
 
-	for _, ds := range dsList {
+	for i, ds := range dsList {
+		//Hack
+		if i > config.GetInt("JobsDB.maxDSQuerySize", 20) {
+			break
+		}
+
 		jd.assert(count > 0, fmt.Sprintf("cannot receive negative job count: %d", count))
 		jobs := jd.getUnprocessedJobsDS(ds, true, count, params)
 		outJobs = append(outJobs, jobs...)
@@ -3597,7 +3602,12 @@ func (jd *HandleT) GetProcessed(params GetQueryParamsT) []*JobT {
 		limitByEventCount = true
 	}
 
-	for _, ds := range dsList {
+	for i, ds := range dsList {
+		//Hack
+		if i > config.GetInt("JobsDB.maxDSQuerySize", 20) {
+			break
+		}
+
 		//count==0 means return all which we don't want
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 		jobs := jd.getProcessedJobsDS(ds, false, count, params)
