@@ -749,7 +749,7 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 	}
 }
 
-func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, commonMetaData transformer.MetadataT, destination backendconfig.DestinationT, stage string, trackingPlanEnabled bool) ([]transformer.TransformerEventT, []*types.PUReportedMetric, map[string]int64, map[string]MetricMetadata) {
+func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, commonMetaData transformer.MetadataT, destination backendconfig.DestinationT, stage string, trackingPlanEnabled, userTransformationEnabled bool) ([]transformer.TransformerEventT, []*types.PUReportedMetric, map[string]int64, map[string]MetricMetadata) {
 	successMetrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
@@ -800,6 +800,17 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		} else if stage == transformer.TrackingPlanValidationStage {
 			inPU = types.GATEWAY
 			pu = types.TRACKINGPLAN_VALIDATOR
+		} else if stage == transformer.FilteringEventsStage {
+			if userTransformationEnabled {
+				inPU = types.USER_TRANSFORMER
+			} else {
+				if trackingPlanEnabled {
+					inPU = types.TRACKINGPLAN_VALIDATOR
+				} else {
+					inPU = types.GATEWAY
+				}
+			}
+			pu = types.SUPPORTED_MESSAGES_FILTER
 		}
 
 		for k, cd := range connectionDetailsMap {
@@ -928,7 +939,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
 		var inPU, pu string
-		if stage == transformer.DestTransformerStage {
+		if stage == transformer.FilteringEventsStage {
 			if transformationEnabled {
 				inPU = types.USER_TRANSFORMER
 			} else {
@@ -938,6 +949,9 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 					inPU = types.GATEWAY
 				}
 			}
+			pu = types.SUPPORTED_MESSAGES_FILTER
+		} else if stage == transformer.DestTransformerStage {
+			inPU = types.SUPPORTED_MESSAGES_FILTER
 			pu = types.DEST_TRANSFORMER
 		} else if stage == transformer.UserTransformerStage {
 			if trackingPlanEnabled {
@@ -1578,7 +1592,7 @@ func (proc *HandleT) transformSrcDest(
 		var successMetrics []*types.PUReportedMetric
 		var successCountMap map[string]int64
 		var successCountMetadataMap map[string]MetricMetadata
-		eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.UserTransformerStage, trackingPlanEnabled)
+		eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.UserTransformerStage, trackingPlanEnabled, transformationEnabled)
 		failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled, trackingPlanEnabled)
 		proc.saveFailedJobs(failedJobs)
 		if _, ok := procErrorJobsByDestID[destID]; !ok {
@@ -1634,8 +1648,8 @@ func (proc *HandleT) transformSrcDest(
 	var successMetrics []*types.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
-	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.UserTransformerStage, trackingPlanEnabled)
-	failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.UserTransformerStage, transformationEnabled, trackingPlanEnabled)
+	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.FilteringEventsStage, trackingPlanEnabled, transformationEnabled)
+	failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.FilteringEventsStage, transformationEnabled, trackingPlanEnabled)
 	proc.saveFailedJobs(failedJobs)
 	if _, ok := procErrorJobsByDestID[destID]; !ok {
 		procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)

@@ -1,13 +1,14 @@
 package processor
 
 import (
+	"strconv"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"strconv"
 )
 
 type TrackingPlanStatT struct {
@@ -98,7 +99,7 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 		trackingPlanEnabledMap[SourceIDT(sourceID)] = true
 
 		var successMetrics []*types.PUReportedMetric
-		eventsToTransform, successMetrics, _, _ := proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.TrackingPlanValidationStage, true)
+		eventsToTransform, successMetrics, _, _ := proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.TrackingPlanValidationStage, true, false) //Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
 		failedJobs, failedMetrics, _ := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.TrackingPlanValidationStage, false, true)
 
 		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
