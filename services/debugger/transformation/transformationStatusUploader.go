@@ -68,7 +68,7 @@ var (
 	configBackendURL             string
 	disableTransformationUploads bool
 	pkgLogger              logger.LoggerI
-	transformationCacheMap debugger.CacheT
+	transformationCacheMap debugger.Cache
 )
 
 var uploadEnabledTransformations map[string]bool

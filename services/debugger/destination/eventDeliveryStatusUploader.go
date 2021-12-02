@@ -34,7 +34,7 @@ var uploader debugger.UploaderI
 var (
 	configBackendURL                  string
 	disableEventDeliveryStatusUploads bool
-	eventsDeliveryCache               debugger.CacheT
+	eventsDeliveryCache               debugger.Cache
 )
 
 var pkgLogger logger.LoggerI

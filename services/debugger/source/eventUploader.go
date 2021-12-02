@@ -40,7 +40,7 @@ var (
 	configBackendURL    string
 	disableEventUploads bool
 	pkgLogger      logger.LoggerI
-	eventsCacheMap debugger.CacheT
+	eventsCacheMap debugger.Cache
 )
 
 func Init() {

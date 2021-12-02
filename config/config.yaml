@@ -48,7 +48,7 @@ Debugger:
 LiveEvent:
   cache:
     size: 3
-    ttl: 30d
+    ttl: 20d
     clearFreq: 5s
 SourceDebugger:
   disableEventUploads: false
