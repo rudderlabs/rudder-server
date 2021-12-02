@@ -49,7 +49,6 @@ func (c *Cache) init() {
 			}
 		}()
 	})
-	//sync.Once{}.Do()
 }
 
 func (c *Cache) update(key string, value string) {
