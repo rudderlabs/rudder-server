@@ -170,6 +170,7 @@ type SourceIDT string
 
 const USER_TRANSFORMATION = "USER_TRANSFORMATION"
 const DEST_TRANSFORMATION = "DEST_TRANSFORMATION"
+const METRICKEYDELIMITER = "!<<DELIMITER>>!"
 
 func buildStatTags(sourceID, workspaceID string, destination backendconfig.DestinationT, transformationType string) map[string]string {
 	var module = "router"
@@ -818,7 +819,12 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 
 func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata, countMap map[string]int64, connectionDetailsMap map[string]*types.ConnectionDetails, statusDetailsMap map[string]*types.StatusDetail, event transformer.TransformerResponseT, status string, payload json.RawMessage) {
 	if proc.isReportingEnabled() {
-		countKey := fmt.Sprintf("%s:%s:%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID)
+		var eventName string
+		var eventType string
+		eventName = event.Metadata.EventName
+		eventType = event.Metadata.EventType
+		countKey := fmt.Sprintf("%s:%s:%s:%s%s%s%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, METRICKEYDELIMITER, eventName, METRICKEYDELIMITER, eventType)
+		proc.logger.Info(countKey)
 		if _, ok := countMap[countKey]; !ok {
 			countMap[countKey] = 0
 		}
@@ -829,7 +835,7 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 			}
 		}
 
-		key := fmt.Sprintf("%s:%s:%s:%s:%d", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, status, event.StatusCode)
+		key := fmt.Sprintf("%s:%s:%s:%s:%d:%s:%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, status, event.StatusCode, eventName, eventType)
 		_, ok := connectionDetailsMap[key]
 		if !ok {
 			cd := types.CreateConnectionDetail(event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, event.Metadata.SourceTaskID, event.Metadata.SourceTaskRunID, event.Metadata.SourceJobID, event.Metadata.SourceJobRunID, event.Metadata.SourceDefinitionID, event.Metadata.DestinationDefinitionID, event.Metadata.SourceCategory)
@@ -837,12 +843,6 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 		}
 		sd, ok := statusDetailsMap[key]
 		if !ok {
-			var eventName string
-			var eventType string
-			if string(payload) != `{}` {
-				eventName = event.Metadata.EventName
-				eventType = event.Metadata.EventType
-			}
 			sd = types.CreateStatusDetail(status, 0, event.StatusCode, event.Error, payload, eventName, eventType)
 			statusDetailsMap[key] = sd
 		}
@@ -873,13 +873,14 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		}
 
 		//Using first element in messages array for sample event
-		sampleEvent, err := json.Marshal(messages[0])
-		if err != nil {
-			proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal first element in failed events: %v`, err)
-			sampleEvent = []byte(`{}`)
+		for _, message := range messages {
+			sampleEvent, err := json.Marshal(message)
+			if err != nil {
+				proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal first element in failed events: %v`, err)
+				sampleEvent = []byte(`{}`)
+			}
+			proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
 		}
-		//Update metrics maps
-		proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
 
 		id := uuid.Must(uuid.NewV4())
 
@@ -1007,6 +1008,10 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	//diff = succesCount + abortCount - inCount
 	diffMetrics := make([]*types.PUReportedMetric, 0)
 	for key, inCount := range inCountMap {
+
+		splitKey := strings.Split(key, METRICKEYDELIMITER)
+		eventName := splitKey[1]
+		eventType := splitKey[2]
 		successCount := successCountMap[key]
 		failedCount := failedCountMap[key]
 		diff := successCount + failedCount - inCount
@@ -1015,7 +1020,7 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 			metric := &types.PUReportedMetric{
 				ConnectionDetails: *types.CreateConnectionDetail(metricMetadata.sourceID, metricMetadata.destinationID, metricMetadata.sourceBatchID, metricMetadata.sourceTaskID, metricMetadata.sourceTaskRunID, metricMetadata.sourceJobID, metricMetadata.sourceJobRunID, metricMetadata.sourceDefinitionID, metricMetadata.destinationDefinitionID, metricMetadata.sourceCategory),
 				PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
-				StatusDetail:      types.CreateStatusDetail(types.DiffStatus, diff, 0, "", []byte(`{}`), "", ""),
+				StatusDetail:      types.CreateStatusDetail(types.DiffStatus, diff, 0, "", []byte(`{}`), eventName, eventType),
 			}
 			diffMetrics = append(diffMetrics, metric)
 		}
@@ -1543,7 +1548,7 @@ func (proc *HandleT) transformSrcDest(
 		inCountMetadataMap = make(map[string]MetricMetadata)
 		for i := range eventList {
 			event := &eventList[i]
-			key := fmt.Sprintf("%s:%s:%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID)
+			key := fmt.Sprintf("%s:%s:%s:%s%s%s%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, METRICKEYDELIMITER, event.Metadata.EventName, METRICKEYDELIMITER, event.Metadata.EventType)
 			if _, ok := inCountMap[key]; !ok {
 				inCountMap[key] = 0
 			}
