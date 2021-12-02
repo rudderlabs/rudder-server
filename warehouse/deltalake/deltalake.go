@@ -134,7 +134,7 @@ func columnsWithValues(keys []string) string {
 
 // GetDatabricksConnectorURL returns databricks connector url.
 func GetDatabricksConnectorURL() string {
-	return config.GetEnv("WAREHOUSE_DATABRICKS_CONNECTOR_URL", "localhost:55051")
+	return config.GetEnv("WAREHOUSE_DATABRICKS_CONNECTOR_URL", "localhost:50051")
 }
 
 // connect creates database connection with CredentialsT
@@ -143,7 +143,7 @@ func (dl *HandleT) connect(cred databricks.CredentialsT) (dbHandleT *databricks.
 	dbHandleT.Cred = &cred
 	dbHandleT.Context = context.Background()
 	dbHandleT.CredIdentifier = uuid.Must(uuid.NewV4()).String()
-	dbHandleT.Conn, err = grpc.Dial(GetDatabricksConnectorURL(), grpc.WithInsecure(), grpc.WithBlock())
+	dbHandleT.Conn, err = grpc.DialContext(dbHandleT.Context, GetDatabricksConnectorURL(), grpc.WithInsecure())
 	if err != nil {
 		return nil, fmt.Errorf("%s Error while creating grpc connection to Delta lake: %v", dl.GetLogIdentifier(), err)
 	}
