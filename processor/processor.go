@@ -168,9 +168,9 @@ type MetricMetadata struct {
 type WriteKeyT string
 type SourceIDT string
 
+const METRICKEYDELIMITER = "!<<#>>!"
 const USER_TRANSFORMATION = "USER_TRANSFORMATION"
 const DEST_TRANSFORMATION = "DEST_TRANSFORMATION"
-const METRICKEYDELIMITER = "!<<DELIMITER>>!"
 
 func buildStatTags(sourceID, workspaceID string, destination backendconfig.DestinationT, transformationType string) map[string]string {
 	var module = "router"
@@ -823,7 +823,7 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 		var eventType string
 		eventName = event.Metadata.EventName
 		eventType = event.Metadata.EventType
-		countKey := fmt.Sprintf("%s:%s:%s:%s%s%s%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, METRICKEYDELIMITER, eventName, METRICKEYDELIMITER, eventType)
+		countKey := fmt.Sprint(event.Metadata.SourceID, METRICKEYDELIMITER, event.Metadata.DestinationID, METRICKEYDELIMITER, event.Metadata.SourceBatchID, METRICKEYDELIMITER, eventName, METRICKEYDELIMITER, eventType)
 		proc.logger.Info(countKey)
 		if _, ok := countMap[countKey]; !ok {
 			countMap[countKey] = 0
@@ -1008,10 +1008,14 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	//diff = succesCount + abortCount - inCount
 	diffMetrics := make([]*types.PUReportedMetric, 0)
 	for key, inCount := range inCountMap {
-
+		var eventName, eventType string
 		splitKey := strings.Split(key, METRICKEYDELIMITER)
-		eventName := splitKey[1]
-		eventType := splitKey[2]
+		if len(splitKey) < 5 {
+			eventName = ""
+			eventType = ""
+		}
+		eventName = splitKey[3]
+		eventType = splitKey[4]
 		successCount := successCountMap[key]
 		failedCount := failedCountMap[key]
 		diff := successCount + failedCount - inCount
@@ -1548,7 +1552,7 @@ func (proc *HandleT) transformSrcDest(
 		inCountMetadataMap = make(map[string]MetricMetadata)
 		for i := range eventList {
 			event := &eventList[i]
-			key := fmt.Sprintf("%s:%s:%s:%s%s%s%s", event.Metadata.SourceID, event.Metadata.DestinationID, event.Metadata.SourceBatchID, METRICKEYDELIMITER, event.Metadata.EventName, METRICKEYDELIMITER, event.Metadata.EventType)
+			key := fmt.Sprint(event.Metadata.SourceID, METRICKEYDELIMITER, event.Metadata.DestinationID, METRICKEYDELIMITER, event.Metadata.SourceBatchID, METRICKEYDELIMITER, event.Metadata.EventName, METRICKEYDELIMITER, event.Metadata.EventType)
 			if _, ok := inCountMap[key]; !ok {
 				inCountMap[key] = 0
 			}
