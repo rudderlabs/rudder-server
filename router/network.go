@@ -26,14 +26,14 @@ type NetHandleT struct {
 }
 
 type SendPostResponse struct {
-	StatusCode int
+	StatusCode          int
 	ResponseContentType string
-	ResponseBody []byte
+	ResponseBody        []byte
 }
 
 //Network interface
 type NetHandleI interface {
-	SendPost(ctx context.Context, structData integrations.PostParametersT) SendPostResponse
+	SendPost(ctx context.Context, structData integrations.PostParametersT) *SendPostResponse
 }
 
 //temp solution for handling complex query params
@@ -56,10 +56,10 @@ func handleQueryParam(param interface{}) string {
 
 //SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
-func (network *NetHandleT) SendPost(ctx context.Context, structData integrations.PostParametersT) SendPostResponse {
+func (network *NetHandleT) SendPost(ctx context.Context, structData integrations.PostParametersT) *SendPostResponse {
 	if disableEgress {
-		return SendPostResponse{
-			StatusCode: 200,
+		return &SendPostResponse{
+			StatusCode:   200,
 			ResponseBody: []byte("200: outgoing disabled"),
 		}
 	}
@@ -103,8 +103,8 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 				// support for JSON ARRAY
 				jsonListStr, ok := bodyValue["batch"].(string)
 				if !ok {
-					return SendPostResponse{
-						StatusCode: 400,
+					return &SendPostResponse{
+						StatusCode:   400,
 						ResponseBody: []byte("400 Unable to parse json list. Unexpected transformer response"),
 					}
 				}
@@ -112,8 +112,8 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			case "XML":
 				strValue, ok := bodyValue["payload"].(string)
 				if !ok {
-					return SendPostResponse{
-						StatusCode: 400,
+					return &SendPostResponse{
+						StatusCode:   400,
 						ResponseBody: []byte("400 Unable to construct xml payload. Unexpected transformer response"),
 					}
 				}
@@ -132,8 +132,8 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		req, err := http.NewRequestWithContext(ctx, requestMethod, postInfo.URL, payload)
 		if err != nil {
 			network.logger.Error(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL))
-			return SendPostResponse{
-				StatusCode: 400,
+			return &SendPostResponse{
+				StatusCode:   400,
 				ResponseBody: []byte(fmt.Sprintf(`400 Unable to construct "%s" request for URL : "%s"`, requestMethod, postInfo.URL)),
 			}
 		}
@@ -188,16 +188,16 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 
 		if err != nil {
 			network.logger.Error("Errored when sending request to the server", err)
-			return SendPostResponse{
-				StatusCode: http.StatusGatewayTimeout,
-				ResponseBody: []byte{},
+			return &SendPostResponse{
+				StatusCode:          http.StatusGatewayTimeout,
+				ResponseBody:        respBody,
 				ResponseContentType: contentTypeHeader,
 			}
 		}
 
-		return SendPostResponse{
-			StatusCode: resp.StatusCode,
-			ResponseBody: respBody,
+		return &SendPostResponse{
+			StatusCode:          resp.StatusCode,
+			ResponseBody:        respBody,
 			ResponseContentType: contentTypeHeader,
 		}
 	}
@@ -205,8 +205,8 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 	// returning 200 with a message in case of unsupported processing
 	// so that we don't process again. can change this code to anything
 	// to be not picked up by router again
-	return SendPostResponse{
-		StatusCode: 200,
+	return &SendPostResponse{
+		StatusCode:   200,
 		ResponseBody: []byte{},
 	}
 

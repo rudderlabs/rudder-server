@@ -258,35 +258,34 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 	return ch
 }
 
-
-func (worker *workerT) recordStatsForFailedTransforms(transformedJobs *[]types.DestinationJobT) {
-	failedTransformationJobCount := 0
-	for _, destJob := range *transformedJobs {
+func (worker *workerT) recordStatsForFailedTransforms(transformType string, transformedJobs []types.DestinationJobT) {
+	for _, destJob := range transformedJobs {
 		if destJob.StatusCode != http.StatusOK {
-			failedTransformationJobCount += 1
+			transformFailedCountStat := stats.NewTaggedStat("router_transform_num_failed_jobs", stats.CountType, stats.Tags{
+				"destType":      worker.rt.destName,
+				"transformType": transformType,
+				"statusCode":    strconv.Itoa(destJob.StatusCode),
+				"destination":   destJob.Destination.ID,
+			})
+			transformFailedCountStat.Count(1)
 		}
-	}
-	if failedTransformationJobCount > 0 {
-		worker.rt.batchOutputCountStat.Count(failedTransformationJobCount)
 	}
 }
 
 func (worker *workerT) routerTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
-	worker.rt.batchInputCountStat.Count(len(routerJobs))
+	worker.rt.routerTransformInputCountStat.Count(len(routerJobs))
 	destinationJobs := worker.rt.transformer.Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
-	worker.rt.batchOutputCountStat.Count(len(destinationJobs))
-	worker.recordStatsForFailedTransforms(&destinationJobs)
+	worker.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
+	worker.recordStatsForFailedTransforms("routerTransform", destinationJobs)
 	return destinationJobs
 }
 
 func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJobT {
-
 	inputJobsLength := len(routerJobs)
 	worker.rt.batchInputCountStat.Count(inputJobsLength)
-
 	destinationJobs := worker.rt.transformer.Transform(transformer.BATCH, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
 	worker.rt.batchOutputCountStat.Count(len(destinationJobs))
-	worker.recordStatsForFailedTransforms(&destinationJobs)
+	worker.recordStatsForFailedTransforms("batch", destinationJobs)
 
 	var totalJobMetadataCount int
 	for _, destinationJob := range destinationJobs {
@@ -840,7 +839,7 @@ func (worker *workerT) updateAbortedMetrics(destinationID, statusCode string) {
 }
 
 func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, payload json.RawMessage,
-	destContentType string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
+	respContentType string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT) {
 	//Enhancing status.ErrorResponse with firstAttemptedAt
 	firstAttemptedAtTime := time.Now()
 	if destinationJobMetadata.FirstAttemptedAt != "" {
@@ -853,7 +852,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 	status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
 	status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "response", respBody)
-	status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "content-type", destContentType)
+	status.ErrorResponse = router_utils.EnhanceJSON(status.ErrorResponse, "content-type", respContentType)
 
 	if isSuccessStatus(respStatusCode) {
 		atomic.AddUint64(&worker.rt.successCount, 1)
