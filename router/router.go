@@ -1333,7 +1333,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			if transformedAtMap[k] == "processor" {
 				inPu = utilTypes.DEST_TRANSFORMER
 			} else {
-				inPu = utilTypes.SUPPORTED_MESSAGES_FILTER
+				inPu = utilTypes.EVENT_FILTER
 			}
 			m := &utilTypes.PUReportedMetric{
 				ConnectionDetails: *cd,

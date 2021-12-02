@@ -1154,7 +1154,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 			if transformedAtMap[k] == "processor" {
 				inPu = types.DEST_TRANSFORMER
 			} else {
-				inPu = types.SUPPORTED_MESSAGES_FILTER
+				inPu = types.EVENT_FILTER
 			}
 			m := &types.PUReportedMetric{
 				ConnectionDetails: *cd,

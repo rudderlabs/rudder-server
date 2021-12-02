@@ -170,6 +170,7 @@ type SourceIDT string
 
 const USER_TRANSFORMATION = "USER_TRANSFORMATION"
 const DEST_TRANSFORMATION = "DEST_TRANSFORMATION"
+const EVENT_FILTER = "EVENT_FILTER"
 
 func buildStatTags(sourceID, workspaceID string, destination backendconfig.DestinationT, transformationType string) map[string]string {
 	var module = "router"
@@ -224,6 +225,22 @@ func (proc *HandleT) newDestinationTransformationStat(sourceID, workspaceID, tra
 		numOutputSuccessEvents: numOutputSuccessEvents,
 		numOutputFailedEvents:  numOutputFailedEvents,
 		transformTime:          destTransform,
+	}
+}
+
+func (proc *HandleT) newEventFilterStat(sourceID, workspaceID string, destination backendconfig.DestinationT) *DestStatT {
+	tags := buildStatTags(sourceID, workspaceID, destination, EVENT_FILTER)
+
+	numEvents := proc.stats.NewTaggedStat("proc_event_filter_input_events", stats.CountType, tags)
+	numOutputSuccessEvents := proc.stats.NewTaggedStat("proc_event_filter_output_success_events", stats.CountType, tags)
+	numOutputFailedEvents := proc.stats.NewTaggedStat("proc_event_filter_output_failed_events", stats.CountType, tags)
+	eventFilterTime := proc.stats.NewTaggedStat("proc_event_filter_time", stats.TimerType, tags)
+
+	return &DestStatT{
+		numEvents:              numEvents,
+		numOutputSuccessEvents: numOutputSuccessEvents,
+		numOutputFailedEvents:  numOutputFailedEvents,
+		transformTime:          eventFilterTime,
 	}
 }
 
@@ -800,7 +817,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		} else if stage == transformer.TrackingPlanValidationStage {
 			inPU = types.GATEWAY
 			pu = types.TRACKINGPLAN_VALIDATOR
-		} else if stage == transformer.FilteringEventsStage {
+		} else if stage == transformer.EventFilterStage {
 			if userTransformationEnabled {
 				inPU = types.USER_TRANSFORMER
 			} else {
@@ -810,7 +827,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 					inPU = types.GATEWAY
 				}
 			}
-			pu = types.SUPPORTED_MESSAGES_FILTER
+			pu = types.EVENT_FILTER
 		}
 
 		for k, cd := range connectionDetailsMap {
@@ -939,7 +956,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
 		var inPU, pu string
-		if stage == transformer.FilteringEventsStage {
+		if stage == transformer.EventFilterStage {
 			if transformationEnabled {
 				inPU = types.USER_TRANSFORMER
 			} else {
@@ -949,9 +966,9 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 					inPU = types.GATEWAY
 				}
 			}
-			pu = types.SUPPORTED_MESSAGES_FILTER
+			pu = types.EVENT_FILTER
 		} else if stage == transformer.DestTransformerStage {
-			inPU = types.SUPPORTED_MESSAGES_FILTER
+			inPU = types.EVENT_FILTER
 			pu = types.DEST_TRANSFORMER
 		} else if stage == transformer.UserTransformerStage {
 			if trackingPlanEnabled {
@@ -1643,13 +1660,14 @@ func (proc *HandleT) transformSrcDest(
 	transformAtFromFeaturesFile := gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String()
 
 	//Filtering events based on the supported message types - START
+	s := time.Now()
 	proc.logger.Debug("Supported messages filtering input size", len(eventsToTransform))
 	response = ConvertToFilteredTransformerResponse(eventsToTransform, transformAt != "none")
 	var successMetrics []*types.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
-	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.FilteringEventsStage, trackingPlanEnabled, transformationEnabled)
-	failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.FilteringEventsStage, transformationEnabled, trackingPlanEnabled)
+	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.EventFilterStage, trackingPlanEnabled, transformationEnabled)
+	failedJobs, failedMetrics, failedCountMap := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.EventFilterStage, transformationEnabled, trackingPlanEnabled)
 	proc.saveFailedJobs(failedJobs)
 	if _, ok := procErrorJobsByDestID[destID]; !ok {
 		procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
@@ -1670,7 +1688,7 @@ func (proc *HandleT) transformSrcDest(
 			}
 		}
 
-		diffMetrics := getDiffMetrics(inPU, types.SUPPORTED_MESSAGES_FILTER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+		diffMetrics := getDiffMetrics(inPU, types.EVENT_FILTER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
 		reportMetrics = append(reportMetrics, successMetrics...)
 		reportMetrics = append(reportMetrics, failedMetrics...)
 		reportMetrics = append(reportMetrics, diffMetrics...)
@@ -1680,7 +1698,12 @@ func (proc *HandleT) transformSrcDest(
 		inCountMetadataMap = successCountMetadataMap
 	}
 	//REPORTING - END
-	//TODO add filteredEvents stats
+	eventFilterStat := proc.newEventFilterStat(sourceID, workspaceID, destination)
+	eventFilterStat.numEvents.Count(len(eventsToTransform))
+	eventFilterStat.numOutputSuccessEvents.Count(len(response.Events))
+	eventFilterStat.numOutputFailedEvents.Count(len(failedJobs))
+	eventFilterStat.transformTime.Since(s)
+
 	//Filtering events based on the supported message types - END
 
 	if len(eventsToTransform) == 0 {
@@ -1738,13 +1761,13 @@ func (proc *HandleT) transformSrcDest(
 			for k, cd := range connectionDetailsMap {
 				m := &types.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *types.CreatePUDetails(types.SUPPORTED_MESSAGES_FILTER, types.DEST_TRANSFORMER, false, false),
+					PUDetails:         *types.CreatePUDetails(types.EVENT_FILTER, types.DEST_TRANSFORMER, false, false),
 					StatusDetail:      statusDetailsMap[k],
 				}
 				successMetrics = append(successMetrics, m)
 			}
 
-			diffMetrics := getDiffMetrics(types.SUPPORTED_MESSAGES_FILTER, types.DEST_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
+			diffMetrics := getDiffMetrics(types.EVENT_FILTER, types.DEST_TRANSFORMER, inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
 
 			reportMetrics = append(reportMetrics, failedMetrics...)
 			reportMetrics = append(reportMetrics, successMetrics...)

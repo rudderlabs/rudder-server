@@ -24,14 +24,14 @@ var (
 	DiffStatus = "diff"
 
 	//Module names
-	GATEWAY                   = "gateway"
-	TRACKINGPLAN_VALIDATOR    = "tracking_plan_validator"
-	USER_TRANSFORMER          = "user_transformer"
-	SUPPORTED_MESSAGES_FILTER = "supported_messages_filter"
-	DEST_TRANSFORMER          = "dest_transformer"
-	ROUTER                    = "router"
-	BATCH_ROUTER              = "batch_router"
-	WAREHOUSE                 = "warehouse"
+	GATEWAY                = "gateway"
+	TRACKINGPLAN_VALIDATOR = "tracking_plan_validator"
+	USER_TRANSFORMER       = "user_transformer"
+	EVENT_FILTER           = "event_filter"
+	DEST_TRANSFORMER       = "dest_transformer"
+	ROUTER                 = "router"
+	BATCH_ROUTER           = "batch_router"
+	WAREHOUSE              = "warehouse"
 )
 
 type Client struct {
