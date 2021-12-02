@@ -1258,6 +1258,7 @@ func (rt *HandleT) Disable() {
 func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
+	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 
 	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
@@ -1277,6 +1278,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			if !ok {
 				cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 				connectionDetailsMap[key] = cd
+				transformedAtMap[key] = parameters.TransformAt
 			}
 			sd, ok := statusDetailsMap[key]
 			if !ok {
@@ -1327,9 +1329,15 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	if rt.reporting != nil && rt.reportingEnabled {
 		utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 		for k, cd := range connectionDetailsMap {
+			var inPu string
+			if transformedAtMap[k] == "processor" {
+				inPu = utilTypes.DEST_TRANSFORMER
+			} else {
+				inPu = utilTypes.SUPPORTED_MESSAGES_FILTER
+			}
 			m := &utilTypes.PUReportedMetric{
 				ConnectionDetails: *cd,
-				PUDetails:         *utilTypes.CreatePUDetails(utilTypes.DEST_TRANSFORMER, utilTypes.ROUTER, true, false),
+				PUDetails:         *utilTypes.CreatePUDetails(inPu, utilTypes.ROUTER, true, false),
 				StatusDetail:      statusDetailsMap[k],
 			}
 			if m.StatusDetail.Count != 0 {
