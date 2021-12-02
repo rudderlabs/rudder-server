@@ -45,10 +45,24 @@ import (
 
 var AppStartTime int64
 var errorStorePath string
+var reservedFolderPaths map[string]bool
 
 const (
 	// RFC3339Milli with milli sec precision
 	RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
+)
+
+const (
+	RudderAsyncDestinationLogs    = "rudder-async-destination-logs"
+	RudderArchives                = "rudder-archives"
+	RudderWarehouseStagingUploads = "rudder-warehouse-staging-uploads"
+	RudderRawDataDestinationLogs  = "rudder-raw-data-destination-logs"
+	RudderWarehouseLoadUploadsTmp = "rudder-warehouse-load-uploads-tmp"
+	RudderIdentityMergeRulesTmp   = "rudder-identity-merge-rules-tmp"
+	RudderIdentityMappingsTmp     = "rudder-identity-mappings-tmp"
+	RudderRedshiftManifests       = "rudder-redshift-manifests"
+	RudderWarehouseJsonUploadsTmp = "rudder-warehouse-json-uploads-tmp"
+	RudderTestPayload             = "rudder-test-payload"
 )
 
 // ErrorStoreT : DS to store the app errors
@@ -72,6 +86,7 @@ var pkgLogger logger.LoggerI
 func Init() {
 	pkgLogger = logger.NewLogger().Child("utils").Child("misc")
 	config.RegisterStringConfigVariable("/tmp/error_store.json", &errorStorePath, false, "recovery.errorStorePath")
+	reservedFolderPaths = GetReservedFolderPaths()
 }
 
 func LoadDestinations() ([]string, []string) {
@@ -296,12 +311,39 @@ func RemoveFilePaths(filePaths ...string) {
 	}
 }
 
+// GetReservedFolderPaths returns all temporary folder paths.
+func GetReservedFolderPaths() (paths map[string]bool) {
+	tmpDirPath, err := CreateTMPDIR()
+	if err != nil {
+		return
+	}
+
+	paths = make(map[string]bool)
+	paths[tmpDirPath] = true
+	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderAsyncDestinationLogs)] = true
+	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderArchives)] = true
+	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderWarehouseStagingUploads)] = true
+	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderRawDataDestinationLogs)] = true
+	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderWarehouseLoadUploadsTmp)] = true
+	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderIdentityMergeRulesTmp)] = true
+	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderIdentityMappingsTmp)] = true
+	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderRedshiftManifests)] = true
+	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderWarehouseJsonUploadsTmp)] = true
+	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload))] = true
+	return
+}
+
 // RemoveEmptyFolderStructureForFilePath recursively cleans up everything till it reaches the stage where the folders are not empty or parent.
 func RemoveEmptyFolderStructureForFilePath(fp string) {
 	if fp == "" {
 		return
 	}
 	for currDir := filepath.Dir(fp); currDir != "/" && currDir != "."; {
+		// Checking if the currDir is present in the temporary folders or not
+		// If present we should stop at that point.
+		if _, ok := reservedFolderPaths[currDir]; ok {
+			break
+		}
 		parentDir := filepath.Dir(currDir)
 		err := syscall.Rmdir(currDir)
 		if err != nil {
@@ -1218,48 +1260,10 @@ func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
 	return result
 }
 
-/*
-// Go supported types
-var kindNames = []string{
-	Invalid:       "invalid",
-	Bool:          "bool",
-	Int:           "int",
-	Int8:          "int8",
-	Int16:         "int16",
-	Int32:         "int32",
-	Int64:         "int64",
-	Uint:          "uint",
-	Uint8:         "uint8",
-	Uint16:        "uint16",
-	Uint32:        "uint32",
-	Uint64:        "uint64",
-	Uintptr:       "uintptr",
-	Float32:       "float32",
-	Float64:       "float64",
-	Complex64:     "complex64",
-	Complex128:    "complex128",
-	Array:         "array",
-	Chan:          "chan",
-	Func:          "func",
-	Interface:     "interface",
-	Map:           "map",
-	Ptr:           "ptr",
-	Slice:         "slice",
-	String:        "string",
-	Struct:        "struct",
-	UnsafePointer: "unsafe.Pointer",
-}
-
-// Json schema supported types
-string
-number
-integer
-object
-array
-boolean
-null
-*/
 // GetJsonSchemaDTFromGoDT returns the json schema supported data types from go lang supported data types.
+// References:
+// 1. Go supported types: https://golangbyexample.com/all-data-types-in-golang-with-examples/
+// 2. Json schema supported types: https://json-schema.org/understanding-json-schema/reference/type.html
 func GetJsonSchemaDTFromGoDT(goType string) string {
 	switch goType {
 	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64":

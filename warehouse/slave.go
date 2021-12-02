@@ -62,7 +62,7 @@ func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bo
  */
 func (jobRun *JobRunT) setStagingFileDownloadPath() (filePath string) {
 	job := jobRun.job
-	dirName := "/rudder-warehouse-json-uploads-tmp/"
+	dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseJsonUploadsTmp)
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to create tmp DIR")
