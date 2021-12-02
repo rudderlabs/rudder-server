@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+/*
+	loadCacheConfig sets the properties of the cache after reading it from the config file.
+This gives a feature of hot readability as well.
+ */
 func (cache *CacheT) loadCacheConfig() {
 	config.RegisterIntConfigVariable(3, &cache.size, true, 1, "LiveEvent.Cache.Size")
 	config.RegisterDurationConfigVariable(time.Duration(720), &cache.keyTTL, true, time.Hour,
@@ -19,15 +23,23 @@ type cacheItem struct {
 	lastAccess time.Time
 }
 
+/*
+	CacheT is an in-memory cache. Each key-value pair stored in this cache have a TTL and one goroutine removes the
+key-value pair form the cache which is older than TTL time.
+*/
 type CacheT struct {
 	lock        sync.RWMutex
-	keyTTL      time.Duration
-	cleanupFreq time.Duration
-	size        int
+	keyTTL      time.Duration // Time after which the data will be expired and removed from the cache
+	cleanupFreq time.Duration // This is the time at which a cleaner goroutines  checks whether the data is expired in cache
+	size        int           // This is the size upto which this cache can store a value corresponding to any key
 	cacheMap    map[string]*cacheItem
 	once        sync.Once
 }
 
+/*
+This method initiates the cache object. To initiate, this sets certain properties of the cache like keyTTL,
+cleanupFreq, size, empty cacheMap
+ */
 func (cache *CacheT) init() {
 	cache.once.Do(func() {
 		cache.loadCacheConfig()
@@ -50,6 +62,9 @@ func (cache *CacheT) init() {
 	})
 }
 
+/*
+	Update Inserts the data in the cache, This method expects a string as a key and []byte as the data
+ */
 func (cache *CacheT) Update(key string, value []byte) {
 	cache.init()
 	cache.lock.Lock()
@@ -67,6 +82,11 @@ func (cache *CacheT) Update(key string, value []byte) {
 	cache.cacheMap[key].lastAccess = time.Now()
 }
 
+/*
+	ReadAndPopData reads the data by taking a string key,
+if there is any data available corresponding to the given key then it removes the data from the cache and returns it
+in the form of []byte
+ */
 func (cache *CacheT) ReadAndPopData(key string) [][]byte {
 	cache.init()
 	var historicEventsDelivery [][]byte
