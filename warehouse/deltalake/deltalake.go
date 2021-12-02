@@ -134,7 +134,7 @@ func columnsWithValues(keys []string) string {
 
 // GetDatabricksConnectorURL returns databricks connector url.
 func GetDatabricksConnectorURL() string {
-	return config.GetEnv("DATABRICKS_CONNECTOR_URL", "localhost:8000")
+	return config.GetEnv("WAREHOUSE_DATABRICKS_CONNECTOR_URL", "localhost:55051")
 }
 
 // connect creates database connection with CredentialsT
