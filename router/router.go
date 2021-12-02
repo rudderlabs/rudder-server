@@ -901,7 +901,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			addToFailedMap = false
 			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID, status.ErrorCode)
 			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
-			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "error_response", status.ErrorResponse)
+			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "reason", status.ErrorResponse) //NOTE: Old key used was "error_response"
 		}
 
 		if worker.rt.guaranteeUserEventOrder {
