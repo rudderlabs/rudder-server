@@ -967,7 +967,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 	return
 }
 
-func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err error, postToWarehouseErr bool) {
+func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOccurred error, postToWarehouseErr bool) {
 	var (
 		batchJobState string
 		errorResp     []byte
@@ -975,23 +975,23 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 	jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
 	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
-	if err != nil {
+	if errOccurred != nil {
 		switch {
-		case errors.Is(err, rterror.DisabledEgress):
+		case errors.Is(errOccurred, rterror.DisabledEgress):
 			brt.logger.Debugf("BRT: Outgoing traffic disabled : %v at %v", batchJobs.BatchDestination.Source.ID,
 				time.Now().Format("01-02-2006"))
 			batchJobState = jobsdb.Succeeded.State
-			errorResp = []byte(fmt.Sprintf(`{"success":"%s"}`, err.Error()))
-		case errors.Is(err, rterror.InvalidServiceProvider):
+			errorResp = []byte(fmt.Sprintf(`{"success":"%s"}`, errOccurred.Error()))
+		case errors.Is(errOccurred, rterror.InvalidServiceProvider):
 			brt.logger.Warnf("BRT: Destination %s : %s for destination ID : %v at %v",
-				batchJobs.BatchDestination.Destination.DestinationDefinition.DisplayName, err.Error(),
+				batchJobs.BatchDestination.Destination.DestinationDefinition.DisplayName, errOccurred.Error(),
 				batchJobs.BatchDestination.Destination.ID, time.Now().Format("01-02-2006"))
 			batchJobState = jobsdb.Aborted.State
-			errorResp = []byte(fmt.Sprintf(`{"reason":"%s"}`, err.Error()))
+			errorResp = []byte(fmt.Sprintf(`{"reason":"%s"}`, errOccurred.Error()))
 		default:
-			brt.logger.Errorf("BRT: Error uploading to object storage: %v %v", err, batchJobs.BatchDestination.Source.ID)
+			brt.logger.Errorf("BRT: Error uploading to object storage: %v %v", errOccurred, batchJobs.BatchDestination.Source.ID)
 			batchJobState = jobsdb.Failed.State
-			errorResp, _ = json.Marshal(ErrorResponseT{Error: err.Error()})
+			errorResp, _ = json.Marshal(ErrorResponseT{Error: errOccurred.Error()})
 			batchReqMetric.batchRequestFailed = 1
 			// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
 		}
@@ -1016,6 +1016,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 		warehouseServiceFailedTimeLock.Unlock()
 	}
 
+	var err error
 	reportMetrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
@@ -1051,6 +1052,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 			if !postToWarehouseErr && timeElapsed > brt.retryTimeWindow && job.LastJobStatus.AttemptNum >= brt.
 				maxFailedCountForJob {
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
+				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 				abortedEvents = append(abortedEvents, job)
 				router.PrepareJobRunIdAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 				jobState = jobsdb.Aborted.State
@@ -1060,6 +1062,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 				warehouseServiceFailedTimeLock.RLock()
 				if time.Since(warehouseServiceFailedTime) > warehouseServiceMaxRetryTime {
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
+					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 					abortedEvents = append(abortedEvents, job)
 					router.PrepareJobRunIdAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 					jobState = jobsdb.Aborted.State
@@ -1068,6 +1071,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, err er
 			}
 		case jobsdb.Aborted.State:
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
+			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 			abortedEvents = append(abortedEvents, job)
 			router.PrepareJobRunIdAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 		}
