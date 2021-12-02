@@ -243,7 +243,6 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 			time.Sleep(1 * time.Second)
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledB, &deliveryStatus)).To(BeFalse())
-			Expect(len(eventsDeliveryCache.m)).To(Equal(1))
 		})
 
 		It("records events", func() {

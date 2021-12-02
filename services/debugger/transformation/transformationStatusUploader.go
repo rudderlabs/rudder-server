@@ -68,7 +68,7 @@ var (
 	configBackendURL             string
 	disableTransformationUploads bool
 	pkgLogger              logger.LoggerI
-	transformationCacheMap Cache
+	transformationCacheMap debugger.CacheT
 )
 
 var uploadEnabledTransformations map[string]bool
@@ -80,7 +80,6 @@ func Init() {
 }
 
 func loadConfig() {
-	loadCacheConfig()
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
 }
@@ -179,7 +178,8 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 		} else {
 			tStatusUpdated := *tStatus
 			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
-			transformationCacheMap.update(transformation.ID, &tStatusUpdated)
+			tStatusUpdatedData, _ := json.Marshal(tStatusUpdated)
+			transformationCacheMap.Update(transformation.ID, tStatusUpdatedData)
 		}
 	}
 
@@ -224,9 +224,13 @@ func getEventsAfterTransform(singularEvent types.SingularEventT, receivedAt time
 
 func recordHistoricTransformations(tIDs []string) {
 	for _, tID := range tIDs {
-		tStatuses := transformationCacheMap.readAndPopData(tID)
+		tStatuses := transformationCacheMap.ReadAndPopData(tID)
 		for _, tStatus := range tStatuses {
-			processRecordTransformationStatus(tStatus, tID)
+			var tStatusData TransformationStatusT
+			if err := json.Unmarshal(tStatus, &tStatusData); err != nil {
+				panic(err)
+			}
+			processRecordTransformationStatus(&tStatusData, tID)
 		}
 	}
 }

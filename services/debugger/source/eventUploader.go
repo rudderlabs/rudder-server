@@ -39,8 +39,8 @@ var uploader debugger.UploaderI
 var (
 	configBackendURL    string
 	disableEventUploads bool
-	pkgLogger           logger.LoggerI
-	eventsCacheMap      Cache
+	pkgLogger      logger.LoggerI
+	eventsCacheMap debugger.CacheT
 )
 
 func Init() {
@@ -49,7 +49,6 @@ func Init() {
 }
 
 func loadConfig() {
-	loadCacheConfig()
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableEventUploads, true, "SourceDebugger.disableEventUploads")
 }
@@ -67,9 +66,6 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 	rruntime.Go(func() {
 		backendConfigSubscriber(backendConfig)
 	})
-	rruntime.Go(func() {
-		eventsCacheMap.printCache()
-	})
 }
 
 //recordHistoricEvents sends the events collected in cache as live events.
@@ -77,8 +73,12 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 //IMP: The function must be called before releasing configSubscriberLock lock to ensure the order of RecordEvent call
 func recordHistoricEvents(writeKeys []string) {
 	for _, writeKey := range writeKeys {
-		historicEvents := eventsCacheMap.readAndPopData(writeKey)
-		for _, eventBatch := range historicEvents {
+		historicEvents := eventsCacheMap.ReadAndPopData(writeKey)
+		for _, eventBatchData := range historicEvents {
+			var eventBatch string
+			if err := json.Unmarshal(eventBatchData, &eventBatch); err != nil {
+				panic(err)
+			}
 			uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatch})
 		}
 	}
@@ -96,7 +96,8 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !misc.ContainsString(uploadEnabledWriteKeys, writeKey) {
-		eventsCacheMap.update(writeKey, eventBatch)
+		eventBatchData, _ := json.Marshal(eventBatch)
+		eventsCacheMap.Update(writeKey, eventBatchData)
 		return false
 	}
 

@@ -34,7 +34,7 @@ var uploader debugger.UploaderI
 var (
 	configBackendURL                  string
 	disableEventDeliveryStatusUploads bool
-	eventsDeliveryCache               Cache
+	eventsDeliveryCache               debugger.CacheT
 )
 
 var pkgLogger logger.LoggerI
@@ -45,7 +45,6 @@ func Init() {
 }
 
 func loadConfig() {
-	loadCacheConfig()
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
 }
@@ -65,7 +64,8 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !HasUploadEnabled(destinationID) {
-		eventsDeliveryCache.update(destinationID, deliveryStatus)
+		deliveryStatusData, _ := json.Marshal(deliveryStatus)
+		eventsDeliveryCache.Update(destinationID, deliveryStatusData)
 		return false
 	}
 
@@ -89,10 +89,6 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 
 	rruntime.Go(func() {
 		backendConfigSubscriber(backendConfig)
-	})
-
-	rruntime.Go(func() {
-		eventsDeliveryCache.printCache()
 	})
 }
 
@@ -149,9 +145,13 @@ func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 
 func recordHistoricEventsDelivery(destinationIDs []string) {
 	for _, destinationID := range destinationIDs {
-		historicEventsDelivery := eventsDeliveryCache.readAndPopData(destinationID)
+		historicEventsDelivery := eventsDeliveryCache.ReadAndPopData(destinationID)
 		for _, event := range historicEventsDelivery {
-			uploader.RecordEvent(event)
+			var historicEventsDeliveryData DeliveryStatusT
+			if err := json.Unmarshal(event, &historicEventsDeliveryData); err != nil {
+				panic(err)
+			}
+			uploader.RecordEvent(&historicEventsDeliveryData)
 		}
 	}
 }

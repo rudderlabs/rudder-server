@@ -45,18 +45,17 @@ Debugger:
   maxRetry: 3
   batchTimeout: 2s
   retrySleep: 100ms
+LiveEvent:
+  Cache:
+    Size: 3
+    TTL: 30d
+    ClearFreq: 5s
 SourceDebugger:
   disableEventUploads: false
-  maxEventsCacheSize: 3
-  maxEventsCacheTTL: 30d
 DestinationDebugger:
   disableEventDeliveryStatusUploads: false
-  maxEventsCacheSize: 3
-  maxEventsCacheTTL: 30d
 TransformationDebugger:
   disableTransformationStatusUploads: false
-  maxTransformationsCacheSize: 3
-  maxTransformationsCacheTTL: 30d
 Archiver:
   backupRowsBatchSize: 100
 JobsDB:
