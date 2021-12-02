@@ -239,20 +239,21 @@ func processRecordTransformationStatus(tStatus *TransformationStatusT, tID strin
 	reportedMessageIDs := make(map[string]struct{})
 	eventBeforeMap := make(map[string]*EventBeforeTransform)
 	eventAfterMap := make(map[string]*EventsAfterTransform)
-	for _, userTransformerEvent := range tStatus.UserTransformedEvents {
-		if userTransformerEvent.Metadata.MessageID != "" {
-			reportedMessageIDs[userTransformerEvent.Metadata.MessageID] = struct{}{}
-			singularEventWithReceivedAt := tStatus.EventsByMessageID[userTransformerEvent.Metadata.MessageID]
-			if _, ok := eventBeforeMap[userTransformerEvent.Metadata.MessageID]; !ok {
-				eventBeforeMap[userTransformerEvent.Metadata.MessageID] = getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
+	for i := range tStatus.UserTransformedEvents {
+		metadata := tStatus.UserTransformedEvents[i].Metadata
+		if metadata.MessageID != "" {
+			reportedMessageIDs[metadata.MessageID] = struct{}{}
+			singularEventWithReceivedAt := tStatus.EventsByMessageID[metadata.MessageID]
+			if _, ok := eventBeforeMap[metadata.MessageID]; !ok {
+				eventBeforeMap[metadata.MessageID] = getEventBeforeTransform(singularEventWithReceivedAt.SingularEvent, singularEventWithReceivedAt.ReceivedAt)
 			}
 
-			if _, ok := eventAfterMap[userTransformerEvent.Metadata.MessageID]; !ok {
-				eventAfterMap[userTransformerEvent.Metadata.MessageID] = getEventsAfterTransform(userTransformerEvent.Message, time.Now())
+			if _, ok := eventAfterMap[metadata.MessageID]; !ok {
+				eventAfterMap[metadata.MessageID] = getEventsAfterTransform(tStatus.UserTransformedEvents[i].Message, time.Now())
 			} else {
-				payloadArr := eventAfterMap[userTransformerEvent.Metadata.MessageID].EventPayloads
-				payloadArr = append(payloadArr, getEventAfterTransform(userTransformerEvent.Message))
-				eventAfterMap[userTransformerEvent.Metadata.MessageID].EventPayloads = payloadArr
+				payloadArr := eventAfterMap[metadata.MessageID].EventPayloads
+				payloadArr = append(payloadArr, getEventAfterTransform(tStatus.UserTransformedEvents[i].Message))
+				eventAfterMap[metadata.MessageID].EventPayloads = payloadArr
 			}
 		}
 	}

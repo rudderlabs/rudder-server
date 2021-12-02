@@ -544,11 +544,10 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 				brt.configSubscriberLock.Unlock()
 				dedupedIDMergeRuleJobs++
 				continue
-			} else {
-				brt.encounteredMergeRuleMap[warehouseConnIdentifier][ruleIdentifier] = true
-				brt.encounteredMergeRuleMapLock.Unlock()
-				brt.configSubscriberLock.Unlock()
 			}
+			brt.encounteredMergeRuleMap[warehouseConnIdentifier][ruleIdentifier] = true
+			brt.encounteredMergeRuleMapLock.Unlock()
+			brt.configSubscriberLock.Unlock()
 		}
 
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
@@ -637,7 +636,6 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 	switch datePrefixLayout {
 	case "MM-DD-YYYY": //used to be earlier default
 		datePrefixLayout = time.Now().Format("01-02-2006")
-		break
 	default:
 		datePrefixLayout = time.Now().Format("2006-01-02")
 	}
@@ -917,11 +915,9 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		for columnName, columnType := range columns {
 			if _, ok := schemaMap[tableName][columnName]; !ok {
 				schemaMap[tableName][columnName] = columnType
-			} else {
+			} else if  columnType == "text" && schemaMap[tableName][columnName] == "string" {
 				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
-				if columnType == "text" && schemaMap[tableName][columnName] == "string" {
-					schemaMap[tableName][columnName] = columnType
-				}
+				schemaMap[tableName][columnName] = columnType
 			}
 		}
 	}
