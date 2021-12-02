@@ -46,10 +46,10 @@ Debugger:
   batchTimeout: 2s
   retrySleep: 100ms
 LiveEvent:
-  Cache:
-    Size: 3
-    TTL: 30d
-    ClearFreq: 5s
+  cache:
+    size: 3
+    ttl: 30d
+    clearFreq: 5s
 SourceDebugger:
   disableEventUploads: false
 DestinationDebugger:

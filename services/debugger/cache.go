@@ -11,11 +11,11 @@ import (
 This gives a feature of hot readability as well.
  */
 func (cache *CacheT) loadCacheConfig() {
-	config.RegisterIntConfigVariable(3, &cache.size, true, 1, "LiveEvent.Cache.Size")
+	config.RegisterIntConfigVariable(3, &cache.size, true, 1, "LiveEvent.Cache.size")
 	config.RegisterDurationConfigVariable(time.Duration(720), &cache.keyTTL, true, time.Hour,
-		"LiveEvent.Cache.TTL")            // default KeyTTL 15 days
+		"LiveEvent.cache.ttl")            // default keyTTL is 30 days
 	config.RegisterDurationConfigVariable(time.Duration(15), &cache.cleanupFreq, true, time.Second,
-		"LiveEvent.Cache.ClearFreq") // default KeyTTL 15 days
+		"LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
 }
 
 type cacheItem struct {
