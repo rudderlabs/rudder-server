@@ -198,7 +198,7 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			pkgLogger.Errorf("MS: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
 			return nil, err
 		}
-		dirName := "/rudder-warehouse-load-uploads-tmp/"
+		dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseLoadUploadsTmp)
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
 			pkgLogger.Errorf("MS: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
