@@ -139,21 +139,19 @@ func GetDatabricksConnectorURL() string {
 
 // connect creates database connection with CredentialsT
 func (dl *HandleT) connect(cred databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
-	dbHandleT = &databricks.DBHandleT{}
-	dbHandleT.Cred = &cred
-	dbHandleT.Context = context.Background()
-	dbHandleT.CredIdentifier = uuid.Must(uuid.NewV4()).String()
-	dbHandleT.Conn, err = grpc.DialContext(dbHandleT.Context, GetDatabricksConnectorURL(), grpc.WithInsecure())
+	context := context.Background()
+	conn, err := grpc.DialContext(context, GetDatabricksConnectorURL(), grpc.WithInsecure())
 	if err != nil {
 		return nil, fmt.Errorf("%s Error while creating grpc connection to Delta lake: %v", dl.GetLogIdentifier(), err)
 	}
-	dbHandleT.Client = proto.NewDatabricksClient(dbHandleT.Conn)
-	connectionResponse, err := dbHandleT.Client.Connect(dbHandleT.Context, &proto.ConnectionRequest{
-		Host:           dbHandleT.Cred.Host,
-		Port:           dbHandleT.Cred.Port,
-		Pwd:            dbHandleT.Cred.Token,
-		HttpPath:       dbHandleT.Cred.Path,
-		Identifier:     dbHandleT.CredIdentifier,
+	identifier := uuid.Must(uuid.NewV4()).String()
+	client := proto.NewDatabricksClient(conn)
+	connectionResponse, err := client.Connect(context, &proto.ConnectionRequest{
+		Host:           cred.Host,
+		Port:           cred.Port,
+		Pwd:            cred.Token,
+		HttpPath:       cred.Path,
+		Identifier:     identifier,
 		UserAgentEntry: "RudderStack",
 	})
 	if err != nil {
@@ -161,6 +159,13 @@ func (dl *HandleT) connect(cred databricks.CredentialsT) (dbHandleT *databricks.
 	}
 	if len(connectionResponse.GetError()) != 0 {
 		return nil, fmt.Errorf("%s Error connection to Delta lake with response:%v", dl.GetLogIdentifier(), connectionResponse.GetError())
+	}
+
+	dbHandleT = &databricks.DBHandleT{
+		CredIdentifier: identifier,
+		Conn:           conn,
+		Client:         client,
+		Context:        context,
 	}
 	return dbHandleT, nil
 }
@@ -570,9 +575,9 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	for _, tableName := range filteredTablesNames {
 		// Creating describe sql statement for table
 		ttSqlStatement := fmt.Sprintf(`SELECT * FROM %s.%s LIMIT 1;`, dl.Namespace, tableName)
-		fetchTableAttributesResponse, err := dl.dbHandleT.Client.FetchTableAttributes(dl.dbHandleT.Context, &proto.ExecuteRequest{
+		fetchTableAttributesResponse, err := dbHandle.Client.FetchTableAttributes(dbHandle.Context, &proto.ExecuteRequest{
 			SqlStatement: ttSqlStatement,
-			Identifier:   dl.dbHandleT.CredIdentifier,
+			Identifier:   dbHandle.CredIdentifier,
 		})
 		if err != nil {
 			return schema, fmt.Errorf("%s Error while fetching table attributes: %v", dl.GetLogIdentifier(), err)
@@ -609,6 +614,7 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	dl.Warehouse = warehouse
 	dl.dbHandleT, err = dl.connectToWarehouse()
+	// TODO: Check this.
 	return
 }
 
@@ -703,4 +709,3 @@ func (dl *HandleT) GetLogIdentifier(args ...string) string {
 	}
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", dl.Warehouse.Type, dl.Warehouse.Source.ID, dl.Warehouse.Destination.ID, dl.Warehouse.Namespace, strings.Join(args, "]["))
 }
-
