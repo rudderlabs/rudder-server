@@ -409,7 +409,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			pkgLogger.Debugf("MS: Record Interface: %v", recordInterface)
 			_, err = stmt.Exec(finalColumnValues...)
 			if err != nil {
-				pkgLogger.Errorf("MS: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
+				pkgLogger.Errorf("MS: Error in exec statement for loading in staging table from file :%s: File:'%s' %v", stagingTableName, objectFileName, err)
 				txn.Rollback()
 				return
 			}
