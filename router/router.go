@@ -1271,7 +1271,9 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		//Update metrics maps
 		//REPORTING - ROUTER - START
 		if rt.reporting != nil && rt.reportingEnabled {
-			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
+			eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
+			eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
+			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
 			cd, ok := connectionDetailsMap[key]
 			if !ok {
 				cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
@@ -1284,8 +1286,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				if err != nil {
 					errorCode = 200 //TODO handle properly
 				}
-				eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
-				eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
 				sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload, eventName, eventType)
 				statusDetailsMap[key] = sd
 			}
