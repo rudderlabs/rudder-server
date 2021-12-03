@@ -19,7 +19,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DatabricksClient interface {
 	Connect(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*ConnectionResponse, error)
-	Close(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*ConnectionResponse, error)
+	Close(ctx context.Context, in *CloseConnectionRequest, opts ...grpc.CallOption) (*CloseConnectionResponse, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*ExecuteResponse, error)
 	FetchSchemas(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*FetchSchemasResponse, error)
 	FetchTables(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*FetchTablesResponse, error)
@@ -44,8 +44,8 @@ func (c *databricksClient) Connect(ctx context.Context, in *ConnectionRequest, o
 	return out, nil
 }
 
-func (c *databricksClient) Close(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*ConnectionResponse, error) {
-	out := new(ConnectionResponse)
+func (c *databricksClient) Close(ctx context.Context, in *CloseConnectionRequest, opts ...grpc.CallOption) (*CloseConnectionResponse, error) {
+	out := new(CloseConnectionResponse)
 	err := c.cc.Invoke(ctx, "/proto.Databricks/Close", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -103,7 +103,7 @@ func (c *databricksClient) FetchTotalCountInTable(ctx context.Context, in *Execu
 // for forward compatibility
 type DatabricksServer interface {
 	Connect(context.Context, *ConnectionRequest) (*ConnectionResponse, error)
-	Close(context.Context, *ConnectionRequest) (*ConnectionResponse, error)
+	Close(context.Context, *CloseConnectionRequest) (*CloseConnectionResponse, error)
 	Execute(context.Context, *ExecuteRequest) (*ExecuteResponse, error)
 	FetchSchemas(context.Context, *ExecuteRequest) (*FetchSchemasResponse, error)
 	FetchTables(context.Context, *ExecuteRequest) (*FetchTablesResponse, error)
@@ -119,7 +119,7 @@ type UnimplementedDatabricksServer struct {
 func (UnimplementedDatabricksServer) Connect(context.Context, *ConnectionRequest) (*ConnectionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Connect not implemented")
 }
-func (UnimplementedDatabricksServer) Close(context.Context, *ConnectionRequest) (*ConnectionResponse, error) {
+func (UnimplementedDatabricksServer) Close(context.Context, *CloseConnectionRequest) (*CloseConnectionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Close not implemented")
 }
 func (UnimplementedDatabricksServer) Execute(context.Context, *ExecuteRequest) (*ExecuteResponse, error) {
@@ -169,7 +169,7 @@ func _Databricks_Connect_Handler(srv interface{}, ctx context.Context, dec func(
 }
 
 func _Databricks_Close_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ConnectionRequest)
+	in := new(CloseConnectionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func _Databricks_Close_Handler(srv interface{}, ctx context.Context, dec func(in
 		FullMethod: "/proto.Databricks/Close",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DatabricksServer).Close(ctx, req.(*ConnectionRequest))
+		return srv.(DatabricksServer).Close(ctx, req.(*CloseConnectionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

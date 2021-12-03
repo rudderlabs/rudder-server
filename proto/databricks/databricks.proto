@@ -4,7 +4,7 @@ option go_package = ".;proto";
 
 service Databricks {
   rpc Connect(ConnectionRequest) returns (ConnectionResponse) {}
-  rpc Close(ConnectionRequest) returns (ConnectionResponse) {}
+  rpc Close(CloseConnectionRequest) returns (CloseConnectionResponse) {}
   rpc Execute(ExecuteRequest) returns (ExecuteResponse) {}
   rpc FetchSchemas(ExecuteRequest) returns (FetchSchemasResponse) {}
   rpc FetchTables(ExecuteRequest) returns (FetchTablesResponse) {}
@@ -22,6 +22,14 @@ message ConnectionRequest {
 }
 
 message ConnectionResponse{
+  string error = 1;
+}
+
+message CloseConnectionRequest {
+  string identifier = 1;
+}
+
+message CloseConnectionResponse {
   string error = 1;
 }
 
