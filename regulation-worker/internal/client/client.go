@@ -88,7 +88,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 
 	genEndPoint := "/worker/workspaces/{workspace_id}/regulations/worker-job/{job_id}"
 	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID, fmt.Sprint(jobID)))
-	statusSchema := statusJobSchema{
+	statusSchema := StatusJobSchema{
 		Status: string(status),
 	}
 	body, err := json.Marshal(statusSchema)

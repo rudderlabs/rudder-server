@@ -38,7 +38,8 @@ func TestJobSvc(t *testing.T) {
 		{
 			name: "regulation worker returns without err",
 			job: model.Job{
-				ID: 1,
+				ID:          1,
+				WorkspaceID: "1234",
 			},
 			expectedStatus:  model.JobStatusRunning,
 			deleteJobStatus: model.JobStatusComplete,
@@ -81,10 +82,10 @@ func TestJobSvc(t *testing.T) {
 			mockAPIClient.EXPECT().UpdateStatus(ctx, tt.deleteJobStatus, jobID).Return(tt.updateStatusErrAfter).Times(tt.updateStatusAfterCallCount)
 
 			mockDeleter := service.NewMockdeleter(mockCtrl)
-			mockDeleter.EXPECT().DeleteJob(ctx, tt.job, tt.dest).Return(tt.deleteJobStatus, tt.deleteJobErr).Times(tt.deleteJobCallCount)
+			mockDeleter.EXPECT().Delete(ctx, tt.job, tt.dest).Return(tt.deleteJobStatus).Times(tt.deleteJobCallCount)
 
 			mockDestDetail := service.NewMockdestDetail(mockCtrl)
-			mockDestDetail.EXPECT().GetDestDetails(tt.job.DestinationID).Return(tt.dest, nil).Times(tt.getDestDetailsCount)
+			mockDestDetail.EXPECT().GetDestDetails(tt.job.DestinationID, tt.job.WorkspaceID).Return(tt.dest, nil).Times(tt.getDestDetailsCount)
 			svc := service.JobSvc{
 				API:        mockAPIClient,
 				Deleter:    mockDeleter,

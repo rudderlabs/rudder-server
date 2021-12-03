@@ -73,25 +73,26 @@ func (m *MockdestType) EXPECT() *MockdestTypeMockRecorder {
 }
 
 // DestType mocks base method.
-func (m *MockdestType) DestType(batchdest []string, destName string) string {
+func (m *MockdestType) DestType(batchDest, customdest []string, destName string) string {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DestType", batchdest, destName)
+	ret := m.ctrl.Call(m, "DestType", batchDest, customdest, destName)
 	ret0, _ := ret[0].(string)
 	return ret0
 }
 
 // DestType indicates an expected call of DestType.
-func (mr *MockdestTypeMockRecorder) DestType(batchdest, destName interface{}) *gomock.Call {
+func (mr *MockdestTypeMockRecorder) DestType(batchDest, customdest, destName interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DestType", reflect.TypeOf((*MockdestType)(nil).DestType), batchdest, destName)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DestType", reflect.TypeOf((*MockdestType)(nil).DestType), batchDest, customdest, destName)
 }
 
 // LoadBatchList mocks base method.
-func (m *MockdestType) LoadBatchList() []string {
+func (m *MockdestType) LoadBatchList() ([]string, []string) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "LoadBatchList")
 	ret0, _ := ret[0].([]string)
-	return ret0
+	ret1, _ := ret[1].([]string)
+	return ret0, ret1
 }
 
 // LoadBatchList indicates an expected call of LoadBatchList.

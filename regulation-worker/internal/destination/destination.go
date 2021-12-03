@@ -19,8 +19,8 @@ type DestMiddleware struct {
 }
 
 type destType interface {
-	LoadBatchList() []string
-	DestType(batchdest []string, destName string) string
+	LoadBatchList() ([]string, []string)
+	DestType(batchDest []string, customdest []string, destName string) string
 }
 
 type DestCategory struct {
@@ -29,7 +29,7 @@ type DestCategory struct {
 //make api call to get json and then parse it to get destination related details
 //like: dest_type, auth details,
 //return destination Type enum{file, api}
-func (d *DestMiddleware) GetDestDetails(destID string) (model.Destination, error) {
+func (d *DestMiddleware) GetDestDetails(destID, workspaceID string) (model.Destination, error) {
 	config, notErr := d.Dest.Get()
 	if !notErr {
 		return model.Destination{}, fmt.Errorf("error while getting destination details")
@@ -45,21 +45,22 @@ func (d *DestMiddleware) GetDestDetails(destID string) (model.Destination, error
 			}
 		}
 	}
-	batchDestinations := d.DestCat.LoadBatchList()
-	destDetail.Type = d.DestCat.DestType(batchDestinations, destDetail.Name)
+	batchDestinations, customDestination := d.DestCat.LoadBatchList()
+	destDetail.Type = d.DestCat.DestType(batchDestinations, customDestination, destDetail.Name)
 
 	return destDetail, nil
 }
 
-func (dc *DestCategory) LoadBatchList() []string {
-	batchDest, _ := misc.LoadDestinations()
-	return batchDest
+func (dc *DestCategory) LoadBatchList() ([]string, []string) {
+	batchDest, customDest := misc.LoadDestinations()
+	return batchDest, customDest
 }
 
-func (dc *DestCategory) DestType(batchdest []string, destName string) string {
-
+func (dc *DestCategory) DestType(batchdest []string, customDest []string, destName string) string {
 	if misc.Contains(batchdest, destName) {
 		return "batch"
+	} else if misc.Contains(customDest, destName) {
+		return "kvstore"
 	} else {
 		return "API"
 	}

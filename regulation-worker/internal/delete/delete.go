@@ -2,32 +2,39 @@ package delete
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
-type deleter interface {
-	Delete(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error)
+type apiManager interface {
+	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
 }
-type Deleter struct {
-	API   deleter
-	Batch deleter
+
+type batchManager interface {
+	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
+}
+
+type kvManager interface {
+	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
+}
+
+type DeleteFacade struct {
+	AM apiManager
+	BM batchManager
+	CM kvManager
 }
 
 //get destType & access credentials from workspaceID & destID
 //call appropriate struct file type or api type based on destType.
-func (d *Deleter) DeleteJob(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error) {
-	switch dest.Type {
+func (d *DeleteFacade) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
+	switch destDetail.Type {
 	case "api":
-		delAPI := MockAPIDeleter{}
-		return delAPI.Delete(ctx, job, dest)
+		return d.AM.Delete(ctx, job, destDetail.Config, destDetail.Name)
 	case "batch":
-		delBatch := MockBatchDeleter{}
-		return delBatch.Delete(ctx, job, dest)
+		return d.BM.Delete(ctx, job, destDetail.Config, destDetail.Name)
+	case "kvstore":
+		return d.CM.Delete(ctx, job, destDetail.Config, destDetail.Name)
 	default:
-		fmt.Println("default called")
-		return model.JobStatusFailed, fmt.Errorf("deletion feature not available for %s destination type", dest.Type)
-
+		return model.JobStatusFailed
 	}
 }
