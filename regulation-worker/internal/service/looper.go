@@ -17,8 +17,7 @@ func (l *Looper) Loop(ctx context.Context) error {
 	for {
 		err := l.Svc.JobSvc(ctx)
 		if err == model.ErrNoRunnableJob {
-			isContextCanceled := sleepContext(ctx, 10*time.Minute)
-			if isContextCanceled {
+			if ctxCanceled := sleepCtx(ctx, 10*time.Minute);  ctxCanceled {
 				return nil
 			}
 		} else if err != nil {

@@ -11,22 +11,14 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
-type apiManager interface {
-	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
-}
-
-type batchManager interface {
-	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
-}
-
-type customManager interface {
+type deleter interface {
 	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
 }
 
 type DeleteFacade struct {
-	AM apiManager
-	BM batchManager
-	CM customManager
+	AM deleter
+	BM deleter
+	CM deleter
 }
 
 //get destType & access credentials from workspaceID & destID

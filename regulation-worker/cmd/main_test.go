@@ -44,7 +44,7 @@ func run(m *testing.M) int {
 	defer svr.Close()
 	workspaceID := "216Co97d9So9TkqphM0cxBzRxc3"
 	svcCtx, svcCancel := context.WithCancel(context.Background())
-	code := make(chan int)
+	done := make(chan struct{})
 	go func() {
 
 		os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
@@ -53,15 +53,16 @@ func run(m *testing.M) int {
 		config.Load()
 		logger.Init()
 		backendconfig.Init()
-		code <- m.Run()
+	 main.Run()
+	 doce <- struct{}
 		svcCancel()
 
 	}()
 	_ = os.Setenv("workspaceID", workspaceID)
 	_ = os.Setenv("urlPrefix", svr.URL)
-	main.Run(svcCtx)
-	statusCode := <-code
-	return statusCode
+	code := main.Run(svcCtx)
+	<-done
+	return code
 }
 
 type test struct {
