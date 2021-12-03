@@ -901,7 +901,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 			addToFailedMap = false
 			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID, status.ErrorCode)
 			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
-			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "error_response", status.ErrorResponse)
+			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "reason", status.ErrorResponse) //NOTE: Old key used was "error_response"
 		}
 
 		if worker.rt.guaranteeUserEventOrder {
@@ -981,21 +981,19 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 
 func (worker *workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
 	//Sending destination response to config backend
-	if destinationdebugger.HasUploadEnabled(destinationJobMetadata.DestinationID) {
-		deliveryStatus := destinationdebugger.DeliveryStatusT{
-			DestinationID: destinationJobMetadata.DestinationID,
-			SourceID:      strings.Join(sourceIDs, ","),
-			Payload:       payload,
-			AttemptNum:    status.AttemptNum,
-			JobState:      status.JobState,
-			ErrorCode:     status.ErrorCode,
-			ErrorResponse: status.ErrorResponse,
-			SentAt:        status.ExecTime.Format(misc.RFC3339Milli),
-			EventName:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_name").String(),
-			EventType:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_type").String(),
-		}
-		destinationdebugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
+	deliveryStatus := destinationdebugger.DeliveryStatusT{
+		DestinationID: destinationJobMetadata.DestinationID,
+		SourceID:      strings.Join(sourceIDs, ","),
+		Payload:       payload,
+		AttemptNum:    status.AttemptNum,
+		JobState:      status.JobState,
+		ErrorCode:     status.ErrorCode,
+		ErrorResponse: status.ErrorResponse,
+		SentAt:        status.ExecTime.Format(misc.RFC3339Milli),
+		EventName:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_name").String(),
+		EventType:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_type").String(),
 	}
+	destinationdebugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
 }
 
 func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters JobParametersT, userID string, previousFailedJobID int64) (markedAsWaiting bool) {

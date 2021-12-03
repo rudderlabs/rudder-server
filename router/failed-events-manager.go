@@ -15,8 +15,8 @@ var (
 )
 
 type FailedEventRowT struct {
-	DestinationID string
-	RecordID      json.RawMessage
+	DestinationID string          `json:"destination_id"`
+	RecordID      json.RawMessage `json:"record_id"`
 }
 
 var (
@@ -30,6 +30,7 @@ type FailedEventsManagerI interface {
 	SaveFailedRecordIDs(map[string][]*FailedEventRowT, *sql.Tx)
 	DropFailedRecordIDs(jobRunID string)
 	FetchFailedRecordIDs(jobRunID string) []*FailedEventRowT
+	GetDBHandle() *sql.DB
 }
 
 type FailedEventsManagerT struct {
@@ -63,11 +64,13 @@ func (fem *FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap ma
 		created_at TIMESTAMP NOT NULL);`, table)
 		_, err := txn.Exec(sqlStatement)
 		if err != nil {
+			txn.Rollback()
 			panic(err)
 		}
 		insertQuery := fmt.Sprintf(`INSERT INTO %s VALUES($1, $2, $3);`, table)
 		stmt, err := txn.Prepare(insertQuery)
 		if err != nil {
+			txn.Rollback()
 			panic(err)
 		}
 		createdAt := time.Now()
@@ -181,4 +184,8 @@ func CleanFailedRecordsTableProcess(ctx context.Context) {
 			dbHandle.Close()
 		}
 	}
+}
+
+func (fem *FailedEventsManagerT) GetDBHandle() *sql.DB {
+	return fem.dbHandle
 }

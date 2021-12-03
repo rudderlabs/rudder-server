@@ -138,7 +138,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	contentType := r.Header.Get("Content-Type")
-	if strings.ToLower(contentType) == "application/x-www-form-urlencoded" {
+	if strings.Contains(strings.ToLower(contentType), "application/x-www-form-urlencoded") {
 		if err := r.ParseForm(); err != nil {
 			webhook.failRequest(w, r, response.GetStatus(response.ErrorInParseForm), response.GetStatusCode(response.ErrorInParseForm), "couldNotParseForm")
 			atomic.AddUint64(&webhook.ackCount, 1)
