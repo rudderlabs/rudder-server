@@ -39,13 +39,13 @@ var uploader debugger.UploaderI
 var (
 	configBackendURL    string
 	disableEventUploads bool
-	pkgLogger           logger.LoggerI
+	pkgLogger      logger.LoggerI
+	eventsCacheMap debugger.Cache
 )
 
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("debugger").Child("source")
-
 }
 
 func loadConfig() {
@@ -68,6 +68,22 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 	})
 }
 
+//recordHistoricEvents sends the events collected in cache as live events.
+//This is called on config update.
+//IMP: The function must be called before releasing configSubscriberLock lock to ensure the order of RecordEvent call
+func recordHistoricEvents(writeKeys []string) {
+	for _, writeKey := range writeKeys {
+		historicEvents := eventsCacheMap.ReadAndPopData(writeKey)
+		for _, eventBatchData := range historicEvents {
+			var eventBatch string
+			if err := json.Unmarshal(eventBatchData, &eventBatch); err != nil {
+				panic(err)
+			}
+			uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatch})
+		}
+	}
+}
+
 //RecordEvent is used to put the event batch in the eventBatchChannel,
 //which will be processed by handleEvents.
 func RecordEvent(writeKey string, eventBatch string) bool {
@@ -80,6 +96,8 @@ func RecordEvent(writeKey string, eventBatch string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !misc.ContainsString(uploadEnabledWriteKeys, writeKey) {
+		eventBatchData, _ := json.Marshal(eventBatch)
+		eventsCacheMap.Update(writeKey, eventBatchData)
 		return false
 	}
 
@@ -148,6 +166,8 @@ func updateConfig(sources backendconfig.ConfigT) {
 			}
 		}
 	}
+
+	recordHistoricEvents(uploadEnabledWriteKeys)
 	configSubscriberLock.Unlock()
 }
 
