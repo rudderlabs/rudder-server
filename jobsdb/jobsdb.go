@@ -77,7 +77,6 @@ type GetQueryParamsT struct {
 	IgnoreCustomValFiltersInQuery bool
 	UseTimeFilter                 bool
 	Before                        time.Time
-	AfterJobID                    int64
 }
 
 //StatTagsT is a struct to hold tags for stats
@@ -1449,8 +1448,8 @@ func (jd *HandleT) prepareAndExecStmtInTxnAllowMissing(txn *sql.Tx, sqlStatement
 		//rolling back old failed transaction
 		txn.Rollback()
 
-		pqError := err.(*pq.Error)
-		if allowMissing && pqError.Code == pq.ErrorCode("42P01") {
+		pqError, ok := err.(*pq.Error)
+		if ok && allowMissing && pqError.Code == pq.ErrorCode("42P01") {
 			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
 			txn, err = jd.dbHandle.Begin()
 			jd.assertError(err)
@@ -1854,11 +1853,13 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 		// fmt.Println("Bursting CACHE")
 		return
 	}
-	pqErr := err.(*pq.Error)
-	errCode := string(pqErr.Code)
-	if errCode == dbErrorMap["Invalid JSON"] || errCode == dbErrorMap["Invalid Unicode"] ||
-		errCode == dbErrorMap["Invalid Escape Sequence"] || errCode == dbErrorMap["Invalid Escape Character"] {
-		return errors.New("Invalid JSON")
+	pqErr, ok := err.(*pq.Error)
+	if ok {
+		errCode := string(pqErr.Code)
+		if errCode == dbErrorMap["Invalid JSON"] || errCode == dbErrorMap["Invalid Unicode"] ||
+			errCode == dbErrorMap["Invalid Escape Sequence"] || errCode == dbErrorMap["Invalid Escape Character"] {
+			return errors.New("Invalid JSON")
+		}
 	}
 	return
 }
@@ -2184,11 +2185,6 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 
 	if len(parameterFilters) > 0 {
 		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
-	}
-
-	if params.AfterJobID > 0 {
-		sqlStatement += fmt.Sprintf(" AND jobs.job_id > $%d", len(args)+1)
-		args = append(args, params.AfterJobID)
 	}
 
 	if params.UseTimeFilter {

@@ -17,6 +17,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,6 +57,7 @@ func run(m *testing.M) int {
 	os.Setenv("WORKSPACE_TOKEN", "1zzAnCvbknUuGogjQIBhkST0O4K")
 	os.Setenv("CONFIG_PATH", "./test_config.yaml")
 	config.Load()
+	logger.Init()
 	backendconfig.Init()
 	code := m.Run()
 
