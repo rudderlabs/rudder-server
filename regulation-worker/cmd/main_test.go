@@ -3,6 +3,7 @@ package main_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -42,25 +43,32 @@ func handler() http.Handler {
 func run(m *testing.M) int {
 	svr := httptest.NewServer(handler())
 	defer svr.Close()
+
+	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
+	os.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
+	os.Setenv("CONFIG_PATH", "./test_config.yaml")
+	config.Load()
+	logger.Init()
+	backendconfig.Init()
+
 	workspaceID := "216Co97d9So9TkqphM0cxBzRxc3"
-	svcCtx, svcCancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-
-		os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
-		os.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
-		os.Setenv("CONFIG_PATH", "./test_config.yaml")
-		config.Load()
-		logger.Init()
-		backendconfig.Init()
-	 main.Run()
-	 doce <- struct{}
-		svcCancel()
-
-	}()
 	_ = os.Setenv("workspaceID", workspaceID)
 	_ = os.Setenv("urlPrefix", svr.URL)
-	code := main.Run(svcCtx)
+
+	svcCtx, svcCancel := context.WithCancel(context.Background())
+	done := make(chan string)
+
+	go func() {
+
+		main.Run(svcCtx)
+		fmt.Println("main.run returned")
+		done <- "done"
+
+	}()
+
+	code := m.Run()
+	svcCancel()
+	fmt.Println("svccancel triggered")
 	<-done
 	return code
 }
