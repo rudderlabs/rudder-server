@@ -43,10 +43,12 @@ func run(m *testing.M) int {
 		}
 	}()
 
+	freeport := resource.GetPort("6379/tcp")
+
 	if err := pool.Retry(func() error {
 		var err error
 		client := redis.NewClient(&redis.Options{
-			Addr:     "localhost:6379",
+			Addr:     "localhost:" + freeport,
 			Password: "",
 			DB:       0,
 		})
