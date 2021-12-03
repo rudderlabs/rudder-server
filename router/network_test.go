@@ -109,10 +109,10 @@ var _ = Describe("Network", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			statusCode, body := network.SendPost(ctx, structData)
+			resp := network.SendPost(ctx, structData)
 
-			gomega.Expect(statusCode).To(gomega.Equal(http.StatusGatewayTimeout))
-			gomega.Expect(body).To(gomega.Equal(""))
+			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusGatewayTimeout))
+			gomega.Expect(string(resp.ResponseBody)).To(gomega.Equal(""))
 		})
 	})
 })
