@@ -575,8 +575,21 @@ func TestWebhook(t *testing.T) {
 		[
 			{
 				"userId": "identified_user_id",
-			   "anonymousId":"anonymousId_1",
-			   "messageId":"messageId_1"
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
 			}
 		]
 	}`)
@@ -724,7 +737,7 @@ func TestPostgres(t *testing.T) {
 	require.Eventually(t, func() bool {
 		eventSql := "select count(*) from dev_integration_test_1.identifies"
 		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
+		return myEvent.count == "2"
 	}, time.Minute, 10*time.Millisecond)
 
 	require.Eventually(t, func() bool {
