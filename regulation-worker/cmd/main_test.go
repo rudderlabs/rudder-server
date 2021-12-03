@@ -17,6 +17,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
 
