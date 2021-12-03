@@ -19,7 +19,6 @@ type CredentialsT struct {
 }
 
 type DBHandleT struct {
-	Cred           *CredentialsT
 	CredIdentifier string
 	Context        context.Context
 	Conn           *grpc.ClientConn
@@ -30,15 +29,10 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("databricks")
 }
 
-// Close closes grpc connection and sql connection as well.
+// Close calls Close as well as closes grpc connection
 func (dbT *DBHandleT) Close() {
-	closeConnectionResponse, err := dbT.Client.Close(dbT.Context, &proto.ConnectionRequest{
-		Host:           dbT.Cred.Host,
-		Port:           dbT.Cred.Port,
-		Pwd:            dbT.Cred.Token,
-		HttpPath:       dbT.Cred.Path,
-		Identifier:     dbT.CredIdentifier,
-		UserAgentEntry: "RudderStack",
+	closeConnectionResponse, err := dbT.Client.Close(dbT.Context, &proto.CloseConnectionRequest{
+		Identifier: dbT.CredIdentifier,
 	})
 	if err != nil {
 		pkgLogger.Errorf("Error closing connection in delta lake: %v", err)
