@@ -56,6 +56,7 @@ func run(m *testing.M) int {
 	os.Setenv("WORKSPACE_TOKEN", "1zzAnCvbknUuGogjQIBhkST0O4K")
 	os.Setenv("CONFIG_PATH", "./test_config.yaml")
 	config.Load()
+	logger.Init()
 	backendconfig.Init()
 	code := m.Run()
 
