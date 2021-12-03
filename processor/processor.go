@@ -824,7 +824,6 @@ func (proc *HandleT) updateMetricMaps(countMetadataMap map[string]MetricMetadata
 		eventName = event.Metadata.EventName
 		eventType = event.Metadata.EventType
 		countKey := fmt.Sprint(event.Metadata.SourceID, METRICKEYDELIMITER, event.Metadata.DestinationID, METRICKEYDELIMITER, event.Metadata.SourceBatchID, METRICKEYDELIMITER, eventName, METRICKEYDELIMITER, eventType)
-		proc.logger.Info(countKey)
 		if _, ok := countMap[countKey]; !ok {
 			countMap[countKey] = 0
 		}
@@ -872,7 +871,6 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			continue
 		}
 
-		//Using first element in messages array for sample event
 		for _, message := range messages {
 			sampleEvent, err := json.Marshal(message)
 			if err != nil {
@@ -1013,9 +1011,10 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 		if len(splitKey) < 5 {
 			eventName = ""
 			eventType = ""
+		} else {
+			eventName = splitKey[3]
+			eventType = splitKey[4]
 		}
-		eventName = splitKey[3]
-		eventType = splitKey[4]
 		successCount := successCountMap[key]
 		failedCount := failedCountMap[key]
 		diff := successCount + failedCount - inCount
