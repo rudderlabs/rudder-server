@@ -28,7 +28,7 @@ var (
 
 func TestMain(m *testing.M) {
 
-	os.Exit(run(m))
+	// os.Exit(run(m))
 }
 
 func handler() http.Handler {
