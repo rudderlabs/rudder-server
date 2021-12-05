@@ -18,13 +18,13 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DatabricksClient interface {
-	Connect(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*ConnectionResponse, error)
-	Close(ctx context.Context, in *CloseConnectionRequest, opts ...grpc.CallOption) (*CloseConnectionResponse, error)
+	Connect(ctx context.Context, in *ConnectRequest, opts ...grpc.CallOption) (*ConnectResponse, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*ExecuteResponse, error)
-	FetchSchemas(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*FetchSchemasResponse, error)
-	FetchTables(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*FetchTablesResponse, error)
-	FetchTableAttributes(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*FetchTableAttributesResponse, error)
-	FetchTotalCountInTable(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*FetchTotalCountInTableResponse, error)
+	FetchSchemas(ctx context.Context, in *FetchSchemasRequest, opts ...grpc.CallOption) (*FetchSchemasResponse, error)
+	FetchTables(ctx context.Context, in *FetchTablesRequest, opts ...grpc.CallOption) (*FetchTablesResponse, error)
+	FetchTableAttributes(ctx context.Context, in *FetchTableAttributesRequest, opts ...grpc.CallOption) (*FetchTableAttributesResponse, error)
+	FetchTotalCountInTable(ctx context.Context, in *FetchTotalCountInTableRequest, opts ...grpc.CallOption) (*FetchTotalCountInTableResponse, error)
+	Close(ctx context.Context, in *CloseRequest, opts ...grpc.CallOption) (*CloseResponse, error)
 }
 
 type databricksClient struct {
@@ -35,18 +35,9 @@ func NewDatabricksClient(cc grpc.ClientConnInterface) DatabricksClient {
 	return &databricksClient{cc}
 }
 
-func (c *databricksClient) Connect(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*ConnectionResponse, error) {
-	out := new(ConnectionResponse)
+func (c *databricksClient) Connect(ctx context.Context, in *ConnectRequest, opts ...grpc.CallOption) (*ConnectResponse, error) {
+	out := new(ConnectResponse)
 	err := c.cc.Invoke(ctx, "/proto.Databricks/Connect", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *databricksClient) Close(ctx context.Context, in *CloseConnectionRequest, opts ...grpc.CallOption) (*CloseConnectionResponse, error) {
-	out := new(CloseConnectionResponse)
-	err := c.cc.Invoke(ctx, "/proto.Databricks/Close", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +53,7 @@ func (c *databricksClient) Execute(ctx context.Context, in *ExecuteRequest, opts
 	return out, nil
 }
 
-func (c *databricksClient) FetchSchemas(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*FetchSchemasResponse, error) {
+func (c *databricksClient) FetchSchemas(ctx context.Context, in *FetchSchemasRequest, opts ...grpc.CallOption) (*FetchSchemasResponse, error) {
 	out := new(FetchSchemasResponse)
 	err := c.cc.Invoke(ctx, "/proto.Databricks/FetchSchemas", in, out, opts...)
 	if err != nil {
@@ -71,7 +62,7 @@ func (c *databricksClient) FetchSchemas(ctx context.Context, in *ExecuteRequest,
 	return out, nil
 }
 
-func (c *databricksClient) FetchTables(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*FetchTablesResponse, error) {
+func (c *databricksClient) FetchTables(ctx context.Context, in *FetchTablesRequest, opts ...grpc.CallOption) (*FetchTablesResponse, error) {
 	out := new(FetchTablesResponse)
 	err := c.cc.Invoke(ctx, "/proto.Databricks/FetchTables", in, out, opts...)
 	if err != nil {
@@ -80,7 +71,7 @@ func (c *databricksClient) FetchTables(ctx context.Context, in *ExecuteRequest, 
 	return out, nil
 }
 
-func (c *databricksClient) FetchTableAttributes(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*FetchTableAttributesResponse, error) {
+func (c *databricksClient) FetchTableAttributes(ctx context.Context, in *FetchTableAttributesRequest, opts ...grpc.CallOption) (*FetchTableAttributesResponse, error) {
 	out := new(FetchTableAttributesResponse)
 	err := c.cc.Invoke(ctx, "/proto.Databricks/FetchTableAttributes", in, out, opts...)
 	if err != nil {
@@ -89,9 +80,18 @@ func (c *databricksClient) FetchTableAttributes(ctx context.Context, in *Execute
 	return out, nil
 }
 
-func (c *databricksClient) FetchTotalCountInTable(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*FetchTotalCountInTableResponse, error) {
+func (c *databricksClient) FetchTotalCountInTable(ctx context.Context, in *FetchTotalCountInTableRequest, opts ...grpc.CallOption) (*FetchTotalCountInTableResponse, error) {
 	out := new(FetchTotalCountInTableResponse)
 	err := c.cc.Invoke(ctx, "/proto.Databricks/FetchTotalCountInTable", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *databricksClient) Close(ctx context.Context, in *CloseRequest, opts ...grpc.CallOption) (*CloseResponse, error) {
+	out := new(CloseResponse)
+	err := c.cc.Invoke(ctx, "/proto.Databricks/Close", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -102,13 +102,13 @@ func (c *databricksClient) FetchTotalCountInTable(ctx context.Context, in *Execu
 // All implementations must embed UnimplementedDatabricksServer
 // for forward compatibility
 type DatabricksServer interface {
-	Connect(context.Context, *ConnectionRequest) (*ConnectionResponse, error)
-	Close(context.Context, *CloseConnectionRequest) (*CloseConnectionResponse, error)
+	Connect(context.Context, *ConnectRequest) (*ConnectResponse, error)
 	Execute(context.Context, *ExecuteRequest) (*ExecuteResponse, error)
-	FetchSchemas(context.Context, *ExecuteRequest) (*FetchSchemasResponse, error)
-	FetchTables(context.Context, *ExecuteRequest) (*FetchTablesResponse, error)
-	FetchTableAttributes(context.Context, *ExecuteRequest) (*FetchTableAttributesResponse, error)
-	FetchTotalCountInTable(context.Context, *ExecuteRequest) (*FetchTotalCountInTableResponse, error)
+	FetchSchemas(context.Context, *FetchSchemasRequest) (*FetchSchemasResponse, error)
+	FetchTables(context.Context, *FetchTablesRequest) (*FetchTablesResponse, error)
+	FetchTableAttributes(context.Context, *FetchTableAttributesRequest) (*FetchTableAttributesResponse, error)
+	FetchTotalCountInTable(context.Context, *FetchTotalCountInTableRequest) (*FetchTotalCountInTableResponse, error)
+	Close(context.Context, *CloseRequest) (*CloseResponse, error)
 	mustEmbedUnimplementedDatabricksServer()
 }
 
@@ -116,26 +116,26 @@ type DatabricksServer interface {
 type UnimplementedDatabricksServer struct {
 }
 
-func (UnimplementedDatabricksServer) Connect(context.Context, *ConnectionRequest) (*ConnectionResponse, error) {
+func (UnimplementedDatabricksServer) Connect(context.Context, *ConnectRequest) (*ConnectResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Connect not implemented")
-}
-func (UnimplementedDatabricksServer) Close(context.Context, *CloseConnectionRequest) (*CloseConnectionResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Close not implemented")
 }
 func (UnimplementedDatabricksServer) Execute(context.Context, *ExecuteRequest) (*ExecuteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
 }
-func (UnimplementedDatabricksServer) FetchSchemas(context.Context, *ExecuteRequest) (*FetchSchemasResponse, error) {
+func (UnimplementedDatabricksServer) FetchSchemas(context.Context, *FetchSchemasRequest) (*FetchSchemasResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FetchSchemas not implemented")
 }
-func (UnimplementedDatabricksServer) FetchTables(context.Context, *ExecuteRequest) (*FetchTablesResponse, error) {
+func (UnimplementedDatabricksServer) FetchTables(context.Context, *FetchTablesRequest) (*FetchTablesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FetchTables not implemented")
 }
-func (UnimplementedDatabricksServer) FetchTableAttributes(context.Context, *ExecuteRequest) (*FetchTableAttributesResponse, error) {
+func (UnimplementedDatabricksServer) FetchTableAttributes(context.Context, *FetchTableAttributesRequest) (*FetchTableAttributesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FetchTableAttributes not implemented")
 }
-func (UnimplementedDatabricksServer) FetchTotalCountInTable(context.Context, *ExecuteRequest) (*FetchTotalCountInTableResponse, error) {
+func (UnimplementedDatabricksServer) FetchTotalCountInTable(context.Context, *FetchTotalCountInTableRequest) (*FetchTotalCountInTableResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FetchTotalCountInTable not implemented")
+}
+func (UnimplementedDatabricksServer) Close(context.Context, *CloseRequest) (*CloseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Close not implemented")
 }
 func (UnimplementedDatabricksServer) mustEmbedUnimplementedDatabricksServer() {}
 
@@ -151,7 +151,7 @@ func RegisterDatabricksServer(s grpc.ServiceRegistrar, srv DatabricksServer) {
 }
 
 func _Databricks_Connect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ConnectionRequest)
+	in := new(ConnectRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -163,25 +163,7 @@ func _Databricks_Connect_Handler(srv interface{}, ctx context.Context, dec func(
 		FullMethod: "/proto.Databricks/Connect",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DatabricksServer).Connect(ctx, req.(*ConnectionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Databricks_Close_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CloseConnectionRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DatabricksServer).Close(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/proto.Databricks/Close",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DatabricksServer).Close(ctx, req.(*CloseConnectionRequest))
+		return srv.(DatabricksServer).Connect(ctx, req.(*ConnectRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -205,7 +187,7 @@ func _Databricks_Execute_Handler(srv interface{}, ctx context.Context, dec func(
 }
 
 func _Databricks_FetchSchemas_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ExecuteRequest)
+	in := new(FetchSchemasRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -217,13 +199,13 @@ func _Databricks_FetchSchemas_Handler(srv interface{}, ctx context.Context, dec 
 		FullMethod: "/proto.Databricks/FetchSchemas",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DatabricksServer).FetchSchemas(ctx, req.(*ExecuteRequest))
+		return srv.(DatabricksServer).FetchSchemas(ctx, req.(*FetchSchemasRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _Databricks_FetchTables_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ExecuteRequest)
+	in := new(FetchTablesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -235,13 +217,13 @@ func _Databricks_FetchTables_Handler(srv interface{}, ctx context.Context, dec f
 		FullMethod: "/proto.Databricks/FetchTables",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DatabricksServer).FetchTables(ctx, req.(*ExecuteRequest))
+		return srv.(DatabricksServer).FetchTables(ctx, req.(*FetchTablesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _Databricks_FetchTableAttributes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ExecuteRequest)
+	in := new(FetchTableAttributesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -253,13 +235,13 @@ func _Databricks_FetchTableAttributes_Handler(srv interface{}, ctx context.Conte
 		FullMethod: "/proto.Databricks/FetchTableAttributes",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DatabricksServer).FetchTableAttributes(ctx, req.(*ExecuteRequest))
+		return srv.(DatabricksServer).FetchTableAttributes(ctx, req.(*FetchTableAttributesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _Databricks_FetchTotalCountInTable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ExecuteRequest)
+	in := new(FetchTotalCountInTableRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -271,7 +253,25 @@ func _Databricks_FetchTotalCountInTable_Handler(srv interface{}, ctx context.Con
 		FullMethod: "/proto.Databricks/FetchTotalCountInTable",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DatabricksServer).FetchTotalCountInTable(ctx, req.(*ExecuteRequest))
+		return srv.(DatabricksServer).FetchTotalCountInTable(ctx, req.(*FetchTotalCountInTableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Databricks_Close_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CloseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabricksServer).Close(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.Databricks/Close",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabricksServer).Close(ctx, req.(*CloseRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -286,10 +286,6 @@ var Databricks_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Connect",
 			Handler:    _Databricks_Connect_Handler,
-		},
-		{
-			MethodName: "Close",
-			Handler:    _Databricks_Close_Handler,
 		},
 		{
 			MethodName: "Execute",
@@ -310,6 +306,10 @@ var Databricks_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FetchTotalCountInTable",
 			Handler:    _Databricks_FetchTotalCountInTable_Handler,
+		},
+		{
+			MethodName: "Close",
+			Handler:    _Databricks_Close_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
