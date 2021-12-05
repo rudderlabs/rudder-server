@@ -5,6 +5,7 @@ option go_package = ".;proto";
 service Databricks {
   rpc Connect(ConnectRequest) returns (ConnectResponse) {}
   rpc Execute(ExecuteRequest) returns (ExecuteResponse) {}
+  rpc ExecuteQuery(ExecuteQueryRequest) returns (ExecuteQueryResponse) {}
   rpc FetchSchemas(FetchSchemasRequest) returns (FetchSchemasResponse) {}
   rpc FetchTables(FetchTablesRequest) returns (FetchTablesResponse) {}
   rpc FetchTableAttributes(FetchTableAttributesRequest) returns (FetchTableAttributesResponse) {}
@@ -40,6 +41,21 @@ message ExecuteRequest {
 message ExecuteResponse {
   string errorCode = 1;
   string errorMessage = 2;
+}
+
+message ExecuteQueryRequest {
+  string sqlStatement = 1;
+  string identifier = 2;
+}
+
+message ItemQueryColumns {
+  repeated string columns = 1;
+}
+
+message ExecuteQueryResponse {
+  repeated ItemQueryColumns rows = 1;
+  string errorCode = 2;
+  string errorMessage = 3;
 }
 
 message FetchSchemasRequest {

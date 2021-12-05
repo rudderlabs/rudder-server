@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion7
 type DatabricksClient interface {
 	Connect(ctx context.Context, in *ConnectRequest, opts ...grpc.CallOption) (*ConnectResponse, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*ExecuteResponse, error)
+	ExecuteQuery(ctx context.Context, in *ExecuteQueryRequest, opts ...grpc.CallOption) (*ExecuteQueryResponse, error)
 	FetchSchemas(ctx context.Context, in *FetchSchemasRequest, opts ...grpc.CallOption) (*FetchSchemasResponse, error)
 	FetchTables(ctx context.Context, in *FetchTablesRequest, opts ...grpc.CallOption) (*FetchTablesResponse, error)
 	FetchTableAttributes(ctx context.Context, in *FetchTableAttributesRequest, opts ...grpc.CallOption) (*FetchTableAttributesResponse, error)
@@ -47,6 +48,15 @@ func (c *databricksClient) Connect(ctx context.Context, in *ConnectRequest, opts
 func (c *databricksClient) Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*ExecuteResponse, error) {
 	out := new(ExecuteResponse)
 	err := c.cc.Invoke(ctx, "/proto.Databricks/Execute", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *databricksClient) ExecuteQuery(ctx context.Context, in *ExecuteQueryRequest, opts ...grpc.CallOption) (*ExecuteQueryResponse, error) {
+	out := new(ExecuteQueryResponse)
+	err := c.cc.Invoke(ctx, "/proto.Databricks/ExecuteQuery", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +114,7 @@ func (c *databricksClient) Close(ctx context.Context, in *CloseRequest, opts ...
 type DatabricksServer interface {
 	Connect(context.Context, *ConnectRequest) (*ConnectResponse, error)
 	Execute(context.Context, *ExecuteRequest) (*ExecuteResponse, error)
+	ExecuteQuery(context.Context, *ExecuteQueryRequest) (*ExecuteQueryResponse, error)
 	FetchSchemas(context.Context, *FetchSchemasRequest) (*FetchSchemasResponse, error)
 	FetchTables(context.Context, *FetchTablesRequest) (*FetchTablesResponse, error)
 	FetchTableAttributes(context.Context, *FetchTableAttributesRequest) (*FetchTableAttributesResponse, error)
@@ -121,6 +132,9 @@ func (UnimplementedDatabricksServer) Connect(context.Context, *ConnectRequest) (
 }
 func (UnimplementedDatabricksServer) Execute(context.Context, *ExecuteRequest) (*ExecuteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
+}
+func (UnimplementedDatabricksServer) ExecuteQuery(context.Context, *ExecuteQueryRequest) (*ExecuteQueryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExecuteQuery not implemented")
 }
 func (UnimplementedDatabricksServer) FetchSchemas(context.Context, *FetchSchemasRequest) (*FetchSchemasResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FetchSchemas not implemented")
@@ -182,6 +196,24 @@ func _Databricks_Execute_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DatabricksServer).Execute(ctx, req.(*ExecuteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Databricks_ExecuteQuery_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecuteQueryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabricksServer).ExecuteQuery(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.Databricks/ExecuteQuery",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabricksServer).ExecuteQuery(ctx, req.(*ExecuteQueryRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -290,6 +322,10 @@ var Databricks_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Execute",
 			Handler:    _Databricks_Execute_Handler,
+		},
+		{
+			MethodName: "ExecuteQuery",
+			Handler:    _Databricks_ExecuteQuery_Handler,
 		},
 		{
 			MethodName: "FetchSchemas",
