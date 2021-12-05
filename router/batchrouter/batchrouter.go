@@ -545,11 +545,10 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 				brt.configSubscriberLock.Unlock()
 				dedupedIDMergeRuleJobs++
 				continue
-			} else {
-				brt.encounteredMergeRuleMap[warehouseConnIdentifier][ruleIdentifier] = true
-				brt.encounteredMergeRuleMapLock.Unlock()
-				brt.configSubscriberLock.Unlock()
 			}
+			brt.encounteredMergeRuleMap[warehouseConnIdentifier][ruleIdentifier] = true
+			brt.encounteredMergeRuleMapLock.Unlock()
+			brt.configSubscriberLock.Unlock()
 		}
 
 		eventID := gjson.GetBytes(job.EventPayload, "messageId").String()
@@ -638,7 +637,6 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 	switch datePrefixLayout {
 	case "MM-DD-YYYY": //used to be earlier default
 		datePrefixLayout = time.Now().Format("01-02-2006")
-		break
 	default:
 		datePrefixLayout = time.Now().Format("2006-01-02")
 	}
@@ -918,11 +916,9 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		for columnName, columnType := range columns {
 			if _, ok := schemaMap[tableName][columnName]; !ok {
 				schemaMap[tableName][columnName] = columnType
-			} else {
+			} else if  columnType == "text" && schemaMap[tableName][columnName] == "string" {
 				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
-				if columnType == "text" && schemaMap[tableName][columnName] == "string" {
-					schemaMap[tableName][columnName] = columnType
-				}
+				schemaMap[tableName][columnName] = columnType
 			}
 		}
 	}
@@ -1020,6 +1016,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 	var err error
 	reportMetrics := make([]*types.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
+	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*types.StatusDetail)
 	jobStateCounts := make(map[string]map[string]int)
 	for _, job := range batchJobs.Jobs {
@@ -1097,11 +1094,12 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		if brt.reporting != nil && brt.reportingEnabled {
 			//Update metrics maps
 			errorCode := getBRTErrorCode(jobState)
-			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode))
+			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
 			cd, ok := connectionDetailsMap[key]
 			if !ok {
 				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 				connectionDetailsMap[key] = cd
+				transformedAtMap[key] = parameters.TransformAt
 			}
 			sd, ok := statusDetailsMap[key]
 			if !ok {
@@ -1157,9 +1155,15 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			terminalPU = false
 		}
 		for k, cd := range connectionDetailsMap {
+			var inPu string
+			if transformedAtMap[k] == "processor" {
+				inPu = types.DEST_TRANSFORMER
+			} else {
+				inPu = types.EVENT_FILTER
+			}
 			m := &types.PUReportedMetric{
 				ConnectionDetails: *cd,
-				PUDetails:         *types.CreatePUDetails(types.DEST_TRANSFORMER, types.BATCH_ROUTER, terminalPU, false),
+				PUDetails:         *types.CreatePUDetails(inPu, types.BATCH_ROUTER, terminalPU, false),
 				StatusDetail:      statusDetailsMap[k],
 			}
 			if m.StatusDetail.Count != 0 {
@@ -1300,9 +1304,6 @@ func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) 
 }
 
 func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output StorageUploadOutput, isWarehouse bool) {
-	if !destinationdebugger.HasUploadEnabled(batchDestination.Destination.ID) {
-		return
-	}
 	var (
 		errorCode string
 		jobState  string
