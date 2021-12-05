@@ -15,12 +15,6 @@ import (
 	"strings"
 )
 
-// ODBC NATIVE ERRORS
-const (
-	tableOrViewNotFound = "Table or view not found"
-	databaseNotFound    = "NoSuchDatabaseException"
-)
-
 // Database configuration
 const (
 	DLHost  = "host"
@@ -29,9 +23,23 @@ const (
 	DLToken = "token"
 )
 
+// Reference: https://docs.oracle.com/cd/E17952_01/connector-odbc-en/connector-odbc-reference-errorcodes.html
+const (
+	tableOrViewNotFound = "42S02"
+	databaseNotFound    = "42000"
+)
+
 var (
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
+	driverPath         string
+	schema             string
+	sparkServerType    string
+	authMech           string
+	uid                string
+	thriftTransport    string
+	ssl                string
+	userAgent          string
 )
 
 // Rudder data type mapping with Delta lake mappings.
@@ -95,6 +103,14 @@ func Init() {
 // loadConfig loads config
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
+	config.RegisterStringConfigVariable("/opt/simba/spark/lib/64/libsparkodbc_sb64.so", &driverPath, false, "Warehouse.deltalake.driverPath")
+	config.RegisterStringConfigVariable("default", &schema, false, "Warehouse.deltalake.schema")
+	config.RegisterStringConfigVariable("3", &sparkServerType, false, "Warehouse.deltalake.sparkServerType")
+	config.RegisterStringConfigVariable("3", &authMech, false, "Warehouse.deltalake.authMech")
+	config.RegisterStringConfigVariable("token", &uid, false, "Warehouse.deltalake.uid")
+	config.RegisterStringConfigVariable("2", &thriftTransport, false, "Warehouse.deltalake.thriftTransport")
+	config.RegisterStringConfigVariable("1", &ssl, false, "Warehouse.deltalake.ssl")
+	config.RegisterStringConfigVariable("RudderStack", &userAgent, false, "Warehouse.deltalake.userAgent")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -137,6 +153,14 @@ func GetDatabricksConnectorURL() string {
 	return config.GetEnv("WAREHOUSE_DATABRICKS_CONNECTOR_URL", "localhost:50051")
 }
 
+// checkAndIgnoreAlreadyExistError checks and ignores native errors.
+func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool {
+	if errorCode == "" || errorCode == ignoreError {
+		return true
+	}
+	return false
+}
+
 // connect creates database connection with CredentialsT
 func (dl *HandleT) connect(cred databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
 	context := context.Background()
@@ -146,19 +170,25 @@ func (dl *HandleT) connect(cred databricks.CredentialsT) (dbHandleT *databricks.
 	}
 	identifier := uuid.Must(uuid.NewV4()).String()
 	client := proto.NewDatabricksClient(conn)
-	connectionResponse, err := client.Connect(context, &proto.ConnectionRequest{
-		Host:           cred.Host,
-		Port:           cred.Port,
-		Pwd:            cred.Token,
-		HttpPath:       cred.Path,
-		Identifier:     identifier,
-		UserAgentEntry: "RudderStack",
+	connectionResponse, err := client.Connect(context, &proto.ConnectRequest{
+		Host:            cred.Host,
+		Port:            cred.Port,
+		Schema:          schema,
+		SparkServerType: sparkServerType,
+		AuthMech:        authMech,
+		Uid:             uid,
+		Pwd:             cred.Token,
+		ThriftTransport: thriftTransport,
+		Ssl:             ssl,
+		HttpPath:        cred.Path,
+		UserAgentEntry:  userAgent,
+		Identifier:      identifier,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%s Error connection to Delta lake: %v", dl.GetLogIdentifier(), err)
+		return nil, fmt.Errorf("%s Error connecting to Delta lake: %v", dl.GetLogIdentifier(), err)
 	}
-	if len(connectionResponse.GetError()) != 0 {
-		return nil, fmt.Errorf("%s Error connection to Delta lake with response:%v", dl.GetLogIdentifier(), connectionResponse.GetError())
+	if len(connectionResponse.GetErrorCode()) != 0 {
+		return nil, fmt.Errorf("%s Error connecting to Delta lake with response:%v", dl.GetLogIdentifier(), connectionResponse.GetErrorMessage())
 	}
 
 	dbHandleT = &databricks.DBHandleT{
@@ -172,15 +202,15 @@ func (dl *HandleT) connect(cred databricks.CredentialsT) (dbHandleT *databricks.
 
 // fetchTables fetch tables with tableNames
 func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (tableNames []string, err error) {
-	fetchTableResponse, err := dbT.Client.FetchTables(dbT.Context, &proto.ExecuteRequest{
-		SqlStatement: sqlStatement,
-		Identifier:   dbT.CredIdentifier,
+	fetchTableResponse, err := dbT.Client.FetchTables(dbT.Context, &proto.FetchTablesRequest{
+		Schema:     sqlStatement,
+		Identifier: dbT.CredIdentifier,
 	})
 	if err != nil {
 		return tableNames, fmt.Errorf("%s Error while fetching tables: %v", dl.GetLogIdentifier(), err)
 	}
-	if len(fetchTableResponse.GetError()) != 0 && !strings.Contains(fetchTableResponse.GetError(), databaseNotFound) {
-		err = fmt.Errorf("%s Error while fetching tables with response: %v", dl.GetLogIdentifier(), fetchTableResponse.GetError())
+	if !checkAndIgnoreAlreadyExistError(fetchTableResponse.GetErrorCode(), databaseNotFound) {
+		err = fmt.Errorf("%s Error while fetching tables with response: %v", dl.GetLogIdentifier(), fetchTableResponse.GetErrorMessage())
 		return
 	}
 	tableNames = append(tableNames, fetchTableResponse.GetTables()...)
@@ -196,8 +226,8 @@ func (dl *HandleT) ExecuteSQL(sqlStatement string) (err error) {
 	if err != nil {
 		return fmt.Errorf("%s Error while executing: %v", dl.GetLogIdentifier(), err)
 	}
-	if len(executeResponse.GetError()) != 0 {
-		err = fmt.Errorf("%s Error while executing with response: %v", dl.GetLogIdentifier(), executeResponse.GetError())
+	if !checkAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), databaseNotFound) || !checkAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), tableOrViewNotFound) {
+		err = fmt.Errorf("%s Error while executing with response: %v", dl.GetLogIdentifier(), executeResponse.GetErrorMessage())
 		return
 	}
 	return
@@ -206,15 +236,15 @@ func (dl *HandleT) ExecuteSQL(sqlStatement string) (err error) {
 // schemaExists checks it schema exists or not.
 func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
-	fetchSchemasResponse, err := dl.dbHandleT.Client.FetchSchemas(dl.dbHandleT.Context, &proto.ExecuteRequest{
+	fetchSchemasResponse, err := dl.dbHandleT.Client.FetchSchemas(dl.dbHandleT.Context, &proto.FetchSchemasRequest{
 		SqlStatement: sqlStatement,
 		Identifier:   dl.dbHandleT.CredIdentifier,
 	})
 	if err != nil {
 		return exists, fmt.Errorf("%s Error while fetching schemas: %v", dl.GetLogIdentifier(), err)
 	}
-	if len(fetchSchemasResponse.GetError()) != 0 && !strings.Contains(fetchSchemasResponse.GetError(), databaseNotFound) {
-		err = fmt.Errorf("%s Error while fetching schemas with response: %v", dl.GetLogIdentifier(), fetchSchemasResponse.GetError())
+	if !checkAndIgnoreAlreadyExistError(fetchSchemasResponse.GetErrorCode(), databaseNotFound) {
+		err = fmt.Errorf("%s Error while fetching schemas with response: %v", dl.GetLogIdentifier(), fetchSchemasResponse.GetErrorMessage())
 		return
 	}
 	exists = len(fetchSchemasResponse.GetDatabases()) == 1 && strings.Compare(fetchSchemasResponse.GetDatabases()[0], schemaName) == 0
@@ -238,7 +268,7 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 			SqlStatement: sqlStatement,
 			Identifier:   dl.dbHandleT.CredIdentifier,
 		})
-		if err == nil && len(dropTableResponse.GetError()) != 0 && !strings.Contains(dropTableResponse.GetError(), tableOrViewNotFound) {
+		if err == nil && !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
 			continue
 		}
 		if err != nil {
@@ -247,9 +277,7 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 	}
 }
 
-// sortedColumnNames returns sorted column names for
-// 1. LOAD_FILE_TYPE_PARQUET
-// 2. LOAD_FILE_TYPE_CSV
+// sortedColumnNames returns sorted column names
 func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSchemaT, sortedColumnKeys []string) (sortedColumnNames string) {
 	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sortedColumnNames = strings.Join(sortedColumnKeys[:], ",")
@@ -269,7 +297,7 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 // credentialsStr return authentication for AWS STS and SSE-C encryption
 func (sf *HandleT) credentialsStr() string {
 	var auth string
-	// TODO: Required when we are going to use hosted data plane.
+	// TODO: Required when we are going to use this for hosted data plane.
 	//if sf.Uploader.UseRudderStorage() {
 	//	tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
 	//	auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', awsSessionToken = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
@@ -477,14 +505,24 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 
 // dropDanglingStagingTables drop dandling staging tables.
 func (dl *HandleT) dropDanglingStagingTables() {
-	// Creating show tables sql statement to get the staging tables associated with the namespace
-	sqlStatement := fmt.Sprintf(`SHOW TABLES FROM %s LIKE '%s';`, dl.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "*"))
-
 	// Fetching the staging tables
-	stagingTableNames, _ := dl.fetchTables(dl.dbHandleT, sqlStatement)
+	tableNames, err := dl.fetchTables(dl.dbHandleT, dl.Namespace)
+	if err != nil {
+		return
+	}
+
+	// Filtering tables based on not part of staging tables
+	var filteredTablesNames []string
+	for _, tableName := range tableNames {
+		// Ignoring the staging tables
+		if !strings.HasPrefix(tableName, stagingTablePrefix) {
+			continue
+		}
+		filteredTablesNames = append(filteredTablesNames, tableName)
+	}
 
 	// Drop staging tables
-	dl.dropStagingTables(stagingTableNames)
+	dl.dropStagingTables(filteredTablesNames)
 	return
 }
 
@@ -552,11 +590,8 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	// Schema Initialization
 	schema = make(warehouseutils.SchemaT)
 
-	// Creating show tables sql statement to get the tables associated with the namespace
-	sqlStatement := fmt.Sprintf(`SHOW TABLES FROM %s;`, dl.Namespace)
-
 	// Fetching the tables
-	tableNames, err := dl.fetchTables(dbHandle, sqlStatement)
+	tableNames, err := dl.fetchTables(dbHandle, dl.Namespace)
 	if err != nil {
 		return
 	}
@@ -573,17 +608,16 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 	// For each table we are generating schema
 	for _, tableName := range filteredTablesNames {
-		// Creating describe sql statement for table
-		ttSqlStatement := fmt.Sprintf(`SELECT * FROM %s.%s LIMIT 1;`, dl.Namespace, tableName)
-		fetchTableAttributesResponse, err := dbHandle.Client.FetchTableAttributes(dbHandle.Context, &proto.ExecuteRequest{
-			SqlStatement: ttSqlStatement,
-			Identifier:   dbHandle.CredIdentifier,
+		fetchTableAttributesResponse, err := dbHandle.Client.FetchTableAttributes(dbHandle.Context, &proto.FetchTableAttributesRequest{
+			Schema:     dl.Namespace,
+			Table:      tableName,
+			Identifier: dbHandle.CredIdentifier,
 		})
 		if err != nil {
 			return schema, fmt.Errorf("%s Error while fetching table attributes: %v", dl.GetLogIdentifier(), err)
 		}
-		if len(fetchTableAttributesResponse.GetError()) != 0 && !strings.Contains(fetchTableAttributesResponse.GetError(), tableOrViewNotFound) {
-			return schema, fmt.Errorf("%s Error while fetching table attributes with response: %v", dl.GetLogIdentifier(), fetchTableAttributesResponse.GetError())
+		if !checkAndIgnoreAlreadyExistError(fetchTableAttributesResponse.GetErrorCode(), tableOrViewNotFound) {
+			return schema, fmt.Errorf("%s Error while fetching table attributes with response: %v", dl.GetLogIdentifier(), fetchTableAttributesResponse.GetErrorMessage())
 		}
 
 		// Populating the schema for the table
@@ -614,7 +648,6 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	dl.Warehouse = warehouse
 	dl.dbHandleT, err = dl.connectToWarehouse()
-	// TODO: Check this.
 	return
 }
 
@@ -673,7 +706,7 @@ func (dl *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 // GetTotalCountInTable returns total count in tables.
 func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s;`, dl.Namespace, tableName)
-	fetchTotalCountInTableResponse, err := dl.dbHandleT.Client.FetchTotalCountInTable(dl.dbHandleT.Context, &proto.ExecuteRequest{
+	response, err := dl.dbHandleT.Client.FetchTotalCountInTable(dl.dbHandleT.Context, &proto.FetchTotalCountInTableRequest{
 		SqlStatement: sqlStatement,
 		Identifier:   dl.dbHandleT.CredIdentifier,
 	})
@@ -681,11 +714,11 @@ func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 		err = fmt.Errorf("%s Error while fetching table count: %v", dl.GetLogIdentifier(), err)
 		return
 	}
-	if len(fetchTotalCountInTableResponse.GetError()) != 0 && !strings.Contains(fetchTotalCountInTableResponse.GetError(), tableOrViewNotFound) {
-		err = fmt.Errorf("%s Error while fetching table count with response: %v", dl.GetLogIdentifier(), fetchTotalCountInTableResponse.GetError())
+	if !checkAndIgnoreAlreadyExistError(response.GetErrorCode(), tableOrViewNotFound) {
+		err = fmt.Errorf("%s Error while fetching table count with response: %v", dl.GetLogIdentifier(), response.GetErrorMessage())
 		return
 	}
-	total = fetchTotalCountInTableResponse.GetCount()
+	total = response.GetCount()
 	return
 }
 

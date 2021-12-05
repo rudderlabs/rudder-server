@@ -29,16 +29,16 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("databricks")
 }
 
-// Close calls Close as well as closes grpc connection
+// Close closes sql connection as well as closes grpc connection
 func (dbT *DBHandleT) Close() {
-	closeConnectionResponse, err := dbT.Client.Close(dbT.Context, &proto.CloseConnectionRequest{
+	closeConnectionResponse, err := dbT.Client.Close(dbT.Context, &proto.CloseRequest{
 		Identifier: dbT.CredIdentifier,
 	})
 	if err != nil {
 		pkgLogger.Errorf("Error closing connection in delta lake: %v", err)
 	}
-	if len(closeConnectionResponse.GetError()) != 0 {
-		pkgLogger.Errorf("Error closing connection in delta lake with response: %v", err)
+	if closeConnectionResponse.GetErrorCode() != "" {
+		pkgLogger.Errorf("Error closing connection in delta lake with response: %v", err, closeConnectionResponse.GetErrorMessage())
 	}
 	dbT.Conn.Close()
 }
