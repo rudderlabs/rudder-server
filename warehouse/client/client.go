@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
@@ -92,7 +93,17 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 }
 
 func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, err error) {
-	// TODO: Implement this
+	executeResponse, err := cl.DBHandleT.Client.ExecuteQuery(cl.DBHandleT.Context, &proto.ExecuteQueryRequest{
+		SqlStatement: statement,
+		Identifier:   cl.DBHandleT.CredIdentifier,
+	})
+	if err != nil {
+		return
+	}
+
+	for _, row := range executeResponse.GetRows() {
+		result.Values = append(result.Values, row.GetColumns())
+	}
 	return result, nil
 }
 
