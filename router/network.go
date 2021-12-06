@@ -158,8 +158,8 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		resp, err := client.Do(req)
 		if err != nil {
 			return &utils.SendPostResponse{
-				StatusCode:   500,
-				ResponseBody: []byte(fmt.Sprintf(`500 Unable to make "%s" request for URL : "%s"`, requestMethod, postInfo.URL)),
+				StatusCode:   http.StatusGatewayTimeout,
+				ResponseBody: []byte(fmt.Sprintf(`504 Unable to make "%s" request for URL : "%s"`, requestMethod, postInfo.URL)),
 			}
 		}
 

@@ -3,6 +3,7 @@ package router
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -110,9 +111,9 @@ var _ = Describe("Network", func() {
 			cancel()
 
 			resp := network.SendPost(ctx, structData)
-
+			fmt.Println(resp.StatusCode)
 			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusGatewayTimeout))
-			gomega.Expect(string(resp.ResponseBody)).To(gomega.Equal(""))
+			gomega.Expect(string(resp.ResponseBody)).To(gomega.Equal("504 Unable to make \"\" request for URL : \"https://www.google-analytics.com/collect\""))
 		})
 	})
 })
