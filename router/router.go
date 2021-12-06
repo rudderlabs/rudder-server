@@ -1134,11 +1134,8 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 		return nil
 	}
 
-	if !rt.guaranteeUserEventOrder {
-		//if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
-		return rt.workers[rand.Intn(rt.noOfWorkers)]
-	}
-
+	//checking if this job can be throttled
+	var parameters JobParametersT
 	userID := job.UserID
 
 	//checking if the user is in throttledMap. If yes, returning nil.
@@ -1146,6 +1143,24 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 	if _, ok := rt.throttledUserMap[userID]; ok {
 		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as user has earlier jobs in throttled map`, rt.destName, job.JobID, userID)
 		return nil
+	}
+
+	err := json.Unmarshal(job.Parameters, &parameters)
+
+	if err != nil {
+		rt.logger.Errorf(`[%v Router] :: Unmarshalling parameters failed with the error %v . Returning nil worker`, err)
+		return nil
+	}
+
+	if rt.shouldThrottle(parameters.DestinationID, userID, throttledAtTime) {
+		rt.throttledUserMap[userID] = struct{}{}
+		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`, rt.destName, job.JobID, userID)
+		return nil
+	}
+
+	if !rt.guaranteeUserEventOrder {
+		//if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
+		return rt.workers[rand.Intn(rt.noOfWorkers)]
 	}
 
 	index := int(math.Abs(float64(misc.GetHash(userID) % rt.noOfWorkers)))
@@ -1197,17 +1212,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 		}
 	}
 
-	//checking if this job can be throttled
-	if toSendWorker != nil {
-		var parameters JobParametersT
-		err := json.Unmarshal(job.Parameters, &parameters)
-		if err == nil && rt.canThrottle(parameters.DestinationID, userID, throttledAtTime) {
-			rt.throttledUserMap[userID] = struct{}{}
-			rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`, rt.destName, job.JobID, userID)
-			return nil
-		}
-	}
-
 	return toSendWorker
 	//#EndJobOrder
 }
@@ -1223,7 +1227,7 @@ func (worker *workerT) canBackoff(job *jobsdb.JobT, userID string) (shouldBackof
 	return false
 }
 
-func (rt *HandleT) canThrottle(destID string, userID string, throttledAtTime time.Time) (canBeThrottled bool) {
+func (rt *HandleT) shouldThrottle(destID string, userID string, throttledAtTime time.Time) (canBeThrottled bool) {
 	if !rt.throttler.IsEnabled() {
 		return false
 	}
@@ -1621,13 +1625,11 @@ func (rt *HandleT) readAndProcess() int {
 	toQuery := jobQueryBatchSize
 	retryList := rt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 	toQuery -= len(retryList)
-	throttledList := rt.jobsDB.GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
-	toQuery -= len(throttledList)
 	waitList := rt.jobsDB.GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery}) //Jobs send to waiting state
 	toQuery -= len(waitList)
 	unprocessedList := rt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: toQuery})
 
-	combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
+	combinedList := append(waitList, append(unprocessedList, retryList...)...)
 
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
