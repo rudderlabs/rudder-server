@@ -525,18 +525,15 @@ func (proc *HandleT) makeFeaturesFetchCall() bool {
 	}
 
 	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return true
+	}
 
 	if res.StatusCode == 200 {
-		body, err := io.ReadAll(res.Body)
-		if err == nil {
-			proc.transformerFeatures = json.RawMessage(body)
-			return false
-		}
-
-		return true
+		proc.transformerFeatures = json.RawMessage(body)
 	} else if res.StatusCode == 404 {
 		proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
-		return false
 	}
 
 	return false
