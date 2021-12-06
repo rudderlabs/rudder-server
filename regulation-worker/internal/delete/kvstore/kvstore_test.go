@@ -17,7 +17,8 @@ import (
 )
 
 var (
-	hold bool
+	redisAddress string
+	hold         bool
 )
 
 func TestMain(m *testing.M) {
@@ -43,12 +44,12 @@ func run(m *testing.M) int {
 		}
 	}()
 
-	freeport := resource.GetPort("6379/tcp")
+	redisAddress = fmt.Sprintf("localhost:%s", resource.GetPort("6379/tcp"))
 
 	if err := pool.Retry(func() error {
 		var err error
 		client := redis.NewClient(&redis.Options{
-			Addr:     "localhost:" + freeport,
+			Addr:     redisAddress,
 			Password: "",
 			DB:       0,
 		})
@@ -86,7 +87,7 @@ func TestRedisDeletion(t *testing.T) {
 	destName := "REDIS"
 	destConfig := map[string]interface{}{
 		"clusterMode": false,
-		"address":     "localhost:6379",
+		"address":     redisAddress,
 	}
 	manager := kvstoremanager.New(destName, destConfig)
 	kvstore := kvstore.KVDeleteManager{
@@ -135,11 +136,10 @@ func TestRedisDeletion(t *testing.T) {
 		fieldCountBeforeDelete[i] = len(result)
 	}
 
-	for _, test := range testData {
-		err := kvstore.KVStoreManager.DeleteKey(test.key)
-		if err != nil {
-			fmt.Println("error while deleting data for key: ", testData[0].key, " from redis using Del: ", err)
-		}
+	//deleting the last key inserted
+	err := kvstore.KVStoreManager.DeleteKey(testData[len(testData)-1].key)
+	if err != nil {
+		fmt.Println("error while deleting data for key: ", testData[0].key, " from redis using Del: ", err)
 	}
 
 	fieldCountAfterDelete := make([]int, len(testData))
@@ -151,8 +151,9 @@ func TestRedisDeletion(t *testing.T) {
 		fieldCountAfterDelete[i] = len(result)
 	}
 
-	for i := 0; i < len(testData); i++ {
-		require.NotEqual(t, 0, fieldCountBeforeDelete[i], "expected fields")
-		require.Equal(t, 0, fieldCountAfterDelete[i], "expected no field")
+	for i := 0; i < len(testData)-1; i++ {
+		require.Equal(t, fieldCountBeforeDelete[i], fieldCountAfterDelete[i], "expected no deletion for this key")
 	}
+
+	require.NotEqual(t, fieldCountBeforeDelete[len(fieldCountBeforeDelete)-1], fieldCountAfterDelete[len(fieldCountAfterDelete)-1])
 }
