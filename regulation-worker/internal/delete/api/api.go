@@ -15,7 +15,7 @@ import (
 )
 
 type API struct {
-	Client *http.Client
+	Client           *http.Client
 	DestTransformURL string
 }
 
@@ -39,27 +39,33 @@ func (api *API) Delete(ctx context.Context, job model.Job, destConfig map[string
 		return model.JobStatusFailed
 	}
 
-	// client := &http.Client{}
+	//TODO: log error received from server
 	resp, err := api.Client.Do(req)
 	if err != nil {
 		return model.JobStatusFailed
 	}
 
+	//TODO: log err, if decoding was unsuccessful.
 	var jobResp JobRespSchema
 	if err := json.NewDecoder(resp.Body).Decode(&jobResp); err != nil {
 		return model.JobStatusFailed
 	}
 
-	if resp.StatusCode == http.StatusBadRequest {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return model.JobStatusComplete
+	case http.StatusBadRequest:
 		return model.JobStatusInvalidFormat
-	} else if resp.StatusCode == http.StatusUnauthorized {
+	case http.StatusUnauthorized:
 		return model.JobStatusInvalidCredential
-	} else if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+	case http.StatusNotFound, http.StatusMethodNotAllowed:
 		return model.JobStatusNotSupported
-	} else if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusRequestTimeout || (resp.StatusCode >= 500 && resp.StatusCode < 600) {
+	case http.StatusTooManyRequests, http.StatusRequestTimeout:
+		return model.JobStatusFailed
+	default:
 		return model.JobStatusFailed
 	}
-	return model.JobStatusComplete
+
 }
 
 func mapJobToPayload(job model.Job, destName string, destConfig map[string]interface{}) []apiDeletionPayloadSchema {

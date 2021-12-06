@@ -18,7 +18,6 @@ import (
 func (d *deleteAPI) handler() http.Handler {
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/d-transformer/delete-users", d.deleteMockServer).Methods("DELETE")
-	// srvMux.HandleFunc("/worker/workspaces/{workspace_id}/regulations/worker-job/{job_id}", updateJobStatus).Methods("PATCH")
 
 	return srvMux
 }
@@ -168,7 +167,10 @@ func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, _ = w.Write(body)
+	_, err = w.Write(body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func strPtr(str string) *string {
