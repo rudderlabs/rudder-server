@@ -395,7 +395,7 @@ func (worker *workerT) workerProcess() {
 				JobT:             job}
 
 			worker.rt.configSubscriberLock.RLock()
-			batchDestination, ok := worker.rt.destinationsMap["1tKim8I8kk1dPPNlaSWQJ1kDMoX"]
+			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
 			if !ok {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
