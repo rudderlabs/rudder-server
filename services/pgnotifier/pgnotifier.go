@@ -95,7 +95,7 @@ func loadPGNotifierConfig() {
 	retriggerInterval = time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
 	config.RegisterIntConfigVariable(500, &retriggerCount, false, 1, "PgNotifier.retriggerCount")
 	config.RegisterIntConfigVariable(120, &retriggerExecutingTimeLimitInS, false, 1, "PgNotifier.retriggerExecutingTimeLimitInS")
-	config.RegisterBoolConfigVariable(true, &skipDDLQueries, false, "PgNotifier.skipDDLQueries")
+	config.RegisterBoolConfigVariable(false, &skipDDLQueries, false, "PgNotifier.skipDDLQueries")
 }
 
 //New Given default connection info return pg notifiew object from it
