@@ -1,4 +1,4 @@
-FROM golang:1.16.8-alpine
+FROM golang:1.16-alpine3.14
 RUN apk add --no-cache build-base
 RUN mkdir /app
 WORKDIR /app
