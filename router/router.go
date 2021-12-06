@@ -395,7 +395,7 @@ func (worker *workerT) workerProcess() {
 				JobT:             job}
 
 			worker.rt.configSubscriberLock.RLock()
-			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
+			batchDestination, ok := worker.rt.destinationsMap["1tKim8I8kk1dPPNlaSWQJ1kDMoX"]
 			if !ok {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
@@ -1147,7 +1147,12 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 
 	err := json.Unmarshal(job.Parameters, &parameters)
 
-	if err == nil && rt.canThrottle(parameters.DestinationID, userID, throttledAtTime) {
+	if err != nil {
+		rt.logger.Errorf(`[%v Router] :: Unmarshalling parameters failed with the error %v . Returning nil worker`, err)
+		return nil
+	}
+
+	if err == nil && rt.shouldThrottle(parameters.DestinationID, userID, throttledAtTime) {
 		rt.throttledUserMap[userID] = struct{}{}
 		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`, rt.destName, job.JobID, userID)
 		return nil
@@ -1222,7 +1227,7 @@ func (worker *workerT) canBackoff(job *jobsdb.JobT, userID string) (shouldBackof
 	return false
 }
 
-func (rt *HandleT) canThrottle(destID string, userID string, throttledAtTime time.Time) (canBeThrottled bool) {
+func (rt *HandleT) shouldThrottle(destID string, userID string, throttledAtTime time.Time) (canBeThrottled bool) {
 	if !rt.throttler.IsEnabled() {
 		return false
 	}
