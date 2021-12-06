@@ -2926,7 +2926,7 @@ func (jd *HandleT) journalMarkDoneInTxn(txHandler transactionHandler, opID int64
 }
 
 func (jd *HandleT) JournalDeleteEntry(opID int64) {
-	sqlStatement := fmt.Sprintf(`DELETE from "%s"_journal WHERE id=$1 AND owner=$2`, jd.tablePrefix)
+	sqlStatement := fmt.Sprintf(`DELETE from "%s_journal" WHERE id=$1 AND owner=$2`, jd.tablePrefix)
 	_, err := jd.dbHandle.Exec(sqlStatement, opID, jd.ownerType)
 	jd.assertError(err)
 }

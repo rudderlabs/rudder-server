@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 const (
@@ -151,6 +153,26 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 		}
 	}
 
+	//PickUp stats
+	var pickUpCountStat stats.RudderStats
+	customerCountStat := make(map[string]int)
+
+	for _, job := range outJobs {
+		if _, ok := customerCountStat[job.Customer]; !ok {
+			customerCountStat[job.Customer] = 0
+		}
+		customerCountStat[job.Customer] += 1
+	}
+
+	for customer, jobCount := range customerCountStat {
+		pickUpCountStat = stats.NewTaggedStat("pick_up_count", stats.CountType, stats.Tags{
+			"customer": customer,
+			"state":    "unprocessed",
+			"module":   mj.tablePrefix,
+		})
+		pickUpCountStat.Count(jobCount)
+	}
+
 	return outJobs
 }
 
@@ -229,6 +251,26 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 		}
 	}
 
+	//PickUp stats
+	var pickUpCountStat stats.RudderStats
+	customerCountStat := make(map[string]int)
+
+	for _, job := range outJobs {
+		if _, ok := customerCountStat[job.Customer]; !ok {
+			customerCountStat[job.Customer] = 0
+		}
+		customerCountStat[job.Customer] += 1
+	}
+
+	for customer, jobCount := range customerCountStat {
+		pickUpCountStat = stats.NewTaggedStat("pick_up_count", stats.CountType, stats.Tags{
+			"customer": customer,
+			"state":    params.StateFilters[0],
+			"module":   mj.tablePrefix,
+		})
+		pickUpCountStat.Count(jobCount)
+	}
+
 	return outJobs
 }
 
@@ -264,7 +306,10 @@ func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.Customer, &_null)
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.Customer, &_null,
+			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
+			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
+			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
 		mj.assertError(err)
 		jobList = append(jobList, &job)
 
@@ -338,7 +383,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
 
 	sqlStatement = fmt.Sprintf(`SELECT
                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                               jobs.created_at, jobs.expire_at,
+                                               jobs.created_at, jobs.expire_at, jobs.customer,
 											   sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,

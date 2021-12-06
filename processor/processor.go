@@ -179,7 +179,7 @@ func (proc *HandleT) buildStatTags(sourceID, workspaceID string, destination bac
 		"destination":    destination.ID,
 		"destType":       destination.DestinationDefinition.Name,
 		"source":         sourceID,
-		"workspaceId":    workspaceID,
+		"customer":       workspaceID,
 		"transformation": transformationType,
 	}
 }

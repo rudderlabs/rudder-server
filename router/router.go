@@ -576,6 +576,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					"module":      "router",
 					"destType":    worker.rt.destName,
 					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
+					"customer":    destinationJob.JobMetadataArray[0].JobT.Customer,
 				})
 				workspaceID := destinationJob.JobMetadataArray[0].JobT.Customer
 				deliveryLatencyStat.Start()
@@ -965,6 +966,7 @@ func (worker *workerT) sendRouterResponseCountStat(destinationJobMetadata *types
 		"respStatusCode": status.ErrorCode,
 		"destination":    destinationTag,
 		"attempt_number": strconv.Itoa(status.AttemptNum),
+		"customer":       status.Customer,
 	})
 	routerResponseStat.Count(1)
 }
@@ -977,6 +979,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 			"destType":       worker.rt.destName,
 			"destination":    destinationTag,
 			"attempt_number": strconv.Itoa(status.AttemptNum),
+			"customer":       status.Customer,
 		})
 		eventsDeliveredStat.Count(1)
 		if destinationJobMetadata.ReceivedAt != "" {
@@ -988,6 +991,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 						"destType":       worker.rt.destName,
 						"destination":    destinationTag,
 						"attempt_number": strconv.Itoa(status.AttemptNum),
+						"customer":       status.Customer,
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
