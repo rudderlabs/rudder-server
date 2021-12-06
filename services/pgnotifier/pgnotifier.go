@@ -466,7 +466,7 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 	m := &migrator.Migrator{
 		Handle:                     notifier.dbHandle,
 		MigrationsTable:            "pg_notifier_queue_migrations",
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", false),
 	}
 	err = m.Migrate("pg_notifier_queue")
 	if err != nil {
