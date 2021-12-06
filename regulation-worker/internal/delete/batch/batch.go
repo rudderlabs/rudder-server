@@ -243,7 +243,7 @@ func (b *Batch) delete(ctx context.Context, PatternFile, targetFile string) erro
 	return nil
 }
 
-func downloadWithExpBackoff(fu func(context.Context, string) (string, error), ctx context.Context, fileName string) (string, error) {
+func downloadWithExpBackoff(ctx context.Context, fu func(context.Context, string) (string, error), fileName string) (string, error) {
 
 	maxWait := time.Minute * 10
 	bo := backoff.NewExponentialBackOff()
@@ -270,7 +270,7 @@ func downloadWithExpBackoff(fu func(context.Context, string) (string, error), ct
 	return absFileName, err
 }
 
-func uploadWithExpBackoff(fu func(ctx context.Context, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error, ctx context.Context, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error {
+func uploadWithExpBackoff(ctx context.Context, fu func(ctx context.Context, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error {
 
 	maxWait := time.Minute * 10
 	bo := backoff.NewExponentialBackOff()
@@ -508,7 +508,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 				<-goRoutineCount
 			}()
 
-			FileAbsPath, err := downloadWithExpBackoff(batch.download, gCtx, files[_i].Key)
+			FileAbsPath, err := downloadWithExpBackoff(gCtx, batch.download, files[_i].Key)
 			if err != nil {
 				return err
 			}
@@ -518,7 +518,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 				return fmt.Errorf("error while deleting object, %w", err)
 			}
 
-			err = uploadWithExpBackoff(batch.upload, gCtx, FileAbsPath, files[_i].Key, absStatusTrackerFileName)
+			err = uploadWithExpBackoff(gCtx, batch.upload, FileAbsPath, files[_i].Key, absStatusTrackerFileName)
 			if err != nil {
 				return fmt.Errorf("error while uploading cleaned file, %w", err)
 			}
