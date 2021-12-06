@@ -156,14 +156,23 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		req.Header.Add("User-Agent", "RudderLabs")
 
 		resp, err := client.Do(req)
-
-		var respBody []byte
-
-		if resp != nil && resp.Body != nil {
-			respBody, _ = io.ReadAll(resp.Body)
-			network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
-			defer resp.Body.Close()
+		if err != nil {
+			return &utils.SendPostResponse{
+				StatusCode:   500,
+				ResponseBody: []byte(fmt.Sprintf(`500 Unable to make "%s" request for URL : "%s"`, requestMethod, postInfo.URL)),
+			}
 		}
+
+		defer resp.Body.Close()
+
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return &utils.SendPostResponse{
+				StatusCode:   resp.StatusCode,
+				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : "%s"`, postInfo.URL)),
+			}
+		}
+		network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 
 		var contentTypeHeader string
 		if resp != nil && resp.Header != nil {
