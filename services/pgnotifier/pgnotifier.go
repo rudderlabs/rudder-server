@@ -374,7 +374,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority
 		"queueName": queueName,
 		"batchID":   batchID,
 		"module":    "pg_notifier",
-	})
+	}).Count(len(messages))
 	notifier.trackBatch(batchID, &ch)
 	return
 }
