@@ -21,6 +21,9 @@
                 {
                     "config":
                     {
+                   
+                        "eventDelivery": false,
+                        "eventDeliveryTS": 1638536577875,
                         "webhookUrl": "{{.webhookUrl}}",
                         "webhookMethod": "POST"
                     },
@@ -68,7 +71,8 @@
                                 "cloud",
                                 "warehouse",
                                 "reactnative",
-                                "flutter"
+                                "flutter",
+                                "cordova"
                             ],
                             "supportedMessageTypes":
                             [
@@ -78,6 +82,10 @@
                                 "page",
                                 "screen",
                                 "track"
+                            ],
+                            "syncBehaviours": [
+                                "upsert",
+                                "mirror"
                             ],
                             "saveDestinationResponse": false
                         },
