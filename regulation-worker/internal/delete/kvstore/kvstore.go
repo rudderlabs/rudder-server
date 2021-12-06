@@ -8,15 +8,14 @@ import (
 )
 
 type KVDeleteManager struct {
-	KVStoreManager kvstoremanager.KVStoreManager
+	// KVStoreManager kvstoremanager.KVStoreManager
 }
 
 func (kv *KVDeleteManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
-
-	kv.KVStoreManager.Connect()
+	kvm := kvstoremanager.New(destName, destConfig)
 	var err error
 	for _, user := range job.UserAttributes {
-		err = kv.KVStoreManager.DeleteKey(user.UserID)
+		err = kvm.DeleteKey(user.UserID)
 		if err != nil {
 			return model.JobStatusFailed
 		}

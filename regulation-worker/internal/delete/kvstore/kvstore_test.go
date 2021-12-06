@@ -1,6 +1,7 @@
 package kvstore_test
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/ory/dockertest"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/stretchr/testify/require"
 )
@@ -84,17 +86,7 @@ func blockOnHold() {
 
 func TestRedisDeletion(t *testing.T) {
 
-	destName := "REDIS"
-	destConfig := map[string]interface{}{
-		"clusterMode": false,
-		"address":     redisAddress,
-	}
-	manager := kvstoremanager.New(destName, destConfig)
-	kvstore := kvstore.KVDeleteManager{
-		KVStoreManager: manager,
-	}
-
-	testData := []struct {
+	inputTestData := []struct {
 		key    string
 		fields map[string]interface{}
 	}{
@@ -119,41 +111,65 @@ func TestRedisDeletion(t *testing.T) {
 		},
 	}
 
+	destName := "REDIS"
+	destConfig := map[string]interface{}{
+		"clusterMode": false,
+		"address":     redisAddress,
+	}
+
+	manager := kvstoremanager.New(destName, destConfig)
+
 	//inserting test data in Redis
-	for _, test := range testData {
-		err := kvstore.KVStoreManager.HMSet(test.key, test.fields)
+	for _, test := range inputTestData {
+		err := manager.HMSet(test.key, test.fields)
 		if err != nil {
 			fmt.Println("error while inserting into redis using HMSET: ", err)
 		}
 	}
 
-	fieldCountBeforeDelete := make([]int, len(testData))
-	for i, test := range testData {
-		result, err := kvstore.KVStoreManager.HGetAll(test.key)
+	fieldCountBeforeDelete := make([]int, len(inputTestData))
+	for i, test := range inputTestData {
+		result, err := manager.HGetAll(test.key)
 		if err != nil {
 			fmt.Println("error while getting data from redis using HMGET: ", err)
 		}
 		fieldCountBeforeDelete[i] = len(result)
 	}
 
-	//deleting the last key inserted
-	err := kvstore.KVStoreManager.DeleteKey(testData[len(testData)-1].key)
-	if err != nil {
-		fmt.Println("error while deleting data for key: ", testData[0].key, " from redis using Del: ", err)
+	ctx := context.Background()
+	kvstore := kvstore.KVDeleteManager{}
+
+	deleteJob := model.Job{
+		ID: 1,
+		UserAttributes: []model.UserAttribute{
+			{
+				UserID: "Jermaine1473336609491897794707338",
+				Phone:  strPtr("6463633841"),
+				Email:  strPtr("dorowane8n285680461479465450293436@gmail.com"),
+			},
+		},
 	}
 
-	fieldCountAfterDelete := make([]int, len(testData))
-	for i, test := range testData {
-		result, err := kvstore.KVStoreManager.HGetAll(test.key)
+	//deleting the last key inserted
+	status := kvstore.Delete(ctx, deleteJob, destConfig, destName)
+	require.Equal(t, model.JobStatusComplete, status, "actual deletion status different than expected")
+
+	fieldCountAfterDelete := make([]int, len(inputTestData))
+	for i, test := range inputTestData {
+		result, err := manager.HGetAll(test.key)
 		if err != nil {
 			fmt.Println("error while getting data from redis using HMGET: ", err)
 		}
 		fieldCountAfterDelete[i] = len(result)
 	}
 
-	for i := 0; i < len(testData)-1; i++ {
+	for i := 1; i < len(inputTestData); i++ {
 		require.Equal(t, fieldCountBeforeDelete[i], fieldCountAfterDelete[i], "expected no deletion for this key")
 	}
 
-	require.NotEqual(t, fieldCountBeforeDelete[len(fieldCountBeforeDelete)-1], fieldCountAfterDelete[len(fieldCountAfterDelete)-1])
+	require.NotEqual(t, fieldCountBeforeDelete[0], fieldCountAfterDelete[0], "key found, expected no key")
+}
+
+func strPtr(str string) *string {
+	return &str
 }
