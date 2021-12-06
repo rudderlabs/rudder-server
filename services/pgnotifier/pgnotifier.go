@@ -14,8 +14,9 @@ import (
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
@@ -222,6 +223,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				pkgLogger.Errorf("PgNotifier: Failed to query for tracking jobs by batch_id: %s, connInfo: %s", stmt, notifier.URI)
 				panic(err)
 			}
+
 			if count == 0 {
 				stmt = fmt.Sprintf(`SELECT payload->'StagingFileID', payload->'Output', status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
 				rows, err := notifier.dbHandle.Query(stmt)
@@ -368,6 +370,11 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority
 		return
 	}
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(messages), queueName, batchID)
+	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
+		"queueName": queueName,
+		"batchID":   batchID,
+		"module":    "pg_notifier",
+	})
 	notifier.trackBatch(batchID, &ch)
 	return
 }

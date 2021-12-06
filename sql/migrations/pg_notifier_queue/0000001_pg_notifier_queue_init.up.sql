@@ -26,15 +26,17 @@ CREATE TABLE IF NOT EXISTS pg_notifier_queue (
     last_exec_time TIMESTAMP,
     attempt SMALLINT DEFAULT 0,
     error TEXT,
-    worker_id VARCHAR(64)),
+    worker_id VARCHAR(64),
     workspace VARCHAR(64),
-    priority int;
+    priority int);
 
 CREATE INDEX IF NOT EXISTS pg_notifier_queue_status_idx ON pg_notifier_queue (status);
 
 CREATE INDEX IF NOT EXISTS pg_notifier_queue_batch_id_idx ON pg_notifier_queue (batch_id);
 
 CREATE INDEX IF NOT EXISTS pg_notifier_queue_workspace_topic_idx ON pg_notifier_queue (workspace, topic);
+
+CREATE INDEX IF NOT EXISTS pg_notifier_queue_status_workspace_idx ON pg_notifier_queue (status, workspace);
 
 DO $$ BEGIN
     CREATE TYPE pg_notifier_subscriber_status
