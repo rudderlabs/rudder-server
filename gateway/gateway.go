@@ -1447,6 +1447,7 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		configSubscriberLock.Lock()
 		enabledWriteKeysSourceMap = map[string]backendconfig.SourceT{}
 		enabledWriteKeyWebhookMap = map[string]string{}
+		enabledWriteKeyWorkspaceMap = map[string]string{}
 		sources := config.Data.(backendconfig.ConfigT)
 		sourceIDToNameMap = map[string]string{}
 		for _, source := range sources.Sources {
