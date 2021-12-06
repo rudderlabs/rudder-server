@@ -1152,7 +1152,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 		return nil
 	}
 
-	if err == nil && rt.shouldThrottle(parameters.DestinationID, userID, throttledAtTime) {
+	if rt.shouldThrottle(parameters.DestinationID, userID, throttledAtTime) {
 		rt.throttledUserMap[userID] = struct{}{}
 		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`, rt.destName, job.JobID, userID)
 		return nil
