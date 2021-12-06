@@ -30,6 +30,7 @@ var (
 var (
 	pgNotifierDBhost, pgNotifierDBuser, pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode string
 	pgNotifierDBport                                                                                int
+	skipDDLQueries                                                                                  bool
 )
 
 const (
@@ -94,6 +95,7 @@ func loadPGNotifierConfig() {
 	retriggerInterval = time.Duration(config.GetInt("PgNotifier.retriggerIntervalInS", 2)) * time.Second
 	config.RegisterIntConfigVariable(500, &retriggerCount, false, 1, "PgNotifier.retriggerCount")
 	config.RegisterIntConfigVariable(120, &retriggerExecutingTimeLimitInS, false, 1, "PgNotifier.retriggerExecutingTimeLimitInS")
+	config.RegisterBoolConfigVariable(true, &skipDDLQueries, false, "PgNotifier.skipDDLQueries")
 }
 
 //New Given default connection info return pg notifiew object from it
@@ -116,7 +118,9 @@ func New(workspaceIdentifier string, fallbackConnectionInfo string) (notifier Pg
 		URI:                 connectionInfo,
 		workspaceIdentifier: workspaceIdentifier,
 	}
-	err = notifier.setupQueue()
+	if !skipDDLQueries {
+		err = notifier.setupQueue()
+	}
 	return
 }
 
@@ -136,9 +140,11 @@ func (notifier PgNotifierT) AddTopic(ctx context.Context, topic string) (err err
 			return
 		}
 	}
-	err = notifier.createTrigger(topic)
-	if err != nil {
-		return
+	if !skipDDLQueries {
+		err = notifier.createTrigger(topic)
+		if err != nil {
+			return
+		}
 	}
 
 	notifier.triggerPending(ctx, topic)
