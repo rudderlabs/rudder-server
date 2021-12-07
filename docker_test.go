@@ -47,46 +47,38 @@ import (
 )
 
 var (
-	pool             *dockertest.Pool
-	err              error
-	z                *dockertest.Resource
-	resourceKafka    *dockertest.Resource
-	resourceRedis	 *dockertest.Resource
-	transformerRes   *dockertest.Resource
-	resource         *dockertest.Resource
-	reportingRes	 *dockertest.Resource
-	timescaleRes 	 *dockertest.Resource
-	network          *dc.Network
-	resourcePostgres *dockertest.Resource
-	transformURL     string
-	minioEndpoint    string
-	minioBucketName  string
+	pool                     *dockertest.Pool
+	err                      error
+	network                  *dc.Network
+	transformURL             string
+	minioEndpoint            string
+	minioBucketName          string
 	timescaleDB_DSN_Internal string
-	reportingserviceURL string
-	hold             bool = true
-	db               *sql.DB
-	rs_db			 *sql.DB
-	redisClient      *redis.Client
-	DB_DSN           = "root@tcp(127.0.0.1:3306)/service"
-	httpPort         string
-	httpKafkaPort    string
-	dbHandle         *sql.DB
-	sourceJSON       backendconfig.ConfigT
-	webhookurl       string
-	webhookDestinationurl string
-	webhook          *WebhookRecorder
-	webhookDestination *WebhookRecorder
-	address          string
-	runIntegration   bool
-	writeKey         string
-	webhookEventWriteKey string
-	workspaceID      string
-	redisAddress     string
-	brokerPort       string
-	localhostPort    string
-	localhostPortInt int
-	EventID string
-	VersionID string
+	reportingserviceURL      string
+	hold                     bool = true
+	db                       *sql.DB
+	rs_db                    *sql.DB
+	redisClient              *redis.Client
+	DB_DSN                   = "root@tcp(127.0.0.1:3306)/service"
+	httpPort                 string
+	httpKafkaPort            string
+	dbHandle                 *sql.DB
+	sourceJSON               backendconfig.ConfigT
+	webhookurl               string
+	webhookDestinationurl    string
+	webhook                  *WebhookRecorder
+	webhookDestination       *WebhookRecorder
+	address                  string
+	runIntegration           bool
+	writeKey                 string
+	webhookEventWriteKey     string
+	workspaceID              string
+	redisAddress             string
+	brokerPort               string
+	localhostPort            string
+	localhostPortInt         int
+	EventID                  string
+	VersionID                string
 )
 
 type WebhookRecorder struct {
@@ -210,19 +202,19 @@ func blockOnHold() {
 	<-c
 }
 
-func SendEvent(payload *strings.Reader, call_type string) (string, error){
+func SendEvent(payload *strings.Reader, call_type string) (string, error) {
 	log.Println(fmt.Sprintf("Sending %s Event", call_type))
-	url := ""
-	if call_type != "beacon" {
-		url = fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, call_type)
-	} else{url = fmt.Sprintf("http://localhost:%s/beacon/v1/batch?writeKey=%s", httpPort, writeKey)}
+	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, call_type)
+	if call_type == "beacon" {
+		url = fmt.Sprintf("http://localhost:%s/beacon/v1/batch?writeKey=%s", httpPort, writeKey)
+	}
 	method := "POST"
 	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
 
 	if err != nil {
 		log.Println(err)
-		return "" , err
+		return "", err
 	}
 
 	req.Header.Add("Content-Type", "application/json")
@@ -235,59 +227,58 @@ func SendEvent(payload *strings.Reader, call_type string) (string, error){
 	res, err := client.Do(req)
 	if err != nil {
 		log.Println(err)
-		return  "" , err
+		return "", err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		log.Println(err)
-		return "" , err
+		return "", err
 	}
 	log.Println(string(body))
 	log.Println("Event Sent Successfully")
-	return string(body) ,err
+	return string(body), err
 }
 
 func SendWebhookEvent() {
 	log.Println("Sending Webhook Event")
 	url := fmt.Sprintf("http://localhost:%s/v1/webhook?writeKey=%s", httpPort, webhookEventWriteKey)
 	method := "POST"
-  
+
 	payload := strings.NewReader(`{
 	"data": {
 	  "customer_id": "abcd-1234"  
 	},
 	"object_type": "email"
  	 }`)
-  
-	client := &http.Client {
-	}
+
+	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
-  
+
 	if err != nil {
-	  log.Println(err)
-	  return
+		log.Println(err)
+		return
 	}
 	req.Header.Add("Content-Type", "application/json")
-  
+
 	res, err := client.Do(req)
 	if err != nil {
-	  log.Println(err)
-	  return
+		log.Println(err)
+		return
 	}
 	defer res.Body.Close()
-  
+
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-	  log.Println(err)
-	  return
+		log.Println(err)
+		return
 	}
 	log.Println(string(body))
 	log.Println("Webhook Event Sent Successfully")
 }
 
-func SendPixelEvents(){
+func SendPixelEvents() {
 	// Send pixel/v1/page
 	log.Println("Sending pixel/v1/page Event")
 	url := fmt.Sprintf("http://localhost:%s/pixel/v1/page?writeKey=%s&anonymousId=identified_user_id", httpPort, writeKey)
@@ -305,29 +296,28 @@ func SendPixelEvents(){
 	log.Println("pixel/v1/track Event Sent Successfully")
 }
 
-func GetEvent(url string, method string)(string, error){
-	client := &http.Client {
-	}
+func GetEvent(url string, method string) (string, error) {
+	client := &http.Client{}
 	req, err := http.NewRequest(method, url, nil)
 
 	if err != nil {
 		fmt.Println(err)
-		return "" , err
+		return "", err
 	}
 	req.Header.Add("Authorization", "Basic cnVkZGVyOnBhc3N3b3Jk")
 	res, err := client.Do(req)
 	if err != nil {
 		fmt.Println(err)
-		return "" , err
+		return "", err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		fmt.Println(err)
-		return "" , err
+		return "", err
 	}
-	return string(body) , err
+	return string(body), err
 }
 
 func TestMain(m *testing.M) {
@@ -364,56 +354,55 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("could not connect to docker: %w", err)
 	}
-	SetZookeeper()
+	z := SetZookeeper()
 	defer func() {
 		if err := pool.Purge(z); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	SetKafka()
+	resourceKafka := SetKafka(z)
 	defer func() {
 		if err := pool.Purge(resourceKafka); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	SetRedis()
+	resourceRedis := SetRedis()
 	defer func() {
 		if err := pool.Purge(resourceRedis); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	SetJobsDB()
+	resourcePostgres := SetJobsDB()
 	defer func() {
-	if err := pool.Purge(resourcePostgres); err != nil {
-		log.Printf("Could not purge resource: %s \n", err)
-	}
+		if err := pool.Purge(resourcePostgres); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
 	}()
-	SetTransformer()
+	transformerRes := SetTransformer()
 	defer func() {
-	if err := pool.Purge(transformerRes); err != nil {
-		log.Printf("Could not purge resource: %s \n", err)
-	}
+		if err := pool.Purge(transformerRes); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
 	}()
-	SetMINIO()
+	resource := SetMINIO()
 	defer func() {
-	if err := pool.Purge(resource); err != nil {
-		log.Printf("Could not purge resource: %s \n", err)
-	}
+		if err := pool.Purge(resource); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
 	}()
-	SetTimescaleDB()
+
+	timescaleRes := SetTimescaleDB()
 	defer func() {
 		if err := pool.Purge(timescaleRes); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
-		}()
-
-	SetReportingService()
-	defer func() {
-	if err := pool.Purge(reportingRes); err != nil {
-		log.Printf("Could not purge resource: %s \n", err)
-	}
 	}()
-	
+	reportingRes := SetReportingService()
+	defer func() {
+		if err := pool.Purge(reportingRes); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
 
 	os.Setenv("JOBS_DB_HOST", "localhost")
 	os.Setenv("JOBS_DB_NAME", "jobsdb")
@@ -460,21 +449,21 @@ func run(m *testing.M) (int, error) {
 	writeKey = randString(27)
 	workspaceID = randString(27)
 	webhookEventWriteKey = randString(27)
-	fmt.Println("writeKey",writeKey)
+	fmt.Println("writeKey", writeKey)
 
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":      webhookurl,
-			"webhookDestinationurl":webhookDestinationurl,
-			"writeKey":        writeKey,
-			"webhookEventWriteKey": webhookEventWriteKey,
-			"workspaceId":     workspaceID,
-			"postgresPort":    resourcePostgres.GetPort("5432/tcp"),
-			"address":         redisAddress,
-			"minioEndpoint":   minioEndpoint,
-			"minioBucketName": minioBucketName,
-			"kafkaPort":       strconv.Itoa(localhostPortInt),
+			"webhookUrl":            webhookurl,
+			"webhookDestinationurl": webhookDestinationurl,
+			"writeKey":              writeKey,
+			"webhookEventWriteKey":  webhookEventWriteKey,
+			"workspaceId":           workspaceID,
+			"postgresPort":          resourcePostgres.GetPort("5432/tcp"),
+			"address":               redisAddress,
+			"minioEndpoint":         minioEndpoint,
+			"minioBucketName":       minioBucketName,
+			"kafkaPort":             strconv.Itoa(localhostPortInt),
 		},
 	)
 	defer func() {
@@ -508,10 +497,10 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("MINIO_SSL", "false")
 	os.Setenv("WAREHOUSE_URL", "http://localhost:8082")
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
-	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE","true")
+	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
 	os.Setenv("RSERVER_EVENT_SCHEMAS_ENABLE_EVENT_SCHEMAS_FEATURE", "true")
-	os.Setenv("RSERVER_EVENT_SCHEMAS_SYNC_INTERVAL","15")
+	os.Setenv("RSERVER_EVENT_SCHEMAS_SYNC_INTERVAL", "15")
 	os.Setenv("RSERVER_REPORTING_URL", reportingserviceURL)
 
 	fmt.Printf("--- Setup done (%s)\n", time.Since(setupStart))
@@ -540,7 +529,7 @@ func run(m *testing.M) (int, error) {
 	<-svcDone
 
 	tearDownStart = time.Now()
-	
+
 	return code, nil
 }
 
@@ -595,8 +584,21 @@ func TestWebhook(t *testing.T) {
 		[
 			{
 				"userId": "identified_user_id",
-			   "anonymousId":"anonymousId_1",
-			   "messageId":"messageId_1"
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
 			}
 		]
 	}`)
@@ -682,9 +684,9 @@ func TestWebhook(t *testing.T) {
 		return len(webhookDestination.Requests()) == 1
 	}, time.Minute, 10*time.Millisecond)
 
-    i :=-1
+	i := -1
 	require.Eventually(t, func() bool {
-		i=i+1
+		i = i + 1
 		req := webhook.Requests()[i]
 		body, _ := io.ReadAll(req.Body)
 		return gjson.GetBytes(body, "anonymousId").Str == "anonymousId_1"
@@ -705,7 +707,6 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified_user_id")
 	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "e4cab80e-2f0e-4fa2-87e0-3a4af182634c")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
-
 
 	req = webhookDestination.Requests()[0]
 	body, err = io.ReadAll(req.Body)
@@ -766,7 +767,7 @@ func TestPostgres(t *testing.T) {
 	}, time.Minute, 10*time.Millisecond)
 }
 
-// Verify Audience List EndPoint 
+// Verify Audience List EndPoint
 func TestAudiencelist(t *testing.T) {
 	payload := strings.NewReader(`{
 		"type": "audiencelist",
@@ -788,19 +789,17 @@ func TestAudiencelist(t *testing.T) {
 		},
 		"userId": "user123"
 		}`)
-	resBody, _ :=SendEvent(payload, "audiencelist")
+	resBody, _ := SendEvent(payload, "audiencelist")
 	require.Equal(t, resBody, "OK")
 }
 
 type eventSchemasObject struct {
-	EventID string
+	EventID   string
 	EventType string
 	VersionID string
+}
 
-  }
-
-
-// Verify Event Models EndPoint 
+// Verify Event Models EndPoint
 func TestEventModels(t *testing.T) {
 	// GET /schemas/event-models
 	url := fmt.Sprintf("http://localhost:%s/schemas/event-models", httpPort)
@@ -820,22 +819,22 @@ func TestEventModels(t *testing.T) {
 	if err != nil {
 		fmt.Println("error:", err)
 	}
-	fmt.Println( "// loop over array of structs of shipObject" )
+	fmt.Println("// loop over array of structs of shipObject")
 	for k := range eventSchemas {
 		if eventSchemas[k].EventType == "page" {
 			EventID = eventSchemas[k].EventID
 		}
-  	}
+	}
 	if EventID == "" {
 		fmt.Println("error: Page type EventID not found")
 	}
 	log.Println("Test Schemas Event ID", EventID)
 }
 
-// Verify Event Versions EndPoint 
+// Verify Event Versions EndPoint
 func TestEventVersions(t *testing.T) {
 	// GET /schemas/event-versions
-	url := fmt.Sprintf("http://localhost:%s/schemas/event-versions?EventID=%s", httpPort,EventID)
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-versions?EventID=%s", httpPort, EventID)
 	method := "GET"
 	resBody, _ := GetEvent(url, method)
 	require.Contains(t, resBody, EventID)
@@ -851,25 +850,25 @@ func TestEventVersions(t *testing.T) {
 	log.Println("Test Schemas Event ID's VersionID: ", VersionID)
 }
 
-// Verify schemas/event-model/{EventID}/key-counts EndPoint 
+// Verify schemas/event-model/{EventID}/key-counts EndPoint
 func TestEventModelKeyCounts(t *testing.T) {
 	// GET schemas/event-model/{EventID}/key-counts
-	url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/key-counts", httpPort,EventID)
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/key-counts", httpPort, EventID)
 	method := "GET"
 	resBody, _ := GetEvent(url, method)
 	require.Contains(t, resBody, "messageId")
 }
 
-// Verify /schemas/event-model/{EventID}/metadata EndPoint 
+// Verify /schemas/event-model/{EventID}/metadata EndPoint
 func TestEventModelMetadata(t *testing.T) {
 	// GET /schemas/event-model/{EventID}/metadata
-	url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/metadata", httpPort,EventID)
+	url := fmt.Sprintf("http://localhost:%s/schemas/event-model/%s/metadata", httpPort, EventID)
 	method := "GET"
 	resBody, _ := GetEvent(url, method)
 	require.Contains(t, resBody, "messageId")
 }
 
-// Verify /schemas/event-version/{VersionID}/metadata EndPoint 
+// Verify /schemas/event-version/{VersionID}/metadata EndPoint
 func TestEventVersionMetadata(t *testing.T) {
 	// GET /schemas/event-version/{VersionID}/metadata
 	url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/metadata", httpPort, VersionID)
@@ -878,19 +877,16 @@ func TestEventVersionMetadata(t *testing.T) {
 	require.Contains(t, resBody, "messageId")
 }
 
-// Verify /schemas/event-version/{VersionID}/missing-keys EndPoint 
+// Verify /schemas/event-version/{VersionID}/missing-keys EndPoint
 func TestEventVersionMissingKeys(t *testing.T) {
 	// GET /schemas/event-version/{VersionID}/metadata
 	url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/missing-keys", httpPort, VersionID)
 	method := "GET"
 	resBody, _ := GetEvent(url, method)
-	log.Println("EventID", EventID)
-	log.Println("VersionID", VersionID)
-	log.Println(resBody)
 	require.Contains(t, resBody, "originalTimestamp")
-	require.Contains(t, resBody, "sentAt" )
-	require.Contains(t, resBody, "channel" )
-	require.Contains(t, resBody, "integrations.All" )
+	require.Contains(t, resBody, "sentAt")
+	require.Contains(t, resBody, "channel")
+	require.Contains(t, resBody, "integrations.All")
 }
 
 // Verify /schemas/event-models/json-schemas EndPoint
@@ -921,6 +917,7 @@ func TestRedis(t *testing.T) {
 	}, time.Minute, 10*time.Millisecond)
 
 }
+
 // Verify Event in Kafka
 func TestKafka(t *testing.T) {
 
@@ -957,9 +954,7 @@ out:
 		select {
 		case msg := <-consumer:
 			msgCount++
-			// t.Log("Received messages", string(msg.Key), string(msg.Value))
 			require.Equal(t, "identified_user_id", string(msg.Key))
-			// require.Contains(t, string(msg.Value), "new-val")
 			require.Contains(t, string(msg.Value), "identified_user_id")
 			if msgCount == expectedCount {
 				break out
@@ -976,7 +971,7 @@ out:
 
 }
 
-// Verify beacon  EndPoint 
+// Verify beacon  EndPoint
 func TestBeaconBatch(t *testing.T) {
 	payload := strings.NewReader(`{
 		"batch":
@@ -988,10 +983,9 @@ func TestBeaconBatch(t *testing.T) {
 			}
 		]
 	}`)
-	resBody, _ :=SendEvent(payload, "beacon")
+	resBody, _ := SendEvent(payload, "beacon")
 	require.Equal(t, resBody, "OK")
 }
-
 
 func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
 	consumers := make(chan *sarama.ConsumerMessage)
@@ -1025,7 +1019,7 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 	return consumers, errors
 }
 
-func SetZookeeper() {
+func SetZookeeper() *dockertest.Resource {
 	network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
 	if err != nil {
 		log.Printf("Could not create docker network: %s", err)
@@ -1039,7 +1033,7 @@ func SetZookeeper() {
 	log.Println("zookeeper Port:", zookeeperPort)
 	log.Println("zookeeper client Port :", zookeeperclientPort)
 
-	z, err = pool.RunWithOptions(&dockertest.RunOptions{
+	z, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-zookeeper",
 		Tag:        "latest",
 		NetworkID:  network.ID,
@@ -1052,10 +1046,10 @@ func SetZookeeper() {
 	if err != nil {
 		fmt.Println(err)
 	}
-	
+	return z
 }
 
-func SetKafka() {
+func SetKafka(z *dockertest.Resource) *dockertest.Resource {
 	// Set Kafka: pulls an image, creates a container based on it and runs it
 	KAFKA_ZOOKEEPER_CONNECT := fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
 	log.Println("KAFKA_ZOOKEEPER_CONNECT:", KAFKA_ZOOKEEPER_CONNECT)
@@ -1079,7 +1073,7 @@ func SetKafka() {
 
 	log.Println("KAFKA_ADVERTISED_LISTENERS", KAFKA_ADVERTISED_LISTENERS)
 
-	resourceKafka, err = pool.RunWithOptions(&dockertest.RunOptions{
+	resourceKafka, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-kafka",
 		Tag:        "latest",
 		NetworkID:  network.ID,
@@ -1101,11 +1095,12 @@ func SetKafka() {
 		fmt.Println(err)
 	}
 	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
+	return resourceKafka
 }
 
-func SetRedis() {
+func SetRedis() *dockertest.Resource {
 	// pulls an redis image, creates a container based on it and runs it
-	resourceRedis, err = pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
+	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
 	if err != nil {
 		log.Printf("Could not start resource: %s", err)
 	}
@@ -1122,12 +1117,13 @@ func SetRedis() {
 	}); err != nil {
 		log.Printf("Could not connect to docker: %s", err)
 	}
+	return resourceRedis
 }
 
-func SetJobsDB() {
+func SetJobsDB() *dockertest.Resource {
 	database := "jobsdb"
 	// pulls an image, creates a container based on it and runs it
-	resourcePostgres, err = pool.Run("postgres", "11-alpine", []string{
+	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
 		"POSTGRES_PASSWORD=password",
 		"POSTGRES_DB=" + database,
 		"POSTGRES_USER=rudder",
@@ -1148,12 +1144,13 @@ func SetJobsDB() {
 		log.Println("Could not connect to postgres", DB_DSN, err)
 	}
 	fmt.Println("DB_DSN:", DB_DSN)
+	return resourcePostgres
 }
 
-func SetTransformer() {
+func SetTransformer() *dockertest.Resource {
 	// Set Rudder Transformer
 	// pulls an image, creates a container based on it and runs it
-	transformerRes, err = pool.RunWithOptions(&dockertest.RunOptions{
+	transformerRes, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "rudderlabs/rudder-transformer",
 		Tag:          "latest",
 		ExposedPorts: []string{"9090"},
@@ -1172,8 +1169,9 @@ func SetTransformer() {
 		time.Minute,
 		time.Second,
 	)
+	return transformerRes
 }
-func SetTimescaleDB(){
+func SetTimescaleDB() *dockertest.Resource {
 	// Set  timescale DB
 	// pulls an image, creates a container based on it and runs it
 	database := "temo"
@@ -1203,9 +1201,10 @@ func SetTimescaleDB(){
 		log.Println("Could not connect to postgres %w", err)
 	}
 	log.Println("timescaleDB_DSN_viaHost", timescaleDB_DSN_viaHost)
+	return timescaleRes
 }
 
-func SetReportingService(){
+func SetReportingService() *dockertest.Resource {
 	// Set  reporting service
 	// pulls an image, creates a container based on it and runs it
 	reportingRes, err := pool.RunWithOptions(&dockertest.RunOptions{
@@ -1228,10 +1227,10 @@ func SetReportingService(){
 		time.Minute,
 		time.Second,
 	)
-
+	return reportingRes
 }
 
-func SetMINIO() {
+func SetMINIO() *dockertest.Resource {
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
 		fmt.Println(err)
@@ -1251,7 +1250,7 @@ func SetMINIO() {
 		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
 	}
 
-	resource, err = pool.RunWithOptions(options)
+	resource, err := pool.RunWithOptions(options)
 	if err != nil {
 		log.Println("Could not start resource:", err)
 	}
@@ -1289,7 +1288,9 @@ func SetMINIO() {
 		log.Println(err)
 		panic(err)
 	}
+	return resource
 }
+
 // Verify Event in Reporting Service
 func TestReportingService(t *testing.T) {
 	if _, err := os.Stat("enterprise/reporting/reporting.go"); err == nil {
@@ -1298,44 +1299,36 @@ func TestReportingService(t *testing.T) {
 		fmt.Printf("File does not exist\n")
 		t.Skip()
 	}
-	var myEvent Event
+	url := fmt.Sprintf("%s/totalEvents?sourceId=('%s')&from=2021-09-16&to=2022-12-09", reportingserviceURL, "xxxyyyzzEaEurW247ad9WYZLUyk")
+	fmt.Println("Reporting service total events url: ", url)
 	require.Eventually(t, func() bool {
-		eventSql := "select count (*) from metrics"
-		rs_db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "11"
+		method := "GET"
+		client := &http.Client{}
+		req, err := http.NewRequest(method, url, nil)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+		req.Header.Add("Content-Type", "application/json")
+		req.Header.Add("Authorization",
+			fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
+				[]byte(fmt.Sprintf("%s:", writeKey)),
+			)),
+		)
+
+		res, err := client.Do(req)
+		if err != nil {
+			fmt.Println(err)
+		}
+		defer res.Body.Close()
+
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return strings.Contains(string(body), "12")
 	}, 3*time.Minute, 10*time.Millisecond)
-	url := fmt.Sprintf("%s/totalEvents?sourceId=('%s')&from=2021-09-16&to=2021-12-09", reportingserviceURL, "xxxyyyzzEaEurW247ad9WYZLUyk")
-	fmt.Println("url", url)
-	method := "GET"
 
-	client := &http.Client{}
-	req, err := http.NewRequest(method, url, nil)
-
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization",
-		fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
-			[]byte(fmt.Sprintf("%s:", writeKey)),
-		)),
-	)
-
-	res, err := client.Do(req)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer res.Body.Close()
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println(string(body))
 }
-
 
 // TODO: Verify in Live Events API

@@ -10,7 +10,7 @@
             "name": "Dev Integration Test 1",
             "writeKey": "{{.writeKey}}",
             "enabled": true,
-            "sourceDefinitionId": "xxxyyyzzpWDzNxgGUYzq9sZdZZB",
+            "sourceDefinitionId": "1cD32rPRAgRxakAPoN8q1F4rnlO",
             "createdBy": "xxxyyyzzueyoBz4jb7bRdOzDxai",
             "workspaceId": "{{.workspaceId}}",
             "deleted": false,
@@ -628,7 +628,7 @@
             ],
             "sourceDefinition":
             {
-                "id": "xxxyyyzzpWDzNxgGUYzq9sZdZZB",
+                "id": "1cD32rPRAgRxakAPoN8q1F4rnlO",
                 "name": "HTTP",
                 "options": null,
                 "displayName": "HTTP",
