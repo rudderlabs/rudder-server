@@ -47,17 +47,6 @@ func (workspaceConfig *WorkspaceConfig) Get() (ConfigT, bool) {
 	}
 }
 
-//GetRegulations returns sources from the workspace
-func (workspaceConfig *WorkspaceConfig) GetRegulations() (RegulationsT, bool) {
-	return RegulationsT{}, false
-	// Following part is deprecated. This feature is now implemented in enterprise repo.
-	//if configFromFile {
-	//	return workspaceConfig.getRegulationsFromFile()
-	//} else {
-	//	return workspaceConfig.getRegulationsFromAPI()
-	//}
-}
-
 // getFromApi gets the workspace config from api
 func (workspaceConfig *WorkspaceConfig) getFromAPI() (ConfigT, bool) {
 	url := fmt.Sprintf("%s/workspaceConfig?fetchAll=true", configBackendURL)
