@@ -49,11 +49,13 @@ func (workspaceConfig *WorkspaceConfig) Get() (ConfigT, bool) {
 
 //GetRegulations returns sources from the workspace
 func (workspaceConfig *WorkspaceConfig) GetRegulations() (RegulationsT, bool) {
-	if configFromFile {
-		return workspaceConfig.getRegulationsFromFile()
-	} else {
-		return workspaceConfig.getRegulationsFromAPI()
-	}
+	return RegulationsT{}, false
+	// Following part is deprecated. This feature is now implemented in enterprise repo.
+	//if configFromFile {
+	//	return workspaceConfig.getRegulationsFromFile()
+	//} else {
+	//	return workspaceConfig.getRegulationsFromAPI()
+	//}
 }
 
 // getFromApi gets the workspace config from api
