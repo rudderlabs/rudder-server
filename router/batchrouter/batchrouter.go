@@ -915,7 +915,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		for columnName, columnType := range columns {
 			if _, ok := schemaMap[tableName][columnName]; !ok {
 				schemaMap[tableName][columnName] = columnType
-			} else if  columnType == "text" && schemaMap[tableName][columnName] == "string" {
+			} else if columnType == "text" && schemaMap[tableName][columnName] == "string" {
 				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
 				schemaMap[tableName][columnName] = columnType
 			}
@@ -1895,9 +1895,9 @@ func IsAsyncDestination(destType string) bool {
 func (brt *HandleT) crashRecover() {
 	brt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: -1})
 
-	if misc.Contains(objectStorageDestinations, brt.destType) {
+	/*if misc.Contains(objectStorageDestinations, brt.destType) {
 		brt.dedupRawDataDestJobsOnCrash()
-	}
+	}*/
 }
 
 func IsObjectStorageDestination(destType string) bool {
