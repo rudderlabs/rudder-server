@@ -108,7 +108,6 @@ type JobsDB interface {
 
 	GetToRetry(params GetQueryParamsT) []*JobT
 	GetWaiting(params GetQueryParamsT) []*JobT
-	GetThrottled(params GetQueryParamsT) []*JobT
 	GetProcessed(params GetQueryParamsT) []*JobT
 	GetUnprocessed(params GetQueryParamsT) []*JobT
 	GetExecuting(params GetQueryParamsT) []*JobT
@@ -463,7 +462,6 @@ var (
 	Waiting      = jobStateT{isValid: true, isTerminal: false, State: "waiting"}
 	WaitingRetry = jobStateT{isValid: true, isTerminal: false, State: "waiting_retry"}
 	Migrating    = jobStateT{isValid: true, isTerminal: false, State: "migrating"}
-	Throttled    = jobStateT{isValid: true, isTerminal: false, State: "throttled"}
 	Importing    = jobStateT{isValid: true, isTerminal: false, State: "importing"}
 
 	//Valid, Terminal
@@ -480,7 +478,6 @@ var jobStates []jobStateT = []jobStateT{
 	Executing,
 	Waiting,
 	WaitingRetry,
-	Throttled,
 	Migrating,
 	Succeeded,
 	Aborted,
@@ -850,8 +847,6 @@ func (jd *HandleT) dbReader(ctx context.Context) {
 	for readReq := range jd.readChannel {
 		if readReq.reqType == Failed.State {
 			readReq.jobsListChan <- jd.getToRetry(readReq.getQueryParams)
-		} else if readReq.reqType == Throttled.State {
-			readReq.jobsListChan <- jd.getThrottled(readReq.getQueryParams)
 		} else if readReq.reqType == Waiting.State {
 			readReq.jobsListChan <- jd.getWaiting(readReq.getQueryParams)
 		} else if readReq.reqType == NotProcessed.State {
@@ -3706,47 +3701,6 @@ GetWaiting returns events which are under processing
 This is a wrapper over GetProcessed call above
 */
 func (jd *HandleT) getWaiting(params GetQueryParamsT) []*JobT {
-	return jd.GetProcessed(params)
-}
-
-/*
-GetThrottled returns events which were throttled before
-If enableReaderQueue is true, this goes through worker pool, else calls getUnprocessed directly.
-*/
-func (jd *HandleT) GetThrottled(params GetQueryParamsT) []*JobT {
-	if params.JobCount == 0 {
-		return []*JobT{}
-	}
-
-	params.StateFilters = []string{Throttled.State}
-
-	tags := StatTagsT{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	totalReadTime := jd.getTimerStat("processed_total_time", tags)
-	totalReadTime.Start()
-	defer totalReadTime.End()
-
-	if jd.enableReaderQueue {
-		readChannelWaitTime := jd.getTimerStat("processed_wait_time", tags)
-		readChannelWaitTime.Start()
-		readJobRequest := readJob{
-			getQueryParams: params,
-			jobsListChan:   make(chan []*JobT),
-			reqType:        Throttled.State,
-		}
-		jd.readChannel <- readJobRequest
-		readChannelWaitTime.End()
-		jobsList := <-readJobRequest.jobsListChan
-		return jobsList
-	} else {
-		return jd.getThrottled(params)
-	}
-}
-
-/*
-GetThrottled returns events which were throttled before
-This is a wrapper over GetProcessed call above
-*/
-func (jd *HandleT) getThrottled(params GetQueryParamsT) []*JobT {
 	return jd.GetProcessed(params)
 }
 

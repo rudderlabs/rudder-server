@@ -185,8 +185,7 @@ var _ = Describe("Router", func() {
 			}
 
 			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
-			callThrottled := c.mockRouterJobsDB.EXPECT().GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callThrottled)
+			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
 			c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
@@ -241,8 +240,7 @@ var _ = Describe("Router", func() {
 			}
 
 			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
-			callThrottled := c.mockRouterJobsDB.EXPECT().GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callThrottled)
+			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
 			c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
@@ -311,8 +309,7 @@ var _ = Describe("Router", func() {
 			}
 
 			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(emptyJobsList).Times(1)
-			callThrottled := c.mockRouterJobsDB.EXPECT().GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callThrottled)
+			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(emptyJobsList).Times(1).After(callRetry)
 			c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1)
@@ -416,8 +413,7 @@ var _ = Describe("Router", func() {
 			}
 
 			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
-			callThrottled := c.mockRouterJobsDB.EXPECT().GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callThrottled)
+			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
 			callUnprocessed := c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
@@ -547,8 +543,7 @@ var _ = Describe("Router", func() {
 			}
 
 			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
-			callThrottled := c.mockRouterJobsDB.EXPECT().GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callThrottled)
+			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
 			callUnprocessed := c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
@@ -735,8 +730,7 @@ var _ = Describe("Router", func() {
 			}
 
 			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
-			callThrottled := c.mockRouterJobsDB.EXPECT().GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callThrottled)
+			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
 			callUnprocessed := c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
@@ -915,8 +909,7 @@ var _ = Describe("Router", func() {
 			}
 
 			callRetry := c.mockRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
-			callThrottled := c.mockRouterJobsDB.EXPECT().GetThrottled(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
-			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callThrottled)
+			callWaiting := c.mockRouterJobsDB.EXPECT().GetWaiting(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1).After(callRetry)
 			callUnprocessed := c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
