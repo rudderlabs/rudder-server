@@ -36,7 +36,6 @@ var (
 	curSourceJSON                         ConfigT
 	curSourceJSONLock                     sync.RWMutex
 	curRegulationJSON                     RegulationsT
-	curRegulationJSONLock                 sync.RWMutex
 	initializedLock                       sync.RWMutex
 	initialized                           bool
 	waitForRegulations                    bool
