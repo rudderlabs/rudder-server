@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	operationmanager "github.com/rudderlabs/rudder-server/operation-manager"
 	"github.com/rudderlabs/rudder-server/router"
+	recovery "github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
@@ -816,7 +817,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
 
-	if gateway.application.Options().DegradedMode || gateway.application.Options().StandByMode || gateway.application.Options().MigrationMode != "" {
+	if !recovery.IsNormalMode() {
 		errorMessage = "server not in normal mode"
 		defer http.Error(w, errorMessage, 500)
 		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 500, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
@@ -966,7 +967,7 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 
-	if gateway.application.Options().DegradedMode || gateway.application.Options().StandByMode || gateway.application.Options().MigrationMode != "" {
+	if !recovery.IsNormalMode() {
 		errorMessage := "server not in normal mode"
 		defer http.Error(w, errorMessage, 500)
 		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 500, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
