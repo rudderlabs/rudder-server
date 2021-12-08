@@ -13,7 +13,7 @@ service Databricks {
   rpc Close(CloseRequest) returns (CloseResponse) {}
 }
 
-message ConnectRequest {
+message ConnectionConfig {
   string host = 1;
   string port = 2;
   string schema = 3;
@@ -25,7 +25,11 @@ message ConnectRequest {
   string ssl = 9;
   string httpPath = 10;
   string userAgentEntry = 11;
-  string identifier = 12;
+}
+
+message ConnectRequest {
+  ConnectionConfig config = 1;
+  string identifier = 2;
 }
 
 message ConnectResponse{
@@ -34,8 +38,9 @@ message ConnectResponse{
 }
 
 message ExecuteRequest {
-  string sqlStatement = 1;
+  ConnectionConfig config = 1;
   string identifier = 2;
+  string sqlStatement = 3;
 }
 
 message ExecuteResponse {
@@ -44,8 +49,9 @@ message ExecuteResponse {
 }
 
 message ExecuteQueryRequest {
-  string sqlStatement = 1;
+  ConnectionConfig config = 1;
   string identifier = 2;
+  string sqlStatement = 3;
 }
 
 message ItemQueryColumns {
@@ -59,8 +65,9 @@ message ExecuteQueryResponse {
 }
 
 message FetchSchemasRequest {
-  string sqlStatement = 1;
+  ConnectionConfig config = 1;
   string identifier = 2;
+  string sqlStatement = 3;
 }
 
 message FetchSchemasResponse {
@@ -70,8 +77,9 @@ message FetchSchemasResponse {
 }
 
 message FetchTablesRequest {
-  string schema = 1;
+  ConnectionConfig config = 1;
   string identifier = 2;
+  string schema = 3;
 }
 
 message FetchTablesResponse {
@@ -81,9 +89,10 @@ message FetchTablesResponse {
 }
 
 message FetchTableAttributesRequest {
-  string schema = 1;
-  string table = 2;
-  string identifier = 3;
+  ConnectionConfig config = 1;
+  string identifier = 2;
+  string schema = 3;
+  string table = 4;
 }
 
 message ItemAttribute {
@@ -98,8 +107,9 @@ message FetchTableAttributesResponse {
 }
 
 message FetchTotalCountInTableRequest {
-  string sqlStatement = 1;
+  ConnectionConfig config = 1;
   string identifier = 2;
+  string sqlStatement = 3;
 }
 
 message FetchTotalCountInTableResponse {
@@ -109,7 +119,8 @@ message FetchTotalCountInTableResponse {
 }
 
 message CloseRequest {
-  string identifier = 1;
+  ConnectionConfig config = 1;
+  string identifier = 2;
 }
 
 message CloseResponse {
