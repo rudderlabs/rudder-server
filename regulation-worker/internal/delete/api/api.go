@@ -44,6 +44,7 @@ func (api *API) Delete(ctx context.Context, job model.Job, destConfig map[string
 	if err != nil {
 		return model.JobStatusFailed
 	}
+	resp.Body.Close()
 
 	//TODO: log err, if decoding was unsuccessful.
 	var jobResp JobRespSchema
