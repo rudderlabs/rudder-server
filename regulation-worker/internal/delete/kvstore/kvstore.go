@@ -8,7 +8,12 @@ import (
 )
 
 type KVDeleteManager struct {
-	// KVStoreManager kvstoremanager.KVStoreManager
+}
+
+func (kv *KVDeleteManager) GetSupportedDestination() []string {
+	var supportedDestinations = []string{"REDIS"}
+
+	return supportedDestinations
 }
 
 func (kv *KVDeleteManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {

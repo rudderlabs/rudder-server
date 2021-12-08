@@ -2,31 +2,37 @@ package delete
 
 import (
 	"context"
+	"sync"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
+//go:generate mockgen -source=delete.go -destination=mock_delete_test.go -package=delete github.com/rudderlabs/rudder-server/regulation-worker/internal/delete
 type deleteManager interface {
 	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
+	GetSupportedDestination() []string
 }
 
-type DeleteFacade struct {
-	AM deleteManager
-	BM deleteManager
-	CM deleteManager
+type DeleteRouter struct {
+	Managers []deleteManager
+	router   map[string]deleteManager
+	once     sync.Once
 }
 
-//get destType & access credentials from workspaceID & destID
-//call appropriate struct file type or api type based on destType.
-func (d *DeleteFacade) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
-	switch destDetail.Type {
-	case "api":
-		return d.AM.Delete(ctx, job, destDetail.Config, destDetail.Name)
-	case "batch":
-		return d.BM.Delete(ctx, job, destDetail.Config, destDetail.Name)
-	case "kvstore":
-		return d.CM.Delete(ctx, job, destDetail.Config, destDetail.Name)
-	default:
-		return model.JobStatusFailed
+func (r *DeleteRouter) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
+
+	r.once.Do(func() {
+		r.router = make(map[string]deleteManager)
+
+		for _, m := range r.Managers {
+			destinations := m.GetSupportedDestination()
+			for _, d := range destinations {
+				r.router[d] = m
+			}
+		}
+	})
+	if _, ok := r.router[destDetail.Name]; ok {
+		return r.router[destDetail.Name].Delete(ctx, job, destDetail.Config, destDetail.Name)
 	}
+	return model.JobStatusFailed
 }

@@ -170,6 +170,13 @@ func TestRedisDeletion(t *testing.T) {
 	require.NotEqual(t, fieldCountBeforeDelete[0], fieldCountAfterDelete[0], "key found, expected no key")
 }
 
+func TestGetSupportedDestination(t *testing.T) {
+	expectedDestinations := []string{"REDIS"}
+	kvm := kvstore.KVDeleteManager{}
+	actualSupportedDest := kvm.GetSupportedDestination()
+	require.Equal(t, expectedDestinations, actualSupportedDest, "actual supported destinatins different than expected")
+}
+
 func strPtr(str string) *string {
 	return &str
 }
