@@ -3,6 +3,7 @@ package databricks
 import (
 	"context"
 	"github.com/rudderlabs/rudder-server/proto/databricks"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"google.golang.org/grpc"
 )
@@ -31,6 +32,7 @@ type DBHandleT struct {
 	Context        context.Context
 	Conn           *grpc.ClientConn
 	Client         proto.DatabricksClient
+	CloseStats     stats.RudderStats
 }
 
 func Init() {
@@ -39,6 +41,9 @@ func Init() {
 
 // Close closes sql connection as well as closes grpc connection
 func (dbT *DBHandleT) Close() {
+	dbT.CloseStats.Start()
+	defer dbT.CloseStats.End()
+
 	closeConnectionResponse, err := dbT.Client.Close(dbT.Context, &proto.CloseRequest{
 		Config:     dbT.CredConfig,
 		Identifier: dbT.CredIdentifier,
