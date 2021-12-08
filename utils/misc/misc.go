@@ -91,7 +91,7 @@ func Init() {
 
 func LoadDestinations() ([]string, []string) {
 	batchDestinations := []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "MARKETO_BULK_UPLOAD"}
-	customDestinations := []string{"REDIS", "KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "PERSONALIZE", "GOOGLESHEETS"}
+	customDestinations := []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	return batchDestinations, customDestinations
 }
 

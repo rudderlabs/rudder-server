@@ -43,7 +43,6 @@ type UserAttribute struct {
 type Destination struct {
 	Config        map[string]interface{}
 	DestinationID string
-	Type          string
 	Name          string
 }
 

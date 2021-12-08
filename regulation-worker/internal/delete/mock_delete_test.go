@@ -49,16 +49,16 @@ func (mr *MockdeleteManagerMockRecorder) Delete(ctx, job, destConfig, destName i
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockdeleteManager)(nil).Delete), ctx, job, destConfig, destName)
 }
 
-// GetSupportedDestination mocks base method.
-func (m *MockdeleteManager) GetSupportedDestination() []string {
+// GetSupportedDestinations mocks base method.
+func (m *MockdeleteManager) GetSupportedDestinations() []string {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetSupportedDestination")
+	ret := m.ctrl.Call(m, "GetSupportedDestinations")
 	ret0, _ := ret[0].([]string)
 	return ret0
 }
 
-// GetSupportedDestination indicates an expected call of GetSupportedDestination.
-func (mr *MockdeleteManagerMockRecorder) GetSupportedDestination() *gomock.Call {
+// GetSupportedDestinations indicates an expected call of GetSupportedDestinations.
+func (mr *MockdeleteManagerMockRecorder) GetSupportedDestinations() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSupportedDestination", reflect.TypeOf((*MockdeleteManager)(nil).GetSupportedDestination))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSupportedDestinations", reflect.TypeOf((*MockdeleteManager)(nil).GetSupportedDestinations))
 }

@@ -46,7 +46,6 @@ func TestJobSvc(t *testing.T) {
 			dest: model.Destination{
 				Config:        config,
 				DestinationID: "1111",
-				Type:          "batch",
 				Name:          "S3",
 			},
 			getJobCallCount:             1,

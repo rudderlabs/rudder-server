@@ -37,17 +37,10 @@ func Run(ctx context.Context) {
 			WorkspaceID: config.GetEnv("workspaceID", "1001"),
 			URLPrefix:   config.GetEnv("urlPrefix", "http://localhost:35359"),
 		},
-		Deleter: &delete.DeleteFacade{
-			// AM: &api.API{
-			// 	Client:           &http.Client{},
-			// 	DestTransformURL: config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"),
-			// },
-			// BM:  &batch.BatchManager{},
-			// KVM: &kvstore.Mock_KVStoreWorker{},
-		}, DestDetail: &destination.DestMiddleware{
-			Dest:    &backendconfig.WorkspaceConfig{},
-			DestCat: &destination.DestCategory{},
+		DestDetail: &destination.DestMiddleware{
+			Dest: &backendconfig.WorkspaceConfig{},
 		},
+		Deleter: &delete.DeleteRouter{},
 	}
 
 	l := withLoop(svc)
