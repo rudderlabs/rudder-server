@@ -816,7 +816,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
 
-	if gateway.application.Options().DegradedMode || gateway.application.Options().StandByMode {
+	if gateway.application.Options().DegradedMode || gateway.application.Options().StandByMode || gateway.application.Options().MigrationMode != "" {
 		errorMessage = "server not in normal mode"
 		defer http.Error(w, errorMessage, 500)
 		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 500, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
@@ -966,7 +966,7 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 
-	if gateway.application.Options().DegradedMode || gateway.application.Options().StandByMode {
+	if gateway.application.Options().DegradedMode || gateway.application.Options().StandByMode || gateway.application.Options().MigrationMode != "" {
 		errorMessage := "server not in normal mode"
 		defer http.Error(w, errorMessage, 500)
 		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 500, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
