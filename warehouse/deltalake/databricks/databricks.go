@@ -12,13 +12,21 @@ var (
 )
 
 type CredentialsT struct {
-	Host  string
-	Port  string
-	Path  string
-	Token string
+	Host            string
+	Port            string
+	Path            string
+	Token           string
+	Schema          string
+	SparkServerType string
+	AuthMech        string
+	UID             string
+	ThriftTransport string
+	SSL             string
+	UserAgentEntry  string
 }
 
 type DBHandleT struct {
+	CredConfig     *proto.ConnectionConfig
 	CredIdentifier string
 	Context        context.Context
 	Conn           *grpc.ClientConn
@@ -32,6 +40,7 @@ func Init() {
 // Close closes sql connection as well as closes grpc connection
 func (dbT *DBHandleT) Close() {
 	closeConnectionResponse, err := dbT.Client.Close(dbT.Context, &proto.CloseRequest{
+		Config:     dbT.CredConfig,
 		Identifier: dbT.CredIdentifier,
 	})
 	if err != nil {

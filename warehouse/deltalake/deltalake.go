@@ -32,7 +32,6 @@ const (
 var (
 	stagingTablePrefix string
 	pkgLogger          logger.LoggerI
-	driverPath         string
 	schema             string
 	sparkServerType    string
 	authMech           string
@@ -103,7 +102,6 @@ func Init() {
 // loadConfig loads config
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
-	config.RegisterStringConfigVariable("/opt/simba/spark/lib/64/libsparkodbc_sb64.so", &driverPath, false, "Warehouse.deltalake.driverPath")
 	config.RegisterStringConfigVariable("default", &schema, false, "Warehouse.deltalake.schema")
 	config.RegisterStringConfigVariable("3", &sparkServerType, false, "Warehouse.deltalake.sparkServerType")
 	config.RegisterStringConfigVariable("3", &authMech, false, "Warehouse.deltalake.authMech")
@@ -162,49 +160,56 @@ func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool 
 }
 
 // connect creates database connection with CredentialsT
-func (dl *HandleT) connect(cred databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
-	context := context.Background()
-	conn, err := grpc.DialContext(context, GetDatabricksConnectorURL(), grpc.WithInsecure())
+func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
+	ctx := context.Background()
+	identifier := uuid.Must(uuid.NewV4()).String()
+	connConfig := &proto.ConnectionConfig{
+		Host:            cred.Host,
+		Port:            cred.Port,
+		HttpPath:        cred.Path,
+		Pwd:             cred.Token,
+		Schema:          cred.Schema,
+		SparkServerType: cred.SparkServerType,
+		AuthMech:        cred.AuthMech,
+		Uid:             cred.UID,
+		ThriftTransport: cred.ThriftTransport,
+		Ssl:             cred.SSL,
+		UserAgentEntry:  cred.UserAgentEntry,
+	}
+
+	conn, err := grpc.DialContext(ctx, GetDatabricksConnectorURL(), grpc.WithInsecure())
 	if err != nil {
 		return nil, fmt.Errorf("%s Error while creating grpc connection to Delta lake: %v", dl.GetLogIdentifier(), err)
 	}
-	identifier := uuid.Must(uuid.NewV4()).String()
-	client := proto.NewDatabricksClient(conn)
-	connectionResponse, err := client.Connect(context, &proto.ConnectRequest{
-		Host:            cred.Host,
-		Port:            cred.Port,
-		Schema:          schema,
-		SparkServerType: sparkServerType,
-		AuthMech:        authMech,
-		Uid:             uid,
-		Pwd:             cred.Token,
-		ThriftTransport: thriftTransport,
-		Ssl:             ssl,
-		HttpPath:        cred.Path,
-		UserAgentEntry:  userAgent,
-		Identifier:      identifier,
+
+	dbClient := proto.NewDatabricksClient(conn)
+	connectionResponse, err := dbClient.Connect(ctx, &proto.ConnectRequest{
+		Config:     connConfig,
+		Identifier: identifier,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%s Error connecting to Delta lake: %v", dl.GetLogIdentifier(), err)
 	}
-	if len(connectionResponse.GetErrorCode()) != 0 {
+	if connectionResponse.GetErrorCode() != "" {
 		return nil, fmt.Errorf("%s Error connecting to Delta lake with response:%v", dl.GetLogIdentifier(), connectionResponse.GetErrorMessage())
 	}
 
 	dbHandleT = &databricks.DBHandleT{
+		CredConfig:     connConfig,
 		CredIdentifier: identifier,
 		Conn:           conn,
-		Client:         client,
-		Context:        context,
+		Client:         dbClient,
+		Context:        ctx,
 	}
-	return dbHandleT, nil
+	return
 }
 
 // fetchTables fetch tables with tableNames
 func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (tableNames []string, err error) {
 	fetchTableResponse, err := dbT.Client.FetchTables(dbT.Context, &proto.FetchTablesRequest{
-		Schema:     sqlStatement,
+		Config:     dl.dbHandleT.CredConfig,
 		Identifier: dbT.CredIdentifier,
+		Schema:     sqlStatement,
 	})
 	if err != nil {
 		return tableNames, fmt.Errorf("%s Error while fetching tables: %v", dl.GetLogIdentifier(), err)
@@ -220,8 +225,9 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (
 // ExecuteSQL executes sql using grpc Client
 func (dl *HandleT) ExecuteSQL(sqlStatement string) (err error) {
 	executeResponse, err := dl.dbHandleT.Client.Execute(dl.dbHandleT.Context, &proto.ExecuteRequest{
-		SqlStatement: sqlStatement,
+		Config:       dl.dbHandleT.CredConfig,
 		Identifier:   dl.dbHandleT.CredIdentifier,
+		SqlStatement: sqlStatement,
 	})
 	if err != nil {
 		return fmt.Errorf("%s Error while executing: %v", dl.GetLogIdentifier(), err)
@@ -237,8 +243,9 @@ func (dl *HandleT) ExecuteSQL(sqlStatement string) (err error) {
 func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
 	fetchSchemasResponse, err := dl.dbHandleT.Client.FetchSchemas(dl.dbHandleT.Context, &proto.FetchSchemasRequest{
-		SqlStatement: sqlStatement,
+		Config:       dl.dbHandleT.CredConfig,
 		Identifier:   dl.dbHandleT.CredIdentifier,
+		SqlStatement: sqlStatement,
 	})
 	if err != nil {
 		return exists, fmt.Errorf("%s Error while fetching schemas: %v", dl.GetLogIdentifier(), err)
@@ -265,8 +272,9 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 		pkgLogger.Infof("%s Dropping table %+v\n", dl.GetLogIdentifier(), stagingTableName)
 		sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, dl.Namespace, stagingTableName)
 		dropTableResponse, err := dl.dbHandleT.Client.Execute(dl.dbHandleT.Context, &proto.ExecuteRequest{
-			SqlStatement: sqlStatement,
+			Config:       dl.dbHandleT.CredConfig,
 			Identifier:   dl.dbHandleT.CredIdentifier,
+			SqlStatement: sqlStatement,
 		})
 		if err == nil && !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
 			continue
@@ -329,7 +337,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	loadFolder := warehouseutils.GetObjectFolder(dl.ObjectStorage, csvObjectLocation)
 
-	// Get the credentials string to copy from the stagling locstion to table
+	// Get the credentials string to copy from the staging location to table
 	credentialsStr := dl.credentialsStr()
 
 	// Creating copy sql statement to copy from load folder to the staging table
@@ -427,7 +435,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	userColMap := dl.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
-		// do not reference uuid in queries as it can be an autoincrementing field set by segment compatible tables
+		// do not reference uuid in queries as it can be an auto incrementing field set by segment compatible tables
 		if colName == "id" || colName == "user_id" || colName == "uuid" {
 			continue
 		}
@@ -528,12 +536,20 @@ func (dl *HandleT) dropDanglingStagingTables() {
 
 // connectToWarehouse returns the database connection configured with CredentialsT
 func (dl *HandleT) connectToWarehouse() (*databricks.DBHandleT, error) {
-	return dl.connect(databricks.CredentialsT{
-		Host:  warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
-		Port:  warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
-		Path:  warehouseutils.GetConfigValue(DLPath, dl.Warehouse),
-		Token: warehouseutils.GetConfigValue(DLToken, dl.Warehouse),
-	})
+	credT := &databricks.CredentialsT{
+		Host:            warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
+		Port:            warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
+		Path:            warehouseutils.GetConfigValue(DLPath, dl.Warehouse),
+		Token:           warehouseutils.GetConfigValue(DLToken, dl.Warehouse),
+		Schema:          schema,
+		SparkServerType: sparkServerType,
+		AuthMech:        authMech,
+		UID:             uid,
+		ThriftTransport: thriftTransport,
+		SSL:             ssl,
+		UserAgentEntry:  userAgent,
+	}
+	return dl.connect(credT)
 }
 
 // CreateTable creates tables with table name and columns
@@ -554,7 +570,7 @@ func (dl *HandleT) AddColumn(name string, columnName string, columnType string) 
 	return
 }
 
-// CreateSchema checks if schema exists or not. If it does not exists, it creates the schema.
+// CreateSchema checks if schema exists or not. If it does not exist, it creates the schema.
 func (dl *HandleT) CreateSchema() (err error) {
 	// Checking if schema exists or not
 	var schemaExists bool
@@ -609,9 +625,10 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	// For each table we are generating schema
 	for _, tableName := range filteredTablesNames {
 		fetchTableAttributesResponse, err := dbHandle.Client.FetchTableAttributes(dbHandle.Context, &proto.FetchTableAttributesRequest{
+			Config:     dbHandle.CredConfig,
+			Identifier: dbHandle.CredIdentifier,
 			Schema:     dl.Namespace,
 			Table:      tableName,
-			Identifier: dbHandle.CredIdentifier,
 		})
 		if err != nil {
 			return schema, fmt.Errorf("%s Error while fetching table attributes: %v", dl.GetLogIdentifier(), err)
@@ -698,7 +715,7 @@ func (dl *HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-// DownloadIdentityRules download identity tules
+// DownloadIdentityRules download identity rules
 func (dl *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
@@ -707,8 +724,9 @@ func (dl *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s;`, dl.Namespace, tableName)
 	response, err := dl.dbHandleT.Client.FetchTotalCountInTable(dl.dbHandleT.Context, &proto.FetchTotalCountInTableRequest{
-		SqlStatement: sqlStatement,
+		Config:       dl.dbHandleT.CredConfig,
 		Identifier:   dl.dbHandleT.CredIdentifier,
+		SqlStatement: sqlStatement,
 	})
 	if err != nil {
 		err = fmt.Errorf("%s Error while fetching table count: %v", dl.GetLogIdentifier(), err)
