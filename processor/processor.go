@@ -87,6 +87,7 @@ type HandleT struct {
 	pipeProcessing                 stats.RudderStats
 	statNumRequests                stats.RudderStats
 	statNumEvents                  stats.RudderStats
+	statValidatedEvents            stats.RudderStats
 	statGroupedEvents              stats.RudderStats
 	statDBReadRequests             stats.RudderStats
 	statDBReadEvents               stats.RudderStats
@@ -330,6 +331,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.statNumRequests = proc.stats.NewStat("processor.num_requests", stats.CountType)
 	proc.statNumEvents = proc.stats.NewStat("processor.num_events", stats.CountType)
 	proc.statGroupedEvents = proc.stats.NewStat("processor.grouped_events", stats.CountType)
+	proc.statValidatedEvents = proc.stats.NewStat("processor.validated_events", stats.CountType)
 
 	proc.statDBReadRequests = proc.stats.NewStat("processor.db_read_requests", stats.HistogramType)
 	proc.statDBReadEvents = proc.stats.NewStat("processor.db_read_events", stats.HistogramType)
@@ -1261,6 +1263,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	validatedEventsByWriteKey, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(groupedEventsByWriteKey, eventsByMessageID)
 	validateEventsTime := time.Since(validateEventsStart)
 	defer proc.validateEventsTime.SendTiming(validateEventsTime)
+
+	for _, v := range validatedEventsByWriteKey {
+		proc.statValidatedEvents.Count(len(v))
+	}
 
 	// Appending validatedErrorJobs to procErrorJobs
 	procErrorJobs = append(procErrorJobs, validatedErrorJobs...)
