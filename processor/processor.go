@@ -490,39 +490,13 @@ func (proc *HandleT) syncTransformerFeatureJson(ctx context.Context) {
 				return
 			}
 
-			url := transformerURL + "/features"
-			req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
-			if err != nil {
-				proc.logger.Error("error creating request - %s", err)
+			retry := proc.makeFeaturesFetchCall()
+			if retry {
 				time.Sleep(200 * time.Millisecond)
 				continue
-			}
-			tr := &http.Transport{}
-			client := &http.Client{Transport: tr}
-			res, err := client.Do(req)
-
-			if err != nil {
-				proc.logger.Error("error sending request - %s", err)
-				time.Sleep(200 * time.Millisecond)
-				continue
-			}
-			if res.StatusCode == 200 {
-				body, err := io.ReadAll(res.Body)
-				if err == nil {
-					proc.transformerFeatures = json.RawMessage(body)
-					res.Body.Close()
-					break
-				}
-				res.Body.Close()
-				time.Sleep(200 * time.Millisecond)
-				continue
-
-			}
-			if res.StatusCode == 404 {
-				proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
-				break
 			}
 		}
+
 		if proc.transformerFeatures != nil && !isUnLocked {
 			isUnLocked = true
 		}
@@ -533,6 +507,36 @@ func (proc *HandleT) syncTransformerFeatureJson(ctx context.Context) {
 		case <-time.After(pollInterval):
 		}
 	}
+}
+
+func (proc *HandleT) makeFeaturesFetchCall() bool {
+	url := transformerURL + "/features"
+	req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
+	if err != nil {
+		proc.logger.Error("error creating request - %s", err)
+		return true
+	}
+	tr := &http.Transport{}
+	client := &http.Client{Transport: tr}
+	res, err := client.Do(req)
+	if err != nil {
+		proc.logger.Error("error sending request - %s", err)
+		return true
+	}
+
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return true
+	}
+
+	if res.StatusCode == 200 {
+		proc.transformerFeatures = json.RawMessage(body)
+	} else if res.StatusCode == 404 {
+		proc.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
+	}
+
+	return false
 }
 
 //SetDisableDedupFeature overrides SetDisableDedupFeature configuration and returns previous value

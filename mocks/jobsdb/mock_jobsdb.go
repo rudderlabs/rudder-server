@@ -183,20 +183,6 @@ func (mr *MockJobsDBMockRecorder) GetProcessed(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProcessed", reflect.TypeOf((*MockJobsDB)(nil).GetProcessed), arg0)
 }
 
-// GetThrottled mocks base method.
-func (m *MockJobsDB) GetThrottled(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetThrottled", arg0)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
-	return ret0
-}
-
-// GetThrottled indicates an expected call of GetThrottled.
-func (mr *MockJobsDBMockRecorder) GetThrottled(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetThrottled", reflect.TypeOf((*MockJobsDB)(nil).GetThrottled), arg0)
-}
-
 // GetToRetry mocks base method.
 func (m *MockJobsDB) GetToRetry(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
 	m.ctrl.T.Helper()
