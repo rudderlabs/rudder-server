@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
@@ -48,7 +49,7 @@ func (sHandle *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Sch
 	namespace := sHandle.warehouse.Namespace
 
 	var rawSchema json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[2]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.id DESC`, warehouseutils.WarehouseSchemasTable, destID, namespace)
+	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[2]s' AND %[1]s.namespace='%[3]s') ORDER BY %[1]s.updated_at DESC`, warehouseutils.WarehouseSchemasTable, destID, namespace)
 	pkgLogger.Infof("[WH]: Fetching current schema from wh postgresql: %s", sqlStatement)
 
 	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
