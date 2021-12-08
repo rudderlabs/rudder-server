@@ -2,7 +2,6 @@ package delete
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
@@ -14,19 +13,19 @@ type deleteManager interface {
 	GetSupportedDestinations() []string
 }
 
-type DeleteRouter struct {
+type Router struct {
 	Managers []deleteManager
 	router   map[string]deleteManager
 	once     sync.Once
 }
 
-func New(managers ...deleteManager) *DeleteRouter {
-	return &DeleteRouter{
+func NewRouter(managers ...deleteManager) *Router {
+	return &Router{
 		Managers: managers,
 	}
 }
 
-func (r *DeleteRouter) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
+func (r *Router) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
 
 	r.once.Do(func() {
 		r.router = make(map[string]deleteManager)
@@ -37,7 +36,6 @@ func (r *DeleteRouter) Delete(ctx context.Context, job model.Job, destDetail mod
 				r.router[d] = m
 			}
 		}
-		fmt.Println("r.router=", r.router)
 	})
 	if _, ok := r.router[destDetail.Name]; ok {
 		return r.router[destDetail.Name].Delete(ctx, job, destDetail.Config, destDetail.Name)

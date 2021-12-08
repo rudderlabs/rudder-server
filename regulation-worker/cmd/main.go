@@ -40,7 +40,7 @@ func Run(ctx context.Context) {
 		DestDetail: &destination.DestMiddleware{
 			Dest: &backendconfig.WorkspaceConfig{},
 		},
-		Deleter: &delete.DeleteRouter{},
+		Deleter: &delete.Router{},
 	}
 
 	l := withLoop(svc)

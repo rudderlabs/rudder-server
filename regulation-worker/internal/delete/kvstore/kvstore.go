@@ -7,11 +7,12 @@ import (
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 )
 
+var supportedDestinations = []string{"REDIS"}
+
 type KVDeleteManager struct {
 }
 
 func (kv *KVDeleteManager) GetSupportedDestination() []string {
-	var supportedDestinations = []string{"REDIS"}
 
 	return supportedDestinations
 }

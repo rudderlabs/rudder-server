@@ -46,7 +46,7 @@ func TestDelete(t *testing.T) {
 	md1 := mockDelete
 	md2 := mockDelete
 
-	r := delete.New(md1, md2)
+	r := delete.NewRouter(md1, md2)
 	for _, tt := range testData {
 		md1.EXPECT().GetSupportedDestinations().Return([]string{"d1", "d2"}).Times(tt.getSupportedDestinationsCallCount)
 		md2.EXPECT().GetSupportedDestinations().Return([]string{"d3", "d4"}).Times(tt.getSupportedDestinationsCallCount)
