@@ -87,6 +87,7 @@ type HandleT struct {
 	pipeProcessing                 stats.RudderStats
 	statNumRequests                stats.RudderStats
 	statNumEvents                  stats.RudderStats
+	statGroupedEvents              stats.RudderStats
 	statDBReadRequests             stats.RudderStats
 	statDBReadEvents               stats.RudderStats
 	statDBReadPayloadBytes         stats.RudderStats
@@ -328,6 +329,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pipeProcessing = proc.stats.NewStat("processor.pipe_processing", stats.TimerType)
 	proc.statNumRequests = proc.stats.NewStat("processor.num_requests", stats.CountType)
 	proc.statNumEvents = proc.stats.NewStat("processor.num_events", stats.CountType)
+	proc.statNumEvents = proc.stats.NewStat("processor.grouped_events", stats.CountType)
 
 	proc.statDBReadRequests = proc.stats.NewStat("processor.db_read_requests", stats.HistogramType)
 	proc.statDBReadEvents = proc.stats.NewStat("processor.db_read_events", stats.HistogramType)
@@ -1324,6 +1326,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 
 	if len(statusList) != len(jobList) {
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
+	}
+
+	for _, v := range groupedEvents {
+		proc.statGroupedEvents.Count(len(v))
 	}
 
 	return transformationMessage{
