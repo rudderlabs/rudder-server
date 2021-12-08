@@ -87,6 +87,7 @@ type HandleT struct {
 	pipeProcessing                 stats.RudderStats
 	statNumRequests                stats.RudderStats
 	statNumEvents                  stats.RudderStats
+	statGroupedEventsByWritekey    stats.RudderStats
 	statValidatedEvents            stats.RudderStats
 	statGroupedEvents              stats.RudderStats
 	statDBReadRequests             stats.RudderStats
@@ -330,6 +331,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pipeProcessing = proc.stats.NewStat("processor.pipe_processing", stats.TimerType)
 	proc.statNumRequests = proc.stats.NewStat("processor.num_requests", stats.CountType)
 	proc.statNumEvents = proc.stats.NewStat("processor.num_events", stats.CountType)
+	proc.statGroupedEventsByWritekey = proc.stats.NewStat("processor.grouped_events_by_writekey", stats.CountType)
 	proc.statGroupedEvents = proc.stats.NewStat("processor.grouped_events", stats.CountType)
 	proc.statValidatedEvents = proc.stats.NewStat("processor.validated_events", stats.CountType)
 
@@ -1252,6 +1254,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 	//REPORTING - GATEWAY metrics - END
 
 	proc.statNumEvents.Count(totalEvents)
+
+	for _, v := range groupedEventsByWriteKey {
+		proc.statGroupedEventsByWritekey.Count(len(v))
+	}
 
 	marshalTime := time.Since(marshalStart)
 	defer proc.marshalSingularEvents.SendTiming(marshalTime)
