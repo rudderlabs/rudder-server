@@ -18,10 +18,10 @@ type APIClient interface {
 }
 
 type destDetail interface {
-	GetDestDetails(destID string) (model.Destination, error)
+	GetDestDetails(destID, workspaceID string) (model.Destination, error)
 }
 type deleter interface {
-	DeleteJob(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error)
+	Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus
 }
 
 type JobSvc struct {
@@ -49,15 +49,11 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	}
 
 	//executing deletion
-	dest, err := js.DestDetail.GetDestDetails(job.DestinationID)
+	destDetail, err := js.DestDetail.GetDestDetails(job.DestinationID, job.WorkspaceID)
 	if err != nil {
 		return fmt.Errorf("error while getting destination details: %w", err)
 	}
-
-	status, err = js.Deleter.DeleteJob(ctx, job, dest)
-	if err != nil {
-		return err
-	}
+	status = js.Deleter.Delete(ctx, job, destDetail)
 
 	err = js.updateStatus(ctx, status, job.ID)
 	if err != nil {
