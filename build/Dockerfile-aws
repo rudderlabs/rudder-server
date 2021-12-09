@@ -1,4 +1,4 @@
-FROM alpine:latest
+FROM frolvlad/alpine-glibc:alpine-3.13_glibc-2.33
 RUN apk add --no-cache ca-certificates postgresql-client curl
 ADD rudder-server /
 ADD ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
