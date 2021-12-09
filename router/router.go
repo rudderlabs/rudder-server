@@ -111,6 +111,7 @@ type HandleT struct {
 	responseTransform                      bool
 	saveDestinationResponseOverride        bool
 	routerLatencyStat                      map[string]misc.MovingAverage
+	sourceIDWorkspaceMap                   map[string]string
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -645,10 +646,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				worker.deliveryTimeStat.End()
 				deliveryLatencyStat.End()
 				timeTaken := time.Since(startedAt)
-				if _, ok := worker.rt.routerLatencyStat[workspaceID]; !ok {
-					worker.rt.routerLatencyStat[workspaceID] = misc.NewMovingAverage()
-				}
-				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken / time.Second))
+				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken) / float64(time.Second))
 
 				// END: request to destination endpoint
 
@@ -1277,7 +1275,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		//Update metrics maps
 		//REPORTING - ROUTER - START
 		if rt.reporting != nil && rt.reportingEnabled {
-			workspaceID := rt.backendConfig.GetWorkspaceIDForSourceID((parameters.SourceID))
+			workspaceID := rt.sourceIDWorkspaceMap[parameters.SourceID]
 			_, ok := routerCustomerJobStatusCount[workspaceID]
 			if !ok {
 				routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
@@ -1944,8 +1942,10 @@ func (rt *HandleT) backendConfigSubscriber() {
 		rt.configSubscriberLock.Lock()
 		rt.destinationsMap = map[string]*router_utils.BatchDestinationT{}
 		allSources := config.Data.(backendconfig.ConfigT)
+		rt.sourceIDWorkspaceMap = map[string]string{}
 		for _, source := range allSources.Sources {
 			workspaceID := source.WorkspaceID
+			rt.sourceIDWorkspaceMap[source.ID] = source.WorkspaceID
 			if _, ok := rt.routerLatencyStat[workspaceID]; !ok {
 				rt.routerLatencyStat[workspaceID] = misc.NewMovingAverage()
 				rt.routerLatencyStat[workspaceID].Add(0)
