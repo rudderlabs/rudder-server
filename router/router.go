@@ -1632,6 +1632,8 @@ func (rt *HandleT) readAndProcess() int {
 
 	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
 	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat)
+	fmt.Println("Inside Router", rt.destName)
+	fmt.Println(rt.customerCount)
 	retryList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Failed.State}})
 	throttledList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Throttled.State}})
 	waitList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State}})
@@ -1945,6 +1947,11 @@ func (rt *HandleT) backendConfigSubscriber() {
 		rt.destinationsMap = map[string]*router_utils.BatchDestinationT{}
 		allSources := config.Data.(backendconfig.ConfigT)
 		for _, source := range allSources.Sources {
+			workspaceID := source.WorkspaceID
+			if _, ok := rt.routerLatencyStat[workspaceID]; !ok {
+				rt.routerLatencyStat[workspaceID] = misc.NewMovingAverage()
+				rt.routerLatencyStat[workspaceID].Add(0)
+			}
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name == rt.destName {

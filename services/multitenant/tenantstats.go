@@ -155,23 +155,38 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 	runningJobCount := jobQueryBatchSize
 
 	for _, customerKey := range sortedLatencyList {
-		timeRequired := float64(latencyMap[customerKey].Value() * multitenantStat.RouterInputRates["router"][customerKey][destType].Value() * float64(routerTimeOut/time.Second))
-		///int(float64(jobQueryBatchSize)*(customerLiveCount[customerKey]/totalCount)) + 1
-		customerPickUpCount[customerKey] = int(math.Min(timeRequired, runningTimeCounter) / latencyMap[customerKey].Value())
-		if multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] > 0 {
-			customerPickUpCount[customerKey] = customerPickUpCount[customerKey] + 1
-		}
-		if customerPickUpCount[customerKey] > multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] {
-			customerPickUpCount[customerKey] = multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType]
-			timeRequired = latencyMap[customerKey].Value() * float64(multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType]) * float64(routerTimeOut/time.Second)
-		}
-		//modify time required
-		runningTimeCounter = runningTimeCounter - timeRequired
-		runningJobCount = runningJobCount - customerPickUpCount[customerKey]
-		//runningJobCount should be a number large enough to ensure fairness but small enough to not cause OOM Issues
-		if runningJobCount <= 0 {
-			pkgLogger.Infof(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize`)
-			return customerPickUpCount
+		customerCountKey, ok := multitenantStat.RouterInputRates["router"][customerKey]
+		if ok {
+			destTypeCount, ok := customerCountKey[destType]
+			if ok {
+				timeRequired := 0.0
+				if latencyMap[customerKey].Value() != 0 {
+					timeRequired = float64(latencyMap[customerKey].Value() * destTypeCount.Value() * float64(routerTimeOut/time.Second))
+					///int(float64(jobQueryBatchSize)*(customerLiveCount[customerKey]/totalCount)) + 1
+					customerPickUpCount[customerKey] = int(math.Min(timeRequired, runningTimeCounter) / latencyMap[customerKey].Value())
+					if customerPickUpCount[customerKey] == 0 && multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] > 0 {
+						customerPickUpCount[customerKey] = customerPickUpCount[customerKey] + 1
+					}
+					if customerPickUpCount[customerKey] > multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] {
+						customerPickUpCount[customerKey] = multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType]
+						timeRequired = latencyMap[customerKey].Value() * float64(multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType]) * float64(routerTimeOut/time.Second)
+					}
+					//modify time required
+
+				} else {
+					customerPickUpCount[customerKey] = int(destTypeCount.Value())
+					if multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] < customerPickUpCount[customerKey] {
+						customerPickUpCount[customerKey] = multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType]
+					}
+				}
+				runningTimeCounter = runningTimeCounter - timeRequired
+				runningJobCount = runningJobCount - customerPickUpCount[customerKey]
+				//runningJobCount should be a number large enough to ensure fairness but small enough to not cause OOM Issues
+				if runningJobCount <= 0 || runningTimeCounter < 0 {
+					pkgLogger.Infof(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize`)
+					return customerPickUpCount
+				}
+			}
 		}
 	}
 
@@ -180,17 +195,23 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 	}
 
 	for _, customerKey := range sortedLatencyList {
-		if multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] == 0 {
+		customerCountKey, ok := multitenantStat.RouterInMemoryJobCounts["router"][customerKey]
+		if !ok {
 			continue
 		}
-		timeRequired := latencyMap[customerKey].Value() * float64(multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType]) * float64(routerTimeOut/time.Second)
+		if customerCountKey[destType] == 0 {
+			continue
+		}
+		timeRequired := latencyMap[customerKey].Value() * float64(customerCountKey[destType]) * float64(routerTimeOut/time.Second)
 		if timeRequired < runningTimeCounter {
-			customerPickUpCount[customerKey] += int(timeRequired / latencyMap[customerKey].Value())
-			runningTimeCounter = runningTimeCounter - timeRequired
-			runningJobCount = runningJobCount - int(timeRequired/latencyMap[customerKey].Value())
-			if runningJobCount <= 0 {
-				pkgLogger.Infof(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize after picking pileUp`)
-				return customerPickUpCount
+			if latencyMap[customerKey].Value() != 0 {
+				customerPickUpCount[customerKey] += int(timeRequired / latencyMap[customerKey].Value())
+				runningTimeCounter = runningTimeCounter - timeRequired
+				runningJobCount = runningJobCount - int(timeRequired/latencyMap[customerKey].Value())
+				if runningJobCount <= 0 {
+					pkgLogger.Infof(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize after picking pileUp`)
+					return customerPickUpCount
+				}
 			}
 		}
 	}
