@@ -33,8 +33,8 @@ func TestMain(m *testing.M) {
 
 func handler() http.Handler {
 	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/worker/workspaces/{workspace_id}/regulations/worker-job", getJob).Methods("GET")
-	srvMux.HandleFunc("/worker/workspaces/{workspace_id}/regulations/worker-job/{job_id}", updateJobStatus).Methods("PATCH")
+	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs", getJob).Methods("GET")
+	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}", updateJobStatus).Methods("PATCH")
 
 	return srvMux
 }

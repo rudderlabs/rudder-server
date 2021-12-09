@@ -29,7 +29,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 
 	method := "GET"
 
-	genEndPoint := "/worker/workspaces/{workspace_id}/regulations/worker-job"
+	genEndPoint := "/dataplane/workspaces/{workspace_id}/regulations/workerJobs"
 	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID))
 
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
@@ -88,7 +88,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 
 	method := "PATCH"
 
-	genEndPoint := "/worker/workspaces/{workspace_id}/regulations/worker-job/{job_id}"
+	genEndPoint := "/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}"
 	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID, fmt.Sprint(jobID)))
 	statusSchema := StatusJobSchema{
 		Status: string(status),
