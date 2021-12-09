@@ -30,6 +30,7 @@ import (
 var (
 	regexRequiredSuffix   = regexp.MustCompile(".json.gz$")
 	statusTrackerFileName = "statusTracker.txt"
+	supportedDestinations = []string{"S3"}
 )
 
 const listMaxItem int64 = 1000
@@ -381,6 +382,14 @@ func (b *Batch) createPatternFile(userAttributes []model.UserAttribute) (string,
 }
 
 type BatchManager struct {
+}
+
+type KVDeleteManager struct {
+}
+
+func (bm *BatchManager) GetSupportedDestinations() []string {
+
+	return supportedDestinations
 }
 
 //TODO: aws s3 ListObject allows listing of at max 1000 object at a time. So, implement paginatin.

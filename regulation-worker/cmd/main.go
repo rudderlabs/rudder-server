@@ -10,6 +10,8 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 )
@@ -31,6 +33,8 @@ func main() {
 }
 
 func Run(ctx context.Context) {
+
+	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{})
 	svc := service.JobSvc{
 		API: &client.JobAPI{
 			WorkspaceID: config.GetEnv("workspaceID", "1001"),
@@ -39,7 +43,7 @@ func Run(ctx context.Context) {
 		DestDetail: &destination.DestMiddleware{
 			Dest: &backendconfig.WorkspaceConfig{},
 		},
-		Deleter: &delete.Router{},
+		Deleter: router,
 	}
 	l := withLoop(svc)
 	err := l.Loop(ctx)
