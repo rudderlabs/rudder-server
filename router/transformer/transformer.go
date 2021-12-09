@@ -259,16 +259,16 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 
 	// error handling if body is missing
 	if resp.Body == nil {
-		respData = []byte("[Response Transform] :: transformer returned empty response body")
+		respData = []byte("[Transformer Proxy] :: transformer returned empty response body")
 		respCode = http.StatusBadRequest
-		return respData, respCode, fmt.Errorf("[Response Transform] :: transformer returned empty response body")
+		return respData, respCode, fmt.Errorf("[Transformer Proxy] :: transformer returned empty response body")
 	}
 
 	respData, err = io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	// error handling while reading from resp.Body
 	if err != nil {
-		respData = []byte(fmt.Sprintf(`[Response Transform] :: failed to read response body, Error:: %+v`, err))
+		respData = []byte(fmt.Sprintf(`[Transformer Proxy] :: failed to read response body, Error:: %+v`, err))
 		respCode = http.StatusBadRequest
 		return respData, respCode, err
 	}
@@ -285,5 +285,5 @@ func getRouterTransformURL() string {
 }
 
 func getProxyURL(destName string) string {
-	return strings.TrimSuffix(config.GetEnv("PROXY_URL", "http://localhost:9091"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
+	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
 }

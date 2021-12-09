@@ -597,7 +597,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
 							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 							defer cancel()
-							//response transform start
+							//transformer proxy start
 							if worker.rt.transformerProxy {
 								rtl_time := time.Now()
 								respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
@@ -608,7 +608,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								// stat end
 								worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
 							}
-							// response transform end
+							// transformer proxy end
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
@@ -622,7 +622,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				ch <- struct{}{}
 
 				//Using reponse status code and body to get response code rudder router logic is based on.
-				// Works when response transform in disabled
+				// Works when transformer proxy in disabled
 				if !worker.rt.transformerProxy && destinationResponseHandler != nil {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
 				}
