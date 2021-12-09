@@ -51,10 +51,3 @@ type APIReqErr struct {
 	Body       string
 	Err        error
 }
-
-type APIPayload struct {
-	JobID          int
-	DestType       string
-	Config         map[string]interface{}
-	UserAttributes []UserAttribute
-}

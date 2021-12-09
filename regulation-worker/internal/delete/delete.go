@@ -1,10 +1,5 @@
 package delete
 
-//This is going to declare appropriate struct based on destination type & call `Deleter` method of it.
-//to get deletion done.
-//called by JobSvc with (model.Job, model.Destination).
-//returns final status,error ({successful, failure}, err)
-
 import (
 	"context"
 	"sync"
