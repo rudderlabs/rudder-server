@@ -107,3 +107,30 @@ func (m *redisManagerT) StatusCode(err error) int {
 	}
 	return statusCode
 }
+
+func (m *redisManagerT) DeleteKey(key string) (err error) {
+	if m.clusterMode {
+		_, err = m.clusterClient.Del(key).Result()
+	} else {
+		_, err = m.client.Del(key).Result()
+	}
+	return err
+}
+
+func (m *redisManagerT) HMGet(key string, fields ...string) (result []interface{}, err error) {
+	if m.clusterMode {
+		result, err = m.clusterClient.HMGet(key, fields...).Result()
+	} else {
+		result, err = m.client.HMGet(key, fields...).Result()
+	}
+	return result, err
+}
+
+func (m *redisManagerT) HGetAll(key string) (result map[string]string, err error) {
+	if m.clusterMode {
+		result, err = m.clusterClient.HGetAll(key).Result()
+	} else {
+		result, err = m.client.HGetAll(key).Result()
+	}
+	return result, err
+}
