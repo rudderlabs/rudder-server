@@ -11,6 +11,9 @@ type KVStoreManager interface {
 	Close() error
 	HMSet(key string, fields map[string]interface{}) error
 	StatusCode(err error) int
+	DeleteKey(key string) (err error)
+	HMGet(key string, fields ...string) (result []interface{}, err error)
+	HGetAll(key string) (result map[string]string, err error)
 }
 
 type SettingsT struct {
