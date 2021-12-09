@@ -14,14 +14,14 @@ type deleteManager interface {
 }
 
 type Router struct {
-	Managers []deleteManager
+	managers []deleteManager
 	router   map[string]deleteManager
 	once     sync.Once
 }
 
 func NewRouter(managers ...deleteManager) *Router {
 	return &Router{
-		Managers: managers,
+		managers: managers,
 	}
 }
 
@@ -30,7 +30,7 @@ func (r *Router) Delete(ctx context.Context, job model.Job, destDetail model.Des
 	r.once.Do(func() {
 		r.router = make(map[string]deleteManager)
 
-		for _, m := range r.Managers {
+		for _, m := range r.managers {
 			destinations := m.GetSupportedDestinations()
 			for _, d := range destinations {
 				r.router[d] = m

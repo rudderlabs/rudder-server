@@ -90,7 +90,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 
 	genEndPoint := "/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}"
 	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID, fmt.Sprint(jobID)))
-	statusSchema := StatusJobSchema{
+	statusSchema := statusJobSchema{
 		Status: string(status),
 	}
 	body, err := json.Marshal(statusSchema)
@@ -107,7 +107,8 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	} else {

@@ -6,7 +6,7 @@ type jobSchema struct {
 	UserAttributes []userAttributesSchema `json:"userAttributes"`
 }
 
-type StatusJobSchema struct {
+type statusJobSchema struct {
 	Status string `json:"status"`
 }
 

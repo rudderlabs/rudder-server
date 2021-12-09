@@ -35,7 +35,7 @@ func Run(ctx context.Context) {
 	svc := service.JobSvc{
 		API: &client.JobAPI{
 			WorkspaceID: config.GetEnv("workspaceID", "1001"),
-			URLPrefix:   config.GetEnv("urlPrefix", "http://localhost:35359"),
+			URLPrefix:   config.GetEnv("urlPrefix", "https://api.rudderlabs.com:35359"),
 		},
 		DestDetail: &destination.DestMiddleware{
 			Dest: &backendconfig.WorkspaceConfig{},

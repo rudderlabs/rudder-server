@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
@@ -115,7 +114,7 @@ func getJob(w http.ResponseWriter, r *http.Request) {
 func updateJobStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	jobID, _ := strconv.Atoi(mux.Vars(r)["job_id"])
-	var status client.StatusJobSchema
+	var status statusJobSchema
 	if err := json.NewDecoder(r.Body).Decode(&status); err != nil {
 		return
 	}
