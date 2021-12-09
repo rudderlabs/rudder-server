@@ -91,6 +91,11 @@ func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer s
 	parameterFilters := params.ParameterFilters
 	var sqlStatement string
 
+	if count < 0 {
+		mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 unprocessed jobs for this customer.", count, customer)
+		count = 0
+	}
+
 	// event_count default 1, number of items in payload
 	sqlStatement = fmt.Sprintf(
 		selectQuery+
@@ -353,6 +358,11 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 	var sqlStatement string
+
+	if count < 0 {
+		mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 %s jobs for this customer.", count, customer, stateFilters[0])
+		count = 0
+	}
 
 	//some stats
 

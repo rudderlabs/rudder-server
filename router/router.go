@@ -1630,6 +1630,17 @@ func (rt *HandleT) readAndProcess() int {
 
 	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
 	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat)
+
+	var customerCountStat stats.RudderStats
+	for customer, count := range rt.customerCount {
+		customerCountStat = stats.NewTaggedStat("customer_count", stats.CountType, stats.Tags{
+			"customer": customer,
+			"module":   "router",
+		})
+		customerCountStat.Count(count)
+		//note that this will give an aggregated count
+	}
+
 	retryList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Failed.State}})
 	throttledList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Throttled.State}})
 	waitList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State}})
