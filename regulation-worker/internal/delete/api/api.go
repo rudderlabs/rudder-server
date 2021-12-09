@@ -22,11 +22,9 @@ type API struct {
 //prepares payload based on (job,destDetail) & make an API call to transformer.
 //gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
 func (api *API) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
-
 	method := "DELETE"
 	endpoint := "/d-transformer/delete-users"
 	url := fmt.Sprint(api.DestTransformURL, endpoint)
-
 	bodySchema := mapJobToPayload(job, destName, destConfig)
 
 	reqBody, err := json.Marshal(bodySchema)
@@ -44,14 +42,13 @@ func (api *API) Delete(ctx context.Context, job model.Job, destConfig map[string
 	if err != nil {
 		return model.JobStatusFailed
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 
 	//TODO: log err, if decoding was unsuccessful.
 	var jobResp JobRespSchema
 	if err := json.NewDecoder(resp.Body).Decode(&jobResp); err != nil {
 		return model.JobStatusFailed
 	}
-
 	switch resp.StatusCode {
 	case http.StatusOK:
 		return model.JobStatusComplete
