@@ -16,7 +16,6 @@ func (dm *S3DeleteManager) delete(ctx context.Context, patternFile, decompressed
 	//actual delete
 	out, err := exec.Command("sed", "-f", patternFile, decompressedFile).Output()
 	if err != nil {
-		fmt.Println("sed error= ", err)
 		return nil, fmt.Errorf("error while running sed command: %s", err)
 	}
 

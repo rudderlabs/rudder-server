@@ -12,7 +12,7 @@ var supportedDestinations = []string{"REDIS"}
 type KVDeleteManager struct {
 }
 
-func (kv *KVDeleteManager) GetSupportedDestination() []string {
+func (kv *KVDeleteManager) GetSupportedDestinations() []string {
 
 	return supportedDestinations
 }

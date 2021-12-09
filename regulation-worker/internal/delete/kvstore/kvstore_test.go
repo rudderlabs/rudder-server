@@ -173,7 +173,7 @@ func TestRedisDeletion(t *testing.T) {
 func TestGetSupportedDestination(t *testing.T) {
 	expectedDestinations := []string{"REDIS"}
 	kvm := kvstore.KVDeleteManager{}
-	actualSupportedDest := kvm.GetSupportedDestination()
+	actualSupportedDest := kvm.GetSupportedDestinations()
 	require.Equal(t, expectedDestinations, actualSupportedDest, "actual supported destinatins different than expected")
 }
 
