@@ -26,3 +26,12 @@ func (l *Looper) Loop(ctx context.Context) error {
 		}
 	}
 }
+
+func sleepContext(ctx context.Context, delay time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	case <-time.After(delay):
+		return false
+	}
+}

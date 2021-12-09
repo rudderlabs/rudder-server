@@ -4,15 +4,17 @@ package filemanager
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/router/rterror"
 )
 
 var (
 	DefaultFileManagerFactory FileManagerFactory
-	ErrKeyNotFound               = errors.New("NoSuchKey")
+	ErrKeyNotFound            = errors.New("NoSuchKey")
 )
 
 type FileManagerFactoryT struct{}
@@ -81,7 +83,7 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 			Config: GetDOSpacesConfig(settings.Config),
 		}, nil
 	}
-	return nil, errors.New("No provider configured for FileManager")
+	return nil, fmt.Errorf("%w: %s", rterror.InvalidServiceProvider, settings.Provider)
 }
 
 // GetProviderConfigFromEnv returns the provider config

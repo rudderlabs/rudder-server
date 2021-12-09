@@ -59,13 +59,10 @@ func TestGetDestDetails(t *testing.T) {
 			},
 		},
 	}
-	testBatchDestinations := []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "MARKETO_BULK_UPLOAD"}
-	testDestName := "S3"
 	testDestID := "1111"
 	expDest := model.Destination{
 		Config:        config,
 		DestinationID: "1111",
-		Type:          "batch",
 		Name:          "S3",
 	}
 
@@ -75,13 +72,8 @@ func TestGetDestDetails(t *testing.T) {
 	mockDestMiddleware := destination.NewMockdestinationMiddleware(mockCtrl)
 	mockDestMiddleware.EXPECT().Get().Return(testConfig, true).Times(1)
 
-	mockDestType := destination.NewMockdestType(mockCtrl)
-	mockDestType.EXPECT().LoadBatchList().Return(testBatchDestinations).Times(1)
-	mockDestType.EXPECT().DestType(testBatchDestinations, testDestName).Return("batch").Times(1)
-
 	dest := destination.DestMiddleware{
-		Dest:    mockDestMiddleware,
-		DestCat: mockDestType,
+		Dest: mockDestMiddleware,
 	}
 
 	destDetail, err := dest.GetDestDetails(testDestID)

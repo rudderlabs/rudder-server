@@ -181,7 +181,7 @@ func initEventDeliveryStatusUploader() {
 	Init()
 }
 
-var _ = Describe("eventDesliveryStatusUploader", func() {
+var _ = Describe("eventDeliveryStatusUploader", func() {
 	initEventDeliveryStatusUploader()
 
 	var (

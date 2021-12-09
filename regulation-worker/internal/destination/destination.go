@@ -5,7 +5,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 //go:generate mockgen -source=destination.go -destination=mock_destination_test.go -package=destination github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination/destination
@@ -14,24 +13,15 @@ type destinationMiddleware interface {
 }
 
 type DestMiddleware struct {
-	Dest    destinationMiddleware
-	DestCat destType
-}
-
-type destType interface {
-	LoadBatchList() []string
-	DestType(batchdest []string, destName string) string
-}
-
-type DestCategory struct {
+	Dest destinationMiddleware
 }
 
 //make api call to get json and then parse it to get destination related details
 //like: dest_type, auth details,
 //return destination Type enum{file, api}
 func (d *DestMiddleware) GetDestDetails(destID string) (model.Destination, error) {
-	config, ok := d.Dest.Get()
-	if !ok {
+	config, notErr := d.Dest.Get()
+	if !notErr {
 		return model.Destination{}, fmt.Errorf("error while getting destination details")
 	}
 
@@ -45,20 +35,6 @@ func (d *DestMiddleware) GetDestDetails(destID string) (model.Destination, error
 			}
 		}
 	}
-	batchDestinations := d.DestCat.LoadBatchList()
-	destDetail.Type = d.DestCat.DestType(batchDestinations, destDetail.Name)
+
 	return destDetail, nil
-}
-
-func (dc *DestCategory) LoadBatchList() []string {
-	batchDest, _ := misc.LoadDestinations()
-	return batchDest
-}
-
-func (dc *DestCategory) DestType(batchdest []string, destName string) string {
-	if misc.Contains(batchdest, destName) {
-		return "batch"
-	} else {
-		return "API"
-	}
 }

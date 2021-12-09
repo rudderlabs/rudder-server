@@ -12,65 +12,47 @@ import (
 
 func TestDelete(t *testing.T) {
 
-	var mockJob model.Job
+	ctx := context.Background()
 	testData := []struct {
-		name              string
-		destDetail        model.Destination
-		expectedStatus    model.JobStatus
-		expectedCallCount int
+		name                              string
+		job                               model.Job
+		destDetail                        model.Destination
+		expectedStatus                    model.JobStatus
+		md1CallCount                      int
+		getSupportedDestinationsCallCount int
 	}{
 		{
-			name: "API type deleter",
+			name: "destination exists",
 			destDetail: model.Destination{
-				Type: "api",
+				Name: "d1",
 			},
-			expectedStatus:    model.JobStatusComplete,
-			expectedCallCount: 1,
+			expectedStatus:                    model.JobStatusComplete,
+			md1CallCount:                      1,
+			getSupportedDestinationsCallCount: 1,
 		},
 		{
-			name: "batch type deleter",
+			name: "destination doesn't exists",
 			destDetail: model.Destination{
-				Type: "batch",
+				Name: "d5",
 			},
-			expectedStatus:    model.JobStatusComplete,
-			expectedCallCount: 1,
-		},
-		{
-			name: "custom type deleter",
-			destDetail: model.Destination{
-				Type: "custom",
-			},
-			expectedStatus:    model.JobStatusComplete,
-			expectedCallCount: 1,
-		},
-		{
-			name: "random type deleter",
-			destDetail: model.Destination{
-				Type: "random",
-			},
-			expectedStatus:    model.JobStatusFailed,
-			expectedCallCount: 0,
+			expectedStatus: model.JobStatusFailed,
 		},
 	}
 
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
-	mockdeleter := delete.NewMockdeleter(mockCtrl)
+	mockDelete := delete.NewMockdeleteManager(mockCtrl)
+	md1 := mockDelete
+	md2 := mockDelete
 
-	deleter := delete.DeleteFacade{
-		AM: mockdeleter,
-		BM: mockdeleter,
-		CM: mockdeleter,
-	}
-
-	ctx := context.Background()
+	r := delete.NewRouter(md1, md2)
 	for _, tt := range testData {
-		t.Run("TestFlow", func(t *testing.T) {
-			mockdeleter.EXPECT().Delete(ctx, mockJob, tt.destDetail.Config, tt.destDetail.Name).Return(tt.expectedStatus).Times(tt.expectedCallCount)
-			status := deleter.Delete(ctx, mockJob, tt.destDetail)
-			require.Equal(t, tt.expectedStatus, status, "actual status different than expected")
-		})
+		md1.EXPECT().GetSupportedDestinations().Return([]string{"d1", "d2"}).Times(tt.getSupportedDestinationsCallCount)
+		md2.EXPECT().GetSupportedDestinations().Return([]string{"d3", "d4"}).Times(tt.getSupportedDestinationsCallCount)
+		md1.EXPECT().Delete(ctx, tt.job, tt.destDetail.Config, tt.destDetail.Name).Return(model.JobStatusComplete).Times(tt.md1CallCount)
+		status := r.Delete(ctx, tt.job, tt.destDetail)
+		require.Equal(t, tt.expectedStatus, status, "actual status different than expected")
 	}
 
 }

@@ -12,31 +12,31 @@ import (
 	model "github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
-// Mockdeleter is a mock of deleter interface.
-type Mockdeleter struct {
+// MockdeleteManager is a mock of deleteManager interface.
+type MockdeleteManager struct {
 	ctrl     *gomock.Controller
-	recorder *MockdeleterMockRecorder
+	recorder *MockdeleteManagerMockRecorder
 }
 
-// MockdeleterMockRecorder is the mock recorder for Mockdeleter.
-type MockdeleterMockRecorder struct {
-	mock *Mockdeleter
+// MockdeleteManagerMockRecorder is the mock recorder for MockdeleteManager.
+type MockdeleteManagerMockRecorder struct {
+	mock *MockdeleteManager
 }
 
-// NewMockdeleter creates a new mock instance.
-func NewMockdeleter(ctrl *gomock.Controller) *Mockdeleter {
-	mock := &Mockdeleter{ctrl: ctrl}
-	mock.recorder = &MockdeleterMockRecorder{mock}
+// NewMockdeleteManager creates a new mock instance.
+func NewMockdeleteManager(ctrl *gomock.Controller) *MockdeleteManager {
+	mock := &MockdeleteManager{ctrl: ctrl}
+	mock.recorder = &MockdeleteManagerMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *Mockdeleter) EXPECT() *MockdeleterMockRecorder {
+func (m *MockdeleteManager) EXPECT() *MockdeleteManagerMockRecorder {
 	return m.recorder
 }
 
 // Delete mocks base method.
-func (m *Mockdeleter) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
+func (m *MockdeleteManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Delete", ctx, job, destConfig, destName)
 	ret0, _ := ret[0].(model.JobStatus)
@@ -44,7 +44,21 @@ func (m *Mockdeleter) Delete(ctx context.Context, job model.Job, destConfig map[
 }
 
 // Delete indicates an expected call of Delete.
-func (mr *MockdeleterMockRecorder) Delete(ctx, job, destConfig, destName interface{}) *gomock.Call {
+func (mr *MockdeleteManagerMockRecorder) Delete(ctx, job, destConfig, destName interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*Mockdeleter)(nil).Delete), ctx, job, destConfig, destName)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockdeleteManager)(nil).Delete), ctx, job, destConfig, destName)
+}
+
+// GetSupportedDestinations mocks base method.
+func (m *MockdeleteManager) GetSupportedDestinations() []string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetSupportedDestinations")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// GetSupportedDestinations indicates an expected call of GetSupportedDestinations.
+func (mr *MockdeleteManagerMockRecorder) GetSupportedDestinations() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSupportedDestinations", reflect.TypeOf((*MockdeleteManager)(nil).GetSupportedDestinations))
 }
