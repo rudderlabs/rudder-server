@@ -45,6 +45,11 @@ Debugger:
   maxRetry: 3
   batchTimeout: 2s
   retrySleep: 100ms
+LiveEvent:
+  cache:
+    size: 3
+    ttl: 20d
+    clearFreq: 5s
 SourceDebugger:
   disableEventUploads: false
 DestinationDebugger:
