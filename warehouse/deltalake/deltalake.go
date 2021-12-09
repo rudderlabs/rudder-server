@@ -834,6 +834,7 @@ func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (dl *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
+	dl.stats = stats.DefaultStats
 	dbHandleT, err := dl.connectToWarehouse()
 
 	if err != nil {
