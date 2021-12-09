@@ -94,6 +94,7 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 
 func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	executeResponse, err := cl.DBHandleT.Client.ExecuteQuery(cl.DBHandleT.Context, &proto.ExecuteQueryRequest{
+		Config: cl.DBHandleT.CredConfig,
 		SqlStatement: statement,
 		Identifier:   cl.DBHandleT.CredIdentifier,
 	})
