@@ -64,6 +64,9 @@ func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error
 	if err != nil {
 		return []*filemanager.FileObject{}, fmt.Errorf("failed to fetch object list from S3:%w", err)
 	}
+	if len(fileObjects) == 0 {
+		return nil, nil
+	}
 
 	//since everything is stored as a file in S3, above fileObjects list also has directory & not just *.json.gz files. So, need to remove those.
 	count := 0
@@ -446,6 +449,8 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 		if err != nil {
 			return "", fmt.Errorf("error while reading statusTrackerFile: %w", err)
 		}
+		//if statusTracker.txt exists then read it & remove all those files name from above gzFilesObjects,
+		//since those files are already cleaned.
 
 		jobID := fmt.Sprintf("%d", job.ID)
 
@@ -519,17 +524,17 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 
 			FileAbsPath, err := downloadWithExpBackoff(gCtx, batch.download, files[_i].Key)
 			if err != nil {
-				return err
+				return fmt.Errorf("error while downloading statusTrackerFile:%w", err)
 			}
 
 			err = batch.delete(gCtx, absPatternFile, FileAbsPath)
 			if err != nil {
-				return fmt.Errorf("error while deleting object, %w", err)
+				return fmt.Errorf("error while reading statusTracker.txt:%w", err)
 			}
 
 			err = uploadWithExpBackoff(gCtx, batch.upload, FileAbsPath, files[_i].Key, absStatusTrackerFileName)
 			if err != nil {
-				return fmt.Errorf("error while uploading cleaned file, %w", err)
+				return fmt.Errorf("error while creating statusTrackerFile:%w", err)
 			}
 
 			return nil
