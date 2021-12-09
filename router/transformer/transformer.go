@@ -42,7 +42,7 @@ type HandleT struct {
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ResponseTransform(ctx context.Context, responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string)
+	ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string) (statusCode int, respBody string)
 }
 
 //NewTransformer creates a new transformer
@@ -61,7 +61,7 @@ var (
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
-	config.RegisterDurationConfigVariable(time.Duration(30), &timeoutDuration, true, time.Second, []string{"Processor.timeoutDuration", "Processor.timeoutDurationInSecond"}...)
+	config.RegisterDurationConfigVariable(time.Duration(600), &timeoutDuration, true, time.Second, []string{"Processor.timeoutDuration", "Processor.timeoutDurationInSecond"}...)
 	config.RegisterInt64ConfigVariable(15, &retryWithBackoffCount, true, 1, "Router.responseTransformRetryCount")
 }
 
@@ -172,7 +172,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integrations.DeliveryResponseT, destName string) (int, string) {
+func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string) (int, string) {
 	rawJSON, err := json.Marshal(responseData)
 	if err != nil {
 		panic(err)
@@ -181,7 +181,7 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 	var respData []byte
 	var respCode int
 
-	url := getResponseTransformURL(destName)
+	url := getProxyURL(destName)
 	payload := []byte(rawJSON)
 
 	operation := func() error {
@@ -192,12 +192,12 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(retryWithBackoffCount))
 	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("[Response Transform] Request for response transform to URL:: %v, Error:: %+v retrying after:: %v,", url, err, t)
+		pkgLogger.Errorf("[Transformer Proxy] Request for proxy to URL:: %v, Error:: %+v retrying after:: %v,", url, err, t)
 		stats.NewStat("responnse_transformer.retry_metric", stats.CountType).Increment()
 	})
 
 	if err != nil {
-		panic(fmt.Errorf("[Response Transform] Reesponse transform failed after max retries Error:: %+v", err))
+		panic(fmt.Errorf("[Transformer Proxy] Proxy request failed after max retries Error:: %+v", err))
 	}
 
 	//Detecting content type of the respBody
@@ -209,28 +209,15 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 		respData = []byte("")
 	}
 
-	/*
-		Response Transsformer Response payload:
-		{
-			output: {
-				status: [destination status compatible with server]
-				message: [ generic message for jobs_db payload]
-				destinationResponse: [actual response payload from destination]
-			}
-		}
-	*/
-	// response transform success extract the value of output, marshal to TransResponseT Type
-
 	transformerResponse := integrations.TransResponseT{
-		Status:  http.StatusBadRequest,
-		Message: "[Response Trasnform]:: Default Message TransResponseT",
+		Message: "[Transformer Proxy]:: Default Message TransResponseT",
 	}
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
 	integrations.CollectDestErrorStats(respData)
 	err = json.Unmarshal(respData, &transformerResponse)
 	// unmarshal failure
 	if err != nil {
-		errStr := string(respData) + " [Error at Response Transform, Unmarshaling::]" + err.Error()
+		errStr := string(respData) + " [Transformer Proxy Unmarshaling]::" + err.Error()
 		trans.logger.Errorf(errStr)
 		respData = []byte(errStr)
 		respCode = http.StatusBadRequest
@@ -239,9 +226,8 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 	// unmarshal success
 	respData, err = json.Marshal(transformerResponse)
 	if err != nil {
-		panic(fmt.Errorf("[Response transform:: failed to Marshal transformer response : %+v", err))
+		panic(fmt.Errorf("[Transformer Proxy]:: failed to Marshal proxy response : %+v", err))
 	}
-	respCode = int(transformerResponse.Status)
 
 	return respCode, string(respData)
 }
@@ -271,30 +257,22 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 		return []byte{}, http.StatusBadRequest, err
 	}
 
-	if resp.StatusCode == http.StatusNotFound {
-		panic(fmt.Errorf("[Response transform doesnot exist for URL: URL: %v", url))
-	}
-
 	// error handling if body is missing
 	if resp.Body == nil {
-		respData = []byte("[Response Transform] :: transformer returned empty response body")
+		respData = []byte("[Transformer Proxy] :: transformer returned empty response body")
 		respCode = http.StatusBadRequest
-		return respData, respCode, fmt.Errorf("[Response Transform] :: transformer returned empty response body")
+		return respData, respCode, fmt.Errorf("[Transformer Proxy] :: transformer returned empty response body")
 	}
 
 	respData, err = io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	// error handling while reading from resp.Body
 	if err != nil {
-		respData = []byte(fmt.Sprintf(`[Response Transform] :: failed to read response body, Error:: %+v`, err))
+		respData = []byte(fmt.Sprintf(`[Transformer Proxy] :: failed to read response body, Error:: %+v`, err))
 		respCode = http.StatusBadRequest
 		return respData, respCode, err
 	}
-
-	if resp.StatusCode != http.StatusOK {
-		return respData, respCode, fmt.Errorf("[Response Transform] :: transformer returned a non 200 status")
-	}
-
+	respCode = resp.StatusCode
 	return respData, respCode, nil
 }
 
@@ -306,6 +284,6 @@ func getRouterTransformURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
 }
 
-func getResponseTransformURL(destName string) string {
-	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/transform/" + strings.ToLower(destName) + "/response"
+func getProxyURL(destName string) string {
+	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
 }
