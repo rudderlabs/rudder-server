@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/grpc"
 	"strings"
+	"time"
 )
 
 // Database configuration
@@ -40,6 +41,7 @@ var (
 	thriftTransport    string
 	ssl                string
 	userAgent          string
+	grpcTimeout        time.Duration
 )
 
 // Rudder data type mapping with Delta lake mappings.
@@ -111,6 +113,7 @@ func loadConfig() {
 	config.RegisterStringConfigVariable("2", &thriftTransport, false, "Warehouse.deltalake.thriftTransport")
 	config.RegisterStringConfigVariable("1", &ssl, false, "Warehouse.deltalake.ssl")
 	config.RegisterStringConfigVariable("RudderStack", &userAgent, false, "Warehouse.deltalake.userAgent")
+	config.RegisterDurationConfigVariable(time.Duration(2), &grpcTimeout, false, time.Minute, "Warehouse.deltalake.grpcTimeout")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -199,9 +202,22 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 		UserAgentEntry:  cred.UserAgentEntry,
 	}
 
-	conn, err := grpc.DialContext(ctx, GetDatabricksConnectorURL(), grpc.WithInsecure())
+	// Getting timeout context
+	tCtx, cancel := context.WithTimeout(ctx, grpcTimeout)
+	defer cancel()
+
+	// Creating grpc connection using timeout context
+	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithInsecure(), grpc.WithBlock())
+	if err == context.DeadlineExceeded {
+		execTimeouts := dl.stats.NewStat("warehouse.clickhouse.grpcTimeouts", stats.CountType)
+		execTimeouts.Count(1)
+
+		err = fmt.Errorf("%s Connection timed out to Delta lake: %v", dl.GetLogIdentifier(), err)
+		return
+	}
 	if err != nil {
-		return nil, fmt.Errorf("%s Error while creating grpc connection to Delta lake: %v", dl.GetLogIdentifier(), err)
+		err = fmt.Errorf("%s Error while creating grpc connection to Delta lake: %v", dl.GetLogIdentifier(), err)
+		return
 	}
 
 	dbClient := proto.NewDatabricksClient(conn)
@@ -210,10 +226,12 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 		Identifier: identifier,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%s Error connecting to Delta lake: %v", dl.GetLogIdentifier(), err)
+		err = fmt.Errorf("%s Error connecting to Delta lake: %v", dl.GetLogIdentifier(), err)
+		return
 	}
 	if connectionResponse.GetErrorCode() != "" {
-		return nil, fmt.Errorf("%s Error connecting to Delta lake with response:%v", dl.GetLogIdentifier(), connectionResponse.GetErrorMessage())
+		err = fmt.Errorf("%s Error connecting to Delta lake with response:%v", dl.GetLogIdentifier(), connectionResponse.GetErrorMessage())
+		return
 	}
 
 	dbHandleT = &databricks.DBHandleT{
