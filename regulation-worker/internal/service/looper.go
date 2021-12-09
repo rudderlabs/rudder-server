@@ -6,6 +6,7 @@ import (
 
 	backoff "github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type Looper struct {
@@ -17,8 +18,7 @@ func (l *Looper) Loop(ctx context.Context) error {
 	for {
 		err := l.Svc.JobSvc(ctx)
 		if err == model.ErrNoRunnableJob {
-			isContextCanceled := sleepContext(ctx, 10*time.Minute)
-			if isContextCanceled {
+			if ctxCanceled := misc.SleepCtx(ctx, 10*time.Minute); ctxCanceled {
 				return nil
 			}
 		} else if err != nil {

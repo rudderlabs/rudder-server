@@ -68,7 +68,15 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	if manager.Config.EnableSSE {
 		uploadInput.ServerSideEncryption = aws.String("AES256")
 	}
+
 	output, err := s3manager.Upload(uploadInput)
+	if err != nil {
+		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {
+			err = fmt.Errorf(fmt.Sprintf(`Bucket '%s' not found.`, manager.Config.Bucket))
+		}
+		return UploadOutput{}, err
+	}
+
 	return UploadOutput{Location: output.Location, ObjectName: fileName}, err
 }
 

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,9 +10,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/custom"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 )
@@ -38,20 +34,12 @@ func Run(ctx context.Context) {
 	svc := service.JobSvc{
 		API: &client.JobAPI{
 			WorkspaceID: config.GetEnv("workspaceID", "1001"),
-			URLPrefix:   config.GetEnv("urlPrefix", "http://localhost:35359"),
-		},
-		Deleter: &delete.DeleteFacade{
-			AM: &api.API{
-				Client:           &http.Client{},
-				DestTransformURL: config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"),
-			},
-			BM: &batch.BatchManager{},
-			CM: &custom.Mock_KVStoreWorker{},
+			URLPrefix:   config.GetEnv("urlPrefix", "https://api.rudderlabs.com:35359"),
 		},
 		DestDetail: &destination.DestMiddleware{
-			Dest:    &backendconfig.WorkspaceConfig{},
-			DestCat: &destination.DestCategory{},
+			Dest: &backendconfig.WorkspaceConfig{},
 		},
+		Deleter: &delete.Router{},
 	}
 	l := withLoop(svc)
 	err := l.Loop(ctx)

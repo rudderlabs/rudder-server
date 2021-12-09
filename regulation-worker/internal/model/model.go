@@ -43,7 +43,6 @@ type UserAttribute struct {
 type Destination struct {
 	Config        map[string]interface{}
 	DestinationID string
-	Type          string
 	Name          string
 }
 
@@ -51,11 +50,4 @@ type APIReqErr struct {
 	StatusCode int
 	Body       string
 	Err        error
-}
-
-type APIPayload struct {
-	JobID          int
-	DestType       string
-	Config         map[string]interface{}
-	UserAttributes []UserAttribute
 }
