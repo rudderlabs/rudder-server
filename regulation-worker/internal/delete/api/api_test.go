@@ -152,7 +152,10 @@ func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(r.Body)
+	_, err := buf.ReadFrom(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 	d.payload = buf.String()
 
 	w.WriteHeader(d.respStatusCode)
