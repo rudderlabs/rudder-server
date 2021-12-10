@@ -33,7 +33,6 @@ type JobSvc struct {
 //called by looper
 //calls api-client.getJob(workspaceID)
 //calls api-client to get new job with workspaceID, which returns jobID.
-
 func (js *JobSvc) JobSvc(ctx context.Context) error {
 	//API request to get new job
 	job, err := js.API.Get(ctx)
