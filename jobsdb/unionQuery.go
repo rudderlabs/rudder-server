@@ -174,6 +174,7 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 			"customer": customer,
 			"state":    "unprocessed",
 			"module":   mj.tablePrefix,
+			"destType": params.CustomValFilters[0],
 		})
 		pickUpCountStat.Count(jobCount)
 	}
@@ -272,6 +273,7 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 			"customer": customer,
 			"state":    params.StateFilters[0],
 			"module":   mj.tablePrefix,
+			"destType": params.CustomValFilters[0],
 		})
 		pickUpCountStat.Count(jobCount)
 	}

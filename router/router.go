@@ -1636,6 +1636,7 @@ func (rt *HandleT) readAndProcess() int {
 		customerCountStat = stats.NewTaggedStat("customer_count", stats.CountType, stats.Tags{
 			"customer": customer,
 			"module":   "router",
+			"destType": rt.destName,
 		})
 		customerCountStat.Count(count)
 		//note that this will give an aggregated count
