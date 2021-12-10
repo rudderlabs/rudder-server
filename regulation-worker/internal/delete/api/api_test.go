@@ -17,7 +17,7 @@ import (
 
 func (d *deleteAPI) handler() http.Handler {
 	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/d-transformer/delete-users", d.deleteMockServer).Methods("DELETE")
+	srvMux.HandleFunc("/delete-users", d.deleteMockServer).Methods("POST")
 
 	return srvMux
 }

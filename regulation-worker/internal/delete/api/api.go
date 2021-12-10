@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	supportedDestinations = []string{"BRAZE", "amplitude", "intercom"}
+	supportedDestinations = []string{"BRAZE", "AM", "INTERCOM"}
 )
 
 type APIManager struct {
@@ -26,8 +26,8 @@ type APIManager struct {
 //prepares payload based on (job,destDetail) & make an API call to transformer.
 //gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
 func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
-	method := "DELETE"
-	endpoint := "/d-transformer/delete-users"
+	method := "POST"
+	endpoint := "/delete-users"
 	url := fmt.Sprint(api.DestTransformURL, endpoint)
 	bodySchema := mapJobToPayload(job, destName, destConfig)
 
@@ -40,6 +40,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	if err != nil {
 		return model.JobStatusFailed
 	}
+	req.Header.Set("Content-Type", "application/json")
 
 	//TODO: log error received from server
 	resp, err := api.Client.Do(req)

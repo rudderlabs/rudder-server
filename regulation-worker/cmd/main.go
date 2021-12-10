@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -34,8 +35,12 @@ func main() {
 }
 
 func Run(ctx context.Context) {
-
-	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &api.APIManager{})
+	transformerURL := config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	apiManager := api.APIManager{
+		Client:           &http.Client{},
+		DestTransformURL: transformerURL,
+	}
+	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
 	svc := service.JobSvc{
 		API: &client.JobAPI{
 			WorkspaceID: config.GetEnv("workspaceID", "1001"),
