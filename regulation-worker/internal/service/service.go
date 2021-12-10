@@ -30,10 +30,9 @@ type JobSvc struct {
 	DestDetail destDetail
 }
 
-/* called by looper
-calls api-client.getJob(workspaceID)
- calls api-client to get new job with workspaceID, which returns jobID.
- */
+//called by looper
+//calls api-client.getJob(workspaceID)
+//calls api-client to get new job with workspaceID, which returns jobID.
 
 func (js *JobSvc) JobSvc(ctx context.Context) error {
 	//API request to get new job
