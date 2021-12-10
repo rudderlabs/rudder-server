@@ -23,13 +23,14 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 )
 
 var (
 	regexRequiredSuffix   = regexp.MustCompile(".json.gz$")
-	statusTrackerFileName = "statusTracker.txt"
+	statusTrackerFileName = "ruddderDeleteTracker.txt"
 	supportedDestinations = []string{"S3"}
 )
 
