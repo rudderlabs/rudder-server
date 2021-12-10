@@ -21,13 +21,14 @@ import (
 )
 
 var (
-	testData []test
-	mu       sync.Mutex
+	testData            []test
+	mu                  sync.Mutex
+	testDataInitialized = make(chan string)
 )
 
 func TestMain(m *testing.M) {
 
-	// os.Exit(run(m))
+	os.Exit(run(m))
 }
 
 func handler() http.Handler {
@@ -43,7 +44,7 @@ func run(m *testing.M) int {
 	defer svr.Close()
 	workspaceID := "216Co97d9So9TkqphM0cxBzRxc3"
 	svcCtx, svcCancel := context.WithCancel(context.Background())
-	code := make(chan int)
+	code := make(chan int, 1)
 	go func() {
 		os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
 		os.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
@@ -52,13 +53,15 @@ func run(m *testing.M) int {
 		config.Load()
 		logger.Init()
 		backendconfig.Init()
-		code <- m.Run()
+		c := m.Run()
 		svcCancel()
+		code <- c
+
 	}()
+	<-testDataInitialized
 	_ = os.Setenv("workspaceID", workspaceID)
 	_ = os.Setenv("urlPrefix", svr.URL)
 	main.Run(svcCtx)
-
 	statusCode := <-code
 	return statusCode
 }
@@ -71,7 +74,6 @@ type test struct {
 }
 
 func TestFlow(t *testing.T) {
-	t.Skip()
 	t.Run("TestFlow", func(t *testing.T) {
 		testData = []test{
 			{
@@ -81,7 +83,7 @@ func TestFlow(t *testing.T) {
 				status:            "pending",
 			},
 		}
-
+		testDataInitialized <- "done"
 		require.Eventually(t, func() bool {
 			for _, test := range testData {
 				mu.Lock()
@@ -97,7 +99,6 @@ func TestFlow(t *testing.T) {
 }
 
 func getJob(w http.ResponseWriter, r *http.Request) {
-
 	w.Header().Set("Content-Type", "application/json")
 	for i, test := range testData {
 		status := test.status
