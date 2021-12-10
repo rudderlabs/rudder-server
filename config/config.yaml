@@ -107,9 +107,9 @@ Router:
   maxFailedCountForJob: 3
   retryTimeWindow: 180m
   failedKeysEnabled: false
-  saveDestinationResponseOverride: true
-  transformerProxy: true
-  responseTransformRetryCount: 15
+  saveDestinationResponseOverride: false
+  transformerProxy: false
+  transformerProxyRetryCount: 15
   MARKETO:
     noOfWorkers: 4
   throttler:
