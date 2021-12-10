@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,6 +11,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
@@ -33,8 +35,12 @@ func main() {
 }
 
 func Run(ctx context.Context) {
-
-	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{})
+	transformerURL := config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	apiManager := api.APIManager{
+		Client:           &http.Client{},
+		DestTransformURL: transformerURL,
+	}
+	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
 	svc := service.JobSvc{
 		API: &client.JobAPI{
 			WorkspaceID: config.GetEnv("workspaceID", "1001"),

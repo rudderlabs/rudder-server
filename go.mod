@@ -76,6 +76,7 @@ require (
 	github.com/xtgo/uuid v0.0.0-20140804021211-a0b114877d4c // indirect
 	go.uber.org/automaxprocs v1.4.0
 	go.uber.org/zap v1.19.1
+	golang.org/x/net v0.0.0-20210917221730-978cfadd31cf
 	golang.org/x/oauth2 v0.0.0-20201208152858-08078c50e5b5
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/sys v0.0.0-20210927094055-39ccf1dd6fa6 // indirect
