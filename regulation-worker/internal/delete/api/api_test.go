@@ -130,7 +130,7 @@ func TestDelete(t *testing.T) {
 
 			defer svr.Close()
 			os.Setenv("DEST_TRANSFORM_URL", svr.URL)
-			api := api.API{
+			api := api.APIManager{
 				Client:           &http.Client{},
 				DestTransformURL: svr.URL,
 			}

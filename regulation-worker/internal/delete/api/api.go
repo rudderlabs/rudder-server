@@ -14,14 +14,18 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
-type API struct {
+var (
+	supportedDestinations = []string{"BRAZE", "amplitude", "intercom"}
+)
+
+type APIManager struct {
 	Client           *http.Client
 	DestTransformURL string
 }
 
 //prepares payload based on (job,destDetail) & make an API call to transformer.
 //gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
-func (api *API) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
+func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 	method := "DELETE"
 	endpoint := "/d-transformer/delete-users"
 	url := fmt.Sprint(api.DestTransformURL, endpoint)
@@ -64,6 +68,11 @@ func (api *API) Delete(ctx context.Context, job model.Job, destConfig map[string
 		return model.JobStatusFailed
 	}
 
+}
+
+func (bm *APIManager) GetSupportedDestinations() []string {
+
+	return supportedDestinations
 }
 
 func mapJobToPayload(job model.Job, destName string, destConfig map[string]interface{}) []apiDeletionPayloadSchema {
