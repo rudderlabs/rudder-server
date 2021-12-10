@@ -45,6 +45,11 @@ Debugger:
   maxRetry: 3
   batchTimeout: 2s
   retrySleep: 100ms
+LiveEvent:
+  cache:
+    size: 3
+    ttl: 20d
+    clearFreq: 5s
 SourceDebugger:
   disableEventUploads: false
 DestinationDebugger:
@@ -102,8 +107,8 @@ Router:
   maxFailedCountForJob: 3
   retryTimeWindow: 180m
   failedKeysEnabled: false
-  saveDestinationResponseOverride: false
-  responseTransform: false
+  saveDestinationResponseOverride: true
+  transformerProxy: false
   responseTransformRetryCount: 15
   MARKETO:
     noOfWorkers: 4
@@ -116,7 +121,7 @@ Router:
     httpTimeout: 120s
     httpMaxIdleConnsPerHost: 32
   BQSTREAM:
-    responseTransform: true
+    transformerProxy: true
 BatchRouter:
   mainLoopSleep: 2s
   jobQueryBatchSize: 100000

@@ -267,7 +267,7 @@ getNonSucceededJobsCount returns events which are not in terminal state.
 This is a wrapper over GetProcessed call above
 */
 func (jd *ReadonlyHandleT) getNonSucceededJobsCount(customValFilters []string, parameterFilters []ParameterFilterT) int64 {
-	return jd.getProcessedCount([]string{Failed.State, Waiting.State, Throttled.State, Executing.State, Importing.State}, customValFilters, parameterFilters)
+	return jd.getProcessedCount([]string{Failed.State, Waiting.State, Executing.State, Importing.State}, customValFilters, parameterFilters)
 }
 
 /*

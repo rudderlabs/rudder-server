@@ -27,6 +27,12 @@ type DrainStats struct {
 	Reasons []string
 }
 
+type SendPostResponse struct {
+	StatusCode          int
+	ResponseContentType string
+	ResponseBody        []byte
+}
+
 func Init() {
 	loadConfig()
 }

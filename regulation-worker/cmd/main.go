@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
@@ -33,14 +34,13 @@ func main() {
 func Run(ctx context.Context) {
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			WorkspaceID: getEnv("workspaceID", "1001"),
-			URLPrefix:   getEnv("urlPrefix", "http://localhost:35359"),
+			WorkspaceID: config.GetEnv("workspaceID", "1001"),
+			URLPrefix:   config.GetEnv("urlPrefix", "https://api.rudderlabs.com:35359"),
 		},
-		Deleter: &delete.Deleter{},
 		DestDetail: &destination.DestMiddleware{
-			Dest:    &backendconfig.WorkspaceConfig{},
-			DestCat: &destination.DestCategory{},
+			Dest: &backendconfig.WorkspaceConfig{},
 		},
+		Deleter: &delete.Router{},
 	}
 
 	l := withLoop(svc)
@@ -49,13 +49,6 @@ func Run(ctx context.Context) {
 		panic(err)
 	}
 
-}
-
-func getEnv(name, defaultValue string) string {
-	if value := os.Getenv(name); value != "" {
-		return value
-	}
-	return defaultValue
 }
 
 func withLoop(svc service.JobSvc) *service.Looper {

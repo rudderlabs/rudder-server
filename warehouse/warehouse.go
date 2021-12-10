@@ -79,6 +79,7 @@ var (
 	waitForConfig                       time.Duration
 	waitForWorkerSleep                  time.Duration
 	uploadBufferTimeInMin               int
+	columnCountThreshold                int
 	ShouldForceSetLowerVersion          bool
 	useParquetLoadFilesRS               bool
 )
@@ -173,6 +174,7 @@ func loadConfig() {
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	config.RegisterDurationConfigVariable(time.Duration(30), &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
 	config.RegisterIntConfigVariable(180, &uploadBufferTimeInMin, false, 1, "Warehouse.uploadBufferTimeInMin")
+  config.RegisterIntConfigVariable(1000, &columnCountThreshold, false, 1, "Warehouse.columnCountThreshold")
 	config.RegisterDurationConfigVariable(time.Duration(5), &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
@@ -1051,12 +1053,13 @@ func (wh *HandleT) Shutdown() {
 }
 
 func (wh *HandleT) resetInProgressJobs() {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET in_progress=%t WHERE destination_type='%s'`, warehouseutils.WarehouseUploadsTable, false, wh.destType)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET in_progress=%t WHERE destination_type='%s' AND in_progress=%t`, warehouseutils.WarehouseUploadsTable, false, wh.destType, true)
 	_, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 }
+
 
 func getLoadFileFormat(whType string) string {
 	switch whType {
