@@ -4,6 +4,7 @@ go 1.16
 
 require (
 	cloud.google.com/go/bigquery v1.8.0
+	cloud.google.com/go/kms v1.1.0 // indirect
 	cloud.google.com/go/pubsub v1.3.1
 	cloud.google.com/go/storage v1.10.0
 	github.com/Azure/azure-storage-blob-go v0.14.0
@@ -33,7 +34,7 @@ require (
 	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/gofrs/uuid v4.1.0+incompatible
 	github.com/golang-migrate/migrate/v4 v4.11.0
-	github.com/golang/mock v1.5.0
+	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.2
 	github.com/gomodule/redigo v1.8.5
 	github.com/gorilla/mux v1.8.0
@@ -77,13 +78,12 @@ require (
 	go.uber.org/automaxprocs v1.4.0
 	go.uber.org/zap v1.19.1
 	golang.org/x/net v0.0.0-20210917221730-978cfadd31cf
-	golang.org/x/oauth2 v0.0.0-20201208152858-08078c50e5b5
+	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20210927094055-39ccf1dd6fa6 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 	golang.org/x/tools v0.1.6 // indirect
-	google.golang.org/api v0.39.0
-	google.golang.org/grpc v1.39.0
+	google.golang.org/api v0.62.0
+	google.golang.org/grpc v1.40.1
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
 	gopkg.in/ini.v1 v1.52.0 // indirect
