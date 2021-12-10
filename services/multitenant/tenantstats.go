@@ -8,12 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var jobQueryBatchSize int
 var pkgLogger logger.LoggerI
 var multitenantStat MultitenantStatsT
 
@@ -33,16 +31,21 @@ func Init() {
 	multitenantStat.RouterInputRates = make(map[string]map[string]map[string]misc.MovingAverage)
 	multitenantStat.RouterInputRates["router"] = make(map[string]map[string]misc.MovingAverage)
 	multitenantStat.RouterInputRates["batch_router"] = make(map[string]map[string]misc.MovingAverage)
-	config.RegisterIntConfigVariable(10000, &jobQueryBatchSize, true, 1, "Router.jobQueryBatchSize")
 	go writerouterPileUpStatsEncodedToFile()
 }
 
 func writerouterPileUpStatsEncodedToFile() {
 	for {
-		file, _ := os.Create("router_pile_up_stat_persist.txt")
+
+		tmpDirPath, err := misc.CreateTMPDIR()
+		if err != nil {
+			panic(err)
+		}
+		path := tmpDirPath + "router_pile_up_stat_persist.txt"
+		file, _ := os.Create(path)
 		buf := new(bytes.Buffer)
 		encoder := gob.NewEncoder(buf)
-		err := encoder.Encode(multitenantStat.RouterInMemoryJobCounts)
+		err = encoder.Encode(multitenantStat.RouterInMemoryJobCounts)
 		if err != nil {
 			panic(err)
 		}
@@ -55,7 +58,12 @@ func writerouterPileUpStatsEncodedToFile() {
 }
 
 func prePopulateRouterPileUpCounts() {
-	byteData, err := os.ReadFile("router_pile_up_stat_persist.txt")
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
+	path := tmpDirPath + "router_pile_up_stat_persist.txt"
+	byteData, err := os.ReadFile(path)
 	if err != nil {
 		//TODO : Build Stats with CrashRecover Query If file not found
 		return
@@ -147,9 +155,9 @@ func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Dura
 	}
 }
 
-func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage) map[string]int {
+func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int) map[string]int {
 	customerPickUpCount := make(map[string]int)
-	runningTimeCounter := float64(noOfWorkers) * float64(routerTimeOut/time.Second)
+	runningTimeCounter := float64(noOfWorkers) * float64(routerTimeOut) / float64(time.Second)
 	multitenantStat.routerJobCountMutex.RLock()
 	defer multitenantStat.routerJobCountMutex.RUnlock()
 	runningJobCount := jobQueryBatchSize
@@ -161,14 +169,14 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			if ok {
 				timeRequired := 0.0
 				if latencyMap[customerKey].Value() != 0 {
-					timeRequired = float64(latencyMap[customerKey].Value() * destTypeCount.Value() * float64(routerTimeOut/time.Second))
+					timeRequired = float64(latencyMap[customerKey].Value() * destTypeCount.Value() * float64(routerTimeOut) / float64(time.Second))
 					customerPickUpCount[customerKey] = int(math.Min(timeRequired, runningTimeCounter) / latencyMap[customerKey].Value())
 					if customerPickUpCount[customerKey] == 0 && multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] > 0 {
 						customerPickUpCount[customerKey] = customerPickUpCount[customerKey] + 1
 					}
 					if customerPickUpCount[customerKey] > multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] {
 						customerPickUpCount[customerKey] = multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType]
-						timeRequired = latencyMap[customerKey].Value() * float64(multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType]) * float64(routerTimeOut/time.Second)
+						timeRequired = latencyMap[customerKey].Value() * float64(customerPickUpCount[customerKey]) * float64(routerTimeOut) / float64(time.Second)
 					}
 					//modify time required
 
@@ -181,16 +189,12 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 				runningTimeCounter = runningTimeCounter - timeRequired
 				runningJobCount = runningJobCount - customerPickUpCount[customerKey]
 				//runningJobCount should be a number large enough to ensure fairness but small enough to not cause OOM Issues
-				if runningJobCount <= 0 || runningTimeCounter < 0 {
-					pkgLogger.Infof(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize`)
+				if runningJobCount <= 0 || runningTimeCounter <= 0 {
+					pkgLogger.Infof(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize for %v`, destType)
 					return customerPickUpCount
 				}
 			}
 		}
-	}
-
-	if runningTimeCounter <= 0 {
-		return customerPickUpCount
 	}
 
 	for _, customerKey := range sortedLatencyList {
@@ -201,14 +205,14 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 		if customerCountKey[destType] == 0 {
 			continue
 		}
-		timeRequired := latencyMap[customerKey].Value() * float64(customerCountKey[destType]) * float64(routerTimeOut/time.Second)
+		timeRequired := latencyMap[customerKey].Value() * float64(customerCountKey[destType]) * float64(routerTimeOut) / float64(time.Second)
 		if timeRequired < runningTimeCounter {
 			if latencyMap[customerKey].Value() != 0 {
 				customerPickUpCount[customerKey] += int(timeRequired / latencyMap[customerKey].Value())
 				runningTimeCounter = runningTimeCounter - timeRequired
 				runningJobCount = runningJobCount - int(timeRequired/latencyMap[customerKey].Value())
 				if runningJobCount <= 0 {
-					pkgLogger.Infof(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize after picking pileUp`)
+					pkgLogger.Infof(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize after picking pileUp%v`, destType)
 					return customerPickUpCount
 				}
 			}

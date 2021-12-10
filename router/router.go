@@ -1629,11 +1629,11 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
-	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat)
+	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat, jobQueryBatchSize)
 
 	var customerCountStat stats.RudderStats
 	for customer, count := range rt.customerCount {
-		customerCountStat = stats.NewTaggedStat("customer_count", stats.CountType, stats.Tags{
+		customerCountStat = stats.NewTaggedStat("customer_pickup_count", stats.CountType, stats.Tags{
 			"customer": customer,
 			"module":   "router",
 			"destType": rt.destName,
