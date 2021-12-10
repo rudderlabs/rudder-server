@@ -200,6 +200,8 @@ func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, er
 	return strings.TrimPrefix(path, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 }
 
+//IMPT NOTE: `ListFilesWithPrefix` support Continuation Token. So, if you want same set of files (says 1st 1000 again)
+//then create a new S3Manager & not use the existing one. Since, using the existing one will by default return next 1000 files.
 func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	if !manager.Config.IsTruncated {
 		return

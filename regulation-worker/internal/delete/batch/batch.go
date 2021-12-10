@@ -29,7 +29,7 @@ import (
 
 var (
 	regexRequiredSuffix   = regexp.MustCompile(".json.gz$")
-	statusTrackerFileName = "statusTracker.txt"
+	statusTrackerFileName = "ruddderDeleteTracker.txt"
 	supportedDestinations = []string{"S3"}
 )
 
