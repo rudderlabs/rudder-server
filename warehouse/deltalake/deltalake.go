@@ -93,7 +93,6 @@ type HandleT struct {
 	ObjectStorage string
 	Warehouse     warehouseutils.WarehouseT
 	Uploader      warehouseutils.UploaderI
-	stats         stats.Stats
 }
 
 // Init initializes the delta lake warehouse
@@ -166,7 +165,7 @@ func checkAndIgnoreAlreadyExistError(errorCode string, ignoreError string) bool 
 
 // connect creates database connection with CredentialsT
 func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks.DBHandleT, err error) {
-	connStat := dl.stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	connStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -177,7 +176,7 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 	connStat.Start()
 	defer connStat.End()
 
-	closeConnStat := dl.stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	closeConnStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -209,7 +208,7 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 	// Creating grpc connection using timeout context
 	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithInsecure(), grpc.WithBlock())
 	if err == context.DeadlineExceeded {
-		execTimeouts := dl.stats.NewStat("warehouse.clickhouse.grpcTimeouts", stats.CountType)
+		execTimeouts := stats.NewStat("warehouse.clickhouse.grpcTimeouts", stats.CountType)
 		execTimeouts.Count(1)
 
 		err = fmt.Errorf("%s Connection timed out to Delta lake: %v", dl.GetLogIdentifier(), err)
@@ -247,7 +246,7 @@ func (dl *HandleT) connect(cred *databricks.CredentialsT) (dbHandleT *databricks
 
 // fetchTables fetch tables with tableNames
 func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (tableNames []string, err error) {
-	fetchTablesExecTime := dl.stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	fetchTablesExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -276,7 +275,7 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, sqlStatement string) (
 
 // ExecuteSQL executes sql using grpc Client
 func (dl *HandleT) ExecuteSQL(sqlStatement string, queryType string) (err error) {
-	execSqlStatTime := dl.stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	execSqlStatTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -304,7 +303,7 @@ func (dl *HandleT) ExecuteSQL(sqlStatement string, queryType string) (err error)
 
 // schemaExists checks it schema exists or not.
 func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
-	fetchSchemasExecTime := dl.stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	fetchSchemasExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -342,7 +341,7 @@ func (dl *HandleT) createSchema() (err error) {
 
 // dropStagingTables drops staging tables
 func (dl *HandleT) dropStagingTables(tableNames []string) {
-	dropTablesExecTime := dl.stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	dropTablesExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -707,7 +706,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		filteredTablesNames = append(filteredTablesNames, tableName)
 	}
 
-	fetchTablesAttributesExecTime := dl.stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	fetchTablesAttributesExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -751,7 +750,6 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dl.Uploader = uploader
-	dl.stats = stats.DefaultStats
 	dl.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.DELTALAKE, warehouse.Destination.Config, dl.Uploader.UseRudderStorage())
 
 	dl.dbHandleT, err = dl.connectToWarehouse()
@@ -819,7 +817,7 @@ func (dl *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 
 // GetTotalCountInTable returns total count in tables.
 func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
-	fetchTotalCountExecTime := dl.stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	fetchTotalCountExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -852,7 +850,6 @@ func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (dl *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
-	dl.stats = stats.DefaultStats
 	dbHandleT, err := dl.connectToWarehouse()
 
 	if err != nil {
