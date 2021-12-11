@@ -387,14 +387,16 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 }
 
 // credentialsStr return authentication for AWS STS and SSE-C encryption
-func (sf *HandleT) credentialsStr() string {
-	var auth string
-	// TODO: Required when we are going to use this for hosted data plane.
-	//if sf.Uploader.UseRudderStorage() {
-	//	tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
-	//	auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', awsSessionToken = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
-	//}
-	return auth
+func (dl *HandleT) credentialsStr() (auth string, err error) {
+	if dl.Uploader.UseRudderStorage() {
+		var tempAccessKeyId, tempSecretAccessKey, token string
+		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
+		if err != nil {
+			return
+		}
+		auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', 'awsSessionToken' = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
+	}
+	return
 }
 
 // loadTable Loads table with table name
@@ -420,9 +422,15 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 	loadFolder := warehouseutils.GetObjectFolder(dl.ObjectStorage, csvObjectLocation)
+	if dl.Uploader.UseRudderStorage() {
+		loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)
+	}
 
 	// Get the credentials string to copy from the staging location to table
-	credentialsStr := dl.credentialsStr()
+	credentialsStr, err := dl.credentialsStr()
+	if err != nil {
+		return
+	}
 
 	// Creating copy sql statement to copy from load folder to the staging table
 	var sortedColumnNames = dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys)

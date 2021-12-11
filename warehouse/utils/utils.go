@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sts"
 	"os"
 	"regexp"
 	"sort"
@@ -686,4 +690,14 @@ func JoinWithFormatting(keys []string, format func(idx int, str string) string, 
 		output[idx] += format(idx, str)
 	}
 	return strings.Join(output, separator)
+}
+
+func GetTemporaryS3Cred(accessKeyID, accessKey string) (string, string, string, error) {
+	mySession := session.Must(session.NewSession())
+	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
+	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &AWSCredsExpiryInS})
+	if err != nil {
+		return "", "", "", err
+	}
+	return *SessionTokenOutput.Credentials.AccessKeyId, *SessionTokenOutput.Credentials.SecretAccessKey, *SessionTokenOutput.Credentials.SessionToken, err
 }
