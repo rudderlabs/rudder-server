@@ -152,7 +152,7 @@ func columnsWithValues(keys []string) string {
 
 // GetDatabricksConnectorURL returns databricks connector url.
 func GetDatabricksConnectorURL() string {
-	return config.GetEnv("WAREHOUSE_DATABRICKS_CONNECTOR_URL", "localhost:50051")
+	return config.GetEnv("DATABRICKS_CONNECTOR_URL", "localhost:50051")
 }
 
 // checkAndIgnoreAlreadyExistError checks and ignores native errors.
