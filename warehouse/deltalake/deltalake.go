@@ -19,10 +19,12 @@ import (
 
 // Database configuration
 const (
-	DLHost  = "host"
-	DLPort  = "port"
-	DLPath  = "path"
-	DLToken = "token"
+	DLHost          = "host"
+	DLPort          = "port"
+	DLPath          = "path"
+	DLToken         = "token"
+	AWSAccessKey    = "accessKey"
+	AWSAccessSecret = "accessKeyID"
 )
 
 // Reference: https://docs.oracle.com/cd/E17952_01/connector-odbc-en/connector-odbc-reference-errorcodes.html
@@ -387,13 +389,18 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 }
 
 // credentialsStr return authentication for AWS STS and SSE-C encryption
-func (dl *HandleT) credentialsStr() (auth string, err error) {
-	if dl.Uploader.UseRudderStorage() {
+// STS authentication is only supported with S3A client.
+func (dl *HandleT) credentialsStr() (auth string, s3aClient bool, err error) {
+	awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
+	awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
+
+	if awsAccessKey == "" && awsSecretKey != "" {
 		var tempAccessKeyId, tempSecretAccessKey, token string
-		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
+		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(awsSecretKey, awsAccessKey)
 		if err != nil {
 			return
 		}
+		s3aClient = true
 		auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', 'awsSessionToken' = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
 	}
 	return
@@ -416,20 +423,20 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		defer dl.dropStagingTables([]string{stagingTableName})
 	}
 
+	// Get the credentials string to copy from the staging location to table
+	auth, s3aClient, err := dl.credentialsStr()
+	if err != nil {
+		return
+	}
+
 	// Getting the load folder where the load files are present
 	csvObjectLocation, err := dl.Uploader.GetSampleLoadFileLocation(tableName)
 	if err != nil {
 		return
 	}
 	loadFolder := warehouseutils.GetObjectFolder(dl.ObjectStorage, csvObjectLocation)
-	if dl.Uploader.UseRudderStorage() {
+	if s3aClient {
 		loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)
-	}
-
-	// Get the credentials string to copy from the staging location to table
-	credentialsStr, err := dl.credentialsStr()
-	if err != nil {
-		return
 	}
 
 	// Creating copy sql statement to copy from load folder to the staging table
@@ -441,7 +448,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			"PATTERN = '*.parquet' "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, credentialsStr)
+			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, auth)
 	} else {
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = CSV "+
@@ -449,7 +456,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"' ) "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, credentialsStr)
+			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, auth)
 	}
 
 	// Sanitising copy sql statement for logging
