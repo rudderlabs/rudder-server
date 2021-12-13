@@ -1355,6 +1355,8 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 	}
 
+	multitenant.SendPileUpStats()
+
 	if len(statusList) > 0 {
 		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
 

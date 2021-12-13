@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -34,6 +35,20 @@ func Init() {
 	go writerouterPileUpStatsEncodedToFile()
 }
 
+func SendPileUpStats() {
+	multitenantStat.routerJobCountMutex.RLock()
+	for customer, value := range multitenantStat.RouterInMemoryJobCounts["router"] {
+		for destType, count := range value {
+			countStat := stats.NewTaggedStat("pile_up_count", stats.CountType, stats.Tags{
+				"customer": customer,
+				"destType": destType,
+			})
+			countStat.Count(count)
+		}
+	}
+	multitenantStat.routerJobCountMutex.RUnlock()
+}
+
 func writerouterPileUpStatsEncodedToFile() {
 	for {
 
@@ -49,11 +64,14 @@ func writerouterPileUpStatsEncodedToFile() {
 		if err != nil {
 			panic(err)
 		}
+		if len(buf.Bytes()) != 0 {
+			time.Sleep(10 * time.Second)
+		}
 		_, err = file.Write(buf.Bytes())
 		if err != nil {
 			panic(err)
 		}
-		time.Sleep(60 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
 }
 
@@ -201,6 +219,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			continue
 		}
 		timeRequired := latencyMap[customerKey].Value() * float64(customerCountKey[destType])
+		//TODO : Include earliestJobMap into the algorithm if required or get away with earliestJobMap
 		if timeRequired < runningTimeCounter {
 			if latencyMap[customerKey].Value() != 0 {
 				pickUpCount := misc.MinInt(customerCountKey[destType], runningJobCount)
@@ -215,7 +234,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			// Migrated jobs fix in else condition
 		} else {
 			pickUpCount := int(runningTimeCounter / latencyMap[customerKey].Value())
-			customerPickUpCount[customerKey] += pickUpCount
+			customerPickUpCount[customerKey] += misc.MinInt(pickUpCount, runningJobCount)
 			runningJobCount = runningJobCount - pickUpCount
 			pkgLogger.Debugf(`[Router Pickup] Total Jobs picked exhausted the time limit after picking pileUp for %v with count %v`, destType, runningJobCount)
 			return customerPickUpCount
