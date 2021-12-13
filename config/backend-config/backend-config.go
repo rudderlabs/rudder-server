@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/etcdconfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -44,6 +45,8 @@ var (
 	LastRegulationSync                    string
 	maxRegulationsPerRequest              int
 	configEnvReplacementEnabled           bool
+	workSpaces                            string
+	watchChan                             chan map[string]string
 
 	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
@@ -351,10 +354,23 @@ func configUpdate(statConfigBackendError stats.RudderStats) {
 }
 
 func pollConfigUpdate() {
+	workSpaces, watchChan = etcdconfig.GetWorkspaces(context.Background())
+	pkgLogger.Infof("Workspaces being served at Startup: %s", workSpaces)
 	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
 	for {
+		select {
+		case workSpacesWatch := <-watchChan:
+			switch workSpacesWatch["type"] {
+			case "PUT":
+				workSpaces = workSpacesWatch["workSpaces"]
+				pkgLogger.Infof("Update in workspaces being served: %s", workSpaces)
+			case "DELETE":
+				workSpaces = ``
+				pkgLogger.Info("This pod no longer serves any tenants, proceed appropriately")
+			}
+		case <-time.After(time.Duration(pollInterval)):
+		}
 		configUpdate(statConfigBackendError)
-		time.Sleep(time.Duration(pollInterval))
 	}
 }
 
