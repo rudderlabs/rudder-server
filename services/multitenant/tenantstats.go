@@ -200,10 +200,10 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 		if customerCountKey[destType] == 0 {
 			continue
 		}
-		timeRequired := latencyMap[customerKey].Value() * float64(customerCountKey[destType]) * float64(routerTimeOut) / float64(time.Second)
+		timeRequired := latencyMap[customerKey].Value() * float64(customerCountKey[destType])
 		if timeRequired < runningTimeCounter {
 			if latencyMap[customerKey].Value() != 0 {
-				pickUpCount := misc.MinInt(int(timeRequired/latencyMap[customerKey].Value()), runningJobCount)
+				pickUpCount := misc.MinInt(customerCountKey[destType], runningJobCount)
 				customerPickUpCount[customerKey] += pickUpCount
 				runningTimeCounter = runningTimeCounter - timeRequired
 				runningJobCount = runningJobCount - pickUpCount
@@ -212,6 +212,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 					return customerPickUpCount
 				}
 			}
+			// Migrated jobs fix in else condition
 		} else {
 			pickUpCount := int(runningTimeCounter / latencyMap[customerKey].Value())
 			customerPickUpCount[customerKey] += pickUpCount
