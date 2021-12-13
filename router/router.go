@@ -1632,7 +1632,6 @@ func (rt *HandleT) readAndProcess() int {
 	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat, jobQueryBatchSize)
 
 	var customerCountStat stats.RudderStats
-	var totalCount int
 	for customer, count := range rt.customerCount {
 		customerCountStat = stats.NewTaggedStat("customer_pickup_count", stats.CountType, stats.Tags{
 			"customer": customer,
@@ -1640,11 +1639,7 @@ func (rt *HandleT) readAndProcess() int {
 			"destType": rt.destName,
 		})
 		customerCountStat.Count(count)
-		totalCount = totalCount + count
 		//note that this will give an aggregated count
-	}
-	if totalCount > jobQueryBatchSize+1000 {
-		rt.logger.Errorf("The total Query size for %v dest Type is more than expected buffer with count being %v", rt.destName, totalCount)
 	}
 	retryList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Failed.State}})
 	throttledList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Throttled.State}})

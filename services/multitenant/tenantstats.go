@@ -185,7 +185,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 				runningJobCount = runningJobCount - customerPickUpCount[customerKey]
 				//runningJobCount should be a number large enough to ensure fairness but small enough to not cause OOM Issues
 				if runningJobCount <= 0 || runningTimeCounter <= 0 {
-					pkgLogger.Infof(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize for %v with count %v`, destType, runningJobCount)
+					pkgLogger.Debugf(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize for %v with count %v`, destType, runningJobCount)
 					return customerPickUpCount
 				}
 			}
@@ -208,7 +208,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 				runningTimeCounter = runningTimeCounter - timeRequired
 				runningJobCount = runningJobCount - pickUpCount
 				if runningJobCount <= 0 || runningTimeCounter <= 0 {
-					pkgLogger.Infof(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize after picking pileUp for %v with count %v`, destType, runningJobCount)
+					pkgLogger.Debugf(`[Router Pickup] Total Jobs picked up crosses the maxJobQueryBatchSize after picking pileUp for %v with count %v`, destType, runningJobCount)
 					return customerPickUpCount
 				}
 			}
@@ -217,7 +217,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			pickUpCount := int(runningTimeCounter / latencyMap[customerKey].Value())
 			customerPickUpCount[customerKey] += pickUpCount
 			runningJobCount = runningJobCount - pickUpCount
-			pkgLogger.Infof(`[Router Pickup] Total Jobs picked exhausted the time limit after picking pileUp for %v with count %v`, destType, runningJobCount)
+			pkgLogger.Debugf(`[Router Pickup] Total Jobs picked exhausted the time limit after picking pileUp for %v with count %v`, destType, runningJobCount)
 			return customerPickUpCount
 		}
 	}
