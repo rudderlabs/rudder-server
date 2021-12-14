@@ -1276,6 +1276,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		//REPORTING - ROUTER - START
 		if rt.reporting != nil && rt.reportingEnabled {
 			workspaceID := rt.sourceIDWorkspaceMap[parameters.SourceID]
+			rt.logger.Infof("The workspace ID % v is for the source ID %v", workspaceID, parameters.SourceID)
 			_, ok := routerCustomerJobStatusCount[workspaceID]
 			if !ok {
 				routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
@@ -1349,6 +1350,17 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 	}
 	//REPORTING - ROUTER - END
+
+	for customer, value := range routerCustomerJobStatusCount {
+		for destType, count := range value {
+			countStat := stats.NewTaggedStat("removal_router_stat", stats.CountType, stats.Tags{
+				"customer": customer,
+				"destType": destType,
+			})
+			countStat.Count(count)
+		}
+	}
+
 	for customer := range routerCustomerJobStatusCount {
 		for destType := range routerCustomerJobStatusCount[customer] {
 			multitenant.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router")
@@ -1961,7 +1973,6 @@ func (rt *HandleT) backendConfigSubscriber() {
 			rt.sourceIDWorkspaceMap[source.ID] = source.WorkspaceID
 			if _, ok := rt.routerLatencyStat[workspaceID]; !ok {
 				rt.routerLatencyStat[workspaceID] = misc.NewMovingAverage()
-				rt.routerLatencyStat[workspaceID].Add(0)
 			}
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {

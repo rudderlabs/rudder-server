@@ -1388,6 +1388,15 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
+	for customer, value := range processorLoopStats["router"] {
+		for destType, count := range value {
+			countStat := stats.NewTaggedStat("addition_processor_stat", stats.CountType, stats.Tags{
+				"customer": customer,
+				"destType": destType,
+			})
+			countStat.Count(count)
+		}
+	}
 	multitenant.ReportProcLoopAddStats(processorLoopStats["router"], time.Since(start), "router")
 	multitenant.ReportProcLoopAddStats(processorLoopStats["batch_router"], time.Since(start), "batch_router")
 	proc.gatewayDB.CommitTransaction(txn)
