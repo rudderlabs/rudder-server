@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sts"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -90,7 +92,6 @@ var ObjectStorageMap = map[string]string{
 	"BQ":             "GCS",
 	"GCS_DATALAKE":   "GCS",
 	"AZURE_DATALAKE": "AZURE_BLOB",
-	"DELTALAKE":      "S3",
 }
 
 var SnowflakeStorageMap = map[string]string{
@@ -326,6 +327,27 @@ func GetObjectFolder(provider string, location string) (folder string) {
 		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gcs"})
 	case "AZURE_BLOB":
 		folder = GetAzureBlobLocationFolder(location)
+	}
+	return
+}
+
+// GetObjectFolderForDeltalake returns the folder path for the storage object based on the storage provider for delta lake
+// eg. For provider as S3: https://<bucket-name>.s3.amazonaws.com/<directory-name> --> s3://<bucket-name>/<directory-name>
+// eg. For provider as GCS: https://storage.cloud.google.com/<bucket-name>/<directory-name> --> gs://<bucket-name>/<directory-name>
+// eg. For provider as AZURE_BLOB: https://<storage-account-name>.blob.core.windows.net/<container-name>/<directory-name> --> wasbs://<container-name>@<storage-account-name>.blob.core.windows.net/<directory-name>
+func GetObjectFolderForDeltalake(provider string, location string) (folder string) {
+	switch provider {
+	case "S3":
+		folder = GetS3LocationFolder(location)
+	case "GCS":
+		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gs"})
+	case "AZURE_BLOB":
+		blobUrl, _ := url.Parse(location)
+		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
+		accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
+		blobLocation := fmt.Sprintf("wasbs://%s@%s.blob.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
+		lastPos := strings.LastIndex(blobLocation, "/")
+		folder = blobLocation[:lastPos]
 	}
 	return
 }
