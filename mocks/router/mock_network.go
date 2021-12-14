@@ -10,6 +10,7 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	integrations "github.com/rudderlabs/rudder-server/processor/integrations"
+	utils "github.com/rudderlabs/rudder-server/router/utils"
 )
 
 // MockNetHandleI is a mock of NetHandleI interface.
@@ -36,12 +37,11 @@ func (m *MockNetHandleI) EXPECT() *MockNetHandleIMockRecorder {
 }
 
 // SendPost mocks base method.
-func (m *MockNetHandleI) SendPost(arg0 context.Context, arg1 integrations.PostParametersT) (int, string) {
+func (m *MockNetHandleI) SendPost(arg0 context.Context, arg1 integrations.PostParametersT) *utils.SendPostResponse {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SendPost", arg0, arg1)
-	ret0, _ := ret[0].(int)
-	ret1, _ := ret[1].(string)
-	return ret0, ret1
+	ret0, _ := ret[0].(*utils.SendPostResponse)
+	return ret0
 }
 
 // SendPost indicates an expected call of SendPost.
