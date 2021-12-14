@@ -109,7 +109,7 @@ Router:
   failedKeysEnabled: false
   saveDestinationResponseOverride: true
   transformerProxy: false
-  responseTransformRetryCount: 15
+  transformerProxyRetryCount: 15
   MARKETO:
     noOfWorkers: 4
   throttler:
