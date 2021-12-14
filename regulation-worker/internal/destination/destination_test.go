@@ -60,7 +60,6 @@ func TestGetDestDetails(t *testing.T) {
 		},
 	}
 	testDestID := "1111"
-	testWorkspaceID := "1234"
 	expDest := model.Destination{
 		Config:        config,
 		DestinationID: "1111",
@@ -77,7 +76,7 @@ func TestGetDestDetails(t *testing.T) {
 		Dest: mockDestMiddleware,
 	}
 
-	destDetail, err := dest.GetDestDetails(testDestID, testWorkspaceID)
+	destDetail, err := dest.GetDestDetails(testDestID)
 
 	require.NoError(t, err, "expected no err")
 	require.Equal(t, expDest, destDetail, "actual dest detail different than expected")

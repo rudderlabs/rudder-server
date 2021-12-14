@@ -1303,3 +1303,12 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 	}
 	return "object"
 }
+
+func SleepCtx(ctx context.Context, delay time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	case <-time.After(delay):
+		return false
+	}
+}
