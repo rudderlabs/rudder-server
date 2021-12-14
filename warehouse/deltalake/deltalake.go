@@ -394,7 +394,7 @@ func (dl *HandleT) credentialsStr() (auth string, s3aClient bool, err error) {
 	awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
 	awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
 
-	if awsAccessKey == "" && awsSecretKey != "" {
+	if dl.ObjectStorage == "AWS" && awsAccessKey != "" && awsSecretKey != "" {
 		var tempAccessKeyId, tempSecretAccessKey, token string
 		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(awsSecretKey, awsAccessKey)
 		if err != nil {
@@ -434,7 +434,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	if err != nil {
 		return
 	}
-	loadFolder := warehouseutils.GetObjectFolder(dl.ObjectStorage, csvObjectLocation)
+	loadFolder := warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, csvObjectLocation)
 	if s3aClient {
 		loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)
 	}
