@@ -390,18 +390,36 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 
 // credentialsStr return authentication for AWS STS and SSE-C encryption
 // STS authentication is only supported with S3A client.
-func (dl *HandleT) credentialsStr() (auth string, s3aClient bool, err error) {
-	awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
-	awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
-
-	if dl.ObjectStorage == "AWS" && awsAccessKey != "" && awsSecretKey != "" {
-		var tempAccessKeyId, tempSecretAccessKey, token string
-		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(awsSecretKey, awsAccessKey)
-		if err != nil {
-			return
+func (dl *HandleT) credentialsStr() (auth string, err error) {
+	switch dl.ObjectStorage {
+	case "S3":
+		awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
+		awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
+		if awsAccessKey != "" && awsSecretKey != "" {
+			var tempAccessKeyId, tempSecretAccessKey, token string
+			tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(awsSecretKey, awsAccessKey)
+			if err != nil {
+				return
+			}
+			auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', 'awsSessionToken' = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
 		}
-		s3aClient = true
-		auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', 'awsSessionToken' = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
+	}
+	return
+}
+
+// getLoadFolder return the load folder where the load files are present
+func (dl *HandleT) getLoadFolder(tableName string) (loadFolder string, err error) {
+	csvObjectLocation, err := dl.Uploader.GetSampleLoadFileLocation(tableName)
+	if err != nil {
+		return
+	}
+	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, csvObjectLocation)
+	if dl.ObjectStorage == "S3" {
+		awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
+		awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
+		if awsAccessKey != "" && awsSecretKey != "" {
+			loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)
+		}
 	}
 	return
 }
@@ -424,19 +442,14 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	// Get the credentials string to copy from the staging location to table
-	auth, s3aClient, err := dl.credentialsStr()
+	auth, err := dl.credentialsStr()
 	if err != nil {
 		return
 	}
 
-	// Getting the load folder where the load files are present
-	csvObjectLocation, err := dl.Uploader.GetSampleLoadFileLocation(tableName)
+	loadFolder, err := dl.getLoadFolder(tableName)
 	if err != nil {
 		return
-	}
-	loadFolder := warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, csvObjectLocation)
-	if s3aClient {
-		loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)
 	}
 
 	// Creating copy sql statement to copy from load folder to the staging table
