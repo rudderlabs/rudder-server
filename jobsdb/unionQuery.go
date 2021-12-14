@@ -101,7 +101,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer s
 		selectQuery+
 			`FROM %[1]s AS jobs `+
 			`LEFT JOIN %[2]s AS job_status ON jobs.job_id=job_status.job_id `+
-			`WHERE job_status.job_id is NULL AND customer='%[3]s'`,
+			`WHERE job_status.job_id is NULL AND jobs.customer='%[3]s'`,
 		ds.JobTable, ds.JobStatusTable, customer)
 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
@@ -201,6 +201,7 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionDS(ds dataSetT, customerCount m
 	var rows *sql.Rows
 	var err error
 
+	mj.logger.Info(queryString)
 	rows, err = mj.dbHandle.Query(queryString)
 	mj.assertError(err)
 
@@ -231,6 +232,7 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionDS(ds dataSetT, customerCount m
 		mj.markClearEmptyResult(ds, customer, []string{NotProcessed.State}, params.CustomValFilters, params.ParameterFilters, cacheValue(cacheUpdate), &_willTryToSet)
 	}
 
+	mj.printNumJobsByCustomer(jobList)
 	return jobList
 }
 
@@ -302,6 +304,7 @@ func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map
 	var err error
 
 	stmt, err := mj.dbHandle.Prepare(queryString)
+	mj.logger.Info(queryString)
 	mj.assertError(err)
 	defer stmt.Close()
 
@@ -337,6 +340,7 @@ func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map
 		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters, cacheValue(cacheUpdate), &_willTryToSet)
 	}
 
+	mj.printNumJobsByCustomer(jobList)
 	return jobList
 }
 
@@ -408,8 +412,24 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
                                                AS job_latest_state
                                             WHERE jobs.job_id=job_latest_state.job_id
                                              %[4]s %[5]s
-                                             AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[6]s`,
-		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
+                                             AND job_latest_state.retry_time < $1 AND jobs.customer='%[7]s' ORDER BY jobs.job_id %[6]s`,
+		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, customer)
 
 	return sqlStatement
+}
+
+func (mj *MultiTenantHandleT) printNumJobsByCustomer(jobs []*JobT) {
+	if len(jobs) == 0 {
+		mj.logger.Info("No Jobs found for this query")
+	}
+	customerJobCountMap := make(map[string]int)
+	for _, job := range jobs {
+		if _, ok := customerJobCountMap[job.Customer]; !ok {
+			customerJobCountMap[job.Customer] = 0
+		}
+		customerJobCountMap[job.Customer] += 1
+	}
+	for customer, count := range customerJobCountMap {
+		mj.logger.Info(customer, `: `, count)
+	}
 }
