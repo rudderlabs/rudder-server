@@ -2,6 +2,7 @@ package types
 
 import (
 	"encoding/json"
+	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -37,6 +38,7 @@ type JobMetadataT struct {
 	FirstAttemptedAt string       `json:"firstAttemptedAt"`
 	TransformAt      string       `json:"transformAt"`
 	JobT             *jobsdb.JobT `json:"jobsT"`
+	PickedAtTime     time.Time    `json:"pickedAtTime"`
 }
 
 //TransformMessageT is used to pass message to the transformer workers

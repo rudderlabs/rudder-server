@@ -148,8 +148,9 @@ type JobParametersT struct {
 }
 
 type workerMessageT struct {
-	job             *jobsdb.JobT
-	throttledAtTime time.Time
+	job                *jobsdb.JobT
+	throttledAtTime    time.Time
+	workerAssignedTime time.Time
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -384,7 +385,9 @@ func (worker *workerT) workerProcess() {
 				CreatedAt:        job.CreatedAt.Format(misc.RFC3339Milli),
 				FirstAttemptedAt: firstAttemptedAt,
 				TransformAt:      parameters.TransformAt,
-				JobT:             job}
+				JobT:             job,
+				PickedAtTime:     message.workerAssignedTime,
+			}
 
 			worker.rt.configSubscriberLock.RLock()
 			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
@@ -567,6 +570,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				diagnosisStartTime := time.Now()
 				sourceID := destinationJob.JobMetadataArray[0].SourceID
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
+				pickedAtTime := destinationJob.JobMetadataArray[0].PickedAtTime
 
 				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
 				transformAt := destinationJob.JobMetadataArray[0].TransformAt
@@ -586,7 +590,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				// TODO: remove trackStuckDelivery once we verify it is not needed,
 				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := worker.trackStuckDelivery()
-				if worker.rt.customDestinationManager != nil {
+				if time.Since(pickedAtTime) > worker.rt.routerTimeout {
+					respStatusCode, respBodyTemp = 429, fmt.Sprintf(`429 Jobs took more time than expected.Will be retried`)
+				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
 							panic(fmt.Errorf("different sources are grouped together"))
@@ -1785,7 +1791,7 @@ func (rt *HandleT) readAndProcess() int {
 
 	//Send the jobs to the jobQ
 	for _, wrkJob := range toProcess {
-		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime}
+		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime, workerAssignedTime: time.Now()}
 	}
 
 	if len(toProcess) == 0 {
