@@ -56,7 +56,7 @@ func writerouterPileUpStatsEncodedToFile() {
 		if err != nil {
 			panic(err)
 		}
-		path := tmpDirPath + "router_pile_up_stat_persist.txt"
+		path := tmpDirPath + "/router_pile_up_stat_persist.txt"
 		file, _ := os.Create(path)
 		buf := new(bytes.Buffer)
 		encoder := gob.NewEncoder(buf)
@@ -71,7 +71,7 @@ func writerouterPileUpStatsEncodedToFile() {
 		if err != nil {
 			panic(err)
 		}
-		time.Sleep(10 * time.Second)
+		time.Sleep(10 * time.Second) // TODO : Make these sleep timings configurable
 	}
 }
 
