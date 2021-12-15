@@ -400,7 +400,7 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 }
 
 // Setup backend config
-func Setup(pollRegulations bool, configEnvHandler types.ConfigEnvI) {
+func Setup(configEnvHandler types.ConfigEnvI) {
 	if isMultiWorkspace {
 		backendConfig = new(MultiWorkspaceConfig)
 	} else {
