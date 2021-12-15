@@ -58,6 +58,7 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 			fileName = manager.Config.Prefix + "/" + fileName
 		}
 	}
+
 	uploadInput := &awsS3Manager.UploadInput{
 		ACL:    aws.String("bucket-owner-full-control"),
 		Bucket: aws.String(manager.Config.Bucket),
@@ -67,20 +68,22 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 	if manager.Config.EnableSSE {
 		uploadInput.ServerSideEncryption = aws.String("AES256")
 	}
+
 	output, err := s3manager.Upload(uploadInput)
 	if err != nil {
 		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {
-			err = errors.New(fmt.Sprintf(`Bucket '%s' not found.`, manager.Config.Bucket))
+			err = fmt.Errorf(fmt.Sprintf(`Bucket '%s' not found.`, manager.Config.Bucket))
 		}
 		return UploadOutput{}, err
 	}
+
 	return UploadOutput{Location: output.Location, ObjectName: fileName}, err
 }
 
 func (manager *S3Manager) Download(output *os.File, key string) error {
 	sess, err := manager.getSession()
 	if err != nil {
-		return fmt.Errorf(`Error starting S3 session: %v`, err)
+		return fmt.Errorf(`error starting S3 session: %v`, err)
 	}
 
 	downloader := s3manager.NewDownloader(sess)
@@ -90,13 +93,19 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 			Bucket: aws.String(manager.Config.Bucket),
 			Key:    aws.String(key),
 		})
-	return err
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == ErrKeyNotFound.Error() {
+			return ErrKeyNotFound
+		}
+		return err
+	}
+	return nil
 }
 
 func (manager *S3Manager) DeleteObjects(keys []string) (err error) {
 	sess, err := manager.getSession()
 	if err != nil {
-		return fmt.Errorf(`Error starting S3 session: %v`, err)
+		return fmt.Errorf(`error starting S3 session: %v`, err)
 	}
 
 	var objects []*s3.ObjectIdentifier
@@ -191,7 +200,12 @@ func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, er
 	return strings.TrimPrefix(path, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 }
 
+//IMPT NOTE: `ListFilesWithPrefix` support Continuation Token. So, if you want same set of files (says 1st 1000 again)
+//then create a new S3Manager & not use the existing one. Since, using the existing one will by default return next 1000 files.
 func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	if !manager.Config.IsTruncated {
+		return
+	}
 	fileObjects = make([]*FileObject, 0)
 
 	getRegionSession := session.Must(session.NewSession())
@@ -218,18 +232,24 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fi
 
 	// Create S3 service client
 	svc := s3.New(sess)
-
-	// Get the list of items
-	resp, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{
+	listObjectsV2Input := s3.ListObjectsV2Input{
 		Bucket:  aws.String(manager.Config.Bucket),
 		Prefix:  aws.String(prefix),
 		MaxKeys: &maxItems,
 		// Delimiter: aws.String("/"),
-	})
+	}
+	//startAfter is to resume a paused task.
+	if manager.Config.StartAfter != "" {
+		listObjectsV2Input.StartAfter = aws.String(manager.Config.StartAfter)
+	}
+	listObjectsV2Input.ContinuationToken = manager.Config.ContinuationToken
+	// Get the list of items
+	resp, err := svc.ListObjectsV2(&listObjectsV2Input)
 	if err != nil {
 		return
 	}
-
+	manager.Config.IsTruncated = *resp.IsTruncated
+	manager.Config.ContinuationToken = resp.NextContinuationToken
 	for _, item := range resp.Contents {
 		fileObjects = append(fileObjects, &FileObject{*item.Key, *item.LastModified})
 	}
@@ -242,7 +262,8 @@ type S3Manager struct {
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {
-	var bucketName, prefix, accessKeyID, accessKey string
+	var bucketName, prefix, accessKeyID, accessKey, startAfter string
+	var continuationToken *string
 	var enableSSE, ok bool
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
@@ -261,20 +282,26 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 			enableSSE = false
 		}
 	}
-	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
+	if config["startAfter"] != nil {
+		startAfter = config["startAfter"].(string)
+	}
 
-	return &S3Config{Bucket: bucketName, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey, EnableSSE: enableSSE, RegionHint: regionHint}
+	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
+	return &S3Config{Bucket: bucketName, Prefix: prefix, AccessKeyID: accessKeyID, AccessKey: accessKey, EnableSSE: enableSSE, RegionHint: regionHint, ContinuationToken: continuationToken, StartAfter: startAfter, IsTruncated: true}
 }
 
 type S3Config struct {
-	Bucket      string
-	Prefix      string
-	AccessKeyID string
-	AccessKey   string
-	EnableSSE   bool
-	RegionHint  string
+	Bucket            string
+	Prefix            string
+	AccessKeyID       string
+	AccessKey         string
+	EnableSSE         bool
+	RegionHint        string
+	ContinuationToken *string
+	StartAfter        string
+	IsTruncated       bool
 }
 
-func (manager *S3Manager) GetConfiguredPrefix() (string) {
+func (manager *S3Manager) GetConfiguredPrefix() string {
 	return manager.Config.Prefix
 }
