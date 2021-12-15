@@ -2109,11 +2109,11 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 		// destErrDetailed := destErrOutput.Output
 		// Check the category
 		// Trigger the refresh endpoint/disable endpoint
+		rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
 		switch destErrOutput.AuthErrorCategory {
 		case oauth.DISABLE_DEST:
-			return rt.ExecDisableDestination(destinationJob, workspaceId, trRespBody)
+			return rt.ExecDisableDestination(destinationJob, workspaceId, trRespBody, rudderAccountId)
 		case oauth.REFRESH_TOKEN:
-			rudderAccountId := router_utils.GetRudderAccountId(&destinationJob.Destination)
 			var refSecret *oauth.AuthResponse
 			refTokenParams := &oauth.RefreshTokenParams{
 				AccessToken:     params.accessToken,
@@ -2130,7 +2130,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 				// Even trying to refresh the token also doesn't work here. Hence this would be more ideal to Abort Events
 				// As well as to disable destination as well.
 				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
-				disableStCd, _ := rt.ExecDisableDestination(destinationJob, workspaceId, trRespBody)
+				disableStCd, _ := rt.ExecDisableDestination(destinationJob, workspaceId, trRespBody, rudderAccountId)
 				stats.NewTaggedStat(oauth.INVALID_REFRESH_TOKEN_GRANT, stats.CountType, stats.Tags{
 					"destinationId": destinationJob.Destination.ID,
 					"worspaceId":    refTokenParams.WorkspaceId,
@@ -2152,13 +2152,13 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 	return trRespStatusCode, trRespBody
 }
 
-func (rt *HandleT) ExecDisableDestination(destinationJob types.DestinationJobT, workspaceId string, destResBody string) (int, string) {
+func (rt *HandleT) ExecDisableDestination(destinationJob types.DestinationJobT, workspaceId string, destResBody string, rudderAccountId string) (int, string) {
 	disableDestStatTags := stats.Tags{
 		"id":          destinationJob.Destination.ID,
 		"workspaceId": workspaceId,
 		"success":     "true",
 	}
-	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destinationJob.Destination, workspaceId)
+	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destinationJob.Destination, workspaceId, rudderAccountId)
 	if errCatStatusCode != http.StatusOK {
 		// Error while disabling a destination
 		// High-Priority notification to rudderstack needs to be sent

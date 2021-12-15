@@ -36,18 +36,18 @@ func (m *MockAuthorizer) EXPECT() *MockAuthorizerMockRecorder {
 }
 
 // DisableDestination mocks base method.
-func (m *MockAuthorizer) DisableDestination(arg0 backendconfig.DestinationT, arg1 string) (int, string) {
+func (m *MockAuthorizer) DisableDestination(arg0 backendconfig.DestinationT, arg1, arg2 string) (int, string) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DisableDestination", arg0, arg1)
+	ret := m.ctrl.Call(m, "DisableDestination", arg0, arg1, arg2)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(string)
 	return ret0, ret1
 }
 
 // DisableDestination indicates an expected call of DisableDestination.
-func (mr *MockAuthorizerMockRecorder) DisableDestination(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockAuthorizerMockRecorder) DisableDestination(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DisableDestination", reflect.TypeOf((*MockAuthorizer)(nil).DisableDestination), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DisableDestination", reflect.TypeOf((*MockAuthorizer)(nil).DisableDestination), arg0, arg1, arg2)
 }
 
 // FetchToken mocks base method.

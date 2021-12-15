@@ -69,7 +69,7 @@ type OAuthErrResHandler struct {
 
 type Authorizer interface {
 	Setup()
-	DisableDestination(destination backendconfig.DestinationT, workspaceId string) (statusCode int, resBody string)
+	DisableDestination(destination backendconfig.DestinationT, workspaceId string, rudderAccountId string) (statusCode int, resBody string)
 	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse)
 	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse)
 }
@@ -340,7 +340,7 @@ func (refStats *OAuthStats) SendCountStat() {
 	}).Increment()
 }
 
-func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backendconfig.DestinationT, workspaceId string) (statusCode int, respBody string) {
+func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backendconfig.DestinationT, workspaceId string, rudderAccountId string) (statusCode int, respBody string) {
 	authErrHandlerTimeStart := time.Now()
 	destinationId := destination.ID
 	disableDestMutex := authErrHandler.getKeyMutex(authErrHandler.destLockMap, destinationId)
@@ -416,6 +416,17 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 	disableDestStats.statName = "disable_destination_success"
 	disableDestStats.errorMessage = ""
 	disableDestStats.SendCountStat()
+
+	// After a successfully disabling the destination, need to remove existing accessToken(from in-memory cache)
+	// This is being done to obtain new token after re-enabling disabled destination
+	disableDestMutex.RLock()
+	if _, isAccountPresent := authErrHandler.destAuthInfoMap[rudderAccountId]; isAccountPresent {
+		accountMutex := authErrHandler.getKeyMutex(authErrHandler.accountLockMap, rudderAccountId)
+		accountMutex.Lock()
+		delete(authErrHandler.destAuthInfoMap, rudderAccountId)
+		accountMutex.Unlock()
+	}
+	disableDestMutex.Unlock()
 
 	return statusCode, fmt.Sprintf(`{response: {isDisabled: %v, activeRequest: %v}`, !disableDestRes.Enabled, false)
 }
