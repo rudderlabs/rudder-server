@@ -419,14 +419,10 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination backend
 
 	// After a successfully disabling the destination, need to remove existing accessToken(from in-memory cache)
 	// This is being done to obtain new token after re-enabling disabled destination
-	disableDestMutex.RLock()
-	if _, isAccountPresent := authErrHandler.destAuthInfoMap[rudderAccountId]; isAccountPresent {
-		accountMutex := authErrHandler.getKeyMutex(authErrHandler.accountLockMap, rudderAccountId)
-		accountMutex.Lock()
-		delete(authErrHandler.destAuthInfoMap, rudderAccountId)
-		accountMutex.Unlock()
-	}
-	disableDestMutex.Unlock()
+	accountMutex := authErrHandler.getKeyMutex(authErrHandler.accountLockMap, rudderAccountId)
+	accountMutex.Lock()
+	defer accountMutex.Unlock()
+	delete(authErrHandler.destAuthInfoMap, rudderAccountId)
 
 	return statusCode, fmt.Sprintf(`{response: {isDisabled: %v, activeRequest: %v}`, !disableDestRes.Enabled, false)
 }
