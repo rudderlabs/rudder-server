@@ -1175,11 +1175,11 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 		defer worker.abortedUserMutex.Unlock()
 		if count, ok := worker.abortedUserIDMap[userID]; ok {
 			if count >= rt.allowAbortedUserJobsCountForProcessing {
-				rt.logger.Debugf("[%v Router] :: allowed jobs count(%d) >= allowAbortedUserJobsCountForProcessing(%d) for userID %s. returing nil worker", rt.destName, count, rt.allowAbortedUserJobsCountForProcessing, userID)
+				rt.logger.Debugf("[%v Router] :: allowed jobs count(%d) >= allowAbortedUserJobsCountForProcessing(%d) for userID %s. returning nil worker", rt.destName, count, rt.allowAbortedUserJobsCountForProcessing, userID)
 				return nil
 			}
 
-			rt.logger.Debugf("[%v Router] :: userID found in abortedUserIDtoJobMap: %s. Allowing jobID: %d. returing worker", rt.destName, userID, job.JobID)
+			rt.logger.Debugf("[%v Router] :: userID found in abortedUserIDtoJobMap: %s. Allowing jobID: %d. returning worker", rt.destName, userID, job.JobID)
 			// incrementing abortedUserIDMap after all checks of backoff, throttle etc are made
 			// We don't need lock inside this defer func, because we already hold the lock above and this
 			// defer is called before defer Unlock
@@ -1582,7 +1582,7 @@ func (rt *HandleT) collectMetrics(ctx context.Context) {
 //   iii> Worker Process
 //   iv>  responseQ
 //   v>   statusInsertLoop Buffer (enough jobs are buffered before updating status)
-// Now, when the failed_job_id eventually suceeds in the Worker Process (iii above),
+// Now, when the failed_job_id eventually succeeds in the Worker Process (iii above),
 // there may be pending jobs in all the other data-structures. For example, there
 //may be jobs in responseQ(iv) and statusInsertLoop(v) buffer - all those jobs will
 //be in Waiting state. Similarly, there may be other jobs in requestQ and generatorLoop
@@ -1591,7 +1591,7 @@ func (rt *HandleT) collectMetrics(ctx context.Context) {
 //will pass through before the jobs in responseQ/insertStatus buffer. That will violate the
 //ordering of job.
 //We fix this by removing an entry from the failedJobIDMap structure only when we are guaranteed
-//that all the other structures are empty. We do the following to ahieve this
+//that all the other structures are empty. We do the following to achieve this
 // A. In generatorLoop, we do not let any job pass through except failed_job_id. That ensures requestQ is empty
 // B. We wait for the failed_job_id status (when succeeded) to be sync'd to disk. This along with A ensures
 //    that responseQ and statusInsertLoop Buffer are empty for that userID.
@@ -1686,7 +1686,7 @@ func (rt *HandleT) readAndProcess() int {
 		rt.logger.Debugf("[%v Router] ===== len to be processed==== : %v", rt.destName, len(combinedList))
 	}
 
-	//List of jobs wich can be processed mapped per channel
+	//List of jobs which can be processed mapped per channel
 	type workerJobT struct {
 		worker *workerT
 		job    *jobsdb.JobT
@@ -2117,7 +2117,7 @@ func (rt *HandleT) setupCustomerCount() {
 	// for now not distinguishing un/processed jobs, just treating them equal
 
 	//rt.customerCount = rt.jobsDB.GetCustomerCounts(jobQueryBatchSize)
-	//the above funcitonality can be done during crashRecovery
+	//the above functionality can be done during crashRecovery
 	//for now let's just get all the customers this pod serves and give equal jobs to them
 	//TODO!!!
 	rt.configSubscriberLock.RLock()
