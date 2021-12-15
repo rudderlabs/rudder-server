@@ -111,6 +111,7 @@ type HandleT struct {
 	transformerFeatures            json.RawMessage
 	readLoopSleep                  time.Duration
 	maxLoopSleep                   time.Duration
+	processorLoopStats             map[string]map[string]map[string]int // TODO : Remove this
 
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
@@ -287,6 +288,10 @@ func (proc *HandleT) Status() interface{} {
 func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI) {
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
+	//TODO : Remove this
+	proc.processorLoopStats = make(map[string]map[string]map[string]int)
+	proc.processorLoopStats["router"] = make(map[string]map[string]int)
+	proc.processorLoopStats["batch_router"] = make(map[string]map[string]int)
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
@@ -1459,8 +1464,10 @@ func (proc *HandleT) Store(in storeMessage) {
 			_, ok := processorLoopStats["router"][destJobs[i].Customer]
 			if !ok {
 				processorLoopStats["router"][destJobs[i].Customer] = make(map[string]int)
+				proc.processorLoopStats["router"][destJobs[i].Customer] = make(map[string]int)
 			}
 			processorLoopStats["router"][destJobs[i].Customer][destJobs[i].CustomVal] += 1
+			proc.processorLoopStats["router"][destJobs[i].Customer][destJobs[i].CustomVal] += 1
 			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
 		}
 
@@ -1481,9 +1488,11 @@ func (proc *HandleT) Store(in storeMessage) {
 			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].Customer]
 			if !ok {
 				processorLoopStats["batch_router"][batchDestJobs[i].Customer] = make(map[string]int)
+				proc.processorLoopStats["batch_router"][batchDestJobs[i].Customer] = make(map[string]int)
 			}
 			destination_id := gjson.Get(string(batchDestJobs[i].Parameters), "destination_id").String()
 			processorLoopStats["batch_router"][batchDestJobs[i].Customer][destination_id] += 1
+			proc.processorLoopStats["batch_router"][batchDestJobs[i].Customer][destination_id] += 1
 			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
 		}
 
@@ -1529,13 +1538,13 @@ func (proc *HandleT) Store(in storeMessage) {
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
-	for customer, value := range processorLoopStats["router"] {
+	for customer, value := range proc.processorLoopStats["router"] {
 		for destType, count := range value {
-			countStat := stats.NewTaggedStat("addition_processor_stat", stats.CountType, stats.Tags{
+			countStat := stats.NewTaggedStat("addition_processor_stat", stats.GaugeType, stats.Tags{
 				"customer": customer,
 				"destType": destType,
 			})
-			countStat.Count(count)
+			countStat.Gauge(count)
 		}
 	}
 	multitenant.ReportProcLoopAddStats(processorLoopStats["router"], time.Since(beforeStoreStatus), "router")

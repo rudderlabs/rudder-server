@@ -113,6 +113,7 @@ type HandleT struct {
 	saveDestinationResponseOverride        bool
 	routerLatencyStat                      map[string]misc.MovingAverage
 	sourceIDWorkspaceMap                   map[string]string
+	routerCustomerJobStatusCount           map[string]map[string]int // TODO : Remove This
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -1304,6 +1305,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			workspaceID := rt.sourceIDWorkspaceMap[parameters.SourceID]
 			_, ok := routerCustomerJobStatusCount[workspaceID]
 			if !ok {
+				rt.routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
 				routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
 			}
 			eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
@@ -1329,6 +1331,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			}
 			if resp.status.JobState != jobsdb.Failed.State {
 				if resp.status.JobState == jobsdb.Succeeded.State || resp.status.JobState == jobsdb.Aborted.State {
+					rt.routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
 					routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
 					sd.Count++
 				}
@@ -1383,13 +1386,13 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 	//REPORTING - ROUTER - END
 
-	for customer, value := range routerCustomerJobStatusCount {
+	for customer, value := range rt.routerCustomerJobStatusCount {
 		for destType, count := range value {
-			countStat := stats.NewTaggedStat("removal_router_stat", stats.CountType, stats.Tags{
+			countStat := stats.NewTaggedStat("removal_router_stat", stats.GaugeType, stats.Tags{
 				"customer": customer,
 				"destType": destType,
 			})
-			countStat.Count(count)
+			countStat.Gauge(count)
 		}
 	}
 
@@ -1853,6 +1856,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.statusLoopResumeChannel = make(chan bool)
 	rt.reporting = reporting
 	rt.routerLatencyStat = make(map[string]misc.MovingAverage)
+	//TODO : Remove this
+	rt.routerCustomerJobStatusCount = make(map[string]map[string]int)
 
 	config.RegisterBoolConfigVariable(utilTypes.DEFAULT_REPORTING_ENABLED, &rt.reportingEnabled, false, "Reporting.enabled")
 	destName := destinationDefinition.Name
