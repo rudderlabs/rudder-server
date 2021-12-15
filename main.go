@@ -262,7 +262,7 @@ func Run(ctx context.Context) {
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 
-	if enableSuppressUserFeature && application.Features().SuppressUser == nil {
+	if !enableSuppressUserFeature || application.Features().SuppressUser == nil {
 			pkgLogger.Info("Suppress User feature is enterprise only. Unable to poll regulations.")
 	}
 
