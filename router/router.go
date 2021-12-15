@@ -1306,7 +1306,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			if !ok {
 				routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
 			}
-			key := fmt.Sprintf("%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode)
 			eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
 			eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
 			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
@@ -1689,11 +1688,10 @@ func (rt *HandleT) readAndProcess() int {
 		//note that this will give an aggregated count
 	}
 	retryList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Failed.State}})
-	throttledList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Throttled.State}})
 	waitList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State}})
 	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}})
 
-	combinedList := append(waitList, append(unprocessedList, append(throttledList, retryList...)...)...)
+	combinedList := append(waitList, append(unprocessedList, retryList...)...)
 	rt.earliestJobMap = make(map[string]time.Time)
 
 	if len(combinedList) == 0 {

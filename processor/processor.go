@@ -1075,12 +1075,6 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) transformationMessage {
 	start := time.Now()
 	defer proc.processJobsTime.Since(start)
-	processorLoopStats := make(map[string]map[string]map[string]int)
-	proc.statNumRequests.Count(len(jobList))
-	processorLoopStats["router"] = make(map[string]map[string]int)
-	processorLoopStats["batch_router"] = make(map[string]map[string]int)
-	var destJobs []*jobsdb.JobT
-	var batchDestJobs []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
 	var groupedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
@@ -1400,25 +1394,7 @@ func (proc *HandleT) transformations(in transformationMessage) storeMessage {
 	}()
 
 	for o := range chOut {
-		for i := range o.destJobs {
-			totalPayloadRouterBytes += len(o.destJobs[i].EventPayload)
-			_, ok := processorLoopStats["router"][o.destJobs[i].Customer]
-			if !ok {
-				processorLoopStats["router"][o.destJobs[i].Customer] = make(map[string]int)
-			}
-			processorLoopStats["router"][o.destJobs[i].Customer][o.destJobs[i].CustomVal] += 1
-		}
 		destJobs = append(destJobs, o.destJobs...)
-
-		for i := range o.batchDestJobs {
-			totalPayloadBatchBytes += len(o.batchDestJobs[i].EventPayload)
-			_, ok := processorLoopStats["batch_router"][o.batchDestJobs[i].Customer]
-			if !ok {
-				processorLoopStats["batch_router"][o.batchDestJobs[i].Customer] = make(map[string]int)
-			}
-			destination_id := gjson.Get(string(o.batchDestJobs[i].Parameters), "destination_id").String()
-			processorLoopStats["batch_router"][o.batchDestJobs[i].Customer][destination_id] += 1
-		}
 		batchDestJobs = append(batchDestJobs, o.batchDestJobs...)
 
 		in.reportMetrics = append(in.reportMetrics, o.reportMetrics...)
@@ -1464,6 +1440,9 @@ type storeMessage struct {
 
 func (proc *HandleT) Store(in storeMessage) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
+	processorLoopStats := make(map[string]map[string]map[string]int)
+	processorLoopStats["router"] = make(map[string]map[string]int)
+	processorLoopStats["batch_router"] = make(map[string]map[string]int)
 
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
@@ -1477,6 +1456,11 @@ func (proc *HandleT) Store(in storeMessage) {
 		}
 		totalPayloadRouterBytes := 0
 		for i := range destJobs {
+			_, ok := processorLoopStats["router"][destJobs[i].Customer]
+			if !ok {
+				processorLoopStats["router"][destJobs[i].Customer] = make(map[string]int)
+			}
+			processorLoopStats["router"][destJobs[i].Customer][destJobs[i].CustomVal] += 1
 			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
 		}
 
@@ -1494,6 +1478,12 @@ func (proc *HandleT) Store(in storeMessage) {
 		}
 		totalPayloadBatchBytes := 0
 		for i := range batchDestJobs {
+			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].Customer]
+			if !ok {
+				processorLoopStats["batch_router"][batchDestJobs[i].Customer] = make(map[string]int)
+			}
+			destination_id := gjson.Get(string(batchDestJobs[i].Parameters), "destination_id").String()
+			processorLoopStats["batch_router"][batchDestJobs[i].Customer][destination_id] += 1
 			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
 		}
 
@@ -1548,8 +1538,8 @@ func (proc *HandleT) Store(in storeMessage) {
 			countStat.Count(count)
 		}
 	}
-	multitenant.ReportProcLoopAddStats(processorLoopStats["router"], time.Since(start), "router")
-	multitenant.ReportProcLoopAddStats(processorLoopStats["batch_router"], time.Since(start), "batch_router")
+	multitenant.ReportProcLoopAddStats(processorLoopStats["router"], time.Since(beforeStoreStatus), "router")
+	multitenant.ReportProcLoopAddStats(processorLoopStats["batch_router"], time.Since(beforeStoreStatus), "batch_router")
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.statDBW.Since(beforeStoreStatus)
