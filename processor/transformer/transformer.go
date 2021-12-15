@@ -23,6 +23,7 @@ import (
 
 const (
 	UserTransformerStage        = "user_transformer"
+	EventFilterStage            = "event_filter"
 	DestTransformerStage        = "dest_transformer"
 	TrackingPlanValidationStage = "trackingPlan_validation"
 )

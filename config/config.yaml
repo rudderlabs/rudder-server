@@ -45,6 +45,11 @@ Debugger:
   maxRetry: 3
   batchTimeout: 2s
   retrySleep: 100ms
+LiveEvent:
+  cache:
+    size: 3
+    ttl: 20d
+    clearFreq: 5s
 SourceDebugger:
   disableEventUploads: false
 DestinationDebugger:
@@ -78,6 +83,8 @@ JobsDB:
     batch_rt:
       enabled: false
       failedOnly: false
+  gw:
+    enableWriterQueue: false
 Router:
   jobQueryBatchSize: 10000
   updateStatusBatchSize: 1000
@@ -102,6 +109,7 @@ Router:
   failedKeysEnabled: false
   saveDestinationResponseOverride: false
   responseTransform: false
+  responseTransformRetryCount: 15
   MARKETO:
     noOfWorkers: 4
   throttler:
@@ -174,6 +182,7 @@ Processor:
   errDBReadBatchSize: 1000
   noOfErrStashWorkers: 2
   maxFailedCountForErrJob: 3
+  enableEventCount: true
   Stats:
     captureEventName: false
 Dedup:

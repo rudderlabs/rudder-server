@@ -3,6 +3,7 @@ package backendconfig
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -307,10 +308,11 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) makeHTTPRequest(url string) ([
 		return []byte{}, 400, err
 	}
 
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = IoUtil.ReadAll(resp.Body)
-		defer resp.Body.Close()
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return []byte{}, 400, err
 	}
 
 	return respBody, resp.StatusCode, nil

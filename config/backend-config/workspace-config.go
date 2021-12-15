@@ -272,10 +272,11 @@ func (workspaceConfig *WorkspaceConfig) makeHTTPRequest(url string) ([]byte, int
 		return []byte{}, 400, err
 	}
 
-	var respBody []byte
-	if resp != nil && resp.Body != nil {
-		respBody, _ = IoUtil.ReadAll(resp.Body)
-		defer resp.Body.Close()
+	defer resp.Body.Close()
+
+	respBody, err := IoUtil.ReadAll(resp.Body)
+	if err != nil {
+		return []byte{}, 400, err
 	}
 
 	return respBody, resp.StatusCode, nil

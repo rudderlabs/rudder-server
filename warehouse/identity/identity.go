@@ -355,7 +355,7 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 			pkgLogger.Errorf("IDR: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
 			return nil, err
 		}
-		dirName := "/rudder-warehouse-load-uploads-tmp/"
+		dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseLoadUploadsTmp)
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
 			pkgLogger.Errorf("IDR: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
@@ -458,7 +458,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 	}
 
 	// START: Add new merge rules to local pg table and also to file
-	mergeRulesFileGzWriter, mergeRulesFilePath := idr.createTempGzFile(`/rudder-identity-merge-rules-tmp/`)
+	mergeRulesFileGzWriter, mergeRulesFilePath := idr.createTempGzFile(fmt.Sprintf(`/%s/`, misc.RudderIdentityMergeRulesTmp))
 	defer misc.RemoveFilePaths(mergeRulesFilePath)
 
 	ruleIDs, err := idr.addRules(txn, fileNames, &mergeRulesFileGzWriter)
@@ -471,7 +471,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 	// END: Add new merge rules to local pg table and also to file
 
 	// START: Add new/changed identity mappings to local pg table and also to file
-	mappingsFileGzWriter, mappingsFilePath := idr.createTempGzFile(`/rudder-identity-mappings-tmp/`)
+	mappingsFileGzWriter, mappingsFilePath := idr.createTempGzFile(fmt.Sprintf(`/%s/`, misc.RudderIdentityMappingsTmp))
 	defer misc.RemoveFilePaths(mappingsFilePath)
 	var totalMappingRecords int
 	for idx, ruleID := range ruleIDs {
@@ -532,7 +532,7 @@ func (idr *HandleT) Resolve() (err error) {
 func (idr *HandleT) ResolveHistoricIdentities() (err error) {
 	var loadFileNames []string
 	defer misc.RemoveFilePaths(loadFileNames...)
-	gzWriter, path := idr.createTempGzFile(`/rudder-identity-merge-rules-tmp/`)
+	gzWriter, path := idr.createTempGzFile(fmt.Sprintf(`/%s/`, misc.RudderIdentityMergeRulesTmp))
 	err = idr.WarehouseManager.DownloadIdentityRules(&gzWriter)
 	gzWriter.CloseGZ()
 	if err != nil {
