@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
@@ -28,7 +29,6 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	defer cancel()
 
 	method := "GET"
-
 	genEndPoint := "/dataplane/workspaces/{workspace_id}/regulations/workerJobs"
 	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID))
 
@@ -37,12 +37,19 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		return model.Job{}, err
 	}
 
+	workspaceToken := config.GetEnv("CONFIG_BACKEND_TOKEN", "22JnFdS3ZKDd0UfuEYowUeNi9fe")
+	req.SetBasicAuth(workspaceToken, "")
+	req.Header.Set("Content-Type", "application/json")
+
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return model.Job{}, err
 	}
 	defer resp.Body.Close()
+	if err != nil {
+		fmt.Println(err)
+	}
 
 	//if successful
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {

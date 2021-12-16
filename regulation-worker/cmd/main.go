@@ -43,8 +43,8 @@ func Run(ctx context.Context) {
 	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			WorkspaceID: config.GetEnv("workspaceID", "1001"),
-			URLPrefix:   config.GetEnv("urlPrefix", "https://api.rudderlabs.com:35359"),
+			WorkspaceID: config.GetEnv("workspaceID", "22JnFf8IlRAjIXtGUmhxylWMORi"),
+			URLPrefix:   config.GetEnv("urlPrefix", "https://leonidas-api.dev-rudder.rudderlabs.com"),
 		},
 		DestDetail: &destination.DestMiddleware{
 			Dest: &backendconfig.WorkspaceConfig{},
