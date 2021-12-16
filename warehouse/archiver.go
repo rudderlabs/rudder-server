@@ -309,6 +309,9 @@ func archiveUploads(dbHandle *sql.DB) {
 }
 
 func runArchiver(ctx context.Context, dbHandle *sql.DB) {
+	if archiveUploadRelatedRecords {
+		archiveUploads(dbHandle)
+	}
 	for {
 		select {
 		case <-ctx.Done():

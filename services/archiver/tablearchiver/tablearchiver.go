@@ -75,6 +75,7 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 		buf := bytes.Buffer{}
 		t.Execute(&buf, data)
 		query := buf.String()
+		pkgLogger.Infof(`[TableJSONArchiver]: Running query : %v`, query)
 
 		var rawJSONRows sql.NullString
 		row := jsonArchiver.DbHandle.QueryRow(query)
