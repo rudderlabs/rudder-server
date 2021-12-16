@@ -671,7 +671,11 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				deliveryLatencyStat.End()
 				timeTaken := time.Since(startedAt)
 				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken) / float64(time.Second))
-
+				movingAverageLatencyStat := stats.NewTaggedStat("moving_average_latency", stats.GaugeType, stats.Tags{
+					"customer": workspaceID,
+					"destType": worker.rt.destName,
+				})
+				movingAverageLatencyStat.Gauge(float64(timeTaken) / float64(time.Second))
 				// END: request to destination endpoint
 
 				if isSuccessStatus(respStatusCode) && !worker.rt.saveDestinationResponseOverride {

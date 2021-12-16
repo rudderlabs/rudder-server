@@ -33,20 +33,42 @@ func Init() {
 	multitenantStat.RouterInputRates["router"] = make(map[string]map[string]misc.MovingAverage)
 	multitenantStat.RouterInputRates["batch_router"] = make(map[string]map[string]misc.MovingAverage)
 	go writerouterPileUpStatsEncodedToFile()
+	go SendRouterInMovingAverageStat()
+	go SendPileUpStats()
 }
 
 func SendPileUpStats() {
-	multitenantStat.routerJobCountMutex.RLock()
-	for customer, value := range multitenantStat.RouterInMemoryJobCounts["router"] {
-		for destType, count := range value {
-			countStat := stats.NewTaggedStat("pile_up_count", stats.CountType, stats.Tags{
-				"customer": customer,
-				"destType": destType,
-			})
-			countStat.Count(count)
+	for {
+		time.Sleep(10 * time.Second)
+		multitenantStat.routerJobCountMutex.RLock()
+		for customer, value := range multitenantStat.RouterInMemoryJobCounts["router"] {
+			for destType, count := range value {
+				countStat := stats.NewTaggedStat("pile_up_count", stats.GaugeType, stats.Tags{
+					"customer": customer,
+					"destType": destType,
+				})
+				countStat.Gauge(count)
+			}
 		}
+		multitenantStat.routerJobCountMutex.RUnlock()
 	}
-	multitenantStat.routerJobCountMutex.RUnlock()
+}
+
+func SendRouterInMovingAverageStat() {
+	for {
+		time.Sleep(10 * time.Second)
+		multitenantStat.routerJobCountMutex.RLock()
+		for customer, value := range multitenantStat.RouterInputRates["router"] {
+			for destType, count := range value {
+				movingAverageStat := stats.NewTaggedStat("router_input_rate", stats.GaugeType, stats.Tags{
+					"customer": customer,
+					"destType": destType,
+				})
+				movingAverageStat.Gauge(count)
+			}
+		}
+		multitenantStat.routerJobCountMutex.RUnlock()
+	}
 }
 
 func writerouterPileUpStatsEncodedToFile() {
