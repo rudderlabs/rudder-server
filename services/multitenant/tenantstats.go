@@ -64,7 +64,7 @@ func SendRouterInMovingAverageStat() {
 					"customer": customer,
 					"destType": destType,
 				})
-				movingAverageStat.Gauge(count)
+				movingAverageStat.Gauge(count.Value())
 			}
 		}
 		multitenantStat.routerJobCountMutex.RUnlock()
