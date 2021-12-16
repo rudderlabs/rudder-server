@@ -321,4 +321,3 @@ func runArchiver(ctx context.Context, dbHandle *sql.DB) {
 		}
 	}
 }
-
