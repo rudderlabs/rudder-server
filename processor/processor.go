@@ -1464,6 +1464,9 @@ func (proc *HandleT) Store(in storeMessage) {
 			_, ok := processorLoopStats["router"][destJobs[i].Customer]
 			if !ok {
 				processorLoopStats["router"][destJobs[i].Customer] = make(map[string]int)
+			}
+			_, ok = proc.processorLoopStats["router"][destJobs[i].Customer]
+			if !ok {
 				proc.processorLoopStats["router"][destJobs[i].Customer] = make(map[string]int)
 			}
 			processorLoopStats["router"][destJobs[i].Customer][destJobs[i].CustomVal] += 1

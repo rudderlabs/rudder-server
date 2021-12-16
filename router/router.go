@@ -40,7 +40,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-
 )
 
 type PauseT struct {
@@ -1310,8 +1309,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			workspaceID := rt.sourceIDWorkspaceMap[parameters.SourceID]
 			_, ok := routerCustomerJobStatusCount[workspaceID]
 			if !ok {
-				rt.routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
 				routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
+			}
+			_, ok = rt.routerCustomerJobStatusCount[workspaceID]
+			if !ok {
+				rt.routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
 			}
 			eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
 			eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
