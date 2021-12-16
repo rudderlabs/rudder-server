@@ -12,9 +12,11 @@ import (
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
+	pkgLogger             = logger.NewLogger().Child("api")
 	supportedDestinations = []string{"BRAZE", "AM", "INTERCOM"}
 )
 
@@ -26,32 +28,39 @@ type APIManager struct {
 //prepares payload based on (job,destDetail) & make an API call to transformer.
 //gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
 func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
+	pkgLogger.Debugf("deleting: %w", job, " from API destination: %w", destName)
 	method := "POST"
 	endpoint := "/delete-users"
 	url := fmt.Sprint(api.DestTransformURL, endpoint)
+	pkgLogger.Debugf("transformer url: %w", url)
+
 	bodySchema := mapJobToPayload(job, destName, destConfig)
 
 	reqBody, err := json.Marshal(bodySchema)
 	if err != nil {
+		pkgLogger.Errorf("error while marshalling job request body: %w", err)
 		return model.JobStatusFailed
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(reqBody))
 	if err != nil {
+		pkgLogger.Errorf("error while create new request: %w", err)
 		return model.JobStatusFailed
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	//TODO: log error received from server
+	pkgLogger.Debugf("sending request: %w", req)
 	resp, err := api.Client.Do(req)
 	if err != nil {
+		pkgLogger.Errorf("error while making http request: %w", err)
 		return model.JobStatusFailed
 	}
 	defer resp.Body.Close()
+	pkgLogger.Debugf("response status code: %w", resp.StatusCode, " response body: %w", resp.Body)
 
-	//TODO: log err, if decoding was unsuccessful.
 	var jobResp JobRespSchema
 	if err := json.NewDecoder(resp.Body).Decode(&jobResp); err != nil {
+		pkgLogger.Errorf("error while decoding response body: %w", err)
 		return model.JobStatusFailed
 	}
 	switch resp.StatusCode {

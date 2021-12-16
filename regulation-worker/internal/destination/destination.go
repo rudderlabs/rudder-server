@@ -5,7 +5,10 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
+
+var pkgLogger = logger.NewLogger().Child("client")
 
 //go:generate mockgen -source=destination.go -destination=mock_destination_test.go -package=destination github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination/destination
 type destinationMiddleware interface {
@@ -20,8 +23,10 @@ type DestMiddleware struct {
 //like: dest_type, auth details,
 //return destination Type enum{file, api}
 func (d *DestMiddleware) GetDestDetails(destID string) (model.Destination, error) {
-	config, notErr := d.Dest.Get()
-	if !notErr {
+	pkgLogger.Debugf("getting destination details for destinationId: %w", destID)
+	config, ok := d.Dest.Get()
+	if !ok {
+		pkgLogger.Errorf("error while getting destination details")
 		return model.Destination{}, fmt.Errorf("error while getting destination details")
 	}
 
@@ -36,5 +41,6 @@ func (d *DestMiddleware) GetDestDetails(destID string) (model.Destination, error
 		}
 	}
 
+	pkgLogger.Debugf("obtained destination detail: %w", destDetail)
 	return destDetail, nil
 }

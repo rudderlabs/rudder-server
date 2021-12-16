@@ -35,10 +35,13 @@ type JobSvc struct {
 //calls api-client to get new job with workspaceID, which returns jobID.
 func (js *JobSvc) JobSvc(ctx context.Context) error {
 	//API request to get new job
+	pkgLogger.Debugf("making API request to get job")
 	job, err := js.API.Get(ctx)
 	if err != nil {
+		pkgLogger.Debugf("error while getting job: %w", err)
 		return err
 	}
+	pkgLogger.Debugf("job: %w", job)
 	//once job is successfully received, calling updatestatus API to update the status of job to running.
 	status := model.JobStatusRunning
 	err = js.updateStatus(ctx, status, job.ID)
@@ -48,6 +51,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	//executing deletion
 	destDetail, err := js.DestDetail.GetDestDetails(job.DestinationID)
 	if err != nil {
+		pkgLogger.Errorf("error while getting destination detailsL %w", err)
 		return fmt.Errorf("error while getting destination details: %w", err)
 	}
 
@@ -62,6 +66,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 }
 
 func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
+	pkgLogger.Debugf("updating job status to: %w", status)
 	maxWait := time.Minute * 10
 	var err error
 	bo := backoff.NewExponentialBackOff()
@@ -71,12 +76,14 @@ func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobI
 
 	if err = backoff.Retry(func() error {
 		err := js.API.UpdateStatus(ctx, status, jobID)
+		pkgLogger.Debugf("trying to update status...")
 		return err
 	}, boCtx); err != nil {
 		if bo.NextBackOff() == backoff.Stop {
+			pkgLogger.Debugf("reached retry limit...")
 			return err
 		}
 
 	}
-	return err
+	return nil
 }

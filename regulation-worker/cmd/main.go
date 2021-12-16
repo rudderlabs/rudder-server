@@ -16,10 +16,13 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-func main() {
+var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
+func main() {
+	pkgLogger.Info("starting regulation-worker")
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -36,11 +39,16 @@ func main() {
 
 func Run(ctx context.Context) {
 	transformerURL := config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	pkgLogger.Infof("using transformer URL:", transformerURL)
+
 	apiManager := api.APIManager{
 		Client:           &http.Client{},
 		DestTransformURL: transformerURL,
 	}
+
+	pkgLogger.Infof("creating delete router")
 	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
+	pkgLogger.Infof("created delete router: %w", router)
 	svc := service.JobSvc{
 		API: &client.JobAPI{
 			WorkspaceID: config.GetEnv("workspaceID", "1001"),
@@ -51,9 +59,11 @@ func Run(ctx context.Context) {
 		},
 		Deleter: router,
 	}
+	pkgLogger.Infof("calling service with: %w", svc)
 	l := withLoop(svc)
 	err := l.Loop(ctx)
 	if err != nil {
+		pkgLogger.Errorf("error: %w", err)
 		panic(err)
 	}
 

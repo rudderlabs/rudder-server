@@ -23,11 +23,14 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 )
 
 var (
+	loggerId              = "loggerId"
+	pkgLogger             = logger.NewLogger().Child("batch")
 	regexRequiredSuffix   = regexp.MustCompile(".json.gz$")
 	statusTrackerFileName = "ruddderDeleteTracker.txt"
 	supportedDestinations = []string{"S3"}
@@ -44,6 +47,10 @@ type Batch struct {
 	FM         filemanager.FileManager
 	DM         deleteManager
 	TmpDirPath string
+}
+
+func ctxWithLoggerID(ctx context.Context, id int) context.Context {
+	return context.WithValue(ctx, loggerId, id)
 }
 
 //return appropriate deleteManger based on destination Name
