@@ -122,7 +122,7 @@ func archiveUploads(dbHandle *sql.DB) {
 		}
 	}()
 	if err == sql.ErrNoRows {
-		pkgLogger.Debugf(`No uploads found for acrhival. Query: %s`, sqlStatement)
+		pkgLogger.Debugf(`No uploads found for archival. Query: %s`, sqlStatement)
 		return
 	}
 	if err != nil {
@@ -137,7 +137,7 @@ func archiveUploads(dbHandle *sql.DB) {
 		var uploadMetdata json.RawMessage
 		err = rows.Scan(&uploadID, &sourceID, &destID, &startStagingFileId, &endStagingFileId, &startLoadFileID, &endLoadFileID, &uploadMetdata)
 		if err != nil {
-			pkgLogger.Errorf(`Error scanning wh_upload for acrhival. Error: %v`, err)
+			pkgLogger.Errorf(`Error scanning wh_upload for archival. Error: %v`, err)
 			continue
 		}
 
