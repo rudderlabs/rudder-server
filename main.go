@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	httppprof "net/http/pprof"
 	"runtime/pprof"
+
 	"strconv"
 	"strings"
 
@@ -283,6 +285,10 @@ func Run(ctx context.Context) {
 		return admin.StartServer(ctx)
 	})
 
+	g.Go(func() error {
+		return startDebugHandler(ctx)
+	})
+
 	misc.AppStartTime = time.Now().Unix()
 	//If the server is standby mode, then no major services (gateway, processor, routers...) run
 	if options.StandByMode {
@@ -352,6 +358,23 @@ func Run(ctx context.Context) {
 		logger.Log.Sync()
 	}
 	stats.StopRuntimeStats()
+}
+
+func startDebugHandler(ctx context.Context) error {
+	debugPort := config.GetInt("Go.debugPort", 7777)
+	srv := &http.Server{
+		Handler: http.HandlerFunc(httppprof.Index),
+		Addr:    "127.0.0.1:" + strconv.Itoa(debugPort),
+	}
+	func() {
+		<-ctx.Done()
+		srv.Shutdown(context.Background())
+	}()
+
+	if err := srv.ListenAndServe(); err != nil {
+		return fmt.Errorf("debug server: %w", err)
+	}
+	return nil
 }
 
 func startStandbyWebHandler(ctx context.Context) error {
