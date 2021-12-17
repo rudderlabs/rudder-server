@@ -118,6 +118,7 @@ func archiveUploads(dbHandle *sql.DB) {
 	rows, err := dbHandle.Query(sqlStatement)
 	defer func() {
 		if err != nil {
+			pkgLogger.Errorf(`Error occurred while archiving warehouse uploads with error: %v`, err)
 			stats.NewTaggedStat("warehouse.archiver.uploadAborted", stats.CountType, stats.Tags{}).Count(1)
 		}
 	}()
@@ -309,9 +310,6 @@ func archiveUploads(dbHandle *sql.DB) {
 }
 
 func runArchiver(ctx context.Context, dbHandle *sql.DB) {
-	if archiveUploadRelatedRecords {
-		archiveUploads(dbHandle)
-	}
 	for {
 		select {
 		case <-ctx.Done():
