@@ -230,7 +230,7 @@ func (job *UploadJobT) initTableUploads() error {
 	return createTableUploads(job.upload.ID, tables)
 }
 
-func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
+func (job *UploadJobT) syncRemoteSchema() (schemaChanged bool, err error) {
 	schemaHandle := SchemaHandleT{
 		warehouse:    job.warehouse,
 		stagingFiles: job.stagingFiles,
@@ -243,8 +243,8 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 		return false, err
 	}
 
-	hasSchemaChanged = compareSchema(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
-	if hasSchemaChanged {
+	schemaChanged = hasSchemaChanged(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
+	if schemaChanged {
 		err = schemaHandle.updateLocalSchema(schemaHandle.schemaInWarehouse)
 		if err != nil {
 			return false, err
@@ -252,7 +252,7 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 		schemaHandle.localSchema = schemaHandle.schemaInWarehouse
 	}
 
-	return hasSchemaChanged, nil
+	return schemaChanged, nil
 }
 
 func (job *UploadJobT) getTotalRowsInStagingFiles() int64 {
