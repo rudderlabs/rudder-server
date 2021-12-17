@@ -51,6 +51,7 @@ func Run(ctx context.Context) {
 	pkgLogger.Infof("created delete router: %w", router)
 	svc := service.JobSvc{
 		API: &client.JobAPI{
+			Client:      &http.Client{},
 			WorkspaceID: config.GetEnv("workspaceID", "1001"),
 			URLPrefix:   config.GetEnv("urlPrefix", "https://api.rudderlabs.com:35359"),
 		},

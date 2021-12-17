@@ -18,6 +18,7 @@ import (
 var pkgLogger = logger.NewLogger().Child("client")
 
 type JobAPI struct {
+	Client      *http.Client
 	WorkspaceID string
 	URLPrefix   string
 }
@@ -43,8 +44,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	}
 
 	pkgLogger.Debugf("making request: %w", req)
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := j.Client.Do(req)
 	if err != nil {
 		pkgLogger.Errorf("http request failed with error: %w", err)
 		return model.Job{}, err
@@ -114,8 +114,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	}
 	pkgLogger.Debugf("sending request: %w", req)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := j.Client.Do(req)
 	if err != nil {
 		pkgLogger.Errorf("error while making http request: %w", err)
 		return err
