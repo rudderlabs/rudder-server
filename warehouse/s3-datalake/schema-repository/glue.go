@@ -115,7 +115,8 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// create table request
 	input := glue.CreateTableInput{
-		DatabaseName: aws.String(gl.Namespace),
+		DatabaseName:     aws.String(gl.Namespace),
+		PartitionIndexes: []*glue.PartitionIndex{&glue.PartitionIndex{IndexName: aws.String("by day"), Keys: []*string{aws.String("year"), aws.String("month"), aws.String("day")}}},
 		TableInput: &glue.TableInput{
 			Name: aws.String(tableName),
 		},

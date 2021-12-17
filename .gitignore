@@ -11,6 +11,8 @@ imports/enterprise.go
 enterprise
 *.coverprofile
 junit*.xml
-**/profile.out
+**/profile.out*
 .idea/*
+
 build/regulation-worker
+build/wait-for-go/wait-for-go.x
