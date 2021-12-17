@@ -243,7 +243,7 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 		return false, err
 	}
 
-	hasSchemaChanged = !compareSchema(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
+	hasSchemaChanged = compareSchema(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
 	if hasSchemaChanged {
 		err = schemaHandle.updateLocalSchema(schemaHandle.schemaInWarehouse)
 		if err != nil {
