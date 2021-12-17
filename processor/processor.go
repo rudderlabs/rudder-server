@@ -1548,6 +1548,7 @@ func (proc *HandleT) Store(in storeMessage) {
 				"destType": destType,
 			})
 			countStat.Gauge(count)
+			proc.logger.Infof("addition_processor_stat is %v for customer %v", count, customer)
 		}
 	}
 	multitenant.ReportProcLoopAddStats(processorLoopStats["router"], time.Since(beforeStoreStatus), "router")

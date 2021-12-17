@@ -224,6 +224,10 @@ func isJobTerminated(status int) bool {
 		return false
 	}
 
+	if status != types.RouterTimedOut {
+		return false
+	}
+
 	return status >= 200 && status < 500
 }
 
@@ -608,7 +612,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := worker.trackStuckDelivery()
 				if time.Since(pickedAtTime) > worker.rt.routerTimeout {
-					respStatusCode, respBodyTemp = 429, fmt.Sprintf(`429 Jobs took more time than expected.Will be retried`)
+					respStatusCode, respBodyTemp = types.RouterTimedOut, fmt.Sprintf(`777 Jobs took more time than expected. Will be retried`)
 				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
@@ -670,12 +674,15 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				worker.deliveryTimeStat.End()
 				deliveryLatencyStat.End()
 				timeTaken := time.Since(startedAt)
-				worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken) / float64(time.Second))
+				if respStatusCode != types.RouterTimedOut {
+					worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken) / float64(time.Second))
+				}
 				movingAverageLatencyStat := stats.NewTaggedStat("moving_average_latency", stats.GaugeType, stats.Tags{
 					"customer": workspaceID,
 					"destType": worker.rt.destName,
 				})
 				movingAverageLatencyStat.Gauge(float64(timeTaken) / float64(time.Second))
+				worker.rt.logger.Infof("moving_average_latency is %.8f for customer %v", float64(timeTaken)/float64(time.Second), workspaceID)
 				// END: request to destination endpoint
 
 				if isSuccessStatus(respStatusCode) && !worker.rt.saveDestinationResponseOverride {
@@ -742,7 +749,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				sourceIDs = append(sourceIDs, destinationJobMetadata.SourceID)
 			}
 			//Sending only one destination live event for every destinationJob.
-			if i == len(destinationJob.JobMetadataArray)-1 {
+			if i == len(destinationJob.JobMetadataArray)-1 && respStatusCode != types.RouterTimedOut {
 				worker.sendDestinationResponseToConfigBackend(payload, &destinationJobMetadata, &status, sourceIDs)
 			}
 		}
@@ -1400,6 +1407,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				"destType": destType,
 			})
 			countStat.Gauge(count)
+			rt.logger.Infof("removal_router_stat is %v for customer %v", count, customer)
 		}
 	}
 

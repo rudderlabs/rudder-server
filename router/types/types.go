@@ -8,6 +8,10 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
+const (
+	RouterTimedOut = 777
+)
+
 //RouterJobT holds the router job and its related metadata
 type RouterJobT struct {
 	Message     json.RawMessage            `json:"message"`
