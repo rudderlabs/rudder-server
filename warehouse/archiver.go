@@ -48,7 +48,7 @@ type backupRecordsArgs struct {
 }
 
 func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
-	pkgLogger.Infof(`Starting backup records for sourceId: %s, destinationId: %s, tableName: %s`, args.sourceID, args.destID, args.tableName)
+	pkgLogger.Infof(`Starting backupRecords for tableName: %s, sourceId: %s, destinationId: %s, uploadId: %s`, args.tableName, args.sourceID, args.destID, args.uploadID)
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		pkgLogger.Errorf("[Archiver]: Failed to create tmp DIR")
@@ -79,14 +79,14 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 	tmpl := fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s WHERE %[2]s order by id asc limit %[3]s offset %[4]s) AS dump_table`, args.tableName, args.tableFilterSQL, tablearchiver.PaginationAction, tablearchiver.OffsetAction)
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
 		DbHandle:      dbHandle,
-		Pagination:    config.GetInt("warehouse.Archiver.backupRowsBatchSize", 100*1000),
+		Pagination:    config.GetInt("warehouse.Archiver.backupRowsBatchSize", 100),
 		QueryTemplate: tmpl,
 		OutputPath:    path,
 		FileManager:   fManager,
 	}
 
 	backupLocation, err = tableJSONArchiver.Do()
-	pkgLogger.Infof(`Completed backupRecords for %s`, args.tableName)
+	pkgLogger.Infof(`Completed backupRecords for tableName: %s, sourceId: %s, destinationId: %s, uploadId: %s`, args.tableName, args.sourceID, args.destID, args.uploadID)
 	return
 }
 
@@ -112,13 +112,13 @@ func usedRudderStorage(uploadMetdata []byte) bool {
 }
 
 func archiveUploads(dbHandle *sql.DB) {
-	pkgLogger.Infof(`Starting archive uploads for warehouse`)
+	pkgLogger.Infof(`Started archiving for warehouse`)
 	sqlStatement := fmt.Sprintf(`SELECT id,source_id, destination_id, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, metadata FROM %s WHERE ((metadata->>'archivedStagingAndLoadFiles')::bool IS DISTINCT FROM TRUE) AND created_at < NOW() -INTERVAL '%d DAY' AND status = '%s'`, warehouseutils.WarehouseUploadsTable, uploadsArchivalTimeInDays, ExportedData)
 
 	rows, err := dbHandle.Query(sqlStatement)
 	defer func() {
 		if err != nil {
-			pkgLogger.Errorf(`Error occurred while archiving warehouse uploads with error: %v`, err)
+			pkgLogger.Errorf(`Error occurred while archiving for warehouse uploads with error: %v`, err)
 			stats.NewTaggedStat("warehouse.archiver.uploadAborted", stats.CountType, stats.Tags{}).Count(1)
 		}
 	}()
