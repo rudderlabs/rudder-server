@@ -9,31 +9,31 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-//MigrationCheckpointT captures an event of export/import to recover from incase of a crash during migration
+// MigrationCheckpointT captures an event of export/import to recover from incase of a crash during migration
 type MigrationCheckpointT struct {
 	ID            int64           `json:"ID"`
-	MigrationType MigrationOp     `json:"MigrationType"` //ENUM : export, import, acceptNewEvents
+	MigrationType MigrationOp     `json:"MigrationType"` // ENUM : export, import, acceptNewEvents
 	FromNode      string          `json:"FromNode"`
 	ToNode        string          `json:"ToNode"`
 	JobsCount     int64           `json:"JobsCount"`
 	FileLocation  string          `json:"FileLocation"`
-	Status        string          `json:"Status"` //ENUM : Look up 'Values for Status'
+	Status        string          `json:"Status"` // ENUM : Look up 'Values for Status'
 	StartSeq      int64           `json:"StartSeq"`
 	Payload       json.RawMessage `json:"Payload"`
 	TimeStamp     time.Time       `json:"TimeStamp"`
 }
 
-//MigrationOp is a custom type for supported types in migrationCheckpoint
+// MigrationOp is a custom type for supported types in migrationCheckpoint
 type MigrationOp string
 
-//ENUM Values for MigrationOp
+// ENUM Values for MigrationOp
 const (
 	ExportOp          = "export"
 	ImportOp          = "import"
 	AcceptNewEventsOp = "acceptNewEvents"
 )
 
-//ENUM Values for Status
+// ENUM Values for Status
 const (
 	SetupForExport = "setup_for_export"
 	Exported       = "exported"
@@ -46,7 +46,7 @@ const (
 	Imported               = "imported"
 )
 
-//MigrationCheckpointSuffix : Suffix for checkpoints table
+// MigrationCheckpointSuffix : Suffix for checkpoints table
 const (
 	MigrationCheckpointSuffix = "migration_checkpoints"
 	UniqueConstraintSuffix    = "unique_checkpoint"
@@ -64,14 +64,14 @@ func (jd *HandleT) deleteSetupCheckpoint(operationType MigrationOp) {
 	}
 }
 
-//Checkpoint writes a migration event if id is passed as 0. Else it will update status and start_sequence
+// Checkpoint writes a migration event if id is passed as 0. Else it will update status and start_sequence
 func (jd *HandleT) Checkpoint(migrationCheckpoint MigrationCheckpointT) int64 {
 	id, err := jd.CheckpointInTxn(jd.dbHandle, migrationCheckpoint)
 	jd.assertError(err)
 	return id
 }
 
-//CheckpointInTxn writes a migration event if id is passed as 0. Else it will update status and start_sequence
+// CheckpointInTxn writes a migration event if id is passed as 0. Else it will update status and start_sequence
 // If txn is passed, it will run the statement in that txn, otherwise it will execute without a transaction
 func (jd *HandleT) CheckpointInTxn(txHandler transactionHandler, migrationCheckpoint MigrationCheckpointT) (int64, error) {
 	jd.assert(migrationCheckpoint.MigrationType == ExportOp ||
@@ -99,7 +99,7 @@ func (jd *HandleT) CheckpointInTxn(txHandler transactionHandler, migrationCheckp
 	var mcID int64
 
 	stmt, err = txHandler.Prepare(sqlStatement)
-	//skipcq: SCC-SA5001
+	// skipcq: SCC-SA5001
 	defer stmt.Close()
 	if err != nil {
 		return mcID, err
@@ -135,7 +135,7 @@ func (jd *HandleT) CheckpointInTxn(txHandler transactionHandler, migrationCheckp
 	return mcID, nil
 }
 
-//NewSetupCheckpointEvent returns a new migration event that captures setup for export, import of new event acceptance
+// NewSetupCheckpointEvent returns a new migration event that captures setup for export, import of new event acceptance
 func NewSetupCheckpointEvent(migrationType MigrationOp, node string) MigrationCheckpointT {
 	switch migrationType {
 	case ExportOp:
@@ -149,19 +149,19 @@ func NewSetupCheckpointEvent(migrationType MigrationOp, node string) MigrationCh
 	}
 }
 
-//NewMigrationCheckpoint is a constructor for MigrationCheckpoint struct
-func NewMigrationCheckpoint(migrationType MigrationOp, fromNode string, toNode string, jobsCount int64, fileLocation string, status string, startSeq int64) MigrationCheckpointT {
+// NewMigrationCheckpoint is a constructor for MigrationCheckpoint struct
+func NewMigrationCheckpoint(migrationType MigrationOp, fromNode, toNode string, jobsCount int64, fileLocation, status string, startSeq int64) MigrationCheckpointT {
 	return MigrationCheckpointT{0, migrationType, fromNode, toNode, jobsCount, fileLocation, status, startSeq, []byte("{}"), time.Now()}
 }
 
-//SetupForMigration prepares jobsdb to start migrations
-func (jd *HandleT) SetupForMigration(fromVersion int, toVersion int) {
+// SetupForMigration prepares jobsdb to start migrations
+func (jd *HandleT) SetupForMigration(fromVersion, toVersion int) {
 	jd.migrationState.fromVersion = fromVersion
 	jd.migrationState.toVersion = toVersion
 	jd.SetupCheckpointTable()
 }
 
-//SetupCheckpointTable creates a table
+// SetupCheckpointTable creates a table
 func (jd *HandleT) SetupCheckpointTable() {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id BIGSERIAL PRIMARY KEY,
@@ -235,7 +235,7 @@ func (jd *HandleT) findOrCreateDsFromSetupCheckpoint(migrationType MigrationOp) 
 	return ds
 }
 
-//GetSetupCheckpoint gets all checkpoints and picks out the setup event for that type
+// GetSetupCheckpoint gets all checkpoints and picks out the setup event for that type
 func (jd *HandleT) GetSetupCheckpoint(migrationType MigrationOp) (MigrationCheckpointT, bool) {
 	var setupStatus string
 	switch migrationType {
@@ -256,10 +256,9 @@ func (jd *HandleT) GetSetupCheckpoint(migrationType MigrationOp) (MigrationCheck
 	default:
 		panic("More than 1 setup event found. This should not happen")
 	}
-
 }
 
-//GetCheckpoints gets all checkpoints and
+// GetCheckpoints gets all checkpoints and
 func (jd *HandleT) GetCheckpoints(migrationType MigrationOp, status string) []MigrationCheckpointT {
 	queryString := fmt.Sprintf(`SELECT * from %s WHERE migration_type = $1`, jd.getCheckpointTableName())
 	var statusFilter string
@@ -295,7 +294,7 @@ func (jd *HandleT) GetCheckpoints(migrationType MigrationOp, status string) []Mi
 	return migrationCheckpoints
 }
 
-//skipcq: SCC-U1000
+// skipcq: SCC-U1000
 func (migrationCheckpoint MigrationCheckpointT) getLastJobID() int64 {
 	if migrationCheckpoint.StartSeq == 0 {
 		return int64(0)

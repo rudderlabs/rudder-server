@@ -14,7 +14,7 @@ import (
 )
 
 func TestGet(t *testing.T) {
-	var tests = []struct {
+	tests := []struct {
 		name                      string
 		workspaceID               string
 		respBody                  string
@@ -44,7 +44,6 @@ func TestGet(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-
 		t.Run(tt.name, func(t *testing.T) {
 			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.respCode)
@@ -60,13 +59,12 @@ func TestGet(t *testing.T) {
 			require.Equal(t, tt.expectedErr, err)
 			require.Equal(t, tt.expectedUsrAttributeCount, len(job.UserAttributes), "no of users different than expected")
 			t.Log("actual job:", job)
-
 		})
 	}
 }
 
 func TestUpdateStatus(t *testing.T) {
-	var tests = []struct {
+	tests := []struct {
 		name            string
 		workspaceID     string
 		status          model.JobStatus
@@ -94,7 +92,6 @@ func TestUpdateStatus(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-
 		t.Run(tt.name, func(t *testing.T) {
 			var body []byte
 			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +107,6 @@ func TestUpdateStatus(t *testing.T) {
 			err := c.UpdateStatus(context.Background(), tt.status, tt.jobID)
 			require.Equal(t, tt.expectedErr, err)
 			require.Equal(t, tt.expectedReqBody, string(body), "actual request body different than expected")
-
 		})
 	}
 }

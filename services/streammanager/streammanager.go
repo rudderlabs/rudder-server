@@ -20,7 +20,6 @@ type Opts struct {
 
 // NewProducer delegates the call to the appropriate based on parameter destination for creating producer
 func NewProducer(destinationConfig interface{}, destType string, o Opts) (interface{}, error) {
-
 	switch destType {
 	case "AZURE_EVENT_HUB":
 		producer, err := kafka.NewProducerForAzureEventHub(destinationConfig, kafka.Opts{
@@ -56,14 +55,12 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 		producer, err := personalize.NewProducer(destinationConfig)
 		return producer, err
 	default:
-		return nil, fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
+		return nil, fmt.Errorf("No provider configured for StreamManager") // 404, "No provider configured for StreamManager", ""
 	}
-
 }
 
 // CloseProducer delegates the call to the appropriate manager based on parameter destination to close a given producer
 func CloseProducer(producer interface{}, destType string) error {
-
 	switch destType {
 	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE", "GOOGLESHEETS":
 		return nil
@@ -74,17 +71,16 @@ func CloseProducer(producer interface{}, destType string) error {
 		err := googlepubsub.CloseProducer(producer)
 		return err
 	default:
-		return fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
+		return fmt.Errorf("No provider configured for StreamManager") // 404, "No provider configured for StreamManager", ""
 	}
-
 }
 
 type StreamProducer interface {
-	Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string)
+	Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, string, string)
 }
 
 // Produce delegates call to appropriate manager based on parameter destination
-func Produce(jsonData json.RawMessage, destType string, producer interface{}, config interface{}) (int, string, string) {
+func Produce(jsonData json.RawMessage, destType string, producer, config interface{}) (int, string, string) {
 	switch destType {
 	case "KINESIS":
 		return kinesis.Produce(jsonData, producer, config)
@@ -103,5 +99,4 @@ func Produce(jsonData json.RawMessage, destType string, producer interface{}, co
 	default:
 		return 404, "No provider configured for StreamManager", "No provider configured for StreamManager"
 	}
-
 }

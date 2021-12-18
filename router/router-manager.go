@@ -2,9 +2,7 @@ package router
 
 import "fmt"
 
-var (
-	RoutersManager RoutersManagerI
-)
+var RoutersManager RoutersManagerI
 
 type RoutersManagerI interface {
 	AddRouter(router *HandleT)

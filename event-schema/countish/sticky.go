@@ -5,8 +5,10 @@ import (
 	"math/rand"
 )
 
-var Rand = rand.Float64
-var RandCoin = rand.Int31n
+var (
+	Rand     = rand.Float64
+	RandCoin = rand.Int31n
+)
 
 type StickySampler struct {
 	ErrorTolerance  float64

@@ -9,11 +9,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-var pagerDutyEndPoint = "https://events.pagerduty.com/v2/enqueue"
-var pkgLogger logger.LoggerI
+var (
+	pagerDutyEndPoint = "https://events.pagerduty.com/v2/enqueue"
+	pkgLogger         logger.LoggerI
+)
 
 func (ops *PagerDuty) Alert(message string) {
-
 	payload := map[string]interface{}{
 		"summary":  message,
 		"severity": "critical",

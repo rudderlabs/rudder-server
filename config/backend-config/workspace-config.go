@@ -28,7 +28,7 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey strin
 	return workspaceConfig.workspaceID
 }
 
-//GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
+// GetWorkspaceLibrariesFromWorkspaceID returns workspaceLibraries for workspaceID
 func (workspaceConfig *WorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	workspaceConfig.workspaceIDLock.RLock()
 	defer workspaceConfig.workspaceIDLock.RUnlock()
@@ -38,7 +38,7 @@ func (workspaceConfig *WorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(work
 	return workspaceConfig.workspaceIDToLibrariesMap[workspaceID]
 }
 
-//Get returns sources from the workspace
+// Get returns sources from the workspace
 func (workspaceConfig *WorkspaceConfig) Get() (ConfigT, bool) {
 	if configFromFile {
 		return workspaceConfig.getFromFile()
@@ -47,7 +47,7 @@ func (workspaceConfig *WorkspaceConfig) Get() (ConfigT, bool) {
 	}
 }
 
-//GetRegulations returns sources from the workspace
+// GetRegulations returns sources from the workspace
 func (workspaceConfig *WorkspaceConfig) GetRegulations() (RegulationsT, bool) {
 	if configFromFile {
 		return workspaceConfig.getRegulationsFromFile()
@@ -72,7 +72,6 @@ func (workspaceConfig *WorkspaceConfig) getFromAPI() (ConfigT, bool) {
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
-
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
 		return ConfigT{}, false
@@ -154,13 +153,12 @@ func (workspaceConfig *WorkspaceConfig) getWorkspaceRegulationsFromAPI() ([]Work
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch workspace regulations from API with error: %v, retrying after %v", err, t)
 		})
-
 		if err != nil {
 			pkgLogger.Error("Error sending request to the server", err)
 			return []WorkspaceRegulationT{}, false
 		}
 
-		//If statusCode is not 2xx, then returning empty regulations
+		// If statusCode is not 2xx, then returning empty regulations
 		if statusCode < 200 || statusCode >= 300 {
 			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch workspace regulations. statusCode: %v, error: %v", statusCode, err)
 			return []WorkspaceRegulationT{}, false
@@ -214,7 +212,7 @@ func (workspaceConfig *WorkspaceConfig) getSourceRegulationsFromAPI() ([]SourceR
 			return []SourceRegulationT{}, false
 		}
 
-		//If statusCode is not 2xx, then returning empty regulations
+		// If statusCode is not 2xx, then returning empty regulations
 		if statusCode < 200 || statusCode >= 300 {
 			pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch source regulations. statusCode: %v, error: %v", statusCode, err)
 			return []SourceRegulationT{}, false

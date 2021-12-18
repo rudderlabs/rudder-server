@@ -32,7 +32,7 @@ func (loader *ParquetLoader) GetLoadTimeFomat(columnName string) string {
 	return time.RFC3339
 }
 
-func (loader *ParquetLoader) AddColumn(columnName string, colType string, val interface{}) {
+func (loader *ParquetLoader) AddColumn(columnName, colType string, val interface{}) {
 	var err error
 	if val != nil {
 		val, err = GetParquetValue(val, colType)
@@ -46,7 +46,7 @@ func (loader *ParquetLoader) AddColumn(columnName string, colType string, val in
 	loader.Values = append(loader.Values, val)
 }
 
-func (loader *ParquetLoader) AddRow(columnNames []string, row []string) {
+func (loader *ParquetLoader) AddRow(columnNames, row []string) {
 	// TODO : implement
 }
 

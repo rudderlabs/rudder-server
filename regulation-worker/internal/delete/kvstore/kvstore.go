@@ -9,11 +9,9 @@ import (
 
 var supportedDestinations = []string{"REDIS"}
 
-type KVDeleteManager struct {
-}
+type KVDeleteManager struct{}
 
 func (kv *KVDeleteManager) GetSupportedDestinations() []string {
-
 	return supportedDestinations
 }
 

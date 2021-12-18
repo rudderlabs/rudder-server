@@ -45,7 +45,7 @@ var (
 	maxRegulationsPerRequest              int
 	configEnvReplacementEnabled           bool
 
-	//DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
+	// DefaultBackendConfig will be initialized be Setup to either a WorkspaceConfig or MultiWorkspaceConfig.
 	DefaultBackendConfig BackendConfig
 	Http                 sysUtils.HttpI   = sysUtils.NewHttp()
 	pkgLogger            logger.LoggerI   = logger.NewLogger().Child("backend-config")
@@ -224,6 +224,7 @@ type BackendConfig interface {
 	WaitForConfig(ctx context.Context) error
 	Subscribe(channel chan utils.DataEvent, topic Topic)
 }
+
 type CommonBackendConfig struct {
 	configEnvHandler types.ConfigEnvI
 }
@@ -251,7 +252,7 @@ func Init() {
 	loadConfig()
 }
 
-func trackConfig(preConfig ConfigT, curConfig ConfigT) {
+func trackConfig(preConfig, curConfig ConfigT) {
 	Diagnostics.DisableMetrics(curConfig.EnableMetrics)
 	if diagnostics.EnableConfigIdentifyMetric {
 		if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
@@ -292,14 +293,13 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 }
 
 func regulationsUpdate(statConfigBackendError stats.RudderStats) {
-
 	regulationJSON, ok := backendConfig.GetRegulations()
 	if !ok {
 		statConfigBackendError.Increment()
 	}
 
-	//sorting the regulationJSON.
-	//json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
+	// sorting the regulationJSON.
+	// json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
 	sort.Slice(regulationJSON.WorkspaceRegulations[:], func(i, j int) bool {
 		return regulationJSON.WorkspaceRegulations[i].ID < regulationJSON.WorkspaceRegulations[j].ID
 	})
@@ -312,7 +312,7 @@ func regulationsUpdate(statConfigBackendError stats.RudderStats) {
 		curRegulationJSONLock.Lock()
 		curRegulationJSON = regulationJSON
 		curRegulationJSONLock.Unlock()
-		initializedLock.Lock() //Using initializedLock for waitForRegulations too.
+		initializedLock.Lock() // Using initializedLock for waitForRegulations too.
 		defer initializedLock.Unlock()
 		waitForRegulations = false
 		LastRegulationSync = time.Now().Format(time.RFC3339)
@@ -321,14 +321,13 @@ func regulationsUpdate(statConfigBackendError stats.RudderStats) {
 }
 
 func configUpdate(statConfigBackendError stats.RudderStats) {
-
 	sourceJSON, ok := backendConfig.Get()
 	if !ok {
 		statConfigBackendError.Increment()
 	}
 
-	//sorting the sourceJSON.
-	//json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
+	// sorting the sourceJSON.
+	// json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
 	sort.Slice(sourceJSON.Sources[:], func(i, j int) bool {
 		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
 	})

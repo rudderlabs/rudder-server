@@ -1,9 +1,9 @@
 package api
 
-//This is simply going to make any API call to transfomer as per the API spec here: https://www.notion.so/rudderstacks/GDPR-Transformer-API-Spec-c3303b5b70c64225815d56c7767f8d22
-//to get deletion done.
-//called by delete/deleteSvc with (model.Job, model.Destination).
-//returns final status,error ({successful, failure}, err)
+// This is simply going to make any API call to transfomer as per the API spec here: https://www.notion.so/rudderstacks/GDPR-Transformer-API-Spec-c3303b5b70c64225815d56c7767f8d22
+// to get deletion done.
+// called by delete/deleteSvc with (model.Job, model.Destination).
+// returns final status,error ({successful, failure}, err)
 import (
 	"bytes"
 	"context"
@@ -14,17 +14,15 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
-var (
-	supportedDestinations = []string{"BRAZE", "AM", "INTERCOM"}
-)
+var supportedDestinations = []string{"BRAZE", "AM", "INTERCOM"}
 
 type APIManager struct {
 	Client           *http.Client
 	DestTransformURL string
 }
 
-//prepares payload based on (job,destDetail) & make an API call to transformer.
-//gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
+// prepares payload based on (job,destDetail) & make an API call to transformer.
+// gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
 func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 	method := "POST"
 	endpoint := "/delete-users"
@@ -42,14 +40,14 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	//TODO: log error received from server
+	// TODO: log error received from server
 	resp, err := api.Client.Do(req)
 	if err != nil {
 		return model.JobStatusFailed
 	}
 	defer resp.Body.Close()
 
-	//TODO: log err, if decoding was unsuccessful.
+	// TODO: log err, if decoding was unsuccessful.
 	var jobResp JobRespSchema
 	if err := json.NewDecoder(resp.Body).Decode(&jobResp); err != nil {
 		return model.JobStatusFailed
@@ -68,11 +66,9 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	default:
 		return model.JobStatusFailed
 	}
-
 }
 
 func (bm *APIManager) GetSupportedDestinations() []string {
-
 	return supportedDestinations
 }
 

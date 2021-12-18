@@ -73,7 +73,6 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 	}
 
 	service, err := generateServiceWithRefreshToken(*jwtconfig)
-
 	// If err is not nil then retrun
 	if err != nil {
 		pkgLogger.Errorf("[Googlesheets] error  :: %v", err)
@@ -98,8 +97,7 @@ func NewProducer(destinationConfig interface{}) (*sheets.Service, error) {
 	return service, err
 }
 
-func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
-
+func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (statusCode int, respStatus, responseMessage string) {
 	sheetsClient := producer.(*sheets.Service)
 	parsedJSON := gjson.ParseBytes(jsonData)
 	spreadSheetId := parsedJSON.Get("spreadSheetId").String()
@@ -149,7 +147,7 @@ func generateServiceWithRefreshToken(jwtconfig jwt.Config) (*sheets.Service, err
 
 // Wrapper func to insert headerData or rowData based on boolean flag.
 // Returns error for failure cases of API calls otherwise returns nil
-func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, spreadSheetTab string, data []interface{}, isHeader bool) error {
+func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId, spreadSheetTab string, data []interface{}, isHeader bool) error {
 	// Creating value range for inserting row into sheet
 	var vr sheets.ValueRange
 	vr.MajorDimension = "ROWS"
@@ -163,7 +161,6 @@ func insertDataToSheet(sheetsClient *sheets.Service, spreadSheetId string, sprea
 
 	if isHeader {
 		_, err = sheetsClient.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
-
 	} else {
 		_, err = sheetsClient.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Do()
 	}

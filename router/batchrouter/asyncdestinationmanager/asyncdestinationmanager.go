@@ -81,8 +81,10 @@ type Parameters struct {
 	MetaData MetaDataT `json:"metadata"`
 }
 
-var HTTPTimeout time.Duration
-var pkgLogger logger.LoggerI
+var (
+	HTTPTimeout time.Duration
+	pkgLogger   logger.LoggerI
+)
 
 func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(600), &HTTPTimeout, true, time.Second, "AsyncDestination.HTTPTimeout")
@@ -117,7 +119,7 @@ func CleanUpData(keyMap map[string]interface{}, importingJobIDs []int64) ([]int6
 	return succesfulJobIDs, failedJobIDsTrans
 }
 
-func Upload(url string, filePath string, config map[string]interface{}, destType string, failedJobIDs []int64, importingJobIDs []int64, destinationID string) AsyncUploadOutput {
+func Upload(url, filePath string, config map[string]interface{}, destType string, failedJobIDs, importingJobIDs []int64, destinationID string) AsyncUploadOutput {
 	file, err := os.Open(filePath)
 	if err != nil {
 		panic("BRT: Read File Failed" + err.Error())
@@ -254,6 +256,7 @@ func Upload(url string, filePath string, config map[string]interface{}, destType
 	}
 	return uploadResponse
 }
+
 func GetTransformedData(payload json.RawMessage) string {
 	return gjson.Get(string(payload), "body.JSON").String()
 }
@@ -273,7 +276,7 @@ func GetMarshalledData(payload string, jobID int64) string {
 	return string(responsePayload)
 }
 
-func GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID string, destType string, csvHeaders string) []byte {
+func GenerateFailedPayload(config map[string]interface{}, jobs []*jobsdb.JobT, importID, destType, csvHeaders string) []byte {
 	var failedPayloadT AsyncFailedPayload
 	failedPayloadT.Input = make([]map[string]interface{}, len(jobs))
 	index := 0

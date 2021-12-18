@@ -48,7 +48,7 @@ func DownloadObjectFromS3(location string, destConfig interface{}, file *os.File
 	}
 }
 
-func queryRS(anonymousId string, table string, namespace string, destConfig interface{}) QueryTrackPayload {
+func queryRS(anonymousId, table, namespace string, destConfig interface{}) QueryTrackPayload {
 	config := destConfig.(map[string]interface{})
 	if _, ok := config["user"]; !ok {
 		panic("user not found")

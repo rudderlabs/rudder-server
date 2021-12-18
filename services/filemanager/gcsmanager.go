@@ -109,7 +109,6 @@ func (manager *GCSManager) Download(output *os.File, key string) error {
 	ctx := context.Background()
 
 	client, err := manager.getClient()
-
 	if err != nil {
 		return err
 	}
@@ -135,7 +134,7 @@ func (manager *GCSManager) GetObjectNameFromLocation(location string) (string, e
 	return location[len(baseURL):], nil
 }
 
-//TODO complete this
+// TODO complete this
 func (manager *GCSManager) GetDownloadKeyFromFileLocation(location string) string {
 	locationSlice := strings.Split(location, "storage.googleapis.com/"+manager.Config.Bucket+"/")
 	pkgLogger.Debug("Location: ", location, "downloadKey: ", locationSlice[len(locationSlice)-1])

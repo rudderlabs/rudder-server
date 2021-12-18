@@ -55,10 +55,10 @@ func enhanceWithViolation(response transformer.ResponseT, trackingPlanId string)
 // 1. eventsToTransform gets added to validatedEventsByWriteKey
 // 2. failedJobs gets added to validatedErrorJobs
 func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[WriteKeyT][]transformer.TransformerEventT, []*types.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
-	var validatedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
-	var validatedReportMetrics = make([]*types.PUReportedMetric, 0)
-	var validatedErrorJobs = make([]*jobsdb.JobT, 0)
-	var trackingPlanEnabledMap = make(map[SourceIDT]bool)
+	validatedEventsByWriteKey := make(map[WriteKeyT][]transformer.TransformerEventT)
+	validatedReportMetrics := make([]*types.PUReportedMetric, 0)
+	validatedErrorJobs := make([]*jobsdb.JobT, 0)
+	trackingPlanEnabledMap := make(map[SourceIDT]bool)
 
 	for writeKey, eventList := range groupedEventsByWriteKey {
 		validationStat := proc.newValidationStat(eventList[0].Metadata)
@@ -99,7 +99,7 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 		trackingPlanEnabledMap[SourceIDT(sourceID)] = true
 
 		var successMetrics []*types.PUReportedMetric
-		eventsToTransform, successMetrics, _, _ := proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.TrackingPlanValidationStage, true, false) //Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
+		eventsToTransform, successMetrics, _, _ := proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.TrackingPlanValidationStage, true, false) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
 		failedJobs, failedMetrics, _ := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.TrackingPlanValidationStage, false, true)
 
 		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
@@ -108,13 +108,13 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 
 		validatedErrorJobs = append(validatedErrorJobs, failedJobs...)
 
-		//REPORTING - START
+		// REPORTING - START
 		if proc.isReportingEnabled() {
-			//There will be no diff metrics for tracking plan validation
+			// There will be no diff metrics for tracking plan validation
 			validatedReportMetrics = append(validatedReportMetrics, successMetrics...)
 			validatedReportMetrics = append(validatedReportMetrics, failedMetrics...)
 		}
-		//REPORTING - END
+		// REPORTING - END
 
 		if len(eventsToTransform) == 0 {
 			continue

@@ -80,7 +80,6 @@ type User struct {
 func NewWebhook() *WebhookRecorder {
 	whr := WebhookRecorder{}
 	whr.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 		dump, err := httputil.DumpRequest(r, true)
 		if err != nil {
 			http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
@@ -111,8 +110,9 @@ func (whr *WebhookRecorder) Requests() []*http.Request {
 func (whr *WebhookRecorder) Close() {
 	whr.Server.Close()
 }
+
 func randString(n int) string {
-	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
 	s := make([]rune, n)
 	for i := range s {
@@ -201,7 +201,6 @@ func SendEvent(payload *strings.Reader) {
 	method := "POST"
 	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
-
 	if err != nil {
 		log.Println(err)
 		return
@@ -488,7 +487,7 @@ func run(m *testing.M) (int, error) {
 		Tag:        "latest",
 		Cmd:        []string{"server", "/data"},
 		PortBindings: map[dc.Port][]dc.PortBinding{
-			"9000/tcp": []dc.PortBinding{{HostPort: strconv.Itoa(minioPortInt)}},
+			"9000/tcp": {{HostPort: strconv.Itoa(minioPortInt)}},
 		},
 		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
 	}
@@ -660,7 +659,7 @@ func TestWebhook(t *testing.T) {
 		},
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	  }`)
-	SendEvent(payload_2) //sending duplicate event to check dedup
+	SendEvent(payload_2) // sending duplicate event to check dedup
 	require.Eventually(t, func() bool {
 		return len(webhook.Requests()) == 2
 	}, time.Minute, 10*time.Millisecond)
@@ -680,7 +679,6 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified user id")
 	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
-
 }
 
 // Verify Event in POSTGRES
@@ -708,10 +706,9 @@ func TestRedis(t *testing.T) {
 		event, _ := redigo.String(conn.Do("HGET", "user:identified user id", "trait1"))
 		return event == "new-val"
 	}, time.Minute, 10*time.Millisecond)
-
 }
-func TestKafka(t *testing.T) {
 
+func TestKafka(t *testing.T) {
 	config := sarama.NewConfig()
 	config.ClientID = "go-kafka-consumer"
 	config.Consumer.Return.Errors = true
@@ -761,8 +758,8 @@ out:
 		}
 	}
 	log.Println("Processed", msgCount, "messages")
-
 }
+
 func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMessage, chan *sarama.ConsumerError) {
 	consumers := make(chan *sarama.ConsumerMessage)
 	errors := make(chan *sarama.ConsumerError)

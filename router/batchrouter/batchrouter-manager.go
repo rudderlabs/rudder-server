@@ -2,9 +2,7 @@ package batchrouter
 
 import "fmt"
 
-var (
-	BatchRoutersManager BatchRoutersManagerI
-)
+var BatchRoutersManager BatchRoutersManagerI
 
 type BatchRoutersManagerI interface {
 	AddBatchRouter(router *HandleT)

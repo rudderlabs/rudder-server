@@ -122,6 +122,7 @@ type BatchDestinationDataT struct {
 	jobs             []*jobsdb.JobT
 	parentWG         *sync.WaitGroup
 }
+
 type AsyncPollT struct {
 	Config   map[string]interface{} `json:"config"`
 	ImportId string                 `json:"importId"`
@@ -136,7 +137,7 @@ type ObjectStorageT struct {
 	DestinationType string
 }
 
-//JobParametersT struct holds source id and destination id of a job
+// JobParametersT struct holds source id and destination id of a job
 type JobParametersT struct {
 	SourceID                string `json:"source_id"`
 	DestinationID           string `json:"destination_id"`
@@ -232,6 +233,7 @@ type AsyncStatusResponse struct {
 	FailedJobsURL  string
 	WarningJobsURL string
 }
+
 type ErrorResponseT struct {
 	Error string
 }
@@ -495,7 +497,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 	}
 }
 
-func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, makeJournalEntry bool, isWarehouse bool) StorageUploadOutput {
+func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, makeJournalEntry, isWarehouse bool) StorageUploadOutput {
 	if disableEgress {
 		return StorageUploadOutput{Error: rterror.DisabledEgress}
 	}
@@ -602,7 +604,8 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         provider,
 			Config:           batchJobs.BatchDestination.Destination.Config,
-			UseRudderStorage: useRudderStorage}),
+			UseRudderStorage: useRudderStorage,
+		}),
 	})
 	if err != nil {
 		return StorageUploadOutput{
@@ -634,7 +637,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 
 	brt.logger.Debugf("BRT: Date prefix layout is %s", datePrefixLayout)
 	switch datePrefixLayout {
-	case "MM-DD-YYYY": //used to be earlier default
+	case "MM-DD-YYYY": // used to be earlier default
 		datePrefixLayout = time.Now().Format("01-02-2006")
 	default:
 		datePrefixLayout = time.Now().Format("2006-01-02")
@@ -657,7 +660,6 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 		opID = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
 	}
 	uploadOutput, err := uploader.Upload(outputFile, keyPrefixes...)
-
 	if err != nil {
 		brt.logger.Errorf("BRT: Error uploading to %s: Error: %v", provider, err)
 		return StorageUploadOutput{
@@ -680,7 +682,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 	}
 }
 
-func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, config map[string]interface{}, makeJournalEntry bool, isAsync bool) {
+func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, config map[string]interface{}, makeJournalEntry, isAsync bool) {
 	if disableEgress {
 		out := asyncdestinationmanager.AsyncUploadOutput{}
 		for _, job := range batchJobs.Jobs {
@@ -718,7 +720,7 @@ func (brt *HandleT) sendJobsToStorage(provider string, batchJobs BatchJobsT, con
 		brt.asyncStructSetup(batchJobs.BatchDestination.Source.ID, destinationID)
 	}
 
-	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].FileName, os.O_CREATE|os.O_WRONLY, 0600)
+	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].FileName, os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		panic(fmt.Errorf("BRT: %s: file open failed : %s", brt.destType, err.Error()))
 	}
@@ -915,7 +917,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		for columnName, columnType := range columns {
 			if _, ok := schemaMap[tableName][columnName]; !ok {
 				schemaMap[tableName][columnName] = columnType
-			} else if  columnType == "text" && schemaMap[tableName][columnName] == "string" {
+			} else if columnType == "text" && schemaMap[tableName][columnName] == "string" {
 				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
 				schemaMap[tableName][columnName] = columnType
 			}
@@ -1089,9 +1091,9 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		}
 		jobStateCounts[jobState][strconv.Itoa(attemptNum)] = jobStateCounts[jobState][strconv.Itoa(attemptNum)] + 1
 
-		//REPORTING - START
+		// REPORTING - START
 		if brt.reporting != nil && brt.reportingEnabled {
-			//Update metrics maps
+			// Update metrics maps
 			errorCode := getBRTErrorCode(jobState)
 			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
 			cd, ok := connectionDetailsMap[key]
@@ -1112,10 +1114,10 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 				sd.Count++
 			}
 		}
-		//REPORTING - END
+		// REPORTING - END
 	}
 
-	//tracking batch router errors
+	// tracking batch router errors
 	if diagnostics.EnableDestinationFailuresMetric {
 		if batchJobState == jobsdb.Failed.State {
 			Diagnostics.Track(diagnostics.BatchRouterFailed, map[string]interface{}{
@@ -1136,7 +1138,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		}
 	}
 
-	//Store the aborted jobs to errorDB
+	// Store the aborted jobs to errorDB
 	if abortedEvents != nil {
 		err := brt.errorDB.Store(abortedEvents)
 		if err != nil {
@@ -1146,7 +1148,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		}
 	}
 
-	//REPORTING - START
+	// REPORTING - START
 	if brt.reporting != nil && brt.reportingEnabled {
 		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 		terminalPU := true
@@ -1170,9 +1172,9 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			}
 		}
 	}
-	//REPORTING - END
+	// REPORTING - END
 
-	//Mark the status of the jobs
+	// Mark the status of the jobs
 	txn := brt.jobsDB.BeginGlobalTransaction()
 	brt.jobsDB.AcquireUpdateJobStatusLocks()
 	err = brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
@@ -1181,7 +1183,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		panic(err)
 	}
 
-	//Save msgids of aborted jobs
+	// Save msgids of aborted jobs
 	if len(jobRunIDAbortedEventsMap) > 0 {
 		router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
 	}
@@ -1268,7 +1270,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 		}
 	}
 
-	//Mark the status of the jobs
+	// Mark the status of the jobs
 	txn := brt.jobsDB.BeginGlobalTransaction()
 	brt.jobsDB.AcquireUpdateJobStatusLocks()
 	err := brt.jobsDB.UpdateJobStatusInTxn(txn, statusList, []string{brt.destType}, parameterFilters)
@@ -1326,8 +1328,8 @@ func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output S
 		errorResp = []byte(`{"success":"OK"}`)
 	}
 
-	//Payload and AttemptNum don't make sense in recording batch router delivery status,
-	//So they are set to default values.
+	// Payload and AttemptNum don't make sense in recording batch router delivery status,
+	// So they are set to default values.
 	payload, err := sjson.SetBytes([]byte(`{}`), "location", output.FileLocation)
 	if err != nil {
 		payload = []byte(`{}`)
@@ -1447,7 +1449,7 @@ func (worker *workerT) workerProcess() {
 			if len(combinedList) == 0 {
 				brt.logger.Debugf("BRT: DB Read Complete. No BRT Jobs to process for parameter Filters: %v", parameterFilters)
 				brt.setDestInProgress(batchDest.Destination.ID, false)
-				//NOTE: Calling Done on parentWG is important before listening on channel again.
+				// NOTE: Calling Done on parentWG is important before listening on channel again.
 				if batchDestData.parentWG != nil {
 					batchDestData.parentWG.Done()
 				}
@@ -1475,7 +1477,7 @@ func (worker *workerT) workerProcess() {
 						ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 						Parameters:    []byte(`{}`), // check
 					}
-					//Enhancing job parameter with the drain reason.
+					// Enhancing job parameter with the drain reason.
 					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", "batch_router")
 					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "reason", reason)
 					drainList = append(drainList, &status)
@@ -1511,7 +1513,7 @@ func (worker *workerT) workerProcess() {
 				}
 			}
 
-			//Mark the drainList jobs as Aborted
+			// Mark the drainList jobs as Aborted
 			if len(drainList) > 0 {
 				err := brt.errorDB.Store(drainJobList)
 				if err != nil {
@@ -1533,7 +1535,7 @@ func (worker *workerT) workerProcess() {
 					brt.drainedJobsStat.Count(destDrainStat.Count)
 				}
 			}
-			//Mark the jobs as executing
+			// Mark the jobs as executing
 			err := brt.jobsDB.UpdateJobStatus(statusList, []string{brt.destType}, parameterFilters)
 			if err != nil {
 				brt.logger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", brt.destType, err)
@@ -1613,7 +1615,7 @@ func (worker *workerT) workerProcess() {
 
 			wg.Wait()
 			brt.setDestInProgress(batchDest.Destination.ID, false)
-			//NOTE: Calling Done on parentWG is important before listening on channel again.
+			// NOTE: Calling Done on parentWG is important before listening on channel again.
 			if batchDestData.parentWG != nil {
 				batchDestData.parentWG.Done()
 			}
@@ -1680,7 +1682,7 @@ func (brt *HandleT) getNamespace(config interface{}, source backendconfig.Source
 	configMap := config.(map[string]interface{})
 	var namespace string
 	if destType == "CLICKHOUSE" {
-		//TODO: Handle if configMap["database"] is nil
+		// TODO: Handle if configMap["database"] is nil
 		return configMap["database"].(string)
 	}
 	if configMap["namespace"] != nil {
@@ -1787,15 +1789,14 @@ loop:
 
 	// Closing channels mainLoop was publishing to:
 	close(brt.processQ)
-
 }
 
-//Enable enables a router :)
+// Enable enables a router :)
 func (brt *HandleT) Enable() {
 	brt.isEnabled = true
 }
 
-//Disable disables a router:)
+// Disable disables a router:)
 func (brt *HandleT) Disable() {
 	brt.isEnabled = false
 }
@@ -1810,7 +1811,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 			panic(err)
 		}
 		if len(object.Config) == 0 {
-			//Backward compatibility. If old entries dont have config, just delete journal entry
+			// Backward compatibility. If old entries dont have config, just delete journal entry
 			brt.jobsDB.JournalDeleteEntry(entry.OpID)
 			continue
 		}
@@ -1909,7 +1910,7 @@ func IsWarehouseDestination(destType string) bool {
 }
 
 func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
-	var splitBatches = map[time.Time]*BatchJobsT{}
+	splitBatches := map[time.Time]*BatchJobsT{}
 	if brt.destType != "S3_DATALAKE" {
 		// return only one batchJob if the destination type is not s3 datalake
 		splitBatches[time.Time{}] = &batchJobs
@@ -2016,7 +2017,7 @@ func setQueryFilters() {
 	}
 }
 
-//Setup initializes this module
+// Setup initializes this module
 func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI) {
 	brt.isBackendConfigInitialized = false
 	brt.backendConfigInitialized = make(chan bool)
@@ -2032,7 +2033,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.pollAsyncStatusPauseChannel = make(chan *PauseT)
 	brt.pollAsyncStatusResumeChannel = make(chan bool)
 
-	//waiting for reporting client setup
+	// waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {
 		brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
 	}
@@ -2131,17 +2132,17 @@ func (brt *HandleT) Pause() {
 		return
 	}
 
-	//Pause poll status worker
+	// Pause poll status worker
 	respChannel := make(chan bool)
 	brt.pollAsyncStatusPauseChannel <- &PauseT{respChannel: respChannel}
 	<-respChannel
 
-	//Pause async upload worker
+	// Pause async upload worker
 	respChannel = make(chan bool)
 	brt.asyncUploadWorkerPauseChannel <- &PauseT{respChannel: respChannel}
 	<-respChannel
 
-	//Pause workers
+	// Pause workers
 	var wg sync.WaitGroup
 	for _, worker := range brt.workers {
 		_worker := worker
@@ -2160,8 +2161,8 @@ func (brt *HandleT) Pause() {
 	brt.paused = true
 }
 
-//Resume will resume the batch router
-//Resuming all the workers
+// Resume will resume the batch router
+// Resuming all the workers
 func (brt *HandleT) Resume() {
 	brt.pauseLock.Lock()
 	defer brt.pauseLock.Unlock()
@@ -2170,7 +2171,7 @@ func (brt *HandleT) Resume() {
 		return
 	}
 
-	//Resume workers
+	// Resume workers
 	for _, worker := range brt.workers {
 		worker.resumeChannel <- true
 	}

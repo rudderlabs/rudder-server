@@ -16,6 +16,7 @@ type DataChannel chan DataEvent
 
 // DataChannelSlice is a slice of DataChannels
 type DataChannelSlice []DataChannel
+
 type PublishSubscriber interface {
 	Publish(topic string, data interface{})
 	PublishToChannel(channel DataChannel, topic string, data interface{})
@@ -37,7 +38,7 @@ func (eb *EventBus) Publish(topic string, data interface{}) {
 		channels := append(DataChannelSlice{}, chans...)
 		go func(data DataEvent, dataChannelSlices DataChannelSlice) {
 			for _, ch := range dataChannelSlices {
-				//Publishing to channels in separate goroutines
+				// Publishing to channels in separate goroutines
 				go func(ch DataChannel, data DataEvent) {
 					ch <- data
 				}(ch, data)

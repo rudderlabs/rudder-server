@@ -107,6 +107,7 @@ var primaryKeyMap = map[string]string{
 	warehouseutils.IdentifiesTable: "id",
 	warehouseutils.DiscardsTable:   "row_id",
 }
+
 var partitionKeyMap = map[string]string{
 	warehouseutils.UsersTable:      "id",
 	warehouseutils.IdentifiesTable: "id",
@@ -115,12 +116,12 @@ var partitionKeyMap = map[string]string{
 
 func connect(cred credentialsT) (*sql.DB, error) {
 	// Create connection string
-	//url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
-	//Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
-	//TrustServerCertificate=true ; all options(disable, false, true) work with this
-	//if rds.forcessl=1; disable option doesnt work. true, false works alongside TrustServerCertificate=true
+	// url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
+	// Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
+	// TrustServerCertificate=true ; all options(disable, false, true) work with this
+	// if rds.forcessl=1; disable option doesnt work. true, false works alongside TrustServerCertificate=true
 	//		https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/SQLServer.Concepts.General.SSL.Using.html
-	//more combination explanations here: https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/connection-string-keywords-and-data-source-names-dsns?view=sql-server-ver15
+	// more combination explanations here: https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/connection-string-keywords-and-data-source-names-dsns?view=sql-server-ver15
 	query := url.Values{}
 	query.Add("database", cred.dbName)
 	query.Add("encrypt", cred.sslMode)
@@ -228,7 +229,6 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		fileNames = append(fileNames, fileName)
 	}
 	return fileNames, nil
-
 }
 
 func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
@@ -251,10 +251,10 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	// create temporary table
 	stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
-	//prepared stmts cannot be used to create temp objects here. Will work in a txn, but will be purged after commit.
-	//https://github.com/denisenkom/go-mssqldb/issues/149, https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN
-	//sqlStatement := fmt.Sprintf(`CREATE  TABLE ##%[2]s like %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
-	//Hence falling back to creating normal tables
+	// prepared stmts cannot be used to create temp objects here. Will work in a txn, but will be purged after commit.
+	// https://github.com/denisenkom/go-mssqldb/issues/149, https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN
+	// sqlStatement := fmt.Sprintf(`CREATE  TABLE ##%[2]s like %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
+	// Hence falling back to creating normal tables
 	sqlStatement := fmt.Sprintf(`select top 0 * into %[1]s.%[2]s from %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
 
 	pkgLogger.Debugf("MS: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
@@ -306,7 +306,6 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					txn.Rollback()
 					return
 				}
-
 			}
 			if len(sortedColumnKeys) != len(record) {
 				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
@@ -356,14 +355,14 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				case "datetime":
 					{
 						var convertedValue time.Time
-						//TODO : handling milli?
+						// TODO : handling milli?
 						if convertedValue, err = time.Parse(time.RFC3339, strValue); err != nil {
 							pkgLogger.Errorf("MS : Mismatch in datatype for type : %s, column : %s, value : %s, err : %v", valueType, sortedColumnKeys[index], strValue, err)
 							finalColumnValues = append(finalColumnValues, nil)
 						} else {
 							finalColumnValues = append(finalColumnValues, convertedValue)
 						}
-						//TODO : handling all cases?
+						// TODO : handling all cases?
 					}
 				case "boolean":
 					{
@@ -377,9 +376,9 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					}
 				case "string":
 					{
-						//This is needed to enable diacritic support Ex: Ü,ç Ç,©,∆,ß,á,ù,ñ,ê
-						//A substitute to this PR; https://github.com/denisenkom/go-mssqldb/pull/576/files
-						//An alternate to this approach is to use nvarchar(instead of varchar)
+						// This is needed to enable diacritic support Ex: Ü,ç Ç,©,∆,ß,á,ù,ñ,ê
+						// A substitute to this PR; https://github.com/denisenkom/go-mssqldb/pull/576/files
+						// An alternate to this approach is to use nvarchar(instead of varchar)
 						if len(strValue) > mssqlStringLengthLimit {
 							strValue = strValue[:mssqlStringLengthLimit]
 						}
@@ -462,7 +461,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	return
 }
 
-//Taken from https://github.com/denisenkom/go-mssqldb/blob/master/tds.go
+// Taken from https://github.com/denisenkom/go-mssqldb/blob/master/tds.go
 func str2ucs2(s string) []byte {
 	res := utf16.Encode([]rune(s))
 	ucs2 := make([]byte, 2*len(res))
@@ -519,13 +518,13 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 							FETCH NEXT 1 ROWS ONLY)
 						  end as %[1]s`, colName, ms.Namespace+"."+unionStagingTableName)
 
-		//IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortedened to below
-		//https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
-		//caseSubQuery := fmt.Sprintf(`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName)
+		// IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortedened to below
+		// https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
+		// caseSubQuery := fmt.Sprintf(`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName)
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
-	//TODO: skipped top level temporary table for now
+	// TODO: skipped top level temporary table for now
 	sqlStatement := fmt.Sprintf(`SELECT * into %[5]s FROM
 												((
 													SELECT id, %[4]s FROM %[2]s WHERE id in (SELECT user_id FROM %[3]s WHERE user_id IS NOT NULL)
@@ -630,7 +629,7 @@ func (ms *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (ms *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+func (ms *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1  FROM SYS.COLUMNS WHERE OBJECT_ID = OBJECT_ID(N'%[1]s') AND name = '%[2]s')
 			ALTER TABLE %[1]s ADD %[2]s %[3]s`, tableName, columnName, rudderDataTypesMapToMssql[columnType])
 	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
@@ -644,12 +643,12 @@ func (ms *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return err
 }
 
-func (ms *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+func (ms *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	err = ms.addColumn(ms.Namespace+"."+tableName, columnName, columnType)
 	return err
 }
 
-func (ms *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (ms *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return
 }
 
@@ -700,7 +699,6 @@ func (ms *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 func (ms *HandleT) dropDanglingStagingTables() bool {
-
 	sqlStatement := fmt.Sprintf(`select table_name
 								 from information_schema.tables
 								 where table_schema = '%s' AND table_name like '%s';`, ms.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
@@ -785,7 +783,7 @@ func (ms *HandleT) LoadTable(tableName string) error {
 
 func (ms *HandleT) Cleanup() {
 	if ms.Db != nil {
-		//extra check aside dropStagingTable(table)
+		// extra check aside dropStagingTable(table)
 		ms.dropDanglingStagingTables()
 		ms.Db.Close()
 	}

@@ -50,7 +50,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			ID:           SourceIDEnabled,
 			WriteKey:     WriteKeyEnabled,
 			Enabled:      true,
-			Destinations: []backendconfig.DestinationT{backendconfig.DestinationT{ID: GADestinationID, Name: "ga dest", DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
+			Destinations: []backendconfig.DestinationT{{ID: GADestinationID, Name: "ga dest", DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 		},
 	},
 }
@@ -109,7 +109,7 @@ var _ = Describe("Router", func() {
 	var c *testContext
 
 	BeforeEach(func() {
-		router_utils.JobRetention = time.Duration(175200) * time.Hour //20 Years(20*365*24)
+		router_utils.JobRetention = time.Duration(175200) * time.Hour // 20 Years(20*365*24)
 		c = &testContext{}
 		c.Setup()
 
@@ -123,7 +123,6 @@ var _ = Describe("Router", func() {
 	})
 
 	Context("Initialization", func() {
-
 		It("should initialize and recover after crash", func() {
 			router := &HandleT{}
 
@@ -156,8 +155,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2009,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -173,8 +172,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -189,7 +188,7 @@ var _ = Describe("Router", func() {
 			c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
-				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil)
@@ -199,7 +198,7 @@ var _ = Describe("Router", func() {
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
-				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"content-type":"","response": "","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"content-type":"","response": "","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
 				})
@@ -228,8 +227,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -244,7 +243,7 @@ var _ = Describe("Router", func() {
 			c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
-				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
 				})
 
@@ -268,7 +267,7 @@ var _ = Describe("Router", func() {
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
-				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Aborted.State, "400", `{"content-type":"","response":"","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
 				})
 			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
@@ -297,8 +296,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -329,7 +328,7 @@ var _ = Describe("Router", func() {
 				})
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
-				Do(func(drainList []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(drainList []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "", `{"reason": "job expired"}`, 0)
 				})
 
@@ -371,8 +370,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2009,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -388,8 +387,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u2",
 					JobID:        2010,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -401,8 +400,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u3",
 					JobID:        2011,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -417,7 +416,7 @@ var _ = Describe("Router", func() {
 			callUnprocessed := c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
-				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
@@ -461,7 +460,7 @@ var _ = Describe("Router", func() {
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
-				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", 1)
 					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", 1)
 					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", 1)
@@ -474,7 +473,6 @@ var _ = Describe("Router", func() {
 			Expect(count).To(Equal(3))
 
 			time.Sleep(3 * time.Second)
-
 		})
 
 		It("aborts jobs if batching fails for few of the jobs", func() {
@@ -482,8 +480,8 @@ var _ = Describe("Router", func() {
 
 			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
 
-			//we have a job that has failed once(toRetryJobsList), it should aborted when picked up next
-			//Because we only allow one failure per job with this
+			// we have a job that has failed once(toRetryJobsList), it should aborted when picked up next
+			// Because we only allow one failure per job with this
 			router.maxFailedCountForJob = 5
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -502,8 +500,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2009,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -518,8 +516,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -531,8 +529,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2011,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -547,7 +545,7 @@ var _ = Describe("Router", func() {
 			callUnprocessed := c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
-				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
@@ -602,7 +600,7 @@ var _ = Describe("Router", func() {
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
 			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
-				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Failed.State, "500", 1)
 					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Failed.State, "500", 0)
 					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Failed.State, "500", 0)
@@ -616,7 +614,6 @@ var _ = Describe("Router", func() {
 
 			time.Sleep(3 * time.Second)
 		})
-
 	})
 
 	Context("Router Transform", func() {
@@ -662,8 +659,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2009,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -679,8 +676,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -692,8 +689,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u2",
 					JobID:        2011,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -705,8 +702,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u2",
 					JobID:        2012,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -718,8 +715,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u3",
 					JobID:        2013,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -734,7 +731,7 @@ var _ = Describe("Router", func() {
 			callUnprocessed := c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
-				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
@@ -744,7 +741,6 @@ var _ = Describe("Router", func() {
 
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callUnprocessed).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-
 					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
 					assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
 					assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
@@ -867,8 +863,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2009,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -884,8 +880,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -897,8 +893,8 @@ var _ = Describe("Router", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u2",
 					JobID:        2011,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["GA"],
 					EventPayload: []byte(gaPayload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -913,7 +909,7 @@ var _ = Describe("Router", func() {
 			callUnprocessed := c.mockRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callWaiting)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
-				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
@@ -921,7 +917,6 @@ var _ = Describe("Router", func() {
 
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callUnprocessed).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-
 					assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
 					assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
 					assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
@@ -991,7 +986,7 @@ func assertRouterJobs(routerJob types.RouterJobT, job *jobsdb.JobT) {
 	Expect(routerJob.JobMetadata.UserID).To(Equal(job.UserID))
 }
 
-func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string, errorCode string, errorResponse string, attemptNum int) {
+func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {
 	Expect(status.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
 	Expect(status.ErrorCode).To(Equal(errorCode))
@@ -1003,7 +998,7 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState 
 	Expect(status.AttemptNum).To(Equal(attemptNum))
 }
 
-func assertTransformJobStatuses(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string, errorCode string, attemptNum int) {
+func assertTransformJobStatuses(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode string, attemptNum int) {
 	Expect(status.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
 	Expect(status.ErrorCode).To(Equal(errorCode))

@@ -106,7 +106,7 @@ var (
 	emptyJobsList    []*jobsdb.JobT
 )
 
-//SetEnableEventSchemasFeature overrides enableEventSchemasFeature configuration and returns previous value
+// SetEnableEventSchemasFeature overrides enableEventSchemasFeature configuration and returns previous value
 func SetEnableEventSchemasFeature(b bool) bool {
 	prev := enableEventSchemasFeature
 	enableEventSchemasFeature = b
@@ -274,7 +274,7 @@ var _ = Describe("Processor", func() {
 	})
 
 	Context("Initialization", func() {
-		var clearDB = false
+		clearDB := false
 		It("should initialize (no jobs to recover)", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
@@ -304,7 +304,7 @@ var _ = Describe("Processor", func() {
 	})
 
 	Context("normal operation", func() {
-		var clearDB = false
+		clearDB := false
 		BeforeEach(func() {
 			// crash recovery check
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobCount: -1}).Times(1)
@@ -380,8 +380,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         1002,
-					CreatedAt:     time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
-					ExpireAt:      time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
+					CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
 					EventCount:    1,
@@ -391,8 +391,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:      uuid.Must(uuid.NewV4()),
 					JobID:     1010,
-					CreatedAt: time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
-					ExpireAt:  time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 					CustomVal: gatewayCustomVal[0],
 					EventPayload: createBatchPayload(WriteKeyEnabledNoUT, "2001-01-02T02:23:45.000Z", []mockEventData{
 						messages["message-1"],
@@ -405,8 +405,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         2002,
-					CreatedAt:     time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
-					ExpireAt:      time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
+					CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
 					EventCount:    1,
@@ -416,8 +416,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         2003,
-					CreatedAt:     time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
-					ExpireAt:      time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
+					CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
 					EventCount:    1,
@@ -427,8 +427,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:      uuid.Must(uuid.NewV4()),
 					JobID:     2010,
-					CreatedAt: time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:  time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal: gatewayCustomVal[0],
 					EventPayload: createBatchPayload(WriteKeyEnabledNoUT, "2002-01-02T02:23:45.000Z", []mockEventData{
 						messages["message-3"],
@@ -484,7 +484,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter).
-				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
 					for i := range unprocessedJobsList {
 						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
@@ -555,8 +555,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         1002,
-					CreatedAt:     time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
-					ExpireAt:      time.Date(2020, 04, 28, 23, 27, 00, 00, time.UTC),
+					CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  nil,
 					EventCount:    1,
@@ -566,8 +566,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:      uuid.Must(uuid.NewV4()),
 					JobID:     1010,
-					CreatedAt: time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
-					ExpireAt:  time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 					CustomVal: gatewayCustomVal[0],
 					EventPayload: createBatchPayload(WriteKeyEnabledOnlyUT, "2001-01-02T02:23:45.000Z", []mockEventData{
 						messages["message-1"],
@@ -580,8 +580,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					JobID:        2002,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
 					CustomVal:    gatewayCustomVal[0],
 					EventPayload: nil,
 					EventCount:   1,
@@ -590,8 +590,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					JobID:        2003,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 28, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
 					CustomVal:    gatewayCustomVal[0],
 					EventPayload: nil,
 					EventCount:   1,
@@ -600,8 +600,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:      uuid.Must(uuid.NewV4()),
 					JobID:     2010,
-					CreatedAt: time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:  time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal: gatewayCustomVal[0],
 					EventPayload: createBatchPayload(WriteKeyEnabledOnlyUT, "2002-01-02T02:23:45.000Z", []mockEventData{
 						messages["message-3"],
@@ -677,7 +677,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
-				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					for i := range unprocessedJobsList {
 						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
 					}
@@ -732,8 +732,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:      uuid.Must(uuid.NewV4()),
 					JobID:     1010,
-					CreatedAt: time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
-					ExpireAt:  time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 					CustomVal: gatewayCustomVal[0],
 					EventPayload: createBatchPayloadWithSameMessageId(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{
 						messages["message-some-id-2"],
@@ -746,8 +746,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:      uuid.Must(uuid.NewV4()),
 					JobID:     2010,
-					CreatedAt: time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:  time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal: gatewayCustomVal[0],
 					EventPayload: createBatchPayloadWithSameMessageId(WriteKeyEnabled, "2002-01-02T02:23:45.000Z", []mockEventData{
 						messages["message-some-id-3"],
@@ -814,8 +814,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         1010,
-					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
-					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					CreatedAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  createBatchPayload(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
 					LastJobStatus: jobsdb.JobStatusT{},
@@ -888,7 +888,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
-				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
 				})
@@ -945,8 +945,8 @@ var _ = Describe("Processor", func() {
 				{
 					UUID:          uuid.Must(uuid.NewV4()),
 					JobID:         1010,
-					CreatedAt:     time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
-					ExpireAt:      time.Date(2020, 04, 28, 23, 26, 00, 00, time.UTC),
+					CreatedAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 					CustomVal:     gatewayCustomVal[0],
 					EventPayload:  createBatchPayload(WriteKeyEnabled, "2001-01-02T02:23:45.000Z", []mockEventData{messages["message-1"], messages["message-2"]}),
 					LastJobStatus: jobsdb.JobStatusT{},
@@ -1019,7 +1019,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().BeginGlobalTransaction().Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().AcquireUpdateJobStatusLocks()
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
-				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(txn *sql.Tx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
 				})
@@ -1049,7 +1049,7 @@ var _ = Describe("Processor", func() {
 	})
 
 	Context("Pause and Resume Function Tests", func() {
-		var clearDB = false
+		clearDB := false
 		It("Should Recieve Something on Pause when Processor Is Not Paused", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
@@ -1124,7 +1124,7 @@ var _ = Describe("Processor", func() {
 	})
 
 	Context("MainLoop Tests", func() {
-		var clearDB = false
+		clearDB := false
 		It("Should be paused when recieved something on Pause Channel", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
@@ -1168,7 +1168,7 @@ var _ = Describe("Processor", func() {
 	})
 
 	Context("ProcessorLoop Tests", func() {
-		var clearDB = false
+		clearDB := false
 		It("Should be Pause and Resume", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
@@ -1253,7 +1253,7 @@ var _ = Describe("Static Function Tests", func() {
 
 	Context("TransformerFormatResponse Tests", func() {
 		It("Should match ConvertToTransformerResponse without filtering", func() {
-			var events = []transformer.TransformerEventT{
+			events := []transformer.TransformerEventT{
 				{
 					Metadata: transformer.MetadataT{
 						MessageID: "message-1",
@@ -1271,7 +1271,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			var expectedResponses = transformer.ResponseT{
+			expectedResponses := transformer.ResponseT{
 				Events: []transformer.TransformerResponseT{
 					{
 						Output: map[string]interface{}{
@@ -1397,7 +1397,6 @@ var _ = Describe("Static Function Tests", func() {
 
 			response := getDiffMetrics("some-string-1", "some-string-2", inCountMetadataMap, inCountMap, successCountMap, failedCountMap)
 			assertReportMetric(expectedResponse, response)
-
 		})
 	})
 
@@ -1411,7 +1410,7 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			var events = []transformer.TransformerEventT{
+			events := []transformer.TransformerEventT{
 				{
 					Metadata: transformer.MetadataT{
 						MessageID: "message-1",
@@ -1443,7 +1442,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			var expectedResponses = transformer.ResponseT{
+			expectedResponses := transformer.ResponseT{
 				Events: []transformer.TransformerResponseT{
 					{
 						Output: map[string]interface{}{
@@ -1525,7 +1524,7 @@ func createMessagePayloadWithSameMessageId(e mockEventData) string {
 	return fmt.Sprintf(`{"rudderId": "some-rudder-id", "messageId":"message-%s","integrations":%s,"some-property":"property-%s","originalTimestamp":"%s","sentAt":"%s"}`, "some-id", integrations, e.id, e.originalTimestamp, e.sentAt)
 }
 
-func createBatchPayloadWithSameMessageId(writeKey string, receivedAt string, events []mockEventData) []byte {
+func createBatchPayloadWithSameMessageId(writeKey, receivedAt string, events []mockEventData) []byte {
 	payloads := make([]string, 0)
 	for _, event := range events {
 		payloads = append(payloads, createMessagePayloadWithSameMessageId(event))
@@ -1534,7 +1533,7 @@ func createBatchPayloadWithSameMessageId(writeKey string, receivedAt string, eve
 	return []byte(fmt.Sprintf(`{"writeKey": "%s", "batch": [%s], "requestIP": "1.2.3.4", "receivedAt": "%s"}`, writeKey, batch, receivedAt))
 }
 
-func createBatchPayload(writeKey string, receivedAt string, events []mockEventData) []byte {
+func createBatchPayload(writeKey, receivedAt string, events []mockEventData) []byte {
 	payloads := make([]string, 0)
 	for _, event := range events {
 		payloads = append(payloads, createMessagePayload(event))
@@ -1547,7 +1546,7 @@ func createBatchParameters(sourceId string) []byte {
 	return []byte(fmt.Sprintf(`{"source_id": "%s"}`, sourceId))
 }
 
-func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string, errorCode string, errorResponse string, attemptNum int) {
+func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {
 	Expect(status.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
 	Expect(status.ErrorCode).To(Equal(errorCode))
@@ -1557,7 +1556,7 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState 
 	Expect(status.AttemptNum).To(Equal(attemptNum))
 }
 
-func assertReportMetric(expectedMetric []*types.PUReportedMetric, actualMetric []*types.PUReportedMetric) {
+func assertReportMetric(expectedMetric, actualMetric []*types.PUReportedMetric) {
 	sort.Slice(expectedMetric, func(i, j int) bool {
 		return expectedMetric[i].ConnectionDetails.SourceID < expectedMetric[j].ConnectionDetails.SourceID
 	})
@@ -1586,7 +1585,7 @@ func assertReportMetric(expectedMetric []*types.PUReportedMetric, actualMetric [
 	}
 }
 
-func assertDestinationTransform(messages map[string]mockEventData, sourceId string, destinationID string, expectations transformExpectation) func(clientEvents []transformer.TransformerEventT, url string, batchSize int) transformer.ResponseT {
+func assertDestinationTransform(messages map[string]mockEventData, sourceId, destinationID string, expectations transformExpectation) func(clientEvents []transformer.TransformerEventT, url string, batchSize int) transformer.ResponseT {
 	return func(clientEvents []transformer.TransformerEventT, url string, batchSize int) transformer.ResponseT {
 		defer GinkgoRecover()
 		destinationDefinitionName := expectations.destinationDefinitionName
@@ -1693,7 +1692,7 @@ func processorSetupAndAssertJobHandling(processor *HandleT, c *testContext, enab
 }
 
 func Setup(processor *HandleT, c *testContext, enableDedup, enableReporting bool) {
-	var clearDB = false
+	clearDB := false
 	SetDisableDedupFeature(enableDedup)
 	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI)
 	processor.reportingEnabled = enableReporting

@@ -46,15 +46,15 @@ func NewProducer(destinationConfig interface{}) (eventbridge.EventBridge, error)
 	} else {
 		s = session.Must(session.NewSession(&aws.Config{
 			Region:      aws.String(config.Region),
-			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, "")}))
+			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, ""),
+		}))
 	}
 	var ebc *eventbridge.EventBridge = eventbridge.New(s)
 	return *ebc, nil
 }
 
 // Produce creates a producer and send data to EventBridge.
-func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string) {
-
+func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, string, string) {
 	// get producer
 	ebc, ok := producer.(eventbridge.EventBridge)
 	if (!ok || ebc == eventbridge.EventBridge{}) {

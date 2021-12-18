@@ -19,7 +19,7 @@ type MapLimitStore struct {
 }
 
 // NewMapLimitStore creates new in-memory data store for internal limiter data. Each element of MapLimitStore is set as expired after expirationTime from its last counter increment. Expired elements are removed with a period specified by the flushInterval argument
-func NewMapLimitStore(expirationTime time.Duration, flushInterval time.Duration) (m *MapLimitStore) {
+func NewMapLimitStore(expirationTime, flushInterval time.Duration) (m *MapLimitStore) {
 	m = &MapLimitStore{
 		data:           make(map[string]limitValue),
 		expirationTime: expirationTime,
@@ -67,7 +67,7 @@ func (m *MapLimitStore) Dec(key string, count int64, window time.Time) error {
 }
 
 // Get gets value of previous window counter and current window counter for key
-func (m *MapLimitStore) Get(key string, previousWindow, currentWindow time.Time) (prevValue int64, currValue int64, err error) {
+func (m *MapLimitStore) Get(key string, previousWindow, currentWindow time.Time) (prevValue, currValue int64, err error) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	prevValue = m.data[mapKey(key, previousWindow)].val

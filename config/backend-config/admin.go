@@ -12,7 +12,6 @@ type BackendConfigAdmin struct{}
 
 // RoutingConfig reports current backend config and process config after masking secret fields
 func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string) (err error) {
-
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -37,7 +36,7 @@ func (bca *BackendConfigAdmin) RoutingConfig(filterProcessor bool, reply *string
 				destinationConfigCopy[k] = v
 			}
 
-			//Mask secret config fields by replacing latter 2/3rd of the field with 'x's
+			// Mask secret config fields by replacing latter 2/3rd of the field with 'x's
 			destinationSecretKeys, ok := destination.DestinationDefinition.Config["secretKeys"]
 			if !ok {
 				destinationSecretKeys = []interface{}{}

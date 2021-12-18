@@ -541,7 +541,7 @@ var _ = Describe("readonly_jobsdb", func() {
 		var jd *ReadonlyHandleT
 		type LatestFailedJob struct {
 			JobID         int64           `header:"JobID"`
-			UserID        string          `header:"UserID"` //ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrating, migrated, wont_migrate
+			UserID        string          `header:"UserID"` // ENUM waiting, executing, succeeded, waiting_retry,  failed, aborted, migrating, migrated, wont_migrate
 			CustomVal     string          `header:"CustomVal"`
 			ExecTime      time.Time       `header:"ExecTime"`
 			ErrorCode     string          `header:"ErrorCode"`
@@ -582,7 +582,7 @@ var _ = Describe("readonly_jobsdb", func() {
 				Expect(failedJobT.CustomVal).To(Equal(job.CustomVal))
 			}
 
-			//Assert values in failedJobs equals those in mockJobs
+			// Assert values in failedJobs equals those in mockJobs
 			if err := c.mock.ExpectationsWereMet(); err != nil {
 				ginkgo.Fail(err.Error())
 			}
@@ -974,7 +974,7 @@ var _ = Describe("readonly_jobsdb", func() {
 
 			ds := dsListInDB[0]
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)).WillReturnRows(maxminJobID())
-			//Query for job details is skipped here because the id lies outside the min and max job_ids in this table
+			// Query for job details is skipped here because the id lies outside the min and max job_ids in this table
 
 			ds = dsListInDB[1]
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)).WillReturnRows(maxminJobID2())
@@ -1088,7 +1088,7 @@ var _ = Describe("readonly_jobsdb", func() {
 
 			ds := dsListInDB[0]
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)).WillReturnRows(maxminJobID())
-			//Query for job details is skipped here because the id lies outside the min and max job_ids in this table
+			// Query for job details is skipped here because the id lies outside the min and max job_ids in this table
 
 			ds = dsListInDB[1]
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)).WillReturnRows(maxminJobID2())
@@ -1135,7 +1135,7 @@ var _ = Describe("readonly_jobsdb", func() {
 
 			ds := dsListInDB[0]
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)).WillReturnRows(maxminJobID())
-			//Query for job details is skipped here because the id lies outside the min and max job_ids in this table
+			// Query for job details is skipped here because the id lies outside the min and max job_ids in this table
 
 			ds = dsListInDB[1]
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, ds.JobTable)).WillReturnRows(maxminJobID2())
@@ -1683,7 +1683,8 @@ var mockCountRows = func() *sqlmock.Rows {
 }
 
 var invalidMockReadOnlyJobs = func(ds dataSetT, state string, count int) *sqlmock.Rows {
-	sqlMockRows := sqlmock.NewRows([]string{fmt.Sprintf("%s.job_id", ds.JobTable),
+	sqlMockRows := sqlmock.NewRows([]string{
+		fmt.Sprintf("%s.job_id", ds.JobTable),
 		fmt.Sprintf("%s.user_id", ds.JobTable),
 		fmt.Sprintf("%s.custom_val", ds.JobTable),
 		"job_latest_state.exec_time",
@@ -1701,7 +1702,8 @@ var invalidMockReadOnlyJobs = func(ds dataSetT, state string, count int) *sqlmoc
 }
 
 var mockReadOnlyJobs = func(ds dataSetT, state string, count int) *sqlmock.Rows {
-	sqlMockRows := sqlmock.NewRows([]string{fmt.Sprintf("%s.job_id", ds.JobTable),
+	sqlMockRows := sqlmock.NewRows([]string{
+		fmt.Sprintf("%s.job_id", ds.JobTable),
 		fmt.Sprintf("%s.user_id", ds.JobTable),
 		fmt.Sprintf("%s.custom_val", ds.JobTable),
 		"job_latest_state.exec_time",

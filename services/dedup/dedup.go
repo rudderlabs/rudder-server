@@ -130,16 +130,16 @@ func (d *DedupHandleT) MarkProcessed(messageIDs []string) {
 
 func (d *DedupHandleT) FindDuplicates(messageIDs []string, allMessageIDsSet map[string]struct{}) (duplicateIndexes []int) {
 	toRemoveMessageIndexesSet := make(map[int]struct{})
-	//Dedup within events batch in a web request
+	// Dedup within events batch in a web request
 	messageIDSet := make(map[string]struct{})
 
 	// Eg messageIDs: [m1, m2, m3, m1, m1, m1]
-	//Constructing a set out of messageIDs
+	// Constructing a set out of messageIDs
 	for _, messageID := range messageIDs {
 		messageIDSet[messageID] = struct{}{}
 	}
 	// Eg messagIDSet: [m1, m2, m3]
-	//In this loop it will remove from set for first occurance and if not found in set it means its a duplicate
+	// In this loop it will remove from set for first occurance and if not found in set it means its a duplicate
 	for idx, messageID := range messageIDs {
 		if _, ok := messageIDSet[messageID]; ok {
 			delete(messageIDSet, messageID)
@@ -147,14 +147,14 @@ func (d *DedupHandleT) FindDuplicates(messageIDs []string, allMessageIDsSet map[
 			toRemoveMessageIndexesSet[idx] = struct{}{}
 		}
 	}
-	//Dedup within batch of batch jobs
+	// Dedup within batch of batch jobs
 	for idx, messageID := range messageIDs {
 		if _, ok := allMessageIDsSet[messageID]; ok {
 			toRemoveMessageIndexesSet[idx] = struct{}{}
 		}
 	}
 
-	//Dedup with badgerDB
+	// Dedup with badgerDB
 	err := d.badgerDB.View(func(txn *badger.Txn) error {
 		for idx, messageID := range messageIDs {
 			_, err := txn.Get([]byte(messageID))

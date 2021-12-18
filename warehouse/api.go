@@ -46,6 +46,7 @@ type UploadPagination struct {
 	Limit  int32 `json:"limit"`
 	Offset int32 `json:"offset"`
 }
+
 type UploadResT struct {
 	ID              int64             `json:"id"`
 	Namespace       string            `json:"namespace"`
@@ -65,6 +66,7 @@ type UploadResT struct {
 type TablesResT struct {
 	Tables []TableUploadResT `json:"tables,omitempty"`
 }
+
 type TableUploadReqT struct {
 	UploadID int64
 	Name     string
@@ -215,7 +217,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 		upload.LastEventAt = timestamppb.New(lastEventAt.Time)
 		upload.IsArchivedUpload = isUploadArchived.Bool // will be false if archivedStagingAndLoadFiles is not set
-		gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
+		gjson.Parse(uploadError).ForEach(func(key, value gjson.Result) bool {
 			upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 			return true
 		})
@@ -329,7 +331,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	upload.LastEventAt = timestamppb.New(lastEventAt.Time)
 	upload.LastExecAt = timestamppb.New(lastExecAt.Time)
 	upload.IsArchivedUpload = isUploadArchived.Bool
-	gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
+	gjson.Parse(uploadError).ForEach(func(key, value gjson.Result) bool {
 		upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
 		return true
 	})

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-
 	"text/template"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -48,7 +47,6 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 
 	path := filepath.Join("/", migrationsDir)
 	sourceDriver, err := httpfs.New(MigrationAssets, path)
-
 	if err != nil {
 		return fmt.Errorf("Could not create migration source for script directory '%v': %w", migrationsDir, err)
 	}

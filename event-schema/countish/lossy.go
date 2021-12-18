@@ -26,6 +26,7 @@ func NewLossyCounter(support, errorTolerance float64) *LossyCounter {
 		N:              0,
 	}
 }
+
 func (lc *LossyCounter) prune(bucket uint64) {
 	fbucket := float64(bucket)
 	for key, value := range lc.D {

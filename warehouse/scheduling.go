@@ -122,7 +122,7 @@ func GetExludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string,
 	return startTime, endTime
 }
 
-func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTime string, windowEndTime string) bool {
+func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTime, windowEndTime string) bool {
 	if len(windowStartTime) == 0 || len(windowEndTime) == 0 {
 		return false
 	}
@@ -175,7 +175,7 @@ func (wh *HandleT) canCreateUpload(warehouse warehouseutils.WarehouseT) bool {
 	return lastUploadCreatedAt.Before(prevScheduledTime)
 }
 
-func durationBeforeNextAttempt(attempt int64) time.Duration { //Add state(retryable/non-retryable) as an argument to decide backoff etc)
+func durationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc)
 	var d time.Duration
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = minUploadBackoff

@@ -49,22 +49,24 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			ID:           SourceIDEnabled,
 			WriteKey:     WriteKeyEnabled,
 			Enabled:      true,
-			Destinations: []backendconfig.DestinationT{backendconfig.DestinationT{ID: S3DestinationID, Name: "s3 dest", DestinationDefinition: s3DestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
+			Destinations: []backendconfig.DestinationT{{ID: S3DestinationID, Name: "s3 dest", DestinationDefinition: s3DestinationDefinition, Enabled: true, IsProcessorEnabled: true}},
 		},
 	},
 }
 
-var sampleConfigPrefix = "config_prefix"
-var sampleFileObjects = []*filemanager.FileObject{
-	{
-		Key:          fmt.Sprintf("%s/%s/%s/%s/%s", sampleConfigPrefix, SourceIDEnabled, WriteKeyEnabled, "01-02-2006", "tmp1.log"),
-		LastModified: time.Now(),
-	},
-	{
-		Key:          fmt.Sprintf("%s/%s/%s/%s/%s", sampleConfigPrefix, SourceIDEnabled, WriteKeyEnabled, "2006-01-02", "tmp2.log"),
-		LastModified: time.Now(),
-	},
-}
+var (
+	sampleConfigPrefix = "config_prefix"
+	sampleFileObjects  = []*filemanager.FileObject{
+		{
+			Key:          fmt.Sprintf("%s/%s/%s/%s/%s", sampleConfigPrefix, SourceIDEnabled, WriteKeyEnabled, "01-02-2006", "tmp1.log"),
+			LastModified: time.Now(),
+		},
+		{
+			Key:          fmt.Sprintf("%s/%s/%s/%s/%s", sampleConfigPrefix, SourceIDEnabled, WriteKeyEnabled, "2006-01-02", "tmp2.log"),
+			LastModified: time.Now(),
+		},
+	}
+)
 
 type testContext struct {
 	asyncHelper       testutils.AsyncTestHelper
@@ -129,7 +131,7 @@ var _ = Describe("BatchRouter", func() {
 	var c *testContext
 
 	BeforeEach(func() {
-		router_utils.JobRetention = time.Duration(175200) * time.Hour //20 Years(20*365*24)
+		router_utils.JobRetention = time.Duration(175200) * time.Hour // 20 Years(20*365*24)
 		c = &testContext{}
 		c.Setup()
 
@@ -143,7 +145,6 @@ var _ = Describe("BatchRouter", func() {
 	})
 
 	Context("Initialization", func() {
-
 		It("should initialize and recover after crash", func() {
 			batchrouter := &HandleT{}
 
@@ -195,8 +196,8 @@ var _ = Describe("BatchRouter", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2009,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["S3"],
 					EventPayload: []byte(s3Payload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -212,8 +213,8 @@ var _ = Describe("BatchRouter", func() {
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
 					JobID:        2010,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					CustomVal:    CustomVal["S3"],
 					EventPayload: []byte(s3Payload),
 					LastJobStatus: jobsdb.JobStatusT{
@@ -227,7 +228,7 @@ var _ = Describe("BatchRouter", func() {
 			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobCount: c.jobQueryBatchSize - len(toRetryJobsList)}).Return(unprocessedJobsList).Times(1).After(callRetry)
 
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
-				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 1)
 				}).Return(nil)
@@ -237,7 +238,7 @@ var _ = Describe("BatchRouter", func() {
 			callBeginTransaction := c.mockBatchRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
 			callAcquireLocks := c.mockBatchRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
 			callUpdateStatus := c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTxn(nil, gomock.Any(), []string{CustomVal["S3"]}, nil).Times(1).After(callAcquireLocks).
-				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30", "success": "OK"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30, "success": "OK""}`, 1)
 				}).Return(nil)
@@ -278,11 +279,10 @@ var _ = Describe("BatchRouter", func() {
 		// 		fmt.Println(timeWindow, len(batchJob.Jobs))
 		// 	}
 		// })
-
 	})
 })
 
-func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string, errorCode string, errorResponse string, attemptNum int) {
+func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {
 	Expect(status.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
 	Expect(status.ErrorCode).To(Equal(errorCode))

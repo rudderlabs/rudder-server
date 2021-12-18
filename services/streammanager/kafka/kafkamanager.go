@@ -30,14 +30,14 @@ type Config struct {
 	Password      string
 }
 
-//AzureEventHubConfig is the config that is required to send data to Azure Event Hub
+// AzureEventHubConfig is the config that is required to send data to Azure Event Hub
 type AzureEventHubConfig struct {
 	Topic                     string
 	BootstrapServer           string
 	EventHubsConnectionString string
 }
 
-//ConfluentCloudConfig is the config that is required to send data to Confluent Cloud
+// ConfluentCloudConfig is the config that is required to send data to Confluent Cloud
 type ConfluentCloudConfig struct {
 	Topic           string
 	BootstrapServer string
@@ -127,8 +127,7 @@ func (x *XDGSCRAMClient) Done() bool {
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destinationConfig interface{}, o Opts) (sarama.SyncProducer, error) {
-
-	var destConfig = Config{}
+	destConfig := Config{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[Kafka] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
@@ -193,8 +192,7 @@ type Opts struct {
 
 // NewProducerForAzureEventHub creates a producer for Azure event hub based on destination config
 func NewProducerForAzureEventHub(destinationConfig interface{}, o Opts) (sarama.SyncProducer, error) {
-
-	var destConfig = AzureEventHubConfig{}
+	destConfig := AzureEventHubConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[Confluent Cloud] Error while marshaling destination Config %+v, with Error : %w", destinationConfig, err)
@@ -229,8 +227,7 @@ func NewProducerForAzureEventHub(destinationConfig interface{}, o Opts) (sarama.
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
 func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (sarama.SyncProducer, error) {
-
-	var destConfig = ConfluentCloudConfig{}
+	destConfig := ConfluentCloudConfig{}
 	jsonConfig, err := json.Marshal(destinationConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[Confluent Cloud] Error while marshalling destination config :: %w", err)
@@ -264,7 +261,7 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o Opts) (sarama
 	return producer, err
 }
 
-func prepareMessage(topic string, key string, message []byte, timestamp time.Time) *sarama.ProducerMessage {
+func prepareMessage(topic, key string, message []byte, timestamp time.Time) *sarama.ProducerMessage {
 	msg := &sarama.ProducerMessage{
 		Topic:     topic,
 		Key:       sarama.StringEncoder(key),
@@ -296,7 +293,6 @@ func prepareBatchedMessage(topic string, batch []map[string]interface{}, timesta
 
 // NewTLSConfig generates a TLS configuration used to authenticate on server with certificates.
 func NewTLSConfig(caCertFile string) *tls.Config {
-
 	tlsConfig := tls.Config{}
 	if len(certificate.Certificate) > 0 {
 		tlsConfig.Certificates = []tls.Certificate{certificate}
@@ -306,7 +302,7 @@ func NewTLSConfig(caCertFile string) *tls.Config {
 	caCertPool.AppendCertsFromPEM(caCert)
 	tlsConfig.RootCAs = caCertPool
 
-	//tlsConfig.BuildNameToCertificate()
+	// tlsConfig.BuildNameToCertificate()
 	tlsConfig.InsecureSkipVerify = true
 	return &tlsConfig
 }
@@ -322,25 +318,23 @@ func CloseProducer(producer interface{}) error {
 		return err
 	}
 	return fmt.Errorf("error while closing producer")
-
 }
 
 // Produce creates a producer and send data to Kafka.
-func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (int, string, string) {
-
+func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (int, string, string) {
 	kafkaProducer, ok := producer.(sarama.SyncProducer)
 	if !ok {
 		return 400, "Could not create producer", "Could not create producer"
 	}
 
-	var config = Config{}
+	config := Config{}
 	jsonConfig, err := json.Marshal(destConfig)
 	if err != nil {
-		return makeErrorResponse(err) //returning 500 for retrying, in case of bad config
+		return makeErrorResponse(err) // returning 500 for retrying, in case of bad config
 	}
 	err = json.Unmarshal(jsonConfig, &config)
 	if err != nil {
-		return makeErrorResponse(err) //returning 500 for retrying, in case of bad config
+		return makeErrorResponse(err) // returning 500 for retrying, in case of bad config
 	}
 
 	topic := config.Topic
@@ -403,7 +397,7 @@ func sendMessage(jsonData json.RawMessage, kafkaProducer sarama.SyncProducer, to
 
 func makeErrorResponse(err error) (int, string, string) {
 	returnMessage := fmt.Sprintf("%s error occured.", err.Error())
-	statusCode := GetStatusCodeFromError(err) //400
+	statusCode := GetStatusCodeFromError(err) // 400
 	errorMessage := err.Error()
 	pkgLogger.Error(returnMessage)
 	return statusCode, returnMessage, errorMessage

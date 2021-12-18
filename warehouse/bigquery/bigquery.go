@@ -85,6 +85,7 @@ func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 	}
 	return schema
 }
+
 func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
 	sampleSchema := getTableSchema(columnMap)
@@ -127,7 +128,7 @@ func (bq *HandleT) createTableView(tableName string, columnMap map[string]string
 	return
 }
 
-func (bq *HandleT) addColumn(tableName string, columnName string, columnType string) (err error) {
+func (bq *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
 	pkgLogger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
 	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
 	meta, err := tableRef.Metadata(bq.BQContext)
@@ -144,7 +145,7 @@ func (bq *HandleT) addColumn(tableName string, columnName string, columnType str
 	return
 }
 
-func (bq *HandleT) schemaExists(schemaname string, location string) (exists bool, err error) {
+func (bq *HandleT) schemaExists(schemaname, location string) (exists bool, err error) {
 	ds := bq.Db.Dataset(bq.Namespace)
 	_, err = ds.Metadata(bq.BQContext)
 	if err != nil {
@@ -205,11 +206,11 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
-func partitionedTable(tableName string, partitionDate string) string {
+func partitionedTable(tableName, partitionDate string) string {
 	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
 }
 
-func (bq *HandleT) loadTable(tableName string, forceLoad bool, getLoadFileLocFromTableUploads bool) (partitionDate string, err error) {
+func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTableUploads bool) (partitionDate string, err error) {
 	pkgLogger.Infof("BQ: Starting load for table:%s\n", tableName)
 	var loadFiles []warehouseutils.LoadFileT
 	if getLoadFileLocFromTableUploads {
@@ -369,7 +370,6 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 func loadConfig() {
 	partitionExpiryUpdated = make(map[string]bool)
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
-
 }
 
 func Init() {
@@ -479,7 +479,7 @@ func (bq *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
-func (bq *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+func (bq *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	err = bq.addColumn(tableName, columnName, columnType)
 	if err != nil {
 		if checkAndIgnoreAlreadyExistError(err) {
@@ -490,7 +490,7 @@ func (bq *HandleT) AddColumn(tableName string, columnName string, columnType str
 	return err
 }
 
-func (bq *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (bq *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return
 }
 
@@ -584,7 +584,7 @@ func (bq *HandleT) tableExists(tableName string) (exists bool, err error) {
 	return false, err
 }
 
-func (bq *HandleT) columnExists(columnName string, tableName string) (exists bool, err error) {
+func (bq *HandleT) columnExists(columnName, tableName string) (exists bool, err error) {
 	tableMetadata, err := bq.Db.Dataset(bq.Namespace).Table(tableName).Metadata(context.Background())
 	if err != nil {
 		return false, err

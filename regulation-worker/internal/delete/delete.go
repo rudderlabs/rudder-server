@@ -26,7 +26,6 @@ func NewRouter(managers ...deleteManager) *Router {
 }
 
 func (r *Router) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
-
 	r.once.Do(func() {
 		r.router = make(map[string]deleteManager)
 

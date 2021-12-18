@@ -32,7 +32,7 @@ func (s *StashRpcHandler) GetDSStats(dsName string, result *string) (err error) 
 	}()
 	jobTableName := prefix + dsName
 	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
-	//skipcq: SCC-SA5001
+	// skipcq: SCC-SA5001
 	defer func() { _ = dbHandle.Close() }()
 	if err != nil {
 		return err

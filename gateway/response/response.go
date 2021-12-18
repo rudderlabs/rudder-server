@@ -6,55 +6,53 @@ import (
 )
 
 const (
-	//Ok - ok
+	// Ok - ok
 	Ok = "OK"
-	//RequestBodyNil - Request body is nil
+	// RequestBodyNil - Request body is nil
 	RequestBodyNil = "Request body is nil"
-	//InvalidRequestMethod - Request Method is invalid
+	// InvalidRequestMethod - Request Method is invalid
 	InvalidRequestMethod = "Invalid HTTP Request Method"
-	//TooManyRequests - too many requests
+	// TooManyRequests - too many requests
 	TooManyRequests = "Max Events Limit reached. Dropping Events."
-	//NoWriteKeyInBasicAuth - Failed to read writeKey from header
+	// NoWriteKeyInBasicAuth - Failed to read writeKey from header
 	NoWriteKeyInBasicAuth = "Failed to read writeKey from header"
-	//NoWriteKeyInQueryParams - Failed to read writeKey from Query Params
+	// NoWriteKeyInQueryParams - Failed to read writeKey from Query Params
 	NoWriteKeyInQueryParams = "Failed to read writeKey from Query Params"
-	//RequestBodyReadFailed - Failed to read body from request
+	// RequestBodyReadFailed - Failed to read body from request
 	RequestBodyReadFailed = "Failed to read body from request"
-	//RequestBodyTooLarge - Request size exceeds max limit
+	// RequestBodyTooLarge - Request size exceeds max limit
 	RequestBodyTooLarge = "Request size exceeds max limit"
-	//InvalidWriteKey - Invalid Write Key
+	// InvalidWriteKey - Invalid Write Key
 	InvalidWriteKey = "Invalid Write Key"
-	//InvalidJSON - Invalid JSON
+	// InvalidJSON - Invalid JSON
 	InvalidJSON = "Invalid JSON"
-	//InvalidWebhookSource - Source does not accept webhook events
+	// InvalidWebhookSource - Source does not accept webhook events
 	InvalidWebhookSource = "Source does not accept webhook events"
-	//SourceTransformerResponseErrorReadFailed - Failed to read error from source transformer response
+	// SourceTransformerResponseErrorReadFailed - Failed to read error from source transformer response
 	SourceTransformerResponseErrorReadFailed = "Failed to read error from source transformer response"
-	//SourceTransformerFailed - Internal server error in source transformer
+	// SourceTransformerFailed - Internal server error in source transformer
 	SourceTransformerFailed = "Internal server error in source transformer"
-	//SourceTransformerFailedToReadOutput - Output not found in source transformer response
+	// SourceTransformerFailedToReadOutput - Output not found in source transformer response
 	SourceTransformerFailedToReadOutput = "Output not found in source transformer response"
-	//SourceTransformerInvalidResponseFormat - Invalid format of source transformer response
+	// SourceTransformerInvalidResponseFormat - Invalid format of source transformer response
 	SourceTransformerInvalidResponseFormat = "Invalid format of source transformer response"
-	//SourceTransformerInvalidOutputFormatInResponse - Invalid output format in source transformer response
+	// SourceTransformerInvalidOutputFormatInResponse - Invalid output format in source transformer response
 	SourceTransformerInvalidOutputFormatInResponse = "Invalid output format in source transformer response"
-	//SourceTransformerInvalidOutputJSON - Invalid output json in source transformer response
+	// SourceTransformerInvalidOutputJSON - Invalid output json in source transformer response
 	SourceTransformerInvalidOutputJSON = "Invalid output json in source transformer response"
-	//NonIdentifiableRequest - Request neither has anonymousId nor userId
+	// NonIdentifiableRequest - Request neither has anonymousId nor userId
 	NonIdentifiableRequest = "Request neither has anonymousId nor userId"
-	//ErrorInMarshal - Error while marshalling
+	// ErrorInMarshal - Error while marshalling
 	ErrorInMarshal = "Error while marshalling"
-	//ErrorInParseForm - Error during parsing form
+	// ErrorInParseForm - Error during parsing form
 	ErrorInParseForm = "Error during parsing form"
-	//ErrorInParseMultiform - Error during parsing multiform
+	// ErrorInParseMultiform - Error during parsing multiform
 	ErrorInParseMultiform = "Error during parsing multiform"
 )
 
-var (
-	statusMap map[string]ResponseStatus
-)
+var statusMap map[string]ResponseStatus
 
-//ResponseStatus holds gateway response status message and code
+// ResponseStatus holds gateway response status message and code
 type ResponseStatus struct {
 	message string
 	code    int
@@ -99,7 +97,6 @@ func GetStatus(key string) string {
 }
 
 func GetPixelResponse() string {
-
 	const transPixel = "\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00\x21\xF9\x04\x01\x00\x00\x00\x00\x2C\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3B"
 
 	return transPixel
@@ -113,7 +110,7 @@ func GetStatusCode(key string) int {
 	return 200
 }
 
-//Always returns a valid response json
+// Always returns a valid response json
 func GetResponse(key string) string {
 	if status, ok := statusMap[key]; ok {
 		return fmt.Sprintf(`{"msg": "%s"}`, status.message)

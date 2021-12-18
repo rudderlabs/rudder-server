@@ -34,7 +34,7 @@ var (
 
 // DestinationManager implements the method to send the events to custom destinations
 type DestinationManager interface {
-	SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string)
+	SendData(jsonData json.RawMessage, sourceID, destID string) (int, string)
 }
 
 // CustomManagerT handles this module
@@ -48,7 +48,7 @@ type CustomManagerT struct {
 	timeout              time.Duration
 }
 
-//CustomDestination keeps the config of a destination and corresponding producer for a stream destination
+// CustomDestination keeps the config of a destination and corresponding producer for a stream destination
 type CustomDestination struct {
 	Config interface{}
 	Client interface{}
@@ -69,7 +69,6 @@ func loadConfig() {
 
 // newClient delegates the call to the appropriate manager
 func (customManager *CustomManagerT) newClient(destID string) error {
-
 	destConfig := customManager.latestConfig[destID].Config
 	var customDestination *CustomDestination
 	var err error
@@ -100,7 +99,7 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 	return err
 }
 
-func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client interface{}, config interface{}) (int, string) {
+func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client, config interface{}) (int, string) {
 	var statusCode int
 	var respBody string
 	switch customManager.managerType {
@@ -123,7 +122,7 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType str
 }
 
 // SendData gets the producer from streamDestinationsMap and sends data
-func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID string, destID string) (int, string) {
+func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, sourceID, destID string) (int, string) {
 	if disableEgress {
 		return 200, `200: outgoing disabled`
 	}
@@ -293,7 +292,7 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 }
 
 func (customManager *CustomManagerT) genComparisonConfig(config interface{}) map[string]interface{} {
-	var relevantConfigs = make(map[string]interface{})
+	relevantConfigs := make(map[string]interface{})
 	configMap, ok := config.(map[string]interface{})
 	if !ok {
 		pkgLogger.Error("[CustomDestinationManager] Desttype: %s. Destination's config is not of expected type (map). Returning empty map", customManager.destType)

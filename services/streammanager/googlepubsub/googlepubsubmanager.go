@@ -18,6 +18,7 @@ type Config struct {
 	ProjectId       string              `json:"projectId"`
 	EventToTopicMap []map[string]string `json:"eventToTopicMap"`
 }
+
 type PubsubClient struct {
 	Pbs      *pubsub.Client
 	TopicMap map[string]*pubsub.Topic
@@ -48,7 +49,7 @@ func NewProducer(destinationConfig interface{}) (*PubsubClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	var topicMap = make(map[string]*pubsub.Topic, len(config.EventToTopicMap))
+	topicMap := make(map[string]*pubsub.Topic, len(config.EventToTopicMap))
 	for _, s := range config.EventToTopicMap {
 		topic := client.Topic(s["to"])
 		topic.PublishSettings.DelayThreshold = 0
@@ -58,7 +59,7 @@ func NewProducer(destinationConfig interface{}) (*PubsubClient, error) {
 	return pbsClient, nil
 }
 
-func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessage string) {
+func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (statusCode int, respStatus, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	pbs, ok := producer.(*PubsubClient)
 	ctx := context.Background()
@@ -76,7 +77,6 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		return 400, respStatus, responseMessage
 	}
 	value, err := json.Marshal(data)
-
 	if err != nil {
 		respStatus = "Failure"
 		responseMessage = "[GooglePubSub] error  :: " + err.Error()
@@ -149,7 +149,7 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	}
 }
 
-//CloseProducer closes a given producer
+// CloseProducer closes a given producer
 func CloseProducer(producer interface{}) error {
 	pbs, ok := producer.(*PubsubClient)
 	if ok {
@@ -166,8 +166,8 @@ func CloseProducer(producer interface{}) error {
 		return err
 	}
 	return fmt.Errorf("error while closing producer")
-
 }
+
 func getError(err error) (statusCode int) {
 	switch status.Code(err) {
 	case codes.Canceled:

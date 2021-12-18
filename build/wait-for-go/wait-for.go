@@ -11,7 +11,7 @@ import (
 
 // Usage example
 // go run build/wait-for-go/wait-for.go -u -t 10 localhost:8125 && go run main.go
-func canConnect(host string, port string, protocol string) bool {
+func canConnect(host, port, protocol string) bool {
 	timeout := time.Second
 	conn, err := net.DialTimeout(protocol, net.JoinHostPort(host, port), timeout)
 	if err != nil {

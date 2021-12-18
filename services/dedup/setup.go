@@ -1,8 +1,6 @@
 package dedup
 
-var (
-	dedupManager DedupI
-)
+var dedupManager DedupI
 
 // GetInstance returns an instance of DedupI
 func GetInstance(clearDB *bool) DedupI {

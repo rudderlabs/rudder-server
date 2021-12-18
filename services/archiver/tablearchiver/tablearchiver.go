@@ -28,9 +28,7 @@ type TableJSONArchiver struct {
 	FileManager   filemanager.FileManager
 }
 
-var (
-	pkgLogger logger.LoggerI
-)
+var pkgLogger logger.LoggerI
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("tablearchiver")
@@ -91,9 +89,9 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 
 		jsonBytes := []byte(rawJSONRows.String)
 
-		jsonBytes = bytes.Replace(jsonBytes, []byte("}, \n {"), []byte("}\n{"), -1) //replacing ", \n " with "\n"
-		jsonBytes = jsonBytes[1 : len(jsonBytes)-1]                                 //stripping starting '[' and ending ']'
-		jsonBytes = append(jsonBytes, '\n')                                         //appending '\n'
+		jsonBytes = bytes.Replace(jsonBytes, []byte("}, \n {"), []byte("}\n{"), -1) // replacing ", \n " with "\n"
+		jsonBytes = jsonBytes[1 : len(jsonBytes)-1]                                 // stripping starting '[' and ending ']'
+		jsonBytes = append(jsonBytes, '\n')                                         // appending '\n'
 
 		gzWriter.Write(jsonBytes)
 
@@ -114,7 +112,6 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 	defer file.Close()
 
 	output, err := jsonArchiver.FileManager.Upload(file)
-
 	if err != nil {
 		pkgLogger.Errorf(`[TableJSONArchiver]: Error uploading local file dump to object storage: %v`, err)
 		return

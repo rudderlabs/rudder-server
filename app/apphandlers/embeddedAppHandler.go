@@ -27,7 +27,7 @@ import (
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//EmbeddedApp is the type for embedded type implemention
+// EmbeddedApp is the type for embedded type implemention
 type EmbeddedApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -47,7 +47,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	//Setting up reporting client
+	// Setting up reporting client
 	if embedded.App.Features().Reporting != nil {
 		reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
@@ -70,12 +70,12 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	migrationMode := embedded.App.Options().MigrationMode
 
-	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
+	// IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 	defer gatewayDB.TearDown()
 
 	if enableProcessor || enableReplay {
-		//setting up router, batch router, proc error DBs only if processor is enabled.
+		// setting up router, batch router, proc error DBs only if processor is enabled.
 		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
 		defer routerDB.TearDown()
 

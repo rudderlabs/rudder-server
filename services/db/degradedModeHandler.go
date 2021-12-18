@@ -15,7 +15,6 @@ func setupDegradedMode() {
 func (handler *DegradedModeHandler) RecordAppStart(currTime int64) {
 	handler.recoveryData.DegradedModeStartTimes = append(handler.recoveryData.DegradedModeStartTimes, currTime)
 	handler.recoveryData.ReadableDegradedModeStartTimes = append(handler.recoveryData.ReadableDegradedModeStartTimes, fmt.Sprint(time.Unix(currTime, 0)))
-
 }
 
 func (handler *DegradedModeHandler) HasThresholdReached() bool {

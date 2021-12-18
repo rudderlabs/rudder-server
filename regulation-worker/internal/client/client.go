@@ -19,11 +19,10 @@ type JobAPI struct {
 	URLPrefix   string
 }
 
-//Get sends http request with workspaceID in the url and receives a json payload
-//which is decoded using schema and then mapped from schema to internal model.Job struct,
-//which is actually returned.
+// Get sends http request with workspaceID in the url and receives a json payload
+// which is decoded using schema and then mapped from schema to internal model.Job struct,
+// which is actually returned.
 func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
-
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Minute))
 	defer cancel()
 
@@ -44,7 +43,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	}
 	defer resp.Body.Close()
 
-	//if successful
+	// if successful
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var jobSchema jobSchema
 		if err := json.NewDecoder(resp.Body).Decode(&jobSchema); err != nil {
@@ -58,7 +57,6 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		return job, nil
 
 	} else if resp.StatusCode == http.StatusNotFound {
-
 		return model.Job{}, model.ErrNoRunnableJob
 	} else {
 
@@ -77,11 +75,10 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		}
 		return model.Job{}, fmt.Errorf("error while getting job:%v", respErr)
 	}
-
 }
 
-//marshals status into appropriate status schema, and sent as payload
-//checked for returned status code.
+// marshals status into appropriate status schema, and sent as payload
+// checked for returned status code.
 func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Minute))
 	defer cancel()
@@ -117,7 +114,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 }
 
 func prepURL(url string, params ...string) string {
-	var re = regexp.MustCompile(`{.*?}`)
+	re := regexp.MustCompile(`{.*?}`)
 	i := 0
 	return string(re.ReplaceAllFunc([]byte(url), func(matched []byte) []byte {
 		if i >= len(params) {

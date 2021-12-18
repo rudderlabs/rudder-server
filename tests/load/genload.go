@@ -41,14 +41,18 @@ var (
 	writeKey     *string
 )
 
-var done chan bool
-var numberOfEventPtr *int
-var badJSON *bool
-var badJSONRate *int
-var dupEventsRate *int
+var (
+	done             chan bool
+	numberOfEventPtr *int
+	badJSON          *bool
+	badJSONRate      *int
+	dupEventsRate    *int
+)
 
-var loadStat stats.RudderStats
-var requestTimeStat stats.RudderStats
+var (
+	loadStat        stats.RudderStats
+	requestTimeStat stats.RudderStats
+)
 
 func main() {
 	stats.Setup()
@@ -115,7 +119,7 @@ func sendBadJSON(lines []string, rudder bool) {
 	}
 }
 
-func generateJobsForSameEvent(uid string, eventName string, count int, rudder bool) {
+func generateJobsForSameEvent(uid, eventName string, count int, rudder bool) {
 	////fmt.Println("event name input: ", eventName)
 	var err error
 	var data []byte
@@ -164,7 +168,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 			}
 
 			if toSendGoodJSON() {
-				for k, _ := range mapping {
+				for k := range mapping {
 					////fmt.Printf("key %v, val %v \n", k, v.Value())
 
 					if strings.Contains(k, "anonymousId") {
@@ -206,7 +210,7 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 					panic(err)
 				}
 
-				//append to list to be send to rudder-stack
+				// append to list to be send to rudder-stack
 				rudderEvents = append(rudderEvents, unmarshalleRudderdData)
 
 				if isBatchToBeMade {
@@ -230,7 +234,6 @@ func generateJobsForSameEvent(uid string, eventName string, count int, rudder bo
 		}
 	}
 	done <- true
-
 }
 
 func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
@@ -284,7 +287,7 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 
 					rudderData := []byte(rudderJSON.Raw)
 
-					for k, _ := range mapping {
+					for k := range mapping {
 						////fmt.Printf("key %v, val %v \n", k, v.Value())
 
 						if strings.Contains(k, "anonymousId") {
@@ -318,7 +321,7 @@ func generateJobsForMulitpleEvent(uid string, count int, rudder bool) {
 				////fmt.Println("==================")
 				////fmt.Println(value)
 
-				//Push the value as json to rudder-stack
+				// Push the value as json to rudder-stack
 				if rudder {
 					sendToRudder(value)
 				}
@@ -372,6 +375,7 @@ func printStats() {
 		fmt.Println("Success/Fail", successCount, failCount)
 	}
 }
+
 func sendToRudder(jsonPayload string) {
 	loadStat.Increment()
 

@@ -1,13 +1,13 @@
 package debugger
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"time"
 )
 
 var _ = Describe("cache", func() {
-
 	Context("cache testing", func() {
 		testKey := "test_key"
 		testValue := []byte("test_value")
@@ -37,7 +37,7 @@ var _ = Describe("cache", func() {
 			Expect(len(c.cacheMap)).To(Equal(1))
 			Expect(len(c.cacheMap[testKey].data)).To(Equal(1))
 			Expect(c.cacheMap[testKey].data[0]).To(Equal(testValue))
-			Eventually(func() int {return len(c.cacheMap)}).Should(Equal(0))
+			Eventually(func() int { return len(c.cacheMap) }).Should(Equal(0))
 		})
 
 		It("Cache readAndPopData", func() {
@@ -62,6 +62,5 @@ var _ = Describe("cache", func() {
 			Expect(c.cacheMap[testKey].data[0]).To(Equal(testValue2))
 			Expect(c.cacheMap[testKey].data[1]).To(Equal(testValue3))
 		})
-
 	})
 })

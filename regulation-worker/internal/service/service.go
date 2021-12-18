@@ -1,7 +1,7 @@
 package service
 
-//TODO: appropriate error handling via model.Errors
-//TODO: appropriate status var update and handling via model.status
+// TODO: appropriate error handling via model.Errors
+// TODO: appropriate status var update and handling via model.status
 import (
 	"context"
 	"fmt"
@@ -20,6 +20,7 @@ type APIClient interface {
 type destDetail interface {
 	GetDestDetails(destID string) (model.Destination, error)
 }
+
 type deleter interface {
 	Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus
 }
@@ -30,22 +31,22 @@ type JobSvc struct {
 	DestDetail destDetail
 }
 
-//called by looper
-//calls api-client.getJob(workspaceID)
-//calls api-client to get new job with workspaceID, which returns jobID.
+// called by looper
+// calls api-client.getJob(workspaceID)
+// calls api-client to get new job with workspaceID, which returns jobID.
 func (js *JobSvc) JobSvc(ctx context.Context) error {
-	//API request to get new job
+	// API request to get new job
 	job, err := js.API.Get(ctx)
 	if err != nil {
 		return err
 	}
-	//once job is successfully received, calling updatestatus API to update the status of job to running.
+	// once job is successfully received, calling updatestatus API to update the status of job to running.
 	status := model.JobStatusRunning
 	err = js.updateStatus(ctx, status, job.ID)
 	if err != nil {
 		return err
 	}
-	//executing deletion
+	// executing deletion
 	destDetail, err := js.DestDetail.GetDestDetails(job.DestinationID)
 	if err != nil {
 		return fmt.Errorf("error while getting destination details: %w", err)
@@ -76,7 +77,6 @@ func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobI
 		if bo.NextBackOff() == backoff.Stop {
 			return err
 		}
-
 	}
 	return err
 }

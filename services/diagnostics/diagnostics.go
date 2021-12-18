@@ -59,6 +59,7 @@ type DiagnosticsI interface {
 	DisableMetrics(enableMetrics bool)
 	Identify(properties map[string]interface{})
 }
+
 type diagnostics struct {
 	Client     analytics.Client
 	StartTime  time.Time

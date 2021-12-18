@@ -37,7 +37,7 @@ func ReplaceDB(dbName, targetName string) {
 	}
 	defer db.Close()
 
-	//Killing sessions on the db
+	// Killing sessions on the db
 	sqlStatement := fmt.Sprintf("SELECT pid, pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid();", dbName)
 	rows, err := db.Query(sqlStatement)
 	if err != nil {

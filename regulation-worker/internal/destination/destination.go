@@ -16,9 +16,9 @@ type DestMiddleware struct {
 	Dest destinationMiddleware
 }
 
-//make api call to get json and then parse it to get destination related details
-//like: dest_type, auth details,
-//return destination Type enum{file, api}
+// make api call to get json and then parse it to get destination related details
+// like: dest_type, auth details,
+// return destination Type enum{file, api}
 func (d *DestMiddleware) GetDestDetails(destID string) (model.Destination, error) {
 	config, notErr := d.Dest.Get()
 	if !notErr {

@@ -2,9 +2,7 @@ package processor
 
 import "fmt"
 
-var (
-	ProcessorManager ProcessorManagerI
-)
+var ProcessorManager ProcessorManagerI
 
 type ProcessorManagerI interface {
 	Pause()

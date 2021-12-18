@@ -15,7 +15,7 @@ var _ = Describe("DestinationConnectionTester", func() {
 		var server *ghttp.Server
 		var endpoint string
 		var url string
-		var payload = DestinationConnectionTesterResponse{
+		payload := DestinationConnectionTesterResponse{
 			DestinationId: "123",
 			InstanceId:    "hosted",
 			Error:         "",
@@ -41,9 +41,8 @@ var _ = Describe("DestinationConnectionTester", func() {
 		})
 
 		AfterEach(func() {
-			//shut down the server between tests
+			// shut down the server between tests
 			server.Close()
 		})
 	})
-
 })

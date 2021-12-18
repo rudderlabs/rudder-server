@@ -8,13 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"strconv"
-	"strings"
 )
 
 func handleBasicAuth(r *http.Request) error {
@@ -183,7 +183,7 @@ func generateJsonSchFromSchProp(schemaProperties map[string]interface{}) map[str
 		case string:
 			jsProperties.Property[k] = getPropertyTypesFromSchValue(value)
 		case map[string]interface{}:
-			//check if map is an array or map
+			// check if map is an array or map
 			if checkIfArray(value) {
 				var vType interface{}
 				for _, v := range value {
@@ -221,8 +221,8 @@ func getPropertyTypesFromSchValue(schVal string) *JSPropertyTypeT {
 	}
 }
 
-//prop.myarr.0
-//will not be able to say if above is prop{myarr:[0]} or prop{myarr{"0":0}}
+// prop.myarr.0
+// will not be able to say if above is prop{myarr:[0]} or prop{myarr{"0":0}}
 func checkIfArray(value map[string]interface{}) bool {
 	if len(value) == 0 {
 		return false
@@ -238,9 +238,9 @@ func checkIfArray(value map[string]interface{}) bool {
 	return true
 }
 
-//https://play.golang.org/p/4juOff38ea
-//or use https://pkg.go.dev/github.com/wolfeidau/unflatten
-//or use https://github.com/nqd/flat
+// https://play.golang.org/p/4juOff38ea
+// or use https://pkg.go.dev/github.com/wolfeidau/unflatten
+// or use https://github.com/nqd/flat
 func unflatten(flat map[string]interface{}) (map[string]interface{}, error) {
 	unflat := map[string]interface{}{}
 
@@ -309,7 +309,7 @@ func (manager *EventSchemaManagerT) GetEventVersions(w http.ResponseWriter, r *h
 	w.Write(schemaVersionsJSON)
 }
 
-//TODO: Complete this
+// TODO: Complete this
 func (manager *EventSchemaManagerT) GetKeyCounts(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
@@ -348,7 +348,6 @@ func (manager *EventSchemaManagerT) GetKeyCounts(w http.ResponseWriter, r *http.
 }
 
 func (manager *EventSchemaManagerT) getKeyCounts(eventID string) (keyCounts map[string]int64, err error) {
-
 	schemaVersions := manager.fetchSchemaVersionsByEventID(eventID)
 
 	keyCounts = make(map[string]int64)
@@ -401,7 +400,6 @@ func (manager *EventSchemaManagerT) GetEventModelMetadata(w http.ResponseWriter,
 	}
 
 	w.Write(metadataJSON)
-
 }
 
 func (manager *EventSchemaManagerT) GetSchemaVersionMetadata(w http.ResponseWriter, r *http.Request) {

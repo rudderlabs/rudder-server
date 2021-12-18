@@ -197,7 +197,7 @@ func (l *LoggerT) getLoggingLevel() int {
 
 // SetModuleLevel sets log level for a module and it's children
 // Pass empty string for module parameter for resetting root logging level
-func SetModuleLevel(module string, levelStr string) error {
+func SetModuleLevel(module, levelStr string) error {
 	level, ok := levelMap[levelStr]
 	if !ok {
 		return errors.New("invalid level value : " + levelStr)
@@ -215,7 +215,7 @@ func SetModuleLevel(module string, levelStr string) error {
 	return nil
 }
 
-//IsDebugLevel Returns true is debug lvl is enabled
+// IsDebugLevel Returns true is debug lvl is enabled
 func (l *LoggerT) IsDebugLevel() bool {
 	return levelDebug >= l.getLoggingLevel()
 }
@@ -258,8 +258,8 @@ func (l *LoggerT) Fatal(args ...interface{}) {
 	if levelFatal >= l.getLoggingLevel() {
 		Log.Error(args...)
 
-		//If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
-		//Else, we are force writing the stacktrace to the file.
+		// If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
+		// Else, we are force writing the stacktrace to the file.
 		if !enableStackTrace {
 			byteArr := make([]byte, 2048)
 			n := runtime.Stack(byteArr, false)
@@ -308,8 +308,8 @@ func (l *LoggerT) Fatalf(format string, args ...interface{}) {
 	if levelFatal >= l.getLoggingLevel() {
 		Log.Errorf(format, args...)
 
-		//If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
-		//Else, we are force writing the stacktrace to the file.
+		// If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
+		// Else, we are force writing the stacktrace to the file.
 		if !enableStackTrace {
 			byteArr := make([]byte, 2048)
 			n := runtime.Stack(byteArr, false)
@@ -327,7 +327,7 @@ func (l *LoggerT) LogRequest(req *http.Request) {
 		bodyBytes, _ := io.ReadAll(req.Body)
 		bodyString := string(bodyBytes)
 		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-		//print raw request body for debugging purposes
+		// print raw request body for debugging purposes
 		Log.Debug("Request Body: ", bodyString)
 	}
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-//MultiWorkspaceConfig is a struct to hold variables necessary for supporting multiple workspaces.
+// MultiWorkspaceConfig is a struct to hold variables necessary for supporting multiple workspaces.
 type MultiWorkspaceConfig struct {
 	CommonBackendConfig
 	writeKeyToWorkspaceIDMap  map[string]string
@@ -22,10 +22,11 @@ type MultiWorkspaceConfig struct {
 	workspaceWriteKeysMapLock sync.RWMutex
 }
 
-//WorkspacesT holds sources of workspaces
+// WorkspacesT holds sources of workspaces
 type WorkspacesT struct {
 	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
 }
+
 type WorkspaceT struct {
 	WorkspaceID string `json:"id"`
 }
@@ -34,17 +35,17 @@ type HostedWorkspacesT struct {
 	HostedWorkspaces []WorkspaceT `json:"workspaces"`
 }
 
-//WorkspaceRegulationsT holds regulations of workspaces
+// WorkspaceRegulationsT holds regulations of workspaces
 type WorkspaceRegulationsT struct {
 	WorkspaceRegulationsMap map[string]RegulationsT `json:"-"`
 }
 
-//SetUp sets up MultiWorkspaceConfig
+// SetUp sets up MultiWorkspaceConfig
 func (multiWorkspaceConfig *MultiWorkspaceConfig) SetUp() {
 	multiWorkspaceConfig.writeKeyToWorkspaceIDMap = make(map[string]string)
 }
 
-//GetWorkspaceIDForWriteKey returns workspaceID for the given writeKey
+// GetWorkspaceIDForWriteKey returns workspaceID for the given writeKey
 func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
@@ -56,7 +57,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceIDForWriteKey(writ
 	return ""
 }
 
-//GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
+// GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
 func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
 	multiWorkspaceConfig.workspaceWriteKeysMapLock.RLock()
 	defer multiWorkspaceConfig.workspaceWriteKeysMapLock.RUnlock()
@@ -67,7 +68,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetWorkspaceLibrariesForWorksp
 	return LibrariesT{}
 }
 
-//Get returns sources from all hosted workspaces
+// Get returns sources from all hosted workspaces
 func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaceConfig?fetchAll=true", configBackendURL)
 
@@ -84,7 +85,6 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch multi workspace config from API with error: %v, retrying after %v", err, t)
 	})
-
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
 		return ConfigT{}, false
@@ -117,7 +117,7 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) Get() (ConfigT, bool) {
 	return sourcesJSON, true
 }
 
-//GetRegulations returns regulations from all hosted workspaces
+// GetRegulations returns regulations from all hosted workspaces
 func (multiWorkspaceConfig *MultiWorkspaceConfig) GetRegulations() (RegulationsT, bool) {
 	url := fmt.Sprintf("%s/hostedWorkspaces", configBackendURL)
 
@@ -134,7 +134,6 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) GetRegulations() (RegulationsT
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspaces with error: %v, retrying after %v", err, t)
 	})
-
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server", err)
 		return RegulationsT{}, false
@@ -188,13 +187,12 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getWorkspaceRegulations(worksp
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspace regulations with error: %v, retrying after %v", err, t)
 		})
-
 		if err != nil {
 			pkgLogger.Error("Error sending request to the server", err)
 			return []WorkspaceRegulationT{}, false
 		}
 
-		//If statusCode is not 2xx, then returning empty regulations
+		// If statusCode is not 2xx, then returning empty regulations
 		if statusCode < 200 || statusCode >= 300 {
 			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted workspace regulations. statusCode: %v, error: %v", statusCode, err)
 			return []WorkspaceRegulationT{}, false
@@ -243,13 +241,12 @@ func (multiWorkspaceConfig *MultiWorkspaceConfig) getSourceRegulations(workspace
 		err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted source regulations with error: %v, retrying after %v", err, t)
 		})
-
 		if err != nil {
 			pkgLogger.Error("Error sending request to the server", err)
 			return []SourceRegulationT{}, false
 		}
 
-		//If statusCode is not 2xx, then returning empty regulations
+		// If statusCode is not 2xx, then returning empty regulations
 		if statusCode < 200 || statusCode >= 300 {
 			pkgLogger.Errorf("[[ Multi-workspace-config ]] Failed to fetch hosted source regulations. statusCode: %v, error: %v", statusCode, err)
 			return []SourceRegulationT{}, false

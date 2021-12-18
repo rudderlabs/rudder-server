@@ -98,9 +98,8 @@ func loadPGNotifierConfig() {
 	config.RegisterIntConfigVariable(120, &retriggerExecutingTimeLimitInS, false, 1, "PgNotifier.retriggerExecutingTimeLimitInS")
 }
 
-//New Given default connection info return pg notifiew object from it
-func New(workspaceIdentifier string, fallbackConnectionInfo string) (notifier PgNotifierT, err error) {
-
+// New Given default connection info return pg notifiew object from it
+func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PgNotifierT, err error) {
 	// by default connection info is fallback connection info
 	connectionInfo := fallbackConnectionInfo
 
@@ -127,7 +126,6 @@ func (notifier PgNotifierT) GetDBHandle() *sql.DB {
 }
 
 func (notifier PgNotifierT) AddTopic(ctx context.Context, topic string) (err error) {
-
 	// clean up all jobs in pgnotifier for same workspace
 	// additional safety check to not delete all jobs with empty workspaceIdentifier
 	if notifier.workspaceIdentifier != "" {
@@ -339,7 +337,7 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority int) (ch chan []ResponseT, err error) {
 	ch = make(chan []ResponseT)
 
-	//Using transactions for bulk copying
+	// Using transactions for bulk copying
 	txn, err := notifier.dbHandle.Begin()
 	if err != nil {
 		return
@@ -380,7 +378,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority
 }
 
 func (notifier *PgNotifierT) Subscribe(topic string, channelSize int) (ch chan NotificationT, err error) {
-	//Create a listener & start listening -- TODO: check if panic is required
+	// Create a listener & start listening -- TODO: check if panic is required
 	listener := pq.NewListener(notifier.URI,
 		10*time.Second,
 		time.Minute,
@@ -425,7 +423,7 @@ func (notifier *PgNotifierT) Subscribe(topic string, channelSize int) (ch chan N
 }
 
 func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
-	//create a postgres function that notifies on the specified channel
+	// create a postgres function that notifies on the specified channel
 	sqlStmt := fmt.Sprintf(`DO $$
 							BEGIN
 							CREATE OR REPLACE FUNCTION pgnotifier_notify() RETURNS TRIGGER AS '
@@ -452,7 +450,7 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 		return
 	}
 
-	//create the trigger
+	// create the trigger
 	sqlStmt = fmt.Sprintf(`DO $$ BEGIN
 									CREATE TRIGGER %[1]s_status_trigger
 											AFTER INSERT OR UPDATE OF status
@@ -483,13 +481,13 @@ func (notifier *PgNotifierT) setupQueue() (err error) {
 	return
 }
 
-//GetCurrentSQLTimestamp to get sql complaint current datetime string
+// GetCurrentSQLTimestamp to get sql complaint current datetime string
 func GetCurrentSQLTimestamp() string {
 	const SQLTimeFormat = "2006-01-02 15:04:05"
 	return time.Now().Format(SQLTimeFormat)
 }
 
-//GetSQLTimestamp to get sql complaint current datetime string from the given duration
+// GetSQLTimestamp to get sql complaint current datetime string from the given duration
 func GetSQLTimestamp(t time.Time) string {
 	const SQLTimeFormat = "2006-01-02 15:04:05"
 	return t.Format(SQLTimeFormat)

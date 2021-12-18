@@ -27,7 +27,6 @@ var (
 )
 
 func TestMain(m *testing.M) {
-
 	os.Exit(run(m))
 }
 
@@ -56,7 +55,6 @@ func run(m *testing.M) int {
 		c := m.Run()
 		svcCancel()
 		code <- c
-
 	}()
 	<-testDataInitialized
 	_ = os.Setenv("workspaceID", workspaceID)
@@ -108,7 +106,7 @@ func getJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	//for the time when testData is not initialized.
+	// for the time when testData is not initialized.
 	w.WriteHeader(404)
 }
 

@@ -25,6 +25,7 @@ var pkgLogger logger.LoggerI
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("personalize")
 }
+
 func NewProducer(destinationConfig interface{}) (personalizeevents.PersonalizeEvents, error) {
 	var config Config
 	jsonConfig, err := json.Marshal(destinationConfig) // produces json
@@ -43,13 +44,14 @@ func NewProducer(destinationConfig interface{}) (personalizeevents.PersonalizeEv
 	} else {
 		s = session.Must(session.NewSession(&aws.Config{
 			Region:      aws.String(config.Region),
-			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, "")}))
+			Credentials: credentials.NewStaticCredentials(config.AccessKeyID, config.SecretAccessKey, ""),
+		}))
 	}
 	var client *personalizeevents.PersonalizeEvents = personalizeevents.New(s)
 	return *client, nil
 }
-func Produce(jsonData json.RawMessage, producer interface{}, destConfig interface{}) (statusCode int, respStatus string, responseMessag string) {
 
+func Produce(jsonData json.RawMessage, producer, destConfig interface{}) (statusCode int, respStatus, responseMessag string) {
 	var resEvent *personalizeevents.PutEventsOutput
 	var resUser *personalizeevents.PutUsersOutput
 	var resItem *personalizeevents.PutItemsOutput
@@ -133,5 +135,4 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 		respStatus = "Success"
 		return 200, respStatus, responseMessage
 	}
-
 }

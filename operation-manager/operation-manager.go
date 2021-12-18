@@ -31,6 +31,7 @@ type OperationManagerI interface {
 	StartProcessLoop(ctx context.Context) error
 	GetOperationStatus(opID int64) (bool, string)
 }
+
 type OperationManagerT struct {
 	dbHandle      *sql.DB
 	gatewayDB     jobsdb.JobsDB

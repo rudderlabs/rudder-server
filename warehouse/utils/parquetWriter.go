@@ -46,7 +46,7 @@ type ParquetWriter struct {
 	schema     []string
 }
 
-func CreateParquetWriter(schema TableSchemaT, outputFilePath string, destType string) (*ParquetWriter, error) {
+func CreateParquetWriter(schema TableSchemaT, outputFilePath, destType string) (*ParquetWriter, error) {
 	bufWriter, err := misc.CreateBufferedWriter(outputFilePath)
 	if err != nil {
 		return nil, err

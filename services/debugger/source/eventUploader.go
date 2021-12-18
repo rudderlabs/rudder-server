@@ -15,32 +15,34 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-//GatewayEventBatchT is a structure to hold batch of events
+// GatewayEventBatchT is a structure to hold batch of events
 type GatewayEventBatchT struct {
 	writeKey   string
 	eventBatch string
 }
 
-//EventUploadT is a structure to hold actual event data
+// EventUploadT is a structure to hold actual event data
 type EventUploadT map[string]interface{}
 
-//EventUploadBatchT is a structure to hold batch of events
+// EventUploadBatchT is a structure to hold batch of events
 type EventUploadBatchT struct {
 	WriteKey   string
 	ReceivedAt string
 	Batch      []EventUploadT
 }
 
-var uploadEnabledWriteKeys []string
-var configSubscriberLock sync.RWMutex
+var (
+	uploadEnabledWriteKeys []string
+	configSubscriberLock   sync.RWMutex
+)
 
 var uploader debugger.UploaderI
 
 var (
 	configBackendURL    string
 	disableEventUploads bool
-	pkgLogger      logger.LoggerI
-	eventsCacheMap debugger.Cache
+	pkgLogger           logger.LoggerI
+	eventsCacheMap      debugger.Cache
 )
 
 func Init() {
@@ -53,10 +55,9 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &disableEventUploads, true, "SourceDebugger.disableEventUploads")
 }
 
-type EventUploader struct {
-}
+type EventUploader struct{}
 
-//Setup initializes this module
+// Setup initializes this module
 func Setup(backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", configBackendURL)
 	eventUploader := &EventUploader{}
@@ -68,9 +69,9 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 	})
 }
 
-//recordHistoricEvents sends the events collected in cache as live events.
-//This is called on config update.
-//IMP: The function must be called before releasing configSubscriberLock lock to ensure the order of RecordEvent call
+// recordHistoricEvents sends the events collected in cache as live events.
+// This is called on config update.
+// IMP: The function must be called before releasing configSubscriberLock lock to ensure the order of RecordEvent call
 func recordHistoricEvents(writeKeys []string) {
 	for _, writeKey := range writeKeys {
 		historicEvents := eventsCacheMap.ReadAndPopData(writeKey)
@@ -84,10 +85,10 @@ func recordHistoricEvents(writeKeys []string) {
 	}
 }
 
-//RecordEvent is used to put the event batch in the eventBatchChannel,
-//which will be processed by handleEvents.
-func RecordEvent(writeKey string, eventBatch string) bool {
-	//if disableEventUploads is true, return;
+// RecordEvent is used to put the event batch in the eventBatchChannel,
+// which will be processed by handleEvents.
+func RecordEvent(writeKey, eventBatch string) bool {
+	// if disableEventUploads is true, return;
 	if disableEventUploads {
 		return false
 	}

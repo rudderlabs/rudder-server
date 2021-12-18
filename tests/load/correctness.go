@@ -48,28 +48,38 @@ var (
 	failCount    uint64
 )
 
-var writeKey *string
-var sourceID *string
-var isS3Test *bool
-var s3Manager filemanager.S3Manager
-var startTime time.Time
+var (
+	writeKey  *string
+	sourceID  *string
+	isS3Test  *bool
+	s3Manager filemanager.S3Manager
+	startTime time.Time
+)
 
-var testTimeUp bool
-var done chan bool
-var redisChan chan []byte
+var (
+	testTimeUp bool
+	done       chan bool
+	redisChan  chan []byte
+)
 
-var testName = config.GetEnv("TEST_NAME", "TEST-default")
-var redisServer = config.GetEnv("REDIS_SERVER", redisServerDefault)
-var sinkServer = config.GetEnv("SINK_SERVER", sinkServerDefault)
-var rudderServer = config.GetEnv("RUDDER_SERVER", rudderServerDefault)
+var (
+	testName     = config.GetEnv("TEST_NAME", "TEST-default")
+	redisServer  = config.GetEnv("REDIS_SERVER", redisServerDefault)
+	sinkServer   = config.GetEnv("SINK_SERVER", sinkServerDefault)
+	rudderServer = config.GetEnv("RUDDER_SERVER", rudderServerDefault)
+)
 
-var redisUserSet = fmt.Sprintf("%s_user_src", testName)
-var redisEventSet = fmt.Sprintf("%s_event_src", testName)
-var redisEventTimeHash = fmt.Sprintf("%s_event_src_timestamp", testName)
+var (
+	redisUserSet       = fmt.Sprintf("%s_user_src", testName)
+	redisEventSet      = fmt.Sprintf("%s_event_src", testName)
+	redisEventTimeHash = fmt.Sprintf("%s_event_src_timestamp", testName)
+)
 
-var redisDestUserSet = fmt.Sprintf("%s_user_dst", testName)
-var redisDestEventSet = fmt.Sprintf("%s_event_dst", testName)
-var redisDestEventTimeHash = fmt.Sprintf("%s_event_dst_timestamp", testName)
+var (
+	redisDestUserSet       = fmt.Sprintf("%s_user_dst", testName)
+	redisDestEventSet      = fmt.Sprintf("%s_event_dst", testName)
+	redisDestEventTimeHash = fmt.Sprintf("%s_event_dst_timestamp", testName)
+)
 
 func isArraySorted(arr []string) bool {
 	for i := 0; i < len(arr); i++ {
@@ -81,7 +91,6 @@ func isArraySorted(arr []string) bool {
 }
 
 func computeTestResults(testDuration int) {
-
 	fmt.Println("Processing Test Results ... ")
 	fmt.Println(totalCount, successCount, failCount)
 	ingestionRate := totalCount / uint64(testDuration)
@@ -107,7 +116,7 @@ func computeTestResults(testDuration int) {
 		fmt.Println("Success: Events Matched!!")
 	}
 
-	//Verify if the order of the events is same - This isn't working (ksuid check failed??)
+	// Verify if the order of the events is same - This isn't working (ksuid check failed??)
 	allUsers := redisClient.SMembers(redisDestUserSet).Val()
 	inOrder := true
 	// for _, user := range allUsers {
@@ -237,7 +246,7 @@ func generateRandomData(payload *[]byte, path string, value interface{}) ([]byte
 }
 
 func generateEvents(userID string, eventDelay int) {
-	var fileData, err = os.ReadFile("batchEvent.json")
+	fileData, err := os.ReadFile("batchEvent.json")
 	if err != nil {
 		panic(err)
 	}
@@ -298,7 +307,7 @@ type BatchEvent struct {
 }
 
 func redisLoop() {
-	var batchTimeout = 1000 * time.Millisecond
+	batchTimeout := 1000 * time.Millisecond
 	var newEventsAdded bool
 
 	redisClient := redis.NewClient(&redis.Options{
@@ -347,7 +356,6 @@ func redisLoop() {
 }
 
 func main() {
-
 	startTime = time.Now()
 	done = make(chan bool)
 	redisChan = make(chan []byte)

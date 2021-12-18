@@ -11,7 +11,6 @@ import (
 )
 
 func TestGetDestDetails(t *testing.T) {
-
 	config := map[string]interface{}{
 		"bucketName":  "malani-deletefeature-testdata",
 		"prefix":      "regulation",

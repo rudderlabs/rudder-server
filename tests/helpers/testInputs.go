@@ -23,6 +23,7 @@ var BatchPayload = `
     ]
 }
 `
+
 var LoadedJson = `
 {
   "anonymous_id": "af0d6ca8-ac18-42dc-ae98-cc40ba5b7c4d",
@@ -261,6 +262,7 @@ var POSTGRESSchema = map[string]map[string]string{
 		"uuid_ts":                     "datetime",
 	},
 }
+
 var RedshiftSchema = map[string]map[string]string{
 	"ginkgo": {
 		"_from":                       "string",
@@ -338,6 +340,7 @@ var RedshiftSchema = map[string]map[string]string{
 		"uuid_ts":                     "datetime",
 	},
 }
+
 var ReservedKeywordsRedshiftSchema = map[string]map[string]string{
 	"ginkgo": {
 		"_from":                       "string",
@@ -492,6 +495,7 @@ var BigQuerySchema = map[string]map[string]string{
 		"uuid_ts":                     "datetime",
 	},
 }
+
 var ReserverKeyWordsBigQuerySchema = map[string]map[string]string{
 	"ginkgo": {
 		"_from":                       "string",
@@ -643,6 +647,7 @@ var SnowflakeSchema = map[string]map[string]string{
 		"UUID_TS":                     "datetime",
 	},
 }
+
 var ReservedKeywordsSnowflakeSchema = map[string]map[string]string{
 	"GINKGO": {
 		"_FROM":                       "string",
@@ -717,6 +722,7 @@ var ReservedKeywordsSnowflakeSchema = map[string]map[string]string{
 		"UUID_TS":                     "datetime",
 	},
 }
+
 var ReservedKeywordsPostgreschema = map[string]map[string]string{
 	"ginkgo": {
 		"_from":                       "string",

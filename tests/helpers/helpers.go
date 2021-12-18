@@ -7,11 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
-
-	"reflect"
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -105,12 +104,14 @@ func jsonIsSubsetR(a, b []byte, diff *JSONDiff, prefix interface{}) (bool, *JSON
 					// Check if the key matches if we have it
 					if vu != val {
 						diff.Rows = append(diff.Rows, JSONDiffRow{
-							Key: fmt.Sprintf("%s/%s", sprefix, k), Expected: vu, Got: jb[k]})
+							Key: fmt.Sprintf("%s/%s", sprefix, k), Expected: vu, Got: jb[k],
+						})
 					}
 				} else {
 					// We didn't find a key we wanted
 					diff.Rows = append(diff.Rows, JSONDiffRow{
-						Key: fmt.Sprintf("%s/%s", sprefix, k), Expected: vu, Got: "NOT FOUND"})
+						Key: fmt.Sprintf("%s/%s", sprefix, k), Expected: vu, Got: "NOT FOUND",
+					})
 				}
 
 			// Compare nested json by calling this function recursively
@@ -140,7 +141,8 @@ func jsonIsSubsetR(a, b []byte, diff *JSONDiff, prefix interface{}) (bool, *JSON
 		if len(jb) != len(ja) {
 			// Length not equal so that is not good
 			diff.Rows = append(diff.Rows, JSONDiffRow{
-				Key: fmt.Sprintf("%s", sprefix), Expected: fmt.Sprintf("LEN=%d", len(ja)), Got: fmt.Sprintf("LEN=%d", len(jb))})
+				Key: fmt.Sprintf("%s", sprefix), Expected: fmt.Sprintf("LEN=%d", len(ja)), Got: fmt.Sprintf("LEN=%d", len(jb)),
+			})
 		} else {
 			// Recurse for each object inside
 			for i, x := range ja {
@@ -167,7 +169,7 @@ func jsonIsSubsetR(a, b []byte, diff *JSONDiff, prefix interface{}) (bool, *JSON
 	return diff == nil || len(diff.Rows) == 0, diff, nil
 }
 
-func IsMapSubset(mapSet interface{}, mapSubset interface{}) bool {
+func IsMapSubset(mapSet, mapSubset interface{}) bool {
 	mapSetValue := reflect.ValueOf(mapSet)
 	mapSubsetValue := reflect.ValueOf(mapSubset)
 
@@ -192,7 +194,7 @@ func IsMapSubset(mapSet interface{}, mapSubset interface{}) bool {
 	return true
 }
 
-//RemoveKeyFromJSON returns the json with keys removed from the input json
+// RemoveKeyFromJSON returns the json with keys removed from the input json
 func RemoveKeyFromJSON(json string, keys ...string) string {
 	for _, key := range keys {
 		var err error
@@ -205,7 +207,7 @@ func RemoveKeyFromJSON(json string, keys ...string) string {
 }
 
 // AddKeyToJSON adds a key and its value to the
-func AddKeyToJSON(json string, key string, value interface{}) string {
+func AddKeyToJSON(json, key string, value interface{}) string {
 	json, _ = sjson.Set(json, key, value)
 	return json
 }
@@ -218,7 +220,7 @@ func SendEventRequest(options EventOptsT) int {
 		}
 	}
 
-	//Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations. Using this WriteKey as default.
+	// Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations. Using this WriteKey as default.
 	if options.WriteKey == "" {
 		options.WriteKey = "1tfJVG2Qg6th77G66NfX8btMtTN"
 	}
@@ -349,7 +351,7 @@ func SameStringSlice(x, y []string) bool {
 
 // GetTableNamesWithPrefix returns all table names with specified prefix
 func GetTableNamesWithPrefix(dbHandle *sql.DB, prefix string) []string {
-	//Read the table names from PG
+	// Read the table names from PG
 	stmt, err := dbHandle.Prepare(`SELECT tablename
                                         FROM pg_catalog.pg_tables
                                         WHERE schemaname != 'pg_catalog' AND
@@ -393,7 +395,7 @@ func GetJobsCount(dbHandle *sql.DB, prefix string) int {
 }
 
 // GetJobStatusCount returns count of job status across all tables with specified prefix
-func GetJobStatusCount(dbHandle *sql.DB, jobState string, prefix string) int {
+func GetJobStatusCount(dbHandle *sql.DB, jobState, prefix string) int {
 	tableNames := GetTableNamesWithPrefix(dbHandle, strings.ToLower(prefix)+"_job_status_")
 	count := 0
 	for _, tableName := range tableNames {
@@ -455,7 +457,7 @@ func GetJobStatus(dbHandle *sql.DB, prefix string, limit int, jobState string) [
 }
 
 // GetLoadFileTableName queries table column form the warehouseLoadFilesTable provided
-func GetLoadFileTableName(dbHandle *sql.DB, warehouseLoadFilesTable string, sourceId string, destinationId string, destinationType string) []string {
+func GetLoadFileTableName(dbHandle *sql.DB, warehouseLoadFilesTable, sourceId, destinationId, destinationType string) []string {
 	rows, err := dbHandle.Query(fmt.Sprintf(`SELECT table_name FROM %s where source_id='%s' and destination_id='%s' and destination_type='%s'`, warehouseLoadFilesTable, sourceId, destinationId, destinationType))
 	if err != nil {
 		panic(err)
@@ -472,7 +474,7 @@ func GetLoadFileTableName(dbHandle *sql.DB, warehouseLoadFilesTable string, sour
 	return tableNames
 }
 
-func GetWarehouseSchema(dbHandle *sql.DB, warehouseSchemaTable string, sourceID string, destinationID string) map[string]map[string]string {
+func GetWarehouseSchema(dbHandle *sql.DB, warehouseSchemaTable, sourceID, destinationID string) map[string]map[string]string {
 	var rawSchema json.RawMessage
 	err := dbHandle.QueryRow(fmt.Sprintf(`SELECT schema FROM %s where source_id='%s'and destination_id='%s'`, warehouseSchemaTable, sourceID, destinationID)).Scan(&rawSchema)
 	if err != nil {
@@ -513,7 +515,8 @@ func DeleteRowsInTable(dbHandle *sql.DB, table string) {
 		panic(err)
 	}
 }
-func GetDestinationIDsFromLoadFileTable(dbHandle *sql.DB, warehouseLoadFilesTable string, sourceID string) []string {
+
+func GetDestinationIDsFromLoadFileTable(dbHandle *sql.DB, warehouseLoadFilesTable, sourceID string) []string {
 	rows, err := dbHandle.Query(fmt.Sprintf(`select destination_id from %s where source_id = '%s'`, warehouseLoadFilesTable, sourceID))
 	if err != nil {
 		panic(err)
@@ -529,7 +532,7 @@ func GetDestinationIDsFromLoadFileTable(dbHandle *sql.DB, warehouseLoadFilesTabl
 	return destinationIDs
 }
 
-func IsThisInThatSliceString(smallSlice []string, bigSlice []string) bool {
+func IsThisInThatSliceString(smallSlice, bigSlice []string) bool {
 	if len(bigSlice) < len(smallSlice) {
 		return false
 	}
@@ -546,7 +549,7 @@ func IsThisInThatSliceString(smallSlice []string, bigSlice []string) bool {
 	return true
 }
 
-func FetchUpdateState(dbHandle *sql.DB, warehouseUploadsTable string, sourceID string, destinationID string, destinationType string) (int64, string, string) {
+func FetchUpdateState(dbHandle *sql.DB, warehouseUploadsTable, sourceID, destinationID, destinationType string) (int64, string, string) {
 	row := dbHandle.QueryRow(fmt.Sprintf(`select id, namespace, status from %s where source_id='%s' and destination_id='%s' and destination_type = '%s' order by updated_at desc limit 1`, warehouseUploadsTable, sourceID, destinationID, destinationType))
 	var id int64
 	var state string
@@ -574,7 +577,7 @@ func VerifyUpdatedTables(dbHandle *sql.DB, warehouseTableUploadsTable string, up
 	return tables
 }
 
-func QueryWarehouseWithAnonymusID(anonymousId string, eventName string, namespace string, destType string, destConfig interface{}) QueryTrackPayload {
+func QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType string, destConfig interface{}) QueryTrackPayload {
 	if destType == "BQ" {
 		return queryBQ(anonymousId, eventName, namespace, destConfig)
 	}

@@ -11,11 +11,13 @@ import (
 	"github.com/rudderlabs/rudder-server/tests/helpers"
 )
 
-var dbHandle *sql.DB
-var gatewayDBPrefix string
-var routerDBPrefix string
-var dbPollFreqInS int = 1
-var gatewayDBCheckBufferInS int = 2
+var (
+	dbHandle                *sql.DB
+	gatewayDBPrefix         string
+	routerDBPrefix          string
+	dbPollFreqInS           int = 1
+	gatewayDBCheckBufferInS int = 2
+)
 
 var _ = BeforeSuite(func() {
 	var err error

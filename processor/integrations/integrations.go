@@ -35,11 +35,11 @@ func loadConfig() {
 }
 
 const (
-	//PostDataKV means post data is sent as KV
+	// PostDataKV means post data is sent as KV
 	PostDataKV = iota + 1
-	//PostDataJSON means post data is sent as JSON
+	// PostDataJSON means post data is sent as JSON
 	PostDataJSON
-	//PostDataXML means post data is sent as XML
+	// PostDataXML means post data is sent as XML
 	PostDataXML
 )
 
@@ -50,7 +50,7 @@ type PostParametersT struct {
 	Type          string `json:"type"`
 	URL           string `json:"endpoint"`
 	RequestMethod string `json:"method"`
-	//Invalid tag used in struct. skipcq: SCC-SA5008
+	// Invalid tag used in struct. skipcq: SCC-SA5008
 	UserID      string                 `json:"userId,,optional"`
 	Headers     map[string]interface{} `json:"headers"`
 	QueryParams map[string]interface{} `json:"params"`
@@ -78,6 +78,7 @@ type TransErrorSpecT struct {
 type TransStatsT struct {
 	StatTags map[string]string `json:"statTags"`
 }
+
 type TransResponseT struct {
 	Status              int64       `json:"status"`
 	Message             string      `json:"message"`
@@ -104,7 +105,6 @@ func CollectIntgTransformErrorStats(input []byte) {
 			}
 		}
 	}
-
 }
 
 // GetPostInfo parses the transformer response
@@ -130,8 +130,8 @@ func ValidatePostInfo(transformRawParams PostParametersT) error {
 	return nil
 }
 
-//FilterClientIntegrations parses the destination names from the
-//input JSON, matches them with enabled destinations from controle plane and returns the IDSs
+// FilterClientIntegrations parses the destination names from the
+// input JSON, matches them with enabled destinations from controle plane and returns the IDSs
 func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
 	clientIntgs, ok := misc.GetRudderEventVal("integrations", clientEvent)
 	if !ok {
@@ -175,12 +175,12 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 	return
 }
 
-//GetTransformerURL gets the transfomer base url endpoint
+// GetTransformerURL gets the transfomer base url endpoint
 func GetTransformerURL() string {
 	return destTransformURL
 }
 
-//GetDestinationURL returns node URL
+// GetDestinationURL returns node URL
 func GetDestinationURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
 	if misc.Contains(warehouse.WarehouseDestinations, destType) {
@@ -198,12 +198,12 @@ func GetDestinationURL(destType string) string {
 	return destinationEndPoint
 }
 
-//GetUserTransformURL returns the port of running user transform
+// GetUserTransformURL returns the port of running user transform
 func GetUserTransformURL() string {
 	return destTransformURL + "/customTransform"
 }
 
-//GetTrackingPlanValidationURL returns the port of running tracking plan validation
+// GetTrackingPlanValidationURL returns the port of running tracking plan validation
 func GetTrackingPlanValidationURL() string {
 	return destTransformURL + "/v0/validate"
 }

@@ -16,11 +16,11 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("rruntime")
 }
 
-//Go Starts the excution of the function passed as argument in a new Goroutine
-//THING TO NOTE: If the function you are intending to run inside a goroutine takes any parameters,
-//before calling this function, create local variable for every argument (so that evaluation of the argument happens immediately)
-//and then pass those local variables as arguments
-//Ex.
+// Go Starts the excution of the function passed as argument in a new Goroutine
+// THING TO NOTE: If the function you are intending to run inside a goroutine takes any parameters,
+// before calling this function, create local variable for every argument (so that evaluation of the argument happens immediately)
+// and then pass those local variables as arguments
+// Ex.
 //    var worker *workerT
 //    worker = &workerT{
 //      	workerID: i,
@@ -36,7 +36,8 @@ func Go(function func()) {
 				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
 					"GoRoutines": {
 						"Number": runtime.NumGoroutine(),
-					}})
+					},
+				})
 
 				misc.RecordAppError(fmt.Errorf("%v", r))
 				pkgLogger.Fatal(r)

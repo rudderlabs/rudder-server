@@ -113,11 +113,11 @@ func (handler *ClearOperationHandlerT) Exec(payload []byte) error {
 	}
 	brm.PauseAll()
 
-	//Clear From GatewayDB
+	// Clear From GatewayDB
 	handler.clearFromJobsdb(clearOperationHandler.gatewayDB, parameterFilters, false, false)
-	//Clear From RouterDB
+	// Clear From RouterDB
 	handler.clearFromJobsdb(clearOperationHandler.routerDB, parameterFilters, true, true)
-	//Clear From BatchRouterDB
+	// Clear From BatchRouterDB
 	handler.clearFromJobsdb(clearOperationHandler.batchRouterDB, parameterFilters, false, true)
 
 	pm.Resume()
@@ -162,7 +162,7 @@ func (handler *ClearOperationHandlerT) clearFromJobsdb(db jobsdb.JobsDB, paramet
 			}
 			statusList = append(statusList, &status)
 		}
-		//Mark the jobs statuses
+		// Mark the jobs statuses
 		err := db.UpdateJobStatus(statusList, []string{}, parameterFilters)
 		if err != nil {
 			pkgLogger.Errorf("ClearQueueManager: Error occurred while marking jobs statuses as aborted. Panicking. ParameterFilters:%#v, Err: %v", parameterFilters, err)

@@ -15,7 +15,7 @@ type ReservoirSample struct {
 	sampleEvents  []interface{}
 }
 
-func NewReservoirSampler(reservoirSize int, currSize int, totalCount int64) (rs *ReservoirSample) {
+func NewReservoirSampler(reservoirSize, currSize int, totalCount int64) (rs *ReservoirSample) {
 	reservoirSampler := new(ReservoirSample)
 	reservoirSampler.currSize = currSize
 	reservoirSampler.reservoirSize = reservoirSize

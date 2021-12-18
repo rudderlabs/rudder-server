@@ -60,7 +60,6 @@ func (manager *DOSpacesManager) Upload(file *os.File, prefixes ...string) (Uploa
 }
 
 func (manager *DOSpacesManager) Download(output *os.File, key string) error {
-
 	region := misc.GetSpacesLocation(manager.Config.EndPoint)
 	downloadSession, err := session.NewSession(&aws.Config{
 		Region:      aws.String(region),
@@ -81,7 +80,7 @@ func (manager *DOSpacesManager) Download(output *os.File, key string) error {
 	return err
 }
 
-//TODO complete this
+// TODO complete this
 func (manager *DOSpacesManager) GetDownloadKeyFromFileLocation(location string) string {
 	return location
 }

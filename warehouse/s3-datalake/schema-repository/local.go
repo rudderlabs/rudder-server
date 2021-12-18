@@ -50,7 +50,7 @@ func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap map[str
 	return ls.uploader.UpdateLocalSchema(schema)
 }
 
-func (ls *LocalSchemaRepository) AddColumn(tableName string, columnName string, columnType string) (err error) {
+func (ls *LocalSchemaRepository) AddColumn(tableName, columnName, columnType string) (err error) {
 	// fetch schema from local db
 	schema, err := ls.FetchSchema(ls.warehouse)
 	if err != nil {
@@ -68,7 +68,7 @@ func (ls *LocalSchemaRepository) AddColumn(tableName string, columnName string, 
 	return ls.uploader.UpdateLocalSchema(schema)
 }
 
-func (ls *LocalSchemaRepository) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (ls *LocalSchemaRepository) AlterColumn(tableName, columnName, columnType string) (err error) {
 	// fetch schema from local db
 	schema, err := ls.FetchSchema(ls.warehouse)
 	if err != nil {

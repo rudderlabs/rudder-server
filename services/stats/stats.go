@@ -19,22 +19,24 @@ const (
 	HistogramType = "histogram"
 )
 
-var client *statsd.Client
-var taggedClientsMap = make(map[string]*statsd.Client)
-var statsEnabled bool
-var statsTagsFormat string
-var statsdServerURL string
-var instanceID string
-var conn statsd.Option
-var taggedClientsMapLock sync.RWMutex
-var enabled bool
-var statsCollectionInterval int64
-var enableCPUStats bool
-var enableMemStats bool
-var enableGCStats bool
-var rc runtimeStatsCollector
-var pkgLogger logger.LoggerI
-var statsSamplingRate float32
+var (
+	client                  *statsd.Client
+	taggedClientsMap        = make(map[string]*statsd.Client)
+	statsEnabled            bool
+	statsTagsFormat         string
+	statsdServerURL         string
+	instanceID              string
+	conn                    statsd.Option
+	taggedClientsMapLock    sync.RWMutex
+	enabled                 bool
+	statsCollectionInterval int64
+	enableCPUStats          bool
+	enableMemStats          bool
+	enableGCStats           bool
+	rc                      runtimeStatsCollector
+	pkgLogger               logger.LoggerI
+	statsSamplingRate       float32
+)
 
 // DefaultStats is a common implementation of StatsD stats managements
 var DefaultStats Stats
@@ -52,29 +54,25 @@ func Init() {
 	statsSamplingRate = float32(config.GetFloat64("statsSamplingRate", 1))
 
 	pkgLogger = logger.NewLogger().Child("stats")
-
 }
 
 type Tags map[string]string
 
 // Stats manages provisioning of RudderStats
 type Stats interface {
-	NewStat(Name string, StatType string) (rStats RudderStats)
-	NewTaggedStat(Name string, StatType string, tags Tags) RudderStats
-	NewSampledTaggedStat(Name string, StatType string, tags Tags) RudderStats
+	NewStat(Name, StatType string) (rStats RudderStats)
+	NewTaggedStat(Name, StatType string, tags Tags) RudderStats
+	NewSampledTaggedStat(Name, StatType string, tags Tags) RudderStats
 }
 
 // HandleT is the default implementation of Stats
-type HandleT struct {
-}
+type HandleT struct{}
 
 // RudderStats provides functions to interact with StatsD stats
 type RudderStats interface {
 	Count(n int)
 	Increment()
-
 	Gauge(value interface{})
-
 	Start()
 	End()
 	DeferredTimer()
@@ -93,7 +91,7 @@ type RudderStatsT struct {
 	dontProcess bool
 }
 
-//Setup creates a new statsd client
+// Setup creates a new statsd client
 func Setup() {
 	DefaultStats = &HandleT{}
 
@@ -103,7 +101,7 @@ func Setup() {
 
 	var err error
 	conn = statsd.Address(statsdServerURL)
-	//TODO: Add tags by calling a function...
+	// TODO: Add tags by calling a function...
 	client, err = statsd.New(conn, statsd.TagsFormat(getTagsFormat()), defaultTags())
 	if err != nil {
 		// If nothing is listening on the target port, an error is returned and
@@ -119,7 +117,7 @@ func Setup() {
 }
 
 // NewStat creates a new RudderStats with provided Name and Type
-func (s *HandleT) NewStat(Name string, StatType string) (rStats RudderStats) {
+func (s *HandleT) NewStat(Name, StatType string) (rStats RudderStats) {
 	return &RudderStatsT{
 		Name:     Name,
 		StatType: StatType,
@@ -129,20 +127,20 @@ func (s *HandleT) NewStat(Name string, StatType string) (rStats RudderStats) {
 
 // NewStat creates a new RudderStats with provided Name and Type
 // Deprecated: Use DefaultStats for managing stats instead
-func NewStat(Name string, StatType string) (rStats RudderStats) {
+func NewStat(Name, StatType string) (rStats RudderStats) {
 	return DefaultStats.NewStat(Name, StatType)
 }
 
-func (s *HandleT) NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
+func (s *HandleT) NewTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
 	return newTaggedStat(Name, StatType, tags, 1)
 }
 
-func (s *HandleT) NewSampledTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
+func (s *HandleT) NewSampledTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
 	return newTaggedStat(Name, StatType, tags, statsSamplingRate)
 }
 
-func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
-	//If stats is not enabled, returning a dummy struct
+func newTaggedStat(Name, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
+	// If stats is not enabled, returning a dummy struct
 	if !statsEnabled {
 		return &RudderStatsT{
 			Name:        Name,
@@ -187,7 +185,7 @@ func newTaggedStat(Name string, StatType string, tags Tags, samplingRate float32
 	}
 }
 
-func NewTaggedStat(Name string, StatType string, tags Tags) (rStats RudderStats) {
+func NewTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
 	return DefaultStats.NewTaggedStat(Name, StatType, tags)
 }
 
@@ -295,7 +293,6 @@ func collectRuntimeStats(client *statsd.Client) {
 	if enabled {
 		rc.run()
 	}
-
 }
 
 // StopRuntimeStats stops collection of runtime stats.

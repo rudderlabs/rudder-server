@@ -8,19 +8,19 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-//ResponseHandlerI - handle destination response
+// ResponseHandlerI - handle destination response
 type ResponseHandlerI interface {
 	IsSuccessStatus(respCode int, respBody string) (returnCode int)
 }
 
-//JSONResponseHandler handler for json response
+// JSONResponseHandler handler for json response
 type JSONResponseHandler struct {
 	abortRules     []map[string]interface{}
 	retryableRules []map[string]interface{}
 	throttledRules []map[string]interface{}
 }
 
-//TXTResponseHandler handler for text response
+// TXTResponseHandler handler for text response
 type TXTResponseHandler struct {
 	abortRules     []map[string]interface{}
 	retryableRules []map[string]interface{}
@@ -43,7 +43,7 @@ func getRulesArrForKey(key string, rules map[string]interface{}) []map[string]in
 	return rulesArr
 }
 
-//New returns a destination response handler. Can be nil(Check before using this)
+// New returns a destination response handler. Can be nil(Check before using this)
 func New(responseRules map[string]interface{}) ResponseHandlerI {
 	if responseType, ok := responseRules["responseType"]; !ok || reflect.TypeOf(responseType).Kind() != reflect.String {
 		return nil
@@ -113,9 +113,9 @@ func evalBody(body string, rules []map[string]interface{}) bool {
 	return false
 }
 
-//JSONResponseHandler -- start
+// JSONResponseHandler -- start
 
-//IsSuccessStatus - returns the status code based on the response code and body
+// IsSuccessStatus - returns the status code based on the response code and body
 func (handler *JSONResponseHandler) IsSuccessStatus(respCode int, respBody string) (returnCode int) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -124,29 +124,29 @@ func (handler *JSONResponseHandler) IsSuccessStatus(respCode int, respBody strin
 		}
 	}()
 
-	//If it is not a 2xx, we don't need to look at the respBody, returning respCode
+	// If it is not a 2xx, we don't need to look at the respBody, returning respCode
 	if !isSuccessStatus(respCode) {
 		return respCode
 	}
 
 	if evalBody(respBody, handler.abortRules) {
-		return 400 //Rudder abort code
+		return 400 // Rudder abort code
 	}
 
 	if evalBody(respBody, handler.retryableRules) {
-		return 500 //Rudder retry code
+		return 500 // Rudder retry code
 	}
 
 	if evalBody(respBody, handler.throttledRules) {
-		return 429 //Rudder throttle code
+		return 429 // Rudder throttle code
 	}
 
 	return respCode
 }
 
-//TXTResponseHandler -- start
+// TXTResponseHandler -- start
 
-//IsSuccessStatus - returns the status code based on the response code and body
+// IsSuccessStatus - returns the status code based on the response code and body
 func (handler *TXTResponseHandler) IsSuccessStatus(respCode int, respBody string) (returnCode int) {
 	defer func() {
 		if r := recover(); r != nil {

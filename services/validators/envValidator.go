@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	//This is integer representation of Postgres version.
-	//For ex, integer representation of version 9.6.3 is 90603
-	//Minimum postgres version needed for rudder server is 10
+	// This is integer representation of Postgres version.
+	// For ex, integer representation of version 9.6.3 is 90603
+	// Minimum postgres version needed for rudder server is 10
 	minPostgresVersion = 100000
 )
 
@@ -29,7 +29,7 @@ func init() {
 }
 
 func createWorkspaceTable(dbHandle *sql.DB) {
-	//Create table to store workspace token
+	// Create table to store workspace token
 	sqlStatement := `CREATE TABLE IF NOT EXISTS workspace (
 		token TEXT PRIMARY KEY,
 		created_at TIMESTAMP NOT NULL,
@@ -42,7 +42,7 @@ func createWorkspaceTable(dbHandle *sql.DB) {
 }
 
 func insertTokenIfNotExists(dbHandle *sql.DB) {
-	//Read entries, if there are no entries insert hashed current workspace token
+	// Read entries, if there are no entries insert hashed current workspace token
 	var totalCount int
 	sqlStatement := `SELECT COUNT(*) FROM workspace`
 	row := dbHandle.QueryRow(sqlStatement)
@@ -55,7 +55,7 @@ func insertTokenIfNotExists(dbHandle *sql.DB) {
 		return
 	}
 
-	//There are no entries in the table, hash current workspace token and insert
+	// There are no entries in the table, hash current workspace token and insert
 	sqlStatement = `INSERT INTO workspace (token, created_at)
 									   VALUES ($1, $2)`
 	stmt, err := dbHandle.Prepare(sqlStatement)
@@ -151,7 +151,7 @@ func closeDBConnection(handle *sql.DB) {
 	}
 }
 
-//IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
+// IsPostgresCompatible checks the if the version of postgres is greater than minPostgresVersion
 func IsPostgresCompatible(db *sql.DB) (bool, error) {
 	var versionNum int
 	err := db.QueryRow("SHOW server_version_num;").Scan(&versionNum)
@@ -161,7 +161,7 @@ func IsPostgresCompatible(db *sql.DB) (bool, error) {
 	return versionNum >= minPostgresVersion, nil
 }
 
-//ValidateEnv validates the current environment available for the server
+// ValidateEnv validates the current environment available for the server
 func ValidateEnv() {
 	dbHandle := createDBConnection()
 	defer closeDBConnection(dbHandle)
@@ -176,7 +176,7 @@ func ValidateEnv() {
 	}
 }
 
-//InitializeEnv initializes the environment for the server
+// InitializeEnv initializes the environment for the server
 func InitializeNodeMigrations() {
 	dbHandle := createDBConnection()
 	defer closeDBConnection(dbHandle)
@@ -190,7 +190,6 @@ func InitializeNodeMigrations() {
 	if err != nil {
 		panic(fmt.Errorf("Could not run node migrations: %w", err))
 	}
-
 }
 
 func CheckAndValidateWorkspaceToken() {
@@ -206,8 +205,8 @@ func CheckAndValidateWorkspaceToken() {
 		return
 	}
 
-	//db connection should be closed. Else alter db fails.
-	//A new connection will be created again below, which will be closed on returning of this function (due to defer statement).
+	// db connection should be closed. Else alter db fails.
+	// A new connection will be created again below, which will be closed on returning of this function (due to defer statement).
 	closeDBConnection(dbHandle)
 
 	pkgLogger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
@@ -217,7 +216,7 @@ func CheckAndValidateWorkspaceToken() {
 
 	dbHandle = createDBConnection()
 
-	//create workspace table and insert hashed token
+	// create workspace table and insert hashed token
 	createWorkspaceTable(dbHandle)
 	insertTokenIfNotExists(dbHandle)
 	setWHSchemaVersionIfNotExists(dbHandle)

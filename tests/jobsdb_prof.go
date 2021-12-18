@@ -59,22 +59,27 @@ var sampleEvent string = `
 
 var endPoint string = "4"
 
-var batchSize int = 100
-var numLoops int = 100
-var numBatchesPerLoop int = 10000
+var (
+	batchSize         int = 100
+	numLoops          int = 100
+	numBatchesPerLoop int = 10000
+)
 
-var numQuery int = 10000
-var failRatio int = 5
+var (
+	numQuery  int = 10000
+	failRatio int = 5
+)
 
 var wg sync.WaitGroup
 
 var storeDone bool = false
 
-var uuidWriteMap map[uuid.UUID]bool
-var uuidReadMap map[uuid.UUID]bool
+var (
+	uuidWriteMap map[uuid.UUID]bool
+	uuidReadMap  map[uuid.UUID]bool
+)
 
 func storeProcess(jd *jobsdb.HandleT) {
-
 	var totalTime float64
 	storeSleep := 2 * time.Millisecond
 
@@ -107,7 +112,6 @@ func storeProcess(jd *jobsdb.HandleT) {
 }
 
 func readProcess(jd *jobsdb.HandleT) {
-
 	var totalReadTime float64
 	var totalUpdateTime float64
 	var totalLoop int
@@ -136,10 +140,9 @@ func readProcess(jd *jobsdb.HandleT) {
 				time.Sleep(readSleep)
 				continue
 			}
-
 		}
 
-		//Mark call as failed
+		// Mark call as failed
 		var statusList []*jobsdb.JobStatusT
 
 		combinedList := append(unprocessedList, retryList...)
@@ -149,7 +152,7 @@ func readProcess(jd *jobsdb.HandleT) {
 
 		for _, job := range combinedList {
 
-			//Save UUID Map
+			// Save UUID Map
 			uuidReadMap[job.UUID] = true
 
 			stat := jobsdb.Succeeded.State
@@ -201,7 +204,7 @@ func main() {
 		go readProcess(&jd)
 		wg.Wait()
 
-		//Verify if everything was proper
+		// Verify if everything was proper
 		for k := range uuidWriteMap {
 			_, ok := uuidReadMap[k]
 			if !ok {

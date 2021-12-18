@@ -7,15 +7,15 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
-//RouterJobT holds the router job and its related metadata
+// RouterJobT holds the router job and its related metadata
 type RouterJobT struct {
 	Message     json.RawMessage            `json:"message"`
 	JobMetadata JobMetadataT               `json:"metadata"`
 	Destination backendconfig.DestinationT `json:"destination"`
 }
 
-//DestinationJobT holds the job to be sent to destination
-//and metadata of all the router jobs from which this job is cooked up
+// DestinationJobT holds the job to be sent to destination
+// and metadata of all the router jobs from which this job is cooked up
 type DestinationJobT struct {
 	Message          json.RawMessage            `json:"batchedRequest"`
 	JobMetadataArray []JobMetadataT             `json:"metadata"`
@@ -25,7 +25,7 @@ type DestinationJobT struct {
 	Error            string                     `json:"error"`
 }
 
-//JobMetadataT holds the job metadata
+// JobMetadataT holds the job metadata
 type JobMetadataT struct {
 	UserID           string       `json:"userId"`
 	JobID            int64        `json:"jobId"`
@@ -39,7 +39,7 @@ type JobMetadataT struct {
 	JobT             *jobsdb.JobT `json:"jobsT"`
 }
 
-//TransformMessageT is used to pass message to the transformer workers
+// TransformMessageT is used to pass message to the transformer workers
 type TransformMessageT struct {
 	Data     []RouterJobT `json:"input"`
 	DestType string       `json:"destType"`

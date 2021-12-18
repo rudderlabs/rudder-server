@@ -91,7 +91,8 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 
 	_, err = azblob.UploadFileToBlockBlob(ctx, file, blobURL, azblob.UploadToBlockBlobOptions{
 		BlockSize:   4 * 1024 * 1024,
-		Parallelism: 16})
+		Parallelism: 16,
+	})
 
 	if err != nil {
 		return UploadOutput{}, err
@@ -183,7 +184,7 @@ func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location strin
 	return location[len(baseURL):], nil
 }
 
-//TODO complete this
+// TODO complete this
 func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location string) string {
 	return location
 }

@@ -105,7 +105,7 @@ type testContext struct {
 
 	mockVersionHandler func(w http.ResponseWriter, r *http.Request)
 
-	//Enterprise mocks
+	// Enterprise mocks
 	mockSuppressUser        *mocksTypes.MockSuppressUserI
 	mockSuppressUserFeature *mocksApp.MockSuppressUserFeature
 }
@@ -148,10 +148,8 @@ func (c *testContext) Finish() {
 }
 
 var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
-	var (
-		gateway = &HandleT{}
-	)
-	var _ = DescribeTable("newDSIdx tests",
+	gateway := &HandleT{}
+	_ = DescribeTable("newDSIdx tests",
 		func(inputKey, value string) {
 			testValidBody := `{"batch":[{"anonymousId":"anon_id_1","event":"event_1_1"},{"anonymousId":"anon_id_2","event":"event_2_1"},{"anonymousId":"anon_id_3","event":"event_3_1"},{"anonymousId":"anon_id_1","event":"event_1_2"},{"anonymousId":"anon_id_2","event":"event_2_2"},{"anonymousId":"anon_id_1","event":"event_1_3"}]}`
 			response, payloadError := gateway.getUsersPayload([]byte(testValidBody))
@@ -228,7 +226,6 @@ var _ = Describe("Gateway Enterprise", func() {
 			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(allowedUserEventData)), 200, "OK")
 		})
 	})
-
 })
 
 var _ = Describe("Gateway", func() {
@@ -278,7 +275,7 @@ var _ = Describe("Gateway", func() {
 			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)
 		})
 
-		assertJobMetadata := func(job *jobsdb.JobT, batchLength int, batchId int) {
+		assertJobMetadata := func(job *jobsdb.JobT, batchLength, batchId int) {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
 
 			var paramsMap, expectedParamsMap map[string]interface{}
@@ -302,7 +299,7 @@ var _ = Describe("Gateway", func() {
 			Expect(batch.Array()).To(HaveLen(batchLength))
 		}
 
-		createValidBody := func(customProperty string, customValue string) []byte {
+		createValidBody := func(customProperty, customValue string) []byte {
 			validData := `{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}}}`
 			validDataWithProperty, _ := sjson.SetBytes([]byte(validData), customProperty, customValue)
 
@@ -365,8 +362,8 @@ var _ = Describe("Gateway", func() {
 			}
 		}
 
-		//Commenting the following test
-		//This will be fixed and uncommented in user based request routing tests
+		// Commenting the following test
+		// This will be fixed and uncommented in user based request routing tests
 		// It("should process multiple requests to all endpoints (except batch) in a batch", func() {
 		// 	handlers := map[string]http.HandlerFunc{
 		// 		"alias":    gateway.webAliasHandler,
@@ -437,9 +434,7 @@ var _ = Describe("Gateway", func() {
 	})
 
 	Context("Rate limits", func() {
-		var (
-			gateway = &HandleT{}
-		)
+		gateway := &HandleT{}
 
 		BeforeEach(func() {
 			SetEnableRateLimit(true)
@@ -467,9 +462,7 @@ var _ = Describe("Gateway", func() {
 	})
 
 	Context("Invalid requests", func() {
-		var (
-			gateway = &HandleT{}
-		)
+		gateway := &HandleT{}
 
 		BeforeEach(func() {
 			gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler)

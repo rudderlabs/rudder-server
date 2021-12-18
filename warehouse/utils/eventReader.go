@@ -11,5 +11,4 @@ func NewEventReader(r io.Reader, provider string) eventReader {
 		return NewJSONReader(r)
 	}
 	return NewCsvReader(r)
-
 }

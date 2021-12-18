@@ -51,7 +51,6 @@ func (jd *HandleT) setupDatabaseTables(clearAll bool) {
 }
 
 func (jd *HandleT) dropDatabaseTables() {
-
 	jd.logger.Infof("[JobsDB:%v] Dropping all database tables", jd.tablePrefix)
 	jd.dropSchemaMigrationTables()
 	jd.dropAllDS()

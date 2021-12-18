@@ -6,17 +6,16 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
-
-	"time"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
-//NOTE: Module name for logging: jobsdb.readonly-<prefix>
-//To enable this module logging using rudder-cli, do the following
-//rudder-cli logging -m=jobsdb.readonly-<prefix> -l=DEBUG
+// NOTE: Module name for logging: jobsdb.readonly-<prefix>
+// To enable this module logging using rudder-cli, do the following
+// rudder-cli logging -m=jobsdb.readonly-<prefix> -l=DEBUG
 
 /*
 ReadonlyJobsDB interface contains public methods to access JobsDB data
@@ -24,13 +23,13 @@ ReadonlyJobsDB interface contains public methods to access JobsDB data
 type ReadonlyJobsDB interface {
 	GetPendingJobsCount(customValFilters []string, count int, parameterFilters []ParameterFilterT) int64
 	GetUnprocessedCount(customValFilters []string, parameterFilters []ParameterFilterT) int64
-	GetJobSummaryCount(arg string, prefix string) (string, error)
-	GetLatestFailedJobs(arg string, prefix string) (string, error)
+	GetJobSummaryCount(arg, prefix string) (string, error)
+	GetLatestFailedJobs(arg, prefix string) (string, error)
 	GetJobIDsForUser(args []string) (string, error)
 	GetFailedStatusErrorCodeCountsByDestination(args []string) (string, error)
 	GetDSListString() (string, error)
-	GetJobIDStatus(job_id string, prefix string) (string, error)
-	GetJobByID(job_id string, prefix string) (string, error)
+	GetJobIDStatus(job_id, prefix string) (string, error)
+	GetJobByID(job_id, prefix string) (string, error)
 }
 
 type ReadonlyHandleT struct {
@@ -76,6 +75,7 @@ type ErrorCodeCountsByDestination struct {
 type ErrorCodeCountStats struct {
 	ErrorCodeCounts []ErrorCodeCountsByDestination
 }
+
 type FailedJobsStats struct {
 	FailedNums []FailedJobs
 }
@@ -109,7 +109,7 @@ func (jd *ReadonlyHandleT) TearDown() {
 	jd.DbHandle.Close()
 }
 
-//Some helper functions
+// Some helper functions
 func (jd *ReadonlyHandleT) assertError(err error) {
 	if err != nil {
 		panic(err)
@@ -273,7 +273,7 @@ func (jd *ReadonlyHandleT) getNonSucceededJobsCount(customValFilters []string, p
 /*
 getProcessedCount returns number of events of a given state.
 */
-func (jd *ReadonlyHandleT) getProcessedCount(stateFilter []string, customValFilters []string, parameterFilters []ParameterFilterT) int64 {
+func (jd *ReadonlyHandleT) getProcessedCount(stateFilter, customValFilters []string, parameterFilters []ParameterFilterT) int64 {
 	var queryStat stats.RudderStats
 	statName := ""
 	if len(customValFilters) > 0 {
@@ -445,7 +445,7 @@ func getJobPrefix(prefix string) string {
 	return response
 }
 
-func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetJobSummaryCount(arg, prefix string) (string, error) {
 	dsListArr := make([]DSPair, 0)
 	argList := strings.Split(arg, ":")
 	if argList[0] != "" {
@@ -518,7 +518,7 @@ func (jd *ReadonlyHandleT) GetJobSummaryCount(arg string, prefix string) (string
 	return string(response), nil
 }
 
-func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg string, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg, prefix string) (string, error) {
 	var dsList DSPair
 	argList := strings.Split(arg, ":")
 	if argList[0] != "" {
@@ -568,7 +568,7 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg string, prefix string) (strin
 	return string(response), nil
 }
 
-func (jd *ReadonlyHandleT) GetJobByID(job_id string, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetJobByID(job_id, prefix string) (string, error) {
 	dsListTotal := jd.getDSList()
 	var response []byte
 	for _, dsPair := range dsListTotal {
@@ -633,7 +633,7 @@ func (jd *ReadonlyHandleT) GetJobByID(job_id string, prefix string) (string, err
 	return string(response), nil
 }
 
-func (jd *ReadonlyHandleT) GetJobIDStatus(job_id string, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetJobIDStatus(job_id, prefix string) (string, error) {
 	dsListTotal := jd.getDSList()
 	var response []byte
 	for _, dsPair := range dsListTotal {

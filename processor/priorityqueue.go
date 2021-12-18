@@ -7,12 +7,12 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 )
 
-//We keep a priority queue of user_id to last event
-//timestamp from that user
+// We keep a priority queue of user_id to last event
+// timestamp from that user
 
 type pqItemT struct {
-	lastTS time.Time //last timestamp
-	index  int       //index in priority queue
+	lastTS time.Time // last timestamp
+	index  int       // index in priority queue
 }
 
 type pqT []*pqItemT
@@ -117,7 +117,7 @@ func (pq *transformRequestPQ) Remove(item *TransformRequestT) {
 	heap.Remove(pq, item.Index)
 }
 
-func (pq *transformRequestPQ) Update(item *TransformRequestT, nextItem *TransformRequestT) {
+func (pq *transformRequestPQ) Update(item, nextItem *TransformRequestT) {
 	index := item.Index
 	item = nextItem
 	item.Index = index

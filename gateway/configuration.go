@@ -7,21 +7,21 @@ import (
 )
 
 func loadConfig() {
-	//Port where GW is running
+	// Port where GW is running
 	config.RegisterIntConfigVariable(8080, &webPort, false, 1, "Gateway.webPort")
-	//Port where AdminHandler is running
+	// Port where AdminHandler is running
 	config.RegisterIntConfigVariable(8089, &adminWebPort, false, 1, "Gateway.adminWebPort")
-	//Number of incoming requests that are batched before handing off to write workers
+	// Number of incoming requests that are batched before handing off to write workers
 	config.RegisterIntConfigVariable(128, &maxUserWebRequestBatchSize, false, 1, "Gateway.maxUserRequestBatchSize")
-	//Number of userWorkerBatchRequest that are batched before initiating write
+	// Number of userWorkerBatchRequest that are batched before initiating write
 	config.RegisterIntConfigVariable(128, &maxDBBatchSize, false, 1, "Gateway.maxDBBatchSize")
-	//Timeout after which batch is formed anyway with whatever requests
-	//are available
+	// Timeout after which batch is formed anyway with whatever requests
+	// are available
 	config.RegisterDurationConfigVariable(time.Duration(15), &userWebRequestBatchTimeout, true, time.Millisecond, []string{"Gateway.userWebRequestBatchTimeout", "Gateway.userWebRequestBatchTimeoutInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &dbBatchWriteTimeout, true, time.Millisecond, []string{"Gateway.dbBatchWriteTimeout", "Gateway.dbBatchWriteTimeoutInMS"}...)
-	//Multiple workers are used to batch user web requests
+	// Multiple workers are used to batch user web requests
 	config.RegisterIntConfigVariable(64, &maxUserWebRequestWorkerProcess, false, 1, "Gateway.maxUserWebRequestWorkerProcess")
-	//Multiple DB writers are used to write data to DB
+	// Multiple DB writers are used to write data to DB
 	config.RegisterIntConfigVariable(256, &maxDBWriterProcess, false, 1, "Gateway.maxDBWriterProcess")
 	// CustomVal is used as a key in the jobsDB customval column
 	config.RegisterStringConfigVariable("GW", &CustomVal, false, "Gateway.CustomVal")
@@ -55,21 +55,21 @@ func IsEnableRateLimit() bool {
 	return enableRateLimit
 }
 
-//SetEnableEventSchemasFeature overrides enableEventSchemasFeature configuration and returns previous value
+// SetEnableEventSchemasFeature overrides enableEventSchemasFeature configuration and returns previous value
 func SetEnableEventSchemasFeature(b bool) bool {
 	prev := enableEventSchemasFeature
 	enableEventSchemasFeature = b
 	return prev
 }
 
-//SetEnableRateLimit overrides enableRateLimit configuration and returns previous value
+// SetEnableRateLimit overrides enableRateLimit configuration and returns previous value
 func SetEnableRateLimit(b bool) bool {
 	prev := enableRateLimit
 	enableRateLimit = b
 	return prev
 }
 
-//SetEnableSuppressUserFeature overrides enableSuppressUserFeature configuration and returns previous value
+// SetEnableSuppressUserFeature overrides enableSuppressUserFeature configuration and returns previous value
 func SetEnableSuppressUserFeature(b bool) bool {
 	prev := enableSuppressUserFeature
 	enableSuppressUserFeature = b

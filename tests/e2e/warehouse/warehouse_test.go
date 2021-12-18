@@ -16,24 +16,25 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-var dbHandle *sql.DB
-var gatewayDBPrefix string
-var routerDBPrefix string
-var dbPollFreqInS int = 1
-var pollIntervalForLoadTables int = 10
-var loadTablesTimeout int = 200
-var eventName string = "ginkgo"
-var warehouseTables []string
-var writeKey string = "1arW7vLmzvmwMkTzDFwmcKiAikX"
-var sourceJSON backendconfig.ConfigT
-
 var (
-	warehouseLoadFolder string
+	dbHandle                  *sql.DB
+	gatewayDBPrefix           string
+	routerDBPrefix            string
+	dbPollFreqInS             int    = 1
+	pollIntervalForLoadTables int    = 10
+	loadTablesTimeout         int    = 200
+	eventName                 string = "ginkgo"
+	warehouseTables           []string
+	writeKey                  string = "1arW7vLmzvmwMkTzDFwmcKiAikX"
+	sourceJSON                backendconfig.ConfigT
 )
+
+var warehouseLoadFolder string
 
 const (
 	exportedDataState = "exported_data"
 )
+
 const (
 	BQ        = "BQ"
 	RS        = "RS"
@@ -61,6 +62,7 @@ func getWorkspaceConfig() backendconfig.ConfigT {
 	sourceJSON, _ := backendConfig.Get()
 	return sourceJSON
 }
+
 func initializeWarehouseConfig() {
 	for _, source := range sourceJSON.Sources {
 		if source.Name == "warehouse-ginkgo" {
@@ -305,7 +307,6 @@ var _ = Describe("Warehouse", func() {
 				return helpers.IsThisInThatSliceString(tables, updatedTables)
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(true))
 		})
-
 	})
 	Describe("testing with different string formats", func() {
 		BeforeEach(func() {
@@ -379,7 +380,6 @@ var _ = Describe("Warehouse", func() {
 				payload := helpers.QueryWarehouseWithAnonymusID(anonymousId, eventName, namespace, destType, WarehouseConfig[0].Destination.Config)
 				return payload.Label
 			}, loadTablesTimeout, pollIntervalForLoadTables).Should(Equal(label))
-
 		})
 	})
 	Describe("sending different data types for a key consecutively", func() {

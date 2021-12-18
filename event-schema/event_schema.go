@@ -1,4 +1,4 @@
-//Event schemas uses countish algorithm by https://github.com/shanemhansen/countish
+// Event schemas uses countish algorithm by https://github.com/shanemhansen/countish
 
 /*
  *
@@ -91,14 +91,16 @@ type PrivateDataT struct {
 	FrequencyCounters []*FrequencyCounter
 }
 
-type WriteKey string
-type EventType string
-type EventIdentifier string
+type (
+	WriteKey        string
+	EventType       string
+	EventIdentifier string
+)
 
-//EventModelMapT : <writeKey, eventType, eventIdentifier> to EventModel Mapping
+// EventModelMapT : <writeKey, eventType, eventIdentifier> to EventModel Mapping
 type EventModelMapT map[WriteKey]map[EventType]map[EventIdentifier]*EventModelT
 
-//SchemaVersionMapT : <event_model_id, schema_hash> to SchemaVersion Mapping
+// SchemaVersionMapT : <event_model_id, schema_hash> to SchemaVersion Mapping
 type SchemaVersionMapT map[string]map[string]*SchemaVersionT
 
 // EventSchemaManagerT handles all event-schemas related features
@@ -150,19 +152,21 @@ var (
 	areEventSchemasPopulated        bool
 )
 
-const EVENT_MODELS_TABLE = "event_models"
-const SCHEMA_VERSIONS_TABLE = "schema_versions"
+const (
+	EVENT_MODELS_TABLE    = "event_models"
+	SCHEMA_VERSIONS_TABLE = "schema_versions"
+)
 
-//GatewayEventBatchT : Type sent from gateway
+// GatewayEventBatchT : Type sent from gateway
 type GatewayEventBatchT struct {
 	writeKey   string
 	eventBatch string
 }
 
-//EventT : Generic type for singular event
+// EventT : Generic type for singular event
 type EventT map[string]interface{}
 
-//EventPayloadT : Generic type for gateway event payload
+// EventPayloadT : Generic type for gateway event payload
 type EventPayloadT struct {
 	WriteKey   string
 	ReceivedAt string
@@ -192,8 +196,8 @@ func Init2() {
 	pkgLogger = logger.NewLogger().Child("event-schema")
 }
 
-//RecordEventSchema : Records event schema for every event in the batch
-func (manager *EventSchemaManagerT) RecordEventSchema(writeKey string, eventBatch string) bool {
+// RecordEventSchema : Records event schema for every event in the batch
+func (manager *EventSchemaManagerT) RecordEventSchema(writeKey, eventBatch string) bool {
 	select {
 	case eventSchemaChannel <- &GatewayEventBatchT{writeKey, eventBatch}:
 	default:
@@ -303,7 +307,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	processingTimer.Start()
 	defer processingTimer.End()
 
-	//TODO: Create locks on every event_model to improve scaling this
+	// TODO: Create locks on every event_model to improve scaling this
 	manager.eventModelLock.Lock()
 	manager.schemaVersionLock.Lock()
 	defer manager.eventModelLock.Unlock()
@@ -449,7 +453,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	updatedEventModels[eventModel.UUID] = eventModel
 }
 
-func (manager *EventSchemaManagerT) createModel(writeKey string, eventType string, eventIdentifier string, eventModel *EventModelT, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
+func (manager *EventSchemaManagerT) createModel(writeKey, eventType, eventIdentifier string, eventModel *EventModelT, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
 	eventModelID := uuid.Must(uuid.NewV4()).String()
 	eventModel = &EventModelT{
 		UUID:            eventModelID,
@@ -559,8 +563,8 @@ func (em *EventModelT) mergeSchema(sv *SchemaVersionT) {
 	em.Schema = masterSchemaJSON
 }
 
-//NewSchemaVersion should be used when a schemaVersion is not found in its cache and requires, a schemaVersionID for the newSchema and the eventModelID to which it belongs along with schema and schemaHash
-func (manager *EventSchemaManagerT) NewSchemaVersion(versionID string, schema map[string]string, schemaHash string, eventModelID string) *SchemaVersionT {
+// NewSchemaVersion should be used when a schemaVersion is not found in its cache and requires, a schemaVersionID for the newSchema and the eventModelID to which it belongs along with schema and schemaHash
+func (manager *EventSchemaManagerT) NewSchemaVersion(versionID string, schema map[string]string, schemaHash, eventModelID string) *SchemaVersionT {
 	schemaJSON, err := json.Marshal(schema)
 	assertError(err)
 
@@ -612,7 +616,6 @@ func getPrivateDataJSON(schemaHash string) []byte {
 	pkgLogger.Debugf("[EventSchemas] Private Data JSON: %s", string(privateDataJSON))
 	assertError(err)
 	return privateDataJSON
-
 }
 
 func (manager *EventSchemaManagerT) flushEventSchemas() {
@@ -677,7 +680,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 
 			stmt, err := txn.Prepare(pq.CopyIn(EVENT_MODELS_TABLE, "uuid", "write_key", "event_type", "event_model_identifier", "schema", "metadata", "private_data", "last_seen", "total_count"))
 			assertTxnError(err, txn)
-			//skipcq: SCC-SA9001
+			// skipcq: SCC-SA9001
 			defer stmt.Close()
 			for eventModelID, eventModel := range updatedEventModels {
 				metadataJSON := getMetadataJSON(eventModel.reservoirSample, eventModel.UUID)
@@ -693,7 +696,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 			pkgLogger.Debugf("[EventSchemas][Flush] %d new event types", len(updatedEventModels))
 		}
 
-		//Handle Schema Versions
+		// Handle Schema Versions
 		if len(schemaVersionsInCache) > 0 {
 			versionIDs := make([]string, 0, len(schemaVersionsInCache))
 			for uid := range updatedSchemaVersions {
@@ -712,7 +715,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas() {
 
 			stmt, err := txn.Prepare(pq.CopyIn(SCHEMA_VERSIONS_TABLE, "uuid", "event_model_id", "schema_hash", "schema", "metadata", "private_data", "first_seen", "last_seen", "total_count"))
 			assertTxnError(err, txn)
-			//skipcq: SCC-SA9001
+			// skipcq: SCC-SA9001
 			defer stmt.Close()
 			for _, sv := range schemaVersionsInCache {
 				metadataJSON := getMetadataJSON(sv.reservoirSample, sv.SchemaHash)
@@ -845,7 +848,6 @@ func assertTxnError(err error, txn *sql.Tx) {
 }
 
 func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) error {
-
 	var uuidFilter string
 	if len(uuidFilters) > 0 {
 		uuidFilter = fmt.Sprintf(`WHERE uuid in ('%s')`, strings.Join(uuidFilters, "', '"))

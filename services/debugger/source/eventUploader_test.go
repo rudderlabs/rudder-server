@@ -72,7 +72,6 @@ var _ = Describe("eventUploader", func() {
 
 	Context("RecordEvent", func() {
 		It("returns false if disableEventUploads is false", func() {
-
 			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 					// on Subscribe, emulate a backend configuration event
@@ -90,7 +89,6 @@ var _ = Describe("eventUploader", func() {
 		})
 
 		It("returns false if writeKey is not part of uploadEnabledWriteKeys", func() {
-
 			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 					// on Subscribe, emulate a backend configuration event
@@ -106,7 +104,6 @@ var _ = Describe("eventUploader", func() {
 		})
 
 		It("transforms payload properly", func() {
-
 			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 					// on Subscribe, emulate a backend configuration event
@@ -129,7 +126,6 @@ var _ = Describe("eventUploader", func() {
 		})
 
 		It("ignores improperly built payload", func() {
-
 			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 					// on Subscribe, emulate a backend configuration event
@@ -149,7 +145,6 @@ var _ = Describe("eventUploader", func() {
 		})
 
 		It("records events", func() {
-
 			c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 				Do(func(channel chan utils.DataEvent, topic backendconfig.Topic) {
 					// on Subscribe, emulate a backend configuration event

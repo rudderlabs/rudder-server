@@ -28,7 +28,7 @@ const (
 	ROUTER_TRANSFORM = "ROUTER_TRANSFORM"
 )
 
-//HandleT is the handle for this class
+// HandleT is the handle for this class
 type HandleT struct {
 	tr                                      *http.Transport
 	client                                  *http.Client
@@ -38,14 +38,14 @@ type HandleT struct {
 	logger                                  logger.LoggerI
 }
 
-//Transformer provides methods to transform events
+// Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
 	ResponseTransform(ctx context.Context, responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string)
 }
 
-//NewTransformer creates a new transformer
+// NewTransformer creates a new transformer
 func NewTransformer() *HandleT {
 	return &HandleT{}
 }
@@ -68,12 +68,11 @@ func loadConfig() {
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router").Child("transformer")
-
 }
 
-//Transform transforms router jobs to destination jobs
+// Transform transforms router jobs to destination jobs
 func (trans *HandleT) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-	//Call remote transformation
+	// Call remote transformation
 	rawJSON, err := json.Marshal(transformMessage)
 	if err != nil {
 		panic(err)
@@ -83,7 +82,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	retryCount := 0
 	var resp *http.Response
 	var respData []byte
-	//We should rarely have error communicating with our JS
+	// We should rarely have error communicating with our JS
 	reqFailed := false
 
 	var url string
@@ -92,7 +91,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	} else if transformType == ROUTER_TRANSFORM {
 		url = getRouterTransformURL()
 	} else {
-		//Unexpected transformType returning empty
+		// Unexpected transformType returning empty
 		return []types.DestinationJobT{}
 	}
 
@@ -102,8 +101,8 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 			bytes.NewBuffer(rawJSON))
 
 		if err == nil {
-			//If no err returned by client.Post, reading body.
-			//If reading body fails, retrying.
+			// If no err returned by client.Post, reading body.
+			// If reading body fails, retrying.
 			respData, err = io.ReadAll(resp.Body)
 		}
 
@@ -116,7 +115,7 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 			}
 			retryCount++
 			time.Sleep(retrySleep)
-			//Refresh the connection
+			// Refresh the connection
 			continue
 		}
 		if reqFailed {
@@ -152,8 +151,8 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 			integrations.CollectIntgTransformErrorStats([]byte(gjson.GetBytes(respData, "output").Raw))
 			err = json.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
 		}
-		//This is returned by our JS engine so should  be parsable
-		//but still handling it
+		// This is returned by our JS engine so should  be parsable
+		// but still handling it
 		if err != nil {
 			panic(err)
 		}
@@ -200,9 +199,9 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 		panic(fmt.Errorf("[Response Transform] Reesponse transform failed after max retries Error:: %+v", err))
 	}
 
-	//Detecting content type of the respBody
+	// Detecting content type of the respBody
 	contentTypeHeader := strings.ToLower(http.DetectContentType(respData))
-	//If content type is not of type "*text*", overriding it with empty string
+	// If content type is not of type "*text*", overriding it with empty string
 	if !(strings.Contains(contentTypeHeader, "text") ||
 		strings.Contains(contentTypeHeader, "application/json") ||
 		strings.Contains(contentTypeHeader, "application/xml")) {
@@ -246,7 +245,7 @@ func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integr
 	return respCode, string(respData)
 }
 
-//is it ok to use same client for network and transformer calls? need to understand timeout setup in router
+// is it ok to use same client for network and transformer calls? need to understand timeout setup in router
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
 	trans.tr = &http.Transport{}
@@ -266,7 +265,6 @@ func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload [
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := trans.client.Do(req)
-
 	if err != nil {
 		return []byte{}, http.StatusBadRequest, err
 	}

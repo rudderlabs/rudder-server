@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"runtime/pprof"
-	"strconv"
-	"strings"
-
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/pprof"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -95,8 +94,10 @@ var (
 	MaxHeaderBytes            int
 )
 
-var version = "Not an official release. Get the latest release from the github repo."
-var major, minor, commit, buildDate, builtBy, gitURL, patch string
+var (
+	version                                                 = "Not an official release. Get the latest release from the github repo."
+	major, minor, commit, buildDate, builtBy, gitURL, patch string
+)
 
 func loadConfig() {
 	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
@@ -107,7 +108,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(720), &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterDurationConfigVariable(time.Duration(15), &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
-
 }
 
 func Init() {
@@ -120,7 +120,7 @@ func versionInfo() map[string]interface{} {
 }
 
 func versionHandler(w http.ResponseWriter, r *http.Request) {
-	var version = versionInfo()
+	version := versionInfo()
 	versionFormatted, _ := json.Marshal(&version)
 	w.Write(versionFormatted)
 }
@@ -202,7 +202,6 @@ func runAllInit() {
 	integrations.Init()
 	alert.Init()
 	Init()
-
 }
 
 func main() {
@@ -228,7 +227,7 @@ func Run(ctx context.Context) {
 
 	application = app.New(options)
 
-	//application & backend setup should be done before starting any new goroutines.
+	// application & backend setup should be done before starting any new goroutines.
 	application.Setup()
 
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
@@ -251,7 +250,8 @@ func Run(ctx context.Context) {
 			defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
 				"GoRoutines": {
 					"Number": runtime.NumGoroutine(),
-				}})
+				},
+			})
 
 			misc.RecordAppError(fmt.Errorf("%v", r))
 			pkgLogger.Fatal(r)
@@ -259,7 +259,7 @@ func Run(ctx context.Context) {
 		}
 	}()
 
-	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
+	// Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 
 	var pollRegulations bool
@@ -284,7 +284,7 @@ func Run(ctx context.Context) {
 	})
 
 	misc.AppStartTime = time.Now().Unix()
-	//If the server is standby mode, then no major services (gateway, processor, routers...) run
+	// If the server is standby mode, then no major services (gateway, processor, routers...) run
 	if options.StandByMode {
 		appHandler.HandleRecovery(options)
 		g.Go(func() error {
@@ -398,14 +398,14 @@ func getWebPort() int {
 	panic(errors.New("invalid app type"))
 }
 
-//StandbyHealthHandler is the http handler for health endpoint
+// StandbyHealthHandler is the http handler for health endpoint
 func standbyHealthHandler(w http.ResponseWriter, r *http.Request) {
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
 	healthVal := fmt.Sprintf(`{"appType": "%s", "mode":"%s"}`, appTypeStr, strings.ToUpper(db.CurrentMode))
 	w.Write([]byte(healthVal))
 }
 
-//StandbyDefaultHandler is the http handler for health endpoint
+// StandbyDefaultHandler is the http handler for health endpoint
 func standbyDefaultHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Server is in standby mode. Please retry after sometime", 500)
 }

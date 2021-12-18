@@ -19,7 +19,6 @@ import (
 )
 
 func main() {
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -31,7 +30,6 @@ func main() {
 		close(c)
 	}()
 	Run(ctx)
-
 }
 
 func Run(ctx context.Context) {
@@ -56,11 +54,9 @@ func Run(ctx context.Context) {
 	if err != nil {
 		panic(err)
 	}
-
 }
 
 func withLoop(svc service.JobSvc) *service.Looper {
-
 	return &service.Looper{
 		Svc: svc,
 	}

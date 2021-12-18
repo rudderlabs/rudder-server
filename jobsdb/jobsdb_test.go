@@ -23,46 +23,46 @@ import (
 var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 	initJobsDB()
 
-	var _ = DescribeTable("newDSIdx tests",
+	_ = DescribeTable("newDSIdx tests",
 		func(before, after, expected string) {
 			computedIdx, err := computeInsertIdx(before, after)
 			Expect(computedIdx).To(Equal(expected))
 			Expect(err).To(BeNil())
 		},
-		//dList => 1 2 3 4 5
+		// dList => 1 2 3 4 5
 		Entry("Internal Migration for regular tables 1 Test 1 : ", "1", "2", "1_1"),
 		Entry("Internal Migration for regular tables 1 Test 2 : ", "2", "3", "2_1"),
 
-		//dList => 1_1 2 3 4 5
+		// dList => 1_1 2 3 4 5
 		Entry("Internal Migration for regular tables 2 Test 1 : ", "1_1", "2", "1_2"),
 		Entry("Internal Migration for regular tables 2 Test 2 : ", "2", "3", "2_1"),
 
-		//dList => 1 2_1 3 4 5
+		// dList => 1 2_1 3 4 5
 		Entry("Internal Migration for regular tables 3 Test 1 : ", "1", "2_1", "1_1"),
 		Entry("Internal Migration for regular tables 3 Test 2 : ", "2_1", "3", "2_2"),
 		Entry("Internal Migration for regular tables 3 Test 3 : ", "3", "4", "3_1"),
 
-		//dList => 1_1 2_1 3 4 5
+		// dList => 1_1 2_1 3 4 5
 		Entry("Internal Migration for regular tables 4 Test 1 : ", "1_1", "2_1", "1_2"),
 
-		//dList => 0_1 1 2 3 4 5
+		// dList => 0_1 1 2 3 4 5
 		Entry("Internal Migration for import tables Case 1 Test 1 : ", "0_1", "1", "0_1_1"),
 		Entry("Internal Migration for import tables Case 1 Test 2 : ", "1", "2", "1_1"),
 
-		//dList => 0_1 0_2 1 2 3 4 5
+		// dList => 0_1 0_2 1 2 3 4 5
 		Entry("Internal Migration for import tables Case 2 Test 1 : ", "0_1", "0_2", "0_1_1"),
 		Entry("Internal Migration for import tables Case 2 Test 2 : ", "0_2", "1", "0_2_1"),
 		Entry("Internal Migration for import tables Case 2 Test 3 : ", "1", "2", "1_1"),
 
-		//dList => 0_1_1 0_2 1 2 3 4 5
+		// dList => 0_1_1 0_2 1 2 3 4 5
 		Entry("Internal Migration for import tables Case 3 Test 1 : ", "0_1_1", "0_2", "0_1_2"),
 		Entry("Internal Migration for import tables Case 3 Test 2 : ", "0_2", "1", "0_2_1"),
 
-		//dList => 0_1_1 0_2_1 1 2 3 4 5
+		// dList => 0_1_1 0_2_1 1 2 3 4 5
 		Entry("Internal Migration for import tables Case 4 Test 1 : ", "0_2_1", "1", "0_2_2"),
 		Entry("Internal Migration for import tables Case 4 Test 2 : ", "0_1_1", "0_2_1", "0_1_2"),
 
-		//dList => 0_1 0_2_1 1 2 3
+		// dList => 0_1 0_2_1 1 2 3
 		Entry("Internal Migration for import tables Case 5 Test 1 : ", "0_1", "0_2_1", "0_1_1"),
 
 		Entry("OrderTest Case 1 Test 1 : ", "9", "10", "9_1"),
@@ -72,7 +72,7 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 	initJobsDB()
 
-	var _ = DescribeTable("newDSIdx tests",
+	_ = DescribeTable("newDSIdx tests",
 		func(dList []dataSetT, after dataSetT, expected string) {
 			computedIdx, err := computeIdxForClusterMigration("table_prefix", dList, after)
 			Expect(computedIdx).To(Equal(expected))
@@ -81,7 +81,7 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 1",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1",
@@ -95,17 +95,17 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 2",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "0_1",
 				},
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1",
 				},
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "2",
@@ -118,7 +118,7 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 			}, "0_2"),
 	)
 
-	var _ = DescribeTable("Error cases",
+	_ = DescribeTable("Error cases",
 		func(dList []dataSetT, after dataSetT) {
 			_, err := computeIdxForClusterMigration("table_prefix", dList, after)
 			Expect(err != nil).Should(BeTrue())
@@ -126,7 +126,7 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 1",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1_1",
@@ -141,12 +141,12 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 
 		Entry("ClusterMigration Case 2",
 			[]dataSetT{
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1",
 				},
-				dataSetT{
+				{
 					JobTable:       "",
 					JobStatusTable: "",
 					Index:          "1_1",
@@ -267,7 +267,7 @@ var _ = Describe("jobsdb", func() {
 		})
 
 		It("makes some db calls if refreshFromDB", func() {
-			//Prepare and execute. Note that tables in DB is different from that in memory.
+			// Prepare and execute. Note that tables in DB is different from that in memory.
 			c.mock.ExpectPrepare(`SELECT tablename
 			FROM pg_catalog.pg_tables
 			WHERE schemaname != 'pg_catalog' AND
@@ -413,7 +413,7 @@ var _ = Describe("jobsdb", func() {
 			stmt = c.mock.ExpectPrepare(fmt.Sprintf(`INSERT INTO %s (uuid, user_id, custom_val, parameters, event_payload)
 			VALUES ($1, $2, $3, $4, (regexp_replace($5::text, '\\u0000', '', 'g'))::json) RETURNING job_id`, ds.JobTable))
 			err := &pq.Error{}
-			err.Code = "22P02" //Invalid JSON syntax
+			err.Code = "22P02" // Invalid JSON syntax
 			stmt.ExpectExec().WithArgs(job2.UUID, job2.UserID, job2.CustomVal, string(job2.Parameters), string(job2.EventPayload)).WillReturnError(err)
 
 			errorMessagesMap := jd.StoreWithRetryEach(mockedPartiallyStoredJobs)
@@ -880,8 +880,10 @@ func assertJobs(expected, actual []*JobT) {
 	}
 }
 
-var d1 = dataSetT{JobTable: "tt_jobs_1",
-	JobStatusTable: "tt_job_status_1"}
+var d1 = dataSetT{
+	JobTable:       "tt_jobs_1",
+	JobStatusTable: "tt_job_status_1",
+}
 
 var d2 = dataSetT{
 	JobTable:       "tt_jobs_2",
@@ -1074,24 +1076,26 @@ var mockedStoreJobs = []*JobT{
 	},
 }
 
-var uuidStr = "a362c501-c38e-4aee-ae61-4a3b095ebcab"
-var s, _ = uuid.FromString(uuidStr)
-var mockedPartiallyStoredJobs = []*JobT{
-	{
-		Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
-		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
-		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-		UUID:         uuid.Must(uuid.NewV4()),
-		CustomVal:    "MOCKDS",
-	},
-	{
-		Parameters:   []byte(`{"batch_id":2,"source_id":"sourceID","source_job_run_id":"random_sourceJobRunID"}`),
-		EventPayload: []byte(`{receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
-		UserID:       "dummy_a-292e-4e79-9880-f8009e0ae4a3",
-		UUID:         s,
-		CustomVal:    "MOCKDEST",
-	},
-}
+var (
+	uuidStr                   = "a362c501-c38e-4aee-ae61-4a3b095ebcab"
+	s, _                      = uuid.FromString(uuidStr)
+	mockedPartiallyStoredJobs = []*JobT{
+		{
+			Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+			EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+			UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+			UUID:         uuid.Must(uuid.NewV4()),
+			CustomVal:    "MOCKDS",
+		},
+		{
+			Parameters:   []byte(`{"batch_id":2,"source_id":"sourceID","source_job_run_id":"random_sourceJobRunID"}`),
+			EventPayload: []byte(`{receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+			UserID:       "dummy_a-292e-4e79-9880-f8009e0ae4a3",
+			UUID:         s,
+			CustomVal:    "MOCKDEST",
+		},
+	}
+)
 
 var statusList = []*JobStatusT{
 	{

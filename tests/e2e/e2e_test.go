@@ -16,12 +16,14 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-var dbHandle *sql.DB
-var gatewayDBPrefix string
-var routerDBPrefix string
-var dbPollFreqInS int = 1
-var gatewayDBCheckBufferInS int = 15
-var jobSuccessStatus string = "succeeded"
+var (
+	dbHandle                *sql.DB
+	gatewayDBPrefix         string
+	routerDBPrefix          string
+	dbPollFreqInS           int    = 1
+	gatewayDBCheckBufferInS int    = 15
+	jobSuccessStatus        string = "succeeded"
+)
 
 var _ = BeforeSuite(func() {
 	var err error
@@ -35,17 +37,15 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = Describe("E2E", func() {
-
 	Context("Without user sessions processing", func() {
-
 		It("verify event stored in gateway 1. has right sourceId and writeKey, 2. enhanced with messageId, anonymousId, requestIP and receivedAt fields", func() {
 			eventTypeMap := []string{"BATCH", "IDENTIFY", "GROUP", "TRACK", "SCREEN", "PAGE", "ALIAS"}
 			for _, eventType := range eventTypeMap {
 				time.Sleep(time.Second)
 				initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 
-				//Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations.
-				//Source id for the above writekey is 1Yc6YceKLOcUYk8je9B0GQ65mmL
+				// Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations.
+				// Source id for the above writekey is 1Yc6YceKLOcUYk8je9B0GQ65mmL
 				switch eventType {
 				case "BATCH":
 					helpers.SendBatchRequest("1Yc6YbOGg6U2E8rlj97ZdOawPyr", helpers.RemoveKeyFromJSON(helpers.BatchPayload, "batch.0.messageId", "batch.0.anonymousId"))
@@ -78,18 +78,22 @@ var _ = Describe("E2E", func() {
 						requestIP = gjson.GetBytes(job.EventPayload, "requestIP").String()
 						receivedAt = gjson.GetBytes(job.EventPayload, "receivedAt").String()
 					}
-					return map[string]bool{sourceId: true,
+					return map[string]bool{
+						sourceId:      true,
 						"messageId":   len(messageId) > 0,
 						"anonymousId": len(anonymousId) > 0,
 						writeKey:      true,
 						"requestIP":   len(requestIP) > 0,
-						"receivedAt":  len(receivedAt) > 0}
-				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(map[string]bool{"1Yc6YceKLOcUYk8je9B0GQ65mmL": true,
+						"receivedAt":  len(receivedAt) > 0,
+					}
+				}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(map[string]bool{
+					"1Yc6YceKLOcUYk8je9B0GQ65mmL": true,
 					"messageId":                   true,
 					"anonymousId":                 true,
 					"1Yc6YbOGg6U2E8rlj97ZdOawPyr": true,
 					"requestIP":                   true,
-					"receivedAt":                  true}))
+					"receivedAt":                  true,
+				}))
 			}
 		})
 
@@ -153,9 +157,9 @@ var _ = Describe("E2E", func() {
 		It("verify event is stored in both gateway and router db", func() {
 			initGatewayJobsCount := helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			//initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
+			// initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 
-			//Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations.
+			// Source with WriteKey: 1Yc6YbOGg6U2E8rlj97ZdOawPyr has one S3 and one GA as destinations.
 			helpers.SendEventRequest(helpers.EventOptsT{
 				WriteKey: "1Yc6YbOGg6U2E8rlj97ZdOawPyr",
 			})
@@ -170,10 +174,10 @@ var _ = Describe("E2E", func() {
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initialRouterJobsCount + 1))
 		})
 
-		//Source with WriteKey: 1YcF00dWZXGjWpSIkfFnbGuI6OI has one GA and one AMPLITUDE as destinations.
+		// Source with WriteKey: 1YcF00dWZXGjWpSIkfFnbGuI6OI has one GA and one AMPLITUDE as destinations.
 		It("should create router job for both GA and AM for single event request", func() {
 			initialRouterJobsCount := helpers.GetJobsCount(dbHandle, routerDBPrefix)
-			//initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
+			// initialRouterJobStatusCount := helpers.GetJobStatusCount(dbHandle, jobSuccessStatus, routerDBPrefix)
 			helpers.SendEventRequest(helpers.EventOptsT{
 				WriteKey: "1YcF00dWZXGjWpSIkfFnbGuI6OI",
 			})
@@ -274,9 +278,6 @@ var _ = Describe("E2E", func() {
 			Eventually(func() int {
 				return helpers.GetJobsCount(dbHandle, gatewayDBPrefix)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(currentGatewayJobsCount + 1))
-
 		})
-
 	})
-
 })

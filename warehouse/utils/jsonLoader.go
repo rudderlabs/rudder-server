@@ -23,8 +23,8 @@ func NewJSONLoader(destType string, writer LoadFileWriterI) *JsonLoader {
 func (loader *JsonLoader) IsLoadTimeColumn(columnName string) bool {
 	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN) || columnName == ToProviderCase(loader.destType, LOADED_AT_COLUMN)
 }
-func (loader *JsonLoader) GetLoadTimeFomat(columnName string) string {
 
+func (loader *JsonLoader) GetLoadTimeFomat(columnName string) string {
 	switch columnName {
 	case ToProviderCase(loader.destType, UUID_TS_COLUMN):
 		return BQUuidTSFormat
@@ -34,12 +34,12 @@ func (loader *JsonLoader) GetLoadTimeFomat(columnName string) string {
 	return ""
 }
 
-func (loader *JsonLoader) AddColumn(columnName string, columnType string, val interface{}) {
+func (loader *JsonLoader) AddColumn(columnName, columnType string, val interface{}) {
 	providerColumnName := ToProviderCase(loader.destType, columnName)
 	loader.columnData[providerColumnName] = val
 }
 
-func (loader *JsonLoader) AddRow(columnNames []string, row []string) {
+func (loader *JsonLoader) AddRow(columnNames, row []string) {
 	for i, columnName := range columnNames {
 		providerColumnName := ToProviderCase(loader.destType, columnName)
 		loader.columnData[providerColumnName] = row[i]

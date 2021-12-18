@@ -10,9 +10,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var (
-	pkgLogger logger.LoggerI
-)
+var pkgLogger logger.LoggerI
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("s3-datalake")
@@ -49,11 +47,11 @@ func (wh *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return wh.SchemaRepository.CreateTable(tableName, columnMap)
 }
 
-func (wh *HandleT) AddColumn(tableName string, columnName string, columnType string) (err error) {
+func (wh *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
 	return wh.SchemaRepository.AddColumn(tableName, columnName, columnType)
 }
 
-func (wh *HandleT) AlterColumn(tableName string, columnName string, columnType string) (err error) {
+func (wh *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return wh.SchemaRepository.AlterColumn(tableName, columnName, columnType)
 }
 

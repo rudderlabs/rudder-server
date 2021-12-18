@@ -39,7 +39,7 @@ var (
 	readonlyProcErrorDB                                        jobsdb.ReadonlyHandleT
 )
 
-//AppHandler to be implemented by different app type objects.
+// AppHandler to be implemented by different app type objects.
 type AppHandler interface {
 	GetAppType() string
 	HandleRecovery(*app.Options)
@@ -99,7 +99,7 @@ func rudderCoreBaseSetup() {
 		})
 	}
 
-	//Reload Config
+	// Reload Config
 	loadConfig()
 
 	readonlyGatewayDB.Setup("gw")
@@ -111,8 +111,8 @@ func rudderCoreBaseSetup() {
 	router.RegisterAdminHandlers(&readonlyRouterDB, &readonlyBatchRouterDB)
 }
 
-//StartProcessor atomically starts processor process if not already started
-func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+// StartProcessor atomically starts processor process if not already started
+func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
 	if !enableProcessor {
 		return
 	}
@@ -122,14 +122,14 @@ func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, ga
 		return
 	}
 
-	var processorInstance = processor.NewProcessor()
+	processorInstance := processor.NewProcessor()
 	processor.ProcessorManagerSetup(processorInstance)
 	processorInstance.Setup(backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB, clearDB, reporting)
 	defer processorInstance.Shutdown()
 	processorInstance.Start(ctx)
 }
 
-//StartRouter atomically starts router process if not already started
+// StartRouter atomically starts router process if not already started
 func StartRouter(ctx context.Context, enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
 	if !enableRouter {
 		return
@@ -165,7 +165,7 @@ loop:
 			for _, source := range sources.Sources {
 				for _, destination := range source.Destinations {
 					enabledDestinations[destination.DestinationDefinition.Name] = true
-					//For batch router destinations
+					// For batch router destinations
 					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) || misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) || misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 						if !ok {

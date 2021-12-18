@@ -43,6 +43,7 @@ var SampleBackendConfig = ConfigT{
 		},
 	},
 }
+
 var SampleFilteredSources = ConfigT{
 	Sources: []SourceT{
 		{
@@ -64,6 +65,7 @@ var SampleFilteredSources = ConfigT{
 		},
 	},
 }
+
 var SampleBackendConfig2 = ConfigT{
 	Sources: []SourceT{
 		{
@@ -77,6 +79,7 @@ var SampleBackendConfig2 = ConfigT{
 		},
 	},
 }
+
 var (
 	originalHttp       = Http
 	originalLogger     = pkgLogger
@@ -189,7 +192,6 @@ var _ = Describe("BackendConfig", func() {
 			mockPubSub.EXPECT().Subscribe(string(TopicProcessConfig), gomock.AssignableToTypeOf(ch)).Times(1)
 			mockPubSub.EXPECT().PublishToChannel(gomock.AssignableToTypeOf(ch), string(TopicProcessConfig), gomock.Eq(SampleFilteredSources)).Times(1)
 			backendConfig.Subscribe(ch, TopicProcessConfig)
-
 		})
 		It("Expect make the correct actions for backendConfig topic", func() {
 			ch := make(chan utils.DataEvent)

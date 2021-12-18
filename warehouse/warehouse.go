@@ -47,7 +47,7 @@ var (
 	notifier                            pgnotifier.PgNotifierT
 	WarehouseDestinations               []string
 	noOfSlaveWorkerRoutines             int
-	slaveWorkerRoutineBusy              []bool //Busy-true
+	slaveWorkerRoutineBusy              []bool // Busy-true
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
 	mainLoopSleep                       time.Duration
@@ -103,8 +103,10 @@ const (
 	triggerUploadQPName           = "triggerUpload"
 )
 
-type WorkerIdentifierT string
-type JobIDT int64
+type (
+	WorkerIdentifierT string
+	JobIDT            int64
+)
 
 type HandleT struct {
 	destType                          string
@@ -140,7 +142,7 @@ func Init4() {
 }
 
 func loadConfig() {
-	//Port where WH is running
+	// Port where WH is running
 	config.RegisterIntConfigVariable(8082, &webPort, false, 1, "Warehouse.webPort")
 	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE"}
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
@@ -172,7 +174,7 @@ func loadConfig() {
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	config.RegisterDurationConfigVariable(time.Duration(30), &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
 	config.RegisterIntConfigVariable(180, &uploadBufferTimeInMin, false, 1, "Warehouse.uploadBufferTimeInMin")
-  config.RegisterIntConfigVariable(1000, &columnCountThreshold, false, 1, "Warehouse.columnCountThreshold")
+	config.RegisterIntConfigVariable(1000, &columnCountThreshold, false, 1, "Warehouse.columnCountThreshold")
 	config.RegisterDurationConfigVariable(time.Duration(5), &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
@@ -325,7 +327,7 @@ func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT
 	configMap := config.(map[string]interface{})
 	var namespace string
 	if destType == "CLICKHOUSE" {
-		//TODO: Handle if configMap["database"] is nil
+		// TODO: Handle if configMap["database"] is nil
 		return configMap["database"].(string)
 	}
 	if configMap["namespace"] != nil {
@@ -341,7 +343,7 @@ func (wh *HandleT) getNamespace(config interface{}, source backendconfig.SourceT
 	return namespace
 }
 
-func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID int64, endID int64) ([]*StagingFileT, error) {
+func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID, endID int64) ([]*StagingFileT, error) {
 	sqlStatement := fmt.Sprintf(`SELECT id, location, status, metadata->>'time_window_year', metadata->>'time_window_month', metadata->>'time_window_day', metadata->>'time_window_hour'
                                 FROM %[1]s
 								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'
@@ -712,9 +714,8 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 }
 
 func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []string) ([]*UploadJobT, error) {
-
 	var skipIdentifiersSQL string
-	var partitionIdentifierSQL = `destination_id, namespace`
+	partitionIdentifierSQL := `destination_id, namespace`
 
 	if len(skipIdentifiers) > 0 {
 		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
@@ -970,16 +971,16 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 	}
 }
 
-func getBucketFolder(batchID string, tableName string) string {
+func getBucketFolder(batchID, tableName string) string {
 	return fmt.Sprintf(`%v-%v`, batchID, tableName)
 }
 
-//Enable enables a router :)
+// Enable enables a router :)
 func (wh *HandleT) Enable() {
 	wh.isEnabled = true
 }
 
-//Disable disables a router:)
+// Disable disables a router:)
 func (wh *HandleT) Disable() {
 	wh.isEnabled = false
 }
@@ -1005,7 +1006,7 @@ func (wh *HandleT) setInterruptedDestinations() {
 	}
 }
 
-func (wh *HandleT) Setup(whType string, whName string) {
+func (wh *HandleT) Setup(whType, whName string) {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.dbHandle = dbHandle
 	wh.notifier = notifier
@@ -1057,7 +1058,6 @@ func (wh *HandleT) resetInProgressJobs() {
 		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
 	}
 }
-
 
 func getLoadFileFormat(whType string) string {
 	switch whType {
@@ -1145,7 +1145,6 @@ loop:
 		})
 	}
 	g.Wait()
-
 }
 
 func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT) {
@@ -1185,7 +1184,6 @@ func onConfigDataEvent(config utils.DataEvent, dstToWhRouter map[string]*HandleT
 			}
 		}
 	}
-
 }
 
 func setupTables(dbHandle *sql.DB) {
@@ -1465,8 +1463,7 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func TriggerUploadHandler(sourceID string, destID string) error {
-
+func TriggerUploadHandler(sourceID, destID string) error {
 	// return error if source id and dest id is empty
 	if sourceID == "" && destID == "" {
 		err := fmt.Errorf("Empty source and destination id")
@@ -1696,7 +1693,7 @@ func Start(ctx context.Context, app app.Interface) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	//Setting up reporting client
+	// Setting up reporting client
 	// only if standalone or embeded connecting to diff DB for warehouse
 	if (isStandAlone() && isMaster()) || (jobsdb.GetConnectionString() != psqlInfo) {
 		if application.Features().Reporting != nil {

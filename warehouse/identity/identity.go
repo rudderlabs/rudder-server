@@ -451,7 +451,6 @@ func (idr *HandleT) createTempGzFile(dirName string) (gzWriter misc.GZipWriter, 
 }
 
 func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
-
 	txn, err := idr.DbHandle.Begin()
 	if err != nil {
 		panic(err)
@@ -517,7 +516,6 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 // 3. Apply each merge rule and update local identity mapping table
 // 4. Upload the diff of each table to load files for both tables
 func (idr *HandleT) Resolve() (err error) {
-
 	var loadFileNames []string
 	defer misc.RemoveFilePaths(loadFileNames...)
 	loadFileNames, err = idr.downloadLoadFiles(idr.whMergeRulesTable())

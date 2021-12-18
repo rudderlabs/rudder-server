@@ -15,11 +15,11 @@ const (
 	ALL_LEVELS        = "all"
 )
 
-//Throttler is an interface for throttling functions
+// Throttler is an interface for throttling functions
 type Throttler interface {
-	CheckLimitReached(destID string, userID string, currentTime time.Time) bool
-	Inc(destID string, userID string, currentTime time.Time)
-	Dec(destID string, userID string, count int64, currentTime time.Time, atLevel string)
+	CheckLimitReached(destID, userID string, currentTime time.Time) bool
+	Inc(destID, userID string, currentTime time.Time)
+	Dec(destID, userID string, count int64, currentTime time.Time, atLevel string)
 	IsEnabled() bool
 	IsUserLevelEnabled() bool
 	IsDestLevelEnabled() bool
@@ -39,7 +39,7 @@ type Settings struct {
 	userLevelTimeWindow int
 }
 
-//HandleT is a Handle for event limiter
+// HandleT is a Handle for event limiter
 type HandleT struct {
 	destinationName string
 	destLimiter     *Limiter
@@ -76,7 +76,7 @@ func (throttler *HandleT) setLimits() {
 	}
 }
 
-//SetUp eventLimiter
+// SetUp eventLimiter
 func (throttler *HandleT) SetUp(destName string) {
 	pkgLogger = logger.NewLogger().Child("router").Child("throttler")
 	throttler.destinationName = destName
@@ -97,8 +97,8 @@ func (throttler *HandleT) SetUp(destName string) {
 	}
 }
 
-//LimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
-func (throttler *HandleT) CheckLimitReached(destID string, userID string, currentTime time.Time) bool {
+// LimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
+func (throttler *HandleT) CheckLimitReached(destID, userID string, currentTime time.Time) bool {
 	var destLevelLimitReached bool
 	if throttler.destLimiter.enabled {
 		destKey := throttler.getDestKey(destID)
@@ -126,9 +126,9 @@ func (throttler *HandleT) CheckLimitReached(destID string, userID string, curren
 	return destLevelLimitReached || userLevelLimitReached
 }
 
-//Inc increases the destLimiter and userLimiter counters.
-//If destID or userID passed is empty, we don't increment the counters.
-func (throttler *HandleT) Inc(destID string, userID string, currentTime time.Time) {
+// Inc increases the destLimiter and userLimiter counters.
+// If destID or userID passed is empty, we don't increment the counters.
+func (throttler *HandleT) Inc(destID, userID string, currentTime time.Time) {
 	if throttler.destLimiter.enabled && destID != "" {
 		destKey := throttler.getDestKey(destID)
 		throttler.destLimiter.ratelimiter.Inc(destKey, currentTime)
@@ -139,9 +139,9 @@ func (throttler *HandleT) Inc(destID string, userID string, currentTime time.Tim
 	}
 }
 
-//Dec decrements the destLimiter and userLimiter counters by count passed
-//If destID or userID passed is empty, we don't decrement the counters.
-func (throttler *HandleT) Dec(destID string, userID string, count int64, currentTime time.Time, atLevel string) {
+// Dec decrements the destLimiter and userLimiter counters by count passed
+// If destID or userID passed is empty, we don't decrement the counters.
+func (throttler *HandleT) Dec(destID, userID string, count int64, currentTime time.Time, atLevel string) {
 	if throttler.destLimiter.enabled && destID != "" && (atLevel == ALL_LEVELS || atLevel == DESTINATION_LEVEL) {
 		destKey := throttler.getDestKey(destID)
 		throttler.destLimiter.ratelimiter.Dec(destKey, count, currentTime)

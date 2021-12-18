@@ -27,7 +27,7 @@ import (
 	_ "github.com/rudderlabs/rudder-server/imports"
 )
 
-//ProcessorApp is the type for Processor type implemention
+// ProcessorApp is the type for Processor type implemention
 type ProcessorApp struct {
 	App            app.Interface
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -72,7 +72,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	rudderCoreBaseSetup()
 	g, ctx := errgroup.WithContext(ctx)
 
-	//Setting up reporting client
+	// Setting up reporting client
 	if processor.App.Features().Reporting != nil {
 		reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
@@ -89,12 +89,12 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 	migrationMode := processor.App.Options().MigrationMode
 
-	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
+	// IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gatewayDB.Setup(jobsdb.Read, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 	defer gatewayDB.TearDown()
 
 	if enableProcessor || enableReplay {
-		//setting up router, batch router, proc error DBs only if processor is enabled.
+		// setting up router, batch router, proc error DBs only if processor is enabled.
 		routerDB.Setup(jobsdb.ReadWrite, options.ClearDB, "rt", routerDBRetention, migrationMode, true, router.QueryFilters)
 		defer routerDB.TearDown()
 
@@ -165,7 +165,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	err := g.Wait()
 
 	return err
-	//go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+	// go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
 }
 
 func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
@@ -173,7 +173,7 @@ func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
 }
 
 func startHealthWebHandler(ctx context.Context) error {
-	//Port where Processor health handler is running
+	// Port where Processor health handler is running
 	pkgLogger.Infof("Starting in %d", webPort)
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/health", healthHandler)

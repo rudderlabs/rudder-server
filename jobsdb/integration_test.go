@@ -127,6 +127,7 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 	}
 	return js
 }
+
 func TestJobsDB(t *testing.T) {
 	initJobsDB()
 	stats.Setup()
@@ -150,7 +151,7 @@ func TestJobsDB(t *testing.T) {
 	defer jobDB.TearDown()
 
 	customVal := "MOCKDS"
-	var sampleTestJob = jobsdb.JobT{
+	sampleTestJob := jobsdb.JobT{
 		Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
 		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
@@ -208,7 +209,7 @@ func TestJobsDB(t *testing.T) {
 		for i := 0; i < dsCount; i++ {
 			require.NoError(t, jobDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob)))
 			triggerAddNewDS <- time.Now()
-			triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+			triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 		}
 
 		t.Log("GetUnprocessed with job count limit")
@@ -278,7 +279,6 @@ func TestJobsDB(t *testing.T) {
 		for _, j := range eventLimitList {
 			require.Equal(t, eventsPerJob, j.EventCount)
 		}
-
 	})
 
 	t.Run("DSoverflow", func(t *testing.T) {
@@ -304,11 +304,11 @@ func TestJobsDB(t *testing.T) {
 		t.Log("First jobs table with jobs of 60 events, second with jobs of 20 events")
 		require.NoError(t, jobDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob_ds1)))
 		triggerAddNewDS <- time.Now()
-		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		require.NoError(t, jobDB.Store(genJobs(customVal, jobCountPerDS, eventsPerJob_ds2)))
 		triggerAddNewDS <- time.Now()
-		triggerAddNewDS <- time.Now() //Second time, waits for the first loop to finish
+		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		t.Log("GetUnprocessed with event count limit")
 		t.Log("Using event count that will cause spill-over, not exact for ds1, but remainder suitable for ds2")
@@ -360,7 +360,6 @@ func TestJobsDB(t *testing.T) {
 			requireSequential(t, eventLimitList)
 			require.Equal(t, jobCountPerDS, len(eventLimitList))
 		}
-
 	})
 }
 

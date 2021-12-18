@@ -13,7 +13,7 @@ func init() {
 	flag.Parse()
 }
 
-func merge(output map[string]interface{}, tmp map[string]interface{}) {
+func merge(output, tmp map[string]interface{}) {
 	for k, v := range tmp {
 		if reflect.TypeOf(v).Kind() == reflect.Map {
 			if output[k] == nil {
@@ -27,7 +27,7 @@ func merge(output map[string]interface{}, tmp map[string]interface{}) {
 }
 
 func main() {
-	var output = make(map[string]interface{})
+	output := make(map[string]interface{})
 
 	for _, f := range flag.Args() {
 		var tmp map[string]interface{}

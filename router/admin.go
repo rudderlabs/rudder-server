@@ -19,8 +19,10 @@ type RouterAdmin struct {
 	handles map[string]*HandleT
 }
 
-var adminInstance *RouterAdmin
-var routerJobsTableName, routerJobStatusTableName string
+var (
+	adminInstance                                 *RouterAdmin
+	routerJobsTableName, routerJobStatusTableName string
+)
 
 func Init2() {
 	adminInstance = &RouterAdmin{
@@ -121,8 +123,10 @@ func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) (err error)
 		}
 	}()
 	var completeErr error
-	dsStats := DSStats{make([]JobCountsByStateAndDestination, 0), make([]ErrorCodeCountsByDestination, 0), make([]JobCountByConnections, 0),
-		make([]LatestJobStatusCounts, 0), 0}
+	dsStats := DSStats{
+		make([]JobCountsByStateAndDestination, 0), make([]ErrorCodeCountsByDestination, 0), make([]JobCountByConnections, 0),
+		make([]LatestJobStatusCounts, 0), 0,
+	}
 	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
 	if err != nil {
 		return err
@@ -255,7 +259,7 @@ JobCountsByStateAndDestination
 │         323 │ succeeded │ KISSMETRICS │
 │─────────────│───────────│─────────────│
 */
-func getJobCountsByStateAndDestination(dbHandle *sql.DB, dsName string, jobsDBPrefix string, dsStats *DSStats) error {
+func getJobCountsByStateAndDestination(dbHandle *sql.DB, dsName, jobsDBPrefix string, dsStats *DSStats) error {
 	routerJobsTableName = jobsDBPrefix + "_jobs_" + dsName
 	routerJobStatusTableName = jobsDBPrefix + "_job_status_" + dsName
 	sqlStmt := fmt.Sprintf(`select count(*), st.job_state, rt.custom_val from  %[1]s rt inner join  %[2]s st
@@ -295,7 +299,7 @@ ErrorCodeCountsByDestination
 │   190 │ 504        │ KISSMETRICS │"1mIdI122332343434TXDqc8lbSL" │
 │───────│────────────│─────────────│──────────────────────────────│
 */
-func getFailedStatusErrorCodeCountsByDestination(dbHandle *sql.DB, dsName string, jobsDBPrefix string, dsStats *DSStats) error {
+func getFailedStatusErrorCodeCountsByDestination(dbHandle *sql.DB, dsName, jobsDBPrefix string, dsStats *DSStats) error {
 	routerJobsTableName = jobsDBPrefix + "_jobs_" + dsName
 	routerJobStatusTableName = jobsDBPrefix + "_job_status_" + dsName
 	sqlStmt := fmt.Sprintf(`select count(*), a.error_code, a.custom_val, a.d from
@@ -337,7 +341,7 @@ func getFailedStatusErrorCodeCountsByDestination(dbHandle *sql.DB, dsName string
 │   323 │ "1kXnQTrRjEmjU2wH8KjRR8EJ3gm" │ "1kgadfXiXiZPM8oKAtkPFxFjm0P" │
 │───────│───────────────────────────────│───────────────────────────────│
 */
-func getJobCountByConnections(dbHandle *sql.DB, dsName string, jobsDBPrefix string, dsStats *DSStats) error {
+func getJobCountByConnections(dbHandle *sql.DB, dsName, jobsDBPrefix string, dsStats *DSStats) error {
 	routerJobsTableName = jobsDBPrefix + "_jobs_" + dsName
 	sqlStmt := fmt.Sprintf(`select count(*), parameters->'source_id' as s, parameters -> 'destination_id' as d from %[1]s
 							group by parameters->'source_id', parameters->'destination_id'
@@ -384,7 +388,7 @@ LatestJobStatusCounts
 │          68 │ executing │ 8    │
 │─────────────│───────────│──────│
 */
-func getLatestJobStatusCounts(dbHandle *sql.DB, dsName string, jobsDBPrefix string, dsStats *DSStats) error {
+func getLatestJobStatusCounts(dbHandle *sql.DB, dsName, jobsDBPrefix string, dsStats *DSStats) error {
 	routerJobStatusTableName = jobsDBPrefix + "_job_status_" + dsName
 	sqlStmt := fmt.Sprintf(`SELECT COUNT(*), job_state, rank FROM
 							(SELECT job_state, RANK() OVER(PARTITION BY job_id ORDER BY exec_time DESC) as rank, job_id from %s)
@@ -413,7 +417,7 @@ func getLatestJobStatusCounts(dbHandle *sql.DB, dsName string, jobsDBPrefix stri
 	return err
 }
 
-func getUnprocessedJobCounts(dbHandle *sql.DB, dsName string, jobsDBPrefix string, dsStats *DSStats) error {
+func getUnprocessedJobCounts(dbHandle *sql.DB, dsName, jobsDBPrefix string, dsStats *DSStats) error {
 	routerJobsTableName = jobsDBPrefix + "_jobs_" + dsName
 	routerJobStatusTableName = jobsDBPrefix + "_job_status_" + dsName
 	sqlStatement := fmt.Sprintf(`select count(*) from %[1]s rt inner join %[2]s st

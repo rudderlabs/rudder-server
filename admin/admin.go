@@ -73,8 +73,10 @@ type Admin struct {
 	rpcServer      *rpc.Server
 }
 
-var instance Admin
-var pkgLogger logger.LoggerI
+var (
+	instance  Admin
+	pkgLogger logger.LoggerI
+)
 
 func Init() {
 	instance = Admin{
@@ -119,14 +121,14 @@ func (a Admin) PrintStack(noArgs struct{}, reply *string) (err error) {
 }
 
 // HeapDump creates heap profile at given path using pprof
-func (a Admin) HeapDump(path *string, reply *string) (err error) {
+func (a Admin) HeapDump(path, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
-	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0755)
+	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0o755)
 	if err != nil {
 		return err
 	}
@@ -137,14 +139,14 @@ func (a Admin) HeapDump(path *string, reply *string) (err error) {
 }
 
 // StartCpuProfile starts writing cpu profile at given path using pprof
-func (a Admin) StartCpuProfile(path *string, reply *string) (err error) {
+func (a Admin) StartCpuProfile(path, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
 			err = fmt.Errorf("Internal Rudder Server Error. Error: %w", r)
 		}
 	}()
-	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0755)
+	f, err := os.OpenFile(*path, os.O_RDWR|os.O_CREATE, 0o755)
 	if err != nil {
 		return err
 	}
@@ -210,7 +212,7 @@ func (a Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 	return err
 }
 
-//GetLoggingConfig returns the logging configuration
+// GetLoggingConfig returns the logging configuration
 func (a Admin) GetLoggingConfig(noArgs struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -224,7 +226,7 @@ func (a Admin) GetLoggingConfig(noArgs struct{}, reply *string) (err error) {
 	return err
 }
 
-//GetFormattedEnv return the formatted env
+// GetFormattedEnv return the formatted env
 func (a Admin) GetFormattedEnv(env string, reply *string) (err error) {
 	*reply = config.TransformKey(env)
 	return nil

@@ -40,8 +40,8 @@ func NewOs() OsI {
 	return &Os{}
 }
 
-//IsNotExist returns a boolean indicating whether the error is known to report that a file or directory does not exist.
-//It is satisfied by ErrNotExist as well as some syscall errors.
+// IsNotExist returns a boolean indicating whether the error is known to report that a file or directory does not exist.
+// It is satisfied by ErrNotExist as well as some syscall errors.
 func (o *Os) IsNotExist(err error) bool {
 	return os.IsNotExist(err)
 }

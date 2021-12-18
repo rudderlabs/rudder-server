@@ -42,7 +42,7 @@ const (
 	PooledWHSlaveMode = "embedded_master"
 )
 
-//TransformKey as package method to get the formatted env from a give string
+// TransformKey as package method to get the formatted env from a give string
 func TransformKey(s string) string {
 	snake := matchAllCap.ReplaceAllString(s, "${1}_${2}")
 	snake = strings.ReplaceAll(snake, ".", "_")
@@ -281,9 +281,8 @@ func checkAndHotReloadConfig(configMap map[string]*ConfigVar) (hasConfigChanged 
 	return hasConfigChanged
 }
 
-//GetBool is a wrapper for viper's GetBool
+// GetBool is a wrapper for viper's GetBool
 func GetBool(key string, defaultValue bool) (value bool) {
-
 	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
 		return cast.ToBool(envVal)
@@ -297,7 +296,6 @@ func GetBool(key string, defaultValue bool) (value bool) {
 
 // GetInt is wrapper for viper's GetInt
 func GetInt(key string, defaultValue int) (value int) {
-
 	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
 		return cast.ToInt(envVal)
@@ -538,7 +536,6 @@ func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloada
 
 // GetInt64 is wrapper for viper's GetInt
 func GetInt64(key string, defaultValue int64) (value int64) {
-
 	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
 		return cast.ToInt64(envVal)
@@ -552,7 +549,6 @@ func GetInt64(key string, defaultValue int64) (value int64) {
 
 // GetFloat64 is wrapper for viper's GetFloat64
 func GetFloat64(key string, defaultValue float64) (value float64) {
-
 	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
 		return cast.ToFloat64(envVal)
@@ -565,8 +561,7 @@ func GetFloat64(key string, defaultValue float64) (value float64) {
 }
 
 // GetString is wrapper for viper's GetString
-func GetString(key string, defaultValue string) (value string) {
-
+func GetString(key, defaultValue string) (value string) {
 	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
 		return envVal
@@ -579,7 +574,7 @@ func GetString(key string, defaultValue string) (value string) {
 }
 
 // GetDuration is wrapper for viper's GetDuration
-func GetDuration(key string, defaultValue time.Duration, timeScale time.Duration) (value time.Duration) {
+func GetDuration(key string, defaultValue, timeScale time.Duration) (value time.Duration) {
 	var envValue string
 	envVal := GetEnv(TransformKey(key), "")
 	if envVal != "" {
@@ -633,7 +628,7 @@ func IsEnvSet(key string) bool {
 }
 
 // GetEnv returns the environment value stored in key variable
-func GetEnv(key string, defaultVal string) string {
+func GetEnv(key, defaultVal string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
 	}
@@ -690,13 +685,13 @@ func SetBool(key string, value bool) {
 	viper.Set(key, value)
 }
 
-func SetString(key string, value string) {
+func SetString(key, value string) {
 	viper.Set(key, value)
 }
 
-//GetWorkspaceToken returns the workspace token provided in the environment variables
-//Env variable CONFIG_BACKEND_TOKEN is deprecating soon
-//WORKSPACE_TOKEN is newly introduced. This will override CONFIG_BACKEND_TOKEN
+// GetWorkspaceToken returns the workspace token provided in the environment variables
+// Env variable CONFIG_BACKEND_TOKEN is deprecating soon
+// WORKSPACE_TOKEN is newly introduced. This will override CONFIG_BACKEND_TOKEN
 func GetWorkspaceToken() string {
 	token := GetEnv("WORKSPACE_TOKEN", "")
 	if token != "" && token != "<your_token_here>" {

@@ -20,7 +20,7 @@ type SchemaHandleT struct {
 	uploadSchema      warehouseutils.SchemaT
 }
 
-func handleSchemaChange(existingDataType string, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
+func handleSchemaChange(existingDataType, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
 	if existingDataType == "string" || existingDataType == "text" {
 		// only stringify if the previous type is non-string/text
 		if columnType != "string" && columnType != "text" {

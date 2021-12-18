@@ -3,11 +3,12 @@ package helpers
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/snowflakedb/gosnowflake"
 	"strings"
+
+	_ "github.com/snowflakedb/gosnowflake"
 )
 
-func querySnowflake(anonymousId string, table string, schema string, destConfig interface{}) QueryTrackPayload {
+func querySnowflake(anonymousId, table, schema string, destConfig interface{}) QueryTrackPayload {
 	config := destConfig.(map[string]interface{})
 	if _, ok := config["user"]; !ok {
 		panic("user not found")

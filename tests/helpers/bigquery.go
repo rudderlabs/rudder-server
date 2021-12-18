@@ -1,14 +1,16 @@
 package helpers
 
 import (
-	"cloud.google.com/go/bigquery"
 	"context"
 	"fmt"
+
+	"cloud.google.com/go/bigquery"
+
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
 
-func queryBQ(anonymousId string, table string, dataset string, destConfig interface{}) QueryTrackPayload {
+func queryBQ(anonymousId, table, dataset string, destConfig interface{}) QueryTrackPayload {
 	config := destConfig.(map[string]interface{})
 	ctx := context.Background()
 	if _, ok := config["project"]; !ok {

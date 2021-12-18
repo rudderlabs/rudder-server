@@ -9,7 +9,7 @@ import (
 )
 
 func (manager *MinioManager) ObjectUrl(objectName string) string {
-	var protocol = "http"
+	protocol := "http"
 	if manager.Config.UseSSL {
 		protocol = "https"
 	}
@@ -77,7 +77,7 @@ func (manager *MinioManager) GetObjectNameFromLocation(location string) (string,
 	return location[len(baseURL):], nil
 }
 
-//TODO complete this
+// TODO complete this
 func (manager *MinioManager) GetDownloadKeyFromFileLocation(location string) string {
 	return location
 }

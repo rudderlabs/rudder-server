@@ -8,9 +8,11 @@ import (
 	"github.com/rudderlabs/rudder-server/tests/helpers"
 )
 
-var dbHandle *sql.DB
-var dbPollFreqInS int = 1
-var gatewayDBCheckBufferInS int = 5
+var (
+	dbHandle                *sql.DB
+	dbPollFreqInS           int = 1
+	gatewayDBCheckBufferInS int = 5
+)
 
 var _ = BeforeSuite(func() {
 	var err error
@@ -22,9 +24,7 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = Describe("EventSchema", func() {
-
 	Context("Without user sessions processing", func() {
-
 		It("verify event schema is stored in config backend db", func() {
 			initEventSchemaCount := helpers.FetchEventSchemaCount(dbHandle)
 
@@ -33,7 +33,6 @@ var _ = Describe("EventSchema", func() {
 			Eventually(func() int {
 				return helpers.FetchEventSchemaCount(dbHandle)
 			}, gatewayDBCheckBufferInS, dbPollFreqInS).Should(Equal(initEventSchemaCount + 1))
-
 		})
 	})
 })

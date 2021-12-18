@@ -65,7 +65,6 @@ func TestBatchDelete(t *testing.T) {
 			status := bm.Delete(ctx, tt.job, tt.dest.Config, tt.dest.Name)
 			require.Equal(t, model.JobStatusComplete, status)
 		})
-
 	}
 }
 

@@ -23,30 +23,38 @@ const (
 	redisServerDefault = "localhost:6379"
 )
 
-var redisServer = config.GetEnv("REDIS_SERVER", redisServerDefault)
-var testName = config.GetEnv("TEST_NAME", "TEST-default")
+var (
+	redisServer = config.GetEnv("REDIS_SERVER", redisServerDefault)
+	testName    = config.GetEnv("TEST_NAME", "TEST-default")
+)
 
-var count uint64
-var showPayload = false
-var enableTestStats = false
-var enableError = false
-var redisChan chan string
+var (
+	count           uint64
+	showPayload     = false
+	enableTestStats = false
+	enableError     = false
+	redisChan       chan string
+)
 
-var burstError = false
-var randomError = false
-var randomErrorCodes = []int{200, 200, 200, 200, 200, 200, 200, 200, 400, 500}
-var errorCounts = make(map[string]uint64)
-var errorMutex sync.Mutex
+var (
+	burstError       = false
+	randomError      = false
+	randomErrorCodes = []int{200, 200, 200, 200, 200, 200, 200, 200, 400, 500}
+	errorCounts      = make(map[string]uint64)
+	errorMutex       sync.Mutex
+)
 
-var timeOfStart = time.Now()
-var limitRate = 100
-var limitBurst = 1000
-var limiter = rate.NewLimiter(rate.Limit(limitRate), limitBurst)
+var (
+	timeOfStart = time.Now()
+	limitRate   = 100
+	limitBurst  = 1000
+	limiter     = rate.NewLimiter(rate.Limit(limitRate), limitBurst)
+)
 
 func limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if limiter.Allow() == false {
-			//fmt.Println("====sending 429 =====")
+			// fmt.Println("====sending 429 =====")
 			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
 			return
 		}
@@ -98,7 +106,7 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 	atomic.AddUint64(&count, 1)
 	var respMessage string
 	if burstError {
-		//fmt.Println("====sending 401 ======")
+		// fmt.Println("====sending 401 ======")
 		http.Error(rw, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		countError("401")
 		return
@@ -107,17 +115,17 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 		statusCode := rand.Intn(len(randomErrorCodes))
 		switch randomErrorCodes[statusCode] {
 		case 200:
-			//fmt.Println("====sending 200 OK=======")
+			// fmt.Println("====sending 200 OK=======")
 			respMessage = "OK"
 			countError("200")
 		case 400:
-			//fmt.Println("====sending 400 =======")
+			// fmt.Println("====sending 400 =======")
 			http.Error(rw, http.StatusText(http.StatusBadRequest),
 				http.StatusBadRequest)
 			countError("400")
 			return
 		case 500:
-			//fmt.Println("====sending 500 =======")
+			// fmt.Println("====sending 500 =======")
 			http.Error(rw, http.StatusText(http.StatusInternalServerError),
 				http.StatusInternalServerError)
 			countError("500")
@@ -128,7 +136,7 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 		countError("200-Reg")
 	}
 
-	//Reached here means no synthetic error OR error-code = 200
+	// Reached here means no synthetic error OR error-code = 200
 	rw.Write([]byte(respMessage))
 	successStat.Increment()
 
@@ -139,25 +147,25 @@ func handleReq(rw http.ResponseWriter, req *http.Request) {
 
 func flipErrorType() {
 	for {
-		//20 seconds of good run
+		// 20 seconds of good run
 		fmt.Println("Disabling error")
 		randomError = false
 		burstError = false
 		<-time.After(20 * time.Second)
 
-		//60 seconds of burst error
+		// 60 seconds of burst error
 		fmt.Println("Enabling burst")
 		burstError = true
 		randomError = false
 		<-time.After(60 * time.Second)
 
-		//20 sec of good run
+		// 20 sec of good run
 		fmt.Println("Disabling error")
 		randomError = false
 		burstError = false
 		<-time.After(20 * time.Second)
 
-		//20 seconds of random error
+		// 20 seconds of random error
 		fmt.Println("Enabling random error")
 		randomError = true
 		burstError = false
@@ -165,6 +173,7 @@ func flipErrorType() {
 
 	}
 }
+
 func printCounter() {
 	startTime := time.Now()
 	for {

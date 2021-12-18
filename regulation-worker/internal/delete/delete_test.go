@@ -11,7 +11,6 @@ import (
 )
 
 func TestDelete(t *testing.T) {
-
 	ctx := context.Background()
 	testData := []struct {
 		name                              string
@@ -54,5 +53,4 @@ func TestDelete(t *testing.T) {
 		status := r.Delete(ctx, tt.job, tt.destDetail)
 		require.Equal(t, tt.expectedStatus, status, "actual status different than expected")
 	}
-
 }
