@@ -238,6 +238,7 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 	}
 	job.schemaHandle = &schemaHandle
 	schemaHandle.localSchema = schemaHandle.getLocalSchema()
+	pkgLogger.Infof("Fetching local schema for sourceId: %s, destinationId: %s, namespace: %s, uploadId: %d", schemaHandle.warehouse.Source.ID, schemaHandle.warehouse.Destination.ID, schemaHandle.warehouse.Namespace, job.upload.ID)
 	schemaHandle.schemaInWarehouse, err = schemaHandle.fetchSchemaFromWarehouse(job.whManager)
 	if err != nil {
 		return false, err
@@ -247,6 +248,7 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 	if hasSchemaChanged {
 		err = schemaHandle.updateLocalSchema(schemaHandle.schemaInWarehouse)
 		if err != nil {
+			pkgLogger.Errorf("Error occurred while updating local schema with error: %v", err)
 			return false, err
 		}
 		schemaHandle.localSchema = schemaHandle.schemaInWarehouse

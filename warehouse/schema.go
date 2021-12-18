@@ -289,6 +289,7 @@ func compareSchema(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
 
 		// If warehouse does not contain the specified table return true.
 		if !whColumnsExist {
+			pkgLogger.Infof("Warehouse does not have table: %s", tableName)
 			return true
 		}
 		for columnName := range localColumns {
@@ -298,6 +299,7 @@ func compareSchema(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
 			// If warehouse does not contain the specified column return true.
 			// If warehouse column does not match with the local one return true
 			if localColumn != warehouseColumn {
+				pkgLogger.Infof("Warehouse type mismatched for table: %s, and column: %s, localColumnType: %s, warehouseColumnType: %s", tableName, columnName, localColumn, warehouseColumn)
 				return true
 			}
 		}
