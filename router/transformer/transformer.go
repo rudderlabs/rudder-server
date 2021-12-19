@@ -30,12 +30,12 @@ const (
 
 //HandleT is the handle for this class
 type HandleT struct {
-	tr                                      *http.Transport
-	client                                  *http.Client
-	transformRequestTimerStat               stats.RudderStats
-	transformerNetworkRequestTimerStat      stats.RudderStats
-	transformerResponseTransformRequestTime stats.RudderStats
-	logger                                  logger.LoggerI
+	tr                                 *http.Transport
+	client                             *http.Client
+	transformRequestTimerStat          stats.RudderStats
+	transformerNetworkRequestTimerStat stats.RudderStats
+	transformerProxyRequestTime        stats.RudderStats
+	logger                             logger.LoggerI
 }
 
 //Transformer provides methods to transform events
@@ -62,7 +62,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(30), &timeoutDuration, true, time.Second, []string{"Processor.timeoutDuration", "Processor.timeoutDurationInSecond"}...)
-	config.RegisterInt64ConfigVariable(15, &retryWithBackoffCount, true, 1, "Router.responseTransformRetryCount")
+	config.RegisterInt64ConfigVariable(15, &retryWithBackoffCount, true, 1, "Router.transformerProxyRetryCount")
 }
 
 func Init() {
@@ -186,14 +186,24 @@ func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integration
 
 	operation := func() error {
 		var requestError error
+		//start
+		rdl_time := time.Now()
 		respData, respCode, requestError = trans.makeHTTPRequest(ctx, url, payload)
+		if requestError != nil {
+			stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": "false"}).SendTiming(time.Since(rdl_time))
+			stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": "false"}).Increment()
+		} else {
+			stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": "true"}).SendTiming(time.Since(rdl_time))
+			stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": "true"}).Increment()
+		}
+		//end
 		return requestError
 	}
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(retryWithBackoffCount))
 	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("[Transformer Proxy] Request for proxy to URL:: %v, Error:: %+v retrying after:: %v,", url, err, t)
-		stats.NewStat("responnse_transformer.retry_metric", stats.CountType).Increment()
+		stats.NewStat("transformer_proxy.retry_metric", stats.CountType).Increment()
 	})
 
 	if err != nil {
@@ -239,7 +249,8 @@ func (trans *HandleT) Setup() {
 	trans.client = &http.Client{Transport: trans.tr, Timeout: timeoutDuration}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
-	trans.transformerResponseTransformRequestTime = stats.NewStat("router.transformer_response_transform_time", stats.TimerType)
+	trans.transformerProxyRequestTime = stats.NewStat("router.transformer_response_transform_time", stats.TimerType)
+
 }
 
 func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload []byte) ([]byte, int, error) {
