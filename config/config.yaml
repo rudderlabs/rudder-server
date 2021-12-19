@@ -108,8 +108,8 @@ Router:
   retryTimeWindow: 180m
   failedKeysEnabled: false
   saveDestinationResponseOverride: false
-  responseTransform: false
-  responseTransformRetryCount: 15
+  transformerProxy: false
+  transformerProxyRetryCount: 15
   MARKETO:
     noOfWorkers: 4
   throttler:
