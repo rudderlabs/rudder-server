@@ -138,42 +138,39 @@ type WareHouseTestT struct {
 }
 
 var (
-	pool                  *dockertest.Pool
-	err                   error
-	z                     *dockertest.Resource
-	resourceKafka         *dockertest.Resource
-	resourceRedis         *dockertest.Resource
-	transformerRes        *dockertest.Resource
-	resource              *dockertest.Resource
-	network               *dc.Network
-	resourcePostgres      *dockertest.Resource
-	transformURL          string
-	minioEndpoint         string
-	minioBucketName       string
-	hold                  bool = true
-	db                    *sql.DB
-	redisClient           *redis.Client
-	DB_DSN                = "root@tcp(127.0.0.1:3306)/service"
-	httpPort              string
-	httpKafkaPort         string
-	dbHandle              *sql.DB
-	sourceJSON            backendconfig.ConfigT
-	webhookurl            string
-	webhookDestinationurl string
-	webhook               *WebhookRecorder
-	webhookDestination    *WebhookRecorder
-	address               string
-	runIntegration        bool
-	writeKey              string
-	webhookEventWriteKey  string
-	workspaceID           string
-	redisAddress          string
-	brokerPort            string
-	localhostPort         string
-	localhostPortInt      int
+	pool                     *dockertest.Pool
+	err                      error
+	network                  *dc.Network
+	transformURL             string
+	minioEndpoint            string
+	minioBucketName          string
+	timescaleDB_DSN_Internal string
+	reportingserviceURL      string
+	hold                     bool = true
+	db                       *sql.DB
+	rs_db                    *sql.DB
+	redisClient              *redis.Client
+	DB_DSN                   = "root@tcp(127.0.0.1:3306)/service"
+	httpPort                 string
+	httpKafkaPort            string
+	dbHandle                 *sql.DB
+	sourceJSON               backendconfig.ConfigT
+	webhookurl               string
+	webhookDestinationurl    string
+	webhook                  *WebhookRecorder
+	webhookDestination       *WebhookRecorder
+	address                  string
+	runIntegration           bool
+	writeKey                 string
+	webhookEventWriteKey     string
+	workspaceID              string
+	redisAddress             string
+	brokerPort               string
+	localhostPort            string
+	localhostPortInt         int
 	whTest                *WareHouseTestT
-	EventID               string
-	VersionID             string
+	EventID                  string
+	VersionID                string
 )
 
 type WebhookRecorder struct {
@@ -220,7 +217,6 @@ func (whr *WebhookRecorder) Requests() []*http.Request {
 func (whr *WebhookRecorder) Close() {
 	whr.Server.Close()
 }
-
 func randString(n int) string {
 	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
@@ -298,12 +294,10 @@ func blockOnHold() {
 	<-c
 }
 
-func SendEvent(payload *strings.Reader, callType string, writeKey string) (string, error) {
-	log.Println(fmt.Sprintf("Sending %s Event", callType))
-	url := ""
-	if callType != "beacon" {
-		url = fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, callType)
-	} else {
+func SendEvent(payload *strings.Reader, call_type string, writeKey string) (string, error) {
+	log.Println(fmt.Sprintf("Sending %s Event", call_type))
+	url := fmt.Sprintf("http://localhost:%s/v1/%s", httpPort, call_type)
+	if call_type == "beacon" {
 		url = fmt.Sprintf("http://localhost:%s/beacon/v1/batch?writeKey=%s", httpPort, writeKey)
 	}
 	method := "POST"
@@ -452,39 +446,52 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("could not connect to docker: %w", err)
 	}
-	SetZookeeper()
+	z := SetZookeeper()
 	defer func() {
 		if err := pool.Purge(z); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	SetKafka()
+	resourceKafka := SetKafka(z)
 	defer func() {
 		if err := pool.Purge(resourceKafka); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	SetRedis()
+	resourceRedis := SetRedis()
 	defer func() {
 		if err := pool.Purge(resourceRedis); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	SetJobsDB()
+	resourcePostgres := SetJobsDB()
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	SetTransformer()
+	transformerRes := SetTransformer()
 	defer func() {
 		if err := pool.Purge(transformerRes); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
-	SetMINIO()
+	resource := SetMINIO()
 	defer func() {
 		if err := pool.Purge(resource); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+
+	timescaleRes := SetTimescaleDB()
+	defer func() {
+		if err := pool.Purge(timescaleRes); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	reportingRes := SetReportingService()
+	defer func() {
+		if err := pool.Purge(reportingRes); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
@@ -614,24 +621,24 @@ func run(m *testing.M) (int, error) {
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":                          webhookurl,
-			"webhookDestinationurl":               webhookDestinationurl,
-			"writeKey":                            writeKey,
-			"webhookEventWriteKey":                webhookEventWriteKey,
+			"webhookUrl":            webhookurl,
+			"webhookDestinationurl": webhookDestinationurl,
+			"writeKey":              writeKey,
+			"webhookEventWriteKey":  webhookEventWriteKey,
 			"postgresEventWriteKey":               whTest.pgTestT.writeKey,
 			"clickHouseEventWriteKey":             whTest.chTestT.writeKey,
 			"clickHouseClusterEventWriteKey":      whTest.chClusterTestT.writeKey,
 			"mssqlEventWriteKey":                  whTest.mssqlTestT.writeKey,
-			"workspaceId":                         workspaceID,
-			"postgresPort":                        resourcePostgres.GetPort("5432/tcp"),
+			"workspaceId":           workspaceID,
+			"postgresPort":          resourcePostgres.GetPort("5432/tcp"),
 			"rwhPostgresDestinationPort":          whTest.pgTestT.resource.GetPort("5432/tcp"),
 			"rwhClickHouseDestinationPort":        whTest.chTestT.resource.GetPort("9000/tcp"),
 			"rwhClickHouseClusterDestinationPort": whTest.chClusterTestT.clickhouse01.GetPort("9000/tcp"),
 			"rwhMSSqlDestinationPort":             whTest.mssqlTestT.resource.GetPort("1433/tcp"),
-			"address":                             redisAddress,
-			"minioEndpoint":                       minioEndpoint,
-			"minioBucketName":                     minioBucketName,
-			"kafkaPort":                           strconv.Itoa(localhostPortInt),
+			"address":               redisAddress,
+			"minioEndpoint":         minioEndpoint,
+			"minioBucketName":       minioBucketName,
+			"kafkaPort":             strconv.Itoa(localhostPortInt),
 		},
 	)
 	defer func() {
@@ -669,6 +676,7 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10")
 	os.Setenv("RSERVER_EVENT_SCHEMAS_ENABLE_EVENT_SCHEMAS_FEATURE", "true")
 	os.Setenv("RSERVER_EVENT_SCHEMAS_SYNC_INTERVAL", "15")
+	os.Setenv("RSERVER_REPORTING_URL", reportingserviceURL)
 
 	fmt.Printf("--- Setup done (%s)\n", time.Since(setupStart))
 
@@ -751,8 +759,21 @@ func TestWebhook(t *testing.T) {
 		[
 			{
 				"userId": "identified_user_id",
-			   "anonymousId":"anonymousId_1",
-			   "messageId":"messageId_1"
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
 			}
 		]
 	}`)
@@ -899,7 +920,7 @@ func TestPostgres(t *testing.T) {
 	require.Eventually(t, func() bool {
 		eventSql := "select count(*) from dev_integration_test_1.identifies"
 		db.QueryRow(eventSql).Scan(&myEvent.count)
-		return myEvent.count == "1"
+		return myEvent.count == "2"
 	}, time.Minute, 10*time.Millisecond)
 
 	require.Eventually(t, func() bool {
@@ -951,6 +972,7 @@ type eventSchemasObject struct {
 	EventID   string
 	EventType string
 	VersionID string
+  }
 }
 
 // Verify Event Models EndPoint
@@ -1037,9 +1059,6 @@ func TestEventVersionMissingKeys(t *testing.T) {
 	url := fmt.Sprintf("http://localhost:%s/schemas/event-version/%s/missing-keys", httpPort, VersionID)
 	method := "GET"
 	resBody, _ := GetEvent(url, method)
-	log.Println("EventID", EventID)
-	log.Println("VersionID", VersionID)
-	log.Println(resBody)
 	require.Contains(t, resBody, "originalTimestamp")
 	require.Contains(t, resBody, "sentAt")
 	require.Contains(t, resBody, "channel")
@@ -1111,9 +1130,7 @@ out:
 		select {
 		case msg := <-consumer:
 			msgCount++
-			// t.Log("Received messages", string(msg.Key), string(msg.Value))
 			require.Equal(t, "identified_user_id", string(msg.Key))
-			// require.Contains(t, string(msg.Value), "new-val")
 			require.Contains(t, string(msg.Value), "identified_user_id")
 			if msgCount == expectedCount {
 				break out
@@ -1127,6 +1144,7 @@ out:
 		}
 	}
 	log.Println("Processed", msgCount, "messages")
+
 }
 
 // Verify beacon  EndPoint
@@ -1730,7 +1748,7 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 	return consumers, errors
 }
 
-func SetZookeeper() {
+func SetZookeeper() *dockertest.Resource {
 	network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
 	if err != nil {
 		log.Printf("Could not create docker network: %s", err)
@@ -1744,7 +1762,7 @@ func SetZookeeper() {
 	log.Println("zookeeper Port:", zookeeperPort)
 	log.Println("zookeeper client Port :", zookeeperclientPort)
 
-	z, err = pool.RunWithOptions(&dockertest.RunOptions{
+	z, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-zookeeper",
 		Tag:        "latest",
 		NetworkID:  network.ID,
@@ -1757,10 +1775,10 @@ func SetZookeeper() {
 	if err != nil {
 		fmt.Println(err)
 	}
-
+	return z
 }
 
-func SetKafka() {
+func SetKafka(z *dockertest.Resource) *dockertest.Resource {
 	// Set Kafka: pulls an image, creates a container based on it and runs it
 	KAFKA_ZOOKEEPER_CONNECT := fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
 	log.Println("KAFKA_ZOOKEEPER_CONNECT:", KAFKA_ZOOKEEPER_CONNECT)
@@ -1784,9 +1802,9 @@ func SetKafka() {
 
 	log.Println("KAFKA_ADVERTISED_LISTENERS", KAFKA_ADVERTISED_LISTENERS)
 
-	resourceKafka, err = pool.RunWithOptions(&dockertest.RunOptions{
+	resourceKafka, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-kafka",
-		Tag:        "latest",
+		Tag:        "7.0.0",
 		NetworkID:  network.ID,
 		Hostname:   "broker",
 		PortBindings: map[dc.Port][]dc.PortBinding{
@@ -1806,11 +1824,12 @@ func SetKafka() {
 		fmt.Println(err)
 	}
 	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
+	return resourceKafka
 }
 
-func SetRedis() {
+func SetRedis() *dockertest.Resource {
 	// pulls an redis image, creates a container based on it and runs it
-	resourceRedis, err = pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
+	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
 	if err != nil {
 		log.Printf("Could not start resource: %s", err)
 	}
@@ -1827,12 +1846,13 @@ func SetRedis() {
 	}); err != nil {
 		log.Printf("Could not connect to docker: %s", err)
 	}
+	return resourceRedis
 }
 
-func SetJobsDB() {
+func SetJobsDB() *dockertest.Resource {
 	database := "jobsdb"
 	// pulls an image, creates a container based on it and runs it
-	resourcePostgres, err = pool.Run("postgres", "11-alpine", []string{
+	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
 		"POSTGRES_PASSWORD=password",
 		"POSTGRES_DB=" + database,
 		"POSTGRES_USER=rudder",
@@ -1853,12 +1873,13 @@ func SetJobsDB() {
 		log.Println("Could not connect to postgres", DB_DSN, err)
 	}
 	fmt.Println("DB_DSN:", DB_DSN)
+	return resourcePostgres
 }
 
-func SetTransformer() {
+func SetTransformer() *dockertest.Resource {
 	// Set Rudder Transformer
 	// pulls an image, creates a container based on it and runs it
-	transformerRes, err = pool.RunWithOptions(&dockertest.RunOptions{
+	transformerRes, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "rudderlabs/rudder-transformer",
 		Tag:          "latest",
 		ExposedPorts: []string{"9090"},
@@ -1877,9 +1898,68 @@ func SetTransformer() {
 		time.Minute,
 		time.Second,
 	)
+	return transformerRes
+}
+func SetTimescaleDB() *dockertest.Resource {
+	// Set  timescale DB
+	// pulls an image, creates a container based on it and runs it
+	database := "temo"
+	timescaleRes, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "timescale/timescaledb",
+		Tag:        "latest-pg13",
+		Env: []string{
+			"POSTGRES_USER=postgres",
+			"POSTGRES_DB=" + database,
+			"POSTGRES_PASSWORD=password",
+		},
+	})
+	if err != nil {
+		log.Println("Could not start resource Timescale DB: %w", err)
+	}
+	timescaleDB_DSN_Internal = fmt.Sprintf("postgresql://postgres:password@host.docker.internal:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
+	fmt.Println("timesacaleDB_DSN", timescaleDB_DSN_Internal)
+	timescaleDB_DSN_viaHost := fmt.Sprintf("postgresql://postgres:password@localhost:%s/%s?sslmode=disable", timescaleRes.GetPort("5432/tcp"), database)
+	if err := pool.Retry(func() error {
+		var err error
+		rs_db, err = sql.Open("postgres", timescaleDB_DSN_viaHost)
+		if err != nil {
+			return err
+		}
+		return rs_db.Ping()
+	}); err != nil {
+		log.Println("Could not connect to postgres %w", err)
+	}
+	log.Println("timescaleDB_DSN_viaHost", timescaleDB_DSN_viaHost)
+	return timescaleRes
 }
 
-func SetMINIO() {
+func SetReportingService() *dockertest.Resource {
+	// Set  reporting service
+	// pulls an image, creates a container based on it and runs it
+	reportingRes, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository:   "rudderstack/rudderstack-reporting",
+		Tag:          "dedup",
+		ExposedPorts: []string{"5000"},
+		Env: []string{
+			"DATABASE_URL=" + timescaleDB_DSN_Internal,
+		},
+	})
+	if err != nil {
+		log.Println("Could not start resource Reporting Service: %w", err)
+	}
+
+	reportingserviceURL = fmt.Sprintf("http://localhost:%s", reportingRes.GetPort("5000/tcp"))
+	fmt.Println("reportingserviceURL", reportingserviceURL)
+	waitUntilReady(
+		context.Background(),
+		fmt.Sprintf("%s/health", reportingserviceURL),
+		time.Minute,
+		time.Second,
+	)
+	return reportingRes
+}
+
+func SetMINIO() *dockertest.Resource {
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
 		fmt.Println(err)
@@ -1899,7 +1979,7 @@ func SetMINIO() {
 		Env: []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY"},
 	}
 
-	resource, err = pool.RunWithOptions(options)
+	resource, err := pool.RunWithOptions(options)
 	if err != nil {
 		log.Println("Could not start resource:", err)
 	}
@@ -1937,6 +2017,47 @@ func SetMINIO() {
 		log.Println(err)
 		panic(err)
 	}
+	return resource
+}
+
+// Verify Event in Reporting Service
+func TestReportingService(t *testing.T) {
+	if _, err := os.Stat("enterprise/reporting/reporting.go"); err == nil {
+		fmt.Printf("File exists\n")
+	} else {
+		fmt.Printf("File does not exist\n")
+		t.Skip()
+	}
+	url := fmt.Sprintf("%s/totalEvents?sourceId=('%s')&from=2021-09-16&to=2022-12-09", reportingserviceURL, "xxxyyyzzEaEurW247ad9WYZLUyk")
+	fmt.Println("Reporting service total events url: ", url)
+	require.Eventually(t, func() bool {
+		method := "GET"
+		client := &http.Client{}
+		req, err := http.NewRequest(method, url, nil)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+		req.Header.Add("Content-Type", "application/json")
+		req.Header.Add("Authorization",
+			fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
+				[]byte(fmt.Sprintf("%s:", writeKey)),
+			)),
+		)
+
+		res, err := client.Do(req)
+		if err != nil {
+			fmt.Println(err)
+		}
+		defer res.Body.Close()
+
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return strings.Contains(string(body), "12")
+	}, 3*time.Minute, 10*time.Millisecond)
+
 }
 
 func initWhConfig() {
