@@ -18,13 +18,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/tidwall/gjson"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 )
 
 var (
@@ -209,13 +209,13 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	pkgLogger.Infof("RS: Generated manifest for table:%s", tableName)
 	manifestJSON, _ := json.Marshal(&manifest)
 
-	manifestFolder := "rudder-redshift-manifests"
+	manifestFolder := misc.RudderRedshiftManifests
 	dirName := "/" + manifestFolder + "/"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		panic(err)
 	}
-	localManifestPath := fmt.Sprintf("%v%v", tmpDirPath+dirName, uuid.NewV4().String())
+	localManifestPath := fmt.Sprintf("%v%v", tmpDirPath+dirName, uuid.Must(uuid.NewV4()).String())
 	err = os.MkdirAll(filepath.Dir(localManifestPath), os.ModePerm)
 	if err != nil {
 		panic(err)
@@ -237,7 +237,7 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 		}),
 	})
 
-	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.NewV4().String())
+	uploadOutput, err := uploader.Upload(file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.Must(uuid.NewV4()).String())
 
 	if err != nil {
 		return "", err
@@ -279,7 +279,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
 	}
 
-	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
+	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
 	err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
 		return
@@ -404,7 +404,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
 	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), warehouseutils.UsersTable), 127)
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
 
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
 										(

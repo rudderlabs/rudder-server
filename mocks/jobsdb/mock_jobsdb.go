@@ -9,9 +9,9 @@ import (
 	json "encoding/json"
 	reflect "reflect"
 
+	uuid "github.com/gofrs/uuid"
 	gomock "github.com/golang/mock/gomock"
 	jobsdb "github.com/rudderlabs/rudder-server/jobsdb"
-	uuid "github.com/satori/go.uuid"
 )
 
 // MockJobsDB is a mock of JobsDB interface.
@@ -181,20 +181,6 @@ func (m *MockJobsDB) GetProcessed(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
 func (mr *MockJobsDBMockRecorder) GetProcessed(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProcessed", reflect.TypeOf((*MockJobsDB)(nil).GetProcessed), arg0)
-}
-
-// GetThrottled mocks base method.
-func (m *MockJobsDB) GetThrottled(arg0 jobsdb.GetQueryParamsT) []*jobsdb.JobT {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetThrottled", arg0)
-	ret0, _ := ret[0].([]*jobsdb.JobT)
-	return ret0
-}
-
-// GetThrottled indicates an expected call of GetThrottled.
-func (mr *MockJobsDBMockRecorder) GetThrottled(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetThrottled", reflect.TypeOf((*MockJobsDB)(nil).GetThrottled), arg0)
 }
 
 // GetToRetry mocks base method.

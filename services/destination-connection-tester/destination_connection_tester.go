@@ -12,12 +12,12 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	uuid "github.com/satori/go.uuid"
 )
 
 var (
@@ -49,7 +49,7 @@ func loadConfig() {
 	maxRetry = config.GetInt("DestinationConnectionTester.maxRetry", 3)
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, false, time.Millisecond, []string{"DestinationConnectionTester.retrySleep", "DestinationConnectionTester.retrySleepInMS"}...)
 	instanceID = config.GetEnv("INSTANCE_ID", "1")
-	rudderConnectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload")
+	rudderConnectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
 
 }
 
@@ -111,7 +111,7 @@ func createTestFileForBatchDestination(destinationID string) string {
 		panic(err)
 	}
 
-	gzipFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.csv.gz", tmpDirPath, rudderConnectionTestingFolder, destinationID, uuid.NewV4(), time.Now().Unix())
+	gzipFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.csv.gz", tmpDirPath, rudderConnectionTestingFolder, destinationID, uuid.Must(uuid.NewV4()), time.Now().Unix())
 	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to make dir %s for testing this destination id %s: err %v", gzipFilePath, destinationID, err)
@@ -170,7 +170,7 @@ func downloadTestFileForBatchDestination(testObjectKey string, provider string, 
 	if err != nil {
 		panic(err)
 	}
-	testFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.csv.gz", tmpDirPath, rudderConnectionTestingFolder, destination.ID, uuid.NewV4(), time.Now().Unix())
+	testFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.csv.gz", tmpDirPath, rudderConnectionTestingFolder, destination.ID, uuid.Must(uuid.NewV4()), time.Now().Unix())
 	err = os.MkdirAll(filepath.Dir(testFilePath), os.ModePerm)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to create directory at path %s: err %v", testFilePath, err)
@@ -192,7 +192,7 @@ func downloadTestFileForBatchDestination(testObjectKey string, provider string, 
 
 func TestBatchDestinationConnection(destination backendconfig.DestinationT) string {
 	testFileName := createTestFileForBatchDestination(destination.ID)
-	keyPrefixes := []string{config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", "rudder-test-payload"), destination.ID, time.Now().Format("01-02-2006")}
+	keyPrefixes := []string{config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload), destination.ID, time.Now().Format("01-02-2006")}
 	_, err := uploadTestFileForBatchDestination(testFileName, keyPrefixes, destination.DestinationDefinition.Name, destination)
 	var error string
 	if err != nil {

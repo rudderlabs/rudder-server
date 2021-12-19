@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	uuid "github.com/gofrs/uuid"
 	"github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 
 	. "github.com/onsi/gomega"
@@ -354,7 +354,7 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
 			%[1]s,
 			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
+				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='executing') OR (job_state='importing')))
 			AS job_latest_state
 		 WHERE %[1]s.job_id=job_latest_state.job_id
 		   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
@@ -367,7 +367,7 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
 			%[1]s,
 			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
+				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='executing') OR (job_state='importing')))
 			AS job_latest_state
 		 WHERE %[1]s.job_id=job_latest_state.job_id
 		   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
@@ -393,7 +393,7 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectQuery(fmt.Sprintf(`select sum(jsonb_array_length(batch)) from (SELECT %[1]s.event_payload->'batch' as batch FROM
 			%[1]s,
 			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
+				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting')  OR (job_state='executing') OR (job_state='importing')))
 			AS job_latest_state
 		 WHERE %[1]s.job_id=job_latest_state.job_id
 
@@ -406,7 +406,7 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectQuery(fmt.Sprintf(`select sum(jsonb_array_length(batch)) from (SELECT %[1]s.event_payload->'batch' as batch FROM
 		  %[1]s,
 		  (SELECT job_id, retry_time FROM %[2]s WHERE id IN
-			  (SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
+			  (SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='executing') OR (job_state='importing')))
 		  AS job_latest_state
 	   WHERE %[1]s.job_id=job_latest_state.job_id
 
@@ -1534,7 +1534,7 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
 			%[1]s,
 			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
+				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='executing') OR (job_state='importing')))
 			AS job_latest_state
 		 WHERE %[1]s.job_id=job_latest_state.job_id
 		   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
@@ -1547,7 +1547,7 @@ var _ = Describe("readonly_jobsdb", func() {
 			c.mock.ExpectQuery(fmt.Sprintf(`SELECT COUNT(%[1]s.job_id) FROM
 			%[1]s,
 			(SELECT job_id, retry_time FROM %[2]s WHERE id IN
-				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='throttled') OR (job_state='executing') OR (job_state='importing')))
+				(SELECT MAX(id) from %[2]s GROUP BY job_id)  AND ((job_state='failed') OR (job_state='waiting') OR (job_state='executing') OR (job_state='importing')))
 			AS job_latest_state
 		 WHERE %[1]s.job_id=job_latest_state.job_id
 		   AND ((%[1]s.custom_val='MOCKDS'))  AND (%[1]s.parameters @> '{"source_id":"sourceID"}' )
@@ -1597,7 +1597,7 @@ var userJobs = []*JobT{
 		Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
 		UserID:       "dummy_a-292e-4e79-9880-f8009e0ae4a3",
-		UUID:         uuid.NewV4(),
+		UUID:         uuid.Must(uuid.NewV4()),
 		CustomVal:    "MOCKDS",
 	},
 	{
@@ -1605,7 +1605,7 @@ var userJobs = []*JobT{
 		Parameters:   []byte(`{"batch_id":2,"source_id":"sourceID","source_job_run_id":"random_sourceJobRunID"}`),
 		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
 		UserID:       "dummy_a-292e-4e79-9880-f8009e0ae4a3",
-		UUID:         uuid.NewV4(),
+		UUID:         uuid.Must(uuid.NewV4()),
 		CustomVal:    "MOCKDS",
 	},
 	{
@@ -1613,7 +1613,7 @@ var userJobs = []*JobT{
 		Parameters:   []byte(`{"batch_id":2,"source_id":"sourceID","source_job_run_id":"random_sourceJobRunID"}`),
 		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
 		UserID:       "dummy_a-292e-4e79-9880-f8009e0ae4a3",
-		UUID:         uuid.NewV4(),
+		UUID:         uuid.Must(uuid.NewV4()),
 		CustomVal:    "MOCKDS",
 	},
 	{
@@ -1621,7 +1621,7 @@ var userJobs = []*JobT{
 		Parameters:   []byte(`{"batch_id":2,"source_id":"sourceID","source_job_run_id":"random_sourceJobRunID"}`),
 		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
 		UserID:       "dummy_a-292e-4e79-9880-f8009e0ae4a3",
-		UUID:         uuid.NewV4(),
+		UUID:         uuid.Must(uuid.NewV4()),
 		CustomVal:    "MOCKDS",
 	},
 }

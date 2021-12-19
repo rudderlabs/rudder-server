@@ -13,8 +13,8 @@ services:
       - d-transformer
     build:
       context: ./
-      dockerfile: build/Dockerfile-dev
-    entrypoint: sh -c './build/wait-for db:5432 -- go run -mod=vendor main.go'
+      dockerfile: build/Dockerfile
+    entrypoint: sh -c './build/wait-for db:5432 -- go run main.go'
     ports:
       - "8080:8080"
     env_file:
@@ -34,6 +34,8 @@ services:
   #   image: minio/minio
   #   ports:
   #     - "9000:9000"
-  #   env_file:
-  #     - build/docker.env
-  #   command: server /data
+  #     - "9001:9001"
+  #   environment:
+  #     - MINIO_ROOT_USER=root
+  #     - MINIO_ROOT_PASSWORD=password
+  #   command: server --console-address :9001 /data

@@ -26,12 +26,18 @@ type DrainStats struct {
 	Reasons []string
 }
 
+type SendPostResponse struct {
+	StatusCode          int
+	ResponseContentType string
+	ResponseBody        []byte
+}
+
 func Init() {
 	loadConfig()
 }
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(24), &JobRetention, true, time.Hour, "Router.jobRetention")
+	config.RegisterDurationConfigVariable(time.Duration(720), &JobRetention, true, time.Hour, "Router.jobRetention")
 }
 
 func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) (bool, string) {

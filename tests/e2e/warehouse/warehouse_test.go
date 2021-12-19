@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 
+	uuid "github.com/gofrs/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
@@ -12,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/tests/helpers"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 )
 
@@ -83,7 +83,7 @@ var _ = Describe("Warehouse", func() {
 
 		It("should able to create a load file in database with event name", func() {
 			batchJson := helpers.AddKeyToJSON(helpers.WarehouseBatchPayload, "batch.0.event", eventName)
-			anonymousId := uuid.NewV4().String()
+			anonymousId := uuid.Must(uuid.NewV4()).String()
 			batchJson = helpers.AddKeyToJSON(batchJson, "batch.0.anonymousId", anonymousId)
 			helpers.SendBatchRequest(writeKey, batchJson)
 
@@ -313,7 +313,7 @@ var _ = Describe("Warehouse", func() {
 		})
 		It("should be able to create load file", func() {
 			batchJson := helpers.AddKeyToJSON(helpers.WarehouseBatchPayload, "batch.0.event", eventName)
-			anonymousId := uuid.NewV4().String()
+			anonymousId := uuid.Must(uuid.NewV4()).String()
 			batchJson = helpers.AddKeyToJSON(batchJson, "batch.0.anonymousId", anonymousId)
 			label := "Ken\"ny\"s iPh'o\"ne5\",6"
 			batchJson = helpers.AddKeyToJSON(batchJson, "batch.0.properties.label", label)
@@ -388,7 +388,7 @@ var _ = Describe("Warehouse", func() {
 		})
 		It("should be able to create load file and schema should have different data types", func() {
 			batchJson := helpers.AddKeyToJSON(helpers.WarehouseBatchPayload, "batch.0.event", eventName)
-			anonymousId := uuid.NewV4().String()
+			anonymousId := uuid.Must(uuid.NewV4()).String()
 			batchJson = helpers.AddKeyToJSON(batchJson, "batch.0.anonymousId", anonymousId)
 			batchJson = helpers.AddKeyToJSON(batchJson, "batch.0.properties.label", "Demo")
 			helpers.SendBatchRequest(writeKey, batchJson)
@@ -472,7 +472,7 @@ var _ = Describe("Warehouse", func() {
 		})
 		It("should be able to create load file, while sending reserved keywords", func() {
 			batchJson := helpers.AddKeyToJSON(helpers.WarehouseBatchPayload, "batch.0.event", eventName)
-			anonymousId := uuid.NewV4().String()
+			anonymousId := uuid.Must(uuid.NewV4()).String()
 			batchJson = helpers.AddKeyToJSON(batchJson, "batch.0.anonymousId", anonymousId)
 			eventName = strings.Replace(strings.ToLower(eventName), " ", "_", -1)
 			property1 := "join"

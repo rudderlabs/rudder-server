@@ -234,7 +234,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ds dataSetT, customValFilte
 	}
 
 	if len(parameterFilters) > 0 {
-		sqlStatement += " AND " + constructParameterJSONQuery(jd, ds.JobTable, parameterFilters)
+		sqlStatement += " AND " + constructParameterJSONQuery(ds.JobTable, parameterFilters)
 	}
 
 	if jd.tablePrefix == "gw" {
@@ -267,7 +267,7 @@ getNonSucceededJobsCount returns events which are not in terminal state.
 This is a wrapper over GetProcessed call above
 */
 func (jd *ReadonlyHandleT) getNonSucceededJobsCount(customValFilters []string, parameterFilters []ParameterFilterT) int64 {
-	return jd.getProcessedCount([]string{Failed.State, Waiting.State, Throttled.State, Executing.State, Importing.State}, customValFilters, parameterFilters)
+	return jd.getProcessedCount([]string{Failed.State, Waiting.State, Executing.State, Importing.State}, customValFilters, parameterFilters)
 }
 
 /*
@@ -332,7 +332,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ds dataSetT, stateFilters []s
 	}
 
 	if len(parameterFilters) > 0 {
-		sourceQuery += " AND " + constructParameterJSONQuery(jd, ds.JobTable, parameterFilters)
+		sourceQuery += " AND " + constructParameterJSONQuery(ds.JobTable, parameterFilters)
 	} else {
 		sourceQuery = ""
 	}

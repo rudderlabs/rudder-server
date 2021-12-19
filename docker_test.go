@@ -68,8 +68,7 @@ var (
 )
 
 type WebhookRecorder struct {
-	Server *httptest.Server
-
+	Server       *httptest.Server
 	requestsMu   sync.RWMutex
 	requestDumps [][]byte
 }
@@ -125,6 +124,7 @@ func randString(n int) string {
 type Event struct {
 	anonymous_id string
 	user_id      string
+	count        string
 }
 
 type Author struct {
@@ -195,34 +195,10 @@ func blockOnHold() {
 	<-c
 }
 
-func CreateSchemaPostgres() {
-	// TODO: Need to configure with workspace json
-	_, err := db.Exec("CREATE SCHEMA example")
-	if err != nil {
-		panic(err)
-	}
-}
-
-func SendEvent() {
+func SendEvent(payload *strings.Reader) {
 	log.Println("Sending Track Event")
 	url := fmt.Sprintf("http://localhost:%s/v1/identify", httpPort)
 	method := "POST"
-
-	payload := strings.NewReader(`{
-	"userId": "identified user id",
-	"anonymousId":"anon-id-new",
-	"context": {
-	  "traits": {
-		 "trait1": "new-val"
-	  },
-	  "ip": "14.5.67.21",
-	  "library": {
-		  "name": "http"
-	  }
-	},
-	"timestamp": "2020-02-02T00:23:09.544Z"
-  }`)
-
 	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
 
@@ -316,6 +292,11 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		log.Panic(err)
 	}
+	defer func() {
+		if err := pool.Purge(z); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
 
 	// Set Kafka: pulls an image, creates a container based on it and runs it
 	KAFKA_ZOOKEEPER_CONNECT := fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT= zookeeper:%s", z.GetPort("2181/tcp"))
@@ -337,12 +318,11 @@ func run(m *testing.M) (int, error) {
 
 	KAFKA_ADVERTISED_LISTENERS := fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%s", strconv.Itoa(localhostPortInt))
 	KAFKA_LISTENERS := "KAFKA_LISTENERS=INTERNAL://broker:9090,EXTERNAL://:9092"
-
 	log.Println("KAFKA_ADVERTISED_LISTENERS", KAFKA_ADVERTISED_LISTENERS)
 
 	resourceKafka, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-kafka",
-		Tag:        "latest",
+		Tag:        "7.0.0",
 		NetworkID:  network.ID,
 		Hostname:   "broker",
 		PortBindings: map[dc.Port][]dc.PortBinding{
@@ -358,10 +338,15 @@ func run(m *testing.M) (int, error) {
 			"KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL",
 		},
 	})
-	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
 	if err != nil {
 		log.Panic(err)
 	}
+	log.Println("Kafka PORT:- ", resourceKafka.GetPort("9092/tcp"))
+	defer func() {
+		if err := pool.Purge(resourceKafka); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
 
 	// pulls an redis image, creates a container based on it and runs it
 	resourceRedis, err := pool.Run("redis", "alpine3.14", []string{"requirepass=secret"})
@@ -512,6 +497,11 @@ func run(m *testing.M) (int, error) {
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
 	}
+	defer func() {
+		if err := pool.Purge(resource); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
 
 	minioEndpoint := fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
 
@@ -580,7 +570,7 @@ func run(m *testing.M) (int, error) {
 
 	fmt.Printf("--- Setup done (%s)\n", time.Since(setupStart))
 
-    os.Setenv("CONFIG_PATH", "./config/config.yaml")
+	os.Setenv("CONFIG_PATH", "./config/config.yaml")
 	os.Setenv("TEST_SINK_URL", "http://localhost:8181")
 	os.Setenv("GO_ENV", "production")
 	os.Setenv("LOG_LEVEL", "INFO")
@@ -598,6 +588,7 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("MINIO_SSL", "false")
 	os.Setenv("WAREHOUSE_URL", "http://localhost:8082")
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
+	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10s")
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := make(chan struct{})
@@ -626,10 +617,6 @@ func run(m *testing.M) (int, error) {
 }
 
 func TestWebhook(t *testing.T) {
-	//Testing postgres Client
-	CreateSchemaPostgres()
-
-	//
 	var err error
 	psqlInfo := jobsdb.GetConnectionString()
 	dbHandle, err = sql.Open("postgres", psqlInfo)
@@ -640,39 +627,73 @@ func TestWebhook(t *testing.T) {
 	sourceJSON = getWorkspaceConfig()
 
 	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
-	SendEvent()
-
+	payload_1 := strings.NewReader(`{
+		"userId": "identified user id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"eventOrderNo":"1",
+		"context": {
+		  "traits": {
+			 "trait1": "new-val"
+		  },
+		  "ip": "14.5.67.21",
+		  "library": {
+			  "name": "http"
+		  }
+		},
+		"timestamp": "2020-02-02T00:23:09.544Z"
+	  }`)
+	SendEvent(payload_1)
+	payload_2 := strings.NewReader(`{
+		"userId": "identified user id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"eventOrderNo":"2",
+		"context": {
+		  "traits": {
+			 "trait1": "new-val"
+		  },
+		  "ip": "14.5.67.21",
+		  "library": {
+			  "name": "http"
+		  }
+		},
+		"timestamp": "2020-02-02T00:23:09.544Z"
+	  }`)
+	SendEvent(payload_2) //sending duplicate event to check dedup
 	require.Eventually(t, func() bool {
-		return 1 <= len(webhook.Requests())
+		return len(webhook.Requests()) == 2
 	}, time.Minute, 10*time.Millisecond)
 
 	req := webhook.Requests()[0]
-
 	body, err := io.ReadAll(req.Body)
+
 	require.NoError(t, err)
 	require.Equal(t, "POST", req.Method)
 	require.Equal(t, "/", req.URL.Path)
 	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
 	require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
 
-	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anon-id-new")
+	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anonymousId_1")
+	require.Equal(t, gjson.GetBytes(body, "messageId").Str, "messageId_1")
+	require.Equal(t, gjson.GetBytes(body, "eventOrderNo").Str, "1")
 	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified user id")
-	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "daf823fb-e8d3-413a-8313-d34cd756f968")
+	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
 
 }
 
 // Verify Event in POSTGRES
 func TestPostgres(t *testing.T) {
-	t.Skip("Skipping Postgres test")
 	var myEvent Event
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1"
 		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
-		return myEvent.anonymous_id == "anon-id-new"
+		return myEvent.anonymous_id == "anonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
-	require.Equal(t, "identified user id", myEvent.user_id)
-
+	eventSql := "select count(*) from dev_integration_test_1.identifies"
+	db.QueryRow(eventSql).Scan(&myEvent.count)
+	require.Equal(t, myEvent.count, "1")
 }
 
 // Verify Event in Redis
@@ -690,7 +711,6 @@ func TestRedis(t *testing.T) {
 
 }
 func TestKafka(t *testing.T) {
-	t.Skip("Skipping Kafka test")
 
 	config := sarama.NewConfig()
 	config.ClientID = "go-kafka-consumer"

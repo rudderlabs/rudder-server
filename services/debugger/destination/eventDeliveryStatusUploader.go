@@ -3,14 +3,13 @@ package destinationdebugger
 import (
 	"encoding/json"
 	"fmt"
-	"sync"
-
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"sync"
 )
 
 //DeliveryStatusT is a structure to hold everything related to event delivery
@@ -35,6 +34,7 @@ var uploader debugger.UploaderI
 var (
 	configBackendURL                  string
 	disableEventDeliveryStatusUploads bool
+	eventsDeliveryCache               debugger.Cache
 )
 
 var pkgLogger logger.LoggerI
@@ -60,8 +60,12 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 		return false
 	}
 
-	// Check if destinationID part of enabled destinations
+	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
 	if !HasUploadEnabled(destinationID) {
+		deliveryStatusData, _ := json.Marshal(deliveryStatus)
+		eventsDeliveryCache.Update(destinationID, deliveryStatusData)
 		return false
 	}
 
@@ -116,23 +120,38 @@ func (eventDeliveryStatusUploader *EventDeliveryStatusUploader) Transform(data i
 func updateConfig(sources backendconfig.ConfigT) {
 	configSubscriberLock.Lock()
 	uploadEnabledDestinationIDs = make(map[string]bool)
+	var uploadEnabledDestinationIdsList []string
 	for _, source := range sources.Sources {
 		for _, destination := range source.Destinations {
 			if destination.Config != nil {
 				if destination.Enabled && destination.Config["eventDelivery"] == true {
+					uploadEnabledDestinationIdsList = append(uploadEnabledDestinationIdsList, destination.ID)
 					uploadEnabledDestinationIDs[destination.ID] = true
 				}
 			}
 		}
 	}
+	recordHistoricEventsDelivery(uploadEnabledDestinationIdsList)
 	configSubscriberLock.Unlock()
 }
 
 func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	configChannel := make(chan utils.DataEvent)
 	backendConfig.Subscribe(configChannel, "backendConfig")
-	for {
-		config := <-configChannel
+	for config := range configChannel {
 		updateConfig(config.Data.(backendconfig.ConfigT))
+	}
+}
+
+func recordHistoricEventsDelivery(destinationIDs []string) {
+	for _, destinationID := range destinationIDs {
+		historicEventsDelivery := eventsDeliveryCache.ReadAndPopData(destinationID)
+		for _, event := range historicEventsDelivery {
+			var historicEventsDeliveryData DeliveryStatusT
+			if err := json.Unmarshal(event, &historicEventsDeliveryData); err != nil {
+				panic(err)
+			}
+			uploader.RecordEvent(&historicEventsDeliveryData)
+		}
 	}
 }

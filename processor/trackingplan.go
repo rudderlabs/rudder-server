@@ -1,13 +1,14 @@
 package processor
 
 import (
+	"strconv"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"strconv"
 )
 
 type TrackingPlanStatT struct {
@@ -18,14 +19,8 @@ type TrackingPlanStatT struct {
 }
 
 // reportViolations It is going add violationErrors in context depending upon certain criteria:
-// 1. ValidationErrors should not be empty
-// 2. sourceSchemaConfig in Metadata.MergedTpConfig should be true
-func reportViolations(validateEvent *transformer.TransformerResponseT) {
-	if len(validateEvent.ValidationErrors) == 0 {
-		return
-	}
-	// nil or true => true
-	// false => false
+// 1. sourceSchemaConfig in Metadata.MergedTpConfig should be true
+func reportViolations(validateEvent *transformer.TransformerResponseT, trackingPlanId string) {
 	if validateEvent.Metadata.MergedTpConfig["propagateValidationErrors"] == "false" {
 		return
 	}
@@ -37,6 +32,7 @@ func reportViolations(validateEvent *transformer.TransformerResponseT) {
 
 	eventContext, castOk := output["context"].(map[string]interface{})
 	if castOk {
+		eventContext["trackingPlanId"] = trackingPlanId
 		eventContext["violationErrors"] = validationErrors
 	}
 }
@@ -44,13 +40,13 @@ func reportViolations(validateEvent *transformer.TransformerResponseT) {
 // enhanceWithViolation It enhances extra information of ValidationErrors in context for:
 // 1. response.Events
 // 1. response.FailedEvents
-func enhanceWithViolation(response transformer.ResponseT) {
+func enhanceWithViolation(response transformer.ResponseT, trackingPlanId string) {
 	for _, validatedEvent := range response.Events {
-		reportViolations(&validatedEvent)
+		reportViolations(&validatedEvent, trackingPlanId)
 	}
 
 	for _, validatedEvent := range response.FailedEvents {
-		reportViolations(&validatedEvent)
+		reportViolations(&validatedEvent, trackingPlanId)
 	}
 }
 
@@ -91,7 +87,7 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 			continue
 		}
 
-		enhanceWithViolation(response)
+		enhanceWithViolation(response, eventList[0].Metadata.TrackingPlanId)
 
 		transformerEvent := eventList[0]
 		destination := transformerEvent.Destination
@@ -103,7 +99,7 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 		trackingPlanEnabledMap[SourceIDT(sourceID)] = true
 
 		var successMetrics []*types.PUReportedMetric
-		eventsToTransform, successMetrics, _, _ := proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.TrackingPlanValidationStage, true)
+		eventsToTransform, successMetrics, _, _ := proc.getDestTransformerEvents(response, commonMetaData, destination, transformer.TrackingPlanValidationStage, true, false) //Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
 		failedJobs, failedMetrics, _ := proc.getFailedEventJobs(response, commonMetaData, eventsByMessageID, transformer.TrackingPlanValidationStage, false, true)
 
 		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))

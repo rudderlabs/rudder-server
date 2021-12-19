@@ -10,11 +10,13 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	uuid "github.com/satori/go.uuid"
 )
 
 var (
@@ -221,6 +223,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 				pkgLogger.Errorf("PgNotifier: Failed to query for tracking jobs by batch_id: %s, connInfo: %s", stmt, notifier.URI)
 				panic(err)
 			}
+
 			if count == 0 {
 				stmt = fmt.Sprintf(`SELECT payload->'StagingFileID', payload->'Output', status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
 				rows, err := notifier.dbHandle.Query(stmt)
@@ -348,7 +351,7 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority
 	}
 	defer stmt.Close()
 
-	batchID := uuid.NewV4().String()
+	batchID := uuid.Must(uuid.NewV4()).String()
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(messages), queueName, batchID)
 	for _, message := range messages {
 		_, err = stmt.Exec(batchID, WaitingState, topic, string(message.Payload), notifier.workspaceIdentifier, priority)
@@ -367,6 +370,11 @@ func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority
 		return
 	}
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(messages), queueName, batchID)
+	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
+		"queueName": queueName,
+		"batchID":   batchID,
+		"module":    "pg_notifier",
+	}).Count(len(messages))
 	notifier.trackBatch(batchID, &ch)
 	return
 }
@@ -462,90 +470,14 @@ func (notifier *PgNotifierT) createTrigger(topic string) (err error) {
 func (notifier *PgNotifierT) setupQueue() (err error) {
 	pkgLogger.Infof("PgNotifier: Creating Job Queue Tables ")
 
-	//create status type
-	sqlStmt := `DO $$ BEGIN
-						CREATE TYPE pg_notifier_status_type
-							AS ENUM(
-								'waiting',
-								'executing',
-								'succeeded',
-								'failed',
-								'aborted'
-									);
-							EXCEPTION
-								WHEN duplicate_object THEN null;
-					END $$;`
-
-	_, err = notifier.dbHandle.Exec(sqlStmt)
-	if err != nil {
-		return
+	m := &migrator.Migrator{
+		Handle:                     notifier.dbHandle,
+		MigrationsTable:            "pg_notifier_queue_migrations",
+		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", false),
 	}
-
-	//create the job queue table
-	sqlStmt = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-										  id BIGSERIAL PRIMARY KEY,
-										  batch_id VARCHAR(64) NOT NULL,
-										  status pg_notifier_status_type NOT NULL,
-										  topic VARCHAR(64) NOT NULL,
-										  payload JSONB NOT NULL,
-										  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-										  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-										  last_exec_time TIMESTAMP,
-										  attempt SMALLINT DEFAULT 0,
-										  error TEXT,
-										  worker_id VARCHAR(64));`, queueName)
-
-	_, err = notifier.dbHandle.Exec(sqlStmt)
+	err = m.Migrate("pg_notifier_queue")
 	if err != nil {
-		return
-	}
-
-	sqlStmt = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS workspace VARCHAR(64)`, queueName)
-	_, err = notifier.dbHandle.Exec(sqlStmt)
-	if err != nil {
-		return
-	}
-
-	sqlStmt = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS priority int`, queueName)
-	_, err = notifier.dbHandle.Exec(sqlStmt)
-	if err != nil {
-		return
-	}
-
-	// create index on status
-	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_status_idx ON %[1]s (status);`, queueName)
-	_, err = notifier.dbHandle.Exec(sqlStmt)
-	if err != nil {
-		return
-	}
-
-	// create index on batch_id
-	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_batch_id_idx ON %[1]s (batch_id);`, queueName)
-	_, err = notifier.dbHandle.Exec(sqlStmt)
-	if err != nil {
-		return
-	}
-
-	// create index on workspace, topic
-	sqlStmt = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %[1]s_workspace_topic_idx ON %[1]s (workspace, topic);`, queueName)
-	_, err = notifier.dbHandle.Exec(sqlStmt)
-	if err != nil {
-		return
-	}
-
-	//create status type for worker
-	sqlStmt = `DO $$ BEGIN
-						CREATE TYPE pg_notifier_subscriber_status
-							AS ENUM(
-								'busy',
-								'free' );
-							EXCEPTION
-								WHEN duplicate_object THEN null;
-					END $$;`
-
-	_, err = notifier.dbHandle.Exec(sqlStmt)
-	if err != nil {
-		return
+		panic(fmt.Errorf("could not run pg_notifier_queue migrations: %w", err))
 	}
 
 	return

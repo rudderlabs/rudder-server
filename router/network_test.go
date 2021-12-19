@@ -2,11 +2,13 @@ package router
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
+	"github.com/onsi/gomega"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -90,7 +92,26 @@ var _ = Describe("Network", func() {
 				Body:       r,
 			}, nil)
 
-			network.SendPost(structData)
+			network.SendPost(context.Background(), structData)
+		})
+
+		It("should respect ctx cancelation", func() {
+
+			network := &NetHandleT{}
+			network.logger = logger.NewLogger().Child("network")
+			network.httpClient = http.DefaultClient
+
+			structData := integrations.PostParametersT{
+				Type: "REST",
+				URL:  "https://www.google-analytics.com/collect",
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			resp := network.SendPost(ctx, structData)
+			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusGatewayTimeout))
+			gomega.Expect(string(resp.ResponseBody)).To(gomega.Equal("504 Unable to make \"\" request for URL : \"https://www.google-analytics.com/collect\""))
 		})
 	})
 })

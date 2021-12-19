@@ -18,12 +18,12 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 	"github.com/tidwall/gjson"
 )
 
@@ -368,7 +368,6 @@ func (job *UploadJobT) run() (err error) {
 		targetStatus := nextUploadState.completed
 
 		switch targetStatus {
-
 		case GeneratedUploadSchema:
 			newStatus = nextUploadState.failed
 			err = job.generateUploadSchema(schemaHandle)
@@ -932,10 +931,10 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	generateTableLoadCountVerificationsMetrics := config.GetBool("Warehouse.generateTableLoadCountMetrics", true)
 	var totalBeforeLoad, totalAfterLoad int64
 	if generateTableLoadCountVerificationsMetrics {
-		var countErr error
-		totalBeforeLoad, countErr = job.getTotalCount(tName)
-		if countErr != nil {
-			pkgLogger.Errorf(`Error getting total count in table:%s before load: %v`, tName, countErr)
+		var errTotalCount error
+		totalBeforeLoad, errTotalCount = job.getTotalCount(tName)
+		if errTotalCount != nil {
+			pkgLogger.Errorf(`Error getting total count in table:%s before load: %v`, tName, errTotalCount)
 		}
 	}
 
@@ -945,22 +944,36 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		return
 	}
 
-	if generateTableLoadCountVerificationsMetrics {
-		var countErr error
-		totalAfterLoad, countErr = job.getTotalCount(tName)
-		if countErr != nil {
-			pkgLogger.Errorf(`Error getting total count in table:%s after load: %v`, tName, countErr)
+	generateTableLoadMetrics := func() {
+		if !generateTableLoadCountVerificationsMetrics {
+			return
+		}
+		var errTotalCount error
+		totalAfterLoad, errTotalCount = job.getTotalCount(tName)
+		if errTotalCount != nil {
+			pkgLogger.Errorf(`Error getting total count in table:%s after load: %v`, tName, errTotalCount)
+			return
+		}
+		eventsInTableUpload, errEventCount := tableUpload.getTotalEvents()
+		if errEventCount != nil {
+			return
 		}
 		job.guageStat(`pre_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
-		eventsInTableUpload := tableUpload.getTotalEvents()
 		job.guageStat(`post_load_table_rows_estimate`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + eventsInTableUpload))
 		job.guageStat(`post_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
 	}
+
+	generateTableLoadMetrics()
 
 	tableUpload.setStatus(TableUploadExported)
 	numEvents, queryErr := tableUpload.getNumEvents()
 	if queryErr == nil {
 		job.recordTableLoad(tName, numEvents)
+	}
+
+	columnCount := len(job.schemaHandle.schemaInWarehouse[tName])
+	if columnCount > columnCountThreshold {
+		job.counterStat(`warehouse_load_table_column_count`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(columnCount)
 	}
 	return
 }
@@ -1538,7 +1551,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files for %s:%s", publishBatchSize, destType, destID)
-	uniqueLoadGenID := uuid.NewV4().String()
+	uniqueLoadGenID := uuid.Must(uuid.NewV4()).String()
 	job.upload.LoadFileGenStartTime = timeutil.Now()
 
 	var wg sync.WaitGroup
@@ -1766,7 +1779,7 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 			txn.Rollback()
 			panic(fmt.Errorf("[WH]: Empty load file generated in slave for tablename: %v", loadFile.TableName))
 		}
-		metadata := json.RawMessage(fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength))
+		metadata := fmt.Sprintf(`{"content_length": %d}`, loadFile.ContentLength)
 		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for loadFules: %v Error: %v`, loadFile, err)
@@ -1778,6 +1791,7 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 	_, err = stmt.Exec()
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error creating load file records: %v", err)
+		txn.Rollback()
 		return
 	}
 	err = txn.Commit()

@@ -15,11 +15,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sts"
+	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 	snowflake "github.com/snowflakedb/gosnowflake" //blank comment
 )
 
@@ -262,7 +262,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
 	}
 
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), tableName), 127)
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s" LIKE "%s"`, stagingTableName, tableName)
 
 	pkgLogger.Debugf("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
@@ -417,13 +417,21 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 		return
 	}
 
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), identityMappingsTable), 127)
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), identityMappingsTable), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%s" LIKE "%s"`, stagingTableName, identityMappingsTable)
 
 	pkgLogger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
 	_, err = dbHandle.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("SF: Error creating temporary table for table:%s: %v\n", identityMappingsTable, err)
+		return
+	}
+
+	sqlStatement = fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN "ID" int AUTOINCREMENT start 1 increment 1`, stagingTableName)
+	pkgLogger.Infof("SF: Adding autoincrement column for table:%s at %s\n", stagingTableName, sqlStatement)
+	_, err = dbHandle.Exec(sqlStatement)
+	if err != nil && !checkAndIgnoreAlreadyExistError(err) {
+		pkgLogger.Errorf("SF: Error adding autoincrement column for table:%s: %v\n", stagingTableName, err)
 		return
 	}
 
@@ -441,7 +449,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	sqlStatement = fmt.Sprintf(`MERGE INTO "%[1]s" AS original
 									USING (
 										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY "MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE" ORDER BY "UPDATED_AT" DESC) AS _rudder_staging_row_number FROM "%[2]s"
+											SELECT *, row_number() OVER (PARTITION BY "MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE" ORDER BY "ID" DESC) AS _rudder_staging_row_number FROM "%[2]s"
 										) AS q WHERE _rudder_staging_row_number = 1
 									) AS staging
 									ON (original."MERGE_PROPERTY_TYPE" = staging."MERGE_PROPERTY_TYPE" AND original."MERGE_PROPERTY_VALUE" = staging."MERGE_PROPERTY_VALUE")
@@ -460,7 +468,8 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 }
 
 func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
-	if len(sf.Uploader.GetTableSchemaInUpload(identifiesTable)) == 0 {
+	identifyColMap := sf.Uploader.GetTableSchemaInUpload(identifiesTable)
+	if len(identifyColMap) == 0 {
 		return errorMap
 	}
 	errorMap = map[string]error{identifiesTable: nil}
@@ -479,15 +488,21 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	errorMap[usersTable] = nil
 
 	userColMap := sf.Uploader.GetTableSchemaInWarehouse(usersTable)
-	var userColNames, firstValProps []string
+	var userColNames, firstValProps, identifyColNames []string
 	for colName := range userColMap {
 		if colName == "ID" {
 			continue
 		}
 		userColNames = append(userColNames, fmt.Sprintf(`"%s"`, colName))
+		if _, ok := identifyColMap[colName]; ok {
+			identifyColNames = append(identifyColNames, fmt.Sprintf(`"%s"`, colName))
+		} else {
+			//This is to handle cases when column in users table not present in inditifies table
+			identifyColNames = append(identifyColNames, fmt.Sprintf(`NULL as "%s"`, colName))
+		}
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.Replace(uuid.NewV4().String(), "-", "", -1), usersTable), 127)
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), usersTable), 127)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%[2]s" AS (SELECT DISTINCT * FROM
 										(
 											SELECT
@@ -497,17 +512,18 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 													SELECT "ID", %[6]s FROM "%[1]s"."%[4]s" WHERE "ID" in (SELECT "USER_ID" FROM "%[5]s" WHERE "USER_ID" IS NOT NULL)
 												) UNION
 												(
-													SELECT "USER_ID", %[6]s FROM "%[5]s" WHERE "USER_ID" IS NOT NULL
+													SELECT "USER_ID", %[7]s FROM "%[5]s" WHERE "USER_ID" IS NOT NULL
 												)
 											)
 										)
 									)`,
-		sf.Namespace,                     // 1
-		stagingTableName,                 // 2
-		strings.Join(firstValProps, ","), // 3
-		usersTable,                       // 4
-		resp.stagingTable,                // 5
-		strings.Join(userColNames, ","),  // 6
+		sf.Namespace,                        // 1
+		stagingTableName,                    // 2
+		strings.Join(firstValProps, ","),    // 3
+		usersTable,                          // 4
+		resp.stagingTable,                   // 5
+		strings.Join(userColNames, ","),     // 6
+		strings.Join(identifyColNames, ","), // 7
 	)
 	pkgLogger.Infof("SF: Creating staging table for users: %s\n", sqlStatement)
 	_, err = resp.dbHandle.Exec(sqlStatement)

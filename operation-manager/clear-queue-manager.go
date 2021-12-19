@@ -132,11 +132,11 @@ func (handler *ClearOperationHandlerT) clearFromJobsdb(db jobsdb.JobsDB, paramet
 	for {
 		var pendingList, unprocessedList []*jobsdb.JobT
 		toQuery := jobQueryBatchSize
-		getParams := jobsdb.GetQueryParamsT{Count: toQuery, ParameterFilters: parameterFilters}
-		getParams.StateFilters = []string{jobsdb.Failed.State, jobsdb.Throttled.State, jobsdb.Waiting.State, jobsdb.Importing.State}
+		getParams := jobsdb.GetQueryParamsT{JobCount: toQuery, ParameterFilters: parameterFilters}
+		getParams.StateFilters = []string{jobsdb.Failed.State, jobsdb.Waiting.State, jobsdb.Importing.State}
 		pendingList = db.GetProcessed(getParams)
 		toQuery -= len(pendingList)
-		getParams = jobsdb.GetQueryParamsT{Count: toQuery, ParameterFilters: parameterFilters}
+		getParams = jobsdb.GetQueryParamsT{JobCount: toQuery, ParameterFilters: parameterFilters}
 		getParams.UseTimeFilter = true
 		getParams.Before = startTime
 		unprocessedList = db.GetUnprocessed(getParams)

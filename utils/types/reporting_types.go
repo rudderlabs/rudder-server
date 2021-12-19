@@ -14,6 +14,8 @@ const (
 	CORE_REPORTING_CLIENT      = "core"
 	WAREHOUSE_REPORTING_CLIENT = "warehouse"
 
+	SUPPORTED_TRANSFORMER_API_VERSION = 2
+
 	DEFAULT_REPORTING_ENABLED = true
 	DEFAULT_REPLAY_ENABLED    = false
 )
@@ -25,6 +27,7 @@ var (
 	GATEWAY                = "gateway"
 	TRACKINGPLAN_VALIDATOR = "tracking_plan_validator"
 	USER_TRANSFORMER       = "user_transformer"
+	EVENT_FILTER           = "event_filter"
 	DEST_TRANSFORMER       = "dest_transformer"
 	ROUTER                 = "router"
 	BATCH_ROUTER           = "batch_router"

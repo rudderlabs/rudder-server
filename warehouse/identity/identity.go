@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	uuid "github.com/satori/go.uuid"
 )
 
 var pkgLogger logger.LoggerI
@@ -85,7 +85,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 		// generate new one and assign to these two
 		var rudderID string
 		if len(rudderIDs) == 0 {
-			rudderID = uuid.NewV4().String()
+			rudderID = uuid.Must(uuid.NewV4()).String()
 		} else {
 			rudderID = rudderIDs[0]
 		}
@@ -109,7 +109,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 		}
 	} else {
 		// generate new one and update all
-		newID := uuid.NewV4().String()
+		newID := rudderIDs[0]
 		row1 := []string{prop1Type.String, prop1Val.String, newID, currentTimeString}
 		rows = append(rows, row1)
 		row1Values := misc.SingleQuoteLiteralJoin(row1)
@@ -140,12 +140,14 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 			rows = append(rows, row)
 		}
 
-		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN (%v)`, idr.mappingsTable(), newID, currentTimeString, quotedRudderIDs)
-		pkgLogger.Debugf(`IDR: Update rudder_id for all properties in mapping table with rudder_id's %v: %v`, quotedRudderIDs, sqlStatement)
-		_, err = txn.Exec(sqlStatement)
+		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN (%v)`, idr.mappingsTable(), newID, currentTimeString, misc.SingleQuoteLiteralJoin(rudderIDs[1:]))
+		var res sql.Result
+		res, err = txn.Exec(sqlStatement)
 		if err != nil {
 			return
 		}
+		affectedRowCount, _ := res.RowsAffected()
+		pkgLogger.Debugf(`IDR: Updated rudder_id for all properties in mapping table. Updated %v rows: %v `, affectedRowCount, sqlStatement)
 
 		sqlStatement = fmt.Sprintf(`INSERT INTO %s (merge_property_type, merge_property_value, rudder_id, updated_at) VALUES (%s) %s ON CONFLICT ON CONSTRAINT %s DO NOTHING`, idr.mappingsTable(), row1Values, row2Values, warehouseutils.IdentityMappingsUniqueMappingConstraintName(idr.Warehouse))
 		pkgLogger.Debugf(`IDR: Insert new mappings into %s: %v`, idr.mappingsTable(), sqlStatement)
@@ -170,7 +172,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 	// add rules from load files into temp table
 	// use original table to delete redundant ones from temp table
 	// insert from temp table into original table
-	mergeRulesStagingTable := fmt.Sprintf(`rudder_identity_merge_rules_staging_%s`, strings.Replace(uuid.NewV4().String(), "-", "", -1))
+	mergeRulesStagingTable := fmt.Sprintf(`rudder_identity_merge_rules_staging_%s`, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
 	sqlStatement := fmt.Sprintf(`CREATE TEMP TABLE %s
 						ON COMMIT DROP
 						AS SELECT * FROM %s
@@ -241,7 +243,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 
 	_, err = stmt.Exec()
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error bulk copy using CopyIn: %v`, err)
+		pkgLogger.Errorf(`IDR: Error bulk copy using CopyIn: %v for uploadID: %v`, err, idr.UploadID)
 		return
 	}
 
@@ -296,6 +298,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		}
 		ids = append(ids, id)
 	}
+	pkgLogger.Debugf(`IDR: Number of merge rules inserted for uploadID %v : %v`, idr.UploadID, len(ids))
 	return ids, nil
 }
 
@@ -352,7 +355,7 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 			pkgLogger.Errorf("IDR: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
 			return nil, err
 		}
-		dirName := "/rudder-warehouse-load-uploads-tmp/"
+		dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseLoadUploadsTmp)
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
 			pkgLogger.Errorf("IDR: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
@@ -435,7 +438,7 @@ func (idr *HandleT) createTempGzFile(dirName string) (gzWriter misc.GZipWriter, 
 		panic(err)
 	}
 	fileExtension := warehouseutils.GetTempFileExtension(idr.Warehouse.Type)
-	path = tmpDirPath + dirName + fmt.Sprintf(`%s_%s/%v/`, idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.ID, idr.UploadID) + uuid.NewV4().String() + "." + fileExtension
+	path = tmpDirPath + dirName + fmt.Sprintf(`%s_%s/%v/`, idr.Warehouse.Destination.DestinationDefinition.Name, idr.Warehouse.Destination.ID, idr.UploadID) + uuid.Must(uuid.NewV4()).String() + "." + fileExtension
 	err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 	if err != nil {
 		panic(err)
@@ -455,7 +458,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 	}
 
 	// START: Add new merge rules to local pg table and also to file
-	mergeRulesFileGzWriter, mergeRulesFilePath := idr.createTempGzFile(`/rudder-identity-merge-rules-tmp/`)
+	mergeRulesFileGzWriter, mergeRulesFilePath := idr.createTempGzFile(fmt.Sprintf(`/%s/`, misc.RudderIdentityMergeRulesTmp))
 	defer misc.RemoveFilePaths(mergeRulesFilePath)
 
 	ruleIDs, err := idr.addRules(txn, fileNames, &mergeRulesFileGzWriter)
@@ -468,7 +471,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 	// END: Add new merge rules to local pg table and also to file
 
 	// START: Add new/changed identity mappings to local pg table and also to file
-	mappingsFileGzWriter, mappingsFilePath := idr.createTempGzFile(`/rudder-identity-mappings-tmp/`)
+	mappingsFileGzWriter, mappingsFilePath := idr.createTempGzFile(fmt.Sprintf(`/%s/`, misc.RudderIdentityMappingsTmp))
 	defer misc.RemoveFilePaths(mappingsFilePath)
 	var totalMappingRecords int
 	for idx, ruleID := range ruleIDs {
@@ -529,7 +532,7 @@ func (idr *HandleT) Resolve() (err error) {
 func (idr *HandleT) ResolveHistoricIdentities() (err error) {
 	var loadFileNames []string
 	defer misc.RemoveFilePaths(loadFileNames...)
-	gzWriter, path := idr.createTempGzFile(`/rudder-identity-merge-rules-tmp/`)
+	gzWriter, path := idr.createTempGzFile(fmt.Sprintf(`/%s/`, misc.RudderIdentityMergeRulesTmp))
 	err = idr.WarehouseManager.DownloadIdentityRules(&gzWriter)
 	gzWriter.CloseGZ()
 	if err != nil {
