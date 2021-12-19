@@ -57,4 +57,3 @@ func (dbT *DBHandleT) Close() {
 	}
 	dbT.Conn.Close()
 }
-
