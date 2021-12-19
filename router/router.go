@@ -107,7 +107,7 @@ type HandleT struct {
 	reporting                              utilTypes.ReportingI
 	reportingEnabled                       bool
 	savePayloadOnError                     bool
-	responseTransform                      bool
+	transformerProxy                       bool
 	saveDestinationResponseOverride        bool
 
 	backgroundGroup  *errgroup.Group
@@ -148,28 +148,28 @@ type workerMessageT struct {
 
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	pauseChannel                chan *PauseT
-	resumeChannel               chan bool
-	channel                     chan workerMessageT     // the worker job channel
-	workerID                    int                     // identifies the worker
-	failedJobs                  int                     // counts the failed jobs of a worker till it gets reset by external channel
-	sleepTime                   time.Duration           // the sleep duration for every job of the worker
-	failedJobIDMap              map[string]int64        // user to failed jobId
-	failedJobIDMutex            sync.RWMutex            // lock to protect structure above
-	retryForJobMap              map[int64]time.Time     // jobID to next retry time map
-	retryForJobMapMutex         sync.RWMutex            // lock to protect structure above
-	routerJobs                  []types.RouterJobT      // slice to hold router jobs to send to destination transformer
-	destinationJobs             []types.DestinationJobT // slice to hold destination jobs
-	rt                          *HandleT                // handle to router
-	deliveryTimeStat            stats.RudderStats
-	routerDeliveryLatencyStat   stats.RudderStats
-	routerResponseTransformStat stats.RudderStats
-	batchTimeStat               stats.RudderStats
-	abortedUserIDMap            map[string]int // aborted user to count of jobs allowed map
-	abortedUserMutex            sync.RWMutex
-	jobCountsByDestAndUser      map[string]*destJobCountsT
-	throttledAtTime             time.Time
-	encounteredRouterTransform  bool
+	pauseChannel               chan *PauseT
+	resumeChannel              chan bool
+	channel                    chan workerMessageT     // the worker job channel
+	workerID                   int                     // identifies the worker
+	failedJobs                 int                     // counts the failed jobs of a worker till it gets reset by external channel
+	sleepTime                  time.Duration           // the sleep duration for every job of the worker
+	failedJobIDMap             map[string]int64        // user to failed jobId
+	failedJobIDMutex           sync.RWMutex            // lock to protect structure above
+	retryForJobMap             map[int64]time.Time     // jobID to next retry time map
+	retryForJobMapMutex        sync.RWMutex            // lock to protect structure above
+	routerJobs                 []types.RouterJobT      // slice to hold router jobs to send to destination transformer
+	destinationJobs            []types.DestinationJobT // slice to hold destination jobs
+	rt                         *HandleT                // handle to router
+	deliveryTimeStat           stats.RudderStats
+	routerDeliveryLatencyStat  stats.RudderStats
+	routerProxyStat            stats.RudderStats
+	batchTimeStat              stats.RudderStats
+	abortedUserIDMap           map[string]int // aborted user to count of jobs allowed map
+	abortedUserMutex           sync.RWMutex
+	jobCountsByDestAndUser     map[string]*destJobCountsT
+	throttledAtTime            time.Time
+	encounteredRouterTransform bool
 }
 
 type destJobCountsT struct {
@@ -610,25 +610,22 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 							respBodyArr = append(respBodyArr, respBodyTemp)
 						} else {
 							// stat start
-							pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.responseTransform, worker.rt.destName)
+							pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
 							sendCtx, cancel := context.WithTimeout(ctx, worker.rt.netClientTimeout)
 							defer cancel()
-							rdl_time := time.Now()
-							resp := worker.rt.netHandle.SendPost(sendCtx, val)
-							respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
-							// stat end
-							worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
-							//response transform start
-							if worker.rt.responseTransform {
-								dResponse := integrations.DeliveryResponseT{
-									Status: int64(respStatusCode),
-									Body:   respBodyTemp,
-								}
+							//transformer proxy start
+							if worker.rt.transformerProxy {
 								rtl_time := time.Now()
-								respStatusCode, respBodyTemp = worker.rt.transformer.ResponseTransform(ctx, dResponse, worker.rt.destName)
-								worker.routerResponseTransformStat.SendTiming(time.Since(rtl_time))
+								respStatusCode, respBodyTemp = worker.rt.transformer.ProxyRequest(ctx, val, worker.rt.destName)
+								worker.routerProxyStat.SendTiming(time.Since(rtl_time))
+							} else {
+								rdl_time := time.Now()
+								resp := worker.rt.netHandle.SendPost(sendCtx, val)
+								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
+								// stat end
+								worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
 							}
-							// response transform end
+							// transformer proxy end
 							if isSuccessStatus(respStatusCode) {
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
@@ -642,8 +639,8 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				ch <- struct{}{}
 
 				//Using reponse status code and body to get response code rudder router logic is based on.
-				// Works when response transform in disabled
-				if !worker.rt.responseTransform && destinationResponseHandler != nil {
+				// Works when transformer proxy in disabled
+				if !worker.rt.transformerProxy && destinationResponseHandler != nil {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
 				}
 
@@ -1085,23 +1082,23 @@ func (rt *HandleT) initWorkers() {
 	g, _ := errgroup.WithContext(context.Background())
 	for i := 0; i < rt.noOfWorkers; i++ {
 		worker := &workerT{
-			pauseChannel:                make(chan *PauseT),
-			resumeChannel:               make(chan bool),
-			channel:                     make(chan workerMessageT, noOfJobsPerChannel),
-			failedJobIDMap:              make(map[string]int64),
-			retryForJobMap:              make(map[int64]time.Time),
-			workerID:                    i,
-			failedJobs:                  0,
-			sleepTime:                   minSleep,
-			routerJobs:                  make([]types.RouterJobT, 0),
-			destinationJobs:             make([]types.DestinationJobT, 0),
-			rt:                          rt,
-			deliveryTimeStat:            stats.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
-			batchTimeStat:               stats.NewTaggedStat("router_batch_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
-			routerDeliveryLatencyStat:   stats.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
-			routerResponseTransformStat: stats.NewTaggedStat("response_transform_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
-			abortedUserIDMap:            make(map[string]int),
-			jobCountsByDestAndUser:      make(map[string]*destJobCountsT),
+			pauseChannel:              make(chan *PauseT),
+			resumeChannel:             make(chan bool),
+			channel:                   make(chan workerMessageT, noOfJobsPerChannel),
+			failedJobIDMap:            make(map[string]int64),
+			retryForJobMap:            make(map[int64]time.Time),
+			workerID:                  i,
+			failedJobs:                0,
+			sleepTime:                 minSleep,
+			routerJobs:                make([]types.RouterJobT, 0),
+			destinationJobs:           make([]types.DestinationJobT, 0),
+			rt:                        rt,
+			deliveryTimeStat:          stats.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			batchTimeStat:             stats.NewTaggedStat("router_batch_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			routerDeliveryLatencyStat: stats.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			routerProxyStat:           stats.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
+			abortedUserIDMap:          make(map[string]int),
+			jobCountsByDestAndUser:    make(map[string]*destJobCountsT),
 		}
 		rt.workers[i] = worker
 
@@ -1825,13 +1822,13 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, erro
 	maxFailedCountKeys := []string{"Router." + rt.destName + "." + "maxFailedCountForJob", "Router." + "maxFailedCountForJob"}
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
 	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
-	responseTransformKeys := []string{"Router." + rt.destName + "." + "responseTransform", "Router." + "responseTransform"}
+	transformerProxyKeys := []string{"Router." + rt.destName + "." + "transformerProxy", "Router." + "transformerProxy"}
 	saveDestinationResponseOverrideKeys := []string{"Router." + rt.destName + "." + "saveDestinationResponseOverride", "Router." + "saveDestinationResponseOverride"}
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
-	config.RegisterBoolConfigVariable(false, &rt.responseTransform, true, responseTransformKeys...)
+	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
 
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
