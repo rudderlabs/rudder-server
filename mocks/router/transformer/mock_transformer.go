@@ -36,19 +36,19 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 	return m.recorder
 }
 
-// ResponseTransform mocks base method.
-func (m *MockTransformer) ResponseTransform(arg0 context.Context, arg1 integrations.DeliveryResponseT, arg2 string) (int, string) {
+// ProxyRequest mocks base method.
+func (m *MockTransformer) ProxyRequest(arg0 context.Context, arg1 integrations.PostParametersT, arg2 string) (int, string) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ResponseTransform", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "ProxyRequest", arg0, arg1, arg2)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(string)
 	return ret0, ret1
 }
 
-// ResponseTransform indicates an expected call of ResponseTransform.
-func (mr *MockTransformerMockRecorder) ResponseTransform(arg0, arg1, arg2 interface{}) *gomock.Call {
+// ProxyRequest indicates an expected call of ProxyRequest.
+func (mr *MockTransformerMockRecorder) ProxyRequest(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResponseTransform", reflect.TypeOf((*MockTransformer)(nil).ResponseTransform), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProxyRequest", reflect.TypeOf((*MockTransformer)(nil).ProxyRequest), arg0, arg1, arg2)
 }
 
 // Setup mocks base method.
