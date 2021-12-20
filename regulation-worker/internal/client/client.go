@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -60,6 +61,10 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			pkgLogger.Errorf("error while decoding reponse body: %w", err)
 			return model.Job{}, fmt.Errorf("error while decoding job: %w", err)
 		}
+
+		userCountPerJob := stats.NewTaggedStat("user_count_per_job", stats.CountType, stats.Tags{"jobId": jobSchema.JobID, "workspaceId": j.WorkspaceID, "user_count": fmt.Sprintf("%d", len(jobSchema.UserAttributes))})
+		userCountPerJob.Start()
+		userCountPerJob.End()
 
 		job, err := mapPayloadToJob(jobSchema, j.WorkspaceID)
 		if err != nil {

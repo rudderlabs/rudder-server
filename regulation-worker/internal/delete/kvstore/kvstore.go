@@ -2,9 +2,11 @@ package kvstore
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -25,6 +27,9 @@ func (kv *KVDeleteManager) Delete(ctx context.Context, job model.Job, destConfig
 	pkgLogger.Debugf("deleting job: %w", job, " from kvstore")
 	kvm := kvstoremanager.New(destName, destConfig)
 	var err error
+	fileCleaningTime := stats.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "kvstore", "destName": destName})
+	fileCleaningTime.Start()
+	defer fileCleaningTime.End()
 	for _, user := range job.UserAttributes {
 		err = kvm.DeleteKey(user.UserID)
 		if err != nil {

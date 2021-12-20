@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
@@ -547,7 +548,12 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 			_i := i
 			goRoutineCount <- true
 			g.Go(func() error {
+				//TODO: add file size stats
+				fileCleaningTime := stats.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "batch", "destName": destName})
+				fileCleaningTime.Start()
+
 				defer func() {
+					fileCleaningTime.End()
 					<-goRoutineCount
 				}()
 
@@ -557,6 +563,10 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 					return fmt.Errorf("error: %w, while downloading file:%s", err, files[_i].Key)
 				}
 
+				fileSizeStats := stats.NewTaggedStat("file_size_mb", stats.CountType, stats.Tags{"jobId": fmt.Sprintf("%d", getFileSize(FileAbsPath))})
+				fileSizeStats.End()
+
+				getFileSize(FileAbsPath)
 				err = batch.delete(gCtx, absPatternFile, FileAbsPath)
 				if err != nil {
 					pkgLogger.Errorf("error: %w, while deleting file:%s", err, files[_i].Key)
@@ -579,6 +589,14 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 		}
 	}
 	return model.JobStatusComplete
+}
+
+func getFileSize(fileAbsPath string) int64 {
+	filePtr, _ := os.OpenFile(fileAbsPath, os.O_RDWR, 0644)
+	defer filePtr.Close()
+	fileStat, _ := filePtr.Stat()
+	fileSize := fileStat.Size() / 1000000
+	return fileSize
 }
 
 func (b *Batch) cleanup(prefix string) {

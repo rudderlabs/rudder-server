@@ -12,6 +12,7 @@ import (
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -48,6 +49,10 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 		return model.JobStatusFailed
 	}
 	req.Header.Set("Content-Type", "application/json")
+
+	fileCleaningTime := stats.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "api", "destName": destName})
+	fileCleaningTime.Start()
+	defer fileCleaningTime.End()
 
 	pkgLogger.Debugf("sending request: %w", req)
 	resp, err := api.Client.Do(req)

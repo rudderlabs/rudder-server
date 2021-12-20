@@ -9,6 +9,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 //go:generate mockgen -source=service.go -destination=mock_service_test.go -package=service github.com/rudderlabs/rudder-server/regulation-worker/internal/service
@@ -38,9 +39,13 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	pkgLogger.Debugf("making API request to get job")
 	job, err := js.API.Get(ctx)
 	if err != nil {
-		pkgLogger.Debugf("error while getting job: %w", err)
+		pkgLogger.Errorf("error while getting job: %w", err)
 		return err
 	}
+	totalJobTime := stats.NewTaggedStat("total_job_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID})
+	totalJobTime.Start()
+	defer totalJobTime.End()
+
 	pkgLogger.Debugf("job: %w", job)
 	//once job is successfully received, calling updatestatus API to update the status of job to running.
 	status := model.JobStatusRunning
@@ -51,7 +56,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	//executing deletion
 	destDetail, err := js.DestDetail.GetDestDetails(job.DestinationID)
 	if err != nil {
-		pkgLogger.Errorf("error while getting destination detailsL %w", err)
+		pkgLogger.Errorf("error while getting destination details: %w", err)
 		return fmt.Errorf("error while getting destination details: %w", err)
 	}
 
