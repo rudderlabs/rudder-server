@@ -11,13 +11,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
 type JobAPI struct {
-	WorkspaceID string
-	URLPrefix   string
+	URLPrefix      string
+	WorkspaceToken string
+	WorkspaceID    string
 }
 
 //Get sends http request with workspaceID in the url and receives a json payload
@@ -37,8 +37,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		return model.Job{}, err
 	}
 
-	workspaceToken := config.GetEnv("CONFIG_BACKEND_TOKEN", "22JnFdS3ZKDd0UfuEYowUeNi9fe")
-	req.SetBasicAuth(workspaceToken, "")
+	req.SetBasicAuth(j.WorkspaceToken, "")
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
@@ -46,11 +45,12 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	if err != nil {
 		return model.Job{}, err
 	}
-	defer resp.Body.Close()
-	if err != nil {
-		fmt.Println(err)
-	}
-
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			fmt.Println("error while closing response body: %w", err)
+		}
+	}()
 	//if successful
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var jobSchema jobSchema

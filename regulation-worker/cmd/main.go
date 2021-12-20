@@ -41,10 +41,12 @@ func Run(ctx context.Context) {
 		DestTransformURL: transformerURL,
 	}
 	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
+	urlPrefix, workspaceToken, workspaceId := getServerDetails()
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			WorkspaceID: config.GetEnv("workspaceID", "22JnFf8IlRAjIXtGUmhxylWMORi"),
-			URLPrefix:   config.GetEnv("urlPrefix", "https://leonidas-api.dev-rudder.rudderlabs.com"),
+			URLPrefix:      urlPrefix,
+			WorkspaceToken: workspaceToken,
+			WorkspaceID:    workspaceId,
 		},
 		DestDetail: &destination.DestMiddleware{
 			Dest: &backendconfig.WorkspaceConfig{},
@@ -57,6 +59,22 @@ func Run(ctx context.Context) {
 		panic(err)
 	}
 
+}
+
+func getServerDetails() (string, string, string) {
+	urlPrefix := config.GetEnv("urlPrefix", "")
+	if urlPrefix == "" {
+		panic("regulation-manager URL prefix not found")
+	}
+	workspaceToken := config.GetEnv("CONFIG_BACKEND_TOKEN", "")
+	if workspaceToken == "" {
+		panic("workspaceToken not found")
+	}
+	workspaceId := config.GetEnv("workspaceID", "")
+	if workspaceId == "" {
+		panic("workspaceId not found")
+	}
+	return urlPrefix, workspaceToken, workspaceId
 }
 
 func withLoop(svc service.JobSvc) *service.Looper {
