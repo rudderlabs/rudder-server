@@ -3,7 +3,6 @@ package main_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -60,7 +59,7 @@ func run(m *testing.M) int {
 	}()
 	<-testDataInitialized
 	_ = os.Setenv("workspaceID", workspaceID)
-	_ = os.Setenv("url_prefix", svr.URL)
+	_ = os.Setenv("URL_PREFIX", svr.URL)
 	main.Run(svcCtx)
 	statusCode := <-code
 	return statusCode
@@ -89,7 +88,6 @@ func TestFlow(t *testing.T) {
 				mu.Lock()
 				status := test.status
 				mu.Unlock()
-				fmt.Println("status=", status)
 				if status == "pending" && test.getJobRespCode == 200 {
 					return false
 				}

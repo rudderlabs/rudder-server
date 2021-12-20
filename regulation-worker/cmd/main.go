@@ -62,7 +62,7 @@ func Run(ctx context.Context) {
 }
 
 func getServerDetails() (string, string, string) {
-	urlPrefix := config.GetEnv("url_prefix", "")
+	urlPrefix := config.GetEnv("URL_PREFIX", "")
 	if urlPrefix == "" {
 		panic("regulation-manager URL prefix not found")
 	}
