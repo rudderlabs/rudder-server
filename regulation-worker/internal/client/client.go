@@ -71,18 +71,10 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			respErr := model.APIReqErr{
-				StatusCode: resp.StatusCode,
-				Err:        err,
-			}
-			return model.Job{}, fmt.Errorf("error while reading request body: %v", respErr)
+			return model.Job{}, fmt.Errorf("error while reading response body: %v", err)
 		}
 
-		respErr := model.APIReqErr{
-			StatusCode: resp.StatusCode,
-			Body:       string(body),
-		}
-		return model.Job{}, fmt.Errorf("error while getting job:%v", respErr)
+		return model.Job{}, fmt.Errorf("GET job API request returned status code: %d, body: %s", resp.StatusCode, body)
 	}
 
 }

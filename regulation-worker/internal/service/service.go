@@ -39,6 +39,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("obtained job: ", job)
 	//once job is successfully received, calling updatestatus API to update the status of job to running.
 	status := model.JobStatusRunning
 	err = js.updateStatus(ctx, status, job.ID)
@@ -50,9 +51,9 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error while getting destination details: %w", err)
 	}
-
+	fmt.Println("dest details: ", destDetail)
 	status = js.Deleter.Delete(ctx, job, destDetail)
-
+	fmt.Println("delete status: ", status)
 	err = js.updateStatus(ctx, status, job.ID)
 	if err != nil {
 		return err

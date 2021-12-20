@@ -3,6 +3,7 @@ package main_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -46,9 +47,8 @@ func run(m *testing.M) int {
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	code := make(chan int, 1)
 	go func() {
+		os.Setenv("CONFIG_BACKEND_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
 		os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
-		os.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
-		os.Setenv("CONFIG_PATH", "./test_config.yaml")
 		os.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
 		config.Load()
 		logger.Init()
@@ -60,7 +60,7 @@ func run(m *testing.M) int {
 	}()
 	<-testDataInitialized
 	_ = os.Setenv("workspaceID", workspaceID)
-	_ = os.Setenv("urlPrefix", svr.URL)
+	_ = os.Setenv("url_prefix", svr.URL)
 	main.Run(svcCtx)
 	statusCode := <-code
 	return statusCode
@@ -89,6 +89,7 @@ func TestFlow(t *testing.T) {
 				mu.Lock()
 				status := test.status
 				mu.Unlock()
+				fmt.Println("status=", status)
 				if status == "pending" && test.getJobRespCode == 200 {
 					return false
 				}
