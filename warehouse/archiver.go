@@ -76,7 +76,7 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 		return
 	}
 
-	tmpl := fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s WHERE %[2]s order by id asc limit %[3]s offset %[4]s) AS dump_table`, args.tableName, args.tableFilterSQL, tablearchiver.PaginationAction, tablearchiver.OffsetAction)
+	tmpl := fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s WHERE %[2]s order by id asc) AS dump_table`, args.tableName, args.tableFilterSQL)
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
 		DbHandle:      dbHandle,
 		Pagination:    config.GetInt("Warehouse.Archiver.backupRowsBatchSize", 100),
