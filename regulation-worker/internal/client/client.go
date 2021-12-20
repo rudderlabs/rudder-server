@@ -19,9 +19,10 @@ import (
 var pkgLogger = logger.NewLogger().Child("client")
 
 type JobAPI struct {
-	Client      *http.Client
-	WorkspaceID string
-	URLPrefix   string
+	Client         *http.Client
+	WorkspaceID    string
+	URLPrefix      string
+	WorkspaceToken string
 }
 
 //Get sends http request with workspaceID in the url and receives a json payload
@@ -34,7 +35,6 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	defer cancel()
 
 	method := "GET"
-
 	genEndPoint := "/dataplane/workspaces/{workspace_id}/regulations/workerJobs"
 	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID))
 	pkgLogger.Debugf("making GET request to URL: %w", url)
@@ -45,13 +45,21 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		return model.Job{}, err
 	}
 
+	req.SetBasicAuth(j.WorkspaceToken, "")
+	req.Header.Set("Content-Type", "application/json")
+
 	pkgLogger.Debugf("making request: %w", req)
 	resp, err := j.Client.Do(req)
 	if err != nil {
 		pkgLogger.Errorf("http request failed with error: %w", err)
 		return model.Job{}, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			fmt.Println("error while closing response body: %w", err)
+		}
+	}()
 	pkgLogger.Debugf("obtained response code: %w", resp.StatusCode, "response body: ", resp.Body)
 
 	//if successful

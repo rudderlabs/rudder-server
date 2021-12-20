@@ -49,11 +49,14 @@ func Run(ctx context.Context) {
 	pkgLogger.Infof("creating delete router")
 	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
 	pkgLogger.Infof("created delete router: %w", router)
+
+	urlPrefix, workspaceToken, workspaceId := getServerDetails()
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			Client:      &http.Client{},
-			WorkspaceID: config.GetEnv("workspaceID", "1001"),
-			URLPrefix:   config.GetEnv("urlPrefix", "https://api.rudderlabs.com:35359"),
+			Client:         &http.Client{},
+			URLPrefix:      urlPrefix,
+			WorkspaceToken: workspaceToken,
+			WorkspaceID:    workspaceId,
 		},
 		DestDetail: &destination.DestMiddleware{
 			Dest: &backendconfig.WorkspaceConfig{},
@@ -68,6 +71,22 @@ func Run(ctx context.Context) {
 		panic(err)
 	}
 
+}
+
+func getServerDetails() (string, string, string) {
+	urlPrefix := config.GetEnv("URL_PREFIX", "")
+	if urlPrefix == "" {
+		panic("regulation-manager URL prefix not found")
+	}
+	workspaceToken := config.GetEnv("CONFIG_BACKEND_TOKEN", "")
+	if workspaceToken == "" {
+		panic("workspaceToken not found")
+	}
+	workspaceId := config.GetEnv("workspaceID", "")
+	if workspaceId == "" {
+		panic("workspaceId not found")
+	}
+	return urlPrefix, workspaceToken, workspaceId
 }
 
 func withLoop(svc service.JobSvc) *service.Looper {

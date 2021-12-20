@@ -42,7 +42,7 @@ func run(m *testing.M) int {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 
-	resource, err := pool.Run("redis", "latest", []string{})
+	resource, err := pool.Run("redis", "alpine3.14", []string{})
 	if err != nil {
 		log.Panicf("Could not start resource: %s", err)
 	}
