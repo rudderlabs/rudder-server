@@ -1930,8 +1930,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 }
 
 func (rt *HandleT) watchETCDForPodStatus(ctx context.Context) {
-	watchChan, initialState := etcdconfig.WatchForMigration(ctx)
-	if initialState == "steady" {
+	watchChan, initialState, statusUpdateChannel := etcdconfig.WatchForMigration(ctx)
+	if initialState == "normal" {
 		rt.podStatusChan <- struct{}{}
 	}
 	for watchResp := range watchChan {
@@ -1940,12 +1940,14 @@ func (rt *HandleT) watchETCDForPodStatus(ctx context.Context) {
 			switch watchResp["processor"] {
 			case "pause":
 				rt.Pause()
+				statusUpdateChannel <- "degraded_completed"
 			case "resume":
-				if initialState != "steady" {
+				if initialState != "normal" {
 					rt.podStatusChan <- struct{}{}
-					initialState = "steady"
+					initialState = "normal"
 				}
 				rt.Resume()
+				statusUpdateChannel <- "normal_completed"
 			}
 		case "DELETE":
 			rt.Shutdown()

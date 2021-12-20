@@ -161,9 +161,10 @@ func heartBeatFunc(ctxHeartBeat context.Context, client *clientv3.Client, heartB
 	heartBeatChan <- true
 }
 
-func WatchForMigration(ctx context.Context) (chan map[string]string, string) {
+func WatchForMigration(ctx context.Context) (chan map[string]string, string, chan string) {
 	migrationStatusChannel := make(chan map[string]string)
-	go func(migrationStatusChan chan map[string]string, ctx context.Context) {
+	etcdMigrationStatusUpdateChannel := make(chan string)
+	go func(migrationStatusChan chan map[string]string, ctx context.Context, etcdMigrationStatusUpdateChannel chan string) {
 		defer cli.Close()
 		watchCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -172,12 +173,12 @@ func WatchForMigration(ctx context.Context) (chan map[string]string, string) {
 			for _, event := range watchResp.Events {
 				switch event.Type {
 				case mvccpb.PUT:
-					if string(event.Kv.Value) == "migration" {
+					if string(event.Kv.Value) == "degraded" {
 						migrationStatusChan <- map[string]string{
 							"type":      "PUT",
 							"processor": "pause",
 						}
-					} else if string(event.Kv.Value) == "steady" {
+					} else if string(event.Kv.Value) == "normal" {
 						migrationStatusChan <- map[string]string{
 							"type":      "PUT",
 							"processor": "resume",
@@ -190,14 +191,16 @@ func WatchForMigration(ctx context.Context) (chan map[string]string, string) {
 						"processor": "STOP",
 					}
 				}
+				statusUpdate := <-etcdMigrationStatusUpdateChannel
+				cli.Put(watchCtx, migrationStatusKey+`/status`, statusUpdate)
 			}
 		}
-	}(migrationStatusChannel, ctx)
+	}(migrationStatusChannel, ctx, etcdMigrationStatusUpdateChannel)
 
 	//get current state
 	initialState, err := cli.Get(ctx, migrationStatusKey)
 	if err != nil {
 		panic(err)
 	}
-	return migrationStatusChannel, string(initialState.Kvs[0].Value)
+	return migrationStatusChannel, string(initialState.Kvs[0].Value), etcdMigrationStatusUpdateChannel
 }
