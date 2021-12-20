@@ -1660,8 +1660,7 @@ func whWareHouseTest(t *testing.T, db *sql.DB, schema string, userId string, whE
 		require.Eventually(t, func() bool {
 			var count int64
 			sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", schema, table, primaryKeys[idx], userId)
-			err = db.QueryRow(sqlStatement).Scan(&count)
-			require.Equal(t, err, nil)
+			_ = db.QueryRow(sqlStatement).Scan(&count)
 			return count == int64(tableCount)
 		}, 2*time.Minute, 100*time.Millisecond)
 	}
