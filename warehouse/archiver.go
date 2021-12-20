@@ -148,6 +148,8 @@ func archiveUploads(dbHandle *sql.DB) {
 			continue
 		}
 
+		pkgLogger.Infof(`Started archiving for uploadId: %d uploads`, uploadID)
+
 		hasUsedRudderStorage := usedRudderStorage(uploadMetdata)
 
 		// archive staging files
@@ -305,6 +307,8 @@ func archiveUploads(dbHandle *sql.DB) {
 			"destination": destID,
 			"source":      sourceID,
 		}).Count(1)
+
+		pkgLogger.Infof(`Completed archiving for uploadId: %d uploads`, uploadID)
 	}
 	pkgLogger.Infof(`Successfully archived %d uploads`, archivedUploads)
 }
