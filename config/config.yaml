@@ -196,6 +196,9 @@ BackendConfig:
   pollInterval: 5s
   regulationsPollInterval: 300s
   maxRegulationsPerRequest: 1000
+  Regulations:
+    pageSize: 50
+    pollInterval: 300s
 recovery:
   enabled: true
   errorStorePath: /tmp/error_store.json
