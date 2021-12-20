@@ -652,11 +652,6 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	// return loadFileUploadOutputs, err
 }
 
-func freeWorker(workerIdx int) {
-	slaveWorkerRoutineBusy[workerIdx] = false
-	pkgLogger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
-}
-
 func claim(workerIdx int, slaveID string) (claimedJob pgnotifier.ClaimT, claimed bool) {
 	pkgLogger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
 	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
@@ -696,7 +691,6 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 }
 
 func setupSlave() {
-	slaveWorkerRoutineBusy = make([]bool, noOfSlaveWorkerRoutines)
 	slaveID := uuid.Must(uuid.NewV4()).String()
 	rruntime.Go(func() {
 		jobNotificationChannel, err := notifier.Subscribe(StagingFilesPGNotifierChannel, 2*noOfSlaveWorkerRoutines)
@@ -707,19 +701,14 @@ func setupSlave() {
 			rruntime.Go(func() {
 				for {
 					ev := <-jobNotificationChannel
-					pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
-					if !slaveWorkerRoutineBusy[workerIdx] {
-						slaveWorkerRoutineBusy[workerIdx] = true
-						idx := workerIdx
-						claimedJob, claimed := claim(idx, slaveID)
-						if !claimed {
-							freeWorker(idx)
-							continue
-						}
-						pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
-						processClaimedJob(claimedJob, idx)
-						freeWorker(idx)
+					pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workerId: %v", ev, workerIdx)
+					idx := workerIdx
+					claimedJob, claimed := claim(idx, slaveID)
+					if !claimed {
+						continue
 					}
+					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
+					processClaimedJob(claimedJob, idx)
 				}
 			})
 		}
