@@ -1058,7 +1058,6 @@ func (wh *HandleT) resetInProgressJobs() {
 	}
 }
 
-
 func getLoadFileFormat(whType string) string {
 	switch whType {
 	case "BQ":
@@ -1684,6 +1683,7 @@ func Start(ctx context.Context, app app.Interface) error {
 				minimalConfigSubscriber()
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+			runArchiver(ctx, dbHandle)
 		}
 		return nil
 	}
