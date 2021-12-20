@@ -16,6 +16,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
@@ -24,10 +25,11 @@ var (
 	testData            []test
 	mu                  sync.Mutex
 	testDataInitialized = make(chan string)
+	once                sync.Once
 )
 
 func TestMain(m *testing.M) {
-
+	Init()
 	os.Exit(run(m))
 }
 
@@ -134,4 +136,14 @@ func updateJobStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, _ = w.Write(body)
+}
+
+func Init() {
+	once.Do(func() {
+		config.Load()
+		logger.Init()
+		stats.Init()
+		stats.Setup()
+
+	})
 }

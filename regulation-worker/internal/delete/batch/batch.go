@@ -563,8 +563,8 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 					return fmt.Errorf("error: %w, while downloading file:%s", err, files[_i].Key)
 				}
 
-				fileSizeStats := stats.NewTaggedStat("file_size_mb", stats.CountType, stats.Tags{"jobId": fmt.Sprintf("%d", getFileSize(FileAbsPath))})
-				fileSizeStats.End()
+				fileSizeStats := stats.NewTaggedStat("file_size_mb", stats.CountType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID)})
+				fileSizeStats.Count(getFileSize(FileAbsPath))
 
 				getFileSize(FileAbsPath)
 				err = batch.delete(gCtx, absPatternFile, FileAbsPath)
@@ -591,12 +591,12 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 	return model.JobStatusComplete
 }
 
-func getFileSize(fileAbsPath string) int64 {
+func getFileSize(fileAbsPath string) int {
 	filePtr, _ := os.OpenFile(fileAbsPath, os.O_RDWR, 0644)
 	defer filePtr.Close()
 	fileStat, _ := filePtr.Stat()
 	fileSize := fileStat.Size() / 1000000
-	return fileSize
+	return int(fileSize)
 }
 
 func (b *Batch) cleanup(prefix string) {

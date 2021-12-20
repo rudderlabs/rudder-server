@@ -1,17 +1,23 @@
 package destination_test
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	destination "github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetDestDetails(t *testing.T) {
+var once sync.Once
 
+func TestGetDestDetails(t *testing.T) {
+	Init()
 	config := map[string]interface{}{
 		"bucketName":  "malani-deletefeature-testdata",
 		"prefix":      "regulation",
@@ -80,4 +86,14 @@ func TestGetDestDetails(t *testing.T) {
 
 	require.NoError(t, err, "expected no err")
 	require.Equal(t, expDest, destDetail, "actual dest detail different than expected")
+}
+
+func Init() {
+	once.Do(func() {
+		config.Load()
+		logger.Init()
+		stats.Init()
+		stats.Setup()
+
+	})
 }

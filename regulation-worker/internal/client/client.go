@@ -28,6 +28,7 @@ type JobAPI struct {
 //which is decoded using schema and then mapped from schema to internal model.Job struct,
 //which is actually returned.
 func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
+
 	pkgLogger.Debugf("making http request to regulation manager to get new job")
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Minute))
 	defer cancel()
@@ -62,9 +63,8 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			return model.Job{}, fmt.Errorf("error while decoding job: %w", err)
 		}
 
-		userCountPerJob := stats.NewTaggedStat("user_count_per_job", stats.CountType, stats.Tags{"jobId": jobSchema.JobID, "workspaceId": j.WorkspaceID, "user_count": fmt.Sprintf("%d", len(jobSchema.UserAttributes))})
-		userCountPerJob.Start()
-		userCountPerJob.End()
+		userCountPerJob := stats.NewTaggedStat("user_count_per_job", stats.CountType, stats.Tags{"jobId": jobSchema.JobID, "workspaceId": j.WorkspaceID})
+		userCountPerJob.Count(len(jobSchema.UserAttributes))
 
 		job, err := mapPayloadToJob(jobSchema, j.WorkspaceID)
 		if err != nil {
@@ -85,9 +85,9 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			pkgLogger.Errorf("error while reading response body: %w", err)
 			return model.Job{}, fmt.Errorf("error while reading response body: %w", err)
 		}
-		pkgLogger.Debugf("obtained response body: %w", body)
+		pkgLogger.Debugf("obtained response body: %w", string(body))
 
-		return model.Job{}, fmt.Errorf("error while getting job: %w", err)
+		return model.Job{}, fmt.Errorf("unexpected response code: %d", resp.StatusCode)
 	}
 
 }

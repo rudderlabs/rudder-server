@@ -2,18 +2,21 @@ package batch_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
 
+var once sync.Once
+
 func TestBatchDelete(t *testing.T) {
-	config.Load()
-	logger.Init()
+	Init()
 
 	ctx := context.Background()
 	tests := []struct {
@@ -71,4 +74,14 @@ func TestBatchDelete(t *testing.T) {
 
 func strPtr(str string) *string {
 	return &(str)
+}
+
+func Init() {
+	once.Do(func() {
+		config.Load()
+		logger.Init()
+		stats.Init()
+		stats.Setup()
+
+	})
 }

@@ -36,7 +36,7 @@ func (r *Router) Delete(ctx context.Context, job model.Job, destDetail model.Des
 
 		for _, m := range r.Managers {
 			destinations := m.GetSupportedDestinations()
-			pkgLogger.Infof("deletion manager: %w", m, "support deletion from: %w", destinations)
+			pkgLogger.Infof("deletion manager: %s", m, "support deletion from: %s", m, destinations)
 			for _, d := range destinations {
 				r.router[d] = m
 			}
