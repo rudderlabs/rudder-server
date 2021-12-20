@@ -1684,10 +1684,16 @@ func Start(ctx context.Context, app app.Interface) error {
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 
-			mux := http.NewServeMux()
-			mux.HandleFunc("/health", healthHandler)
+			g, ctx := errgroup.WithContext(ctx)
 
-			runArchiver(ctx, dbHandle)
+			g.Go(func() error {
+				return startWebHandler(ctx)
+			})
+			g.Go(misc.WithBugsnag(func() error {
+				runArchiver(ctx, dbHandle)
+				return nil
+			}))
+			return g.Wait()
 		}
 		return nil
 	}
