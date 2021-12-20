@@ -37,7 +37,6 @@ var (
 	curSourceJSONLock                     sync.RWMutex
 	initializedLock                       sync.RWMutex
 	initialized                           bool
-	waitForRegulations                    bool
 	LastSync                              string
 	LastRegulationSync                    string
 	maxRegulationsPerRequest              int
@@ -373,7 +372,7 @@ WaitForConfig waits until backend config has been initialized
 func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 	for {
 		initializedLock.RLock()
-		if initialized && !waitForRegulations {
+		if initialized {
 			initializedLock.RUnlock()
 			break
 		}
