@@ -68,6 +68,8 @@ type TransErrorSpecT struct {
 	Metadata                 map[string]interface{} `json:"metadata"`
 	ResponseTransformFailure bool                   `json:"responseTransformFailure"`
 	FailureAt                string                 `json:"failureAt"`
+	AuthErrorCategory        string                 `json:"authErrorCategory"`
+	AccessToken              string                 `json:"accessToken"`
 }
 
 type TransStatsT struct {
@@ -76,6 +78,7 @@ type TransStatsT struct {
 type TransResponseT struct {
 	Message             string      `json:"message"`
 	DestinationResponse interface{} `json:"destinationResponse"`
+	AuthErrorCategory   string      `json:"authErrorCategory"`
 }
 
 func CollectDestErrorStats(input []byte) {
