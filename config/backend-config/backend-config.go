@@ -35,7 +35,6 @@ var (
 	configJSONPath                        string
 	curSourceJSON                         ConfigT
 	curSourceJSONLock                     sync.RWMutex
-	curRegulationJSON                     RegulationsT
 	initializedLock                       sync.RWMutex
 	initialized                           bool
 	waitForRegulations                    bool
@@ -65,9 +64,6 @@ const (
 
 	/*TopicProcessConfig topic provides updates on backend config of processor enabled destinations, via Subscribe function */
 	TopicProcessConfig Topic = "processConfig"
-
-	/*TopicRegulations topic provides updates on regulations, via Subscribe function */
-	TopicRegulations Topic = "regulations"
 
 	/*RegulationSuppress refers to Suppress Regulation */
 	RegulationSuppress Regulation = "Suppress"
@@ -144,11 +140,6 @@ type ConfigT struct {
 type ConnectionFlags struct {
 	URL      string          `json:"url"`
 	Services map[string]bool `json:"services"`
-}
-
-type RegulationsT struct {
-	WorkspaceRegulations []WorkspaceRegulationT `json:"workspaceRegulations"`
-	SourceRegulations    []SourceRegulationT    `json:"sourceRegulations"`
 }
 
 type WRegulationsT struct {
@@ -364,8 +355,6 @@ func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic Top
 		Eb.PublishToChannel(channel, string(topic), filteredSourcesJSON)
 	} else if topic == TopicBackendConfig {
 		Eb.PublishToChannel(channel, string(topic), curSourceJSON)
-	} else if topic == TopicRegulations {
-		Eb.PublishToChannel(channel, string(topic), curRegulationJSON)
 	}
 	curSourceJSONLock.RUnlock()
 }
@@ -418,4 +407,3 @@ func Setup(configEnvHandler types.ConfigEnvI) {
 
 	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
 }
-

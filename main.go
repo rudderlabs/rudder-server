@@ -263,7 +263,7 @@ func Run(ctx context.Context) {
 	stats.Setup()
 
 	if !enableSuppressUserFeature || application.Features().SuppressUser == nil {
-		pkgLogger.Info("Suppress User feature is enterprise only. Unable to poll regulations.")
+		pkgLogger.Info("Suppress User feature is either disabled or enterprise only. Unable to poll regulations.")
 	}
 
 	var configEnvHandler types.ConfigEnvI
