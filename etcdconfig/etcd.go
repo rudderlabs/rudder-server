@@ -161,7 +161,7 @@ func heartBeatFunc(ctxHeartBeat context.Context, client *clientv3.Client, heartB
 	heartBeatChan <- true
 }
 
-func WatchForMigration(ctx context.Context) chan map[string]string {
+func WatchForMigration(ctx context.Context) (chan map[string]string, string) {
 	migrationStatusChannel := make(chan map[string]string)
 	go func(migrationStatusChan chan map[string]string, ctx context.Context) {
 		defer cli.Close()
@@ -193,5 +193,11 @@ func WatchForMigration(ctx context.Context) chan map[string]string {
 			}
 		}
 	}(migrationStatusChannel, ctx)
-	return migrationStatusChannel
+
+	//get current state
+	initialState, err := cli.Get(ctx, migrationStatusKey)
+	if err != nil {
+		panic(err)
+	}
+	return migrationStatusChannel, string(initialState.Kvs[0].Value)
 }
