@@ -1683,6 +1683,10 @@ func Start(ctx context.Context, app app.Interface) error {
 				minimalConfigSubscriber()
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/health", healthHandler)
+
 			runArchiver(ctx, dbHandle)
 		}
 		return nil
