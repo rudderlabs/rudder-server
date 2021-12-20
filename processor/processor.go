@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/etcdconfig"
 	"github.com/rudderlabs/rudder-server/router"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
@@ -346,6 +347,10 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 		proc.backendConfigSubscriber()
 	})
 
+	rruntime.Go(func() {
+		proc.watchETCDForPodStatus(context.Background())
+	})
+
 	g.Go(misc.WithBugsnag(func() error {
 		proc.getTransformerFeatureJson(ctx)
 		return nil
@@ -386,6 +391,23 @@ func (proc *HandleT) Start(ctx context.Context) {
 func (proc *HandleT) Shutdown() {
 	proc.backgroundCancel()
 	_ = proc.backgroundWait()
+}
+
+func (proc *HandleT) watchETCDForPodStatus(ctx context.Context) {
+	watchChan := etcdconfig.WatchForMigration(ctx)
+	for watchResp := range watchChan {
+		switch watchResp["type"] {
+		case "PUT":
+			switch watchResp["processor"] {
+			case "pause":
+				proc.Pause()
+			case "resume":
+				proc.Resume()
+			}
+		case "DELETE":
+			proc.Shutdown()
+		}
+	}
 }
 
 var (

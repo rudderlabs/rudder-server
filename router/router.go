@@ -16,6 +16,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/etcdconfig"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
@@ -1893,6 +1894,10 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.isBackendConfigInitialized = false
 	rt.backendConfigInitialized = make(chan bool)
 
+	rruntime.Go(func() {
+		rt.watchETCDForPodStatus(context.Background())
+	})
+
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -1919,6 +1924,23 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 		rt.backendConfigSubscriber()
 	})
 	adminInstance.registerRouter(destName, rt)
+}
+
+func (rt *HandleT) watchETCDForPodStatus(ctx context.Context) {
+	watchChan := etcdconfig.WatchForMigration(ctx)
+	for watchResp := range watchChan {
+		switch watchResp["type"] {
+		case "PUT":
+			switch watchResp["processor"] {
+			case "pause":
+				rt.Pause()
+			case "resume":
+				rt.Resume()
+			}
+		case "DELETE":
+			rt.Shutdown()
+		}
+	}
 }
 
 func (rt *HandleT) Start() {
