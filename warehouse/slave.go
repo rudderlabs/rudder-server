@@ -703,26 +703,25 @@ func setupSlave() {
 		if err != nil {
 			panic(err)
 		}
-		for {
-			ev := <-jobNotificationChannel
-			pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
-			for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
-				if !slaveWorkerRoutineBusy[workerIdx] {
-					slaveWorkerRoutineBusy[workerIdx] = true
-					idx := workerIdx
-					claimedJob, claimed := claim(idx, slaveID)
-					if !claimed {
-						freeWorker(idx)
-						break
-					}
-					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
-					rruntime.Go(func() {
+		for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
+			rruntime.Go(func() {
+				for {
+					ev := <-jobNotificationChannel
+					pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
+					if !slaveWorkerRoutineBusy[workerIdx] {
+						slaveWorkerRoutineBusy[workerIdx] = true
+						idx := workerIdx
+						claimedJob, claimed := claim(idx, slaveID)
+						if !claimed {
+							freeWorker(idx)
+							continue
+						}
+						pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 						processClaimedJob(claimedJob, idx)
 						freeWorker(idx)
-					})
-					break
+					}
 				}
-			}
+			})
 		}
 	})
 }
