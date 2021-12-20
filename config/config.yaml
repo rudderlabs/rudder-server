@@ -26,7 +26,7 @@ Gateway:
   dbBatchWriteTimeout: 5ms
   maxReqSizeInKB: 4000
   enableRateLimit: false
-  enableSuppressUserFeature: false
+  enableSuppressUserFeature: true
   allowPartialWriteWithErrors: true
   allowReqsWithoutUserIDAndAnonymousID: false
   webhook:
@@ -107,7 +107,7 @@ Router:
   maxFailedCountForJob: 3
   retryTimeWindow: 180m
   failedKeysEnabled: false
-  saveDestinationResponseOverride: true
+  saveDestinationResponseOverride: false
   transformerProxy: false
   transformerProxyRetryCount: 15
   MARKETO:
