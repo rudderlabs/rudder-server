@@ -51,7 +51,7 @@ func WatchForWorkspaces(ctx context.Context) chan map[string]string {
 	returnChan := make(chan map[string]string)
 	go func(returnChan chan map[string]string, ctx context.Context) {
 		defer cli.Close()
-		etcdWatchChan := cli.Watch(ctx, podWorkspacesKey)
+		etcdWatchChan := cli.Watch(ctx, podWorkspacesKey, clientv3.WithLastRev()...)
 		for watchResp := range etcdWatchChan {
 			for _, event := range watchResp.Events {
 				switch event.Type {
@@ -168,7 +168,7 @@ func WatchForMigration(ctx context.Context) (chan map[string]string, string, cha
 		defer cli.Close()
 		watchCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
-		etcdMigrationStatusChannel := cli.Watch(watchCtx, migrationStatusKey)
+		etcdMigrationStatusChannel := cli.Watch(watchCtx, migrationStatusKey, clientv3.WithLastRev()...)
 		for watchResp := range etcdMigrationStatusChannel {
 			for _, event := range watchResp.Events {
 				switch event.Type {
