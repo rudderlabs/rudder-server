@@ -61,7 +61,6 @@ type PostgresTestT struct {
 	destConfig *PostgresDestConfig
 	db         *sql.DB
 	writeKey   string
-	setupDone  bool
 }
 
 type ClickHouseDestConfig struct {
@@ -85,7 +84,6 @@ type ClickHouseTestT struct {
 	destConfig *ClickHouseDestConfig
 	db         *sql.DB
 	writeKey   string
-	setupDone  bool
 }
 
 type ClickHouseClusterTestT struct {
@@ -98,7 +96,6 @@ type ClickHouseClusterTestT struct {
 	db           *sql.DB
 	destConfig   *ClickHouseDestConfig
 	writeKey     string
-	setupDone    bool
 }
 
 type MSSqlDestConfig struct {
@@ -114,7 +111,6 @@ type MSSqlTestT struct {
 	db         *sql.DB
 	destConfig *MSSqlDestConfig
 	writeKey   string
-	setupDone  bool
 }
 
 type WareHouseEventsCount map[string]int
@@ -134,7 +130,6 @@ type WareHouseTestT struct {
 	mssqlTestT             *MSSqlTestT
 	gwJobsSqlFunction      string
 	batchRtJobsSqlFunction string
-	sqlFunctionsAdded      bool
 }
 
 var (
@@ -168,7 +163,7 @@ var (
 	brokerPort               string
 	localhostPort            string
 	localhostPortInt         int
-	whTest                *WareHouseTestT
+	whTest                   *WareHouseTestT
 	EventID                  string
 	VersionID                string
 )
@@ -569,7 +564,7 @@ func run(m *testing.M) (int, error) {
 	}()
 
 	// Adding necessary sql functions which needs to be used during warehouse testing
-	AddSqlFunctionsToJobsDb()
+	AddWhSpecificSqlFunctionsToJobsDb()
 
 	os.Setenv("JOBS_DB_HOST", "localhost")
 	os.Setenv("JOBS_DB_NAME", "jobsdb")
@@ -621,24 +616,24 @@ func run(m *testing.M) (int, error) {
 	workspaceConfigPath := createWorkspaceConfig(
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
-			"webhookUrl":            webhookurl,
-			"webhookDestinationurl": webhookDestinationurl,
-			"writeKey":              writeKey,
-			"webhookEventWriteKey":  webhookEventWriteKey,
+			"webhookUrl":                          webhookurl,
+			"webhookDestinationurl":               webhookDestinationurl,
+			"writeKey":                            writeKey,
+			"webhookEventWriteKey":                webhookEventWriteKey,
 			"postgresEventWriteKey":               whTest.pgTestT.writeKey,
 			"clickHouseEventWriteKey":             whTest.chTestT.writeKey,
 			"clickHouseClusterEventWriteKey":      whTest.chClusterTestT.writeKey,
 			"mssqlEventWriteKey":                  whTest.mssqlTestT.writeKey,
-			"workspaceId":           workspaceID,
-			"postgresPort":          resourcePostgres.GetPort("5432/tcp"),
+			"workspaceId":                         workspaceID,
+			"postgresPort":                        resourcePostgres.GetPort("5432/tcp"),
 			"rwhPostgresDestinationPort":          whTest.pgTestT.resource.GetPort("5432/tcp"),
 			"rwhClickHouseDestinationPort":        whTest.chTestT.resource.GetPort("9000/tcp"),
 			"rwhClickHouseClusterDestinationPort": whTest.chClusterTestT.clickhouse01.GetPort("9000/tcp"),
 			"rwhMSSqlDestinationPort":             whTest.mssqlTestT.resource.GetPort("1433/tcp"),
-			"address":               redisAddress,
-			"minioEndpoint":         minioEndpoint,
-			"minioBucketName":       minioBucketName,
-			"kafkaPort":             strconv.Itoa(localhostPortInt),
+			"address":                             redisAddress,
+			"minioEndpoint":                       minioEndpoint,
+			"minioBucketName":                     minioBucketName,
+			"kafkaPort":                           strconv.Itoa(localhostPortInt),
 		},
 	)
 	defer func() {
@@ -972,7 +967,6 @@ type eventSchemasObject struct {
 	EventID   string
 	EventType string
 	VersionID string
-  }
 }
 
 // Verify Event Models EndPoint
@@ -1166,10 +1160,6 @@ func TestBeaconBatch(t *testing.T) {
 // Verify Event in WareHouse Postgres
 func TestWhPostgresDestination(t *testing.T) {
 	pgTest := whTest.pgTestT
-	if !pgTest.setupDone {
-		log.Println("Setup not initialized for postgres destination")
-		return
-	}
 
 	whDestTest := &WareHouseDestinationTest{
 		writeKey: pgTest.writeKey,
@@ -1194,17 +1184,12 @@ func TestWhPostgresDestination(t *testing.T) {
 
 	whDestTest.userId = "userId_postgres_1"
 	sendUpdatedWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
-	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
 	warehouseDestinationTest(t, whDestTest)
 }
 
 // Verify Event in WareHouse ClickHouse
 func TestWhClickHouseDestination(t *testing.T) {
 	chTestT := whTest.chTestT
-	if !chTestT.setupDone || true {
-		log.Println("Setup not initialized for clickhouse destination")
-		return
-	}
 
 	whDestTest := &WareHouseDestinationTest{
 		writeKey: chTestT.writeKey,
@@ -1220,6 +1205,8 @@ func TestWhClickHouseDestination(t *testing.T) {
 			"screens":       1,
 			"aliases":       1,
 			"groups":        1,
+			"gateway":       6,
+			"batchRT":       8,
 		},
 	}
 	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
@@ -1227,17 +1214,12 @@ func TestWhClickHouseDestination(t *testing.T) {
 
 	whDestTest.userId = "userId_clickhouse_1"
 	sendUpdatedWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
-	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
 	warehouseDestinationTest(t, whDestTest)
 }
 
 // Verify Event in WareHouse ClickHouse Cluster
 func TestWhClickHouseClusterDestination(t *testing.T) {
 	chClusterTestT := whTest.chClusterTestT
-	if !chClusterTestT.setupDone || true {
-		log.Println("Setup not initialized for clickhouse cluster destination")
-		return
-	}
 
 	whDestTest := &WareHouseDestinationTest{
 		writeKey: chClusterTestT.writeKey,
@@ -1253,27 +1235,24 @@ func TestWhClickHouseClusterDestination(t *testing.T) {
 			"screens":       1,
 			"aliases":       1,
 			"groups":        1,
+			"gateway":       6,
+			"batchRT":       8,
 		},
 	}
 	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
 	warehouseDestinationTest(t, whDestTest)
 
 	// Initialize cluster mode setup
-	initWHClickHouseClusterModeSetup(t)
+	//initWHClickHouseClusterModeSetup(t)
 
 	whDestTest.userId = "userId_clickhouse_1"
 	sendUpdatedWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
-	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
 	warehouseDestinationTest(t, whDestTest)
 }
 
 // Verify Event in WareHouse MSSQL
 func TestWhMsSqlDestination(t *testing.T) {
 	mssqlTestT := whTest.mssqlTestT
-	if !mssqlTestT.setupDone || true {
-		log.Println("Setup not initialized for mssql destination")
-		return
-	}
 
 	whDestTest := &WareHouseDestinationTest{
 		writeKey: mssqlTestT.writeKey,
@@ -1289,6 +1268,8 @@ func TestWhMsSqlDestination(t *testing.T) {
 			"screens":       1,
 			"aliases":       1,
 			"groups":        1,
+			"gateway":       6,
+			"batchRT":       8,
 		},
 	}
 	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
@@ -1296,7 +1277,6 @@ func TestWhMsSqlDestination(t *testing.T) {
 
 	whDestTest.userId = "userId_mssql_1"
 	sendUpdatedWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
-	sendWHEvents(whDestTest.writeKey, whDestTest.userId, whDestTest.whEventsCount)
 	warehouseDestinationTest(t, whDestTest)
 }
 
@@ -1591,35 +1571,31 @@ func warehouseDestinationTest(t *testing.T, dt *WareHouseDestinationTest) {
 }
 
 func whGatewayTest(t *testing.T, writeKey string, userId string, whEventCount WareHouseEventsCount) {
-	if !whTest.sqlFunctionsAdded {
-		log.Println("WareHouse sqlFunctionsAdded not set")
-		return
-	}
-
-	if _, exists := whEventCount["gateway"]; !exists {
-		log.Println("WareHouse gateway count not set")
-		return
-	}
+	require.Contains(t, whEventCount, "gateway")
 	gwEvents := whEventCount["gateway"]
+
+	// Checking for the gateway jobs
+	require.Eventually(t, func() bool {
+		var count int64
+		jobSqlStatement := fmt.Sprintf(`select count(*) from gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids`, userId, writeKey)
+		err = db.QueryRow(jobSqlStatement).Scan(&count)
+		require.Equal(t, err, nil)
+		return count == int64(gwEvents)
+	}, time.Minute, 10*time.Millisecond)
 
 	// Getting gateway job ids
 	var jobIds []string
 	require.Eventually(t, func() bool {
 		jobIds = make([]string, 0)
-		jobSqlStatement := fmt.Sprintf(`select * from gw_jobs('%s', '%s') as job_ids`, writeKey, userId)
-		var rows *sql.Rows
-		var err error
-		rows, err = db.Query(jobSqlStatement)
-		if err != nil {
-			return false
-		}
+		jobSqlStatement := fmt.Sprintf(`select * from gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids`, userId, writeKey)
+		rows, err := db.Query(jobSqlStatement)
+		require.Equal(t, err, nil)
+
 		defer rows.Close()
 		for rows.Next() {
 			var jobId int64
 			err = rows.Scan(&jobId)
-			if err != nil {
-				return false
-			}
+			require.Equal(t, err, nil)
 			jobIds = append(jobIds, fmt.Sprint(jobId))
 		}
 		return gwEvents == len(jobIds)
@@ -1629,51 +1605,49 @@ func whGatewayTest(t *testing.T, writeKey string, userId string, whEventCount Wa
 	require.Eventually(t, func() bool {
 		var count int64
 		jobsSqlStatement := fmt.Sprintf("select count(*) from gw_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
-		_ = db.QueryRow(jobsSqlStatement).Scan(&count)
+		err = db.QueryRow(jobsSqlStatement).Scan(&count)
+		require.Equal(t, err, nil)
 		return count == int64(gwEvents)
 	}, time.Minute, 10*time.Millisecond)
 }
 
 func whBatchRouterTest(t *testing.T, userId string, whEventCount WareHouseEventsCount) {
-	if !whTest.sqlFunctionsAdded {
-		log.Println("WareHouse sqlFunctionsAdded not set")
-		return
-	}
+	require.Contains(t, whEventCount, "batchRT")
+	brtEvents := whEventCount["batchRT"]
 
-	if _, exists := whEventCount["batchRT"]; !exists {
-		log.Println("WareHouse batch router count not set")
-		return
-	}
-	batchRT := whEventCount["batchRT"]
+	// Checking for the batch router jobs
+	require.Eventually(t, func() bool {
+		var count int64
+		jobsSqlStatement := fmt.Sprintf(`select count(*) from brt_jobs_for_user_id('%s') as job_ids`, userId)
+		err = db.QueryRow(jobsSqlStatement).Scan(&count)
+		require.Equal(t, err, nil)
+		return count == int64(brtEvents)
+	}, 2*time.Minute, 100*time.Millisecond)
 
 	// Getting batch router job ids
 	var jobIds []string
 	require.Eventually(t, func() bool {
 		jobIds = make([]string, 0)
-		jobSqlStatement := fmt.Sprintf(`select * from batch_rt_jobs('%s') as job_ids`, userId)
-		var rows *sql.Rows
-		var err error
-		rows, err = db.Query(jobSqlStatement)
-		if err != nil {
-			return false
-		}
+		jobSqlStatement := fmt.Sprintf(`select * from brt_jobs_for_user_id('%s') as job_ids`, userId)
+		rows, err := db.Query(jobSqlStatement)
+		require.Equal(t, err, nil)
+
 		defer rows.Close()
 		for rows.Next() {
 			var jobId int64
 			err = rows.Scan(&jobId)
-			if err != nil {
-				return false
-			}
+			require.Equal(t, err, nil)
 			jobIds = append(jobIds, fmt.Sprint(jobId))
 		}
-		return int(batchRT) == len(jobIds)
+		return brtEvents == len(jobIds)
 	}, 2*time.Minute, 100*time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		var count int64
 		jobsSqlStatement := fmt.Sprintf("select count(*) from batch_rt_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
-		_ = db.QueryRow(jobsSqlStatement).Scan(&count)
-		return count == int64(batchRT)
+		err = db.QueryRow(jobsSqlStatement).Scan(&count)
+		require.Equal(t, err, nil)
+		return count == int64(brtEvents)
 	}, 2*time.Minute, 100*time.Millisecond)
 }
 
@@ -1681,17 +1655,15 @@ func whWareHouseTest(t *testing.T, db *sql.DB, schema string, userId string, whE
 	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 	primaryKeys := []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 	for idx, table := range tables {
-		if _, exists := whEventCount[table]; !exists {
-			log.Printf("WareHouse %s table count not set\n", table)
-			return
-		}
-		tableCount := whEventCount["table"]
+		require.Contains(t, whEventCount, table)
+		tableCount := whEventCount[table]
 		require.Eventually(t, func() bool {
 			var count int64
 			sqlStatement := fmt.Sprintf("select count(*) from %s.%s where %s = '%s'", schema, table, primaryKeys[idx], userId)
-			_ = db.QueryRow(sqlStatement).Scan(&count)
+			err = db.QueryRow(sqlStatement).Scan(&count)
+			require.Equal(t, err, nil)
 			return count == int64(tableCount)
-		}, 5*time.Minute, 100*time.Millisecond)
+		}, 2*time.Minute, 100*time.Millisecond)
 	}
 }
 
@@ -1702,7 +1674,7 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 	// Rename tables to tables_shard
 	for _, table := range tables {
 		var sqlStatement string
-		sqlStatement = fmt.Sprintf("rename table %[1]s to %[1]s_shard on cluster rudder_cluster;", table)
+		sqlStatement = fmt.Sprintf("RENAME TABLE %[1]s to %[1]s_shard ON CLUSTER rudder_cluster;", table)
 		_, err = chClusterTestT.db.Exec(sqlStatement)
 		require.Equal(t, err, nil)
 	}
@@ -1900,6 +1872,7 @@ func SetTransformer() *dockertest.Resource {
 	)
 	return transformerRes
 }
+
 func SetTimescaleDB() *dockertest.Resource {
 	// Set  timescale DB
 	// pulls an image, creates a container based on it and runs it
@@ -2062,7 +2035,32 @@ func TestReportingService(t *testing.T) {
 
 func initWhConfig() {
 	whTest = &WareHouseTestT{}
-	whTest.gwJobsSqlFunction = `CREATE OR REPLACE FUNCTION gw_jobs(write_key varchar, user_id varchar)
+	whTest.gwJobsSqlFunction = `CREATE OR REPLACE FUNCTION gw_jobs_for_user_id_and_write_key(user_id varchar, write_key varchar)
+								RETURNS TABLE
+										(
+											job_id varchar
+										)
+							AS
+							$$
+							DECLARE
+								table_record RECORD;
+								batch_record jsonb;
+							BEGIN
+								FOR table_record IN SELECT * FROM gw_jobs_1 where (event_payload ->> 'writeKey') = write_key
+									LOOP
+										FOR batch_record IN SELECT * FROM jsonb_array_elements((table_record.event_payload ->> 'batch')::jsonb)
+											LOOP
+												if batch_record ->> 'userId' != user_id THEN
+													CONTINUE;
+												END IF;
+												job_id := table_record.job_id;
+												RETURN NEXT;
+												EXIT;
+											END LOOP;
+									END LOOP;
+							END;
+							$$ LANGUAGE plpgsql`
+	whTest.batchRtJobsSqlFunction = `CREATE OR REPLACE FUNCTION brt_jobs_for_user_id(user_id varchar)
 									RETURNS TABLE
 											(
 												job_id varchar
@@ -2070,45 +2068,19 @@ func initWhConfig() {
 								AS
 								$$
 								DECLARE
-									table_record RECORD;
-									batch_record jsonb;
+									table_record  RECORD;
+									event_payload jsonb;
 								BEGIN
-									FOR table_record IN SELECT * FROM gw_jobs_1 where (event_payload ->> 'writeKey') = write_key
+									FOR table_record IN SELECT * FROM batch_rt_jobs_1
 										LOOP
-											FOR batch_record IN SELECT * FROM jsonb_array_elements((table_record.event_payload ->> 'batch')::jsonb)
-												LOOP
-													if batch_record ->> 'userId' != user_id THEN
-														CONTINUE;
-													END IF;
-													job_id := table_record.job_id;
-													RETURN NEXT;
-													EXIT;
-												END LOOP;
+											event_payload = (table_record.event_payload ->> 'data')::jsonb;
+											if event_payload ->> 'user_id' = user_id Or event_payload ->> 'id' = user_id THEN
+												job_id := table_record.job_id;
+												RETURN NEXT;
+											END IF;
 										END LOOP;
-								END;
+								END ;
 								$$ LANGUAGE plpgsql`
-	whTest.batchRtJobsSqlFunction = `CREATE OR REPLACE FUNCTION batch_rt_jobs(user_id varchar)
-										RETURNS TABLE
-												(
-													job_id varchar
-												)
-									AS
-									$$
-									DECLARE
-										table_record  RECORD;
-										event_payload jsonb;
-									BEGIN
-										FOR table_record IN SELECT * FROM batch_rt_jobs_1
-											LOOP
-												event_payload = (table_record.event_payload ->> 'data')::jsonb;
-												if event_payload ->> 'user_id' = user_id Or event_payload ->> 'id' = user_id THEN
-													job_id := table_record.job_id;
-													RETURN NEXT;
-												END IF;
-											END LOOP;
-									END ;
-									$$ LANGUAGE plpgsql`
-
 	whTest.pgTestT = &PostgresTestT{
 		writeKey: randString(27),
 		destConfig: &PostgresDestConfig{
@@ -2206,11 +2178,6 @@ func SetWhPostgresDestination() {
 	}); err != nil {
 		log.Printf("Could not connect to warehouse postgres url: %v, with error: %v\n", whPostgresUrl, err)
 	}
-	if err != nil {
-		return
-	}
-
-	pgTest.setupDone = true
 }
 
 func SetWhClickHouseDestination() {
@@ -2260,11 +2227,6 @@ func SetWhClickHouseDestination() {
 	}); err != nil {
 		log.Println("Could not connect to postgres", whClickHouseUrl, err)
 	}
-	if err != nil {
-		return
-	}
-
-	chTestT.setupDone = true
 }
 
 func SetWhClickHouseClusterDestination() {
@@ -2437,11 +2399,6 @@ func SetWhClickHouseClusterDestination() {
 	}); err != nil {
 		log.Println("Could not connect to clickhouse", whClickHouseClusterUrl, err)
 	}
-	if err != nil {
-		return
-	}
-
-	chClusterTestT.setupDone = true
 }
 
 func SetWhMSSqlDestination() {
@@ -2485,18 +2442,9 @@ func SetWhMSSqlDestination() {
 	}); err != nil {
 		log.Println("Could not connect to MSSql", whMSSqlUrl, err)
 	}
-	if err != nil {
-		return
-	}
-
-	mssqlTestT.setupDone = true
 }
 
-func AddSqlFunctionsToJobsDb() {
-	if db == nil {
-		return
-	}
-
+func AddWhSpecificSqlFunctionsToJobsDb() {
 	// Running fetching gateway jobs function
 	_, err = db.Exec(whTest.gwJobsSqlFunction)
 	if err != nil {
@@ -2510,8 +2458,6 @@ func AddSqlFunctionsToJobsDb() {
 		log.Printf("Error occurred with executing prepared statement for events count with err %v\n", err)
 		return
 	}
-
-	whTest.sqlFunctionsAdded = true
 }
 
 // TODO: Verify in Live Events API
