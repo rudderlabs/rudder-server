@@ -47,7 +47,6 @@ var (
 	notifier                            pgnotifier.PgNotifierT
 	WarehouseDestinations               []string
 	noOfSlaveWorkerRoutines             int
-	slaveWorkerRoutineBusy              []bool //Busy-true
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
 	mainLoopSleep                       time.Duration
