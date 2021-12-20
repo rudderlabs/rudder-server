@@ -698,11 +698,11 @@ func setupSlave() {
 			panic(err)
 		}
 		for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
+			idx := workerIdx
 			rruntime.Go(func() {
 				for {
 					ev := <-jobNotificationChannel
-					pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workerId: %v", ev, workerIdx)
-					idx := workerIdx
+					pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workerId: %v", ev, idx)
 					claimedJob, claimed := claim(idx, slaveID)
 					if !claimed {
 						continue
