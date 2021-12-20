@@ -51,7 +51,7 @@ phases:
       - docker build -t rudderstack/develop-rudder-server-enterprise:$VERSION -f build/Dockerfile-aws-dev .
   post_build:
     commands:
-      - docker push rudderlabs/develop-rudder-server:$VERSION
+#      - docker push rudderlabs/develop-rudder-server:$VERSION
       - docker push rudderstack/develop-rudder-server-enterprise:$VERSION
 #reports:
 #  GinkgoUnitTestReports:
