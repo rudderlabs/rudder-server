@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
@@ -149,14 +150,32 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 	outJobs := make([]*JobT, 0)
 
 	//removed count assert, because that params.count is not used..?
+	var tablesQueried int
+	var tablesQueriedStat stats.RudderStats
+	var queryTime stats.RudderStats
+	queryTime = stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
+		"state":    "unprocessed",
+		"module":   mj.tablePrefix,
+		"destType": params.CustomValFilters[0],
+	})
 
+	start := time.Now()
 	for _, ds := range dsList {
 		jobs := mj.getUnprocessedUnionDS(ds, customerCount, params)
 		outJobs = append(outJobs, jobs...)
+		tablesQueried++
 		if len(customerCount) == 0 {
 			break
 		}
 	}
+
+	queryTime.SendTiming(time.Since(start))
+	tablesQueriedStat = stats.NewTaggedStat("tables_queried", stats.CountType, stats.Tags{
+		"state":    "unprocessed",
+		"module":   mj.tablePrefix,
+		"destType": params.CustomValFilters[0],
+	})
+	tablesQueriedStat.Count(tablesQueried)
 
 	//PickUp stats
 	var pickUpCountStat stats.RudderStats
@@ -251,13 +270,32 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 	dsList := mj.getDSList(false)
 	outJobs := make([]*JobT, 0)
 
+	var tablesQueried int
+	var tablesQueriedStat stats.RudderStats
+	var queryTime stats.RudderStats
+	queryTime = stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
+		"state":    params.StateFilters[0],
+		"module":   mj.tablePrefix,
+		"destType": params.CustomValFilters[0],
+	})
+
+	start := time.Now()
 	for _, ds := range dsList {
 		jobs := mj.getProcessedUnionDS(ds, customerCount, params)
 		outJobs = append(outJobs, jobs...)
+		tablesQueried++
 		if len(customerCount) == 0 {
 			break
 		}
 	}
+
+	queryTime.SendTiming(time.Since(start))
+	tablesQueriedStat = stats.NewTaggedStat("tables_queried", stats.CountType, stats.Tags{
+		"state":    params.StateFilters[0],
+		"module":   mj.tablePrefix,
+		"destType": params.CustomValFilters[0],
+	})
+	tablesQueriedStat.Count(tablesQueried)
 
 	//PickUp stats
 	var pickUpCountStat stats.RudderStats
