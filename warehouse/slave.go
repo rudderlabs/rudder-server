@@ -693,7 +693,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 func setupSlave() {
 	slaveID := uuid.Must(uuid.NewV4()).String()
 	rruntime.Go(func() {
-		jobNotificationChannel, err := notifier.Subscribe(StagingFilesPGNotifierChannel, 2*noOfSlaveWorkerRoutines)
+		jobNotificationChannel, err := notifier.Subscribe(StagingFilesPGNotifierChannel, 4*noOfSlaveWorkerRoutines)
 		if err != nil {
 			panic(err)
 		}
@@ -709,6 +709,7 @@ func setupSlave() {
 					}
 					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 					processClaimedJob(claimedJob, idx)
+					pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 				}
 			})
 		}
