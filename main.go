@@ -36,6 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
+	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
 	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
 	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
 
@@ -201,6 +202,7 @@ func runAllInit() {
 	rruntime.Init()
 	integrations.Init()
 	alert.Init()
+	oauth.Init()
 	Init()
 
 }

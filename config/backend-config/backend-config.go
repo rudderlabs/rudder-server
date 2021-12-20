@@ -406,3 +406,17 @@ func Setup(configEnvHandler types.ConfigEnvI) {
 
 	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
 }
+
+func GetConfigBackendURL() string {
+	return configBackendURL
+}
+
+// Gets the workspace token data for a single workspace or multi workspace case
+func GetWorkspaceToken() (workspaceToken string) {
+	workspaceToken = config.GetWorkspaceToken()
+	isMultiWorkspace := config.GetEnvAsBool("HOSTED_SERVICE", false)
+	if isMultiWorkspace {
+		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+	}
+	return workspaceToken
+}
