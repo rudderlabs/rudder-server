@@ -1178,6 +1178,10 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				if !ok {
 					proc.logger.Error("singular event type is unknown")
 				}
+				eventName, ok := singularEvent["event"].(string)
+				if !ok {
+					proc.logger.Error("singular event name is unknown")
+				}
 
 				source, sourceError := getSourceByWriteKey(writeKey)
 				if sourceError != nil {
@@ -1195,7 +1199,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				//REPORTING - GATEWAY metrics - START
 				if proc.isReportingEnabled() {
 					//Grouping events by sourceid + destinationid + source batch id to find the count
-					key := fmt.Sprintf("%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID)
+					key := fmt.Sprintf("%s:%s:%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID, eventName, eventType)
 					if _, ok := inCountMap[key]; !ok {
 						inCountMap[key] = 0
 					}
@@ -1211,7 +1215,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					}
 					sd, ok := statusDetailsMap[key]
 					if !ok {
-						sd = types.CreateStatusDetail(jobsdb.Succeeded.State, 0, 200, "", []byte(`{}`), "", "")
+						sd = types.CreateStatusDetail(jobsdb.Succeeded.State, 0, 200, "", []byte(`{}`), eventName, eventType)
 						statusDetailsMap[key] = sd
 					}
 					sd.Count++
