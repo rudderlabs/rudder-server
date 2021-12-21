@@ -110,6 +110,8 @@ Router:
   saveDestinationResponseOverride: false
   transformerProxy: false
   transformerProxyRetryCount: 15
+  GOOGLESHEETS:
+    noOfWorkers: 1
   MARKETO:
     noOfWorkers: 4
   throttler:
