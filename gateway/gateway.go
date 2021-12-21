@@ -1577,8 +1577,10 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	admin.RegisterStatusHandler("Gateway", &gatewayAdmin)
 	admin.RegisterAdminHandler("Gateway", &gatewayRPCHandler)
 
-	if gateway.application.Features().SuppressUser != nil {
-		gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
+	if enableSuppressUserFeature && gateway.application.Features().SuppressUser != nil {
+		rruntime.Go(func() {
+			gateway.suppressUserHandler = application.Features().SuppressUser.Setup(gateway.backendConfig)
+		})
 	}
 
 	if enableEventSchemasFeature {

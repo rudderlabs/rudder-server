@@ -49,11 +49,14 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	req.Header.Set("Content-Type", "application/json")
 
 	pkgLogger.Debugf("making request: %w", req)
+	fmt.Println("using client to get job")
+	fmt.Println("client=", j.Client)
 	resp, err := j.Client.Do(req)
 	if err != nil {
 		pkgLogger.Errorf("http request failed with error: %w", err)
 		return model.Job{}, err
 	}
+	fmt.Println("resp=", resp)
 	defer func() {
 		err := resp.Body.Close()
 		if err != nil {
