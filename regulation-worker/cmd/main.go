@@ -41,10 +41,12 @@ func Run(ctx context.Context) {
 		DestTransformURL: transformerURL,
 	}
 	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
+
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			WorkspaceID: config.GetEnv("workspaceID", "1001"),
-			URLPrefix:   config.GetEnv("urlPrefix", "https://api.rudderlabs.com:35359"),
+			URLPrefix:      config.MustGetEnv("URL_PREFIX"),
+			WorkspaceToken: config.MustGetEnv("CONFIG_BACKEND_TOKEN"),
+			WorkspaceID:    config.MustGetEnv("workspaceID"),
 		},
 		DestDetail: &destination.DestMiddleware{
 			Dest: &backendconfig.WorkspaceConfig{},
@@ -60,7 +62,6 @@ func Run(ctx context.Context) {
 }
 
 func withLoop(svc service.JobSvc) *service.Looper {
-
 	return &service.Looper{
 		Svc: svc,
 	}

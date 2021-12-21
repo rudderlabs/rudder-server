@@ -35,11 +35,8 @@ var (
 	configJSONPath                        string
 	curSourceJSON                         ConfigT
 	curSourceJSONLock                     sync.RWMutex
-	curRegulationJSON                     RegulationsT
-	curRegulationJSONLock                 sync.RWMutex
 	initializedLock                       sync.RWMutex
 	initialized                           bool
-	waitForRegulations                    bool
 	LastSync                              string
 	LastRegulationSync                    string
 	maxRegulationsPerRequest              int
@@ -66,9 +63,6 @@ const (
 
 	/*TopicProcessConfig topic provides updates on backend config of processor enabled destinations, via Subscribe function */
 	TopicProcessConfig Topic = "processConfig"
-
-	/*TopicRegulations topic provides updates on regulations, via Subscribe function */
-	TopicRegulations Topic = "regulations"
 
 	/*RegulationSuppress refers to Suppress Regulation */
 	RegulationSuppress Regulation = "Suppress"
@@ -147,11 +141,6 @@ type ConnectionFlags struct {
 	Services map[string]bool `json:"services"`
 }
 
-type RegulationsT struct {
-	WorkspaceRegulations []WorkspaceRegulationT `json:"workspaceRegulations"`
-	SourceRegulations    []SourceRegulationT    `json:"sourceRegulations"`
-}
-
 type WRegulationsT struct {
 	WorkspaceRegulations []WorkspaceRegulationT `json:"workspaceRegulations"`
 	Start                int                    `json:"start"`
@@ -218,7 +207,6 @@ type TrackingPlanT struct {
 type BackendConfig interface {
 	SetUp()
 	Get() (ConfigT, bool)
-	GetRegulations() (RegulationsT, bool)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	WaitForConfig(ctx context.Context) error
@@ -291,35 +279,6 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func regulationsUpdate(statConfigBackendError stats.RudderStats) {
-
-	regulationJSON, ok := backendConfig.GetRegulations()
-	if !ok {
-		statConfigBackendError.Increment()
-	}
-
-	//sorting the regulationJSON.
-	//json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
-	sort.Slice(regulationJSON.WorkspaceRegulations[:], func(i, j int) bool {
-		return regulationJSON.WorkspaceRegulations[i].ID < regulationJSON.WorkspaceRegulations[j].ID
-	})
-	sort.Slice(regulationJSON.SourceRegulations[:], func(i, j int) bool {
-		return regulationJSON.SourceRegulations[i].ID < regulationJSON.SourceRegulations[j].ID
-	})
-
-	if ok && !reflect.DeepEqual(curRegulationJSON, regulationJSON) {
-		pkgLogger.Info("Regulations changed")
-		curRegulationJSONLock.Lock()
-		curRegulationJSON = regulationJSON
-		curRegulationJSONLock.Unlock()
-		initializedLock.Lock() //Using initializedLock for waitForRegulations too.
-		defer initializedLock.Unlock()
-		waitForRegulations = false
-		LastRegulationSync = time.Now().Format(time.RFC3339)
-		Eb.Publish(string(TopicRegulations), regulationJSON)
-	}
-}
-
 func configUpdate(statConfigBackendError stats.RudderStats) {
 
 	sourceJSON, ok := backendConfig.Get()
@@ -354,14 +313,6 @@ func pollConfigUpdate() {
 	for {
 		configUpdate(statConfigBackendError)
 		time.Sleep(time.Duration(pollInterval))
-	}
-}
-
-func pollRegulations() {
-	statConfigBackendError := stats.NewStat("config_backend.errors", stats.CountType)
-	for {
-		regulationsUpdate(statConfigBackendError)
-		time.Sleep(time.Duration(regulationsPollInterval))
 	}
 }
 
@@ -403,8 +354,6 @@ func (bc *CommonBackendConfig) Subscribe(channel chan utils.DataEvent, topic Top
 		Eb.PublishToChannel(channel, string(topic), filteredSourcesJSON)
 	} else if topic == TopicBackendConfig {
 		Eb.PublishToChannel(channel, string(topic), curSourceJSON)
-	} else if topic == TopicRegulations {
-		Eb.PublishToChannel(channel, string(topic), curRegulationJSON)
 	}
 	curSourceJSONLock.RUnlock()
 }
@@ -423,7 +372,7 @@ WaitForConfig waits until backend config has been initialized
 func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 	for {
 		initializedLock.RLock()
-		if initialized && !waitForRegulations {
+		if initialized {
 			initializedLock.RUnlock()
 			break
 		}
@@ -439,7 +388,7 @@ func (bc *CommonBackendConfig) WaitForConfig(ctx context.Context) error {
 }
 
 // Setup backend config
-func Setup(pollRegulations bool, configEnvHandler types.ConfigEnvI) {
+func Setup(configEnvHandler types.ConfigEnvI) {
 	if isMultiWorkspace {
 		backendConfig = new(MultiWorkspaceConfig)
 	} else {
@@ -455,20 +404,21 @@ func Setup(pollRegulations bool, configEnvHandler types.ConfigEnvI) {
 		pollConfigUpdate()
 	})
 
-	if pollRegulations {
-		startRegulationPolling()
-	}
-
 	admin.RegisterAdminHandler("BackendConfig", &BackendConfigAdmin{})
 }
 
-// startRegulationPolling - starts enterprise backend regulations polling
-func startRegulationPolling() {
-	waitForRegulations = true
+func GetConfigBackendURL() string {
+	return configBackendURL
+}
 
-	rruntime.Go(func() {
-		pollRegulations()
-	})
+// Gets the workspace token data for a single workspace or multi workspace case
+func GetWorkspaceToken() (workspaceToken string) {
+	workspaceToken = config.GetWorkspaceToken()
+	isMultiWorkspace := config.GetEnvAsBool("HOSTED_SERVICE", false)
+	if isMultiWorkspace {
+		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+	}
+	return workspaceToken
 }
 
 func GetConfigBackendURL() string {

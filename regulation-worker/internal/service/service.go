@@ -50,9 +50,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error while getting destination details: %w", err)
 	}
-
 	status = js.Deleter.Delete(ctx, job, destDetail)
-
 	err = js.updateStatus(ctx, status, job.ID)
 	if err != nil {
 		return err

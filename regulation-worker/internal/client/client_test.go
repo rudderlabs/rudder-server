@@ -40,7 +40,7 @@ func TestGet(t *testing.T) {
 			name:        "Get request to get job: random error",
 			workspaceID: "1001",
 			respCode:    429,
-			expectedErr: fmt.Errorf("error while getting job:{429  <nil>}"),
+			expectedErr: fmt.Errorf("GET job API request returned status code: 429, body: "),
 		},
 	}
 	for _, tt := range tests {
