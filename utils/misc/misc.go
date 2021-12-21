@@ -985,6 +985,9 @@ func IsValidUUID(uuid string) bool {
 
 func HasAWSKeysInConfig(config interface{}) bool {
 	configMap := config.(map[string]interface{})
+	if configMap["useSTSTokens"] == false {
+		return false
+	}
 	if configMap["accessKeyID"] == nil || configMap["accessKey"] == nil {
 		return false
 	}
