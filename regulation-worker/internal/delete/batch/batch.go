@@ -66,7 +66,7 @@ func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error
 	fileObjects, err := b.FM.ListFilesWithPrefix("", listMaxItem)
 	if err != nil {
 		pkgLogger.Errorf("error while getting list of files: %w", err)
-		return []*filemanager.FileObject{}, fmt.Errorf("failed to fetch object list from S3:%w", err)
+		return []*filemanager.FileObject{}, fmt.Errorf("failed to fetch object list from S3: %v", err)
 	}
 	if len(fileObjects) == 0 {
 		return nil, nil
@@ -152,19 +152,19 @@ func (b *Batch) download(ctx context.Context, completeFileName string) (string, 
 
 	tmpFilePathPrefix, err := os.MkdirTemp(b.TmpDirPath, "")
 	if err != nil {
-		pkgLogger.Errorf("error while creating temporary directory: %w", err)
+		pkgLogger.Errorf("error while creating temporary directory: %v", err)
 		return "", fmt.Errorf("error while creating temporary directory: %w", err)
 	}
 	_, fileName := filepath.Split(completeFileName)
 	tmpFilePtr, err := os.OpenFile(filepath.Join(tmpFilePathPrefix, fileName), os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
-		pkgLogger.Errorf("error while opening file, %w", err)
+		pkgLogger.Errorf("error while opening file, %v", err)
 		return "", fmt.Errorf("error while opening file, %w", err)
 	}
 	defer tmpFilePtr.Close()
 	absPath, err := filepath.Abs(tmpFilePtr.Name())
 	if err != nil {
-		pkgLogger.Errorf("error while getting absolute path: %w", err)
+		pkgLogger.Errorf("error while getting absolute path: %v", err)
 		return "", fmt.Errorf("error while getting absolute path: %w", err)
 	}
 	err = b.FM.Download(tmpFilePtr, completeFileName)
@@ -173,7 +173,7 @@ func (b *Batch) download(ctx context.Context, completeFileName string) (string, 
 			pkgLogger.Debugf("file not found")
 			return absPath, nil
 		}
-		pkgLogger.Errorf("error while downloading object using file manager: %w", err)
+		pkgLogger.Errorf("error while downloading object using file manager: %v", err)
 		return "", fmt.Errorf("error while downloading object using file manager: %w", err)
 	}
 	return absPath, nil
@@ -381,14 +381,14 @@ func (b *Batch) createPatternFile(userAttributes []model.UserAttribute) (string,
 
 	PatternFilePtr, err := os.CreateTemp(b.TmpDirPath, "")
 	if err != nil {
-		pkgLogger.Errorf("error while creating pattern file: %w", err)
+		pkgLogger.Errorf("error while creating pattern file: %v", err)
 		return "", fmt.Errorf("error while creating patternFile: %w", err)
 	}
 	defer PatternFilePtr.Close()
 
 	_, err = PatternFilePtr.Write(searchObject)
 	if err != nil {
-		pkgLogger.Errorf("error while writing pattern: %w", err)
+		pkgLogger.Errorf("error while writing pattern: %v", err)
 		return "", fmt.Errorf("error while writing pattern:%w", err)
 	}
 	absPatternFile, err := filepath.Abs(PatternFilePtr.Name())
@@ -418,20 +418,20 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 		Config:   destConfig,
 	})
 	if err != nil {
-		pkgLogger.Errorf("error while getting file manager: %w", err)
+		pkgLogger.Errorf("error while getting file manager: %v", err)
 		return model.JobStatusFailed
 	}
 
 	dm, err := getDeleteManager(destName)
 	if err != nil {
-		pkgLogger.Errorf("error while getting appropriate delete manager: %w", err)
+		pkgLogger.Errorf("error while getting appropriate delete manager: %v", err)
 		return model.JobStatusFailed
 	}
 
 	//parent directory of all the temporary files created/downloaded in the process of deletion.
 	tmpDirPath, err := os.MkdirTemp("", "")
 	if err != nil {
-		pkgLogger.Errorf("error while creating temporary directory to store all temporary files during deletion: %w", err)
+		pkgLogger.Errorf("error while creating temporary directory to store all temporary files during deletion: %v", err)
 		return model.JobStatusFailed
 	}
 
@@ -445,14 +445,14 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 	//file with pattern to be searched & deleted from all downloaded files.
 	absPatternFile, err := batch.createPatternFile(job.UserAttributes)
 	if err != nil {
-		pkgLogger.Errorf("error while creating pattern file: %w", err)
+		pkgLogger.Errorf("error while creating pattern file: %v", err)
 		return model.JobStatusFailed
 	}
 
 	for {
 		files, err := batch.listFiles(ctx)
 		if err != nil {
-			pkgLogger.Errorf("error while getting files list: %w", err)
+			pkgLogger.Errorf("error while getting files list: %v", err)
 			return model.JobStatusFailed
 		}
 
@@ -466,20 +466,20 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 		absStatusTrackerFileName, err := func() (string, error) {
 			absStatusTrackerFileName, err := batch.download(ctx, filepath.Join(destConfig["prefix"].(string), statusTrackerFileName))
 			if err != nil {
-				pkgLogger.Errorf("error while downloading statusTrackerFile: %w", err)
+				pkgLogger.Errorf("error while downloading statusTrackerFile: %v", err)
 				return "", fmt.Errorf("error while downloading statusTrackerFile: %w", err)
 			}
 
 			statusTrackerFilePtr, err := os.OpenFile(absStatusTrackerFileName, os.O_RDWR, 0644)
 			if err != nil {
-				pkgLogger.Errorf("error while opening file, %w", err)
+				pkgLogger.Errorf("error while opening file, %v", err)
 				return "", fmt.Errorf("error while opening file, %w", err)
 			}
 			defer statusTrackerFilePtr.Close()
 
 			data, err := io.ReadAll(statusTrackerFilePtr)
 			if err != nil {
-				pkgLogger.Errorf("error while reading statusTrackerFile: %w", err)
+				pkgLogger.Errorf("error while reading statusTrackerFile: %v", err)
 				return "", fmt.Errorf("error while reading statusTrackerFile: %w", err)
 			}
 			//if statusTracker.txt exists then read it & remove all those files name from above gzFilesObjects,
@@ -490,7 +490,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 			if len(data) == 0 {
 				//insert <jobID> in 1st line
 				if _, err := io.WriteString(statusTrackerFilePtr, jobID+"\n"); err != nil {
-					pkgLogger.Errorf("error while writing jobId to statusTrackerFile: %w", err)
+					pkgLogger.Errorf("error while writing jobId to statusTrackerFile: %v", err)
 					return "", fmt.Errorf("error while writing to jobId to statusTrackerFile: %w", err)
 				}
 			} else {
@@ -501,17 +501,17 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 					_ = statusTrackerFilePtr.Close()
 					statusTrackerTmpDir, err := os.MkdirTemp(batch.TmpDirPath, "")
 					if err != nil {
-						pkgLogger.Errorf("error while creating temporary directory: %w", err)
+						pkgLogger.Errorf("error while creating temporary directory: %v", err)
 						return "", fmt.Errorf("error while creating temporary directory: %w", err)
 					}
 					statusTrackerFilePtr, err = os.OpenFile(filepath.Join(statusTrackerTmpDir, statusTrackerFileName), os.O_CREATE|os.O_RDWR, 0644)
 					if err != nil {
-						pkgLogger.Errorf("error while opening file, %w", err)
+						pkgLogger.Errorf("error while opening file, %v", err)
 						return "", fmt.Errorf("error while opening file, %w", err)
 					}
 
 					if _, err := io.WriteString(statusTrackerFilePtr, jobID+"\n"); err != nil {
-						pkgLogger.Errorf("error while writing to statusTrackerFile: %w", err)
+						pkgLogger.Errorf("error while writing to statusTrackerFile: %v", err)
 						err = fmt.Errorf("error while writing to statusTrackerFile: %w", err)
 						return "", err
 					}
@@ -525,7 +525,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 			return absPath, err
 		}()
 		if err != nil {
-			pkgLogger.Errorf("error while getting status tracker file: %w", err)
+			pkgLogger.Errorf("error while getting status tracker file: %v", err)
 			return model.JobStatusFailed
 		}
 		if len(cleanedFiles) != 0 {
@@ -536,7 +536,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 
 		procAllocated, err := strconv.Atoi(config.GetEnv("GOMAXPROCS", "32"))
 		if err != nil {
-			pkgLogger.Errorf("error while getting maximum number of go routines to be created: %w", err)
+			pkgLogger.Errorf("error while getting maximum number of go routines to be created: %v", err)
 			return model.JobStatusFailed
 		}
 		maxGoRoutine := 8 * procAllocated
@@ -559,7 +559,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 
 				FileAbsPath, err := downloadWithExpBackoff(gCtx, batch.download, files[_i].Key)
 				if err != nil {
-					pkgLogger.Errorf("error: %w, while downloading file: %w", err, files[_i].Key)
+					pkgLogger.Errorf("error: %v, while downloading file: %v", err, files[_i].Key)
 					return fmt.Errorf("error: %w, while downloading file:%s", err, files[_i].Key)
 				}
 
@@ -569,13 +569,13 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 				getFileSize(FileAbsPath)
 				err = batch.delete(gCtx, absPatternFile, FileAbsPath)
 				if err != nil {
-					pkgLogger.Errorf("error: %w, while deleting file:%s", err, files[_i].Key)
+					pkgLogger.Errorf("error: %v, while deleting file:%v", err, files[_i].Key)
 					return fmt.Errorf("error: %w, while deleting file:%s", err, files[_i].Key)
 				}
 
 				err = uploadWithExpBackoff(gCtx, batch.upload, FileAbsPath, files[_i].Key, absStatusTrackerFileName)
 				if err != nil {
-					pkgLogger.Errorf("error: %w, while uploading cleaned file:%s", err, files[_i].Key)
+					pkgLogger.Errorf("error: %v, while uploading cleaned file:%v", err, files[_i].Key)
 					return fmt.Errorf("error: %w, while uploading cleaned file:%s", err, files[_i].Key)
 				}
 
@@ -584,7 +584,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 		}
 		err = g.Wait()
 		if err != nil {
-			pkgLogger.Errorf("job failed with error: %w", err)
+			pkgLogger.Errorf("job failed with error: %v", err)
 			return model.JobStatusFailed
 		}
 	}
@@ -603,10 +603,10 @@ func (b *Batch) cleanup(prefix string) {
 	pkgLogger.Debugf("removing all temporary files & directory locally & from destination.")
 	err := b.FM.DeleteObjects([]string{filepath.Join(prefix, statusTrackerFileName)})
 	if err != nil {
-		pkgLogger.Errorf("error while deleting delete status tracker file from destination: %w", err)
+		pkgLogger.Errorf("error while deleting delete status tracker file from destination: %v", err)
 	}
 	err = os.RemoveAll(b.TmpDirPath)
 	if err != nil {
-		pkgLogger.Errorf("error while deleting temporary directory locally: %w", err)
+		pkgLogger.Errorf("error while deleting temporary directory locally: %v", err)
 	}
 }

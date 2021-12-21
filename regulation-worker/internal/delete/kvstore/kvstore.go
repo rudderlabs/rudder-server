@@ -33,7 +33,7 @@ func (kv *KVDeleteManager) Delete(ctx context.Context, job model.Job, destConfig
 	for _, user := range job.UserAttributes {
 		err = kvm.DeleteKey(user.UserID)
 		if err != nil {
-			pkgLogger.Errorf("failed to delete user: %w", user.UserID, "with error: %w", err)
+			pkgLogger.Errorf("failed to delete user: %v", user.UserID, "with error: %v", err)
 			return model.JobStatusFailed
 		}
 	}

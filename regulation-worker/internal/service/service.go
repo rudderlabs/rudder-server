@@ -39,7 +39,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	pkgLogger.Debugf("making API request to get job")
 	job, err := js.API.Get(ctx)
 	if err != nil {
-		pkgLogger.Errorf("error while getting job: %w", err)
+		pkgLogger.Errorf("error while getting job: %v", err)
 		return err
 	}
 	totalJobTime := stats.NewTaggedStat("total_job_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID})
@@ -56,7 +56,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	//executing deletion
 	destDetail, err := js.DestDetail.GetDestDetails(job.DestinationID)
 	if err != nil {
-		pkgLogger.Errorf("error while getting destination details: %w", err)
+		pkgLogger.Errorf("error while getting destination details: %v", err)
 		return fmt.Errorf("error while getting destination details: %w", err)
 	}
 	status = js.Deleter.Delete(ctx, job, destDetail)

@@ -41,14 +41,14 @@ func main() {
 
 func Run(ctx context.Context) {
 	transformerURL := config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	pkgLogger.Infof("using transformer URL:", transformerURL)
+	pkgLogger.Infof("using transformer URL: %v", transformerURL)
 
 	apiManager := api.APIManager{
 		Client:           &http.Client{},
 		DestTransformURL: transformerURL,
 	}
 
-	pkgLogger.Infof("creating delete router")
+	pkgLogger.Info("creating delete router")
 	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
 
 	svc := service.JobSvc{
@@ -63,11 +63,11 @@ func Run(ctx context.Context) {
 		},
 		Deleter: router,
 	}
-	pkgLogger.Infof("calling service with: %w", svc)
+	pkgLogger.Infof("calling service with: %v", svc)
 	l := withLoop(svc)
 	err := l.Loop(ctx)
 	if err != nil {
-		pkgLogger.Errorf("error: %w", err)
+		pkgLogger.Errorf("error: %v", err)
 		panic(err)
 	}
 

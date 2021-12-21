@@ -31,12 +31,12 @@ func NewRouter(managers ...deleteManager) *Router {
 func (r *Router) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
 	pkgLogger.Debugf("deleting job: %w", job, "from destination: %w", destDetail)
 	r.once.Do(func() {
-		pkgLogger.Infof("getting all the supported destination")
+		pkgLogger.Info("getting all the supported destination")
 		r.router = make(map[string]deleteManager)
 
 		for _, m := range r.Managers {
 			destinations := m.GetSupportedDestinations()
-			pkgLogger.Infof("deletion manager: %s", m, "support deletion from: %s", m, destinations)
+			pkgLogger.Infof("deletion manager: %v", m, "support deletion from: %v", m, destinations)
 			for _, d := range destinations {
 				r.router[d] = m
 			}
@@ -47,6 +47,6 @@ func (r *Router) Delete(ctx context.Context, job model.Job, destDetail model.Des
 		return r.router[destDetail.Name].Delete(ctx, job, destDetail.Config, destDetail.Name)
 	}
 
-	pkgLogger.Errorf("no deletion manager support deletion from destination: %w", destDetail.Name)
+	pkgLogger.Errorf("no deletion manager support deletion from destination: %v", destDetail.Name)
 	return model.JobStatusFailed
 }

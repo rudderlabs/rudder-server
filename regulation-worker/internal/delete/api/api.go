@@ -39,13 +39,13 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 
 	reqBody, err := json.Marshal(bodySchema)
 	if err != nil {
-		pkgLogger.Errorf("error while marshalling job request body: %w", err)
+		pkgLogger.Errorf("error while marshalling job request body: %v", err)
 		return model.JobStatusFailed
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(reqBody))
 	if err != nil {
-		pkgLogger.Errorf("error while create new request: %w", err)
+		pkgLogger.Errorf("error while create new request: %v", err)
 		return model.JobStatusFailed
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -57,7 +57,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	pkgLogger.Debugf("sending request: %w", req)
 	resp, err := api.Client.Do(req)
 	if err != nil {
-		pkgLogger.Errorf("error while making http request: %w", err)
+		pkgLogger.Errorf("error while making http request: %v", err)
 		return model.JobStatusFailed
 	}
 	defer resp.Body.Close()
@@ -65,7 +65,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 
 	var jobResp JobRespSchema
 	if err := json.NewDecoder(resp.Body).Decode(&jobResp); err != nil {
-		pkgLogger.Errorf("error while decoding response body: %w", err)
+		pkgLogger.Errorf("error while decoding response body: %v", err)
 		return model.JobStatusFailed
 	}
 	switch resp.StatusCode {
