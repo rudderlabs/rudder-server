@@ -26,6 +26,7 @@ import (
 var (
 	archiveUploadRelatedRecords bool
 	uploadsArchivalTimeInDays   int
+	uploadsArchivalWorkers      int
 	archiverTickerTime          time.Duration
 )
 
@@ -36,6 +37,7 @@ func Init() {
 func loadConfigArchiver() {
 	config.RegisterBoolConfigVariable(true, &archiveUploadRelatedRecords, true, "Warehouse.archiveUploadRelatedRecords")
 	config.RegisterIntConfigVariable(5, &uploadsArchivalTimeInDays, true, 1, "Warehouse.uploadsArchivalTimeInDays")
+	config.RegisterIntConfigVariable(16, &uploadsArchivalWorkers, true, 1, "Warehouse.uploadsArchivalWorkers")
 	config.RegisterDurationConfigVariable(time.Duration(1440), &archiverTickerTime, true, time.Minute, []string{"Warehouse.archiverTickerTime", "Warehouse.archiverTickerTimeInMin"}...) // default 1 day
 }
 
@@ -45,6 +47,17 @@ type backupRecordsArgs struct {
 	sourceID       string
 	destID         string
 	uploadID       int64
+}
+
+type BackupArchiveT struct {
+	sourceID           string
+	destID             string
+	uploadID           int64
+	startStagingFileId int64
+	endStagingFileId   int64
+	startLoadFileID    int64
+	endLoadFileID      int64
+	uploadMetdata      json.RawMessage
 }
 
 func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
@@ -132,185 +145,198 @@ func archiveUploads(dbHandle *sql.DB) {
 	}
 	defer rows.Close()
 	var archivedUploads int
+	var jobs = make([]misc.RWCJob, 0)
+
 	for rows.Next() {
-		var sourceID, destID string
-		var uploadID, startStagingFileId, endStagingFileId, startLoadFileID, endLoadFileID int64
-		var uploadMetdata json.RawMessage
-		err = rows.Scan(&uploadID, &sourceID, &destID, &startStagingFileId, &endStagingFileId, &startLoadFileID, &endLoadFileID, &uploadMetdata)
+		backupArchiveT := BackupArchiveT{}
+		err = rows.Scan(&backupArchiveT.uploadID, &backupArchiveT.sourceID, &backupArchiveT.destID, &backupArchiveT.startStagingFileId, &backupArchiveT.endStagingFileId, &backupArchiveT.startLoadFileID, &backupArchiveT.endLoadFileID, &backupArchiveT.uploadMetdata)
 		if err != nil {
 			pkgLogger.Errorf(`Error scanning wh_upload for archival. Error: %v`, err)
 			continue
 		}
+		jobs = append(jobs, backupArchiveT)
+	}
 
-		txn, err := dbHandle.Begin()
+	misc.RunWithConcurrency(&misc.RWCConfig{
+		Factor: uploadsArchivalWorkers,
+		Jobs:   &jobs,
+		Run: func(job interface{}) {
+			backupArchiveT := job.(BackupArchiveT)
+			archive(&backupArchiveT, archivedUploads)
+		},
+	})
+
+	pkgLogger.Infof(`Successfully archived %d uploads`, archivedUploads)
+}
+
+func archive(baT *BackupArchiveT, archivedUploads int) {
+	txn, err := dbHandle.Begin()
+	if err != nil {
+		pkgLogger.Errorf(`Error creating txn in archiveUploadFiles. Error: %v`, err)
+		return
+	}
+
+	pkgLogger.Infof(`Started archiving for uploadId: %d uploads`, baT.uploadID)
+
+	hasUsedRudderStorage := usedRudderStorage(baT.uploadMetdata)
+
+	// archive staging files
+	stmt := fmt.Sprintf(`SELECT id, location FROM %s WHERE source_id='%s' AND destination_id='%s' AND id >= %d and id <= %d`, warehouseutils.WarehouseStagingFilesTable, baT.sourceID, baT.destID, baT.startStagingFileId, baT.endStagingFileId)
+
+	stagingFileRows, err := txn.Query(stmt)
+	if err != nil {
+		pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+		txn.Rollback()
+		return
+	}
+	defer stagingFileRows.Close()
+
+	var stagingFileIDs []int64
+	var stagingFileLocations []string
+	for stagingFileRows.Next() {
+		var stagingFileID int64
+		var stagingFileLocation string
+		err = stagingFileRows.Scan(&stagingFileID, &stagingFileLocation)
 		if err != nil {
-			pkgLogger.Errorf(`Error creating txn in archiveUploadFiles. Error: %v`, err)
-			continue
-		}
-
-		pkgLogger.Infof(`Started archiving for uploadId: %d uploads`, uploadID)
-
-		hasUsedRudderStorage := usedRudderStorage(uploadMetdata)
-
-		// archive staging files
-		stmt := fmt.Sprintf(`SELECT id, location FROM %s WHERE source_id='%s' AND destination_id='%s' AND id >= %d and id <= %d`, warehouseutils.WarehouseStagingFilesTable, sourceID, destID, startStagingFileId, endStagingFileId)
-
-		stagingFileRows, err := txn.Query(stmt)
-		if err != nil {
-			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+			pkgLogger.Errorf(`Error scanning staging file id in archiveUploadFiles. Error: %v`, err)
 			txn.Rollback()
-			continue
+			return
 		}
-		defer stagingFileRows.Close()
+		stagingFileIDs = append(stagingFileIDs, stagingFileID)
+		stagingFileLocations = append(stagingFileLocations, stagingFileLocation)
+	}
+	stagingFileRows.Close()
 
-		var stagingFileIDs []int64
-		var stagingFileLocations []string
-		for stagingFileRows.Next() {
-			var stagingFileID int64
-			var stagingFileLocation string
-			err = stagingFileRows.Scan(&stagingFileID, &stagingFileLocation)
+	var storedStagingFilesLocation, storedLoadFilesLocation string
+	if len(stagingFileIDs) > 0 {
+		if archiver.IsArchiverObjectStorageConfigured() {
+			filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
+			storedStagingFilesLocation, err = backupRecords(backupRecordsArgs{
+				tableName:      warehouseutils.WarehouseStagingFilesTable,
+				sourceID:       baT.sourceID,
+				destID:         baT.destID,
+				tableFilterSQL: filterSQL,
+				uploadID:       baT.uploadID,
+			})
+
 			if err != nil {
-				pkgLogger.Errorf(`Error scanning staging file id in archiveUploadFiles. Error: %v`, err)
+				pkgLogger.Errorf(`Error backing up staging files for upload:%d : %v`, baT.uploadID, err)
 				txn.Rollback()
 				return
 			}
-			stagingFileIDs = append(stagingFileIDs, stagingFileID)
-			stagingFileLocations = append(stagingFileLocations, stagingFileLocation)
+		} else {
+			pkgLogger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archived for upload:%d`, baT.uploadID)
 		}
-		stagingFileRows.Close()
 
-		var storedStagingFilesLocation, storedLoadFilesLocation string
-		if len(stagingFileIDs) > 0 {
-			if archiver.IsArchiverObjectStorageConfigured() {
-				filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
-				storedStagingFilesLocation, err = backupRecords(backupRecordsArgs{
-					tableName:      warehouseutils.WarehouseStagingFilesTable,
-					sourceID:       sourceID,
-					destID:         destID,
-					tableFilterSQL: filterSQL,
-					uploadID:       uploadID,
-				})
-
-				if err != nil {
-					pkgLogger.Errorf(`Error backing up staging files for upload:%d : %v`, uploadID, err)
-					txn.Rollback()
-					continue
-				}
-			} else {
-				pkgLogger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archived for upload:%d`, uploadID)
-			}
-
-			if hasUsedRudderStorage {
-				err = deleteFilesInStorage(stagingFileLocations)
-				if err != nil {
-					pkgLogger.Errorf(`Error deleting staging files from Rudder S3. Error: %v`, stmt, err)
-					txn.Rollback()
-					continue
-				}
-			}
-
-			// delete staging files
-			stmt = fmt.Sprintf(`DELETE FROM %s WHERE id IN (%v)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(stagingFileIDs, ","))
-			_, err = txn.Query(stmt)
+		if hasUsedRudderStorage {
+			err = deleteFilesInStorage(stagingFileLocations)
 			if err != nil {
-				pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+				pkgLogger.Errorf(`Error deleting staging files from Rudder S3. Error: %v`, stmt, err)
 				txn.Rollback()
-				continue
+				return
 			}
+		}
 
-			// archive load files
-			if archiver.IsArchiverObjectStorageConfigured() {
-				filterSQL := fmt.Sprintf(`staging_file_id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
-				storedLoadFilesLocation, err = backupRecords(backupRecordsArgs{
-					tableName:      warehouseutils.WarehouseLoadFilesTable,
-					sourceID:       sourceID,
-					destID:         destID,
-					tableFilterSQL: filterSQL,
-					uploadID:       uploadID,
-				})
+		// delete staging files
+		stmt = fmt.Sprintf(`DELETE FROM %s WHERE id IN (%v)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(stagingFileIDs, ","))
+		_, err = txn.Query(stmt)
+		if err != nil {
+			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+			txn.Rollback()
+			return
+		}
 
-				if err != nil {
-					pkgLogger.Errorf(`Error backing up load files for upload:%d : %v`, uploadID, err)
-					txn.Rollback()
-					continue
-				}
-			} else {
-				pkgLogger.Infof(`Object storage not configured to archive upload related load file records. Deleting the ones that need to be archived for upload:%d`, uploadID)
-			}
+		// archive load files
+		if archiver.IsArchiverObjectStorageConfigured() {
+			filterSQL := fmt.Sprintf(`staging_file_id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
+			storedLoadFilesLocation, err = backupRecords(backupRecordsArgs{
+				tableName:      warehouseutils.WarehouseLoadFilesTable,
+				sourceID:       baT.sourceID,
+				destID:         baT.destID,
+				tableFilterSQL: filterSQL,
+				uploadID:       baT.uploadID,
+			})
 
-			// delete load files
-			stmt = fmt.Sprintf(`DELETE FROM %s WHERE staging_file_id = ANY($1) RETURNING location`, warehouseutils.WarehouseLoadFilesTable)
-			loadLocationRows, err := txn.Query(stmt, pq.Array(stagingFileIDs))
 			if err != nil {
-				pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+				pkgLogger.Errorf(`Error backing up load files for upload:%d : %v`, baT.uploadID, err)
 				txn.Rollback()
-				continue
+				return
 			}
+		} else {
+			pkgLogger.Infof(`Object storage not configured to archive upload related load file records. Deleting the ones that need to be archived for upload:%d`, baT.uploadID)
+		}
 
-			defer loadLocationRows.Close()
+		// delete load files
+		stmt = fmt.Sprintf(`DELETE FROM %s WHERE staging_file_id = ANY($1) RETURNING location`, warehouseutils.WarehouseLoadFilesTable)
+		loadLocationRows, err := txn.Query(stmt, pq.Array(stagingFileIDs))
+		if err != nil {
+			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+			txn.Rollback()
+			return
+		}
 
-			if hasUsedRudderStorage {
-				var loadLocations []string
-				for loadLocationRows.Next() {
-					var loc string
-					err = loadLocationRows.Scan(&loc)
-					if err != nil {
-						pkgLogger.Errorf(`Error scanning location in archiveUploadFiles. Error: %v`, err)
-						txn.Rollback()
-						return
-					}
-					loadLocations = append(loadLocations, loc)
+		defer loadLocationRows.Close()
+
+		if hasUsedRudderStorage {
+			var loadLocations []string
+			for loadLocationRows.Next() {
+				var loc string
+				err = loadLocationRows.Scan(&loc)
+				if err != nil {
+					pkgLogger.Errorf(`Error scanning location in archiveUploadFiles. Error: %v`, err)
+					txn.Rollback()
+					return
 				}
-				loadLocationRows.Close()
-				var paths []string
-				for _, loc := range loadLocations {
-					u, err := url.Parse(loc)
-					if err != nil {
-						pkgLogger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
-						txn.Rollback()
-						continue
-					}
-					paths = append(paths, u.Path[1:])
-				}
-				err = deleteFilesInStorage(paths)
+				loadLocations = append(loadLocations, loc)
+			}
+			loadLocationRows.Close()
+			var paths []string
+			for _, loc := range loadLocations {
+				u, err := url.Parse(loc)
 				if err != nil {
 					pkgLogger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
 					txn.Rollback()
 					continue
 				}
+				paths = append(paths, u.Path[1:])
 			}
-			loadLocationRows.Close()
+			err = deleteFilesInStorage(paths)
+			if err != nil {
+				pkgLogger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
+				txn.Rollback()
+				return
+			}
 		}
-
-		// update upload metadata
-		uploadMetdata, _ = sjson.SetBytes(uploadMetdata, "archivedStagingAndLoadFiles", true)
-		stmt = fmt.Sprintf(`UPDATE %s SET metadata = $1 WHERE id = %d`, warehouseutils.WarehouseUploadsTable, uploadID)
-		_, err = txn.Exec(stmt, uploadMetdata)
-		if err != nil {
-			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-			txn.Rollback()
-			continue
-		}
-
-		err = txn.Commit()
-		if err != nil {
-			txn.Rollback()
-			continue
-		}
-		archivedUploads++
-		if storedStagingFilesLocation != "" {
-			pkgLogger.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`, uploadID, storedStagingFilesLocation)
-			pkgLogger.Debugf(`[Archiver]: Archived upload: %d related load files at: %s`, uploadID, storedLoadFilesLocation)
-		}
-
-		stats.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, map[string]string{
-			"destination": destID,
-			"source":      sourceID,
-		}).Count(1)
-
-		pkgLogger.Infof(`Completed archiving for uploadId: %d uploads`, uploadID)
+		loadLocationRows.Close()
 	}
-	pkgLogger.Infof(`Successfully archived %d uploads`, archivedUploads)
+
+	// update upload metadata
+	baT.uploadMetdata, _ = sjson.SetBytes(baT.uploadMetdata, "archivedStagingAndLoadFiles", true)
+	stmt = fmt.Sprintf(`UPDATE %s SET metadata = $1 WHERE id = %d`, warehouseutils.WarehouseUploadsTable, baT.uploadID)
+	_, err = txn.Exec(stmt, baT.uploadMetdata)
+	if err != nil {
+		pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+		txn.Rollback()
+		return
+	}
+
+	err = txn.Commit()
+	if err != nil {
+		txn.Rollback()
+		return
+	}
+	archivedUploads++
+	if storedStagingFilesLocation != "" {
+		pkgLogger.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`, baT.uploadID, storedStagingFilesLocation)
+		pkgLogger.Debugf(`[Archiver]: Archived upload: %d related load files at: %s`, baT.uploadID, storedLoadFilesLocation)
+	}
+
+	stats.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, map[string]string{
+		"destination": baT.destID,
+		"source":      baT.sourceID,
+	}).Count(1)
+
+	pkgLogger.Infof(`Completed archiving for uploadId: %d uploads`, baT.uploadID)
 }
 
 func runArchiver(ctx context.Context, dbHandle *sql.DB) {
@@ -326,4 +352,3 @@ func runArchiver(ctx context.Context, dbHandle *sql.DB) {
 		}
 	}
 }
-
