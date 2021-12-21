@@ -14,16 +14,15 @@ import (
 )
 
 var (
-	cli                *clientv3.Client
-	etcdHosts          []string
-	podWorkspacesKey   string
-	migrationStatusKey string
-	connectTimeout     time.Duration
-	etcdGetTimeout     time.Duration
-	etcdWatchTimeout   time.Duration
-	pkgLogger          logger.LoggerI
-	releaseName        string
-	serverNumber       string
+	cli              *clientv3.Client
+	etcdHosts        []string
+	podPrefix        string
+	connectTimeout   time.Duration
+	etcdGetTimeout   time.Duration
+	etcdWatchTimeout time.Duration
+	pkgLogger        logger.LoggerI
+	releaseName      string
+	serverNumber     string
 )
 
 func Init() {
@@ -39,8 +38,7 @@ func loadConfig() {
 	etcdHosts = strings.Split(config.GetEnv("ETCD_HOST", "127.0.0.1:2379"), `,`)
 	releaseName = config.GetEnv("RELEASE_NAME", `multitenantv1`)
 	serverNumber = config.GetEnv("SERVER_NUMBER", `1`)
-	podWorkspacesKey = releaseName + `/SERVER/` + serverNumber + `/workspaces`
-	migrationStatusKey = releaseName + `/SERVER/` + serverNumber
+	podPrefix = releaseName + `/SERVER/` + serverNumber
 	config.RegisterDurationConfigVariable(time.Duration(15), &etcdGetTimeout, true, time.Second, "ETCD_GET_TIMEOUT")
 	config.RegisterDurationConfigVariable(time.Duration(3), &connectTimeout, true, time.Second, "ETCD_CONN_TIMEOUT")
 	config.RegisterDurationConfigVariable(time.Duration(3), &etcdWatchTimeout, true, time.Second, "ETCD_WATCH_TIMEOUT")
@@ -55,7 +53,7 @@ func WatchForWorkspaces(ctx context.Context) chan map[string]string {
 	returnChan := make(chan map[string]string)
 	go func(returnChan chan map[string]string, ctx context.Context) {
 		defer cli.Close()
-		etcdWatchChan := cli.Watch(ctx, podWorkspacesKey, clientv3.WithLastRev()...)
+		etcdWatchChan := cli.Watch(ctx, podPrefix+`/workspaces`, clientv3.WithLastRev()...)
 		for watchResp := range etcdWatchChan {
 			for _, event := range watchResp.Events {
 				switch event.Type {
@@ -87,7 +85,7 @@ func GetWorkspaces(ctx context.Context) (string, chan map[string]string) {
 
 	select {
 	case cli := <-clientReturnChan:
-		initialWorkspaces, err := cli.Get(ctx, podWorkspacesKey)
+		initialWorkspaces, err := cli.Get(ctx, podPrefix+`/workspaces`)
 		if err != nil {
 			panic(err)
 		}
@@ -158,7 +156,7 @@ func heartBeatFunc(ctxHeartBeat context.Context, client *clientv3.Client, heartB
 		panic(err)
 	}
 
-	_, err = client.Put(ctxHeartBeat, `instancePrefix`+`serverName`, `serverName`, clientv3.WithLease(lease.ID))
+	_, err = client.Put(ctxHeartBeat, podPrefix, `alive`, clientv3.WithLease(lease.ID))
 	if err != nil {
 		panic(err)
 	}
@@ -172,7 +170,7 @@ func WatchForMigration(ctx context.Context) (chan map[string]string, string, cha
 		defer cli.Close()
 		watchCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
-		etcdMigrationStatusChannel := cli.Watch(watchCtx, migrationStatusKey+`/mode`, clientv3.WithLastRev()...)
+		etcdMigrationStatusChannel := cli.Watch(watchCtx, podPrefix+`/mode`, clientv3.WithLastRev()...)
 		for watchResp := range etcdMigrationStatusChannel {
 			for _, event := range watchResp.Events {
 				switch event.Type {
@@ -196,13 +194,13 @@ func WatchForMigration(ctx context.Context) (chan map[string]string, string, cha
 					}
 				}
 				statusUpdate := <-etcdMigrationStatusUpdateChannel
-				cli.Put(watchCtx, migrationStatusKey+`/status`, statusUpdate)
+				cli.Put(watchCtx, podPrefix+`/status`, statusUpdate)
 			}
 		}
 	}(migrationStatusChannel, ctx, etcdMigrationStatusUpdateChannel)
 
 	//get current state
-	initialState, err := cli.Get(ctx, migrationStatusKey+`/mode`)
+	initialState, err := cli.Get(ctx, podPrefix+`/mode`)
 	if err != nil {
 		panic(err)
 	}
