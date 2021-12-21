@@ -246,7 +246,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 		//TODO : Include earliestJobMap into the algorithm if required or get away with earliestJobMap
 		if timeRequired < runningTimeCounter {
 			if latencyMap[customerKey].Value() != 0 {
-				pickUpCount := misc.MinInt(customerCountKey[destType], runningJobCount)
+				pickUpCount := misc.MinInt(customerCountKey[destType]-customerPickUpCount[destType], runningJobCount)
 				customerPickUpCount[customerKey] += pickUpCount
 				runningTimeCounter = runningTimeCounter - timeRequired
 				runningJobCount = runningJobCount - pickUpCount

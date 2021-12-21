@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	selectQuery = `SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.customer, sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `
+	selectQuery = `SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.customer,jobs.running_event_counts `
 )
 
 type MultiTenantHandleT struct {
@@ -74,37 +74,53 @@ func (mj *MultiTenantHandleT) GetCustomerCounts(defaultBatchSize int) map[string
 
 func (mj *MultiTenantHandleT) getUnprocessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) (string, []string) {
 	var queries, customersToQuery []string
-
+	var initialized bool
+	var queryInitial string
 	for customer, count := range customerCount {
 		//do cache stuff here
 		if mj.isEmptyResult(ds, customer, []string{NotProcessed.State}, params.CustomValFilters, params.ParameterFilters) {
 			continue
 		}
+		if !initialized {
+			initialized = true
+			queryInitial = mj.getInitialSingleCustomerUnprocessedQueryString(customer, count, ds, params, true)
+		}
 		queries = append(queries, mj.getSingleCustomerUnprocessedQueryString(customer, count, ds, params, true))
 		customersToQuery = append(customersToQuery, customer)
 	}
 
-	return `(` + strings.Join(queries, `) UNION (`) + `)`, customersToQuery
+	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, customersToQuery
 }
 
-func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
+func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 	var sqlStatement string
-
 	if count < 0 {
 		mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 unprocessed jobs for this customer.", count, customer)
 		count = 0
 	}
-
-	// event_count default 1, number of items in payload
 	sqlStatement = fmt.Sprintf(
-		selectQuery+
-			`FROM %[1]s AS jobs `+
-			`LEFT JOIN %[2]s AS job_status ON jobs.job_id=job_status.job_id `+
-			`WHERE job_status.job_id is NULL AND jobs.customer='%[3]s'`,
-		ds.JobTable, ds.JobStatusTable, customer)
-
+		`with rt_jobs_view AS (
+				SELECT 
+				  jobs.job_id, 
+				  jobs.uuid, 
+				  jobs.user_id, 
+				  jobs.parameters, 
+				  jobs.custom_val, 
+				  jobs.event_payload, 
+				  jobs.event_count, 
+				  jobs.created_at, 
+				  jobs.expire_at, 
+				  jobs.customer ,
+				  0 as running_event_counts
+					
+				FROM 
+				%[1]s jobs LEFT JOIN %[2]s AS job_status ON jobs.job_id = job_status.job_id 
+					WHERE 
+					job_status.job_id is NULL 			   
+			  `,
+		ds.JobTable, ds.JobStatusTable)
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
 		sqlStatement += " AND " + constructQuery(mj, "jobs.custom_val", customValFilters, "OR")
 	}
@@ -123,12 +139,35 @@ func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer s
 		sqlStatement += " ORDER BY jobs.job_id"
 	}
 
-	if count > 0 {
-		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
+	return sqlStatement + ")"
+}
+
+func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
+	parameterFilters := params.ParameterFilters
+	var sqlStatement string
+
+	if count < 0 {
+		mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 unprocessed jobs for this customer.", count, customer)
+		count = 0
 	}
 
-	if params.EventCount > 0 {
-		sqlStatement = fmt.Sprintf(`SELECT * FROM (`+sqlStatement+`) AS subquery WHERE running_event_counts - event_count + 1 <= %d;`, params.EventCount)
+	// event_count default 1, number of items in payload
+	sqlStatement = fmt.Sprintf(
+		selectQuery+
+			`FROM %[1]s AS jobs `+
+			`WHERE jobs.customer='%[2]s'`,
+		"rt_jobs_view", customer)
+
+	if len(parameterFilters) > 0 {
+		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
+	}
+
+	if params.UseTimeFilter {
+		sqlStatement += fmt.Sprintf(" AND created_at < %s", params.Before)
+	}
+
+	if count > 0 {
+		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 	}
 
 	return sqlStatement
@@ -163,19 +202,21 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 	for _, ds := range dsList {
 		jobs := mj.getUnprocessedUnionDS(ds, customerCount, params)
 		outJobs = append(outJobs, jobs...)
-		tablesQueried++
+		if len(jobs) != 0 {
+			tablesQueried++
+		}
 		if len(customerCount) == 0 {
 			break
 		}
 	}
 
 	queryTime.SendTiming(time.Since(start))
-	tablesQueriedStat = stats.NewTaggedStat("tables_queried", stats.CountType, stats.Tags{
+	tablesQueriedStat = stats.NewTaggedStat("tables_queried", stats.GaugeType, stats.Tags{
 		"state":    "unprocessed",
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
 	})
-	tablesQueriedStat.Count(tablesQueried)
+	tablesQueriedStat.Gauge(tablesQueried)
 
 	//PickUp stats
 	var pickUpCountStat stats.RudderStats
@@ -384,20 +425,26 @@ func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map
 
 func (mj *MultiTenantHandleT) getProcessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) (string, []string) {
 	var queries, customersToQuery []string
+	var initialized bool
+	var queryInitial string
 
 	for customer, count := range customerCount {
 		//do cache stuff here
 		if mj.isEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters) {
 			continue
 		}
+		if !initialized {
+			initialized = true
+			queryInitial = mj.getInitialSingleCustomerProcessedQueryString(customer, count, ds, params, true)
+		}
 		queries = append(queries, mj.getSingleCustomerProcessedQueryString(customer, count, ds, params, true))
 		customersToQuery = append(customersToQuery, customer)
 	}
 
-	return `(` + strings.Join(queries, `) UNION (`) + `)`, customersToQuery
+	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, customersToQuery
 }
 
-func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
+func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
@@ -433,15 +480,14 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
 		sourceQuery = ""
 	}
 
-	limitQuery = fmt.Sprintf(" LIMIT %d ", count)
-
-	sqlStatement = fmt.Sprintf(`SELECT
+	sqlStatement = fmt.Sprintf(`with rt_jobs_view AS (
+										SELECT
                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
                                                jobs.created_at, jobs.expire_at, jobs.customer,
 											   sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
-                                               job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
+                                               job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters as status_parameters
                                             FROM
                                                %[1]s AS jobs,
                                                (SELECT job_id, job_state, attempt, exec_time, retry_time,
@@ -450,8 +496,39 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
                                                AS job_latest_state
                                             WHERE jobs.job_id=job_latest_state.job_id
                                              %[4]s %[5]s
-                                             AND job_latest_state.retry_time < $1 AND jobs.customer='%[7]s' ORDER BY jobs.job_id %[6]s`,
+                                             AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[6]s`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, customer)
+
+	return sqlStatement + ")"
+}
+
+func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
+	stateFilters := params.StateFilters
+	var sqlStatement string
+
+	if count < 0 {
+		mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 %s jobs for this customer.", count, customer, stateFilters[0])
+		count = 0
+	}
+
+	//some stats
+
+	var limitQuery string
+
+	limitQuery = fmt.Sprintf(" LIMIT %d ", count)
+
+	sqlStatement = fmt.Sprintf(`SELECT
+                                               jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
+                                               jobs.created_at, jobs.expire_at, jobs.customer,
+											   jobs.running_event_counts,
+                                               jobs.job_state, jobs.attempt,
+                                               jobs.exec_time, jobs.retry_time,
+                                               jobs.error_code, jobs.error_response, jobs.status_parameters
+                                            FROM
+                                               %[1]s 
+                                               AS jobs
+                                            WHERE jobs.customer='%[3]s'  %[2]s`,
+		"rt_jobs_view", limitQuery, customer)
 
 	return sqlStatement
 }
