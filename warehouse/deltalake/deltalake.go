@@ -23,6 +23,7 @@ const (
 	DLPort          = "port"
 	DLPath          = "path"
 	DLToken         = "token"
+	AWSTokens       = "useSTSTokens"
 	AWSAccessKey    = "accessKey"
 	AWSAccessSecret = "accessKeyID"
 )
@@ -393,15 +394,18 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 func (dl *HandleT) credentialsStr() (auth string, err error) {
 	switch dl.ObjectStorage {
 	case "S3":
-		awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
-		awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
-		if awsAccessKey != "" && awsSecretKey != "" {
-			var tempAccessKeyId, tempSecretAccessKey, token string
-			tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(awsSecretKey, awsAccessKey)
-			if err != nil {
-				return
+		useSTSTokens := warehouseutils.GetConfigValueBoolString(AWSTokens, dl.Warehouse)
+		if useSTSTokens == "true" {
+			awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
+			awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
+			if awsAccessKey != "" && awsSecretKey != "" {
+				var tempAccessKeyId, tempSecretAccessKey, token string
+				tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(awsSecretKey, awsAccessKey)
+				if err != nil {
+					return
+				}
+				auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', 'awsSessionToken' = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
 			}
-			auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', 'awsSessionToken' = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
 		}
 	}
 	return
@@ -894,4 +898,3 @@ func (dl *HandleT) GetLogIdentifier(args ...string) string {
 	}
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", dl.Warehouse.Type, dl.Warehouse.Source.ID, dl.Warehouse.Destination.ID, dl.Warehouse.Namespace, strings.Join(args, "]["))
 }
-
