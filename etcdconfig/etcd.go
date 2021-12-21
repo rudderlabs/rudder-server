@@ -22,6 +22,8 @@ var (
 	etcdGetTimeout     time.Duration
 	etcdWatchTimeout   time.Duration
 	pkgLogger          logger.LoggerI
+	releaseName        string
+	serverNumber       string
 )
 
 func Init() {
@@ -35,8 +37,10 @@ type EtcdService struct {
 
 func loadConfig() {
 	etcdHosts = strings.Split(config.GetEnv("ETCD_HOST", "127.0.0.1:2379"), `,`)
-	podWorkspacesKey = config.GetEnv("POD_WORKSPACES_KEY", `/workspaces/RSPodIdentifier`)
-	migrationStatusKey = config.GetEnv("POD_MIGRATION_STATUS_KEY", `/migration/RSPodIdentifier`)
+	releaseName = config.GetEnv("RELEASE_NAME", `multitenantv1`)
+	serverNumber = config.GetEnv("SERVER_NUMBER", `1`)
+	podWorkspacesKey = releaseName + `/SERVER/` + serverNumber + `/workspaces`
+	migrationStatusKey = releaseName + `/SERVER/` + serverNumber
 	config.RegisterDurationConfigVariable(time.Duration(15), &etcdGetTimeout, true, time.Second, "ETCD_GET_TIMEOUT")
 	config.RegisterDurationConfigVariable(time.Duration(3), &connectTimeout, true, time.Second, "ETCD_CONN_TIMEOUT")
 	config.RegisterDurationConfigVariable(time.Duration(3), &etcdWatchTimeout, true, time.Second, "ETCD_WATCH_TIMEOUT")
@@ -168,7 +172,7 @@ func WatchForMigration(ctx context.Context) (chan map[string]string, string, cha
 		defer cli.Close()
 		watchCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
-		etcdMigrationStatusChannel := cli.Watch(watchCtx, migrationStatusKey, clientv3.WithLastRev()...)
+		etcdMigrationStatusChannel := cli.Watch(watchCtx, migrationStatusKey+`/mode`, clientv3.WithLastRev()...)
 		for watchResp := range etcdMigrationStatusChannel {
 			for _, event := range watchResp.Events {
 				switch event.Type {
@@ -198,7 +202,7 @@ func WatchForMigration(ctx context.Context) (chan map[string]string, string, cha
 	}(migrationStatusChannel, ctx, etcdMigrationStatusUpdateChannel)
 
 	//get current state
-	initialState, err := cli.Get(ctx, migrationStatusKey)
+	initialState, err := cli.Get(ctx, migrationStatusKey+`/mode`)
 	if err != nil {
 		panic(err)
 	}
