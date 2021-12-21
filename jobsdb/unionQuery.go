@@ -74,16 +74,11 @@ func (mj *MultiTenantHandleT) GetCustomerCounts(defaultBatchSize int) map[string
 
 func (mj *MultiTenantHandleT) getUnprocessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) (string, []string) {
 	var queries, customersToQuery []string
-	var initialized bool
-	var queryInitial string
+	queryInitial := mj.getInitialSingleCustomerUnprocessedQueryString(ds, params, true)
 	for customer, count := range customerCount {
 		//do cache stuff here
 		if mj.isEmptyResult(ds, customer, []string{NotProcessed.State}, params.CustomValFilters, params.ParameterFilters) {
 			continue
-		}
-		if !initialized {
-			initialized = true
-			queryInitial = mj.getInitialSingleCustomerUnprocessedQueryString(customer, count, ds, params, true)
 		}
 		queries = append(queries, mj.getSingleCustomerUnprocessedQueryString(customer, count, ds, params, true))
 		customersToQuery = append(customersToQuery, customer)
@@ -92,14 +87,11 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionQuerystring(customerCount map[s
 	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, customersToQuery
 }
 
-func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
+func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(ds dataSetT, params GetQueryParamsT, order bool) string {
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 	var sqlStatement string
-	if count < 0 {
-		mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 unprocessed jobs for this customer.", count, customer)
-		count = 0
-	}
+
 	sqlStatement = fmt.Sprintf(
 		`with rt_jobs_view AS (
 				SELECT 
@@ -143,7 +135,6 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(cus
 }
 
 func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
-	parameterFilters := params.ParameterFilters
 	var sqlStatement string
 
 	if count < 0 {
@@ -157,14 +148,6 @@ func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer s
 			`FROM %[1]s AS jobs `+
 			`WHERE jobs.customer='%[2]s'`,
 		"rt_jobs_view", customer)
-
-	if len(parameterFilters) > 0 {
-		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
-	}
-
-	if params.UseTimeFilter {
-		sqlStatement += fmt.Sprintf(" AND created_at < %s", params.Before)
-	}
 
 	if count > 0 {
 		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
@@ -425,17 +408,12 @@ func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map
 
 func (mj *MultiTenantHandleT) getProcessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) (string, []string) {
 	var queries, customersToQuery []string
-	var initialized bool
-	var queryInitial string
+	queryInitial := mj.getInitialSingleCustomerProcessedQueryString(ds, params, true)
 
 	for customer, count := range customerCount {
 		//do cache stuff here
 		if mj.isEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters) {
 			continue
-		}
-		if !initialized {
-			initialized = true
-			queryInitial = mj.getInitialSingleCustomerProcessedQueryString(customer, count, ds, params, true)
 		}
 		queries = append(queries, mj.getSingleCustomerProcessedQueryString(customer, count, ds, params, true))
 		customersToQuery = append(customersToQuery, customer)
@@ -444,16 +422,11 @@ func (mj *MultiTenantHandleT) getProcessedUnionQuerystring(customerCount map[str
 	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, customersToQuery
 }
 
-func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
+func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(ds dataSetT, params GetQueryParamsT, order bool) string {
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 	var sqlStatement string
-
-	if count < 0 {
-		mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 %s jobs for this customer.", count, customer, stateFilters[0])
-		count = 0
-	}
 
 	//some stats
 
@@ -497,7 +470,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(custo
                                             WHERE jobs.job_id=job_latest_state.job_id
                                              %[4]s %[5]s
                                              AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[6]s`,
-		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, customer)
+		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
 
 	return sqlStatement + ")"
 }
@@ -513,9 +486,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
 
 	//some stats
 
-	var limitQuery string
-
-	limitQuery = fmt.Sprintf(" LIMIT %d ", count)
+	limitQuery := fmt.Sprintf(" LIMIT %d ", count)
 
 	sqlStatement = fmt.Sprintf(`SELECT
                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
