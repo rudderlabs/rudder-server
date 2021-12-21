@@ -15,8 +15,9 @@ import (
 )
 
 type JobAPI struct {
-	WorkspaceID string
-	URLPrefix   string
+	URLPrefix      string
+	WorkspaceToken string
+	WorkspaceID    string
 }
 
 //Get sends http request with workspaceID in the url and receives a json payload
@@ -28,7 +29,6 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	defer cancel()
 
 	method := "GET"
-
 	genEndPoint := "/dataplane/workspaces/{workspace_id}/regulations/workerJobs"
 	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID))
 
@@ -37,13 +37,20 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		return model.Job{}, err
 	}
 
+	req.SetBasicAuth(j.WorkspaceToken, "")
+	req.Header.Set("Content-Type", "application/json")
+
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return model.Job{}, err
 	}
-	defer resp.Body.Close()
-
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			fmt.Println("error while closing response body: %w", err)
+		}
+	}()
 	//if successful
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var jobSchema jobSchema
@@ -64,18 +71,10 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			respErr := model.APIReqErr{
-				StatusCode: resp.StatusCode,
-				Err:        err,
-			}
-			return model.Job{}, fmt.Errorf("error while reading request body: %v", respErr)
+			return model.Job{}, fmt.Errorf("error while reading response body: %v", err)
 		}
 
-		respErr := model.APIReqErr{
-			StatusCode: resp.StatusCode,
-			Body:       string(body),
-		}
-		return model.Job{}, fmt.Errorf("error while getting job:%v", respErr)
+		return model.Job{}, fmt.Errorf("GET job API request returned status code: %d, body: %s", resp.StatusCode, body)
 	}
 
 }
