@@ -6,21 +6,16 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
 
-var once sync.Once
-
 func TestGet(t *testing.T) {
-	Init()
+	initialize.Init()
 	var tests = []struct {
 		name                      string
 		workspaceID               string
@@ -74,7 +69,7 @@ func TestGet(t *testing.T) {
 }
 
 func TestUpdateStatus(t *testing.T) {
-	Init()
+	initialize.Init()
 	var tests = []struct {
 		name            string
 		workspaceID     string
@@ -123,14 +118,4 @@ func TestUpdateStatus(t *testing.T) {
 
 		})
 	}
-}
-
-func Init() {
-	once.Do(func() {
-		config.Load()
-		logger.Init()
-		stats.Init()
-		stats.Setup()
-
-	})
 }

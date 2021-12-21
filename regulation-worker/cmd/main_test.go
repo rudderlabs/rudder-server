@@ -12,12 +12,10 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,11 +23,10 @@ var (
 	testData            []test
 	mu                  sync.Mutex
 	testDataInitialized = make(chan string)
-	once                sync.Once
 )
 
 func TestMain(m *testing.M) {
-	Init()
+	initialize.Init()
 	os.Exit(run(m))
 }
 
@@ -51,8 +48,6 @@ func run(m *testing.M) int {
 		os.Setenv("CONFIG_BACKEND_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
 		os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
 		os.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
-		config.Load()
-		logger.Init()
 		backendconfig.Init()
 		c := m.Run()
 		svcCancel()
@@ -135,14 +130,4 @@ func updateJobStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, _ = w.Write(body)
-}
-
-func Init() {
-	once.Do(func() {
-		config.Load()
-		logger.Init()
-		stats.Init()
-		stats.Setup()
-
-	})
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -22,6 +23,7 @@ import (
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
 func main() {
+	initialize.Init()
 	pkgLogger.Info("starting regulation-worker")
 	ctx, cancel := context.WithCancel(context.Background())
 

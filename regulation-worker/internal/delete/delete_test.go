@@ -2,22 +2,17 @@ package delete_test
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	gomock "github.com/golang/mock/gomock"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
 
-var once sync.Once
-
 func TestDelete(t *testing.T) {
-	Init()
+	initialize.Init()
 	ctx := context.Background()
 	testData := []struct {
 		name                              string
@@ -61,14 +56,4 @@ func TestDelete(t *testing.T) {
 		require.Equal(t, tt.expectedStatus, status, "actual status different than expected")
 	}
 
-}
-
-func Init() {
-	once.Do(func() {
-		config.Load()
-		logger.Init()
-		stats.Init()
-		stats.Setup()
-
-	})
 }

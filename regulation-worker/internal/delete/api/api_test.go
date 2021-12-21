@@ -6,20 +6,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sync"
 	"testing"
 
 	"github.com/gorilla/mux"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 )
-
-var once sync.Once
 
 func (d *deleteAPI) handler() http.Handler {
 	srvMux := mux.NewRouter()
@@ -29,7 +25,7 @@ func (d *deleteAPI) handler() http.Handler {
 }
 
 func TestDelete(t *testing.T) {
-	Init()
+	initialize.Init()
 	tests := []struct {
 		name                 string
 		job                  model.Job
@@ -185,14 +181,4 @@ func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
 
 func strPtr(str string) *string {
 	return &(str)
-}
-
-func Init() {
-	once.Do(func() {
-		config.Load()
-		logger.Init()
-		stats.Init()
-		stats.Setup()
-
-	})
 }

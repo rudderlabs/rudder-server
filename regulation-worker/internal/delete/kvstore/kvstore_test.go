@@ -7,29 +7,25 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"testing"
 
 	"github.com/go-redis/redis"
 	"github.com/ory/dockertest"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
 
 var (
 	redisAddress string
 	hold         bool
-	once         sync.Once
 )
 
 func TestMain(m *testing.M) {
-	Init()
+	initialize.Init()
 	os.Exit(run(m))
 }
 
@@ -185,14 +181,4 @@ func TestGetSupportedDestination(t *testing.T) {
 
 func strPtr(str string) *string {
 	return &str
-}
-
-func Init() {
-	once.Do(func() {
-		config.Load()
-		logger.Init()
-		stats.Init()
-		stats.Setup()
-
-	})
 }
