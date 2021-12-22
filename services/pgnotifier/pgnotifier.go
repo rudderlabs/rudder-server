@@ -286,7 +286,6 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT
 		}
 
 		if err != nil {
-			// TODO: raise alert for this metric
 			pgNotifierClaimUpdateFailed.Increment()
 			pkgLogger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
 		}
