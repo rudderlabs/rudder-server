@@ -1443,7 +1443,7 @@ type storeMessage struct {
 	start       time.Time
 }
 
-func (proc *HandleT) Store(in storeMessage) {
+func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun bool) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	processorLoopStats := make(map[string]map[string]map[string]int)
 	processorLoopStats["router"] = make(map[string]map[string]int)
@@ -1453,6 +1453,8 @@ func (proc *HandleT) Store(in storeMessage) {
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
+		proc.logger.Infof("Processor_Total jobs written to router : %v , time now : %v", len(destJobs), time.Now())
+
 		err := proc.routerDB.Store(destJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into router table failed with error: %v", err)
@@ -1551,8 +1553,12 @@ func (proc *HandleT) Store(in storeMessage) {
 			proc.logger.Infof("addition_processor_stat is %v for customer %v", count, customer)
 		}
 	}
-	multitenant.ReportProcLoopAddStats(processorLoopStats["router"], time.Since(beforeStoreStatus), "router")
-	multitenant.ReportProcLoopAddStats(processorLoopStats["batch_router"], time.Since(beforeStoreStatus), "batch_router")
+
+	if !firstRun {
+		multitenant.ReportProcLoopAddStats(processorLoopStats["router"], time.Since(stageStartTime), "router")
+		multitenant.ReportProcLoopAddStats(processorLoopStats["batch_router"], time.Since(stageStartTime), "batch_router")
+	}
+	pkgLogger.Infof("Router In Jobs: %v,%v,%v,%v,%v,%v,%v,%v,%v,%v || Time Taken : %v", processorLoopStats["router"]["22XEji7vy1kqt9cOlRs3sqDL5yC"]["WEBHOOK"], processorLoopStats["router"]["22XEpPF6GSeLXQnYnZTCetLA6pT"]["WEBHOOK"], processorLoopStats["router"]["22XEqwbFowYt87cGPOdmARbK99b"]["WEBHOOK"], processorLoopStats["router"]["22XEsORvYnOy1zeAbfQmXVb1Tie"]["WEBHOOK"], processorLoopStats["router"]["22XEtxIwdZgVO4tAxF8nLtNHEAM"]["WEBHOOK"], processorLoopStats["router"]["22XEvPN3TUqbpAUequb6W4HJDJ0"]["WEBHOOK"], processorLoopStats["router"]["22XEwlX8YitV9aWbK4Fj8QabxeY"]["WEBHOOK"], processorLoopStats["router"]["22XFT1wZ6MEe2YDXLeBspRKs1Nn"]["WEBHOOK"], processorLoopStats["router"]["22XFUKHDiLXirhVsuLOWv2zwAj3"]["WEBHOOK"], processorLoopStats["router"]["22XFVrf23GDmtVCsAQqJwewTgW5"]["WEBHOOK"], time.Since(stageStartTime))
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.statDBW.Since(beforeStoreStatus)
@@ -2090,7 +2096,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.Store(
 		proc.transformations(
 			proc.processJobsForDest(unprocessedList, nil),
-		),
+		), time.Now(), false,
 	)
 	proc.statLoopTime.Since(s)
 
@@ -2245,9 +2251,12 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-
+		stagetime := time.Now()
+		firstRun := true
 		for msg := range chStore {
-			proc.Store(msg)
+			proc.Store(msg, stagetime, firstRun)
+			stagetime = time.Now()
+			firstRun = false
 		}
 	}()
 
