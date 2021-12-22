@@ -1174,14 +1174,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
 				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, backendconfig.DestinationT{})
 
-				eventType, ok := singularEvent["type"].(string)
-				if !ok {
-					proc.logger.Error("singular event type is unknown")
-				}
-				eventName, ok := singularEvent["event"].(string)
-				if !ok {
-					proc.logger.Error("singular event name is unknown")
-				}
+				eventType := misc.GetStringifiedData(singularEvent["type"])
+				eventName := misc.GetStringifiedData(singularEvent["event"])
 
 				source, sourceError := getSourceByWriteKey(writeKey)
 				if sourceError != nil {
