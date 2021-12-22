@@ -100,11 +100,15 @@ func GetWorkspaces(ctx context.Context) (string, chan map[string]string) {
 		if err != nil {
 			panic(err)
 		}
-		workSpaceString := initialWorkspaces.Kvs[0].Value
-
+		var workSpaceString string
+		if len(initialWorkspaces.Kvs) > 0 {
+			workSpaceString = string(initialWorkspaces.Kvs[0].Value)
+		} else {
+			workSpaceString = ``
+		}
 		watchChan := WatchForWorkspaces(ctx)
 
-		return string(workSpaceString), watchChan
+		return workSpaceString, watchChan
 	case <-time.After(connectTimeout):
 		panic("Couldn't find etcd Client")
 	case err := <-errChan:
@@ -185,11 +189,17 @@ func WatchForMigration(ctx context.Context, statusWatchChannel chan utils.DataEv
 	}
 
 	//get current state
+	var initialPodState string
 	initialState, err := cli.Get(ctx, podPrefix+`/mode`)
 	if err != nil {
 		panic(err)
 	}
-	return string(initialState.Kvs[0].Value), podStatusWaitGroup
+	if len(initialState.Kvs) > 0 {
+		initialPodState = string(initialState.Kvs[0].Value)
+	} else {
+		initialPodState = `` //or simply degraded?	works the same now anyway -> processor, router don't start unless initialPodState = `normal`
+	}
+	return initialPodState, podStatusWaitGroup
 }
 
 func MigrationWatch(ctx context.Context) {
