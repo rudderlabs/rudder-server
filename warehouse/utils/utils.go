@@ -674,3 +674,28 @@ func GetTimeWindow(ts time.Time) time.Time {
 func GetTablePathInObjectStorage(namespace string, tableName string) string {
 	return fmt.Sprintf("%s/%s/%s", config.GetEnv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), namespace, tableName)
 }
+
+type Tag struct {
+	Name  string
+	Value string
+}
+
+func NewTimerStat(name string, extraTags ...Tag) stats.RudderStats {
+	tags := map[string]string{
+		"module": "warehouse",
+	}
+	for _, extraTag := range extraTags {
+		tags[extraTag.Name] = extraTag.Value
+	}
+	return stats.NewTaggedStat(name, stats.TimerType, tags)
+}
+
+func NewCounterStat(name string, extraTags ...Tag) stats.RudderStats {
+	tags := map[string]string{
+		"module": "warehouse",
+	}
+	for _, extraTag := range extraTags {
+		tags[extraTag.Name] = extraTag.Value
+	}
+	return stats.NewTaggedStat(name, stats.CountType, tags)
+}

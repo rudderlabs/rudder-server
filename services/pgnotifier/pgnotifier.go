@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/lib/pq"
@@ -32,6 +33,9 @@ var (
 var (
 	pgNotifierDBhost, pgNotifierDBuser, pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode string
 	pgNotifierDBport                                                                                int
+	pgNotifierClaimProcessingFailed = warehouseutils.NewCounterStat("pgnotifier_claim_processing_failed", warehouseutils.Tag{Name: "module", Value: "pgnotifier"})
+	pgNotifierClaimProcessingSucceeded = warehouseutils.NewCounterStat("pgnotifier_claim_processing_succeeded", warehouseutils.Tag{Name: "module", Value: "pgnotifier"})
+	pgNotifierClaimUpdateFailed = warehouseutils.NewCounterStat("pgnotifier_claim_update_failed", warehouseutils.Tag{Name: "module", Value: "pgnotifier"})
 )
 
 const (
@@ -274,14 +278,27 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT
 									END), attempt = attempt + 1, updated_at = '%[5]s', error = %[6]s
 									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), misc.QuoteLiteral(response.Err.Error()), id)
 			_, err = notifier.dbHandle.Exec(stmt)
+			if err != nil {
+				// TODO: abort this job or raise metric and alert
+				// TODOX: raise alert on this metric
+				pgNotifierClaimUpdateFailed.Increment()
+				pkgLogger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
+				return
+			}
+			// only send this metric if claim update was successful
+			// TODO: do we need to send metrics for failures and aborts seperately
+			pgNotifierClaimProcessingFailed.Increment()
 		} else {
 			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = $1 WHERE id = %[4]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), id)
 			_, err = notifier.dbHandle.Exec(stmt, response.Payload)
-		}
-
-		if err != nil {
-			// TODO: abort this job or raise metric and alert
-			pkgLogger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
+			if err != nil {
+				// TODO: abort this job or raise metric and alert
+				pgNotifierClaimUpdateFailed.Increment()
+				pkgLogger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
+				return
+			}
+			// only send this metric if claim update was successful
+			pgNotifierClaimProcessingSucceeded.Increment()
 		}
 	})
 }

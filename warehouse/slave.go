@@ -24,6 +24,13 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+const  (
+	STATS_WORKER_CLAIM_TIME = "worker_claim_time"
+	STATS_WORKER_CLAIM = "worker_claim"
+	STATS_WORKER_IDLE_TIME = "worker_idle_time"
+	STATS_WORKER_CLAIM_PROCESSING_TIME = "worker_claim_processing_time"
+)
+
 // Temporary store for processing staging file to load file
 type JobRunT struct {
 	job                  PayloadT
@@ -336,7 +343,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 	}
 
-	defer jobRun.counterStat("staging_files_processed", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Count(1)
+	defer jobRun.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Count(1)
 	defer jobRun.cleanup()
 
 	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
@@ -700,15 +707,37 @@ func setupSlave() {
 		for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
 			idx := workerIdx
 			rruntime.Go(func() {
+				// TODO: confirm if it is okay to send slaveId in tags - uuid - high cardinality
+				// create tags and timers
+				tags := []warehouseutils.Tag{{Name: "slaveId", Value: slaveID}, {Name: "workerId", Value: fmt.Sprintf("%d", idx)}}
+				successTags := append(tags, warehouseutils.Tag{Name: "status", Value: "success"})
+				failedTags := append(tags, warehouseutils.Tag{Name: "status", Value: "failed"})
+				claimProcessTimer := warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, tags...)
+				workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, tags...)
 				for {
+					// wait for a notification
+					workerIdleTimer.Start()
 					ev := <-jobNotificationChannel
+					workerIdleTimer.End()
 					pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workerId: %v", ev, idx)
+					
+					// claim job and record time taken
+					claimStart := time.Now()
 					claimedJob, claimed := claim(idx, slaveID)
+					claimDuration := time.Since(claimStart)
 					if !claimed {
+						warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_TIME, failedTags...).SendTiming(claimDuration)
+						warehouseutils.NewCounterStat(STATS_WORKER_CLAIM, failedTags...).Increment()
 						continue
 					}
+					warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_TIME, successTags...).SendTiming(claimDuration)
+					warehouseutils.NewCounterStat(STATS_WORKER_CLAIM, successTags...).Increment()
 					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
+					
+					// process job
+					claimProcessTimer.Start()
 					processClaimedJob(claimedJob, idx)
+					claimProcessTimer.End()
 					pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 				}
 			})
