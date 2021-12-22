@@ -55,7 +55,6 @@ func run(m *testing.M) int {
 
 	}()
 	<-testDataInitialized
-	// _ = os.Setenv("workspaceID", workspaceID)
 	_ = os.Setenv("URL_PREFIX", svr.URL)
 	main.Run(svcCtx)
 	statusCode := <-code
