@@ -102,7 +102,7 @@ func TestDelete(t *testing.T) {
 			destName:             "amplitude",
 			respCode:             400,
 			respBodyStatus:       "failed",
-			expectedDeleteStatus: model.JobStatusInvalidFormat,
+			expectedDeleteStatus: model.JobStatusAborted,
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{
@@ -110,7 +110,7 @@ func TestDelete(t *testing.T) {
 			destName:             "amplitude",
 			respCode:             401,
 			respBodyStatus:       "failed",
-			expectedDeleteStatus: model.JobStatusInvalidCredential,
+			expectedDeleteStatus: model.JobStatusAborted,
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{

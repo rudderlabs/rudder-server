@@ -69,17 +69,28 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 		return model.JobStatusFailed
 	}
 	switch resp.StatusCode {
+
 	case http.StatusOK:
 		return model.JobStatusComplete
+
 	case http.StatusBadRequest:
-		return model.JobStatusInvalidFormat
+		pkgLogger.Warnf("Error: %v", jobResp)
+		return model.JobStatusAborted
+
 	case http.StatusUnauthorized:
-		return model.JobStatusInvalidCredential
+		pkgLogger.Warnf("Error: %v", jobResp)
+		return model.JobStatusAborted
+
 	case http.StatusNotFound, http.StatusMethodNotAllowed:
+		pkgLogger.Warnf("Error: %v", jobResp)
 		return model.JobStatusNotSupported
+
 	case http.StatusTooManyRequests, http.StatusRequestTimeout:
+		pkgLogger.Warnf("Error: %v", jobResp)
 		return model.JobStatusFailed
+
 	default:
+		pkgLogger.Warnf("Bad request: %v", jobResp)
 		return model.JobStatusFailed
 	}
 
