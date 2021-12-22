@@ -48,6 +48,13 @@ func Run(ctx context.Context) {
 		DestTransformURL: transformerURL,
 	}
 
+	dest := &destination.DestMiddleware{
+		Dest: &backendconfig.WorkspaceConfig{},
+	}
+	workspaceId, err := dest.GetWorkspaceId(ctx)
+	if err != nil {
+		panic("error while getting workspaceId")
+	}
 	pkgLogger.Info("creating delete router")
 	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
 
@@ -56,7 +63,7 @@ func Run(ctx context.Context) {
 			Client:         &http.Client{},
 			URLPrefix:      config.MustGetEnv("URL_PREFIX"),
 			WorkspaceToken: config.MustGetEnv("CONFIG_BACKEND_TOKEN"),
-			WorkspaceID:    config.MustGetEnv("workspaceID"),
+			WorkspaceID:    workspaceId,
 		},
 		DestDetail: &destination.DestMiddleware{
 			Dest: &backendconfig.WorkspaceConfig{},
@@ -65,7 +72,7 @@ func Run(ctx context.Context) {
 	}
 	pkgLogger.Infof("calling service with: %v", svc)
 	l := withLoop(svc)
-	err := l.Loop(ctx)
+	err = l.Loop(ctx)
 	if err != nil {
 		pkgLogger.Errorf("error: %v", err)
 		panic(err)

@@ -19,6 +19,7 @@ type APIClient interface {
 }
 
 type destDetail interface {
+	GetWorkspaceId(ctx context.Context) (string, error)
 	GetDestDetails(ctx context.Context, destID string) (model.Destination, error)
 }
 type deleter interface {
@@ -39,7 +40,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	pkgLogger.Debugf("making API request to get job")
 	job, err := js.API.Get(ctx)
 	if err != nil {
-		pkgLogger.Errorf("error while getting job: %v", err)
+		pkgLogger.Warnf("error while getting job: %v", err)
 		return err
 	}
 	totalJobTime := stats.NewTaggedStat("total_job_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID})

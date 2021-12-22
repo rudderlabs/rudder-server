@@ -22,12 +22,28 @@ type DestMiddleware struct {
 	Dest destinationMiddleware
 }
 
+func (d *DestMiddleware) GetWorkspaceId(ctx context.Context) (string, error) {
+	pkgLogger.Debugf("getting destination Id")
+	config, err := d.getDestDetails(ctx)
+	if err != nil {
+		pkgLogger.Errorf("error while getting destination details from backend config: %v", err)
+		return "", err
+	}
+	if config.WorkspaceID != "" {
+		pkgLogger.Debugf("workspaceId=", config.WorkspaceID)
+		return config.WorkspaceID, nil
+	}
+
+	pkgLogger.Error("workspaceId not found in config")
+	return "", fmt.Errorf("workspaceId not found in config")
+}
+
 //make api call to get json and then parse it to get destination related details
 //like: dest_type, auth details,
 //return destination Type enum{file, api}
 func (d *DestMiddleware) GetDestDetails(ctx context.Context, destID string) (model.Destination, error) {
 	pkgLogger.Debugf("getting destination details for destinationId: %v", destID)
-	config, err := d.getDestDetails(ctx, destID)
+	config, err := d.getDestDetails(ctx)
 	if err != nil {
 		return model.Destination{}, err
 	}
@@ -50,7 +66,8 @@ func (d *DestMiddleware) GetDestDetails(ctx context.Context, destID string) (mod
 	return destDetail, nil
 }
 
-func (d *DestMiddleware) getDestDetails(ctx context.Context, destId string) (backendconfig.ConfigT, error) {
+func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.ConfigT, error) {
+	pkgLogger.Debugf("getting destination details with exponential backoff")
 
 	maxWait := time.Minute * 10
 	var err error

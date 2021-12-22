@@ -41,7 +41,7 @@ func handler() http.Handler {
 func run(m *testing.M) int {
 	svr := httptest.NewServer(handler())
 	defer svr.Close()
-	workspaceID := "216Co97d9So9TkqphM0cxBzRxc3"
+	// workspaceID := "216Co97d9So9TkqphM0cxBzRxc3"
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	code := make(chan int, 1)
 	go func() {
@@ -55,7 +55,7 @@ func run(m *testing.M) int {
 
 	}()
 	<-testDataInitialized
-	_ = os.Setenv("workspaceID", workspaceID)
+	// _ = os.Setenv("workspaceID", workspaceID)
 	_ = os.Setenv("URL_PREFIX", svr.URL)
 	main.Run(svcCtx)
 	statusCode := <-code
