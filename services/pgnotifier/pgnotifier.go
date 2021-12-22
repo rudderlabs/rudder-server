@@ -31,11 +31,9 @@ var (
 )
 
 var (
-	pgNotifierDBhost, pgNotifierDBuser, pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode string
-	pgNotifierDBport                                                                                int
-	pgNotifierClaimProcessingFailed = warehouseutils.NewCounterStat("pgnotifier_claim_processing_failed", warehouseutils.Tag{Name: "module", Value: "pgnotifier"})
-	pgNotifierClaimProcessingSucceeded = warehouseutils.NewCounterStat("pgnotifier_claim_processing_succeeded", warehouseutils.Tag{Name: "module", Value: "pgnotifier"})
-	pgNotifierClaimUpdateFailed = warehouseutils.NewCounterStat("pgnotifier_claim_update_failed", warehouseutils.Tag{Name: "module", Value: "pgnotifier"})
+	pgNotifierDBhost, pgNotifierDBuser, pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode  string
+	pgNotifierDBport                                                                                 int
+	pgNotifierClaimProcessingFailed, pgNotifierClaimProcessingSucceeded, pgNotifierClaimUpdateFailed stats.RudderStats
 )
 
 const (
@@ -117,6 +115,12 @@ func New(workspaceIdentifier string, fallbackConnectionInfo string) (notifier Pg
 	if err != nil {
 		return
 	}
+
+	// setup metrics
+	pgNotifierClaimProcessingFailed = warehouseutils.NewCounterStat("pgnotifier_claim_processing_failed", warehouseutils.Tag{Name: "module", Value: "pgnotifier"})
+	pgNotifierClaimProcessingSucceeded = warehouseutils.NewCounterStat("pgnotifier_claim_processing_succeeded", warehouseutils.Tag{Name: "module", Value: "pgnotifier"})
+	pgNotifierClaimUpdateFailed = warehouseutils.NewCounterStat("pgnotifier_claim_update_failed", warehouseutils.Tag{Name: "module", Value: "pgnotifier"})
+
 	notifier = PgNotifierT{
 		dbHandle:            dbHandle,
 		URI:                 connectionInfo,
