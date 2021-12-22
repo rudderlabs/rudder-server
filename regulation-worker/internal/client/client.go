@@ -48,7 +48,6 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	req.SetBasicAuth(j.WorkspaceToken, "")
 	req.Header.Set("Content-Type", "application/json")
 
-	pkgLogger.Debugf("making request: %v", req)
 	resp, err := j.Client.Do(req)
 	if err != nil {
 		pkgLogger.Errorf("http request failed with error: %v", err)
