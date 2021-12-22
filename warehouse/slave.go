@@ -24,10 +24,10 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const  (
-	STATS_WORKER_CLAIM_TIME = "worker_claim_time"
-	STATS_WORKER_CLAIM = "worker_claim"
-	STATS_WORKER_IDLE_TIME = "worker_idle_time"
+const (
+	STATS_WORKER_CLAIM_TIME            = "worker_claim_time"
+	STATS_WORKER_CLAIM                 = "worker_claim"
+	STATS_WORKER_IDLE_TIME             = "worker_idle_time"
 	STATS_WORKER_CLAIM_PROCESSING_TIME = "worker_claim_processing_time"
 )
 
@@ -337,13 +337,16 @@ func (event *BatchRouterEventT) getColumnInfo(columnName string) (columnInfo Col
 //
 
 func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
-
+	processStartTime := time.Now()
 	jobRun := JobRunT{
 		job:          job,
 		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 	}
 
 	defer jobRun.counterStat("staging_files_processed", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Count(1)
+	defer func() {
+		jobRun.timerStat("staging_files_total_processing_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Since(processStartTime)
+	}()
 	defer jobRun.cleanup()
 
 	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)

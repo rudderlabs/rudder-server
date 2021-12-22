@@ -360,6 +360,7 @@ func (job *UploadJobT) run() (err error) {
 	}
 
 	for {
+		stateStartTime := time.Now()
 		err = nil
 
 		job.setUploadStatus(UploadStatusOpts{Status: nextUploadState.inProgress})
@@ -542,6 +543,9 @@ func (job *UploadJobT) run() (err error) {
 			uploadStatusOpts.ReportingMetric = reportingMetric
 		}
 		job.setUploadStatus(uploadStatusOpts)
+
+		// record metric for time taken by the current state
+		job.timerStat(nextUploadState.inProgress).SendTiming(time.Since(stateStartTime))
 
 		if newStatus == ExportedData {
 			break
