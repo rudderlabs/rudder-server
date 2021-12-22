@@ -78,8 +78,8 @@ func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.Conf
 	var config backendconfig.ConfigT
 	var ok bool
 	if err = backoff.Retry(func() error {
+		pkgLogger.Debugf("Fetching backend-config...")
 		config, ok = d.Dest.Get()
-		pkgLogger.Debugf("trying to update status...")
 		if !ok {
 			return fmt.Errorf("error while getting destination details")
 		}
