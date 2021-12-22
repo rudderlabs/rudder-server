@@ -398,28 +398,28 @@ func (proc *HandleT) Shutdown() {
 }
 
 func (proc *HandleT) watchETCDForPodStatus(ctx context.Context) {
-	watchChan, initialState, statusUpdateChannel := etcdconfig.WatchForMigration(ctx)
+	statusWatchChan := make(chan utils.DataEvent)
+	initialState, podStatusWaitGroup := etcdconfig.WatchForMigration(ctx, statusWatchChan)
 	if initialState == "normal" {
 		proc.podStatusChan <- struct{}{}
 	}
-	for watchResp := range watchChan {
-		switch watchResp["type"] {
-		case "PUT":
-			switch watchResp["processor"] {
-			case "pause":
-				proc.Pause()
-				statusUpdateChannel <- "degraded_completed"
-			case "resume":
-				if initialState != "normal" {
-					proc.podStatusChan <- struct{}{}
-					initialState = "normal"
-				}
-				proc.Resume()
-				statusUpdateChannel <- "normal_completed"
+	for watchResp := range statusWatchChan {
+		switch watchResp.Data {
+		// case "PUT":
+		// switch watchResp["processor"] {
+		case "degraded":
+			proc.Pause()
+		case "normal":
+			if initialState != "normal" {
+				proc.podStatusChan <- struct{}{}
+				initialState = "normal"
 			}
-		case "DELETE":
-			proc.Shutdown()
+			proc.Resume()
 		}
+		// case "DELETE":
+		// 	proc.Shutdown()
+		// }
+		podStatusWaitGroup.Done()
 	}
 }
 

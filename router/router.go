@@ -1930,28 +1930,27 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 }
 
 func (rt *HandleT) watchETCDForPodStatus(ctx context.Context) {
-	watchChan, initialState, statusUpdateChannel := etcdconfig.WatchForMigration(ctx)
+	statusWatchChan := make(chan utils.DataEvent)
+	initialState, podStatusWaitGroup := etcdconfig.WatchForMigration(ctx, statusWatchChan)
 	if initialState == "normal" {
 		rt.podStatusChan <- struct{}{}
 	}
-	for watchResp := range watchChan {
-		switch watchResp["type"] {
-		case "PUT":
-			switch watchResp["processor"] {
-			case "pause":
-				rt.Pause()
-				statusUpdateChannel <- "degraded_completed"
-			case "resume":
-				if initialState != "normal" {
-					rt.podStatusChan <- struct{}{}
-					initialState = "normal"
-				}
-				rt.Resume()
-				statusUpdateChannel <- "normal_completed"
+	for watchResp := range statusWatchChan {
+		switch watchResp.Data {
+		// case "PUT":
+		// 	switch watchResp["processor"] {
+		case "degraded":
+			rt.Pause()
+		case "normal":
+			if initialState != "normal" {
+				rt.podStatusChan <- struct{}{}
+				initialState = "normal"
 			}
-		case "DELETE":
-			rt.Shutdown()
+			rt.Resume()
+			// case "DELETE":
+			// 	rt.Shutdown()
 		}
+		podStatusWaitGroup.Done()
 	}
 }
 

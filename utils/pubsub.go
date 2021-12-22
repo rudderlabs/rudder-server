@@ -20,12 +20,19 @@ type PublishSubscriber interface {
 	Publish(topic string, data interface{})
 	PublishToChannel(channel DataChannel, topic string, data interface{})
 	Subscribe(topic string, ch DataChannel)
+	NumSubscribers(string) int
 }
 
 // EventBus stores the information about subscribers interested for a particular topic
 type EventBus struct {
 	subscribers map[string]DataChannelSlice
 	rm          sync.RWMutex
+}
+
+func (eb *EventBus) NumSubscribers(topic string) int {
+	eb.rm.RLock()
+	defer eb.rm.RUnlock()
+	return len(eb.subscribers[topic])
 }
 
 func (eb *EventBus) Publish(topic string, data interface{}) {

@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -23,7 +25,14 @@ var (
 	pkgLogger        logger.LoggerI
 	releaseName      string
 	serverNumber     string
+
+	podStatus                 string
+	podStatusWaitGroup        *sync.WaitGroup
+	podStatusLock             sync.RWMutex
+	podStatuswatchInitialized bool
 )
+
+const PODSTATUS = `ETCD_POD_STATUS`
 
 func Init() {
 	loadConfig()
@@ -43,6 +52,8 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(3), &connectTimeout, true, time.Second, "ETCD_CONN_TIMEOUT")
 	config.RegisterDurationConfigVariable(time.Duration(3), &etcdWatchTimeout, true, time.Second, "ETCD_WATCH_TIMEOUT")
 	pkgLogger = logger.NewLogger().Child("etcd")
+	podStatusLock = sync.RWMutex{}
+	podStatusWaitGroup = &sync.WaitGroup{}
 	connectToETCD()
 }
 
@@ -53,7 +64,7 @@ func WatchForWorkspaces(ctx context.Context) chan map[string]string {
 	returnChan := make(chan map[string]string)
 	go func(returnChan chan map[string]string, ctx context.Context) {
 		defer cli.Close()
-		etcdWatchChan := cli.Watch(ctx, podPrefix+`/workspaces`, clientv3.WithLastRev()...)
+		etcdWatchChan := cli.Watch(ctx, podPrefix+`/workspaces`)
 		for watchResp := range etcdWatchChan {
 			for _, event := range watchResp.Events {
 				switch event.Type {
@@ -90,7 +101,6 @@ func GetWorkspaces(ctx context.Context) (string, chan map[string]string) {
 			panic(err)
 		}
 		workSpaceString := initialWorkspaces.Kvs[0].Value
-		pkgLogger.Info(string(workSpaceString))
 
 		watchChan := WatchForWorkspaces(ctx)
 
@@ -113,7 +123,6 @@ func GetEtcdClient(ctx context.Context, clientReturnChan chan *clientv3.Client, 
 	}
 
 	statusRes, err := cli.Status(ctx, etcdHosts[0])
-	pkgLogger.Info(statusRes)
 	if err != nil {
 		errChan <- err
 		return
@@ -123,6 +132,7 @@ func GetEtcdClient(ctx context.Context, clientReturnChan chan *clientv3.Client, 
 	}
 	etcdHeartBeat(ctx)
 	clientReturnChan <- cli
+	go MigrationWatch(ctx)
 }
 
 func etcdHeartBeat(ctx context.Context) {
@@ -163,46 +173,46 @@ func heartBeatFunc(ctxHeartBeat context.Context, client *clientv3.Client, heartB
 	heartBeatChan <- true
 }
 
-func WatchForMigration(ctx context.Context) (chan map[string]string, string, chan string) {
-	migrationStatusChannel := make(chan map[string]string)
-	etcdMigrationStatusUpdateChannel := make(chan string)
-	go func(migrationStatusChan chan map[string]string, ctx context.Context, etcdMigrationStatusUpdateChannel chan string) {
-		defer cli.Close()
-		watchCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		etcdMigrationStatusChannel := cli.Watch(watchCtx, podPrefix+`/mode`, clientv3.WithLastRev()...)
-		for watchResp := range etcdMigrationStatusChannel {
-			for _, event := range watchResp.Events {
-				switch event.Type {
-				case mvccpb.PUT:
-					if string(event.Kv.Value) == "degraded" {
-						migrationStatusChan <- map[string]string{
-							"type":      "PUT",
-							"processor": "pause",
-						}
-					} else if string(event.Kv.Value) == "normal" {
-						migrationStatusChan <- map[string]string{
-							"type":      "PUT",
-							"processor": "resume",
-						}
-					}
-				case mvccpb.DELETE:
-					//This pod's status has been deleted from etcd store, pod no longer needed..?
-					migrationStatusChan <- map[string]string{
-						"type":      "DELETE",
-						"processor": "STOP",
-					}
-				}
-				statusUpdate := <-etcdMigrationStatusUpdateChannel
-				cli.Put(watchCtx, podPrefix+`/status`, statusUpdate)
-			}
-		}
-	}(migrationStatusChannel, ctx, etcdMigrationStatusUpdateChannel)
+var Eb utils.PublishSubscriber = new(utils.EventBus)
+
+func WatchForMigration(ctx context.Context, statusWatchChannel chan utils.DataEvent) (string, *sync.WaitGroup) {
+	Eb.Subscribe(PODSTATUS, statusWatchChannel)
+
+	podStatusLock.RLock()
+	defer podStatusLock.RUnlock()
+	if !podStatuswatchInitialized {
+		go MigrationWatch(ctx)
+	}
 
 	//get current state
 	initialState, err := cli.Get(ctx, podPrefix+`/mode`)
 	if err != nil {
 		panic(err)
 	}
-	return migrationStatusChannel, string(initialState.Kvs[0].Value), etcdMigrationStatusUpdateChannel
+	return string(initialState.Kvs[0].Value), podStatusWaitGroup
+}
+
+func MigrationWatch(ctx context.Context) {
+	podStatusLock.Lock()
+	podStatuswatchInitialized = true
+	podStatusLock.Unlock()
+	defer cli.Close()
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	etcdMigrationStatusChannel := cli.Watch(watchCtx, podPrefix+`/mode`)
+	for watchResp := range etcdMigrationStatusChannel {
+		for _, event := range watchResp.Events {
+			switch event.Type {
+			case mvccpb.PUT:
+				podStatus = string(event.Kv.Value)
+			case mvccpb.DELETE:
+				//This pod's status has been deleted from etcd store, pod no longer needed..?
+				podStatus = `terminated`
+			}
+			podStatusWaitGroup.Add(Eb.NumSubscribers(PODSTATUS))
+			Eb.Publish(PODSTATUS, podStatus)
+			podStatusWaitGroup.Wait()
+			cli.Put(watchCtx, podPrefix+`/status`, podStatus+`_completed`)
+		}
+	}
 }
