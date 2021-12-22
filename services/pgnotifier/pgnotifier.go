@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/lib/pq"
@@ -30,8 +31,11 @@ var (
 )
 
 var (
-	pgNotifierDBhost, pgNotifierDBuser, pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode string
-	pgNotifierDBport                                                                                int
+	pgNotifierDBhost, pgNotifierDBuser, pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode          string
+	pgNotifierDBport                                                                                         int
+	pgNotifierPublish, pgNotifierPublishTime                                                                 stats.RudderStats
+	pgNotifierClaimSucceeded, pgNotifierClaimSucceededTime, pgNotifierClaimFailed, pgNotifierClaimFailedTime stats.RudderStats
+	pgNotifierClaimUpdateFailed                                                                              stats.RudderStats
 )
 
 const (
@@ -113,6 +117,19 @@ func New(workspaceIdentifier string, fallbackConnectionInfo string) (notifier Pg
 	if err != nil {
 		return
 	}
+
+	// setup metrics
+	pgNotifierModuleTag := warehouseutils.Tag{Name: "module", Value: "pgnotifier"}
+	// publish metrics
+	pgNotifierPublish = warehouseutils.NewCounterStat("pgnotifier_publish", pgNotifierModuleTag)
+	pgNotifierPublishTime = warehouseutils.NewTimerStat("pgnotifier_publish_time", pgNotifierModuleTag)
+	// claim metrics
+	pgNotifierClaimSucceeded = warehouseutils.NewCounterStat("pgnotifier_claim", pgNotifierModuleTag, warehouseutils.Tag{Name: "status", Value: "succeeded"})
+	pgNotifierClaimFailed = warehouseutils.NewCounterStat("pgnotifier_claim", pgNotifierModuleTag, warehouseutils.Tag{Name: "status", Value: "failed"})
+	pgNotifierClaimSucceededTime = warehouseutils.NewTimerStat("pgnotifier_claim_time", pgNotifierModuleTag, warehouseutils.Tag{Name: "status", Value: "succeeded"})
+	pgNotifierClaimFailedTime = warehouseutils.NewTimerStat("pgnotifier_claim_time", pgNotifierModuleTag, warehouseutils.Tag{Name: "status", Value: "failed"})
+	pgNotifierClaimUpdateFailed = warehouseutils.NewCounterStat("pgnotifier_claim_update_failed", pgNotifierModuleTag)
+
 	notifier = PgNotifierT{
 		dbHandle:            dbHandle,
 		URI:                 connectionInfo,
@@ -280,13 +297,23 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT
 		}
 
 		if err != nil {
-			// TODO: abort this job or raise metric and alert
+			pgNotifierClaimUpdateFailed.Increment()
 			pkgLogger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
 		}
 	})
 }
 
 func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool) {
+	claimStartTime := time.Now()
+	defer func() {
+		if !claimed {
+			pgNotifierClaimFailedTime.Since(claimStartTime)
+			pgNotifierClaimFailed.Increment()
+			return
+		}
+		pgNotifierClaimSucceededTime.Since(claimStartTime)
+		pgNotifierClaimSucceeded.Increment()
+	}()
 	var claimedID int64
 	var batchID, status string
 	var payload json.RawMessage
@@ -337,6 +364,14 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 }
 
 func (notifier *PgNotifierT) Publish(topic string, messages []MessageT, priority int) (ch chan []ResponseT, err error) {
+	publishStartTime := time.Now()
+	defer func() {
+		if err == nil {
+			pgNotifierPublishTime.Since(publishStartTime)
+			pgNotifierPublish.Increment()
+		}
+	}()
+
 	ch = make(chan []ResponseT)
 
 	//Using transactions for bulk copying
