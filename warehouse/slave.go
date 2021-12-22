@@ -25,10 +25,14 @@ import (
 )
 
 const (
-	STATS_WORKER_CLAIM_TIME            = "worker_claim_time"
-	STATS_WORKER_CLAIM                 = "worker_claim"
-	STATS_WORKER_IDLE_TIME             = "worker_idle_time"
-	STATS_WORKER_CLAIM_PROCESSING_TIME = "worker_claim_processing_time"
+	STATS_WORKER_CLAIM_TIME                 = "worker_claim_time"
+	STATS_WORKER_CLAIM                      = "worker_claim"
+	STATS_WORKER_IDLE_TIME                  = "worker_idle_time"
+	STATS_WORKER_CLAIM_PROCESSING_TIME      = "worker_claim_processing_time"
+	STATS_WORKER_CLAIM_PROCESSING_FAILED    = "worker_claim_processing_failed"
+	STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED = "worker_claim_processing_succeeded"
+	TAG_SLAVEID                             = "slaveId"
+	TAG_WORKERID                            = "workerId"
 )
 
 // Temporary store for processing staging file to load file
@@ -669,12 +673,13 @@ func claim(workerIdx int, slaveID string) (claimedJob pgnotifier.ClaimT, claimed
 	return
 }
 
-func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
+func processClaimedJob(claimedJob pgnotifier.ClaimT, slaveId string, workerIndex int) {
 	handleErr := func(err error, claim pgnotifier.ClaimT) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponseT{
 			Err: err,
 		}
+		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_SLAVEID, Value: slaveId}, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
 		claim.ClaimResponseChan <- response
 	}
 
@@ -697,6 +702,11 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 		Err:     err,
 		Payload: output,
 	}
+	if response.Err != nil {
+		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_SLAVEID, Value: slaveId}, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+	} else {
+		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED, warehouseutils.Tag{Name: TAG_SLAVEID, Value: slaveId}, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+	}
 	claimedJob.ClaimResponseChan <- response
 }
 
@@ -712,7 +722,7 @@ func setupSlave() {
 			rruntime.Go(func() {
 				// TODO: confirm if it is okay to send slaveId in tags - uuid - high cardinality
 				// create tags and timers
-				tags := []warehouseutils.Tag{{Name: "slaveId", Value: slaveID}, {Name: "workerId", Value: fmt.Sprintf("%d", idx)}}
+				tags := []warehouseutils.Tag{{Name: TAG_SLAVEID, Value: slaveID}, {Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)}}
 				successTags := append(tags, warehouseutils.Tag{Name: "status", Value: "success"})
 				failedTags := append(tags, warehouseutils.Tag{Name: "status", Value: "failed"})
 				claimProcessTimer := warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, tags...)
@@ -723,7 +733,7 @@ func setupSlave() {
 					ev := <-jobNotificationChannel
 					workerIdleTimer.End()
 					pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workerId: %v", ev, idx)
-					
+
 					// claim job and record time taken
 					claimStart := time.Now()
 					claimedJob, claimed := claim(idx, slaveID)
@@ -736,10 +746,10 @@ func setupSlave() {
 					warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_TIME, successTags...).SendTiming(claimDuration)
 					warehouseutils.NewCounterStat(STATS_WORKER_CLAIM, successTags...).Increment()
 					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
-					
+
 					// process job
 					claimProcessTimer.Start()
-					processClaimedJob(claimedJob, idx)
+					processClaimedJob(claimedJob, slaveID, idx)
 					claimProcessTimer.End()
 					pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 				}
