@@ -37,7 +37,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	method := "GET"
 	genEndPoint := "/dataplane/workspaces/{workspace_id}/regulations/workerJobs"
 	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID))
-	pkgLogger.Debugf("making GET request to URL: %w", url)
+	pkgLogger.Debugf("making GET request to URL: %v", url)
 
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
@@ -48,22 +48,19 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	req.SetBasicAuth(j.WorkspaceToken, "")
 	req.Header.Set("Content-Type", "application/json")
 
-	pkgLogger.Debugf("making request: %w", req)
-	fmt.Println("using client to get job")
-	fmt.Println("client=", j.Client)
+	pkgLogger.Debugf("making request: %v", req)
 	resp, err := j.Client.Do(req)
 	if err != nil {
 		pkgLogger.Errorf("http request failed with error: %v", err)
 		return model.Job{}, err
 	}
-	fmt.Println("resp=", resp)
 	defer func() {
 		err := resp.Body.Close()
 		if err != nil {
 			pkgLogger.Errorf("error while closing response body: %v", err)
 		}
 	}()
-	pkgLogger.Debugf("obtained response code: %w", resp.StatusCode, "response body: ", resp.Body)
+	pkgLogger.Debugf("obtained response code: %v", resp.StatusCode, "response body: ", resp.Body)
 
 	//if successful
 
@@ -83,7 +80,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			return model.Job{}, fmt.Errorf("error while getting job: %w", err)
 		}
 
-		pkgLogger.Debugf("obtained job: %w", job)
+		pkgLogger.Debugf("obtained job: %v", job)
 		return job, nil
 
 	} else if resp.StatusCode == http.StatusNotFound {
@@ -96,7 +93,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			pkgLogger.Errorf("error while reading response body: %v", err)
 			return model.Job{}, fmt.Errorf("error while reading response body: %w", err)
 		}
-		pkgLogger.Debugf("obtained response body: %w", string(body))
+		pkgLogger.Debugf("obtained response body: %v", string(body))
 
 		return model.Job{}, fmt.Errorf("unexpected response code: %d", resp.StatusCode)
 	}
@@ -106,7 +103,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 //marshals status into appropriate status schema, and sent as payload
 //checked for returned status code.
 func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
-	pkgLogger.Debugf("sending PATCH request to update job status for jobId: ", jobID, "with status: %w", status)
+	pkgLogger.Debugf("sending PATCH request to update job status for jobId: ", jobID, "with status: %v", status)
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Minute))
 	defer cancel()
 
@@ -114,7 +111,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 
 	genEndPoint := "/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}"
 	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID, fmt.Sprint(jobID)))
-	pkgLogger.Debugf("sending request to URL: %w", url)
+	pkgLogger.Debugf("sending request to URL: %v", url)
 
 	statusSchema := statusJobSchema{
 		Status: string(status),
@@ -128,7 +125,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	if err != nil {
 		return err
 	}
-	pkgLogger.Debugf("sending request: %w", req)
+	pkgLogger.Debugf("sending request: %v", req)
 
 	resp, err := j.Client.Do(req)
 	if err != nil {
@@ -137,7 +134,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	}
 	defer resp.Body.Close()
 
-	pkgLogger.Debugf("response code: %w", resp.StatusCode, "response body: %w", resp.Body)
+	pkgLogger.Debugf("response code: %v", resp.StatusCode, "response body: %v", resp.Body)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	} else {

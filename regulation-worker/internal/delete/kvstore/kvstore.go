@@ -24,7 +24,7 @@ func (kv *KVDeleteManager) GetSupportedDestinations() []string {
 }
 
 func (kv *KVDeleteManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
-	pkgLogger.Debugf("deleting job: %w", job, " from kvstore")
+	pkgLogger.Debugf("deleting job: %v", job, " from kvstore")
 	kvm := kvstoremanager.New(destName, destConfig)
 	var err error
 	fileCleaningTime := stats.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "kvstore", "destName": destName})

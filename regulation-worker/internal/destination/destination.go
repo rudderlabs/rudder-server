@@ -26,7 +26,7 @@ type DestMiddleware struct {
 //like: dest_type, auth details,
 //return destination Type enum{file, api}
 func (d *DestMiddleware) GetDestDetails(ctx context.Context, destID string) (model.Destination, error) {
-	pkgLogger.Debugf("getting destination details for destinationId: %w", destID)
+	pkgLogger.Debugf("getting destination details for destinationId: %v", destID)
 	config, err := d.getDestDetails(ctx, destID)
 	if err != nil {
 		return model.Destination{}, err
@@ -46,7 +46,7 @@ func (d *DestMiddleware) GetDestDetails(ctx context.Context, destID string) (mod
 		return model.Destination{}, model.ErrInvalidDestination
 	}
 
-	pkgLogger.Debugf("obtained destination detail: %w", destDetail)
+	pkgLogger.Debugf("obtained destination detail: %v", destDetail)
 	return destDetail, nil
 }
 

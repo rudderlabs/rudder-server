@@ -65,7 +65,7 @@ func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error
 	pkgLogger.Debugf("getting a list of files from destination")
 	fileObjects, err := b.FM.ListFilesWithPrefix("", listMaxItem)
 	if err != nil {
-		pkgLogger.Errorf("error while getting list of files: %w", err)
+		pkgLogger.Errorf("error while getting list of files: %v", err)
 		return []*filemanager.FileObject{}, fmt.Errorf("failed to fetch object list from S3: %v", err)
 	}
 	if len(fileObjects) == 0 {
@@ -148,7 +148,7 @@ func (b *Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName strin
 //downloads `fileName` locally. And returns empty file, if file not found.
 //Note: download happens concurrently in 5 go routine by default.
 func (b *Batch) download(ctx context.Context, completeFileName string) (string, error) {
-	pkgLogger.Debugf("downloading file: %w", completeFileName)
+	pkgLogger.Debugf("downloading file: %v", completeFileName)
 
 	tmpFilePathPrefix, err := os.MkdirTemp(b.TmpDirPath, "")
 	if err != nil {
@@ -410,7 +410,7 @@ func (bm *BatchManager) GetSupportedDestinations() []string {
 //TODO: aws s3 ListObject allows listing of at max 1000 object at a time. So, implement paginatin.
 //Delete users corresponding to input userAttributes from a given batch destination
 func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
-	pkgLogger.Debugf("deleting job: %w", job, "from batch destination: %w", destName)
+	pkgLogger.Debugf("deleting job: %v", job, "from batch destination: %v", destName)
 
 	fmFactory := filemanager.FileManagerFactoryT{}
 	fm, err := fmFactory.New(&filemanager.SettingsT{

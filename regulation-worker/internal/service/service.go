@@ -46,7 +46,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	totalJobTime.Start()
 	defer totalJobTime.End()
 
-	pkgLogger.Debugf("job: %w", job)
+	pkgLogger.Debugf("job: %v", job)
 	//once job is successfully received, calling updatestatus API to update the status of job to running.
 	status := model.JobStatusRunning
 	err = js.updateStatus(ctx, status, job.ID)
@@ -69,7 +69,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 }
 
 func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
-	pkgLogger.Debugf("updating job status to: %w", status)
+	pkgLogger.Debugf("updating job status to: %v", status)
 	maxWait := time.Minute * 10
 	var err error
 	bo := backoff.NewExponentialBackOff()

@@ -29,11 +29,11 @@ type APIManager struct {
 //prepares payload based on (job,destDetail) & make an API call to transformer.
 //gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
 func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
-	pkgLogger.Debugf("deleting: %w", job, " from API destination: %w", destName)
+	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destName)
 	method := "POST"
 	endpoint := "/delete-users"
 	url := fmt.Sprint(api.DestTransformURL, endpoint)
-	pkgLogger.Debugf("transformer url: %w", url)
+	pkgLogger.Debugf("transformer url: %v", url)
 
 	bodySchema := mapJobToPayload(job, destName, destConfig)
 
@@ -50,18 +50,23 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	fileCleaningTime := stats.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "api", "destName": destName})
+	fileCleaningTime := stats.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{
+		"jobId":       fmt.Sprintf("%d", job.ID),
+		"workspaceId": job.WorkspaceID,
+		"destType":    "api",
+		"destName":    destName,
+	})
 	fileCleaningTime.Start()
 	defer fileCleaningTime.End()
 
-	pkgLogger.Debugf("sending request: %w", req)
+	pkgLogger.Debugf("sending request: %v", req)
 	resp, err := api.Client.Do(req)
 	if err != nil {
 		pkgLogger.Errorf("error while making http request: %v", err)
 		return model.JobStatusFailed
 	}
 	defer resp.Body.Close()
-	pkgLogger.Debugf("response status code: %w", resp.StatusCode, " response body: %w", resp.Body)
+	pkgLogger.Debugf("response status code: %v", resp.StatusCode, " response body: %v", resp.Body)
 
 	var jobResp JobRespSchema
 	if err := json.NewDecoder(resp.Body).Decode(&jobResp); err != nil {
