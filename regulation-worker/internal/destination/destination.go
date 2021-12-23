@@ -1,11 +1,17 @@
 package destination
 
 import (
+	"context"
 	"fmt"
+	"time"
 
+	"github.com/cenkalti/backoff"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
+
+var pkgLogger = logger.NewLogger().Child("client")
 
 //go:generate mockgen -source=destination.go -destination=mock_destination_test.go -package=destination github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination/destination
 type destinationMiddleware interface {
@@ -16,13 +22,30 @@ type DestMiddleware struct {
 	Dest destinationMiddleware
 }
 
+func (d *DestMiddleware) GetWorkspaceId(ctx context.Context) (string, error) {
+	pkgLogger.Debugf("getting destination Id")
+	config, err := d.getDestDetails(ctx)
+	if err != nil {
+		pkgLogger.Errorf("error while getting destination details from backend config: %v", err)
+		return "", err
+	}
+	if config.WorkspaceID != "" {
+		pkgLogger.Debugf("workspaceId=", config.WorkspaceID)
+		return config.WorkspaceID, nil
+	}
+
+	pkgLogger.Error("workspaceId not found in config")
+	return "", fmt.Errorf("workspaceId not found in config")
+}
+
 //make api call to get json and then parse it to get destination related details
 //like: dest_type, auth details,
 //return destination Type enum{file, api}
-func (d *DestMiddleware) GetDestDetails(destID string) (model.Destination, error) {
-	config, notErr := d.Dest.Get()
-	if !notErr {
-		return model.Destination{}, fmt.Errorf("error while getting destination details")
+func (d *DestMiddleware) GetDestDetails(ctx context.Context, destID string) (model.Destination, error) {
+	pkgLogger.Debugf("getting destination details for destinationId: %v", destID)
+	config, err := d.getDestDetails(ctx)
+	if err != nil {
+		return model.Destination{}, err
 	}
 
 	destDetail := model.Destination{}
@@ -35,6 +58,38 @@ func (d *DestMiddleware) GetDestDetails(destID string) (model.Destination, error
 			}
 		}
 	}
+	if destDetail.Name == "" {
+		return model.Destination{}, model.ErrInvalidDestination
+	}
 
+	pkgLogger.Debugf("obtained destination detail: %v", destDetail)
 	return destDetail, nil
+}
+
+func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.ConfigT, error) {
+	pkgLogger.Debugf("getting destination details with exponential backoff")
+
+	maxWait := time.Minute * 10
+	var err error
+	bo := backoff.NewExponentialBackOff()
+	boCtx := backoff.WithContext(bo, ctx)
+	bo.MaxInterval = time.Minute
+	bo.MaxElapsedTime = maxWait
+	var config backendconfig.ConfigT
+	var ok bool
+	if err = backoff.Retry(func() error {
+		pkgLogger.Debugf("Fetching backend-config...")
+		config, ok = d.Dest.Get()
+		if !ok {
+			return fmt.Errorf("error while getting destination details")
+		}
+		return nil
+	}, boCtx); err != nil {
+		if bo.NextBackOff() == backoff.Stop {
+			pkgLogger.Debugf("reached retry limit...")
+			return backendconfig.ConfigT{}, err
+		}
+
+	}
+	return config, nil
 }
