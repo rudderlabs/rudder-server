@@ -673,7 +673,11 @@ func claim(workerIdx int, slaveID string) (claimedJob pgnotifier.ClaimT, claimed
 	return
 }
 
-func processClaimedJob(claimedJob pgnotifier.ClaimT, slaveId string, workerIndex int) {
+func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
+	claimProcessTimeStart := time.Now()
+	defer func() {
+		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
+	} ()
 	handleErr := func(err error, claim pgnotifier.ClaimT) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponseT{
@@ -721,9 +725,7 @@ func setupSlave() {
 			idx := workerIdx
 			rruntime.Go(func() {
 				// create tags and timers
-				tags := []warehouseutils.Tag{{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)}}
-				claimProcessTimer := warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, tags...)
-				workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, tags...)
+				workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)})
 				for {
 					// wait for a notification
 					workerIdleTimeStart := time.Now()
@@ -739,9 +741,7 @@ func setupSlave() {
 					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 
 					// process job
-					claimProcessTimeStart := time.Now()
-					processClaimedJob(claimedJob, slaveID, idx)
-					claimProcessTimer.Since(claimProcessTimeStart)
+					processClaimedJob(claimedJob, idx)
 					pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 				}
 			})
