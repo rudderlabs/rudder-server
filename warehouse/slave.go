@@ -31,7 +31,6 @@ const (
 	STATS_WORKER_CLAIM_PROCESSING_TIME      = "worker_claim_processing_time"
 	STATS_WORKER_CLAIM_PROCESSING_FAILED    = "worker_claim_processing_failed"
 	STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED = "worker_claim_processing_succeeded"
-	TAG_SLAVEID                             = "slaveId"
 	TAG_WORKERID                            = "workerId"
 )
 
@@ -682,7 +681,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, slaveId string, workerIndex
 		response := pgnotifier.ClaimResponseT{
 			Err: err,
 		}
-		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_SLAVEID, Value: slaveId}, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
 		claim.ClaimResponseChan <- response
 	}
 
@@ -706,9 +705,9 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, slaveId string, workerIndex
 		Payload: output,
 	}
 	if response.Err != nil {
-		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_SLAVEID, Value: slaveId}, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
 	} else {
-		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED, warehouseutils.Tag{Name: TAG_SLAVEID, Value: slaveId}, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
 	}
 	claimedJob.ClaimResponseChan <- response
 }
@@ -723,9 +722,8 @@ func setupSlave() {
 		for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
 			idx := workerIdx
 			rruntime.Go(func() {
-				// TODO: confirm if it is okay to send slaveId in tags - uuid - high cardinality
 				// create tags and timers
-				tags := []warehouseutils.Tag{{Name: TAG_SLAVEID, Value: slaveID}, {Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)}}
+				tags := []warehouseutils.Tag{{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)}}
 				successTags := append(tags, warehouseutils.Tag{Name: "status", Value: "success"})
 				failedTags := append(tags, warehouseutils.Tag{Name: "status", Value: "failed"})
 				claimProcessTimer := warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, tags...)
