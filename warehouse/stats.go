@@ -43,7 +43,6 @@ func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.RudderStat
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	pkgLogger.Infof("Tags:", tags)
 	return stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
@@ -165,14 +164,13 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		return
 	}
 
-	config := job.warehouse.Destination.Config
-	syncFrequency := "1440"
-	if config[warehouseutils.SyncFrequency] != nil {
-		syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
-	}
-
 	retried := gjson.GetBytes(job.upload.Metadata, "retried").String()
 	if !(retried == "true") {
+		config := job.warehouse.Destination.Config
+		syncFrequency := "1440"
+		if config[warehouseutils.SyncFrequency] != nil {
+			syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
+		}
 		job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}, tag{name: "syncFrequency", value: syncFrequency}).SendTiming(time.Since(firstEventAt))
 	}
 }
