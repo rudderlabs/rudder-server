@@ -183,6 +183,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 	var stagingFileId = jobRun.job.StagingFileID
 
 	loadFileOutputChan := make(chan loadFileUploadOutputT, len(jobRun.outputFileWritersMap))
+	loadFileUploadTimer := jobRun.timerStat("load_file_upload_time")
 	uploadJobChan := make(chan *loadFileUploadJob, len(jobRun.outputFileWritersMap))
 	// close chan to avoid memory leak ranging over it
 	defer close(uploadJobChan)
@@ -198,11 +199,13 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 					return // stop further processing
 				default:
 					tableName := uploadJob.tableName
+					loadFileUploadStart := time.Now()
 					uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, uploadJob.outputFile, tableName)
 					if err != nil {
 						uploadErrorChan <- err
 						return
 					}
+					loadFileUploadTimer.Since(loadFileUploadStart)
 					loadFileStats, err := os.Stat(uploadJob.outputFile.GetLoadFile().Name())
 					if err != nil {
 						uploadErrorChan <- err
@@ -729,9 +732,9 @@ func setupSlave() {
 				workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, tags...)
 				for {
 					// wait for a notification
-					workerIdleTimer.Start()
+					workerIdleTimeStart := time.Now()
 					ev := <-jobNotificationChannel
-					workerIdleTimer.End()
+					workerIdleTimer.Since(workerIdleTimeStart)
 					pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workerId: %v", ev, idx)
 
 					// claim job and record time taken
@@ -748,9 +751,9 @@ func setupSlave() {
 					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 
 					// process job
-					claimProcessTimer.Start()
+					claimProcessTimeStart := time.Now()
 					processClaimedJob(claimedJob, slaveID, idx)
-					claimProcessTimer.End()
+					claimProcessTimer.Since(claimProcessTimeStart)
 					pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 				}
 			})
