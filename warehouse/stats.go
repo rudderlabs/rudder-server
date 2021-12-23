@@ -164,8 +164,8 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		return
 	}
 
-	retried := gjson.GetBytes(job.upload.Metadata, "retried").String()
-	if !(retried == "true") {
+	retried := gjson.GetBytes(job.upload.Metadata, "retried").Bool()
+	if !retried {
 		config := job.warehouse.Destination.Config
 		syncFrequency := "1440"
 		if config[warehouseutils.SyncFrequency] != nil {
