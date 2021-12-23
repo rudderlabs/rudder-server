@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/base64"
 	"strings"
 	"time"
 
@@ -26,12 +27,18 @@ type DrainStats struct {
 	Reasons []string
 }
 
+type SendPostResponse struct {
+	StatusCode          int
+	ResponseContentType string
+	ResponseBody        []byte
+}
+
 func Init() {
 	loadConfig()
 }
 
 func loadConfig() {
-	config.RegisterDurationConfigVariable(time.Duration(24), &JobRetention, true, time.Hour, "Router.jobRetention")
+	config.RegisterDurationConfigVariable(time.Duration(720), &JobRetention, true, time.Hour, "Router.jobRetention")
 }
 
 func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) (bool, string) {
@@ -68,4 +75,34 @@ func EnhanceJSON(rawMsg []byte, key, val string) []byte {
 	}
 
 	return resp
+}
+
+func IsNotEmptyString(s string) bool {
+	return len(strings.TrimSpace(s)) > 0
+}
+
+func GetAuthType(dest backendconfig.DestinationT) (authType string) {
+	destConfig := dest.DestinationDefinition.Config
+	var lookupErr error
+	var authValue interface{}
+	if authValue, lookupErr = misc.NestedMapLookup(destConfig, "auth", "type"); lookupErr != nil {
+		// pkgLogger.Infof(`OAuthsupport for %s not supported`, dest.DestinationDefinition.Name)
+		return ""
+	}
+	authType = authValue.(string)
+	return authType
+}
+
+func BasicAuth(username, password string) string {
+	auth := username + ":" + password
+	return base64.StdEncoding.EncodeToString([]byte(auth))
+}
+
+func GetRudderAccountId(destination *backendconfig.DestinationT) string {
+	if rudderAccountIdInterface, found := destination.Config["rudderAccountId"]; found {
+		if rudderAccountId, ok := rudderAccountIdInterface.(string); ok {
+			return rudderAccountId
+		}
+	}
+	return ""
 }

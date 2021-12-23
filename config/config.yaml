@@ -45,6 +45,11 @@ Debugger:
   maxRetry: 3
   batchTimeout: 2s
   retrySleep: 100ms
+LiveEvent:
+  cache:
+    size: 3
+    ttl: 20d
+    clearFreq: 5s
 SourceDebugger:
   disableEventUploads: false
 DestinationDebugger:
@@ -78,6 +83,8 @@ JobsDB:
     batch_rt:
       enabled: false
       failedOnly: false
+  gw:
+    enableWriterQueue: false
 Router:
   jobQueryBatchSize: 10000
   updateStatusBatchSize: 1000
@@ -101,7 +108,10 @@ Router:
   retryTimeWindow: 180m
   failedKeysEnabled: false
   saveDestinationResponseOverride: false
-  responseTransform: false
+  transformerProxy: false
+  transformerProxyRetryCount: 15
+  GOOGLESHEETS:
+    noOfWorkers: 1
   MARKETO:
     noOfWorkers: 4
   throttler:
@@ -112,6 +122,8 @@ Router:
     forceHTTP1: true
     httpTimeout: 120s
     httpMaxIdleConnsPerHost: 32
+  BQSTREAM:
+    transformerProxy: true
 BatchRouter:
   mainLoopSleep: 2s
   jobQueryBatchSize: 100000
@@ -174,6 +186,7 @@ Processor:
   errDBReadBatchSize: 1000
   noOfErrStashWorkers: 2
   maxFailedCountForErrJob: 3
+  enableEventCount: true
   Stats:
     captureEventName: false
 Dedup:
@@ -185,6 +198,9 @@ BackendConfig:
   pollInterval: 5s
   regulationsPollInterval: 300s
   maxRegulationsPerRequest: 1000
+  Regulations:
+    pageSize: 50
+    pollInterval: 300s
 recovery:
   enabled: true
   errorStorePath: /tmp/error_store.json

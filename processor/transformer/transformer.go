@@ -23,6 +23,7 @@ import (
 
 const (
 	UserTransformerStage        = "user_transformer"
+	EventFilterStage            = "event_filter"
 	DestTransformerStage        = "dest_transformer"
 	TrackingPlanValidationStage = "trackingPlan_validation"
 )
@@ -49,6 +50,7 @@ type MetadataT struct {
 	RecordID            interface{}                       `json:"recordId"`
 	DestinationType     string                            `json:"destinationType"`
 	MessageID           string                            `json:"messageId"`
+	OAuthAccessToken    string                            `json:"oauthAccessToken"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
 	MessageIDs              []string `json:"messageIds"`
 	RudderID                string   `json:"rudderId"`

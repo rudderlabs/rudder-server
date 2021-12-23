@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -29,19 +30,19 @@ const (
 
 //HandleT is the handle for this class
 type HandleT struct {
-	tr                                      *http.Transport
-	client                                  *http.Client
-	transformRequestTimerStat               stats.RudderStats
-	transformerNetworkRequestTimerStat      stats.RudderStats
-	transformerResponseTransformRequestTime stats.RudderStats
-	logger                                  logger.LoggerI
+	tr                                 *http.Transport
+	client                             *http.Client
+	transformRequestTimerStat          stats.RudderStats
+	transformerNetworkRequestTimerStat stats.RudderStats
+	transformerProxyRequestTime        stats.RudderStats
+	logger                             logger.LoggerI
 }
 
 //Transformer provides methods to transform events
 type Transformer interface {
 	Setup()
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
-	ResponseTransform(ctx context.Context, responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string)
+	ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string) (statusCode int, respBody string)
 }
 
 //NewTransformer creates a new transformer
@@ -50,16 +51,18 @@ func NewTransformer() *HandleT {
 }
 
 var (
-	maxRetry        int
-	retrySleep      time.Duration
-	timeoutDuration time.Duration
-	pkgLogger       logger.LoggerI
+	maxRetry              int
+	retrySleep            time.Duration
+	timeoutDuration       time.Duration
+	retryWithBackoffCount int64
+	pkgLogger             logger.LoggerI
 )
 
 func loadConfig() {
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(time.Duration(100), &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(30), &timeoutDuration, true, time.Second, []string{"Processor.timeoutDuration", "Processor.timeoutDurationInSecond"}...)
+	config.RegisterInt64ConfigVariable(15, &retryWithBackoffCount, true, 1, "Router.transformerProxyRetryCount")
 }
 
 func Init() {
@@ -169,103 +172,73 @@ func (trans *HandleT) Transform(transformType string, transformMessage *types.Tr
 	return destinationJobs
 }
 
-func (trans *HandleT) ResponseTransform(ctx context.Context, responseData integrations.DeliveryResponseT, destName string) (statusCode int, respBody string) {
+func (trans *HandleT) ProxyRequest(ctx context.Context, responseData integrations.PostParametersT, destName string) (int, string) {
 	rawJSON, err := json.Marshal(responseData)
-	requestFailed := false
-	retryCount := 0
 	if err != nil {
 		panic(err)
 	}
-	var resp *http.Response
+
 	var respData []byte
 	var respCode int
-	var tempRespData []byte
-	url := getResponseTransformURL(destName)
-	payload := strings.NewReader(string(rawJSON))
-	for {
-		payload.Seek(0, io.SeekStart)
-		req, err := http.NewRequestWithContext(ctx, "POST", url, payload)
-		if err != nil {
-			trans.logger.Error(fmt.Sprintf(`400 Unable to construct POST request for URL : "%s"`, url))
-			return 400, fmt.Sprintf(`400 Unable to construct POST request for URL : "%s"`, url)
-		}
-		req.Header.Add("Content-Type", "application/json")
-		s := time.Now()
-		resp, err = trans.client.Do(req)
-		trans.transformerResponseTransformRequestTime.SendTiming(time.Since(s))
-		// retry in case of err
-		if err != nil {
-			trans.logger.Errorf("[Transformer Response Transform request failed] :: %+v", err)
-			requestFailed = true
-			if retryCount > maxRetry {
-				panic(fmt.Errorf("Transformer HTTP connection error: URL: %v Error: %+v", url, err))
-			}
-			retryCount++
-			time.Sleep(retrySleep)
-			//Refresh the connection
-			continue
-		}
 
-		if resp != nil && resp.Body != nil {
-			tempRespData, _ = io.ReadAll(resp.Body)
-			resp.Body.Close()
-		}
-		//Detecting content type of the respBody
-		contentTypeHeader := http.DetectContentType(tempRespData)
-		//If content type is not of type "*text*", overriding it with empty string
-		if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
-			strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
-			strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {
-			tempRespData = []byte("")
-		}
+	url := getProxyURL(destName)
+	payload := []byte(rawJSON)
 
-		if requestFailed {
-			trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
+	operation := func() error {
+		var requestError error
+		//start
+		rdl_time := time.Now()
+		respData, respCode, requestError = trans.makeHTTPRequest(ctx, url, payload)
+		if requestError != nil {
+			stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": "false"}).SendTiming(time.Since(rdl_time))
+			stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": "false"}).Increment()
+		} else {
+			stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": "true"}).SendTiming(time.Since(rdl_time))
+			stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": "true"}).Increment()
 		}
-
-		if resp != nil {
-			//handling for 404
-			if resp.StatusCode == 404 {
-				panic(fmt.Errorf("[Response transform doesnot exist for URL: URL: %v", url))
-			}
-			// handling for 5xx
-			if resp.StatusCode >= 500 && resp.StatusCode < 600 {
-				var transError integrations.TransErrorT
-				rawTResponse := []byte(gjson.GetBytes(tempRespData, "output").Raw)
-				// if the response is not containing "output" is not an explicit error from transformer
-				if len(rawTResponse) != 0 {
-					err = json.Unmarshal(rawTResponse, &transError)
-					if err != nil {
-						respData = []byte("Failed to parse response transform at server error: " + err.Error())
-						respCode = 400
-						break
-					}
-					// error is explicitly lodged from transformer marking a destination side failure
-					if transError.ErrorDetailed.ResponseTransformFailure {
-						integrations.CollectDestErrorStats(rawTResponse)
-						respData = tempRespData
-						respCode = resp.StatusCode
-						break
-					}
-				}
-				// network level 5xx error we need to retry response transform request
-				trans.logger.Errorf("[Transformer Response Transform request failed] :: %+v", err)
-				requestFailed = true
-				if retryCount > maxRetry {
-					panic(fmt.Errorf("Transformer HTTP connection error: URL: %v Error: %+v", url, err))
-				}
-				retryCount++
-				time.Sleep(retrySleep)
-				//Refresh the connection
-				continue
-			}
-			rawTResponse := []byte(gjson.GetBytes(tempRespData, "output").Raw)
-			integrations.CollectDestErrorStats(rawTResponse)
-			respData = tempRespData
-			respCode = resp.StatusCode
-			break
-		}
+		//end
+		return requestError
 	}
+
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(retryWithBackoffCount))
+	err = backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		pkgLogger.Errorf("[Transformer Proxy] Request for proxy to URL:: %v, Error:: %+v retrying after:: %v,", url, err, t)
+		stats.NewStat("transformer_proxy.retry_metric", stats.CountType).Increment()
+	})
+
+	if err != nil {
+		panic(fmt.Errorf("[Transformer Proxy] Proxy request failed after max retries Error:: %+v", err))
+	}
+
+	//Detecting content type of the respBody
+	contentTypeHeader := strings.ToLower(http.DetectContentType(respData))
+	//If content type is not of type "*text*", overriding it with empty string
+	if !(strings.Contains(contentTypeHeader, "text") ||
+		strings.Contains(contentTypeHeader, "application/json") ||
+		strings.Contains(contentTypeHeader, "application/xml")) {
+		respData = []byte("")
+	}
+
+	transformerResponse := integrations.TransResponseT{
+		Message: "[Transformer Proxy]:: Default Message TransResponseT",
+	}
+	respData = []byte(gjson.GetBytes(respData, "output").Raw)
+	integrations.CollectDestErrorStats(respData)
+	err = json.Unmarshal(respData, &transformerResponse)
+	// unmarshal failure
+	if err != nil {
+		errStr := string(respData) + " [Transformer Proxy Unmarshaling]::" + err.Error()
+		trans.logger.Errorf(errStr)
+		respData = []byte(errStr)
+		respCode = http.StatusBadRequest
+		return respCode, string(respData)
+	}
+	// unmarshal success
+	respData, err = json.Marshal(transformerResponse)
+	if err != nil {
+		panic(fmt.Errorf("[Transformer Proxy]:: failed to Marshal proxy response : %+v", err))
+	}
+
 	return respCode, string(respData)
 }
 
@@ -276,7 +249,42 @@ func (trans *HandleT) Setup() {
 	trans.client = &http.Client{Transport: trans.tr, Timeout: timeoutDuration}
 	trans.transformRequestTimerStat = stats.NewStat("router.processor.transformer_request_time", stats.TimerType)
 	trans.transformerNetworkRequestTimerStat = stats.NewStat("router.transformer_network_request_time", stats.TimerType)
-	trans.transformerResponseTransformRequestTime = stats.NewStat("router.transformer_response_transform_time", stats.TimerType)
+	trans.transformerProxyRequestTime = stats.NewStat("router.transformer_response_transform_time", stats.TimerType)
+
+}
+
+func (trans *HandleT) makeHTTPRequest(ctx context.Context, url string, payload []byte) ([]byte, int, error) {
+	var respData []byte
+	var respCode int
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
+	if err != nil {
+		return []byte{}, http.StatusBadRequest, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := trans.client.Do(req)
+
+	if err != nil {
+		return []byte{}, http.StatusBadRequest, err
+	}
+
+	// error handling if body is missing
+	if resp.Body == nil {
+		respData = []byte("[Transformer Proxy] :: transformer returned empty response body")
+		respCode = http.StatusBadRequest
+		return respData, respCode, fmt.Errorf("[Transformer Proxy] :: transformer returned empty response body")
+	}
+
+	respData, err = io.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	// error handling while reading from resp.Body
+	if err != nil {
+		respData = []byte(fmt.Sprintf(`[Transformer Proxy] :: failed to read response body, Error:: %+v`, err))
+		respCode = http.StatusBadRequest
+		return respData, respCode, err
+	}
+	respCode = resp.StatusCode
+	return respData, respCode, nil
 }
 
 func getBatchURL() string {
@@ -287,6 +295,6 @@ func getRouterTransformURL() string {
 	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
 }
 
-func getResponseTransformURL(destName string) string {
-	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/transform/" + strings.ToLower(destName) + "/response"
+func getProxyURL(destName string) string {
+	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
 }

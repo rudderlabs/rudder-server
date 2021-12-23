@@ -58,11 +58,6 @@ type PostParametersT struct {
 	Files       map[string]interface{} `json:"files"`
 }
 
-type DeliveryResponseT struct {
-	Status int64  `json:"status"`
-	Body   string `json:"responseBody"`
-}
-
 // This struct represents the datastructure present in Transformer network layer Error builder
 type TransErrorSpecT struct {
 	Message                  string                 `json:"message"`
@@ -73,29 +68,36 @@ type TransErrorSpecT struct {
 	Metadata                 map[string]interface{} `json:"metadata"`
 	ResponseTransformFailure bool                   `json:"responseTransformFailure"`
 	FailureAt                string                 `json:"failureAt"`
+	AuthErrorCategory        string                 `json:"authErrorCategory"`
+	AccessToken              string                 `json:"accessToken"`
 }
 
-type TransErrorT struct {
-	ErrorDetailed TransErrorSpecT `json:"errorDetailed"`
+type TransStatsT struct {
+	StatTags map[string]string `json:"statTags"`
+}
+type TransResponseT struct {
+	Message             string      `json:"message"`
+	DestinationResponse interface{} `json:"destinationResponse"`
+	AuthErrorCategory   string      `json:"authErrorCategory"`
 }
 
 func CollectDestErrorStats(input []byte) {
-	var destinationResponseErr TransErrorT
-	err := json.Unmarshal(input, &destinationResponseErr)
+	var integrationStat TransStatsT
+	err := json.Unmarshal(input, &integrationStat)
 	if err == nil {
-		if len(destinationResponseErr.ErrorDetailed.StatTags) > 0 {
-			stats.NewTaggedStat("integration.failure_detailed", stats.CountType, destinationResponseErr.ErrorDetailed.StatTags).Increment()
+		if len(integrationStat.StatTags) > 0 {
+			stats.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
 		}
 	}
 }
 
 func CollectIntgTransformErrorStats(input []byte) {
-	var transErrors []TransErrorT
-	err := json.Unmarshal(input, &transErrors)
+	var integrationStats []TransStatsT
+	err := json.Unmarshal(input, &integrationStats)
 	if err == nil {
-		for _, transError := range transErrors {
-			if len(transError.ErrorDetailed.StatTags) > 0 {
-				stats.NewTaggedStat("integration.failure_detailed", stats.CountType, transError.ErrorDetailed.StatTags).Increment()
+		for _, integrationStat := range integrationStats {
+			if len(integrationStat.StatTags) > 0 {
+				stats.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
 			}
 		}
 	}

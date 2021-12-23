@@ -9,11 +9,13 @@ import (
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGet(t *testing.T) {
+	initialize.Init()
 	var tests = []struct {
 		name                      string
 		workspaceID               string
@@ -40,7 +42,7 @@ func TestGet(t *testing.T) {
 			name:        "Get request to get job: random error",
 			workspaceID: "1001",
 			respCode:    429,
-			expectedErr: fmt.Errorf("error while getting job:{429  <nil>}"),
+			expectedErr: fmt.Errorf("unexpected response code: 429"),
 		},
 	}
 	for _, tt := range tests {
@@ -53,6 +55,7 @@ func TestGet(t *testing.T) {
 			defer svr.Close()
 
 			c := client.JobAPI{
+				Client:      &http.Client{},
 				WorkspaceID: tt.workspaceID,
 				URLPrefix:   svr.URL,
 			}
@@ -66,6 +69,7 @@ func TestGet(t *testing.T) {
 }
 
 func TestUpdateStatus(t *testing.T) {
+	initialize.Init()
 	var tests = []struct {
 		name            string
 		workspaceID     string
@@ -104,6 +108,7 @@ func TestUpdateStatus(t *testing.T) {
 			defer svr.Close()
 
 			c := client.JobAPI{
+				Client:      &http.Client{},
 				URLPrefix:   svr.URL,
 				WorkspaceID: tt.workspaceID,
 			}

@@ -109,10 +109,9 @@ var _ = Describe("Network", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			statusCode, body := network.SendPost(ctx, structData)
-
-			gomega.Expect(statusCode).To(gomega.Equal(http.StatusGatewayTimeout))
-			gomega.Expect(body).To(gomega.Equal(""))
+			resp := network.SendPost(ctx, structData)
+			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusGatewayTimeout))
+			gomega.Expect(string(resp.ResponseBody)).To(gomega.Equal("504 Unable to make \"\" request for URL : \"https://www.google-analytics.com/collect\""))
 		})
 	})
 })
