@@ -669,7 +669,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 func claim(workerIdx int, slaveID string) (claimedJob pgnotifier.ClaimT, claimed bool) {
 	pkgLogger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
 	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
-	claimedJob, claimed = notifier.Claim(workerID, workerIdx)
+	claimedJob, claimed = notifier.Claim(workerID)
 	return
 }
 

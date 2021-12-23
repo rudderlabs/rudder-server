@@ -303,7 +303,7 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT
 	})
 }
 
-func (notifier *PgNotifierT) Claim(workerID string, workerIndex int) (claim ClaimT, claimed bool) {
+func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool) {
 	claimStartTime := time.Now()
 	defer func() {
 		if !claimed {
@@ -325,10 +325,11 @@ func (notifier *PgNotifierT) Claim(workerID string, workerIndex int) (claim Clai
 						SELECT id
 						FROM %[1]s
 						WHERE status='%[5]s' OR status='%[6]s'
+						ORDER BY priority ASC, id ASC
 						FOR UPDATE SKIP LOCKED
-						LIMIT 1 OFFSET %[7]d
+						LIMIT 1
 						)
-						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState, workerIndex)
+						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState)
 
 	tx, err := notifier.dbHandle.Begin()
 	if err != nil {
