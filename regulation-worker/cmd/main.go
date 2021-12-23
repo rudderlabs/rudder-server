@@ -23,9 +23,6 @@ import (
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
 func main() {
-	//to be removed
-	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
-	os.Setenv("CONFIG_BACKEND_TOKEN", "216Albo9iwvlKxRuItkIaLAq1yL")
 
 	initialize.Init()
 	backendconfig.Init()
