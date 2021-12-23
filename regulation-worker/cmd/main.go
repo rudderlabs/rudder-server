@@ -43,7 +43,7 @@ func main() {
 }
 
 func Run(ctx context.Context) {
-	transformerURL := config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	transformerURL := config.MustGetEnv("DEST_TRANSFORM_URL")
 	pkgLogger.Infof("using transformer URL: %v", transformerURL)
 
 	apiManager := api.APIManager{
