@@ -1555,7 +1555,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files for %s:%s", publishBatchSize, destType, destID)
 	uniqueLoadGenID := uuid.Must(uuid.NewV4()).String()
-	publishCounter := job.counterStat("master_pgnotifier_publish")
 	job.upload.LoadFileGenStartTime = timeutil.Now()
 
 	var wg sync.WaitGroup
@@ -1666,7 +1665,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		if err != nil {
 			panic(err)
 		}
-		publishCounter.Count(len(messages))
 		// set messages to nil to release mem allocated
 		messages = nil
 		wg.Add(1)
