@@ -49,11 +49,11 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 
 	pkgLogger.Debugf("job: %v", job)
 	//once job is successfully received, calling updatestatus API to update the status of job to running.
-	status := model.JobStatusRunning
-	err = js.updateStatus(ctx, status, job.ID)
-	if err != nil {
-		return err
-	}
+	// status := model.JobStatusRunning
+	// err = js.updateStatus(ctx, status, job.ID)
+	// if err != nil {
+	// 	return err
+	// }
 	//executing deletion
 	destDetail, err := js.DestDetail.GetDestDetails(ctx, job.DestinationID)
 	if err != nil {
@@ -64,7 +64,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 		return js.updateStatus(ctx, model.JobStatusFailed, job.ID)
 	}
 
-	status = js.Deleter.Delete(ctx, job, destDetail)
+	status := js.Deleter.Delete(ctx, job, destDetail)
 
 	return js.updateStatus(ctx, status, job.ID)
 }

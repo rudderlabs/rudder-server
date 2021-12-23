@@ -23,7 +23,13 @@ import (
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
 func main() {
+	//to be removed
+	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
+	os.Setenv("CONFIG_BACKEND_TOKEN", "216Albo9iwvlKxRuItkIaLAq1yL")
+
 	initialize.Init()
+	backendconfig.Init()
+
 	pkgLogger.Info("starting regulation-worker")
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -47,28 +53,27 @@ func Run(ctx context.Context) {
 		Client:           &http.Client{},
 		DestTransformURL: transformerURL,
 	}
-
 	dest := &destination.DestMiddleware{
 		Dest: &backendconfig.WorkspaceConfig{},
 	}
+
 	workspaceId, err := dest.GetWorkspaceId(ctx)
 	if err != nil {
 		panic("error while getting workspaceId")
 	}
+
 	pkgLogger.Info("creating delete router")
 	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
 			Client:         &http.Client{},
-			URLPrefix:      config.MustGetEnv("URL_PREFIX"),
+			URLPrefix:      config.MustGetEnv("CONFIG_BACKEND_URL"),
 			WorkspaceToken: config.MustGetEnv("CONFIG_BACKEND_TOKEN"),
 			WorkspaceID:    workspaceId,
 		},
-		DestDetail: &destination.DestMiddleware{
-			Dest: &backendconfig.WorkspaceConfig{},
-		},
-		Deleter: router,
+		DestDetail: dest,
+		Deleter:    router,
 	}
 	pkgLogger.Infof("calling service with: %v", svc)
 	l := withLoop(svc)
