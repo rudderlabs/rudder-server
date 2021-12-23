@@ -10,19 +10,19 @@ var (
 	ErrDestDetail         = errors.New("error while getting destination details")
 	ErrNoRunnableJob      = errors.New("no runnable job found")
 	ErrDestNotImplemented = errors.New("job deletion not implemented for the destination")
+	ErrInvalidDestination = errors.New("invalid destination")
 )
 
 type JobStatus string
 
 const (
-	JobStatusUndefined         JobStatus = ""
-	JobStatusPending           JobStatus = "pending"
-	JobStatusRunning           JobStatus = "running"
-	JobStatusComplete          JobStatus = "complete"
-	JobStatusFailed            JobStatus = "failed"
-	JobStatusNotSupported      JobStatus = "not supported"
-	JobStatusInvalidFormat     JobStatus = "invalid format"
-	JobStatusInvalidCredential JobStatus = "invalid credential"
+	JobStatusUndefined    JobStatus = ""
+	JobStatusPending      JobStatus = "pending"
+	JobStatusRunning      JobStatus = "running"
+	JobStatusComplete     JobStatus = "complete"
+	JobStatusFailed       JobStatus = "failed"
+	JobStatusNotSupported JobStatus = "unsupported"
+	JobStatusAborted      JobStatus = "aborted"
 )
 
 type Job struct {

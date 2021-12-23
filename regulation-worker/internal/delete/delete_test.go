@@ -6,12 +6,13 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDelete(t *testing.T) {
-
+	initialize.Init()
 	ctx := context.Background()
 	testData := []struct {
 		name                              string
