@@ -907,7 +907,7 @@ func TestEventModelsJsonSchemas(t *testing.T) {
 func TestRedis(t *testing.T) {
 	conn, err := redigo.Dial("tcp", redisAddress)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	defer conn.Close()
 	require.Eventually(t, func() bool {
