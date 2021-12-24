@@ -32,7 +32,7 @@ func (r *Router) Delete(ctx context.Context, job model.Job, destDetail model.Des
 	pkgLogger.Debugf("deleting job: %v", job, "from destination: %v", destDetail)
 	r.once.Do(func() {
 		pkgLogger.Info("getting all the supported destination")
-		r.router = make(map[string]deleteManager)
+		r.router = make(map[string]deleteManager, len(r.Managers))
 
 		for _, m := range r.Managers {
 			destinations := m.GetSupportedDestinations()
