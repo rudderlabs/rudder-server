@@ -30,6 +30,7 @@ var (
 	podStatusWaitGroup        *sync.WaitGroup
 	podStatusLock             sync.RWMutex
 	podStatuswatchInitialized bool
+	initialRevision           int64
 )
 
 const PODSTATUS = `ETCD_POD_STATUS`
@@ -62,7 +63,8 @@ func connectToETCD() {}
 //returns a channel watching for changes in workspaces that this pod serves
 func WatchForWorkspaces(ctx context.Context) chan map[string]string {
 	returnChan := make(chan map[string]string)
-	go func(returnChan chan map[string]string, ctx context.Context) {
+	revision := initialRevision
+	go func(returnChan chan map[string]string, ctx context.Context, revision int64) {
 		defer cli.Close()
 		etcdWatchChan := cli.Watch(ctx, podPrefix+`/workspaces`)
 		for watchResp := range etcdWatchChan {
@@ -82,7 +84,7 @@ func WatchForWorkspaces(ctx context.Context) chan map[string]string {
 				}
 			}
 		}
-	}(returnChan, ctx)
+	}(returnChan, ctx, revision)
 	return returnChan
 }
 
@@ -97,6 +99,7 @@ func GetWorkspaces(ctx context.Context) (string, chan map[string]string) {
 	if err != nil {
 		panic(err)
 	}
+	initialRevision = initialWorkspaces.Header.Revision
 	var workSpaceString string
 	if len(initialWorkspaces.Kvs) > 0 {
 		workSpaceString = string(initialWorkspaces.Kvs[0].Value)
