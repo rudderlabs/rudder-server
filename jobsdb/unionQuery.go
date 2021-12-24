@@ -80,6 +80,10 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionQuerystring(customerCount map[s
 		if mj.isEmptyResult(ds, customer, []string{NotProcessed.State}, params.CustomValFilters, params.ParameterFilters) {
 			continue
 		}
+		if count < 0 {
+			mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 unprocessed jobs for this customer.", count, customer)
+			continue
+		}
 		queries = append(queries, mj.getSingleCustomerUnprocessedQueryString(customer, count, ds, params, true))
 		customersToQuery = append(customersToQuery, customer)
 	}
@@ -413,6 +417,10 @@ func (mj *MultiTenantHandleT) getProcessedUnionQuerystring(customerCount map[str
 	for customer, count := range customerCount {
 		//do cache stuff here
 		if mj.isEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters) {
+			continue
+		}
+		if count < 0 {
+			mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 %s jobs for this customer.", count, customer, params.StateFilters[0])
 			continue
 		}
 		queries = append(queries, mj.getSingleCustomerProcessedQueryString(customer, count, ds, params, true))
