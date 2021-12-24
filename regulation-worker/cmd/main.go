@@ -15,11 +15,16 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-func main() {
+var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
+func main() {
+	initialize.Init()
+	pkgLogger.Info("starting regulation-worker")
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -36,26 +41,40 @@ func main() {
 
 func Run(ctx context.Context) {
 	transformerURL := config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	pkgLogger.Infof("using transformer URL: %v", transformerURL)
+
 	apiManager := api.APIManager{
 		Client:           &http.Client{},
 		DestTransformURL: transformerURL,
 	}
+
+	dest := &destination.DestMiddleware{
+		Dest: &backendconfig.WorkspaceConfig{},
+	}
+	workspaceId, err := dest.GetWorkspaceId(ctx)
+	if err != nil {
+		panic("error while getting workspaceId")
+	}
+	pkgLogger.Info("creating delete router")
 	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
+			Client:         &http.Client{},
 			URLPrefix:      config.MustGetEnv("URL_PREFIX"),
 			WorkspaceToken: config.MustGetEnv("CONFIG_BACKEND_TOKEN"),
-			WorkspaceID:    config.MustGetEnv("workspaceID"),
+			WorkspaceID:    workspaceId,
 		},
 		DestDetail: &destination.DestMiddleware{
 			Dest: &backendconfig.WorkspaceConfig{},
 		},
 		Deleter: router,
 	}
+	pkgLogger.Infof("calling service with: %v", svc)
 	l := withLoop(svc)
-	err := l.Loop(ctx)
+	err = l.Loop(ctx)
 	if err != nil {
+		pkgLogger.Errorf("error: %v", err)
 		panic(err)
 	}
 

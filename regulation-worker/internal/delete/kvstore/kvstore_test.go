@@ -13,6 +13,7 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/ory/dockertest"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	initialize.Init()
 	os.Exit(run(m))
 }
 
