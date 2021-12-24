@@ -43,28 +43,29 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 		pkgLogger.Warnf("error while getting job: %v", err)
 		return err
 	}
+
 	totalJobTime := stats.NewTaggedStat("total_job_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID})
 	totalJobTime.Start()
 	defer totalJobTime.End()
 
 	pkgLogger.Debugf("job: %v", job)
 	//once job is successfully received, calling updatestatus API to update the status of job to running.
-	// status := model.JobStatusRunning
-	// err = js.updateStatus(ctx, status, job.ID)
-	// if err != nil {
-	// 	return err
-	// }
+	status := model.JobStatusRunning
+	err = js.updateStatus(ctx, status, job.ID)
+	if err != nil {
+		return err
+	}
 	//executing deletion
 	destDetail, err := js.DestDetail.GetDestDetails(ctx, job.DestinationID)
 	if err != nil {
 		pkgLogger.Errorf("error while getting destination details: %v", err)
 		if err == model.ErrInvalidDestination {
-			js.updateStatus(ctx, model.JobStatusAborted, job.ID)
+			return js.updateStatus(ctx, model.JobStatusAborted, job.ID)
 		}
 		return js.updateStatus(ctx, model.JobStatusFailed, job.ID)
 	}
 
-	status := js.Deleter.Delete(ctx, job, destDetail)
+	status = js.Deleter.Delete(ctx, job, destDetail)
 
 	return js.updateStatus(ctx, status, job.ID)
 }
