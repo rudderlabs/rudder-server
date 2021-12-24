@@ -90,33 +90,26 @@ func WatchForWorkspaces(ctx context.Context) chan map[string]string {
 //
 //along with a watchChan to watch further updates in the workspaces
 func GetWorkspaces(ctx context.Context) (string, chan map[string]string) {
-	clientReturnChan := make(chan *clientv3.Client)
-	errChan := make(chan error)
-	go GetEtcdClient(ctx, clientReturnChan, errChan)
 
-	select {
-	case cli := <-clientReturnChan:
-		initialWorkspaces, err := cli.Get(ctx, podPrefix+`/workspaces`)
-		if err != nil {
-			panic(err)
-		}
-		var workSpaceString string
-		if len(initialWorkspaces.Kvs) > 0 {
-			workSpaceString = string(initialWorkspaces.Kvs[0].Value)
-		} else {
-			workSpaceString = ``
-		}
-		watchChan := WatchForWorkspaces(ctx)
+	GetEtcdClient(ctx)
 
-		return workSpaceString, watchChan
-	case <-time.After(connectTimeout):
-		panic("Couldn't find etcd Client")
-	case err := <-errChan:
+	initialWorkspaces, err := cli.Get(ctx, podPrefix+`/workspaces`)
+	if err != nil {
 		panic(err)
 	}
+	var workSpaceString string
+	if len(initialWorkspaces.Kvs) > 0 {
+		workSpaceString = string(initialWorkspaces.Kvs[0].Value)
+	} else {
+		workSpaceString = ``
+	}
+	watchChan := WatchForWorkspaces(ctx)
+
+	return workSpaceString, watchChan
+
 }
 
-func GetEtcdClient(ctx context.Context, clientReturnChan chan *clientv3.Client, errChan chan error) {
+func GetEtcdClient(ctx context.Context) {
 	var err error
 	cli, err = clientv3.New(clientv3.Config{
 		Endpoints:   etcdHosts,
@@ -126,21 +119,37 @@ func GetEtcdClient(ctx context.Context, clientReturnChan chan *clientv3.Client, 
 		panic(err)
 	}
 
-	statusRes, err := cli.Status(ctx, etcdHosts[0])
-	if err != nil {
-		errChan <- err
-		return
-	} else if statusRes == nil {
-		errChan <- errors.New("statusRes is nil")
-		return
+	statusResChan := make(chan *clientv3.StatusResponse)
+	errChan := make(chan error)
+	getEtcdClusterStatus(ctx, statusResChan, errChan)
+
+	select {
+	case statusResponse := <-statusResChan:
+		pkgLogger.Info(statusResponse)
+	case err := <-errChan:
+		panic(err)
+	case <-time.After(connectTimeout):
+		panic("Couldn't find etcd Client within connectTimeout")
 	}
+
 	etcdHeartBeat(ctx)
-	clientReturnChan <- cli
 	go MigrationWatch(ctx)
 }
 
-func getEtcdClusterStatus(ctx context.Context) {
-
+func getEtcdClusterStatus(ctx context.Context, statusResChan chan *clientv3.StatusResponse, errChan chan error) {
+	majorityHosts := etcdHosts[:(len(etcdHosts)+1)/2]
+	for _, host := range majorityHosts {
+		go func(ctx context.Context, statusResChan chan *clientv3.StatusResponse, errChan chan error, host string) {
+			statusRes, err := cli.Status(ctx, host)
+			if err != nil {
+				errChan <- err
+			} else if statusRes == nil {
+				errChan <- errors.New("statusRes is nil")
+			} else {
+				statusResChan <- statusRes
+			}
+		}(ctx, statusResChan, errChan, host)
+	}
 }
 
 func etcdHeartBeat(ctx context.Context) {
