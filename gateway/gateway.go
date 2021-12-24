@@ -155,6 +155,7 @@ type HandleT struct {
 	addToWebRequestQWaitTime                                   stats.RudderStats
 	ProcessRequestTime                                         stats.RudderStats
 	addToBatchRequestQWaitTime                                 stats.RudderStats
+	webReqHandlerTime                                          stats.RudderStats
 	trackSuccessCount                                          int
 	trackFailureCount                                          int
 	requestMetricLock                                          sync.RWMutex
@@ -1088,6 +1089,8 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 }
 
 func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
+	webReqHandlerTime := time.Now()
+	defer gateway.webReqHandlerTime.Since(webReqHandlerTime)
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
@@ -1109,7 +1112,11 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 		return
 	}
 	gateway.logger.Debug(fmt.Sprintf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok)))
+
+	httpWriteTime := gateway.stats.NewTaggedStat("gateway.http_write_time", stats.TimerType, stats.Tags{"reqType": reqType})
+	httpWriteStartTime := time.Now()
 	w.Write([]byte(response.GetStatus(response.Ok)))
+	httpWriteTime.Since(httpWriteStartTime)
 }
 
 func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
@@ -1558,6 +1565,7 @@ func (gateway *HandleT) Setup(application app.Interface, backendConfig backendco
 	gateway.addToWebRequestQWaitTime = gateway.stats.NewStat("gateway.web_request_queue_wait_time", stats.TimerType)
 	gateway.addToBatchRequestQWaitTime = gateway.stats.NewStat("gateway.batch_request_queue_wait_time", stats.TimerType)
 	gateway.ProcessRequestTime = gateway.stats.NewStat("gateway.process_request_time", stats.TimerType)
+	gateway.webReqHandlerTime = gateway.stats.NewStat("gateway.web_req_handler_time", stats.TimerType)
 
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
