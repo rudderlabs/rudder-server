@@ -41,6 +41,47 @@ type MultiTenantJobsDB interface {
 	GetJournalEntries(opType string) (entries []JournalEntryT)
 	JournalMarkStart(opType string, opPayload json.RawMessage) int64
 	JournalDeleteEntry(opID int64)
+	GetPileUpCounts(map[string]map[string]int)
+}
+
+func (mj *MultiTenantHandleT) GetPileUpCounts(statMap map[string]map[string]int) {
+	mj.dsMigrationLock.RLock()
+	mj.dsListLock.RLock()
+	defer mj.dsMigrationLock.RUnlock()
+	defer mj.dsListLock.RUnlock()
+
+	dsList := mj.getDSList(false)
+	for _, ds := range dsList {
+		queryString := fmt.Sprintf(`with joined as (
+			select j.job_id as jobID, j.custom_val as customVal, s.id as statusID, s.job_state as jobState, j.customer as customer from %[1]s j left join %[2]s s on j.job_id = s.job_id where (s.job_state not in ('aborted', 'succeeded', 'migrated') or s.job_id is null)
+		),
+		x as (
+			select *, ROW_NUMBER() OVER(PARTITION BY joined.jobID 
+										 ORDER BY joined.statusID DESC) AS rank
+			  FROM joined
+		),
+		y as (
+			SELECT * FROM x WHERE rank = 1
+		)
+		select count(*), customVal, customer from y group by customVal, customer;`, ds.JobTable, ds.JobStatusTable)
+		rows, err := mj.dbHandle.Query(queryString)
+		mj.assertError(err)
+
+		for rows.Next() {
+			var count sql.NullInt64
+			var customVal string
+			var customer string
+			err := rows.Scan(&count, &customVal, &customer)
+			mj.assertError(err)
+			if _, ok := statMap[customer]; !ok {
+				statMap[customer] = make(map[string]int)
+			}
+			statMap[customer][customVal] += int(count.Int64)
+		}
+		if err = rows.Err(); err != nil {
+			mj.assertError(err)
+		}
+	}
 }
 
 //used to get pickup-counts during server start-up

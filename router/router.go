@@ -1849,7 +1849,20 @@ func destinationID(job *jobsdb.JobT) string {
 }
 
 func (rt *HandleT) crashRecover() {
+	pileUpStatMap := rt.GetPileUpCounts()
+	rt.logger.Info(pileUpStatMap)
+	for customer := range pileUpStatMap {
+		for destType := range pileUpStatMap[customer] {
+			multitenant.AddToInMemoryCount(customer, destType, pileUpStatMap[customer][destType], "router")
+		}
+	}
 	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: -1})
+}
+
+func (rt *HandleT) GetPileUpCounts() map[string]map[string]int {
+	pileUpStatMap := make(map[string]map[string]int) //customer->destStype->count	//non-terminal-only
+	rt.jobsDB.GetPileUpCounts(pileUpStatMap)
+	return pileUpStatMap
 }
 
 func Init() {
@@ -2155,6 +2168,9 @@ func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAborted
 	jobRunIDAbortedEventsMap[taskRunID] = append(jobRunIDAbortedEventsMap[taskRunID], &FailedEventRowT{DestinationID: destinationID, RecordID: recordID})
 }
 
+//
+//
+//TODO CLEANUP
 func (rt *HandleT) setupCustomerCount() {
 	// query router table and try to proportion query count based on the count we get
 	// for now not distinguishing un/processed jobs, just treating them equal
