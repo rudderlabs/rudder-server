@@ -139,6 +139,10 @@ func GetEtcdClient(ctx context.Context, clientReturnChan chan *clientv3.Client, 
 	go MigrationWatch(ctx)
 }
 
+func getEtcdClusterStatus(ctx context.Context) {
+
+}
+
 func etcdHeartBeat(ctx context.Context) {
 	client := cli
 	etcdConnectTimeout := connectTimeout
@@ -219,9 +223,14 @@ func MigrationWatch(ctx context.Context) {
 				//This pod's status has been deleted from etcd store, pod no longer needed..?
 				podStatus = `terminated`
 			}
+
+			// Wait for all subscribers to process based on the pod_status received from etcd
 			podStatusWaitGroup.Add(Eb.NumSubscribers(PODSTATUS))
+			//actual publishing to the subscribers
 			Eb.Publish(PODSTATUS, podStatus)
+			//wait till they've processed the new pod state
 			podStatusWaitGroup.Wait()
+			//after all subscribers have processed the podstate, put the completed state in etcd
 			cli.Put(watchCtx, podPrefix+`/status`, podStatus+`_completed`)
 		}
 	}
