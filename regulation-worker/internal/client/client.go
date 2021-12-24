@@ -126,6 +126,8 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 		return err
 	}
 	pkgLogger.Debugf("sending request: %v", req)
+	req.SetBasicAuth(j.WorkspaceToken, "")
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := j.Client.Do(req)
 	if err != nil {
