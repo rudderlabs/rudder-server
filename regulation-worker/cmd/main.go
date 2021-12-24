@@ -43,24 +43,14 @@ func main() {
 }
 
 func Run(ctx context.Context) {
-	transformerURL := config.MustGetEnv("DEST_TRANSFORM_URL")
-	pkgLogger.Infof("using transformer URL: %v", transformerURL)
 
-	apiManager := api.APIManager{
-		Client:           &http.Client{},
-		DestTransformURL: transformerURL,
-	}
 	dest := &destination.DestMiddleware{
 		Dest: &backendconfig.WorkspaceConfig{},
 	}
-
 	workspaceId, err := dest.GetWorkspaceId(ctx)
 	if err != nil {
 		panic("error while getting workspaceId")
 	}
-
-	pkgLogger.Info("creating delete router")
-	router := delete.NewRouter(&kvstore.KVDeleteManager{}, &batch.BatchManager{}, &apiManager)
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
@@ -70,9 +60,16 @@ func Run(ctx context.Context) {
 			WorkspaceID:    workspaceId,
 		},
 		DestDetail: dest,
-		Deleter:    router,
+		Deleter: delete.NewRouter(
+			&kvstore.KVDeleteManager{},
+			&batch.BatchManager{},
+			&api.APIManager{
+				Client:           &http.Client{},
+				DestTransformURL: config.MustGetEnv("DEST_TRANSFORM_URL"),
+			}),
 	}
-	pkgLogger.Infof("calling service with: %v", svc)
+
+	pkgLogger.Infof("calling looper with service: %v", svc)
 	l := withLoop(svc)
 	err = l.Loop(ctx)
 	if err != nil {
