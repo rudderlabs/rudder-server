@@ -198,7 +198,7 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 	}
 
 	queryTime.SendTiming(time.Since(start))
-	tablesQueriedStat = stats.NewTaggedStat("tables_queried", stats.GaugeType, stats.Tags{
+	tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
 		"state":    "unprocessed",
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
@@ -318,12 +318,12 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 	}
 
 	queryTime.SendTiming(time.Since(start))
-	tablesQueriedStat = stats.NewTaggedStat("tables_queried", stats.CountType, stats.Tags{
+	tablesQueriedStat = stats.NewTaggedStat("tables_queried", stats.GaugeType, stats.Tags{
 		"state":    params.StateFilters[0],
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
 	})
-	tablesQueriedStat.Count(tablesQueried)
+	tablesQueriedStat.Gauge(tablesQueried)
 
 	//PickUp stats
 	var pickUpCountStat stats.RudderStats
