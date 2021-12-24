@@ -10,7 +10,9 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 )
@@ -23,6 +25,7 @@ func (d *deleteAPI) handler() http.Handler {
 }
 
 func TestDelete(t *testing.T) {
+	initialize.Init()
 	tests := []struct {
 		name                 string
 		job                  model.Job
@@ -99,7 +102,7 @@ func TestDelete(t *testing.T) {
 			destName:             "amplitude",
 			respCode:             400,
 			respBodyStatus:       "failed",
-			expectedDeleteStatus: model.JobStatusInvalidFormat,
+			expectedDeleteStatus: model.JobStatusAborted,
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{
@@ -107,7 +110,7 @@ func TestDelete(t *testing.T) {
 			destName:             "amplitude",
 			respCode:             401,
 			respBodyStatus:       "failed",
-			expectedDeleteStatus: model.JobStatusInvalidCredential,
+			expectedDeleteStatus: model.JobStatusAborted,
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{

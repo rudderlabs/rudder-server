@@ -5,12 +5,14 @@ import (
 	"testing"
 
 	gomock "github.com/golang/mock/gomock"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
 func TestJobSvc(t *testing.T) {
+	initialize.Init()
 	config := map[string]interface{}{
 		"bucketName":  "malani-deletefeature-testdata",
 		"prefix":      "regulation",
@@ -84,7 +86,7 @@ func TestJobSvc(t *testing.T) {
 			mockDeleter.EXPECT().Delete(ctx, tt.job, tt.dest).Return(tt.deleteJobStatus).Times(tt.deleteJobCallCount)
 
 			mockDestDetail := service.NewMockdestDetail(mockCtrl)
-			mockDestDetail.EXPECT().GetDestDetails(tt.job.DestinationID).Return(tt.dest, nil).Times(tt.getDestDetailsCount)
+			mockDestDetail.EXPECT().GetDestDetails(ctx, tt.job.DestinationID).Return(tt.dest, nil).Times(tt.getDestDetailsCount)
 			svc := service.JobSvc{
 				API:        mockAPIClient,
 				Deleter:    mockDeleter,
