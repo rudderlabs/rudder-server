@@ -43,6 +43,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 		pkgLogger.Warnf("error while getting job: %v", err)
 		return err
 	}
+
 	totalJobTime := stats.NewTaggedStat("total_job_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID})
 	totalJobTime.Start()
 	defer totalJobTime.End()
@@ -59,7 +60,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	if err != nil {
 		pkgLogger.Errorf("error while getting destination details: %v", err)
 		if err == model.ErrInvalidDestination {
-			js.updateStatus(ctx, model.JobStatusAborted, job.ID)
+			return js.updateStatus(ctx, model.JobStatusAborted, job.ID)
 		}
 		return js.updateStatus(ctx, model.JobStatusFailed, job.ID)
 	}
