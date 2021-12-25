@@ -664,7 +664,7 @@ func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 	}
 
 	start := time.Now()
-	defer gateway.bodyReadTimeStat.SendTiming(time.Since(start))
+	defer gateway.bodyReadTimeStat.Since(start)
 
 	payload, err := io.ReadAll(r.Body)
 	r.Body.Close()
@@ -1033,7 +1033,7 @@ func (rrh *RegularRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respo
 	start := time.Now()
 	gateway.addToWebRequestQ(w, r, done, reqType, payload, writeKey)
 	gateway.addToWebRequestQWaitTime.SendTiming(time.Since(start))
-	defer gateway.ProcessRequestTime.SendTiming(time.Since(start))
+	defer gateway.ProcessRequestTime.Since(start)
 	errorMessage := <-done
 	return errorMessage
 }
