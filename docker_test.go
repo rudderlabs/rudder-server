@@ -322,7 +322,7 @@ func run(m *testing.M) (int, error) {
 
 	resourceKafka, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-kafka",
-		Tag:        "7.0.0",
+		Tag:        "latest",
 		NetworkID:  network.ID,
 		Hostname:   "broker",
 		PortBindings: map[dc.Port][]dc.PortBinding{
