@@ -79,10 +79,10 @@ func Produce(jsonData json.RawMessage, producer interface{}, destConfig interfac
 	parsedJSON := gjson.ParseBytes(jsonData)
 	dsId := parsedJSON.Get("datasetId").String()
 	tblId := parsedJSON.Get("tableId").String()
-	propBytes := gjson.GetBytes(jsonData, "properties").String()
+	props := parsedJSON.Get("properties").String()
 
 	var genericRec *genericRecord
-	err := json.Unmarshal([]byte(propBytes), &genericRec)
+	err := json.Unmarshal([]byte(props), &genericRec)
 	if err != nil {
 		return http.StatusBadRequest, "Failure", createErr(err, "error in unmarshalling data").Error()
 	}
