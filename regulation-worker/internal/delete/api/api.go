@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -31,7 +32,7 @@ type APIManager struct {
 func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destName)
 	method := "POST"
-	endpoint := "/delete-users"
+	endpoint := "/deleteUsers"
 	url := fmt.Sprint(api.DestTransformURL, endpoint)
 	pkgLogger.Debugf("transformer url: %v", url)
 
@@ -54,7 +55,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 		"jobId":       fmt.Sprintf("%d", job.ID),
 		"workspaceId": job.WorkspaceID,
 		"destType":    "api",
-		"destName":    destName,
+		"destName":    strings.ToLower(destName),
 	})
 	fileCleaningTime.Start()
 	defer fileCleaningTime.End()
