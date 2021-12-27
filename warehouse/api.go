@@ -87,6 +87,7 @@ type UploadAPIT struct {
 	dbHandle          *sql.DB
 	log               logger.LoggerI
 	connectionManager *controlplane.ConnectionManager
+	isHosted          bool
 }
 
 var UploadAPI UploadAPIT
@@ -101,6 +102,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
 		enabled:  true,
 		dbHandle: dbHandle,
 		log:      log,
+		isHosted: isMultiWorkspace,
 		connectionManager: &controlplane.ConnectionManager{
 			AuthInfo: controlplane.AuthInfo{
 				Service:        "warehouse",
@@ -144,107 +146,31 @@ var statusMap = map[string]string{
 	"failed":  "%failed%",
 }
 
-func (uploadsReq *UploadsReqT) generateQuery(authorizedSourceIDs []string, selectFields string) string {
-	query := fmt.Sprintf(`select %s, count(*) OVER() AS total_uploads from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
-	var whereClauses []string
-	if uploadsReq.SourceID == "" {
-		whereClauses = append(whereClauses, fmt.Sprintf(`source_id IN (%v)`, misc.SingleQuoteLiteralJoin(authorizedSourceIDs)))
-	} else if misc.ContainsString(authorizedSourceIDs, uploadsReq.SourceID) {
-		whereClauses = append(whereClauses, fmt.Sprintf(`source_id = '%s'`, uploadsReq.SourceID))
-	}
-	if uploadsReq.DestinationID != "" {
-		whereClauses = append(whereClauses, fmt.Sprintf(`destination_id = '%s'`, uploadsReq.DestinationID))
-	}
-	if uploadsReq.DestinationType != "" {
-		whereClauses = append(whereClauses, fmt.Sprintf(`destination_type = '%s'`, uploadsReq.DestinationType))
-	}
-	if uploadsReq.Status != "" {
-		whereClauses = append(whereClauses, fmt.Sprintf(`status like '%s'`, statusMap[uploadsReq.Status]))
-	}
-
-	query = query + strings.Join(whereClauses, " AND ") + fmt.Sprintf(` order by id desc limit %d offset %d`, uploadsReq.Limit, uploadsReq.Offset)
-	uploadsReq.API.log.Info(query)
-	return query
-}
-
 func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsResponse, err error) {
-	uploads := make([]*proto.WHUploadResponse, 0)
-
 	uploadsRes = &proto.WHUploadsResponse{
-		Uploads: uploads,
+		Uploads: make([]*proto.WHUploadResponse, 0),
 	}
+
 	err = uploadsReq.validateReq()
 	if err != nil {
 		return
 	}
+
 	uploadsRes.Pagination = &proto.Pagination{
 		Limit:  uploadsReq.Limit,
 		Offset: uploadsReq.Offset,
 	}
-	if err != nil {
-		return
-	}
-
 	authorizedSourceIDs := uploadsReq.authorizedSources()
 	if len(authorizedSourceIDs) == 0 {
-		uploadsRes.Uploads = uploads
 		return uploadsRes, nil
 	}
 
-	query := uploadsReq.generateQuery(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
-	uploadsReq.API.log.Info(query)
-	rows, err := uploadsReq.API.dbHandle.Query(query)
-	if err != nil {
-		uploadsReq.API.log.Errorf(err.Error())
+	if UploadAPI.isHosted {
+		uploadsRes, err = uploadsReq.getWhUploadsForHosted(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 		return
 	}
-	for rows.Next() {
-		var upload proto.WHUploadResponse
-		var nextRetryTimeStr sql.NullString
-		var uploadError string
-		var timingsObject sql.NullString
-		var totalUploads int32
-		var firstEventAt, lastEventAt, lastExecAt, updatedAt sql.NullTime
-		var isUploadArchived sql.NullBool
-		err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived, &totalUploads)
-		if err != nil {
-			uploadsReq.API.log.Errorf(err.Error())
-			return &proto.WHUploadsResponse{}, err
-		}
-		uploadsRes.Pagination.Total = totalUploads
-		upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
-		upload.LastEventAt = timestamppb.New(lastEventAt.Time)
-		upload.IsArchivedUpload = isUploadArchived.Bool // will be false if archivedStagingAndLoadFiles is not set
-		gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
-			upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
-			return true
-		})
-		// set error only for failed uploads. skip for retried and then successful uploads
-		if upload.Status != ExportedData {
-			lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
-			errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
-			errors := gjson.Get(uploadError, errorPath).Array()
-			if len(errors) > 0 {
-				upload.Error = errors[len(errors)-1].String()
-			}
-		}
-		// set nextRetryTime for non-aborted failed uploads
-		if upload.Status != ExportedData && upload.Status != Aborted && nextRetryTimeStr.Valid {
-			if nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr.String); err == nil {
-				upload.NextRetryTime = timestamppb.New(nextRetryTime)
-			}
-		}
-		// set duration as time between updatedAt and lastExec recorded timings
-		// for ongoing/retrying uploads set diff between lastExec and current time
-		if upload.Status == ExportedData || upload.Status == Aborted {
-			upload.Duration = int32(updatedAt.Time.Sub(lastExecAt.Time) / time.Second)
-		} else {
-			upload.Duration = int32(timeutil.Now().Sub(lastExecAt.Time) / time.Second)
-		}
-		upload.Tables = make([]*proto.WHTable, 0)
-		uploads = append(uploads, &upload)
-	}
-	uploadsRes.Uploads = uploads
+
+	uploadsRes, err = uploadsReq.getWhUploads(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	return
 }
 
@@ -506,4 +432,175 @@ func (uploadsReq UploadsReqT) authorizedSources() (sourceIDs []string) {
 		sourceIDs = []string{}
 	}
 	return sourceIDs
+}
+
+func (uploadsReq *UploadsReqT) getUploadsFromDb(isHosted bool, query string) ([]*proto.WHUploadResponse, int32, error) {
+	var totalUploadCount int32
+	var err error
+	uploads := make([]*proto.WHUploadResponse, 0)
+
+	rows, err := uploadsReq.API.dbHandle.Query(query)
+	if err != nil {
+		uploadsReq.API.log.Errorf(err.Error())
+		return nil, 0, err
+	}
+
+	for rows.Next() {
+		var upload proto.WHUploadResponse
+		var nextRetryTimeStr sql.NullString
+		var uploadError string
+		var timingsObject sql.NullString
+		var totalUploads int32
+		var firstEventAt, lastEventAt, lastExecAt, updatedAt sql.NullTime
+		var isUploadArchived sql.NullBool
+
+		// total upload count is also a part of these rows if the query was made for a hosted workspace
+		if isHosted {
+			err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived, &totalUploads)
+			if err != nil {
+				uploadsReq.API.log.Errorf(err.Error())
+				return nil, totalUploadCount, err
+			}
+			totalUploadCount = totalUploads
+		} else {
+			err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived)
+			if err != nil {
+				uploadsReq.API.log.Errorf(err.Error())
+				return nil, totalUploadCount, err
+			}
+		}
+
+		upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
+		upload.LastEventAt = timestamppb.New(lastEventAt.Time)
+		upload.IsArchivedUpload = isUploadArchived.Bool // will be false if archivedStagingAndLoadFiles is not set
+		gjson.Parse(uploadError).ForEach(func(key gjson.Result, value gjson.Result) bool {
+			upload.Attempt += int32(gjson.Get(value.String(), "attempt").Int())
+			return true
+		})
+		// set error only for failed uploads. skip for retried and then successful uploads
+		if upload.Status != ExportedData {
+			lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
+			errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
+			errors := gjson.Get(uploadError, errorPath).Array()
+			if len(errors) > 0 {
+				upload.Error = errors[len(errors)-1].String()
+			}
+		}
+		// set nextRetryTime for non-aborted failed uploads
+		if upload.Status != ExportedData && upload.Status != Aborted && nextRetryTimeStr.Valid {
+			if nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr.String); err == nil {
+				upload.NextRetryTime = timestamppb.New(nextRetryTime)
+			}
+		}
+		// set duration as time between updatedAt and lastExec recorded timings
+		// for ongoing/retrying uploads set diff between lastExec and current time
+		if upload.Status == ExportedData || upload.Status == Aborted {
+			upload.Duration = int32(updatedAt.Time.Sub(lastExecAt.Time) / time.Second)
+		} else {
+			upload.Duration = int32(timeutil.Now().Sub(lastExecAt.Time) / time.Second)
+		}
+		upload.Tables = make([]*proto.WHTable, 0)
+		uploads = append(uploads, &upload)
+	}
+	return uploads, totalUploadCount, err
+}
+
+func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, error) {
+	var totalUploadCount int32
+	query := fmt.Sprintf(`select count(*) from %s WHERE %s`, warehouseutils.WarehouseUploadsTable, whereClause)
+	err := uploadsReq.API.dbHandle.QueryRow(query).Scan(&totalUploadCount)
+	return totalUploadCount, err
+}
+
+// for hosted workspaces - we get the uploads and the total upload count using the same query
+func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+	var uploads []*proto.WHUploadResponse
+	var totalUploadCount int32
+
+	// create query
+	query := fmt.Sprintf(`select %s, count(*) OVER() AS total_uploads from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
+	var whereClauses []string
+	if uploadsReq.SourceID == "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(`source_id IN (%v)`, misc.SingleQuoteLiteralJoin(authorizedSourceIDs)))
+	} else if misc.ContainsString(authorizedSourceIDs, uploadsReq.SourceID) {
+		whereClauses = append(whereClauses, fmt.Sprintf(`source_id = '%s'`, uploadsReq.SourceID))
+	}
+	if uploadsReq.DestinationID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(`destination_id = '%s'`, uploadsReq.DestinationID))
+	}
+	if uploadsReq.DestinationType != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(`destination_type = '%s'`, uploadsReq.DestinationType))
+	}
+	if uploadsReq.Status != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(`status like '%s'`, statusMap[uploadsReq.Status]))
+	}
+
+	query = query + strings.Join(whereClauses, " AND ") + fmt.Sprintf(` order by id desc limit %d offset %d`, uploadsReq.Limit, uploadsReq.Offset)
+	uploadsReq.API.log.Info(query)
+
+	// get uploads from db
+	uploads, totalUploadCount, err = uploadsReq.getUploadsFromDb(true, query)
+	if err != nil {
+		uploadsReq.API.log.Errorf(err.Error())
+		return &proto.WHUploadsResponse{}, err
+	}
+	
+	// create response
+	uploadsRes.Uploads = uploads
+	uploadsRes.Pagination = &proto.Pagination{
+		Limit:  uploadsReq.Limit,
+		Offset: uploadsReq.Offset,
+		Total:  totalUploadCount,
+	}
+	return
+}
+
+// for non hosted workspaces - we get the uploads and the total upload count using separate queries
+func (uploadsReq *UploadsReqT) getWhUploads(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+	var uploads []*proto.WHUploadResponse
+	var totalUploadCount int32
+
+	// create query
+	query := fmt.Sprintf(`select %s from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
+	var whereClauses []string
+	if uploadsReq.SourceID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(`source_id = '%s'`, uploadsReq.SourceID))
+	}
+	if uploadsReq.DestinationID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(`destination_id = '%s'`, uploadsReq.DestinationID))
+	}
+	if uploadsReq.DestinationType != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(`destination_type = '%s'`, uploadsReq.DestinationType))
+	}
+	if uploadsReq.Status != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf(`status like '%s'`, statusMap[uploadsReq.Status]))
+	}
+	whereClause := strings.Join(whereClauses, " AND ")
+
+	query = query + whereClause + fmt.Sprintf(` order by id desc limit %d offset %d`, uploadsReq.Limit, uploadsReq.Offset)
+	uploadsReq.API.log.Info(query)
+
+	// we get uploads for non hosted workspaces in two steps
+	// this is because getting this info via 2 queries is faster than getting it via one query(using the 'count(*) OVER()' clause)
+	// step1 - get all uploads
+	uploads, _, err = uploadsReq.getUploadsFromDb(false, query)
+	if err != nil {
+		uploadsReq.API.log.Errorf(err.Error())
+		return &proto.WHUploadsResponse{}, err
+	}
+	// step2 - get total upload count
+	totalUploadCount, err = uploadsReq.getTotalUploadCount(whereClause)
+	if err != nil {
+		uploadsReq.API.log.Errorf(err.Error())
+		return &proto.WHUploadsResponse{}, err
+	}
+
+	// create response
+	uploadsRes.Uploads = uploads
+	uploadsRes.Pagination = &proto.Pagination{
+		Limit:  uploadsReq.Limit,
+		Offset: uploadsReq.Offset,
+		Total:  totalUploadCount,
+	}
+	return
 }
