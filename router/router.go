@@ -440,7 +440,7 @@ func (worker *workerT) workerProcess() {
 					if tokenStatusCode == http.StatusOK {
 						jobMetadata.OAuthAccessToken = accountSecretInfo.Account.AccessToken
 					} else {
-						worker.rt.logger.Infof(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo.Err)
+						worker.rt.logger.Errorf(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo.Err)
 					}
 				}
 			}
