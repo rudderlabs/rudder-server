@@ -4,16 +4,15 @@ import (
 	"context"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/utils/logger"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestBatchDelete(t *testing.T) {
-	config.Load()
-	logger.Init()
+	initialize.Init()
 
 	ctx := context.Background()
 	tests := []struct {

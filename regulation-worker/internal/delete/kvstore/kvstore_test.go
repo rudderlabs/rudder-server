@@ -13,6 +13,7 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/ory/dockertest"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	initialize.Init()
 	os.Exit(run(m))
 }
 
@@ -36,7 +38,7 @@ func run(m *testing.M) int {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 
-	resource, err := pool.Run("redis", "latest", []string{})
+	resource, err := pool.Run("redis", "alpine3.14", []string{})
 	if err != nil {
 		log.Panicf("Could not start resource: %s", err)
 	}

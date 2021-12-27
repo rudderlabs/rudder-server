@@ -182,7 +182,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			contentTypeHeader = http.DetectContentType(respBody)
 		}
 
-		//If content type is not of type "*text*", overriding it with empty string
+		// If content type is not of type "*text*", overriding it with empty string
 		if !(strings.Contains(strings.ToLower(contentTypeHeader), "text") ||
 			strings.Contains(strings.ToLower(contentTypeHeader), "application/json") ||
 			strings.Contains(strings.ToLower(contentTypeHeader), "application/xml")) {

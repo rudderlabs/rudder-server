@@ -152,6 +152,7 @@ type ParametersT struct {
 	DestinationDefinitionID string      `json:"destination_definition_id"`
 	SourceCategory          string      `json:"source_category"`
 	RecordID                interface{} `json:"record_id"`
+	WorkspaceId             string      `json:"workspaceId"`
 }
 
 type MetricMetadata struct {
@@ -1866,7 +1867,7 @@ func (proc *HandleT) transformSrcDest(
 		sourceDefID := destEvent.Metadata.SourceDefinitionID
 		destDefID := destEvent.Metadata.DestinationDefinitionID
 		sourceCategory := destEvent.Metadata.SourceCategory
-		customer := destEvent.Metadata.Customer
+		workspaceId := destEvent.Metadata.WorkspaceID
 		//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 		//This is done to respect findWorker logic in router.
 		if rudderID == "" {
@@ -1891,6 +1892,7 @@ func (proc *HandleT) transformSrcDest(
 			SourceDefinitionID:      sourceDefID,
 			DestinationDefinitionID: destDefID,
 			RecordID:                recordId,
+			WorkspaceId:             workspaceId,
 		}
 		marshalledParams, err := json.Marshal(params)
 		if err != nil {
@@ -1906,7 +1908,7 @@ func (proc *HandleT) transformSrcDest(
 			ExpireAt:     time.Now(),
 			CustomVal:    destType,
 			EventPayload: destEventJSON,
-			Customer:     customer,
+			Customer:     workspaceId,
 		}
 		if misc.Contains(batchDestinations, newJob.CustomVal) {
 			batchDestJobs = append(batchDestJobs, &newJob)

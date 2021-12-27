@@ -41,8 +41,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	pkgLogger.Info("Main starting")
 
 	rudderCoreDBValidator()
-	rudderCoreNodeSetup()
 	rudderCoreWorkSpaceTableSetup()
+	rudderCoreNodeSetup()
 	rudderCoreBaseSetup()
 
 	g, ctx := errgroup.WithContext(ctx)
