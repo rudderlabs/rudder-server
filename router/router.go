@@ -428,7 +428,7 @@ func (worker *workerT) workerProcess() {
 			if authType := router_utils.GetAuthType(destination); router_utils.IsNotEmptyString(authType) && authType == "OAuth" {
 				rudderAccountId := router_utils.GetRudderAccountId(&destination)
 				if router_utils.IsNotEmptyString(rudderAccountId) {
-					worker.rt.logger.Infof(`[%s] Token Fetch Method to be called`, destination.DestinationDefinition.Name)
+					worker.rt.logger.Debugf(`[%s][FetchToken] Token Fetch Method to be called`, destination.DestinationDefinition.Name)
 					// Get Access Token Information to send it as part of the event
 					tokenStatusCode, accountSecretInfo := worker.rt.oauth.FetchToken(&oauth.RefreshTokenParams{
 						AccountId:       rudderAccountId,
@@ -436,12 +436,11 @@ func (worker *workerT) workerProcess() {
 						DestDefName:     destination.DestinationDefinition.Name,
 						EventNamePrefix: "fetch_token",
 					})
-					worker.rt.logger.Infof(`[%s] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo)
+					worker.rt.logger.Debugf(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo)
 					if tokenStatusCode == http.StatusOK {
 						jobMetadata.OAuthAccessToken = accountSecretInfo.Account.AccessToken
-						// jobMetadata.OAuthAccessToken = ""
 					} else {
-						worker.rt.logger.Infof(`Error in Token Fetch statusCode: %d\t error: %s\n`, tokenStatusCode, accountSecretInfo.Err)
+						worker.rt.logger.Infof(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo.Err)
 					}
 				}
 			}
