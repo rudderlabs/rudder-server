@@ -37,6 +37,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	pkgLogger.Debugf("transformer url: %v", url)
 
 	bodySchema := mapJobToPayload(job, strings.ToLower(destName), destConfig)
+	fmt.Println(bodySchema)
 
 	reqBody, err := json.Marshal(bodySchema)
 	if err != nil {
