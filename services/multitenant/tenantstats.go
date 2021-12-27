@@ -43,7 +43,7 @@ func SendPileUpStats() {
 					"destType": destType,
 				})
 				countStat.Gauge(count)
-				pkgLogger.Infof("pile_up_count is %v for customer %v", count, customer)
+				pkgLogger.Debugf("pile_up_count is %v for customer %v", count, customer)
 			}
 		}
 		multitenantStat.routerJobCountMutex.RUnlock()
@@ -61,7 +61,7 @@ func SendRouterInMovingAverageStat() {
 					"destType": destType,
 				})
 				movingAverageStat.Gauge(count.Value())
-				pkgLogger.Infof("router_input_rate is %.8f for customer %v", count.Value(), customer)
+				pkgLogger.Debugf("router_input_rate is %.8f for customer %v", count.Value(), customer)
 			}
 		}
 		multitenantStat.routerJobCountMutex.RUnlock()
