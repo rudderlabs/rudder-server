@@ -68,7 +68,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 		return model.JobStatusFailed
 	}
 	defer resp.Body.Close()
-	pkgLogger.Debugf("response status code: %v", resp.StatusCode, " response body: %v", resp.Body)
+	pkgLogger.Info("response status code: %v", resp.StatusCode, " response body: %v", resp.Body)
 
 	var jobResp JobRespSchema
 	if err := json.NewDecoder(resp.Body).Decode(&jobResp); err != nil {
