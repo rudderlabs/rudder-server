@@ -606,6 +606,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				diagnosisStartTime := time.Now()
 				sourceID := destinationJob.JobMetadataArray[0].SourceID
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
+				workspaceId := destinationJob.JobMetadataArray[0].WorkspaceId
 
 				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
 				transformAt := destinationJob.JobMetadataArray[0].TransformAt
@@ -665,7 +666,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								}
 							} else {
 								rdl_time := time.Now()
-								resp := worker.rt.netHandle.SendPost(sendCtx, val)
+								resp := worker.rt.netHandle.SendPost(sendCtx, val, workspaceId)
 								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
 								// stat end
 								worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))

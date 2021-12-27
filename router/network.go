@@ -28,7 +28,7 @@ type NetHandleT struct {
 
 //Network interface
 type NetHandleI interface {
-	SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse
+	SendPost(ctx context.Context, structData integrations.PostParametersT, workspaceId string) *utils.SendPostResponse
 }
 
 //temp solution for handling complex query params
@@ -51,7 +51,7 @@ func handleQueryParam(param interface{}) string {
 
 //SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 //this returns the statusCode, status and response body from the response of the destination call
-func (network *NetHandleT) SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse {
+func (network *NetHandleT) SendPost(ctx context.Context, structData integrations.PostParametersT, workspaceId string) *utils.SendPostResponse {
 	if disableEgress {
 		return &utils.SendPostResponse{
 			StatusCode:   200,
@@ -154,6 +154,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		}
 
 		req.Header.Add("User-Agent", "RudderLabs")
+		req.Header.Add("workspaceId", workspaceId)
 
 		resp, err := client.Do(req)
 		if err != nil {
