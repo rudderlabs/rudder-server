@@ -1558,7 +1558,7 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 		multitenant.ReportProcLoopAddStats(processorLoopStats["router"], time.Since(stageStartTime), "router")
 		multitenant.ReportProcLoopAddStats(processorLoopStats["batch_router"], time.Since(stageStartTime), "batch_router")
 	}
-	pkgLogger.Infof("Router In Jobs: %v,%v,%v,%v,%v,%v,%v,%v,%v,%v || Time Taken : %v", processorLoopStats["router"]["22XEji7vy1kqt9cOlRs3sqDL5yC"]["WEBHOOK"], processorLoopStats["router"]["22XEpPF6GSeLXQnYnZTCetLA6pT"]["WEBHOOK"], processorLoopStats["router"]["22XEqwbFowYt87cGPOdmARbK99b"]["WEBHOOK"], processorLoopStats["router"]["22XEsORvYnOy1zeAbfQmXVb1Tie"]["WEBHOOK"], processorLoopStats["router"]["22XEtxIwdZgVO4tAxF8nLtNHEAM"]["WEBHOOK"], processorLoopStats["router"]["22XEvPN3TUqbpAUequb6W4HJDJ0"]["WEBHOOK"], processorLoopStats["router"]["22XEwlX8YitV9aWbK4Fj8QabxeY"]["WEBHOOK"], processorLoopStats["router"]["22XFT1wZ6MEe2YDXLeBspRKs1Nn"]["WEBHOOK"], processorLoopStats["router"]["22XFUKHDiLXirhVsuLOWv2zwAj3"]["WEBHOOK"], processorLoopStats["router"]["22XFVrf23GDmtVCsAQqJwewTgW5"]["WEBHOOK"], time.Since(stageStartTime))
+
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.statDBW.Since(beforeStoreStatus)

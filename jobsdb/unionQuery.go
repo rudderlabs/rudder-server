@@ -181,12 +181,6 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(ds 
 
 func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer string, count int, ds dataSetT, params GetQueryParamsT, order bool) string {
 	var sqlStatement string
-
-	if count < 0 {
-		mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 unprocessed jobs for this customer.", count, customer)
-		count = 0
-	}
-
 	// event_count default 1, number of items in payload
 	sqlStatement = fmt.Sprintf(
 		selectQuery+

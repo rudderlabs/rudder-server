@@ -1,10 +1,7 @@
 package multitenant
 
 import (
-	"bytes"
-	"encoding/gob"
 	"math"
-	"os"
 	"sync"
 	"time"
 
@@ -28,64 +25,11 @@ func Init() {
 	multitenantStat.RouterInMemoryJobCounts = make(map[string]map[string]map[string]int)
 	multitenantStat.RouterInMemoryJobCounts["router"] = make(map[string]map[string]int)
 	multitenantStat.RouterInMemoryJobCounts["batch_router"] = make(map[string]map[string]int)
-	// prePopulateRouterPileUpCounts()
 	multitenantStat.RouterInputRates = make(map[string]map[string]map[string]misc.MovingAverage)
 	multitenantStat.RouterInputRates["router"] = make(map[string]map[string]misc.MovingAverage)
 	multitenantStat.RouterInputRates["batch_router"] = make(map[string]map[string]misc.MovingAverage)
-	hardcodeInMemoryStats()
-	// go writerouterPileUpStatsEncodedToFile()
 	go SendRouterInMovingAverageStat()
 	go SendPileUpStats()
-}
-
-func hardcodeInMemoryStats() {
-
-	multitenantStat.RouterInputRates["router"]["22XEji7vy1kqt9cOlRs3sqDL5yC"] = make(map[string]misc.MovingAverage)
-	multitenantStat.RouterInputRates["router"]["22XEpPF6GSeLXQnYnZTCetLA6pT"] = make(map[string]misc.MovingAverage)
-	multitenantStat.RouterInputRates["router"]["22XEpPF6GSeLXQnYnZTCetLA6pT"] = make(map[string]misc.MovingAverage)
-	multitenantStat.RouterInputRates["router"]["22XEqwbFowYt87cGPOdmARbK99b"] = make(map[string]misc.MovingAverage)
-	multitenantStat.RouterInputRates["router"]["22XEsORvYnOy1zeAbfQmXVb1Tie"] = make(map[string]misc.MovingAverage)
-	multitenantStat.RouterInputRates["router"]["22XEtxIwdZgVO4tAxF8nLtNHEAM"] = make(map[string]misc.MovingAverage)
-	multitenantStat.RouterInputRates["router"]["22XEvPN3TUqbpAUequb6W4HJDJ0"] = make(map[string]misc.MovingAverage)
-	multitenantStat.RouterInputRates["router"]["22XEwlX8YitV9aWbK4Fj8QabxeY"] = make(map[string]misc.MovingAverage)
-	multitenantStat.RouterInputRates["router"]["22XFT1wZ6MEe2YDXLeBspRKs1Nn"] = make(map[string]misc.MovingAverage)
-	multitenantStat.RouterInputRates["router"]["22XFUKHDiLXirhVsuLOWv2zwAj3"] = make(map[string]misc.MovingAverage)
-	multitenantStat.RouterInputRates["router"]["22XFVrf23GDmtVCsAQqJwewTgW5"] = make(map[string]misc.MovingAverage)
-
-	multitenantStat.RouterInputRates["router"]["22XEji7vy1kqt9cOlRs3sqDL5yC"]["WEBHOOK"] = misc.NewMovingAverage()
-	multitenantStat.RouterInputRates["router"]["22XEpPF6GSeLXQnYnZTCetLA6pT"]["WEBHOOK"] = misc.NewMovingAverage()
-	multitenantStat.RouterInputRates["router"]["22XEpPF6GSeLXQnYnZTCetLA6pT"]["WEBHOOK"] = misc.NewMovingAverage()
-	multitenantStat.RouterInputRates["router"]["22XEqwbFowYt87cGPOdmARbK99b"]["WEBHOOK"] = misc.NewMovingAverage()
-	multitenantStat.RouterInputRates["router"]["22XEsORvYnOy1zeAbfQmXVb1Tie"]["WEBHOOK"] = misc.NewMovingAverage()
-	multitenantStat.RouterInputRates["router"]["22XEtxIwdZgVO4tAxF8nLtNHEAM"]["WEBHOOK"] = misc.NewMovingAverage()
-	multitenantStat.RouterInputRates["router"]["22XEvPN3TUqbpAUequb6W4HJDJ0"]["WEBHOOK"] = misc.NewMovingAverage()
-	multitenantStat.RouterInputRates["router"]["22XEwlX8YitV9aWbK4Fj8QabxeY"]["WEBHOOK"] = misc.NewMovingAverage()
-	multitenantStat.RouterInputRates["router"]["22XFT1wZ6MEe2YDXLeBspRKs1Nn"]["WEBHOOK"] = misc.NewMovingAverage()
-	multitenantStat.RouterInputRates["router"]["22XFUKHDiLXirhVsuLOWv2zwAj3"]["WEBHOOK"] = misc.NewMovingAverage()
-	multitenantStat.RouterInputRates["router"]["22XFVrf23GDmtVCsAQqJwewTgW5"]["WEBHOOK"] = misc.NewMovingAverage()
-
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEji7vy1kqt9cOlRs3sqDL5yC"] = make(map[string]int)
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEpPF6GSeLXQnYnZTCetLA6pT"] = make(map[string]int)
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XFT1wZ6MEe2YDXLeBspRKs1Nn"] = make(map[string]int)
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEqwbFowYt87cGPOdmARbK99b"] = make(map[string]int)
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEsORvYnOy1zeAbfQmXVb1Tie"] = make(map[string]int)
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEtxIwdZgVO4tAxF8nLtNHEAM"] = make(map[string]int)
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEvPN3TUqbpAUequb6W4HJDJ0"] = make(map[string]int)
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEwlX8YitV9aWbK4Fj8QabxeY"] = make(map[string]int)
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XFUKHDiLXirhVsuLOWv2zwAj3"] = make(map[string]int)
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XFVrf23GDmtVCsAQqJwewTgW5"] = make(map[string]int)
-
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEji7vy1kqt9cOlRs3sqDL5yC"]["WEBHOOK"] = 0
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEpPF6GSeLXQnYnZTCetLA6pT"]["WEBHOOK"] = 0
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XFT1wZ6MEe2YDXLeBspRKs1Nn"]["WEBHOOK"] = 0
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEqwbFowYt87cGPOdmARbK99b"]["WEBHOOK"] = 0
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEsORvYnOy1zeAbfQmXVb1Tie"]["WEBHOOK"] = 0
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEtxIwdZgVO4tAxF8nLtNHEAM"]["WEBHOOK"] = 0
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEvPN3TUqbpAUequb6W4HJDJ0"]["WEBHOOK"] = 0
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XEwlX8YitV9aWbK4Fj8QabxeY"]["WEBHOOK"] = 0
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XFUKHDiLXirhVsuLOWv2zwAj3"]["WEBHOOK"] = 0
-	multitenantStat.RouterInMemoryJobCounts["router"]["22XFVrf23GDmtVCsAQqJwewTgW5"]["WEBHOOK"] = 0
-
 }
 
 func SendPileUpStats() {
@@ -123,54 +67,6 @@ func SendRouterInMovingAverageStat() {
 		multitenantStat.routerJobCountMutex.RUnlock()
 	}
 }
-
-func writerouterPileUpStatsEncodedToFile() {
-	for {
-		//TODO : Write this to DB instead of file in a transaction Or Make a DB Query Instead
-		tmpDirPath, err := misc.CreateTMPDIR()
-		if err != nil {
-			panic(err)
-		}
-		path := tmpDirPath + "/router_pile_up_stat_persist.txt"
-		file, _ := os.Create(path)
-		buf := new(bytes.Buffer)
-		encoder := gob.NewEncoder(buf)
-		err = encoder.Encode(multitenantStat.RouterInMemoryJobCounts)
-		if err != nil {
-			panic(err)
-		}
-		if len(buf.Bytes()) != 0 {
-			time.Sleep(10 * time.Second)
-		}
-		_, err = file.Write(buf.Bytes())
-		if err != nil {
-			panic(err)
-		}
-		time.Sleep(10 * time.Second) // TODO : Make these sleep timings configurable
-	}
-}
-
-// func prePopulateRouterPileUpCounts() {
-// 	tmpDirPath, err := misc.CreateTMPDIR()
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	path := tmpDirPath + "router_pile_up_stat_persist.txt"
-// 	byteData, err := os.ReadFile(path)
-// 	if err != nil {
-// 		//TODO : Build Stats with CrashRecover Query If file not found
-// 		return
-// 	}
-// 	if len(byteData) == 0 {
-// 		return
-// 	}
-// 	bufferedData := bytes.NewBuffer(byteData)
-// 	decoder := gob.NewDecoder(bufferedData)
-// 	err = decoder.Decode(&multitenantStat.RouterInMemoryJobCounts)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// }
 
 func AddToInMemoryCount(customerID string, destinationType string, count int, tableType string) {
 	multitenantStat.routerJobCountMutex.RLock()
@@ -282,7 +178,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 				}
 				runningTimeCounter = runningTimeCounter - timeRequired
 				runningJobCount = runningJobCount - customerPickUpCount[customerKey]
-				pkgLogger.Infof("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
+				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
 			}
 		}
 	}
@@ -319,14 +215,8 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			runningJobCount = runningJobCount - pileupPickUp
 			runningTimeCounter = runningTimeCounter - float64(pileupPickUp)*latencyMap[customerKey].Value()
 		}
-		pkgLogger.Infof("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , PileUpLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
+		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , PileUpLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
 	}
-
-	///TODO : Remove these logs when merging to master
-	pkgLogger.Infof("latencyMap: %v,%v,%v,%v,%v,%v,%v,%v,%v,%v", latencyMap["22XEji7vy1kqt9cOlRs3sqDL5yC"].Value(), latencyMap["22XEpPF6GSeLXQnYnZTCetLA6pT"].Value(), latencyMap["22XEqwbFowYt87cGPOdmARbK99b"].Value(), latencyMap["22XEsORvYnOy1zeAbfQmXVb1Tie"].Value(), latencyMap["22XEtxIwdZgVO4tAxF8nLtNHEAM"].Value(), latencyMap["22XEvPN3TUqbpAUequb6W4HJDJ0"].Value(), latencyMap["22XEwlX8YitV9aWbK4Fj8QabxeY"].Value(), latencyMap["22XFT1wZ6MEe2YDXLeBspRKs1Nn"].Value(), latencyMap["22XFUKHDiLXirhVsuLOWv2zwAj3"].Value(), latencyMap["22XFVrf23GDmtVCsAQqJwewTgW5"].Value())
-	pkgLogger.Infof("routerInRates: %v,%v,%v,%v,%v,%v,%v,%v,%v,%v", multitenantStat.RouterInputRates["router"]["22XEji7vy1kqt9cOlRs3sqDL5yC"][destType].Value(), multitenantStat.RouterInputRates["router"]["22XEpPF6GSeLXQnYnZTCetLA6pT"][destType].Value(), multitenantStat.RouterInputRates["router"]["22XEqwbFowYt87cGPOdmARbK99b"][destType].Value(), multitenantStat.RouterInputRates["router"]["22XEsORvYnOy1zeAbfQmXVb1Tie"][destType].Value(), multitenantStat.RouterInputRates["router"]["22XEtxIwdZgVO4tAxF8nLtNHEAM"][destType].Value(), multitenantStat.RouterInputRates["router"]["22XEvPN3TUqbpAUequb6W4HJDJ0"][destType].Value(), multitenantStat.RouterInputRates["router"]["22XEwlX8YitV9aWbK4Fj8QabxeY"][destType].Value(), multitenantStat.RouterInputRates["router"]["22XFT1wZ6MEe2YDXLeBspRKs1Nn"][destType].Value(), multitenantStat.RouterInputRates["router"]["22XFUKHDiLXirhVsuLOWv2zwAj3"][destType].Value(), multitenantStat.RouterInputRates["router"]["22XFVrf23GDmtVCsAQqJwewTgW5"][destType].Value())
-	pkgLogger.Infof("pileUpStats : %v,%v,%v,%v,%v,%v,%v,%v,%v,%v", multitenantStat.RouterInMemoryJobCounts["router"]["22XEji7vy1kqt9cOlRs3sqDL5yC"][destType], multitenantStat.RouterInMemoryJobCounts["router"]["22XEpPF6GSeLXQnYnZTCetLA6pT"][destType], multitenantStat.RouterInMemoryJobCounts["router"]["22XEqwbFowYt87cGPOdmARbK99b"][destType], multitenantStat.RouterInMemoryJobCounts["router"]["22XEsORvYnOy1zeAbfQmXVb1Tie"][destType], multitenantStat.RouterInMemoryJobCounts["router"]["22XEtxIwdZgVO4tAxF8nLtNHEAM"][destType], multitenantStat.RouterInMemoryJobCounts["router"]["22XEvPN3TUqbpAUequb6W4HJDJ0"][destType], multitenantStat.RouterInMemoryJobCounts["router"]["22XEwlX8YitV9aWbK4Fj8QabxeY"][destType], multitenantStat.RouterInMemoryJobCounts["router"]["22XFT1wZ6MEe2YDXLeBspRKs1Nn"][destType], multitenantStat.RouterInMemoryJobCounts["router"]["22XFUKHDiLXirhVsuLOWv2zwAj3"][destType], multitenantStat.RouterInMemoryJobCounts["router"]["22XFVrf23GDmtVCsAQqJwewTgW5"][destType])
-	pkgLogger.Infof("customerPickUpCount: %v,%v,%v,%v,%v,%v,%v,%v,%v,%v", customerPickUpCount["22XEji7vy1kqt9cOlRs3sqDL5yC"], customerPickUpCount["22XEpPF6GSeLXQnYnZTCetLA6pT"], customerPickUpCount["22XEqwbFowYt87cGPOdmARbK99b"], customerPickUpCount["22XEsORvYnOy1zeAbfQmXVb1Tie"], customerPickUpCount["22XEtxIwdZgVO4tAxF8nLtNHEAM"], customerPickUpCount["22XEvPN3TUqbpAUequb6W4HJDJ0"], customerPickUpCount["22XEwlX8YitV9aWbK4Fj8QabxeY"], customerPickUpCount["22XFT1wZ6MEe2YDXLeBspRKs1Nn"], customerPickUpCount["22XFUKHDiLXirhVsuLOWv2zwAj3"], customerPickUpCount["22XFVrf23GDmtVCsAQqJwewTgW5"])
 
 	return customerPickUpCount
 }

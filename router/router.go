@@ -598,11 +598,12 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
+				customer := destinationJob.JobMetadataArray[0].JobT.Customer
 				deliveryLatencyStat := stats.NewTaggedStat("delivery_latency", stats.TimerType, stats.Tags{
 					"module":      "router",
 					"destType":    worker.rt.destName,
 					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
-					"customer":    destinationJob.JobMetadataArray[0].JobT.Customer,
+					"customer":    customer,
 				})
 				workspaceID := destinationJob.JobMetadataArray[0].JobT.Customer
 				deliveryLatencyStat.Start()
@@ -682,7 +683,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					"destType": worker.rt.destName,
 				})
 				movingAverageLatencyStat.Gauge(float64(timeTaken) / float64(time.Second))
-				worker.rt.logger.Infof("moving_average_latency is %.8f for customer %v", float64(timeTaken)/float64(time.Second), workspaceID)
+				worker.rt.logger.Debugf("moving_average_latency is %.8f for customer %v", float64(timeTaken)/float64(time.Second), workspaceID)
 				// END: request to destination endpoint
 
 				if isSuccessStatus(respStatusCode) && !worker.rt.saveDestinationResponseOverride {

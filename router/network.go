@@ -154,7 +154,6 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		}
 
 		req.Header.Add("User-Agent", "RudderLabs")
-
 		resp, err := client.Do(req)
 		if err != nil {
 			return &utils.SendPostResponse{
