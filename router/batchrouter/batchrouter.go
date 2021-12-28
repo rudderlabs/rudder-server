@@ -111,6 +111,7 @@ type HandleT struct {
 	asyncUploadWorkerResumeChannel chan bool
 	pollAsyncStatusPauseChannel    chan *PauseT
 	pollAsyncStatusResumeChannel   chan bool
+	maxDSQuerySize                 int
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -1791,13 +1792,13 @@ func (brt *HandleT) readAndProcess() {
 		brt.logger.Debugf("BRT: %s: Reading in mainLoop", brt.destType)
 		brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, map[string]string{"function": "mainLoop"})
 		brtQueryStat.Start()
-		// toQuery := brt.jobQueryBatchSize
+		toQuery := brt.jobQueryBatchSize
 		if !brt.holdFetchingJobs([]jobsdb.ParameterFilterT{}) {
-			retryList := brt.jobsDB.GetProcessedUnion(brt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, StateFilters: []string{jobsdb.Failed.State}})
-			// retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
-			// toQuery -= len(retryList)
-			unprocessedList := brt.jobsDB.GetUnprocessedUnion(brt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}})
-			// unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
+			//retryList := brt.jobsDB.GetProcessedUnion(brt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, StateFilters: []string{jobsdb.Failed.State}}, brt.maxDSQuerySize)
+			retryList := brt.jobsDB.GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
+			toQuery -= len(retryList)
+			//unprocessedList := brt.jobsDB.GetUnprocessedUnion(brt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}}, brt.maxDSQuerySize)
+			unprocessedList := brt.jobsDB.GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: toQuery})
 			brtQueryStat.End()
 
 			jobs = append(retryList, unprocessedList...)
@@ -2098,6 +2099,9 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobs
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)
 	config.RegisterDurationConfigVariable(30, &brt.asyncUploadTimeout, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "asyncUploadTimeout", "BatchRouter." + "asyncUploadTimeout"}...)
+	maxDSQuerySizeKeys := []string{"BatchRouter." + brt.destType + "." + "maxDSQuery", "BatchRouter." + "maxDSQuery"}
+	config.RegisterIntConfigVariable(10, &brt.maxDSQuerySize, true, 1, maxDSQuerySizeKeys...)
+
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
 	brt.netHandle = client

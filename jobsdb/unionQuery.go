@@ -22,8 +22,8 @@ type MultiTenantJobsDB interface {
 	GetToRetry(params GetQueryParamsT) []*JobT
 	GetUnprocessed(params GetQueryParamsT) []*JobT
 
-	GetUnprocessedUnion(map[string]int, GetQueryParamsT) []*JobT
-	GetProcessedUnion(map[string]int, GetQueryParamsT) []*JobT
+	GetUnprocessedUnion(map[string]int, GetQueryParamsT, int) []*JobT
+	GetProcessedUnion(map[string]int, GetQueryParamsT, int) []*JobT
 	GetCustomerCounts(int) map[string]int
 
 	GetImportingList(params GetQueryParamsT) []*JobT
@@ -195,7 +195,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer s
 	return sqlStatement
 }
 
-func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, params GetQueryParamsT) []*JobT {
+func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
 
 	//add stats
 
@@ -221,7 +221,10 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 	})
 
 	start := time.Now()
-	for _, ds := range dsList {
+	for i, ds := range dsList {
+		if i > maxDSQuerySize {
+			continue
+		}
 		jobs := mj.getUnprocessedUnionDS(ds, customerCount, params)
 		outJobs = append(outJobs, jobs...)
 		if len(jobs) != 0 {
@@ -320,7 +323,7 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionDS(ds dataSetT, customerCount m
 
 //Processed
 
-func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, params GetQueryParamsT) []*JobT {
+func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
 
 	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
@@ -343,7 +346,10 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 	})
 
 	start := time.Now()
-	for _, ds := range dsList {
+	for i, ds := range dsList {
+		if i > maxDSQuerySize {
+			continue
+		}
 		jobs := mj.getProcessedUnionDS(ds, customerCount, params)
 		outJobs = append(outJobs, jobs...)
 		tablesQueried++
