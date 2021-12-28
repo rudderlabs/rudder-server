@@ -247,6 +247,23 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				continue
 			}
 
+			queryParams := req.request.URL.Query()
+			var tempBody map[string]interface{}
+			err = json.Unmarshal(body, &tempBody)
+
+			if err != nil {
+				req.done <- webhookErrorRespT{err: response.GetStatus(response.RequestBodyReadFailed)}
+				continue
+			}
+
+			tempBody["query_parameters"] = queryParams
+			body, err = json.Marshal(tempBody)
+
+			if err != nil {
+				req.done <- webhookErrorRespT{err: response.GetStatus(response.RequestBodyReadFailed)}
+				continue
+			}
+
 			if !json.Valid(body) {
 				req.done <- webhookErrorRespT{err: response.GetStatus(response.InvalidJSON)}
 				continue
