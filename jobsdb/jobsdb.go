@@ -1370,6 +1370,14 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
 
+	//TODO : Evaluate a way to handle indexes only for particular tables
+
+	if jd.tablePrefix == "rt" {
+		sqlStatement = fmt.Sprintf(`CREATE INDEX customer_customval_job_id ON "%s" (custom__val,customer)`, newDS.JobTable)
+		_, err = jd.dbHandle.Exec(sqlStatement)
+		jd.assertError(err)
+	}
+
 	sqlStatement = fmt.Sprintf(`CREATE TABLE "%s" (
                                      id BIGSERIAL,
                                      job_id BIGINT REFERENCES "%s"(job_id),

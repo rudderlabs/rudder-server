@@ -115,7 +115,7 @@ func (mj *MultiTenantHandleT) GetCustomerCounts(defaultBatchSize int) map[string
 
 func (mj *MultiTenantHandleT) getUnprocessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) (string, []string) {
 	var queries, customersToQuery []string
-	queryInitial := mj.getInitialSingleCustomerUnprocessedQueryString(ds, params, true)
+	queryInitial := mj.getInitialSingleCustomerUnprocessedQueryString(ds, params, true, customerCount)
 	for customer, count := range customerCount {
 		//do cache stuff here
 		if mj.isEmptyResult(ds, customer, []string{NotProcessed.State}, params.CustomValFilters, params.ParameterFilters) {
@@ -132,11 +132,15 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionQuerystring(customerCount map[s
 	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, customersToQuery
 }
 
-func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(ds dataSetT, params GetQueryParamsT, order bool) string {
+func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(ds dataSetT, params GetQueryParamsT, order bool, customerCount map[string]int) string {
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 	var sqlStatement string
-
+	customerArray := make([]string, 0)
+	for customer := range customerCount {
+		customerArray = append(customerArray, "'"+customer+"'")
+	}
+	customerString := "(" + strings.Join(customerArray, ", ") + ")"
 	sqlStatement = fmt.Sprintf(
 		`with rt_jobs_view AS (
 				SELECT 
@@ -155,9 +159,9 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(ds 
 				FROM 
 				%[1]s jobs LEFT JOIN %[2]s AS job_status ON jobs.job_id = job_status.job_id 
 					WHERE 
-					job_status.job_id is NULL 			   
+					job_status.job_id is NULL AND jobs.customer IN %[3]s			   
 			  `,
-		ds.JobTable, ds.JobStatusTable)
+		ds.JobTable, ds.JobStatusTable, customerString)
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
 		sqlStatement += " AND " + constructQuery(mj, "jobs.custom_val", customValFilters, "OR")
 	}
@@ -221,16 +225,16 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 	})
 
 	start := time.Now()
-	for i, ds := range dsList {
-		if i > maxDSQuerySize {
-			continue
-		}
+	for _, ds := range dsList {
 		jobs := mj.getUnprocessedUnionDS(ds, customerCount, params)
 		outJobs = append(outJobs, jobs...)
 		if len(jobs) != 0 {
 			tablesQueried++
 		}
 		if len(customerCount) == 0 {
+			break
+		}
+		if tablesQueried > maxDSQuerySize {
 			break
 		}
 	}
@@ -356,6 +360,9 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 		if len(customerCount) == 0 {
 			break
 		}
+		if tablesQueried > maxDSQuerySize {
+			break
+		}
 	}
 
 	queryTime.SendTiming(time.Since(start))
@@ -453,7 +460,7 @@ func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map
 
 func (mj *MultiTenantHandleT) getProcessedUnionQuerystring(customerCount map[string]int, ds dataSetT, params GetQueryParamsT) (string, []string) {
 	var queries, customersToQuery []string
-	queryInitial := mj.getInitialSingleCustomerProcessedQueryString(ds, params, true)
+	queryInitial := mj.getInitialSingleCustomerProcessedQueryString(ds, params, true, customerCount)
 
 	for customer, count := range customerCount {
 		//do cache stuff here
@@ -471,13 +478,18 @@ func (mj *MultiTenantHandleT) getProcessedUnionQuerystring(customerCount map[str
 	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, customersToQuery
 }
 
-func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(ds dataSetT, params GetQueryParamsT, order bool) string {
+func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(ds dataSetT, params GetQueryParamsT, order bool, customerCount map[string]int) string {
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 	var sqlStatement string
 
 	//some stats
+	customerArray := make([]string, 0)
+	for customer := range customerCount {
+		customerArray = append(customerArray, "'"+customer+"'")
+	}
+	customerString := "(" + strings.Join(customerArray, ", ") + ")"
 
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
@@ -516,10 +528,10 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(ds da
                                                  error_code, error_response, parameters FROM %[2]s WHERE id IN
                                                    (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
                                                AS job_latest_state
-                                            WHERE jobs.job_id=job_latest_state.job_id
+                                            WHERE jobs.job_id=job_latest_state.job_id AND jobs.customer IN %[7]s
                                              %[4]s %[5]s
                                              AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[6]s`,
-		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
+		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, customerString)
 
 	return sqlStatement + ")"
 }
