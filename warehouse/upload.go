@@ -259,8 +259,8 @@ func (job *UploadJobT) getTotalRowsInStagingFiles() int64 {
 	var total sql.NullInt64
 	sqlStatement := fmt.Sprintf(`SELECT sum(total_events)
                                 FROM %[1]s
-								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s' AND %[1]s.status='%[5]s'`,
-		warehouseutils.WarehouseStagingFilesTable, job.upload.StartStagingFileID, job.upload.EndStagingFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID, warehouseutils.StagingFileSucceededState)
+								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'`,
+		warehouseutils.WarehouseStagingFilesTable, job.upload.StartStagingFileID, job.upload.EndStagingFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInStagingFiles: %v`, err)
