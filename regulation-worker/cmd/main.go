@@ -56,7 +56,7 @@ func Run(ctx context.Context) {
 		API: &client.JobAPI{
 			Client:         &http.Client{},
 			URLPrefix:      config.MustGetEnv("CONFIG_BACKEND_URL"),
-			WorkspaceToken: config.MustGetEnv("WORKSPACE_TOKEN"),
+			WorkspaceToken: config.MustGetEnv("CONFIG_BACKEND_TOKEN"),
 			WorkspaceID:    workspaceId,
 		},
 		DestDetail: dest,
