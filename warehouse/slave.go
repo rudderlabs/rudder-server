@@ -684,7 +684,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 			Err: err,
 		}
 		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
-		claim.ClaimResponseChan <- response
+		notifier.UpdateClaimedEvent(claimedJob.ID, &response)
 	}
 
 	var job PayloadT
@@ -711,7 +711,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	} else {
 		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
 	}
-	claimedJob.ClaimResponseChan <- response
+	notifier.UpdateClaimedEvent(claimedJob.ID, &response)
 }
 
 func setupSlave() {
@@ -733,7 +733,7 @@ func setupSlave() {
 					workerIdleTimer.Since(workerIdleTimeStart)
 					pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workerId: %v", ev, idx)
 
-					// claim job 
+					// claim job
 					claimedJob, claimed := claim(idx, slaveID)
 					if !claimed {
 						continue

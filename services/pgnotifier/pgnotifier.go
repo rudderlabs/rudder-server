@@ -76,11 +76,11 @@ type ResponseT struct {
 }
 
 type ClaimT struct {
-	ID                int64
-	BatchID           string
-	Status            string
-	Payload           json.RawMessage
-	ClaimResponseChan chan ClaimResponseT
+	ID            int64
+	BatchID       string
+	Status        string
+	Payload       json.RawMessage
+	ClaimResponse ClaimResponseT
 }
 
 type ClaimResponseT struct {
@@ -188,7 +188,6 @@ func (notifier *PgNotifierT) triggerPending(ctx context.Context, topic string) {
 		case <-ctx.Done():
 			return
 		}
-
 		stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[3]s',
 								updated_at = '%[2]s'
 								WHERE id IN (
@@ -278,9 +277,9 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 	})
 }
 
-func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT) {
-	rruntime.Go(func() {
-		response := <-ch
+func (notifier *PgNotifierT) UpdateClaimedEvent(id int64, response *ClaimResponseT) {
+	//rruntime.Go(func() {
+	//	response := <-ch
 		var err error
 		if response.Err != nil {
 			pkgLogger.Error(response.Err.Error())
@@ -300,7 +299,7 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT
 			pgNotifierClaimUpdateFailed.Increment()
 			pkgLogger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
 		}
-	})
+	//})
 }
 
 func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool) {
@@ -351,15 +350,12 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 		return
 	}
 
-	responseChan := make(chan ClaimResponseT, 1)
 	claim = ClaimT{
-		ID:                claimedID,
-		BatchID:           batchID,
-		Status:            status,
-		Payload:           payload,
-		ClaimResponseChan: responseChan,
+		ID:            claimedID,
+		BatchID:       batchID,
+		Status:        status,
+		Payload:       payload,
 	}
-	notifier.updateClaimedEvent(claimedID, responseChan)
 	return claim, true
 }
 
