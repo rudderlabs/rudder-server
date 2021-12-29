@@ -88,18 +88,33 @@ func (m *MockdestDetail) EXPECT() *MockdestDetailMockRecorder {
 }
 
 // GetDestDetails mocks base method.
-func (m *MockdestDetail) GetDestDetails(destID string) (model.Destination, error) {
+func (m *MockdestDetail) GetDestDetails(ctx context.Context, destID string) (model.Destination, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetDestDetails", destID)
+	ret := m.ctrl.Call(m, "GetDestDetails", ctx, destID)
 	ret0, _ := ret[0].(model.Destination)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetDestDetails indicates an expected call of GetDestDetails.
-func (mr *MockdestDetailMockRecorder) GetDestDetails(destID interface{}) *gomock.Call {
+func (mr *MockdestDetailMockRecorder) GetDestDetails(ctx, destID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDestDetails", reflect.TypeOf((*MockdestDetail)(nil).GetDestDetails), destID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDestDetails", reflect.TypeOf((*MockdestDetail)(nil).GetDestDetails), ctx, destID)
+}
+
+// GetWorkspaceId mocks base method.
+func (m *MockdestDetail) GetWorkspaceId(ctx context.Context) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetWorkspaceId", ctx)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetWorkspaceId indicates an expected call of GetWorkspaceId.
+func (mr *MockdestDetailMockRecorder) GetWorkspaceId(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceId", reflect.TypeOf((*MockdestDetail)(nil).GetWorkspaceId), ctx)
 }
 
 // Mockdeleter is a mock of deleter interface.
@@ -125,17 +140,16 @@ func (m *Mockdeleter) EXPECT() *MockdeleterMockRecorder {
 	return m.recorder
 }
 
-// DeleteJob mocks base method.
-func (m *Mockdeleter) DeleteJob(ctx context.Context, job model.Job, dest model.Destination) (model.JobStatus, error) {
+// Delete mocks base method.
+func (m *Mockdeleter) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteJob", ctx, job, dest)
+	ret := m.ctrl.Call(m, "Delete", ctx, job, destDetail)
 	ret0, _ := ret[0].(model.JobStatus)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	return ret0
 }
 
-// DeleteJob indicates an expected call of DeleteJob.
-func (mr *MockdeleterMockRecorder) DeleteJob(ctx, job, dest interface{}) *gomock.Call {
+// Delete indicates an expected call of Delete.
+func (mr *MockdeleterMockRecorder) Delete(ctx, job, destDetail interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteJob", reflect.TypeOf((*Mockdeleter)(nil).DeleteJob), ctx, job, dest)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*Mockdeleter)(nil).Delete), ctx, job, destDetail)
 }

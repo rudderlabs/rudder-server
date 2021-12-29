@@ -203,20 +203,17 @@ var _ = Describe("BackendConfig", func() {
 	Context("WaitForConfig method", func() {
 		It("Should not wait if initialized is true", func() {
 			initialized = true
-			waitForRegulations = false
 			mockLogger.EXPECT().Info("Waiting for initializing backend config").Times(0)
 			backendConfig.WaitForConfig(context.TODO())
 		})
 		It("Should wait until initialized", func() {
 			initialized = false
-			waitForRegulations = true
 			pollInterval = 2000
 			count := 0
 			mockLogger.EXPECT().Info("Waiting for initializing backend config").Do(func(v string) {
 				count++
 				if count == 5 {
 					initialized = true
-					waitForRegulations = false
 				}
 			}).Times(5)
 			backendConfig.WaitForConfig(context.TODO())
