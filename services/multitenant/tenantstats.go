@@ -134,8 +134,8 @@ func CalculateSuccessFailureCounts(customer string, destType string, isSuccess b
 }
 
 func GenerateSuccessRateMap(destType string) map[string]float64 {
-	multitenantStat.routerJobCountMutex.RUnlock()
-	defer multitenantStat.routerJobCountMutex.RLock()
+	multitenantStat.routerJobCountMutex.RLock()
+	defer multitenantStat.routerJobCountMutex.RUnlock()
 	customerSuccessRate := make(map[string]float64)
 	for customer, destTypeMap := range multitenantStat.RouterSuccessRatioLoopCount {
 		_, ok := destTypeMap[destType]
