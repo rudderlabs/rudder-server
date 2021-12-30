@@ -45,11 +45,24 @@ import (
 
 var AppStartTime int64
 var errorStorePath string
-var reservedFolderPaths map[string]bool
+var reservedFolderPaths []*RFP
 
 const (
 	// RFC3339Milli with milli sec precision
 	RFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
+)
+
+const (
+	RudderAsyncDestinationLogs    = "rudder-async-destination-logs"
+	RudderArchives                = "rudder-archives"
+	RudderWarehouseStagingUploads = "rudder-warehouse-staging-uploads"
+	RudderRawDataDestinationLogs  = "rudder-raw-data-destination-logs"
+	RudderWarehouseLoadUploadsTmp = "rudder-warehouse-load-uploads-tmp"
+	RudderIdentityMergeRulesTmp   = "rudder-identity-merge-rules-tmp"
+	RudderIdentityMappingsTmp     = "rudder-identity-mappings-tmp"
+	RudderRedshiftManifests       = "rudder-redshift-manifests"
+	RudderWarehouseJsonUploadsTmp = "rudder-warehouse-json-uploads-tmp"
+	RudderTestPayload             = "rudder-test-payload"
 )
 
 // ErrorStoreT : DS to store the app errors
@@ -66,6 +79,11 @@ type RudderError struct {
 	Message           string
 	StackTrace        string
 	Code              int
+}
+
+type RFP struct {
+	path         string
+	levelsToKeep int
 }
 
 var pkgLogger logger.LoggerI
@@ -301,58 +319,42 @@ func RemoveFilePaths(filePaths ...string) {
 // GetReservedFolderPaths returns all temporary folder paths.
 func GetReservedFolderPaths() (paths []*RFP) {
 	paths = make([]*RFP, 0)
-	paths = append(paths, RudderAsyncDestinationLogs)
-	paths = append(paths, RudderArchives)
-	paths = append(paths, RudderWarehouseStagingUploads)
-	paths = append(paths, RudderRawDataDestinationLogs)
-	paths = append(paths, RudderWarehouseLoadUploadsTmp)
-	paths = append(paths, RudderIdentityMergeRulesTmp)
-	paths = append(paths, RudderIdentityMappingsTmp)
-	paths = append(paths, RudderRedshiftManifests)
-	paths = append(paths, RudderWarehouseJsonUploadsTmp)
-
-	paths = append(paths, &RFP{path: config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload), levelsToKeep: 1})
+	paths = append(paths, &RFP{path: RudderAsyncDestinationLogs, levelsToKeep: 0})
+	paths = append(paths, &RFP{path: RudderArchives, levelsToKeep: 0})
+	paths = append(paths, &RFP{path: RudderWarehouseStagingUploads, levelsToKeep: 0})
+	paths = append(paths, &RFP{path: RudderRawDataDestinationLogs, levelsToKeep: 0})
+	paths = append(paths, &RFP{path: RudderWarehouseLoadUploadsTmp, levelsToKeep: 0})
+	paths = append(paths, &RFP{path: RudderIdentityMergeRulesTmp, levelsToKeep: 2})
+	paths = append(paths, &RFP{path: RudderIdentityMappingsTmp, levelsToKeep: 2})
+	paths = append(paths, &RFP{path: RudderRedshiftManifests, levelsToKeep: 0})
+	paths = append(paths, &RFP{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 1})
+	paths = append(paths, &RFP{path: config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload), levelsToKeep: 0})
 	return
 }
 
-type RFP struct {
-	path         string
-	levelsToKeep int
-}
-
-var (
-	RudderAsyncDestinationLogs    = RFP{path: "rudder-async-destination-logs", levelsToKeep: 1}
-	RudderArchives                = RFP{path: "rudder-archives", levelsToKeep: 1}
-	RudderWarehouseStagingUploads = RFP{path: "rudder-warehouse-staging-uploads", levelsToKeep: 1}
-	RudderRawDataDestinationLogs  = RFP{path: "rudder-raw-data-destination-logs", levelsToKeep: 1}
-	RudderWarehouseLoadUploadsTmp = RFP{path: "rudder-warehouse-load-uploads-tmp", levelsToKeep: 1}
-	RudderIdentityMergeRulesTmp   = RFP{path: "rudder-identity-merge-rules-tmp", levelsToKeep: 1}
-	RudderIdentityMappingsTmp     = RFP{path: "rudder-identity-mappings-tmp", levelsToKeep: 1}
-	RudderRedshiftManifests       = RFP{path: "rudder-redshift-manifests", levelsToKeep: 1}
-	RudderWarehouseJsonUploadsTmp = RFP{path: "rudder-warehouse-json-uploads-tmp", levelsToKeep: 1}
-	RudderTestPayload             = RFP{path: "rudder-test-payload", levelsToKeep: 1}
-)
-
 func checkMatch(currDir string) bool {
-	var rfps []RFP
-	match := false
-	for _, rfp := range rfps {
-		if ok, err:= rfp.matches(currDir); err!=nil && ok {
-			match = true
-			break
+	for _, rfp := range reservedFolderPaths {
+		if ok, err := rfp.matches(currDir); err == nil && ok {
+			return true
 		}
 	}
-	return match
+	return false
 }
 
-func (r *RFP) matches(currDir string) bool, err {
-	splits := strings.Split(currDir, "/")
-	join := strings.Join(splits[0:len(splits)-r.levelsToKeep-1], "/")
-	tmpDirPath, err := CreateTMPDIR()
+func (r *RFP) matches(currDir string) (match bool, err error) {
+	var tmpDirPath string
+	tmpDirPath, err = CreateTMPDIR()
 	if err != nil {
-		return false, err
+		return
 	}
-	return join == fmt.Sprintf("%s/%s", tmpDirPath, r.path)
+
+	splits := strings.Split(currDir, "/")
+	if len(splits) < r.levelsToKeep {
+		return
+	}
+	join := strings.Join(splits[0:len(splits)-r.levelsToKeep], "/")
+	match = fmt.Sprintf("%s/%s", tmpDirPath, r.path) == join
+	return
 }
 
 // RemoveEmptyFolderStructureForFilePath recursively cleans up everything till it reaches the stage where the folders are not empty or parent.
