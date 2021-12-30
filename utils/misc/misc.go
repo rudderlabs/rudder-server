@@ -317,19 +317,19 @@ func RemoveFilePaths(filePaths ...string) {
 }
 
 // GetReservedFolderPaths returns all temporary folder paths.
-func GetReservedFolderPaths() (paths []*RFP) {
-	paths = make([]*RFP, 0)
-	paths = append(paths, &RFP{path: RudderAsyncDestinationLogs, levelsToKeep: 0})
-	paths = append(paths, &RFP{path: RudderArchives, levelsToKeep: 0})
-	paths = append(paths, &RFP{path: RudderWarehouseStagingUploads, levelsToKeep: 0})
-	paths = append(paths, &RFP{path: RudderRawDataDestinationLogs, levelsToKeep: 0})
-	paths = append(paths, &RFP{path: RudderWarehouseLoadUploadsTmp, levelsToKeep: 0})
-	paths = append(paths, &RFP{path: RudderIdentityMergeRulesTmp, levelsToKeep: 2})
-	paths = append(paths, &RFP{path: RudderIdentityMappingsTmp, levelsToKeep: 2})
-	paths = append(paths, &RFP{path: RudderRedshiftManifests, levelsToKeep: 0})
-	paths = append(paths, &RFP{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 1})
-	paths = append(paths, &RFP{path: config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload), levelsToKeep: 0})
-	return
+func GetReservedFolderPaths() []*RFP {
+	return []*RFP{
+		{path: RudderAsyncDestinationLogs, levelsToKeep: 0},
+		{path: RudderArchives, levelsToKeep: 0},
+		{path: RudderWarehouseStagingUploads, levelsToKeep: 0},
+		{path: RudderRawDataDestinationLogs, levelsToKeep: 0},
+		{path: RudderWarehouseLoadUploadsTmp, levelsToKeep: 0},
+		{path: RudderIdentityMergeRulesTmp, levelsToKeep: 2},
+		{path: RudderIdentityMappingsTmp, levelsToKeep: 2},
+		{path: RudderRedshiftManifests, levelsToKeep: 0},
+		{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 1},
+		{path: config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload), levelsToKeep: 0},
+	}
 }
 
 func checkMatch(currDir string) bool {
