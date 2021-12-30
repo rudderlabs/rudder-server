@@ -1,6 +1,15 @@
 version: "3.7"
 
 services:
+  nginx-proxy:
+    depends_on:
+      - backend
+    image: nginx
+    ports:
+      - 8383:80
+    volumes:
+      - ./build/nginx.conf:/etc/nginx/nginx.conf:ro
+
   db:
     image: postgres:11-alpine
     env_file:
