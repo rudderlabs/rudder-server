@@ -231,10 +231,14 @@ func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Dura
 	}
 }
 
-func getCorrectedJobsPickupCount(customerKey string, destType string, jobsPicked int, timeRequired float64, successRate float64) (float64, int, bool) {
+func getCorrectedJobsPickupCount(customerKey string, destType string, jobsPicked int, timeRequired float64, successRate float64, latency float64) (float64, int, bool) {
 
 	if successRate > 1 {
 		panic(fmt.Errorf("Success Rate is more than 1.Panicking for %v customer , %v destType with successRate %v", customerKey, destType, successRate))
+	}
+
+	if latency == 0 {
+		return timeRequired, jobsPicked, false
 	}
 
 	if successRate > 0 {
@@ -247,7 +251,7 @@ func getCorrectedJobsPickupCount(customerKey string, destType string, jobsPicked
 		return timeRequired, jobsPicked, false
 	}
 	if successRate > 0 {
-		return (1 - successRate) * timeRequired, int(float64(jobsPicked) * (1 - successRate)), false
+		return successRate * timeRequired, int(float64(jobsPicked) * successRate), false
 	}
 	_, ok := multitenantStat.RouterCircuitBreakerMap[customerKey]
 	if !ok {
@@ -294,7 +298,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 				} else {
 					customerPickUpCount[customerKey] = misc.MinInt(int(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second)), multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
 				}
-				updatedTimeRequired, updatedPickUpCount, isCustomerLimited := getCorrectedJobsPickupCount(customerKey, destType, customerPickUpCount[customerKey], timeRequired, successRateMap[customerKey])
+				updatedTimeRequired, updatedPickUpCount, isCustomerLimited := getCorrectedJobsPickupCount(customerKey, destType, customerPickUpCount[customerKey], timeRequired, successRateMap[customerKey], latencyMap[customerKey].Value())
 				customerBlockedMap[customerKey] = isCustomerLimited
 				runningTimeCounter = runningTimeCounter - updatedTimeRequired
 				customerPickUpCount[customerKey] = updatedPickUpCount
