@@ -1336,3 +1336,38 @@ func SleepCtx(ctx context.Context, delay time.Duration) bool {
 		return false
 	}
 }
+
+// FolderExists Check if folder exists at particular path
+func FolderExists(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return info.IsDir()
+}
+
+// FileExists Check if file exists at particular path
+func FileExists(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
+}
+
+// IsDirectoryEmpty Check if directory is empty or not
+func IsDirectoryEmpty(name string) (empty bool, err error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	_, err = f.Readdir(1)
+	if err == io.EOF {
+		empty = true
+		err = nil
+		return
+	}
+	return
+}

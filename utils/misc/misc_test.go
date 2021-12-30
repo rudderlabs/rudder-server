@@ -9,7 +9,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -46,7 +45,7 @@ var _ = Describe("Misc", func() {
 		onPostFileCreation := func(sourceFile string, targetDir string) {
 			RemoveFilePaths(sourceFile)
 
-			empty, err := IsDirEmpty(targetDir)
+			empty, err := IsDirectoryEmpty(targetDir)
 			Expect(err).To(BeNil())
 			Expect(empty).To(BeTrue())
 		}
@@ -246,35 +245,3 @@ var _ = Describe("Misc", func() {
 		})
 	})
 })
-
-func FolderExists(path string) bool {
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return info.IsDir()
-}
-
-func FileExists(path string) bool {
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return !info.IsDir()
-}
-
-func IsDirEmpty(name string) (empty bool, err error) {
-	f, err := os.Open(name)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-
-	_, err = f.Readdir(1)
-	if err == io.EOF {
-		empty = true
-		err = nil
-		return
-	}
-	return false, err
-}
