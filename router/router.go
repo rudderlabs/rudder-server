@@ -1385,7 +1385,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload, eventName, eventType)
 				statusDetailsMap[key] = sd
 			}
-			if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 && resp.status.ErrorCode != "1112" {
+			if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 && resp.status.ErrorCode != "1113" {
 				sd.Count++
 			}
 			if resp.status.JobState == jobsdb.Failed.State && resp.status.ErrorCode != "1113" {
