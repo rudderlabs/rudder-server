@@ -98,44 +98,43 @@ func SendRouterInMovingAverageStat() {
 }
 
 func CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool) {
-	multitenantStat.routerJobCountMutex.RLock()
+	multitenantStat.routerSuccessRateMutex.RLock()
 	_, ok := multitenantStat.RouterSuccessRatioLoopCount[customer]
 	if !ok {
-		multitenantStat.routerJobCountMutex.RUnlock()
-		multitenantStat.routerJobCountMutex.Lock()
+		multitenantStat.routerSuccessRateMutex.RUnlock()
+		multitenantStat.routerSuccessRateMutex.Lock()
 		multitenantStat.RouterSuccessRatioLoopCount[customer] = make(map[string]map[string]int)
-		multitenantStat.routerJobCountMutex.Unlock()
-		multitenantStat.routerJobCountMutex.RLock()
+		multitenantStat.routerSuccessRateMutex.Unlock()
+		multitenantStat.routerSuccessRateMutex.RLock()
 	}
 	_, ok = multitenantStat.RouterSuccessRatioLoopCount[customer][destType]
 	if !ok {
-		multitenantStat.routerJobCountMutex.RUnlock()
-		multitenantStat.routerJobCountMutex.Lock()
+		multitenantStat.routerSuccessRateMutex.RUnlock()
+		multitenantStat.routerSuccessRateMutex.Lock()
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType] = make(map[string]int)
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["success"] = 0
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["failure"] = 0
-		multitenantStat.routerJobCountMutex.Unlock()
-		multitenantStat.routerJobCountMutex.RLock()
+		multitenantStat.routerSuccessRateMutex.Unlock()
+		multitenantStat.routerSuccessRateMutex.RLock()
 	}
 	if isSuccess {
-		multitenantStat.routerJobCountMutex.RUnlock()
-		multitenantStat.routerJobCountMutex.Lock()
+		multitenantStat.routerSuccessRateMutex.RUnlock()
+		multitenantStat.routerSuccessRateMutex.Lock()
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["success"] += 1
-		multitenantStat.routerJobCountMutex.Unlock()
-		multitenantStat.routerJobCountMutex.RLock()
+		multitenantStat.routerSuccessRateMutex.Unlock()
+		multitenantStat.routerSuccessRateMutex.RLock()
 	} else {
-		multitenantStat.routerJobCountMutex.RUnlock()
-		multitenantStat.routerJobCountMutex.Lock()
+		multitenantStat.routerSuccessRateMutex.RUnlock()
+		multitenantStat.routerSuccessRateMutex.Lock()
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["failure"] += 1
-		multitenantStat.routerJobCountMutex.Unlock()
-		multitenantStat.routerJobCountMutex.RLock()
+		multitenantStat.routerSuccessRateMutex.Unlock()
+		multitenantStat.routerSuccessRateMutex.RLock()
 	}
-	multitenantStat.routerJobCountMutex.RUnlock()
+	multitenantStat.routerSuccessRateMutex.RUnlock()
 }
 
 func GenerateSuccessRateMap(destType string) map[string]float64 {
-	multitenantStat.routerJobCountMutex.RLock()
-	defer multitenantStat.routerJobCountMutex.RUnlock()
+	multitenantStat.routerSuccessRateMutex.RLock()
 	customerSuccessRate := make(map[string]float64)
 	for customer, destTypeMap := range multitenantStat.RouterSuccessRatioLoopCount {
 		_, ok := destTypeMap[destType]
@@ -149,9 +148,10 @@ func GenerateSuccessRateMap(destType string) map[string]float64 {
 			}
 		}
 	}
-	multitenantStat.routerJobCountMutex.Lock()
+	multitenantStat.routerSuccessRateMutex.RUnlock()
+	multitenantStat.routerSuccessRateMutex.Lock()
 	multitenantStat.RouterSuccessRatioLoopCount = make(map[string]map[string]map[string]int)
-	multitenantStat.routerJobCountMutex.Unlock()
+	multitenantStat.routerSuccessRateMutex.Unlock()
 	return customerSuccessRate
 }
 
