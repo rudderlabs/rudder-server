@@ -255,6 +255,7 @@ func getCorrectedJobsPickupCount(customerKey string, destType string, jobsPicked
 	}
 	_, ok := multitenantStat.RouterCircuitBreakerMap[customerKey]
 	if !ok {
+		multitenantStat.RouterCircuitBreakerMap[customerKey] = make(map[string]BackOffT)
 		multitenantStat.RouterCircuitBreakerMap[customerKey][destType] = BackOffT{backOff: backOff, timeToRetry: time.Now().Add(backOff.Duration())}
 		pkgLogger.Infof("Backing off for %v customer for the first time. Next Time to Retry would be %v", customerKey, multitenantStat.RouterCircuitBreakerMap[customerKey][destType].timeToRetry)
 		return 0, 0, true
