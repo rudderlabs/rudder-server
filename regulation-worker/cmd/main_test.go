@@ -189,7 +189,8 @@ func TestFlow(t *testing.T) {
 
 		fieldCountAfterDelete = make([]int, len(inputTestData))
 		for i, test := range inputTestData {
-			result, err := manager.HGetAll(test.key)
+			key := fmt.Sprintf("user:%s", test.key)
+			result, err := manager.HGetAll(key)
 			if err != nil {
 				fmt.Println("error while getting data from redis using HMGET: ", err)
 			}
