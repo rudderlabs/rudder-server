@@ -646,7 +646,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := worker.trackStuckDelivery()
 				if time.Since(pickedAtTime) > worker.rt.routerTimeout {
-					respStatusCode, respBodyTemp = types.RouterTimedOut, fmt.Sprintf(`777 Jobs took more time than expected. Will be retried`)
+					respStatusCode, respBodyTemp = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
 				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
@@ -1385,14 +1385,21 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload, eventName, eventType)
 				statusDetailsMap[key] = sd
 			}
-			if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 {
+			if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 && resp.status.ErrorCode != "1112" {
 				sd.Count++
 			}
+			if resp.status.JobState == jobsdb.Failed.State && resp.status.ErrorCode != "1113" {
+				multitenant.CalculateSuccessFailureCounts(workspaceID, rt.destName, false)
+			}
+
 			if resp.status.JobState != jobsdb.Failed.State {
 				if resp.status.JobState == jobsdb.Succeeded.State || resp.status.JobState == jobsdb.Aborted.State {
 					rt.routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
 					routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
 					sd.Count++
+				}
+				if resp.status.JobState == jobsdb.Succeeded.State {
+					multitenant.CalculateSuccessFailureCounts(workspaceID, rt.destName, true)
 				}
 			}
 		}
@@ -1452,7 +1459,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				"destType": destType,
 			})
 			countStat.Gauge(count)
-			rt.logger.Infof("removal_router_stat is %v for customer %v", count, customer)
+			rt.logger.Debugf("removal_router_stat is %v for customer %v", count, customer)
 		}
 	}
 
@@ -1736,7 +1743,8 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
-	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat, jobQueryBatchSize)
+	successRateMap := multitenant.GenerateSuccessRateMap(rt.destName)
+	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat, jobQueryBatchSize, successRateMap)
 
 	var customerCountStat stats.RudderStats
 	for customer, count := range rt.customerCount {

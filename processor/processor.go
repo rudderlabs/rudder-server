@@ -1454,7 +1454,6 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
-		proc.logger.Infof("Processor_Total jobs written to router : %v , time now : %v", len(destJobs), time.Now())
 
 		err := proc.routerDB.Store(destJobs)
 		if err != nil {
@@ -1551,7 +1550,7 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 				"destType": destType,
 			})
 			countStat.Gauge(count)
-			proc.logger.Infof("addition_processor_stat is %v for customer %v", count, customer)
+			proc.logger.Debugf("addition_processor_stat is %v for customer %v", count, customer)
 		}
 	}
 

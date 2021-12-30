@@ -418,7 +418,7 @@ func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map
 	var err error
 
 	stmt, err := mj.dbHandle.Prepare(queryString)
-	mj.logger.Info(queryString)
+	mj.logger.Debug(queryString)
 	mj.assertError(err)
 	defer stmt.Close()
 
@@ -577,6 +577,6 @@ func (mj *MultiTenantHandleT) printNumJobsByCustomer(jobs []*JobT) {
 		customerJobCountMap[job.Customer] += 1
 	}
 	for customer, count := range customerJobCountMap {
-		mj.logger.Info(customer, `: `, count)
+		mj.logger.Debug(customer, `: `, count)
 	}
 }
