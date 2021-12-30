@@ -167,7 +167,7 @@ func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
 	resp.Status = string(d.respBodyStatus)
 	resp.Error = d.respBodyErr
 
-	body, err := json.Marshal(resp)
+	body, err := json.Marshal([]api.JobRespSchema{resp})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
