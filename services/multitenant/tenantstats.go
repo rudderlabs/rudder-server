@@ -7,14 +7,20 @@ import (
 	"time"
 
 	"github.com/jpillora/backoff"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var pkgLogger logger.LoggerI
-var multitenantStat MultitenantStatsT
-var backOff *backoff.Backoff
+var (
+	pkgLogger       logger.LoggerI
+	multitenantStat MultitenantStatsT
+	backOff         *backoff.Backoff
+	minBackOff      time.Duration
+	maxBackOff      time.Duration
+	backOffFactor   float64
+)
 
 type MultitenantStatsT struct {
 	RouterInMemoryJobCounts     map[string]map[string]map[string]int
@@ -32,10 +38,14 @@ type BackOffT struct {
 
 func Init() {
 	multitenantStat = MultitenantStatsT{}
+	config.RegisterDurationConfigVariable(time.Duration(30), &minBackOff, false, time.Second, "tenantStats.minBackOff")
+	config.RegisterDurationConfigVariable(time.Duration(600), &maxBackOff, false, time.Second, "tenantStats.maxBackOff")
+	config.RegisterFloat64ConfigVariable(2, &backOffFactor, false, "tenantStats.backOffFactor")
+
 	backOff = &backoff.Backoff{
-		Min:    10 * time.Second,
-		Max:    10 * time.Minute,
-		Factor: 2,
+		Min:    minBackOff,
+		Max:    maxBackOff,
+		Factor: backOffFactor,
 		Jitter: false,
 	}
 	pkgLogger = logger.NewLogger().Child("services").Child("multitenant")
