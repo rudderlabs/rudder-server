@@ -290,7 +290,7 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionDS(ds dataSetT, customerCount m
 	var rows *sql.Rows
 	var err error
 
-	mj.logger.Info(queryString)
+	mj.logger.Debug(queryString)
 	rows, err = mj.dbHandle.Query(queryString)
 	mj.assertError(err)
 

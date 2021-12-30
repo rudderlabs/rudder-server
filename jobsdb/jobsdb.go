@@ -1373,7 +1373,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	//TODO : Evaluate a way to handle indexes only for particular tables
 
 	if jd.tablePrefix == "rt" {
-		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customer_customval_job_id ON "%s" (custom_val,customer)`, newDS.JobTable)
+		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_customer_%s ON "%s" (custom_val,customer)`, newDSIdx, newDS.JobTable)
 		_, err = jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	}
