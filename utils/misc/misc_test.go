@@ -6,6 +6,8 @@ import (
 	"github.com/iancoleman/strcase"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"io"
 	"os"
@@ -13,7 +15,15 @@ import (
 	"time"
 )
 
+func initMisc() {
+	config.Load()
+	logger.Init()
+	Init()
+}
+
 var _ = Describe("Misc", func() {
+	initMisc()
+
 	tmpDirPath, err := CreateTMPDIR()
 	Expect(err).To(BeNil())
 
