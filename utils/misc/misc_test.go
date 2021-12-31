@@ -251,7 +251,7 @@ var _ = Describe("Misc", func() {
 		It("Rudder Connection Test", func() {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderTestPayload)
 
-			// /tmp/rudder-test-payload//DestinationID.7c17e5ea-5e37-4fc4-a3a7-af50e4069dc2.1640923547.csv.gz
+			// /tmp/rudder-test-payload/DestinationID.638853fe-2d60-46d3-86bb-8e6d728ecb33.1640981723.csv.gz
 			// /tmp/rudder-test-payload/
 			sourceFile := fmt.Sprintf(`%v%v.%v.%v.csv.gz`,
 				tmpDirPath+localTmpDirName,
