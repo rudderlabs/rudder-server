@@ -98,39 +98,24 @@ func SendRouterInMovingAverageStat() {
 }
 
 func CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool) {
-	multitenantStat.routerSuccessRateMutex.RLock()
+	multitenantStat.routerSuccessRateMutex.Lock()
+	defer multitenantStat.routerSuccessRateMutex.Unlock()
 	_, ok := multitenantStat.RouterSuccessRatioLoopCount[customer]
 	if !ok {
-		multitenantStat.routerSuccessRateMutex.RUnlock()
-		multitenantStat.routerSuccessRateMutex.Lock()
+
 		multitenantStat.RouterSuccessRatioLoopCount[customer] = make(map[string]map[string]int)
-		multitenantStat.routerSuccessRateMutex.Unlock()
-		multitenantStat.routerSuccessRateMutex.RLock()
 	}
 	_, ok = multitenantStat.RouterSuccessRatioLoopCount[customer][destType]
 	if !ok {
-		multitenantStat.routerSuccessRateMutex.RUnlock()
-		multitenantStat.routerSuccessRateMutex.Lock()
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType] = make(map[string]int)
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["success"] = 0
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["failure"] = 0
-		multitenantStat.routerSuccessRateMutex.Unlock()
-		multitenantStat.routerSuccessRateMutex.RLock()
 	}
 	if isSuccess {
-		multitenantStat.routerSuccessRateMutex.RUnlock()
-		multitenantStat.routerSuccessRateMutex.Lock()
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["success"] += 1
-		multitenantStat.routerSuccessRateMutex.Unlock()
-		multitenantStat.routerSuccessRateMutex.RLock()
 	} else {
-		multitenantStat.routerSuccessRateMutex.RUnlock()
-		multitenantStat.routerSuccessRateMutex.Lock()
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["failure"] += 1
-		multitenantStat.routerSuccessRateMutex.Unlock()
-		multitenantStat.routerSuccessRateMutex.RLock()
 	}
-	multitenantStat.routerSuccessRateMutex.RUnlock()
 }
 
 func GenerateSuccessRateMap(destType string) map[string]float64 {
@@ -231,31 +216,28 @@ func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Dura
 	}
 }
 
-func getCorrectedJobsPickupCount(customerKey string, destType string, jobsPicked int, timeRequired float64, successRate float64, latency float64) (float64, int, bool) {
+func getCorrectedJobsPickupCount(customerKey string, destType string, jobsPicked int, timeRequired float64, successRate float64) (float64, int, bool) {
 
 	if successRate > 1 {
 		panic(fmt.Errorf("Success Rate is more than 1.Panicking for %v customer , %v destType with successRate %v", customerKey, destType, successRate))
-	}
-
-	if latency == 0 {
-		return timeRequired, jobsPicked, false
-	}
-
-	if successRate > 0 {
+	} else if successRate > 0 {
 		_, ok := multitenantStat.RouterCircuitBreakerMap[customerKey]
 		if ok {
-			delete(multitenantStat.RouterCircuitBreakerMap, destType)
+			delete(multitenantStat.RouterCircuitBreakerMap[customerKey], destType)
 		}
 	}
+
 	if successRate == 1 {
 		return timeRequired, jobsPicked, false
-	}
-	if successRate > 0 {
+	} else if successRate > 0 {
 		return successRate * timeRequired, int(float64(jobsPicked) * successRate), false
 	}
 	_, ok := multitenantStat.RouterCircuitBreakerMap[customerKey]
 	if !ok {
 		multitenantStat.RouterCircuitBreakerMap[customerKey] = make(map[string]BackOffT)
+	}
+	_, ok = multitenantStat.RouterCircuitBreakerMap[customerKey][destType]
+	if !ok {
 		multitenantStat.RouterCircuitBreakerMap[customerKey][destType] = BackOffT{backOff: backOff, timeToRetry: time.Now().Add(backOff.Duration())}
 		pkgLogger.Infof("Backing off for %v customer for the first time. Next Time to Retry would be %v", customerKey, multitenantStat.RouterCircuitBreakerMap[customerKey][destType].timeToRetry)
 		return 0, 0, true
@@ -299,7 +281,12 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 				} else {
 					customerPickUpCount[customerKey] = misc.MinInt(int(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second)), multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
 				}
-				updatedTimeRequired, updatedPickUpCount, isCustomerLimited := getCorrectedJobsPickupCount(customerKey, destType, customerPickUpCount[customerKey], timeRequired, successRateMap[customerKey], latencyMap[customerKey].Value())
+				successRate := 1.0
+				_, ok = successRateMap[customerKey]
+				if ok {
+					successRate = successRateMap[customerKey]
+				}
+				updatedTimeRequired, updatedPickUpCount, isCustomerLimited := getCorrectedJobsPickupCount(customerKey, destType, customerPickUpCount[customerKey], timeRequired, successRate)
 				customerBlockedMap[customerKey] = isCustomerLimited
 				runningTimeCounter = runningTimeCounter - updatedTimeRequired
 				customerPickUpCount[customerKey] = updatedPickUpCount

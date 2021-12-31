@@ -692,7 +692,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 								}
 							} else {
 								rdl_time := time.Now()
-								resp := worker.rt.netHandle.SendPost(sendCtx, val)
+								resp := worker.rt.netHandle.SendPost(sendCtx, val, workspaceID)
 								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
 								// stat end
 								worker.routerDeliveryLatencyStat.SendTiming(time.Since(rdl_time))
