@@ -31,7 +31,8 @@ func (kv *KVDeleteManager) Delete(ctx context.Context, job model.Job, destConfig
 	fileCleaningTime.Start()
 	defer fileCleaningTime.End()
 	for _, user := range job.UserAttributes {
-		err = kvm.DeleteKey(user.UserID)
+		key := fmt.Sprintf("user:%s", user.UserID)
+		err = kvm.DeleteKey(key)
 		if err != nil {
 			pkgLogger.Errorf("failed to delete user: %v", user.UserID, "with error: %v", err)
 			return model.JobStatusFailed
