@@ -567,7 +567,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
 
 func (mj *MultiTenantHandleT) printNumJobsByCustomer(jobs []*JobT) {
 	if len(jobs) == 0 {
-		mj.logger.Info("No Jobs found for this query")
+		mj.logger.Debug("No Jobs found for this query")
 	}
 	customerJobCountMap := make(map[string]int)
 	for _, job := range jobs {

@@ -1905,7 +1905,7 @@ func destinationID(job *jobsdb.JobT) string {
 
 func (rt *HandleT) crashRecover() {
 	pileUpStatMap := rt.GetPileUpCounts()
-	rt.logger.Info(pileUpStatMap)
+	rt.logger.Debug(pileUpStatMap)
 	for customer := range pileUpStatMap {
 		for destType := range pileUpStatMap[customer] {
 			multitenant.AddToInMemoryCount(customer, destType, pileUpStatMap[customer][destType], "router")
