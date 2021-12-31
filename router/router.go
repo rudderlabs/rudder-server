@@ -765,7 +765,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			handledJobMetadatas[destinationJobMetadata.JobID] = &destinationJobMetadata
 
 			attemptNum := destinationJobMetadata.AttemptNum
-			if attemptedToSendTheJob {
+			if attemptedToSendTheJob && respStatusCode != types.RouterTimedOut {
 				attemptNum++
 			}
 
@@ -1758,11 +1758,10 @@ func (rt *HandleT) readAndProcess() int {
 		customerCountStat.Count(count)
 		//note that this will give an aggregated count
 	}
-	retryList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Failed.State}}, rt.maxDSQuerySize)
-	waitList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State}}, rt.maxDSQuerySize)
+	nonTerminalList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State, jobsdb.Failed.State}}, rt.maxDSQuerySize)
 	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
 
-	combinedList := append(waitList, append(unprocessedList, retryList...)...)
+	combinedList := append(nonTerminalList, unprocessedList...)
 	rt.earliestJobMap = make(map[string]time.Time)
 
 	if len(combinedList) == 0 {
@@ -1770,8 +1769,6 @@ func (rt *HandleT) readAndProcess() int {
 		time.Sleep(readSleep)
 		return 0
 	}
-
-	rt.logger.Debugf("RT: %s: DB Read Complete. retryList: %v, waitList: %v unprocessedList: %v, total: %v", rt.destName, len(retryList), len(waitList), len(unprocessedList), len(combinedList))
 
 	sort.Slice(combinedList, func(i, j int) bool {
 		return combinedList[i].JobID < combinedList[j].JobID
