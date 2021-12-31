@@ -9,7 +9,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -31,11 +33,12 @@ type APIManager struct {
 func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destName)
 	method := "POST"
-	endpoint := "/delete-users"
+	endpoint := "/deleteUsers"
 	url := fmt.Sprint(api.DestTransformURL, endpoint)
-	pkgLogger.Debugf("transformer url: %v", url)
+	pkgLogger.Debugf("transformer url: %s", url)
 
-	bodySchema := mapJobToPayload(job, destName, destConfig)
+	bodySchema := mapJobToPayload(job, strings.ToLower(destName), destConfig)
+	pkgLogger.Debugf("payload: %#v", bodySchema)
 
 	reqBody, err := json.Marshal(bodySchema)
 	if err != nil {
@@ -54,7 +57,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 		"jobId":       fmt.Sprintf("%d", job.ID),
 		"workspaceId": job.WorkspaceID,
 		"destType":    "api",
-		"destName":    destName,
+		"destName":    strings.ToLower(destName),
 	})
 	fileCleaningTime.Start()
 	defer fileCleaningTime.End()
@@ -66,10 +69,16 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 		return model.JobStatusFailed
 	}
 	defer resp.Body.Close()
-	pkgLogger.Debugf("response status code: %v", resp.StatusCode, " response body: %v", resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		pkgLogger.Errorf("error while reading response body: %v", err)
+		return model.JobStatusFailed
+	}
+	bodyString := string(bodyBytes)
+	pkgLogger.Debugf("response body: %s", bodyString)
 
-	var jobResp JobRespSchema
-	if err := json.NewDecoder(resp.Body).Decode(&jobResp); err != nil {
+	var jobResp []JobRespSchema
+	if err := json.Unmarshal(bodyBytes, &jobResp); err != nil {
 		pkgLogger.Errorf("error while decoding response body: %v", err)
 		return model.JobStatusFailed
 	}
