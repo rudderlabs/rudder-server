@@ -425,7 +425,7 @@ func run(m *testing.M) (int, error) {
 		Tag:          "latest",
 		ExposedPorts: []string{"9090"},
 		Env: []string{
-			"CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com",
+			"CONFIG_BACKEND_URL=https://api.rudderlabs.com",
 		},
 	})
 	if err != nil {

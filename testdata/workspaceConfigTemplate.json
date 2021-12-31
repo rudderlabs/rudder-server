@@ -119,7 +119,13 @@
                     "deleted": false,
                     "createdAt": "2021-08-27T06:48:12.946Z",
                     "updatedAt": "2021-08-27T06:48:12.946Z",
-                    "transformations": [],
+                    "transformations": [
+                        {
+                            "versionId": "22yCnXsSqsdhPftpH5VQpGKwFDr",
+                            "config": {},
+                            "id": "1v46m1machU3ds3OEleYVzaSkdE"
+                        }
+                    ],
                     "destinationDefinition": {
                         "config": {
                             "destConfig": {
