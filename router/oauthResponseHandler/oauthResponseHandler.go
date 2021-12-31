@@ -179,7 +179,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 			refVal.Account.AccessToken != refTokenParams.AccessToken)
 		if isInvalidAccessTokenForRefresh {
 			accountMutex.RUnlock()
-			authErrHandler.logger.Debugf("[%s request] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.AccessToken)
+			authErrHandler.logger.Debugf("[%s request] [Cache] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.AccessToken)
 			return http.StatusOK, refVal
 		}
 	}
@@ -190,7 +190,7 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 		accountMutex.Unlock()
 		if refVal != nil {
 			token := refVal.Account.AccessToken
-			authErrHandler.logger.Debugf("[%s request] [Active] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, token)
+			authErrHandler.logger.Debugf("[%s request] [Active] :: (Read) %s response received from cache(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, token)
 			return http.StatusOK, refVal
 		}
 		// Empty Response(valid while many GetToken calls are happening)
