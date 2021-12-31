@@ -119,7 +119,7 @@ func archiveUploads(dbHandle *sql.DB) {
 	defer func() {
 		if err != nil {
 			pkgLogger.Errorf(`Error occurred while archiving for warehouse uploads with error: %v`, err)
-			stats.NewTaggedStat("warehouse.archiver.uploadAborted", stats.CountType, stats.Tags{}).Count(1)
+			stats.NewTaggedStat("warehouse.archiver.archiveFailed", stats.CountType, stats.Tags{}).Count(1)
 		}
 	}()
 	if err == sql.ErrNoRows {
