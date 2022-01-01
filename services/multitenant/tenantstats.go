@@ -273,7 +273,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 				}
 				if latencyMap[customerKey].Value() != 0 {
 					timeRequired = float64(latencyMap[customerKey].Value() * destTypeCount.Value() * float64(routerTimeOut) / float64(time.Second))
-					customerPickUpCount[customerKey] = int(math.Min(timeRequired, runningTimeCounter) / latencyMap[customerKey].Value())
+					customerPickUpCount[customerKey] = misc.MaxInt(int(math.Min(timeRequired, runningTimeCounter)/latencyMap[customerKey].Value()), 1)
 					if customerPickUpCount[customerKey] > multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] {
 						customerPickUpCount[customerKey] = misc.MaxInt(multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType], 0)
 						timeRequired = latencyMap[customerKey].Value() * float64(customerPickUpCount[customerKey])

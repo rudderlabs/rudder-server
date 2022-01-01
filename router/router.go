@@ -729,7 +729,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					"destType": worker.rt.destName,
 				})
 				movingAverageLatencyStat.Gauge(float64(timeTaken) / float64(time.Second))
-				worker.rt.logger.Debugf("moving_average_latency is %.8f for customer %v", float64(timeTaken)/float64(time.Second), workspaceID)
+				worker.rt.logger.Debugf("k is %.8f for customer %v", float64(timeTaken)/float64(time.Second), workspaceID)
 				// END: request to destination endpoint
 
 				if isSuccessStatus(respStatusCode) && !worker.rt.saveDestinationResponseOverride {
@@ -1832,6 +1832,7 @@ func (rt *HandleT) readAndProcess() int {
 			if !misc.Contains(drainStatsbyDest[destID].Reasons, reason) {
 				drainStatsbyDest[destID].Reasons = append(drainStatsbyDest[destID].Reasons, reason)
 			}
+			multitenant.RemoveFromInMemoryCount(job.Customer, rt.destName, 1, "router")
 			continue
 		}
 		w := rt.findWorker(job, throttledAtTime)
