@@ -361,7 +361,7 @@ func startDebugHandler(ctx context.Context) error {
 	debugPort := config.GetInt("Go.debugPort", 7777)
 	srv := &http.Server{
 		Handler: http.HandlerFunc(httppprof.Index),
-		Addr:    "127.0.0.1:" + strconv.Itoa(debugPort),
+		Addr:    ":" + strconv.Itoa(debugPort),
 	}
 	func() {
 		<-ctx.Done()
