@@ -47,7 +47,7 @@ var _ = Describe("Misc", func() {
 		onPostFileCreation := func(sourceFile string, targetDir string) {
 			RemoveFilePaths(sourceFile)
 
-			empty, err := IsDirectoryEmpty(targetDir)
+			empty, err := FolderExists(targetDir)
 			Expect(err).To(BeNil())
 			Expect(empty).To(BeTrue())
 		}
@@ -165,6 +165,62 @@ var _ = Describe("Misc", func() {
 
 			createFile(sourceFile, targetDir)
 			onPostFileCreation(sourceFile, targetDir)
+
+			// /tmp/rudder-warehouse-load-uploads-tmp/DestinationName_DestinationId_1640923547/rudder-warehouse-staging-logs/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-load-uploads-tmp/
+			sourceFile = fmt.Sprintf(`%v%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s_%d/`, "DestinationName", "DestinationId", time.Now().Unix()),
+				"rudder-warehouse-staging-logs/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz",
+			)
+			targetDir = fmt.Sprintf(`%v`,
+				tmpDirPath+localTmpDirName,
+			)
+
+			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
+
+			// /tmp/rudder-warehouse-load-uploads-tmp/DestinationName_DestinationId_1640923547/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-load-uploads-tmp/
+			sourceFile = fmt.Sprintf(`%v%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s_%d/`, "DestinationName", "DestinationId", time.Now().Unix()),
+				"20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz",
+			)
+			targetDir = fmt.Sprintf(`%v`,
+				tmpDirPath+localTmpDirName,
+			)
+
+			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
+
+			// /tmp/rudder-warehouse-load-uploads-tmp/DestinationName_DestinationId_1640923547/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-load-uploads-tmp/
+			sourceFile = fmt.Sprintf(`%v%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s_%d/`, "DestinationName", "DestinationId", time.Now().Unix()),
+				"2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz",
+			)
+			targetDir = fmt.Sprintf(`%v`,
+				tmpDirPath+localTmpDirName,
+			)
+
+			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
+
+			// /tmp/rudder-warehouse-load-uploads-tmp/DestinationName_DestinationId_1640923547/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-load-uploads-tmp/
+			sourceFile = fmt.Sprintf(`%v%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s_%d/`, "DestinationName", "DestinationId", time.Now().Unix()),
+				"1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz",
+			)
+			targetDir = fmt.Sprintf(`%v`,
+				tmpDirPath+localTmpDirName,
+			)
+
+			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
 		})
 
 		It("Rudder Identity Merge Rules Tmp", func() {
@@ -186,6 +242,22 @@ var _ = Describe("Misc", func() {
 
 			createFile(sourceFile, targetDir)
 			onPostFileCreation(sourceFile, targetDir)
+
+			// /tmp/rudder-identity-merge-rules-tmp/DestinationName_DestinationId/71a855c2-0535-43d1-9f00-556ecc971cc7.csv.gz
+			// /tmp/rudder-identity-merge-rules-tmp/DestinationName_DestinationId/
+			sourceFile = fmt.Sprintf(`%v%v%v.csv.gz`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s/`, "DestinationName", "DestinationId"),
+				uuid.String(),
+			)
+
+			targetDir = fmt.Sprintf(`%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s/`, "DestinationName", "DestinationId"),
+			)
+
+			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
 		})
 
 		It("Rudder Identity Mappings Tmp", func() {
@@ -201,6 +273,22 @@ var _ = Describe("Misc", func() {
 			)
 
 			targetDir := fmt.Sprintf(`%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s/`, "DestinationName", "DestinationId"),
+			)
+
+			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
+
+			// /tmp/rudder-identity-mappings-tmp/DestinationName_DestinationId/b012ad98-1cde-4d27-a415-cdb84021180c.csv.gz
+			// /tmp/rudder-identity-mappings-tmp/DestinationName_DestinationId/
+			sourceFile = fmt.Sprintf(`%v%v%v.csv.gz`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s/`, "DestinationName", "DestinationId"),
+				uuid.String(),
+			)
+
+			targetDir = fmt.Sprintf(`%v%v`,
 				tmpDirPath+localTmpDirName,
 				fmt.Sprintf(`%s_%s/`, "DestinationName", "DestinationId"),
 			)
@@ -246,6 +334,70 @@ var _ = Describe("Misc", func() {
 
 			createFile(sourceFile, targetDir)
 			onPostFileCreation(sourceFile, targetDir)
+
+			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/rudder-warehouse-staging-logs/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/
+			sourceFile = fmt.Sprintf(`%v%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
+				"rudder-warehouse-staging-logs/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz",
+			)
+
+			targetDir = fmt.Sprintf(`%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
+			)
+
+			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
+
+			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/
+			sourceFile = fmt.Sprintf(`%v%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
+				"20jCt8zdozZ26iBb7xXhAas0kCs/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz",
+			)
+
+			targetDir = fmt.Sprintf(`%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
+			)
+
+			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
+
+			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/
+			sourceFile = fmt.Sprintf(`%v%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
+				"2021-11-11/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz",
+			)
+
+			targetDir = fmt.Sprintf(`%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
+			)
+
+			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
+
+			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz
+			// /tmp/rudder-warehouse-json-uploads-tmp/DestinationType_DestinationID/
+			sourceFile = fmt.Sprintf(`%v%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
+				"1636604686.20jCt8zdozZ26iBb7xXhAas0kCs.280588a5-aa54-4ad3-921b-28c09969e78a.json.gz",
+			)
+
+			targetDir = fmt.Sprintf(`%v%v`,
+				tmpDirPath+localTmpDirName,
+				fmt.Sprintf(`%s_%s/`, "DestinationType", "DestinationID"),
+			)
+
+			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
 		})
 
 		It("Rudder Connection Test", func() {
@@ -265,6 +417,76 @@ var _ = Describe("Misc", func() {
 			)
 
 			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
+		})
+
+		It("Random Test", func() {
+			localTmpDirName := fmt.Sprintf(`/%s/`, "random")
+
+			// /tmp/random/Folder1/Folder2/Folder3/Folder4/Folder5/Folder6/Folder7/Folder8/SourceID.DestinationID.638853fe-2d60-46d3-86bb-8e6d728ecb33.1640981723.csv.gz
+			// /tmp/
+			sourceFile := fmt.Sprintf(`%v/%v/%v/%v/%v/%v/%v/%v/%v/%v.%v.%v.csv.gz`,
+				tmpDirPath+localTmpDirName,
+				"Folder1",
+				"Folder2",
+				"Folder3",
+				"Folder4",
+				"Folder5",
+				"Folder6",
+				"Folder7",
+				"Folder8",
+				"SourceID",
+				"DestinationID",
+				uuid.Must(uuid.NewV4()),
+			)
+
+			targetDir := fmt.Sprintf(`%v`,
+				tmpDirPath,
+			)
+
+			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
+
+			// /tmp/random/SourceID.DestinationID.638853fe-2d60-46d3-86bb-8e6d728ecb33.1640981723.csv.gz
+			// /tmp/
+			sourceFile = fmt.Sprintf(`%v%v.%v.%v.csv.gz`,
+				tmpDirPath+localTmpDirName,
+				"SourceID",
+				"DestinationID",
+				uuid.Must(uuid.NewV4()),
+			)
+
+			targetDir = fmt.Sprintf(`%v`,
+				tmpDirPath,
+			)
+
+			createFile(sourceFile, targetDir)
+			onPostFileCreation(sourceFile, targetDir)
+
+
+			// /tmp/random/
+			// /tmp/
+			sourceFile = fmt.Sprintf(`%v`,
+				tmpDirPath+localTmpDirName,
+			)
+
+			targetDir = fmt.Sprintf(`%v`,
+				tmpDirPath,
+			)
+
+			onPostFileCreation(sourceFile, targetDir)
+
+
+			// /tmp/
+			// /tmp/
+			sourceFile = fmt.Sprintf(`%v`,
+				tmpDirPath,
+			)
+
+			targetDir = fmt.Sprintf(`%v`,
+				tmpDirPath,
+			)
+
 			onPostFileCreation(sourceFile, targetDir)
 		})
 	})
