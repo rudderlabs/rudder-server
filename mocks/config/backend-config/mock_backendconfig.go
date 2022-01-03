@@ -51,21 +51,6 @@ func (mr *MockBackendConfigMockRecorder) Get() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockBackendConfig)(nil).Get))
 }
 
-// GetRegulations mocks base method.
-func (m *MockBackendConfig) GetRegulations() (backendconfig.RegulationsT, bool) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRegulations")
-	ret0, _ := ret[0].(backendconfig.RegulationsT)
-	ret1, _ := ret[1].(bool)
-	return ret0, ret1
-}
-
-// GetRegulations indicates an expected call of GetRegulations.
-func (mr *MockBackendConfigMockRecorder) GetRegulations() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRegulations", reflect.TypeOf((*MockBackendConfig)(nil).GetRegulations))
-}
-
 // GetWorkspaceIDForWriteKey mocks base method.
 func (m *MockBackendConfig) GetWorkspaceIDForWriteKey(arg0 string) string {
 	m.ctrl.T.Helper()
