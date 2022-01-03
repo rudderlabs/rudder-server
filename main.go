@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	httppprof "net/http/pprof"
 	"runtime/pprof"
 
 	"strconv"
@@ -45,6 +44,8 @@ import (
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/admin/profiler"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	"github.com/rudderlabs/rudder-server/config"
@@ -283,7 +284,8 @@ func Run(ctx context.Context) {
 	})
 
 	g.Go(func() error {
-		return startDebugHandler(ctx)
+		p := &profiler.Profiler{}
+		return p.StartServer(ctx)
 	})
 
 	misc.AppStartTime = time.Now().Unix()
@@ -355,23 +357,6 @@ func Run(ctx context.Context) {
 		logger.Log.Sync()
 	}
 	stats.StopRuntimeStats()
-}
-
-func startDebugHandler(ctx context.Context) error {
-	debugPort := config.GetInt("Go.debugPort", 7777)
-	srv := &http.Server{
-		Handler: http.HandlerFunc(httppprof.Index),
-		Addr:    ":" + strconv.Itoa(debugPort),
-	}
-	func() {
-		<-ctx.Done()
-		srv.Shutdown(context.Background())
-	}()
-
-	if err := srv.ListenAndServe(); err != nil {
-		return fmt.Errorf("debug server: %w", err)
-	}
-	return nil
 }
 
 func startStandbyWebHandler(ctx context.Context) error {
