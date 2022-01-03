@@ -95,7 +95,7 @@ func (mj *MultiTenantHandleT) GetCustomerCounts(defaultBatchSize int) map[string
 	mj.dsListLock.RLock()
 	defer mj.dsMigrationLock.RUnlock()
 	defer mj.dsListLock.RUnlock()
-	rows, err := mj.dbHandle.Query(fmt.Sprintf(`select customer, count(job_id) from %s group by customer;`, mj.getDSList(false)[0].JobTable))
+	rows, err := mj.dbHandle.Query(fmt.Sprintf(`select workspaceid, count(job_id) from %s group by workspaceid;`, mj.getDSList(false)[0].JobTable))
 	mj.assertError(err)
 
 	for rows.Next() {
@@ -174,10 +174,6 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(ds 
 
 	if params.UseTimeFilter {
 		sqlStatement += fmt.Sprintf(" AND created_at < %s", params.Before)
-	}
-
-	if order {
-		sqlStatement += " ORDER BY jobs.job_id"
 	}
 
 	return sqlStatement + ")"
@@ -529,7 +525,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(ds da
                                                AS job_latest_state
                                             WHERE jobs.job_id=job_latest_state.job_id AND jobs.workspaceid IN %[7]s
                                              %[4]s %[5]s
-                                             AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[6]s`,
+                                             AND job_latest_state.retry_time < $1 %[6]s`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, customerString)
 
 	return sqlStatement + ")"
