@@ -105,6 +105,7 @@ type JobsDB interface {
 	UpdateJobStatusInTxn(txHandler *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 	AcquireUpdateJobStatusLocks()
 	ReleaseUpdateJobStatusLocks()
+	GetPileUpCounts(statMap map[string]map[string]int)
 
 	GetToRetry(params GetQueryParamsT) []*JobT
 	GetWaiting(params GetQueryParamsT) []*JobT
@@ -1822,15 +1823,55 @@ func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]map[stri
 	}
 }
 
+func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
+	jd.dsMigrationLock.RLock()
+	jd.dsListLock.RLock()
+	defer jd.dsMigrationLock.RUnlock()
+	defer jd.dsListLock.RUnlock()
+
+	dsList := jd.getDSList(false)
+	for _, ds := range dsList {
+		queryString := fmt.Sprintf(`with joined as (
+			select j.job_id as jobID, j.custom_val as customVal, s.id as statusID, s.job_state as jobState, j.workspaceid as customer from %[1]s j left join %[2]s s on j.job_id = s.job_id where (s.job_state not in ('executing','aborted', 'succeeded', 'migrated') or s.job_id is null)
+		),
+		x as (
+			select *, ROW_NUMBER() OVER(PARTITION BY joined.jobID 
+										 ORDER BY joined.statusID DESC) AS rank
+			  FROM joined
+		),
+		y as (
+			SELECT * FROM x WHERE rank = 1
+		)
+		select count(*), customVal, customer from y group by customVal, customer;`, ds.JobTable, ds.JobStatusTable)
+		rows, err := jd.dbHandle.Query(queryString)
+		jd.assertError(err)
+
+		for rows.Next() {
+			var count sql.NullInt64
+			var customVal string
+			var customer string
+			err := rows.Scan(&count, &customVal, &customer)
+			jd.assertError(err)
+			if _, ok := statMap[customer]; !ok {
+				statMap[customer] = make(map[string]int)
+			}
+			statMap[customer][customVal] += int(count.Int64)
+		}
+		if err = rows.Err(); err != nil {
+			jd.assertError(err)
+		}
+	}
+}
+
 func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, copyID bool, jobList []*JobT) error {
 	var stmt *sql.Stmt
 	var err error
 
 	if copyID {
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
-			"event_payload", "event_count", "created_at", "expire_at", "customer"))
+			"event_payload", "event_count", "created_at", "expire_at", "workspaceid"))
 	} else {
-		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "customer"))
+		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspaceid"))
 	}
 
 	if err != nil {

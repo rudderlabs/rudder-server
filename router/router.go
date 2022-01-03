@@ -213,6 +213,7 @@ var (
 	toAbortDestinationIDs                                         string
 	QueryFilters                                                  jobsdb.QueryFiltersT
 	disableEgress                                                 bool
+	once                                                          sync.Once
 )
 
 type requestMetric struct {
@@ -1902,20 +1903,20 @@ func destinationID(job *jobsdb.JobT) string {
 }
 
 func (rt *HandleT) crashRecover() {
-	pileUpStatMap := rt.GetPileUpCounts()
-	rt.logger.Info(pileUpStatMap)
+	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: -1})
+	once.Do(func() {
+		rt.fillPileUpCounts()
+	})
+}
+
+func (rt *HandleT) fillPileUpCounts() {
+	pileUpStatMap := make(map[string]map[string]int) //customer->destStype->count	//non-terminal-only
+	rt.jobsDB.GetPileUpCounts(pileUpStatMap)
 	for customer := range pileUpStatMap {
 		for destType := range pileUpStatMap[customer] {
 			multitenant.AddToInMemoryCount(customer, destType, pileUpStatMap[customer][destType], "router")
 		}
 	}
-	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: -1})
-}
-
-func (rt *HandleT) GetPileUpCounts() map[string]map[string]int {
-	pileUpStatMap := make(map[string]map[string]int) //customer->destStype->count	//non-terminal-only
-	rt.jobsDB.GetPileUpCounts(pileUpStatMap)
-	return pileUpStatMap
 }
 
 func Init() {

@@ -667,7 +667,6 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.Namespace = config.GetKubeNamespace()
 	commonMetadata.InstanceID = config.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
-	commonMetadata.Customer = batchEvent.WorkspaceId
 	commonMetadata.JobID = batchEvent.JobID
 	commonMetadata.MessageID = misc.GetStringifiedData(singularEvent["messageId"])
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
@@ -695,7 +694,6 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.Namespace = commonMetadata.Namespace
 	metadata.InstanceID = commonMetadata.InstanceID
 	metadata.RudderID = commonMetadata.RudderID
-	metadata.Customer = commonMetadata.Customer
 	metadata.JobID = commonMetadata.JobID
 	metadata.MessageID = commonMetadata.MessageID
 	metadata.ReceivedAt = commonMetadata.ReceivedAt
@@ -1553,11 +1551,13 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 			proc.logger.Debugf("addition_processor_stat is %v for customer %v", count, customer)
 		}
 	}
-
+	timeElapsed := 10 * time.Millisecond // TODO : Find a better way to fix this
 	if !firstRun {
-		multitenant.ReportProcLoopAddStats(processorLoopStats["router"], time.Since(stageStartTime), "router")
-		multitenant.ReportProcLoopAddStats(processorLoopStats["batch_router"], time.Since(stageStartTime), "batch_router")
+		timeElapsed = time.Since(stageStartTime)
 	}
+
+	multitenant.ReportProcLoopAddStats(processorLoopStats["router"], timeElapsed, "router")
+	multitenant.ReportProcLoopAddStats(processorLoopStats["batch_router"], timeElapsed, "batch_router")
 
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
