@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	selectQuery = `SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.customer,jobs.running_event_counts `
+	selectQuery = `SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspaceid,jobs.running_event_counts `
 )
 
 type MultiTenantHandleT struct {
@@ -53,7 +53,7 @@ func (mj *MultiTenantHandleT) GetPileUpCounts(statMap map[string]map[string]int)
 	dsList := mj.getDSList(false)
 	for _, ds := range dsList {
 		queryString := fmt.Sprintf(`with joined as (
-			select j.job_id as jobID, j.custom_val as customVal, s.id as statusID, s.job_state as jobState, j.customer as customer from %[1]s j left join %[2]s s on j.job_id = s.job_id where (s.job_state not in ('aborted', 'succeeded', 'migrated') or s.job_id is null)
+			select j.job_id as jobID, j.custom_val as customVal, s.id as statusID, s.job_state as jobState, j.workspaceid as customer from %[1]s j left join %[2]s s on j.job_id = s.job_id where (s.job_state not in ('aborted', 'succeeded', 'migrated') or s.job_id is null)
 		),
 		x as (
 			select *, ROW_NUMBER() OVER(PARTITION BY joined.jobID 
@@ -153,13 +153,13 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(ds 
 				  jobs.event_count, 
 				  jobs.created_at, 
 				  jobs.expire_at, 
-				  jobs.customer ,
+				  jobs.workspaceid ,
 				  0 as running_event_counts
 					
 				FROM 
 				%[1]s jobs LEFT JOIN %[2]s AS job_status ON jobs.job_id = job_status.job_id 
 					WHERE 
-					job_status.job_id is NULL AND jobs.customer IN %[3]s			   
+					job_status.job_id is NULL AND jobs.workspaceid IN %[3]s			   
 			  `,
 		ds.JobTable, ds.JobStatusTable, customerString)
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
@@ -189,7 +189,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer s
 	sqlStatement = fmt.Sprintf(
 		selectQuery+
 			`FROM %[1]s AS jobs `+
-			`WHERE jobs.customer='%[2]s'`,
+			`WHERE jobs.workspaceid='%[2]s'`,
 		"rt_jobs_view", customer)
 
 	if count >= 0 {
@@ -517,7 +517,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(ds da
 	sqlStatement = fmt.Sprintf(`with rt_jobs_view AS (
 										SELECT
                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                               jobs.created_at, jobs.expire_at, jobs.customer,
+                                               jobs.created_at, jobs.expire_at, jobs.workspaceid,
 											   sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
@@ -528,7 +528,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(ds da
                                                  error_code, error_response, parameters FROM %[2]s WHERE id IN
                                                    (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
                                                AS job_latest_state
-                                            WHERE jobs.job_id=job_latest_state.job_id AND jobs.customer IN %[7]s
+                                            WHERE jobs.job_id=job_latest_state.job_id AND jobs.workspaceid IN %[7]s
                                              %[4]s %[5]s
                                              AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[6]s`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, customerString)
@@ -551,7 +551,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
 
 	sqlStatement = fmt.Sprintf(`SELECT
                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                               jobs.created_at, jobs.expire_at, jobs.customer,
+                                               jobs.created_at, jobs.expire_at, jobs.workspaceid,
 											   jobs.running_event_counts,
                                                jobs.job_state, jobs.attempt,
                                                jobs.exec_time, jobs.retry_time,
@@ -559,7 +559,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
                                             FROM
                                                %[1]s 
                                                AS jobs
-                                            WHERE jobs.customer='%[3]s'  %[2]s`,
+                                            WHERE jobs.workspaceid='%[3]s'  %[2]s`,
 		"rt_jobs_view", limitQuery, customer)
 
 	return sqlStatement
