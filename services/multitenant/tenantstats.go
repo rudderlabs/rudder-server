@@ -25,6 +25,7 @@ var (
 type MultitenantStatsT struct {
 	RouterInMemoryJobCounts     map[string]map[string]map[string]int
 	routerJobCountMutex         sync.RWMutex
+	routerInRateMutex           sync.RWMutex
 	RouterInputRates            map[string]map[string]map[string]misc.MovingAverage
 	RouterSuccessRatioLoopCount map[string]map[string]map[string]int
 	RouterCircuitBreakerMap     map[string]map[string]BackOffT
@@ -141,56 +142,39 @@ func GenerateSuccessRateMap(destType string) map[string]float64 {
 }
 
 func AddToInMemoryCount(customerID string, destinationType string, count int, tableType string) {
-	multitenantStat.routerJobCountMutex.RLock()
+	multitenantStat.routerJobCountMutex.Lock()
+	defer multitenantStat.routerJobCountMutex.Unlock()
 	_, ok := multitenantStat.RouterInMemoryJobCounts[tableType][customerID]
 	if !ok {
-		multitenantStat.routerJobCountMutex.RUnlock()
-		multitenantStat.routerJobCountMutex.Lock()
 		multitenantStat.RouterInMemoryJobCounts[tableType][customerID] = make(map[string]int)
-		multitenantStat.routerJobCountMutex.Unlock()
-		multitenantStat.routerJobCountMutex.RLock()
 	}
-	multitenantStat.routerJobCountMutex.RUnlock()
 	multitenantStat.RouterInMemoryJobCounts[tableType][customerID][destinationType] += count
 }
 
 func RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string) {
-	multitenantStat.routerJobCountMutex.RLock()
+	multitenantStat.routerJobCountMutex.Lock()
+	defer multitenantStat.routerJobCountMutex.Unlock()
 	_, ok := multitenantStat.RouterInMemoryJobCounts[tableType][customerID]
 	if !ok {
-		multitenantStat.routerJobCountMutex.RUnlock()
-		multitenantStat.routerJobCountMutex.Lock()
 		multitenantStat.RouterInMemoryJobCounts[tableType][customerID] = make(map[string]int)
-		multitenantStat.routerJobCountMutex.Unlock()
-		multitenantStat.routerJobCountMutex.RLock()
 	}
-	multitenantStat.routerJobCountMutex.RUnlock()
 	multitenantStat.RouterInMemoryJobCounts[tableType][customerID][destinationType] += -1 * count
 }
 
 func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string) {
+	multitenantStat.routerInRateMutex.Lock()
+	defer multitenantStat.routerInRateMutex.Unlock()
 	for key := range stats {
 		multitenantStat.routerJobCountMutex.RLock()
 		_, ok := multitenantStat.RouterInputRates[tableType][key]
 		if !ok {
-			multitenantStat.routerJobCountMutex.RUnlock()
-			multitenantStat.routerJobCountMutex.Lock()
 			multitenantStat.RouterInputRates[tableType][key] = make(map[string]misc.MovingAverage)
-			multitenantStat.routerJobCountMutex.Unlock()
-			multitenantStat.routerJobCountMutex.RLock()
 		}
-		multitenantStat.routerJobCountMutex.RUnlock()
 		for destType := range stats[key] {
-			multitenantStat.routerJobCountMutex.RLock()
 			_, ok := multitenantStat.RouterInputRates[tableType][key][destType]
 			if !ok {
-				multitenantStat.routerJobCountMutex.RUnlock()
-				multitenantStat.routerJobCountMutex.Lock()
 				multitenantStat.RouterInputRates[tableType][key][destType] = misc.NewMovingAverage()
-				multitenantStat.routerJobCountMutex.Unlock()
-				multitenantStat.routerJobCountMutex.RLock()
 			}
-			multitenantStat.routerJobCountMutex.RUnlock()
 			multitenantStat.RouterInputRates[tableType][key][destType].Add((float64(stats[key][destType]) * float64(time.Second)) / float64(timeTaken))
 			AddToInMemoryCount(key, destType, stats[key][destType], tableType)
 		}
@@ -199,18 +183,14 @@ func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Dura
 		_, ok := stats[customerKey]
 		if !ok {
 			for destType := range stats[customerKey] {
-				multitenantStat.routerJobCountMutex.Lock()
 				multitenantStat.RouterInputRates[tableType][customerKey][destType].Add(0)
-				multitenantStat.routerJobCountMutex.Unlock()
 			}
 		}
 
 		for destType := range multitenantStat.RouterInputRates[tableType][customerKey] {
 			_, ok := stats[customerKey][destType]
 			if !ok {
-				multitenantStat.routerJobCountMutex.Lock()
 				multitenantStat.RouterInputRates[tableType][customerKey][destType].Add(0)
-				multitenantStat.routerJobCountMutex.Unlock()
 			}
 		}
 	}
@@ -271,16 +251,16 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 					}
 					continue
 				}
+
 				if latencyMap[customerKey].Value() != 0 {
-					timeRequired = float64(latencyMap[customerKey].Value() * destTypeCount.Value() * float64(routerTimeOut) / float64(time.Second))
-					customerPickUpCount[customerKey] = misc.MaxInt(int(math.Min(timeRequired, runningTimeCounter)/latencyMap[customerKey].Value()), 1)
+					customerPickUpCount[customerKey] = misc.MaxInt(int(math.Min(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second), runningTimeCounter/(latencyMap[customerKey].Value()))), 1)
 					if customerPickUpCount[customerKey] > multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] {
 						customerPickUpCount[customerKey] = misc.MaxInt(multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType], 0)
-						timeRequired = latencyMap[customerKey].Value() * float64(customerPickUpCount[customerKey])
 					}
 				} else {
 					customerPickUpCount[customerKey] = misc.MinInt(int(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second)), multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
 				}
+				timeRequired = float64(customerPickUpCount[customerKey]) * latencyMap[customerKey].Value()
 				successRate := 1.0
 				_, ok = successRateMap[customerKey]
 				if ok {
@@ -291,7 +271,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 				runningTimeCounter = runningTimeCounter - updatedTimeRequired
 				customerPickUpCount[customerKey] = updatedPickUpCount
 				runningJobCount = runningJobCount - customerPickUpCount[customerKey]
-				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
+				pkgLogger.Infof("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
 			}
 		}
 	}
@@ -331,7 +311,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			runningJobCount = runningJobCount - pileupPickUp
 			runningTimeCounter = runningTimeCounter - float64(pileupPickUp)*latencyMap[customerKey].Value()
 		}
-		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , PileUpLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
+		pkgLogger.Infof("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , PileUpLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
 	}
 
 	return customerPickUpCount

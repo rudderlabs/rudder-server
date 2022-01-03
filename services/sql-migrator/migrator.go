@@ -72,7 +72,6 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 		}
 		return fmt.Errorf("Could not run migration from directory '%v', %w", migrationsDir, err)
 	}
-
 	return nil
 }
 

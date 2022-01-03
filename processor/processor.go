@@ -667,7 +667,7 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.Namespace = config.GetKubeNamespace()
 	commonMetadata.InstanceID = config.GetInstanceID()
 	commonMetadata.RudderID = batchEvent.UserID
-	commonMetadata.Customer = batchEvent.Customer
+	commonMetadata.Customer = batchEvent.WorkspaceId
 	commonMetadata.JobID = batchEvent.JobID
 	commonMetadata.MessageID = misc.GetStringifiedData(singularEvent["messageId"])
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
@@ -952,7 +952,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			ExpireAt:     time.Now(),
 			CustomVal:    commonMetaData.DestinationType,
 			UserID:       failedEvent.Metadata.RudderID,
-			Customer:     failedEvent.Metadata.Customer,
+			WorkspaceId:  failedEvent.Metadata.Customer,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
@@ -1463,16 +1463,16 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 		}
 		totalPayloadRouterBytes := 0
 		for i := range destJobs {
-			_, ok := processorLoopStats["router"][destJobs[i].Customer]
+			_, ok := processorLoopStats["router"][destJobs[i].WorkspaceId]
 			if !ok {
-				processorLoopStats["router"][destJobs[i].Customer] = make(map[string]int)
+				processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
 			}
-			_, ok = proc.processorLoopStats["router"][destJobs[i].Customer]
+			_, ok = proc.processorLoopStats["router"][destJobs[i].WorkspaceId]
 			if !ok {
-				proc.processorLoopStats["router"][destJobs[i].Customer] = make(map[string]int)
+				proc.processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
 			}
-			processorLoopStats["router"][destJobs[i].Customer][destJobs[i].CustomVal] += 1
-			proc.processorLoopStats["router"][destJobs[i].Customer][destJobs[i].CustomVal] += 1
+			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
+			proc.processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
 			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
 		}
 
@@ -1490,14 +1490,14 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 		}
 		totalPayloadBatchBytes := 0
 		for i := range batchDestJobs {
-			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].Customer]
+			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId]
 			if !ok {
-				processorLoopStats["batch_router"][batchDestJobs[i].Customer] = make(map[string]int)
-				proc.processorLoopStats["batch_router"][batchDestJobs[i].Customer] = make(map[string]int)
+				processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId] = make(map[string]int)
+				proc.processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId] = make(map[string]int)
 			}
 			destination_id := gjson.Get(string(batchDestJobs[i].Parameters), "destination_id").String()
-			processorLoopStats["batch_router"][batchDestJobs[i].Customer][destination_id] += 1
-			proc.processorLoopStats["batch_router"][batchDestJobs[i].Customer][destination_id] += 1
+			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][destination_id] += 1
+			proc.processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][destination_id] += 1
 			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
 		}
 
@@ -1907,7 +1907,7 @@ func (proc *HandleT) transformSrcDest(
 			ExpireAt:     time.Now(),
 			CustomVal:    destType,
 			EventPayload: destEventJSON,
-			Customer:     workspaceId,
+			WorkspaceId:  workspaceId,
 		}
 		if misc.Contains(batchDestinations, newJob.CustomVal) {
 			batchDestJobs = append(batchDestJobs, &newJob)

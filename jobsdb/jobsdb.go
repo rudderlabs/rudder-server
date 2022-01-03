@@ -241,7 +241,7 @@ type JobStatusT struct {
 	ErrorCode     string          `json:"ErrorCode"`
 	ErrorResponse json.RawMessage `json:"ErrorResponse"`
 	Parameters    json.RawMessage `json:"Parameters"`
-	Customer      string          `json:"Customer"`
+	WorkspaceId   string          `json:"WorkspaceId"`
 }
 
 /*
@@ -260,7 +260,7 @@ type JobT struct {
 	EventPayload  json.RawMessage `json:"EventPayload"`
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
-	Customer      string          `json:"Customer"`
+	WorkspaceId   string          `json:"WorkspaceId"`
 }
 
 func (job *JobT) String() string {
@@ -1665,7 +1665,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 			ErrorCode:     job.LastJobStatus.ErrorCode,
 			ErrorResponse: job.LastJobStatus.ErrorResponse,
 			Parameters:    job.LastJobStatus.Parameters,
-			Customer:      job.Customer,
+			WorkspaceId:   job.WorkspaceId,
 		}
 		statusList = append(statusList, &newStatus)
 	}
@@ -1715,10 +1715,10 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 		customValParamMap := make(map[string]map[string]map[string]struct{})
 		var customers []string //for bursting old cache
 		for _, job := range jobList {
-			if !misc.Contains(customers, job.Customer) {
-				customers = append(customers, job.Customer)
+			if !misc.Contains(customers, job.WorkspaceId) {
+				customers = append(customers, job.WorkspaceId)
 			}
-			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters, job.Customer)
+			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters, job.WorkspaceId)
 		}
 
 		if useNewCacheBurst {
@@ -1847,9 +1847,9 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 
 		if copyID {
 			_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
-				string(job.EventPayload), eventCount, job.CreatedAt, job.ExpireAt, job.Customer)
+				string(job.EventPayload), eventCount, job.CreatedAt, job.ExpireAt, job.WorkspaceId)
 		} else {
-			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.Customer)
+			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId)
 		}
 		if err != nil {
 			return err
@@ -1869,7 +1869,7 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 	if err == nil {
 		//Empty customValFilters means we want to clear for all
-		jd.markClearEmptyResult(ds, job.Customer, []string{}, []string{}, nil, hasJobs, nil)
+		jd.markClearEmptyResult(ds, job.WorkspaceId, []string{}, []string{}, nil, hasJobs, nil)
 		// fmt.Println("Bursting CACHE")
 		return
 	}
@@ -2142,7 +2142,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.Customer, &_null,
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &_null,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
 			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
@@ -2250,7 +2250,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.Customer, &_null)
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &_null)
 		jd.assertError(err)
 		jobList = append(jobList, &job)
 	}
@@ -2313,10 +2313,10 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 	updatedStatesMap := map[string]map[string]bool{}
 	for _, status := range statusList {
 		//  Handle the case when google analytics returns gif in response
-		if _, ok := updatedStatesMap[status.Customer]; !ok {
-			updatedStatesMap[status.Customer] = make(map[string]bool)
+		if _, ok := updatedStatesMap[status.WorkspaceId]; !ok {
+			updatedStatesMap[status.WorkspaceId] = make(map[string]bool)
 		}
-		updatedStatesMap[status.Customer][status.JobState] = true
+		updatedStatesMap[status.WorkspaceId][status.JobState] = true
 		if !utf8.ValidString(string(status.ErrorResponse)) {
 			status.ErrorResponse = []byte(`{}`)
 		}

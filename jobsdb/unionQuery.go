@@ -121,7 +121,7 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionQuerystring(customerCount map[s
 		if mj.isEmptyResult(ds, customer, []string{NotProcessed.State}, params.CustomValFilters, params.ParameterFilters) {
 			continue
 		}
-		if count < 0 {
+		if count <= 0 {
 			mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 unprocessed jobs for this customer.", count, customer)
 			continue
 		}
@@ -192,7 +192,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer s
 			`WHERE jobs.customer='%[2]s'`,
 		"rt_jobs_view", customer)
 
-	if count > 0 {
+	if count >= 0 {
 		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 	}
 
@@ -252,10 +252,10 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 	customerCountStat := make(map[string]int)
 
 	for _, job := range outJobs {
-		if _, ok := customerCountStat[job.Customer]; !ok {
-			customerCountStat[job.Customer] = 0
+		if _, ok := customerCountStat[job.WorkspaceId]; !ok {
+			customerCountStat[job.WorkspaceId] = 0
 		}
-		customerCountStat[job.Customer] += 1
+		customerCountStat[job.WorkspaceId] += 1
 	}
 
 	for customer, jobCount := range customerCountStat {
@@ -300,16 +300,16 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionDS(ds dataSetT, customerCount m
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.Customer, &_null)
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &_null)
 		mj.assertError(err)
 		jobList = append(jobList, &job)
 
-		customerCount[job.Customer] -= 1
-		if customerCount[job.Customer] == 0 {
-			delete(customerCount, job.Customer)
+		customerCount[job.WorkspaceId] -= 1
+		if customerCount[job.WorkspaceId] == 0 {
+			delete(customerCount, job.WorkspaceId)
 		}
 
-		cacheUpdateByCustomer[job.Customer] = string(hasJobs)
+		cacheUpdateByCustomer[job.WorkspaceId] = string(hasJobs)
 	}
 	if err = rows.Err(); err != nil {
 		mj.assertError(err)
@@ -378,10 +378,10 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 	customerCountStat := make(map[string]int)
 
 	for _, job := range outJobs {
-		if _, ok := customerCountStat[job.Customer]; !ok {
-			customerCountStat[job.Customer] = 0
+		if _, ok := customerCountStat[job.WorkspaceId]; !ok {
+			customerCountStat[job.WorkspaceId] = 0
 		}
-		customerCountStat[job.Customer] += 1
+		customerCountStat[job.WorkspaceId] += 1
 	}
 
 	for customer, jobCount := range customerCountStat {
@@ -430,19 +430,19 @@ func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.Customer, &_null,
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &_null,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
 			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
 		mj.assertError(err)
 		jobList = append(jobList, &job)
 
-		customerCount[job.Customer] -= 1
-		if customerCount[job.Customer] == 0 {
-			delete(customerCount, job.Customer)
+		customerCount[job.WorkspaceId] -= 1
+		if customerCount[job.WorkspaceId] == 0 {
+			delete(customerCount, job.WorkspaceId)
 		}
 
-		cacheUpdateByCustomer[job.Customer] = string(hasJobs)
+		cacheUpdateByCustomer[job.WorkspaceId] = string(hasJobs)
 	}
 	if err = rows.Err(); err != nil {
 		mj.assertError(err)
@@ -571,10 +571,10 @@ func (mj *MultiTenantHandleT) printNumJobsByCustomer(jobs []*JobT) {
 	}
 	customerJobCountMap := make(map[string]int)
 	for _, job := range jobs {
-		if _, ok := customerJobCountMap[job.Customer]; !ok {
-			customerJobCountMap[job.Customer] = 0
+		if _, ok := customerJobCountMap[job.WorkspaceId]; !ok {
+			customerJobCountMap[job.WorkspaceId] = 0
 		}
-		customerJobCountMap[job.Customer] += 1
+		customerJobCountMap[job.WorkspaceId] += 1
 	}
 	for customer, count := range customerJobCountMap {
 		mj.logger.Debug(customer, `: `, count)

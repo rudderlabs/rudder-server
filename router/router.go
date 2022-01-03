@@ -437,7 +437,7 @@ func (worker *workerT) workerProcess() {
 					ErrorCode:     "",
 					ErrorResponse: []byte(`{"reason": "Aborted because destination is not available in the config" }`),
 					Parameters:    []byte(`{}`),
-					Customer:      job.Customer,
+					WorkspaceId:   job.WorkspaceId,
 				}
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				continue
@@ -633,14 +633,14 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 				// START: request to destination endpoint
 				worker.deliveryTimeStat.Start()
-				customer := destinationJob.JobMetadataArray[0].JobT.Customer
+				customer := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
 				deliveryLatencyStat := stats.NewTaggedStat("delivery_latency", stats.TimerType, stats.Tags{
 					"module":      "router",
 					"destType":    worker.rt.destName,
 					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
 					"customer":    customer,
 				})
-				workspaceID := destinationJob.JobMetadataArray[0].JobT.Customer
+				workspaceID := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
 				deliveryLatencyStat.Start()
 				startedAt := time.Now()
 
@@ -777,7 +777,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				ErrorCode:     strconv.Itoa(respStatusCode),
 				ErrorResponse: []byte(`{}`),
 				Parameters:    []byte(`{}`),
-				Customer:      destinationJobMetadata.JobT.Customer,
+				WorkspaceId:   destinationJobMetadata.JobT.WorkspaceId,
 			}
 
 			worker.postStatusOnResponseQ(respStatusCode, respBody, destinationJob.Message, respContentType, &destinationJobMetadata, &status)
@@ -816,7 +816,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				ErrorCode:     strconv.Itoa(500),
 				ErrorResponse: []byte(`{}`),
 				Parameters:    []byte(`{}`),
-				Customer:      routerJob.JobMetadata.JobT.Customer,
+				WorkspaceId:   routerJob.JobMetadata.JobT.WorkspaceId,
 			}
 
 			worker.postStatusOnResponseQ(500, "transformer failed to handle this job", nil, "", &routerJob.JobMetadata, &status)
@@ -1046,7 +1046,7 @@ func (worker *workerT) sendRouterResponseCountStat(destinationJobMetadata *types
 		"respStatusCode": status.ErrorCode,
 		"destination":    destinationTag,
 		"attempt_number": strconv.Itoa(status.AttemptNum),
-		"customer":       status.Customer,
+		"customer":       status.WorkspaceId,
 	})
 	routerResponseStat.Count(1)
 }
@@ -1059,7 +1059,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 			"destType":       worker.rt.destName,
 			"destination":    destinationTag,
 			"attempt_number": strconv.Itoa(status.AttemptNum),
-			"customer":       status.Customer,
+			"customer":       status.WorkspaceId,
 		})
 		eventsDeliveredStat.Count(1)
 		if destinationJobMetadata.ReceivedAt != "" {
@@ -1071,7 +1071,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 						"destType":       worker.rt.destName,
 						"destination":    destinationTag,
 						"attempt_number": strconv.Itoa(status.AttemptNum),
-						"customer":       status.Customer,
+						"customer":       status.WorkspaceId,
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
@@ -1110,7 +1110,7 @@ func (worker *workerT) handleJobForPrevFailedUser(job *jobsdb.JobT, parameters J
 			JobState:      jobsdb.Waiting.State,
 			ErrorResponse: []byte(resp), // check
 			Parameters:    []byte(`{}`),
-			Customer:      job.Customer,
+			WorkspaceId:   job.WorkspaceId,
 		}
 		worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 		return true
@@ -1797,8 +1797,8 @@ func (rt *HandleT) readAndProcess() int {
 	//Identify jobs which can be processed
 	for _, job := range combinedList {
 		//populating earliestJobMap
-		if _, ok := rt.earliestJobMap[job.Customer]; !ok {
-			rt.earliestJobMap[job.Customer] = job.CreatedAt
+		if _, ok := rt.earliestJobMap[job.WorkspaceId]; !ok {
+			rt.earliestJobMap[job.WorkspaceId] = job.CreatedAt
 		}
 
 		destID := destinationID(job)
@@ -1815,7 +1815,7 @@ func (rt *HandleT) readAndProcess() int {
 				ErrorCode:     "",
 				Parameters:    []byte(`{}`),
 				ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
-				Customer:      job.Customer,
+				WorkspaceId:   job.WorkspaceId,
 			}
 			//Enhancing job parameter with the drain reason.
 			job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", "router")
@@ -1832,7 +1832,7 @@ func (rt *HandleT) readAndProcess() int {
 			if !misc.Contains(drainStatsbyDest[destID].Reasons, reason) {
 				drainStatsbyDest[destID].Reasons = append(drainStatsbyDest[destID].Reasons, reason)
 			}
-			multitenant.RemoveFromInMemoryCount(job.Customer, rt.destName, 1, "router")
+			multitenant.RemoveFromInMemoryCount(job.WorkspaceId, rt.destName, 1, "router")
 			continue
 		}
 		w := rt.findWorker(job, throttledAtTime)
@@ -1846,7 +1846,7 @@ func (rt *HandleT) readAndProcess() int {
 				ErrorCode:     "",
 				ErrorResponse: []byte(`{}`), // check
 				Parameters:    []byte(`{}`),
-				Customer:      job.Customer,
+				WorkspaceId:   job.WorkspaceId,
 			}
 			statusList = append(statusList, &status)
 			toProcess = append(toProcess, workerJobT{worker: w, job: job})
