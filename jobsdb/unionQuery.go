@@ -192,8 +192,8 @@ func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer s
 			`WHERE jobs.workspaceid='%[2]s'`,
 		"rt_jobs_view", customer)
 
-	limitQuery := fmt.Sprintf(" LIMIT %d ", count)
-	sqlStatement += limitQuery
+	orderQuery := " ORDER BY jobs.job_id"
+	sqlStatement += orderQuery
 	if count >= 0 {
 		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 	}
@@ -352,10 +352,7 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 	})
 
 	start := time.Now()
-	for i, ds := range dsList {
-		if i > maxDSQuerySize {
-			continue
-		}
+	for _, ds := range dsList {
 		jobs := mj.getProcessedUnionDS(ds, customerCount, params)
 		outJobs = append(outJobs, jobs...)
 		tablesQueried++
@@ -368,8 +365,8 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 	}
 
 	queryTime.SendTiming(time.Since(start))
-	tablesQueriedStat = stats.NewTaggedStat("tables_queried", stats.GaugeType, stats.Tags{
-		"state":    params.StateFilters[0],
+	tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+		"state":    "nonterminal",
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
 	})

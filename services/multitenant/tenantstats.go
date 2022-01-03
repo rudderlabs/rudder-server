@@ -271,7 +271,10 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 				runningTimeCounter = runningTimeCounter - updatedTimeRequired
 				customerPickUpCount[customerKey] = updatedPickUpCount
 				runningJobCount = runningJobCount - customerPickUpCount[customerKey]
-				pkgLogger.Infof("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
+				if customerPickUpCount[customerKey] == 0 {
+					delete(customerPickUpCount, customerKey)
+				}
+				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
 			}
 		}
 	}
