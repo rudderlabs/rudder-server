@@ -192,6 +192,8 @@ func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer s
 			`WHERE jobs.workspaceid='%[2]s'`,
 		"rt_jobs_view", customer)
 
+	limitQuery := fmt.Sprintf(" LIMIT %d ", count)
+	sqlStatement += limitQuery
 	if count >= 0 {
 		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 	}
@@ -546,6 +548,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
 	}
 
 	//some stats
+	orderQuery := " ORDER BY jobs.job_id"
 
 	limitQuery := fmt.Sprintf(" LIMIT %d ", count)
 
@@ -559,8 +562,8 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
                                             FROM
                                                %[1]s 
                                                AS jobs
-                                            WHERE jobs.workspaceid='%[3]s'  %[2]s`,
-		"rt_jobs_view", limitQuery, customer)
+                                            WHERE jobs.workspaceid='%[3]s' %[4]s %[2]s`,
+		"rt_jobs_view", limitQuery, customer, orderQuery)
 
 	return sqlStatement
 }
