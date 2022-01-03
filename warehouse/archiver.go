@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"net/url"
 	"time"
 
@@ -47,6 +48,7 @@ type backupRecordsArgs struct {
 }
 
 func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
+	pkgLogger.Infof(`Starting backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`, args.uploadID, args.sourceID, args.destID, args.tableName)
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		pkgLogger.Errorf("[Archiver]: Failed to create tmp DIR")
@@ -77,13 +79,14 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 	tmpl := fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s WHERE %[2]s order by id asc limit %[3]s offset %[4]s) AS dump_table`, args.tableName, args.tableFilterSQL, tablearchiver.PaginationAction, tablearchiver.OffsetAction)
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
 		DbHandle:      dbHandle,
-		Pagination:    config.GetInt("Archiver.backupRowsBatchSize", 100),
+		Pagination:    config.GetInt("Warehouse.Archiver.backupRowsBatchSize", 100),
 		QueryTemplate: tmpl,
 		OutputPath:    path,
 		FileManager:   fManager,
 	}
 
 	backupLocation, err = tableJSONArchiver.Do()
+	pkgLogger.Infof(`Completed backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`, args.uploadID, args.sourceID, args.destID, args.tableName)
 	return
 }
 
@@ -109,15 +112,22 @@ func usedRudderStorage(uploadMetdata []byte) bool {
 }
 
 func archiveUploads(dbHandle *sql.DB) {
+	pkgLogger.Infof(`Started archiving for warehouse`)
 	sqlStatement := fmt.Sprintf(`SELECT id,source_id, destination_id, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, metadata FROM %s WHERE ((metadata->>'archivedStagingAndLoadFiles')::bool IS DISTINCT FROM TRUE) AND created_at < NOW() -INTERVAL '%d DAY' AND status = '%s'`, warehouseutils.WarehouseUploadsTable, uploadsArchivalTimeInDays, ExportedData)
 
 	rows, err := dbHandle.Query(sqlStatement)
+	defer func() {
+		if err != nil {
+			pkgLogger.Errorf(`Error occurred while archiving for warehouse uploads with error: %v`, err)
+			stats.NewTaggedStat("warehouse.archiver.archiveFailed", stats.CountType, stats.Tags{}).Count(1)
+		}
+	}()
 	if err == sql.ErrNoRows {
-		pkgLogger.Debugf(`No uploads found for acrhival. Query: %s`, sqlStatement)
+		pkgLogger.Debugf(`No uploads found for archival. Query: %s`, sqlStatement)
 		return
 	}
 	if err != nil {
-		pkgLogger.Errorf(`Error querying wh_uploads for acrhival. Query: %s, Error: %v`, sqlStatement, err)
+		pkgLogger.Errorf(`Error querying wh_uploads for archival. Query: %s, Error: %v`, sqlStatement, err)
 		return
 	}
 	defer rows.Close()
@@ -128,7 +138,7 @@ func archiveUploads(dbHandle *sql.DB) {
 		var uploadMetdata json.RawMessage
 		err = rows.Scan(&uploadID, &sourceID, &destID, &startStagingFileId, &endStagingFileId, &startLoadFileID, &endLoadFileID, &uploadMetdata)
 		if err != nil {
-			pkgLogger.Errorf(`Error scanning wh_upload for acrhival. Error: %v`, err)
+			pkgLogger.Errorf(`Error scanning wh_upload for archival. Error: %v`, err)
 			continue
 		}
 
@@ -290,6 +300,11 @@ func archiveUploads(dbHandle *sql.DB) {
 			pkgLogger.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`, uploadID, storedStagingFilesLocation)
 			pkgLogger.Debugf(`[Archiver]: Archived upload: %d related load files at: %s`, uploadID, storedLoadFilesLocation)
 		}
+
+		stats.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, map[string]string{
+			"destination": destID,
+			"source":      sourceID,
+		}).Count(1)
 	}
 	pkgLogger.Infof(`Successfully archived %d uploads`, archivedUploads)
 }
@@ -298,6 +313,7 @@ func runArchiver(ctx context.Context, dbHandle *sql.DB) {
 	for {
 		select {
 		case <-ctx.Done():
+			pkgLogger.Infof("context is cancelled, stopped running archiving")
 			return
 		case <-time.After(archiverTickerTime):
 			if archiveUploadRelatedRecords {
