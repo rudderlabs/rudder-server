@@ -171,7 +171,7 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		if config[warehouseutils.SyncFrequency] != nil {
 			syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
 		}
-		job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}, tag{name: "syncFrequency", value: syncFrequency}).SendTiming(time.Since(firstEventAt))
+		job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}).SendTiming(time.Since(firstEventAt))
 	}
 }
 
