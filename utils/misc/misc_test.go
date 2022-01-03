@@ -1,6 +1,7 @@
 package misc
 
 import (
+	"errors"
 	"fmt"
 	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
@@ -491,3 +492,33 @@ var _ = Describe("Misc", func() {
 		})
 	})
 })
+
+// FolderExists Check if folder exists at particular path
+func FolderExists(path string) (exists bool, err error) {
+	fileInfo, err := os.Stat(path)
+	if err == nil {
+		exists = fileInfo.IsDir()
+		return
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		exists = false
+		err = nil
+		return
+	}
+	return
+}
+
+// FileExists Check if file exists at particular path
+func FileExists(path string) (exists bool, err error) {
+	fileInfo, err := os.Stat(path)
+	if err == nil {
+		exists = !fileInfo.IsDir()
+		return
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		exists = false
+		err = nil
+		return
+	}
+	return
+}
