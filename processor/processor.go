@@ -792,6 +792,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.SourceTaskRunID = userTransformedEvent.Metadata.SourceTaskRunID
 		eventMetadata.SourceJobID = userTransformedEvent.Metadata.SourceJobID
 		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
+		eventMetadata.Customer = userTransformedEvent.Metadata.Customer
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
 		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
@@ -943,6 +944,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			ExpireAt:     time.Now(),
 			CustomVal:    commonMetaData.DestinationType,
 			UserID:       failedEvent.Metadata.RudderID,
+			WorkspaceId:  failedEvent.Metadata.Customer,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
@@ -1861,6 +1863,7 @@ func (proc *HandleT) transformSrcDest(
 			ExpireAt:     time.Now(),
 			CustomVal:    destType,
 			EventPayload: destEventJSON,
+			WorkspaceId:  workspaceId,
 		}
 		if misc.Contains(batchDestinations, newJob.CustomVal) {
 			batchDestJobs = append(batchDestJobs, &newJob)

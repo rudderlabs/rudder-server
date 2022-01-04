@@ -208,6 +208,7 @@ type BackendConfig interface {
 	SetUp()
 	Get() (ConfigT, bool)
 	GetWorkspaceIDForWriteKey(string) string
+	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	WaitForConfig(ctx context.Context) error
 	Subscribe(channel chan utils.DataEvent, topic Topic)
@@ -237,6 +238,10 @@ func loadConfig() {
 func Init() {
 	Diagnostics = diagnostics.Diagnostics
 	loadConfig()
+}
+
+func GetWorkspaceIDForSourceID(sourceID string) string {
+	return backendConfig.GetWorkspaceIDForSourceID(sourceID)
 }
 
 func trackConfig(preConfig ConfigT, curConfig ConfigT) {

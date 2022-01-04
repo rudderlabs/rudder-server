@@ -81,6 +81,7 @@ var (
 	enabledWriteKeysSourceMap                                                 map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                                 map[string]string
 	sourceIDToNameMap                                                         map[string]string
+	enabledWriteKeyWorkspaceMap                                               map[string]string
 	configSubscriberLock                                                      sync.RWMutex
 	maxReqSize                                                                int
 	enableRateLimit                                                           bool
@@ -106,6 +107,8 @@ var BatchEvent = []byte(`
 		]
 	}
 `)
+
+var DELIMITER = string("<<>>")
 
 func Init() {
 	loadConfig()
@@ -457,13 +460,15 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			// set anonymousId if not set in payload
 			result := gjson.GetBytes(body, "batch")
 			out := []map[string]interface{}{}
-
+			var builtUserID string
 			var notIdentifiable, containsAudienceList bool
 			result.ForEach(func(_, vjson gjson.Result) bool {
 				anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
 				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
 				eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
-
+				if builtUserID == "" {
+					builtUserID = anonIDFromReq + DELIMITER + userIDFromReq
+				}
 				if anonIDFromReq == "" {
 					if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
 						notIdentifiable = true
@@ -536,11 +541,12 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				UserID:       gjson.GetBytes(body, "batch.0.rudderId").Str,
+				UserID:       builtUserID,
 				Parameters:   marshalledParams,
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 				EventCount:   totalEventsInReq,
+				WorkspaceId:  enabledWriteKeyWorkspaceMap[writeKey],
 			}
 			jobList = append(jobList, &newJob)
 
@@ -1462,6 +1468,7 @@ func (gateway *HandleT) backendConfigSubscriber() {
 	for {
 		config := <-ch
 		configSubscriberLock.Lock()
+		enabledWriteKeyWorkspaceMap = map[string]string{}
 		enabledWriteKeysSourceMap = map[string]backendconfig.SourceT{}
 		enabledWriteKeyWebhookMap = map[string]string{}
 		sources := config.Data.(backendconfig.ConfigT)
@@ -1472,6 +1479,7 @@ func (gateway *HandleT) backendConfigSubscriber() {
 				enabledWriteKeysSourceMap[source.WriteKey] = source
 				if source.SourceDefinition.Category == "webhook" {
 					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
+					enabledWriteKeyWorkspaceMap[source.WriteKey] = source.WorkspaceID
 					gateway.webhookHandler.Register(source.SourceDefinition.Name)
 				}
 			}

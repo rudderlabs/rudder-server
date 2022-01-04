@@ -131,6 +131,7 @@ func BuildStatus(job *JobT, jobState string) *JobStatusT {
 		ErrorCode:     "200",
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
+		WorkspaceId:   job.WorkspaceId,
 	}
 	return &newStatus
 }
