@@ -1,8 +1,11 @@
 package warehouse
 
 import (
+	"fmt"
 	"github.com/gofrs/uuid"
+	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/config"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
@@ -91,6 +94,6 @@ func (ic *IndexConstraintT) violates(brEvent *BatchRouterEventT, columnName stri
 		}
 	}
 	violates = concatenatedLength > ic.Limit
-	output = uuid.Must(uuid.NewV4()).String()
+	output = fmt.Sprintf(`%s-%s-`, strcase.ToKebab(warehouseutils.DiscardsTable), uuid.Must(uuid.NewV4()).String())
 	return
 }
