@@ -65,16 +65,15 @@ func SendPileUpStats() {
 	for {
 		time.Sleep(10 * time.Second)
 		multitenantStat.routerJobCountMutex.RLock()
-		for customer, value := range multitenantStat.RouterInMemoryJobCounts["router"] {
-			for destType, count := range value {
-				countStat := stats.NewTaggedStat("pile_up_count", stats.GaugeType, stats.Tags{
-					"customer": customer,
-					"destType": destType,
-				})
-				countStat.Gauge(count)
-				pkgLogger.Debugf("pile_up_count is %v for customer %v", count, customer)
+		totalPileUp := 0
+		for _, value := range multitenantStat.RouterInMemoryJobCounts["router"] {
+			for _, count := range value {
+				totalPileUp = totalPileUp + count
 			}
 		}
+		countStat := stats.NewTaggedStat("pile_up_count", stats.GaugeType, stats.Tags{})
+		countStat.Gauge(totalPileUp)
+		pkgLogger.Debugf("pile_up_count is %v ", totalPileUp)
 		multitenantStat.routerJobCountMutex.RUnlock()
 	}
 }

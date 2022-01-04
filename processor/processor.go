@@ -111,7 +111,7 @@ type HandleT struct {
 	transformerFeatures            json.RawMessage
 	readLoopSleep                  time.Duration
 	maxLoopSleep                   time.Duration
-	processorLoopStats             map[string]map[string]map[string]int // TODO : Remove this
+	processorLoopStats             map[string]int // TODO : Remove this
 
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
@@ -290,9 +290,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	//TODO : Remove this
-	proc.processorLoopStats = make(map[string]map[string]map[string]int)
-	proc.processorLoopStats["router"] = make(map[string]map[string]int)
-	proc.processorLoopStats["batch_router"] = make(map[string]map[string]int)
+	proc.processorLoopStats = make(map[string]int)
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
@@ -1445,8 +1443,6 @@ type storeMessage struct {
 func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun bool) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	processorLoopStats := make(map[string]map[string]map[string]int)
-	processorLoopStats["router"] = make(map[string]map[string]int)
-	processorLoopStats["batch_router"] = make(map[string]map[string]int)
 
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
@@ -1465,12 +1461,8 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 			if !ok {
 				processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
 			}
-			_, ok = proc.processorLoopStats["router"][destJobs[i].WorkspaceId]
-			if !ok {
-				proc.processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
-			}
 			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
-			proc.processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
+			proc.processorLoopStats["router"] += 1
 			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
 		}
 
@@ -1491,11 +1483,10 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId]
 			if !ok {
 				processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId] = make(map[string]int)
-				proc.processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId] = make(map[string]int)
 			}
 			destination_id := gjson.Get(string(batchDestJobs[i].Parameters), "destination_id").String()
 			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][destination_id] += 1
-			proc.processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][destination_id] += 1
+			proc.processorLoopStats["batch_router"] += 1
 			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
 		}
 
@@ -1541,15 +1532,11 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
-	for customer, value := range proc.processorLoopStats["router"] {
-		for destType, count := range value {
-			countStat := stats.NewTaggedStat("addition_processor_stat", stats.GaugeType, stats.Tags{
-				"customer": customer,
-				"destType": destType,
-			})
-			countStat.Gauge(count)
-			proc.logger.Debugf("addition_processor_stat is %v for customer %v", count, customer)
-		}
+	for customVal, value := range proc.processorLoopStats {
+		countStat := stats.NewTaggedStat("addition_processor_stat", stats.GaugeType, stats.Tags{
+			"customVal": customVal,
+		})
+		countStat.Gauge(value)
 	}
 	timeElapsed := 100 * time.Millisecond // TODO : Find a better way to fix this
 	if !firstRun {
