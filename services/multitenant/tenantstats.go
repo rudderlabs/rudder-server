@@ -84,7 +84,7 @@ func SendRouterInMovingAverageStat() {
 		multitenantStat.routerJobCountMutex.RLock()
 		for customer, value := range multitenantStat.RouterInputRates["router"] {
 			for destType, count := range value {
-				pkgLogger.Debugf("router_input_rate is %.8f for customer %v", count.Value(), customer)
+				pkgLogger.Debugf("router_input_rate is %.8f for customer %v destType %v", count.Value(), customer, destType)
 			}
 		}
 		multitenantStat.routerJobCountMutex.RUnlock()
