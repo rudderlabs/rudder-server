@@ -1477,11 +1477,9 @@ func (gateway *HandleT) backendConfigSubscriber() {
 			sourceIDToNameMap[source.ID] = source.Name
 			if source.Enabled {
 				enabledWriteKeysSourceMap[source.WriteKey] = source
-				if source.SourceDefinition.Category == "webhook" {
-					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
-					enabledWriteKeyWorkspaceMap[source.WriteKey] = source.WorkspaceID
-					gateway.webhookHandler.Register(source.SourceDefinition.Name)
-				}
+				enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
+				enabledWriteKeyWorkspaceMap[source.WriteKey] = source.WorkspaceID
+				gateway.webhookHandler.Register(source.SourceDefinition.Name)
 			}
 		}
 		configSubscriberLock.Unlock()
