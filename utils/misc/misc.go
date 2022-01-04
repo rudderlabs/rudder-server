@@ -45,7 +45,7 @@ import (
 
 var AppStartTime int64
 var errorStorePath string
-var reservedFolderPaths map[string]bool
+var reservedFolderPaths []*RFP
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -79,6 +79,11 @@ type RudderError struct {
 	Message           string
 	StackTrace        string
 	Code              int
+}
+
+type RFP struct {
+	path         string
+	levelsToKeep int
 }
 
 var pkgLogger logger.LoggerI
@@ -312,24 +317,43 @@ func RemoveFilePaths(filePaths ...string) {
 }
 
 // GetReservedFolderPaths returns all temporary folder paths.
-func GetReservedFolderPaths() (paths map[string]bool) {
-	tmpDirPath, err := CreateTMPDIR()
+func GetReservedFolderPaths() []*RFP {
+	return []*RFP{
+		{path: RudderAsyncDestinationLogs, levelsToKeep: 0},
+		{path: RudderArchives, levelsToKeep: 0},
+		{path: RudderWarehouseStagingUploads, levelsToKeep: 0},
+		{path: RudderRawDataDestinationLogs, levelsToKeep: 0},
+		{path: RudderWarehouseLoadUploadsTmp, levelsToKeep: 0},
+		{path: RudderIdentityMergeRulesTmp, levelsToKeep: 1},
+		{path: RudderIdentityMappingsTmp, levelsToKeep: 1},
+		{path: RudderRedshiftManifests, levelsToKeep: 0},
+		{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 1},
+		{path: config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload), levelsToKeep: 0},
+	}
+}
+
+func checkMatch(currDir string) bool {
+	for _, rfp := range reservedFolderPaths {
+		if ok, err := rfp.matches(currDir); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *RFP) matches(currDir string) (match bool, err error) {
+	var tmpDirPath string
+	tmpDirPath, err = CreateTMPDIR()
 	if err != nil {
 		return
 	}
 
-	paths = make(map[string]bool)
-	paths[tmpDirPath] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderAsyncDestinationLogs)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderArchives)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderWarehouseStagingUploads)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderRawDataDestinationLogs)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderWarehouseLoadUploadsTmp)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderIdentityMergeRulesTmp)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderIdentityMappingsTmp)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderRedshiftManifests)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderWarehouseJsonUploadsTmp)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload))] = true
+	splits := strings.Split(currDir, "/")
+	if len(splits) < r.levelsToKeep {
+		return
+	}
+	join := strings.Join(splits[0:len(splits)-r.levelsToKeep], "/")
+	match = fmt.Sprintf("%s/%s", tmpDirPath, r.path) == join
 	return
 }
 
@@ -341,7 +365,7 @@ func RemoveEmptyFolderStructureForFilePath(fp string) {
 	for currDir := filepath.Dir(fp); currDir != "/" && currDir != "."; {
 		// Checking if the currDir is present in the temporary folders or not
 		// If present we should stop at that point.
-		if _, ok := reservedFolderPaths[currDir]; ok {
+		if checkMatch(currDir) {
 			break
 		}
 		parentDir := filepath.Dir(currDir)
@@ -1315,3 +1339,4 @@ func SleepCtx(ctx context.Context, delay time.Duration) bool {
 		return false
 	}
 }
+
