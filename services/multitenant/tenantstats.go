@@ -84,11 +84,6 @@ func SendRouterInMovingAverageStat() {
 		multitenantStat.routerJobCountMutex.RLock()
 		for customer, value := range multitenantStat.RouterInputRates["router"] {
 			for destType, count := range value {
-				movingAverageStat := stats.NewTaggedStat("router_input_rate", stats.GaugeType, stats.Tags{
-					"customer": customer,
-					"destType": destType,
-				})
-				movingAverageStat.Gauge(count.Value())
 				pkgLogger.Debugf("router_input_rate is %.8f for customer %v", count.Value(), customer)
 			}
 		}
