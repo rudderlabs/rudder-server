@@ -1443,7 +1443,8 @@ type storeMessage struct {
 func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun bool) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	processorLoopStats := make(map[string]map[string]map[string]int)
-
+	processorLoopStats["router"] = make(map[string]map[string]int)
+	processorLoopStats["batch_router"] = make(map[string]map[string]int)
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {

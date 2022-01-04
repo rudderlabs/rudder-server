@@ -574,7 +574,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
 
 	sqlStatement = fmt.Sprintf(`SELECT
                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                               jobs.created_at, jobs.expire_at, jobs.customer,
+                                               jobs.created_at, jobs.expire_at, jobs.workspaceid,
 											   jobs.running_event_counts,
                                                jobs.job_state, jobs.attempt,
                                                jobs.exec_time, jobs.retry_time,
