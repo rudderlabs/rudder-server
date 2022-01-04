@@ -3,12 +3,14 @@ package bigquery
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -24,6 +26,8 @@ var (
 	partitionExpiryUpdatedLock            sync.RWMutex
 	pkgLogger                             logger.LoggerI
 	setUsersLoadPartitionFirstEventFilter bool
+	stagingTablePrefix                    string
+	isUsersTableDedupEnabled              bool
 )
 
 type HandleT struct {
@@ -205,6 +209,15 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
+func (bq *HandleT) dropStagingTable(stagingTableName string) {
+	pkgLogger.Infof("BQ: Deleting table: %s in bigquery dataset: %s in project: %s", stagingTableName, bq.Namespace, bq.ProjectID)
+	tableRef := bq.Db.Dataset(bq.Namespace).Table(stagingTableName)
+	err := tableRef.Delete(bq.BQContext)
+	if err != nil {
+		pkgLogger.Errorf("BQ:  Error dropping staging table %s in bigquery dataset %s in project %s : %v", stagingTableName, bq.Namespace, bq.ProjectID, err)
+	}
+}
+
 func partitionedTable(tableName string, partitionDate string) string {
 	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
 }
@@ -327,30 +340,110 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		bqUsersView,                      // 3
 		identifiesFrom,                   // 4
 	)
+	loadUserTableByAppend := func() {
+		pkgLogger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
+		partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
+		query := bq.Db.Query(sqlStatement)
+		query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(partitionedUsersTable)
+		query.WriteDisposition = bigquery.WriteAppend
 
-	pkgLogger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
-	partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
-	query := bq.Db.Query(sqlStatement)
-	query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(partitionedUsersTable)
-	query.WriteDisposition = bigquery.WriteAppend
+		job, err := query.Run(bq.BQContext)
+		if err != nil {
+			pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
+			errorMap[warehouseutils.UsersTable] = err
+			return
+		}
+		status, err := job.Wait(bq.BQContext)
+		if err != nil {
+			pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
+			errorMap[warehouseutils.UsersTable] = errors.New(fmt.Sprintf(`append: %v`, err.Error()))
+			return
+		}
 
-	job, err := query.Run(bq.BQContext)
-	if err != nil {
-		pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
-		errorMap[warehouseutils.UsersTable] = err
+		if status.Err() != nil {
+			errorMap[warehouseutils.UsersTable] = status.Err()
+			return
+		}
+	}
+
+	loadUserTableByMerge := func() {
+		stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
+		pkgLogger.Infof(`BQ: Creating staging table for users: %v`, sqlStatement)
+		query := bq.Db.Query(sqlStatement)
+		query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(stagingTableName)
+		query.WriteDisposition = bigquery.WriteAppend
+		job, err := query.Run(bq.BQContext)
+		if err != nil {
+			pkgLogger.Errorf("BQ: Error initiating staging table for users : %v\n", err)
+			errorMap[warehouseutils.UsersTable] = err
+			return
+		}
+
+		status, err := job.Wait(bq.BQContext)
+		if err != nil {
+			pkgLogger.Errorf("BQ: Error initiating staging table for users %v\n", err)
+			errorMap[warehouseutils.UsersTable] = errors.New(fmt.Sprintf(`merge: %v`, err.Error()))
+			return
+		}
+
+		if status.Err() != nil {
+			errorMap[warehouseutils.UsersTable] = status.Err()
+			return
+		}
+		defer bq.dropStagingTable(stagingTableName)
+
+		primaryKey := `ID`
+		columnNames := append([]string{`ID`}, userColNames...)
+		columnNamesStr := strings.Join(columnNames, ",")
+		var columnsWithValues, stagingColumnValues string
+		for idx, colName := range columnNames {
+			columnsWithValues += fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName)
+			stagingColumnValues += fmt.Sprintf(`staging.%s`, colName)
+			if idx != len(columnNames)-1 {
+				columnsWithValues += `,`
+				stagingColumnValues += `,`
+			}
+		}
+
+		sqlStatement = fmt.Sprintf(`MERGE INTO %[1]s AS original
+										USING (
+											SELECT %[3]s FROM %[2]s
+										) AS staging
+										ON (original.%[4]s = staging.%[4]s)
+										WHEN MATCHED THEN
+										UPDATE SET %[5]s
+										WHEN NOT MATCHED THEN
+										INSERT (%[3]s) VALUES (%[6]s)`, bqTable(warehouseutils.UsersTable), bqTable(stagingTableName), columnNamesStr, primaryKey, columnsWithValues, stagingColumnValues)
+		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
+
+		pkgLogger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
+		// partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
+		q := bq.Db.Query(sqlStatement)
+		job, err = q.Run(bq.BQContext)
+		if err != nil {
+			pkgLogger.Errorf("BQ: Error initiating merge load job: %v\n", err)
+			errorMap[warehouseutils.UsersTable] = err
+			return
+		}
+		status, err = job.Wait(bq.BQContext)
+		if err != nil {
+			pkgLogger.Errorf("BQ: Error running merge load job: %v\n", err)
+			errorMap[warehouseutils.UsersTable] = errors.New(fmt.Sprintf(`merge: %v`, err.Error()))
+			return
+		}
+
+		if status.Err() != nil {
+			errorMap[warehouseutils.UsersTable] = status.Err()
+			return
+		}
+	}
+
+	if !isUsersTableDedupEnabled {
+		loadUserTableByAppend()
 		return
 	}
-	status, err := job.Wait(bq.BQContext)
-	if err != nil {
-		pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
-		errorMap[warehouseutils.UsersTable] = err
-		return
-	}
 
-	if status.Err() != nil {
-		errorMap[warehouseutils.UsersTable] = status.Err()
-		return
-	}
+	loadUserTableByMerge()
 	return errorMap
 }
 
@@ -368,7 +461,9 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 
 func loadConfig() {
 	partitionExpiryUpdated = make(map[string]bool)
+	stagingTablePrefix = "RUDDER_STAGING_"
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
+	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled")
 
 }
 
@@ -402,7 +497,60 @@ func (bq *HandleT) removePartitionExpiry() (err error) {
 }
 
 func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+	if !isUsersTableDedupEnabled {
+		return
+	}
+	bq.Warehouse = warehouse
+	bq.Namespace = warehouse.Namespace
+	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
+	bq.Db, err = bq.connect(BQCredentialsT{
+		projectID:   bq.ProjectID,
+		credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.Warehouse),
+	})
+	if err != nil {
+		return
+	}
+	defer bq.Db.Close()
+	bq.dropDanglingStagingTables()
 	return
+}
+func (bq *HandleT) dropDanglingStagingTables() bool {
+	sqlStatement := fmt.Sprintf(`SELECT table_name
+								 FROM %[1]s.INFORMATION_SCHEMA.TABLES
+								 WHERE table_schema = '%[1]s' AND table_name LIKE '%[2]s'`, bq.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
+	query := bq.Db.Query(sqlStatement)
+	it, err := query.Read(bq.BQContext)
+	if err != nil {
+		pkgLogger.Errorf("WH: BQ: Error dropping dangling staging tables in BQ: %v\nQuery: %s\n", err, sqlStatement)
+		return false
+	}
+
+	var stagingTableNames []string
+	for {
+		var values []bigquery.Value
+		err := it.Next(&values)
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			pkgLogger.Errorf("BQ: Error in processing fetched staging tables from information schema in dataset %v : %v", bq.Namespace, err)
+			return false
+		}
+		if _, ok := values[0].(string); ok {
+			stagingTableNames = append(stagingTableNames, values[0].(string))
+		}
+	}
+	pkgLogger.Infof("WH: PG: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
+	delSuccess := true
+	for _, stagingTableName := range stagingTableNames {
+		tableRef := bq.Db.Dataset(bq.Namespace).Table(stagingTableName)
+		err := tableRef.Delete(bq.BQContext)
+		if err != nil {
+			pkgLogger.Errorf("WH: BQ:  Error dropping dangling staging table: %s in BQ: %v", stagingTableName, err)
+			delSuccess = false
+		}
+	}
+	return delSuccess
 }
 
 func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
