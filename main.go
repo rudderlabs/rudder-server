@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -36,6 +37,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
+	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
 	routertransformer "github.com/rudderlabs/rudder-server/router/transformer"
 	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
 
@@ -174,6 +176,7 @@ func runAllInit() {
 	postgres.Init()
 	redshift.Init()
 	snowflake.Init()
+	deltalake.Init()
 	transformer.Init()
 	webhook.Init()
 	batchrouter.Init()
@@ -201,6 +204,7 @@ func runAllInit() {
 	rruntime.Init()
 	integrations.Init()
 	alert.Init()
+	oauth.Init()
 	Init()
 
 }
@@ -262,13 +266,8 @@ func Run(ctx context.Context) {
 	//Creating Stats Client should be done right after setting up logger and before setting up other modules.
 	stats.Setup()
 
-	var pollRegulations bool
-	if enableSuppressUserFeature {
-		if application.Features().SuppressUser != nil {
-			pollRegulations = true
-		} else {
-			pkgLogger.Info("Suppress User feature is enterprise only. Unable to poll regulations.")
-		}
+	if !enableSuppressUserFeature || application.Features().SuppressUser == nil {
+		pkgLogger.Info("Suppress User feature is either disabled or enterprise only. Unable to poll regulations.")
 	}
 
 	var configEnvHandler types.ConfigEnvI
@@ -276,7 +275,7 @@ func Run(ctx context.Context) {
 		configEnvHandler = application.Features().ConfigEnv.Setup()
 	}
 
-	backendconfig.Setup(pollRegulations, configEnvHandler)
+	backendconfig.Setup(configEnvHandler)
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {

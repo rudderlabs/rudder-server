@@ -75,7 +75,9 @@ type ClaimT struct {
 	ID                int64
 	BatchID           string
 	Status            string
+	Workspace         string
 	Payload           json.RawMessage
+	Attempt           int
 	ClaimResponseChan chan ClaimResponseT
 }
 
@@ -261,9 +263,9 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 	})
 }
 
-func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT) {
+func (notifier *PgNotifierT) updateClaimedEvent(claim *ClaimT) {
 	rruntime.Go(func() {
-		response := <-ch
+		response := <-claim.ClaimResponseChan
 		var err error
 		if response.Err != nil {
 			pkgLogger.Error(response.Err.Error())
@@ -272,10 +274,19 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT
 									THEN CAST ( '%[3]s' AS pg_notifier_status_type)
 									ELSE  CAST( '%[4]s' AS pg_notifier_status_type)
 									END), attempt = attempt + 1, updated_at = '%[5]s', error = %[6]s
-									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), misc.QuoteLiteral(response.Err.Error()), id)
+									WHERE id = %[7]v`, queueName, maxAttempt, AbortedState, FailedState, GetCurrentSQLTimestamp(), misc.QuoteLiteral(response.Err.Error()), claim.ID)
 			_, err = notifier.dbHandle.Exec(stmt)
+
+			// Sending stats when we mark pg_notifier status as aborted.
+			if claim.Attempt > maxAttempt {
+				stats.NewTaggedStat("pg_notifier_aborted_records", stats.CountType, map[string]string{
+					"queueName": queueName,
+					"workspace": claim.Workspace,
+					"module":    "pg_notifier",
+				}).Increment()
+			}
 		} else {
-			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = $1 WHERE id = %[4]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), id)
+			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s', updated_at = '%[3]s', payload = $1 WHERE id = %[4]v`, queueName, SucceededState, GetCurrentSQLTimestamp(), claim.ID)
 			_, err = notifier.dbHandle.Exec(stmt, response.Payload)
 		}
 
@@ -288,7 +299,8 @@ func (notifier *PgNotifierT) updateClaimedEvent(id int64, ch chan ClaimResponseT
 
 func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool) {
 	var claimedID int64
-	var batchID, status string
+	var attempt int
+	var batchID, status, workspace string
 	var payload json.RawMessage
 	stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[2]s',
 						updated_at = '%[3]s',
@@ -302,13 +314,13 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 						FOR UPDATE SKIP LOCKED
 						LIMIT 1
 						)
-						RETURNING id, batch_id, status, payload;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState)
+						RETURNING id, batch_id, status, payload, workspace, attempt;`, queueName, ExecutingState, GetCurrentSQLTimestamp(), workerID, WaitingState, FailedState)
 
 	tx, err := notifier.dbHandle.Begin()
 	if err != nil {
 		return
 	}
-	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload)
+	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload, &workspace, &attempt)
 
 	if err != nil {
 		pkgLogger.Debugf("PgNotifier: Claim failed: %v, query: %s, connInfo: %s", err, stmt, notifier.URI)
@@ -330,9 +342,11 @@ func (notifier *PgNotifierT) Claim(workerID string) (claim ClaimT, claimed bool)
 		BatchID:           batchID,
 		Status:            status,
 		Payload:           payload,
+		Attempt:           attempt,
+		Workspace:         workspace,
 		ClaimResponseChan: responseChan,
 	}
-	notifier.updateClaimedEvent(claimedID, responseChan)
+	notifier.updateClaimedEvent(&claim)
 	return claim, true
 }
 
