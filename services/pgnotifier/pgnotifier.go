@@ -81,7 +81,6 @@ type ClaimT struct {
 	Workspace     string
 	Payload       json.RawMessage
 	Attempt       int
-	ClaimResponse ClaimResponseT
 }
 
 type ClaimResponseT struct {
