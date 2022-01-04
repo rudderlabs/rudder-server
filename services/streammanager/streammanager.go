@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/eventbridge"
 	"github.com/rudderlabs/rudder-server/services/streammanager/firehose"
 	"github.com/rudderlabs/rudder-server/services/streammanager/googlepubsub"
@@ -55,6 +56,9 @@ func NewProducer(destinationConfig interface{}, destType string, o Opts) (interf
 	case "PERSONALIZE":
 		producer, err := personalize.NewProducer(destinationConfig)
 		return producer, err
+	case "BQSTREAM":
+		producer, err := bqstream.NewProducer(destinationConfig)
+		return producer, err
 	default:
 		return nil, fmt.Errorf("No provider configured for StreamManager") //404, "No provider configured for StreamManager", ""
 	}
@@ -67,6 +71,8 @@ func CloseProducer(producer interface{}, destType string) error {
 	switch destType {
 	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE", "GOOGLESHEETS":
 		return nil
+	case "BQSTREAM":
+		return bqstream.CloseProducer(producer)
 	case "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD":
 		err := kafka.CloseProducer(producer)
 		return err
@@ -100,6 +106,8 @@ func Produce(jsonData json.RawMessage, destType string, producer interface{}, co
 		return googlesheets.Produce(jsonData, producer, config)
 	case "PERSONALIZE":
 		return personalize.Produce(jsonData, producer, config)
+	case "BQSTREAM":
+		return bqstream.Produce(jsonData, producer, config)
 	default:
 		return 404, "No provider configured for StreamManager", "No provider configured for StreamManager"
 	}

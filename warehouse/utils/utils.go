@@ -5,6 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sts"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -30,6 +36,7 @@ const (
 	CLICKHOUSE    = "CLICKHOUSE"
 	MSSQL         = "MSSQL"
 	AZURE_SYNAPSE = "AZURE_SYNAPSE"
+	DELTALAKE     = "DELTALAKE"
 )
 
 const (
@@ -80,9 +87,11 @@ var (
 )
 
 var ObjectStorageMap = map[string]string{
-	"RS":          "S3",
-	"S3_DATALAKE": "S3",
-	"BQ":          "GCS",
+	"RS":             "S3",
+	"S3_DATALAKE":    "S3",
+	"BQ":             "GCS",
+	"GCS_DATALAKE":   "GCS",
+	"AZURE_DATALAKE": "AZURE_BLOB",
 }
 
 var SnowflakeStorageMap = map[string]string{
@@ -318,6 +327,27 @@ func GetObjectFolder(provider string, location string) (folder string) {
 		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gcs"})
 	case "AZURE_BLOB":
 		folder = GetAzureBlobLocationFolder(location)
+	}
+	return
+}
+
+// GetObjectFolderForDeltalake returns the folder path for the storage object based on the storage provider for delta lake
+// eg. For provider as S3: https://<bucket-name>.s3.amazonaws.com/<directory-name> --> s3://<bucket-name>/<directory-name>
+// eg. For provider as GCS: https://storage.cloud.google.com/<bucket-name>/<directory-name> --> gs://<bucket-name>/<directory-name>
+// eg. For provider as AZURE_BLOB: https://<storage-account-name>.blob.core.windows.net/<container-name>/<directory-name> --> wasbs://<container-name>@<storage-account-name>.blob.core.windows.net/<directory-name>
+func GetObjectFolderForDeltalake(provider string, location string) (folder string) {
+	switch provider {
+	case "S3":
+		folder = GetS3LocationFolder(location)
+	case "GCS":
+		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gs"})
+	case "AZURE_BLOB":
+		blobUrl, _ := url.Parse(location)
+		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
+		accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
+		blobLocation := fmt.Sprintf("wasbs://%s@%s.blob.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
+		lastPos := strings.LastIndex(blobLocation, "/")
+		folder = blobLocation[:lastPos]
 	}
 	return
 }
@@ -566,7 +596,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	if useRudderStorage {
 		return "S3"
 	}
-	if destType == "RS" || destType == "BQ" || destType == "S3_DATALAKE" {
+	if misc.Contains(ObjectStorageMap, destType) {
 		return ObjectStorageMap[destType]
 	}
 	if destType == "SNOWFLAKE" {
@@ -673,6 +703,25 @@ func GetTimeWindow(ts time.Time) time.Time {
 // for location - "s3://testbucket/rudder-datalake/namespace/tableName/" - it returns "rudder-datalake/namespace/tableName"
 func GetTablePathInObjectStorage(namespace string, tableName string) string {
 	return fmt.Sprintf("%s/%s/%s", config.GetEnv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), namespace, tableName)
+}
+
+// JoinWithFormatting returns joined string for keys with the provided formatting function.
+func JoinWithFormatting(keys []string, format func(idx int, str string) string, separator string) string {
+	output := make([]string, len(keys))
+	for idx, str := range keys {
+		output[idx] += format(idx, str)
+	}
+	return strings.Join(output, separator)
+}
+
+func GetTemporaryS3Cred(accessKeyID, accessKey string) (string, string, string, error) {
+	mySession := session.Must(session.NewSession())
+	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
+	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &AWSCredsExpiryInS})
+	if err != nil {
+		return "", "", "", err
+	}
+	return *SessionTokenOutput.Credentials.AccessKeyId, *SessionTokenOutput.Credentials.SecretAccessKey, *SessionTokenOutput.Credentials.SessionToken, err
 }
 
 type Tag struct {
