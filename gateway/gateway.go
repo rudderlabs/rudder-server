@@ -548,7 +548,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 				EventCount:   totalEventsInReq,
-				Customer:     enabledWriteKeyWorkspaceMap[writeKey],
+				WorkspaceId:  enabledWriteKeyWorkspaceMap[writeKey],
 			}
 			jobList = append(jobList, &newJob)
 

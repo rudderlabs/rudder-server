@@ -105,6 +105,7 @@ type JobsDB interface {
 	UpdateJobStatusInTxn(txHandler *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 	AcquireUpdateJobStatusLocks()
 	ReleaseUpdateJobStatusLocks()
+	GetPileUpCounts(statMap map[string]map[string]int)
 
 	GetToRetry(params GetQueryParamsT) []*JobT
 	GetWaiting(params GetQueryParamsT) []*JobT
@@ -241,7 +242,7 @@ type JobStatusT struct {
 	ErrorCode     string          `json:"ErrorCode"`
 	ErrorResponse json.RawMessage `json:"ErrorResponse"`
 	Parameters    json.RawMessage `json:"Parameters"`
-	Customer      string          `json:"Customer"`
+	WorkspaceId   string          `json:"WorkspaceId"`
 }
 
 /*
@@ -260,7 +261,7 @@ type JobT struct {
 	EventPayload  json.RawMessage `json:"EventPayload"`
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
-	Customer      string          `json:"Customer"`
+	WorkspaceId   string          `json:"WorkspaceId"`
 }
 
 func (job *JobT) String() string {
@@ -1365,7 +1366,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 									  event_count INTEGER NOT NULL DEFAULT 1,
                                       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
                                       expire_at TIMESTAMP NOT NULL DEFAULT NOW(),
-									  customer TEXT NOT NULL DEFAULT '');`, newDS.JobTable)
+									  workspaceid TEXT NOT NULL DEFAULT '');`, newDS.JobTable)
 
 	_, err = jd.dbHandle.Exec(sqlStatement)
 	jd.assertError(err)
@@ -1373,7 +1374,7 @@ func (jd *HandleT) createDS(appendLast bool, newDSIdx string) dataSetT {
 	//TODO : Evaluate a way to handle indexes only for particular tables
 
 	if jd.tablePrefix == "rt" {
-		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_customer_%s ON "%s" (custom_val,customer)`, newDSIdx, newDS.JobTable)
+		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS customval_customer_%s ON "%s" (custom_val,workspaceid)`, newDSIdx, newDS.JobTable)
 		_, err = jd.dbHandle.Exec(sqlStatement)
 		jd.assertError(err)
 	}
@@ -1665,7 +1666,7 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 			ErrorCode:     job.LastJobStatus.ErrorCode,
 			ErrorResponse: job.LastJobStatus.ErrorResponse,
 			Parameters:    job.LastJobStatus.Parameters,
-			Customer:      job.Customer,
+			WorkspaceId:   job.WorkspaceId,
 		}
 		statusList = append(statusList, &newStatus)
 	}
@@ -1715,10 +1716,10 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 		customValParamMap := make(map[string]map[string]map[string]struct{})
 		var customers []string //for bursting old cache
 		for _, job := range jobList {
-			if !misc.Contains(customers, job.Customer) {
-				customers = append(customers, job.Customer)
+			if !misc.Contains(customers, job.WorkspaceId) {
+				customers = append(customers, job.WorkspaceId)
 			}
-			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters, job.Customer)
+			jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters, job.WorkspaceId)
 		}
 
 		if useNewCacheBurst {
@@ -1822,15 +1823,55 @@ func (jd *HandleT) clearCache(ds dataSetT, CVPMap map[string]map[string]map[stri
 	}
 }
 
+func (jd *HandleT) GetPileUpCounts(statMap map[string]map[string]int) {
+	jd.dsMigrationLock.RLock()
+	jd.dsListLock.RLock()
+	defer jd.dsMigrationLock.RUnlock()
+	defer jd.dsListLock.RUnlock()
+
+	dsList := jd.getDSList(false)
+	for _, ds := range dsList {
+		queryString := fmt.Sprintf(`with joined as (
+			select j.job_id as jobID, j.custom_val as customVal, s.id as statusID, s.job_state as jobState, j.workspaceid as customer from %[1]s j left join %[2]s s on j.job_id = s.job_id where (s.job_state not in ('executing','aborted', 'succeeded', 'migrated') or s.job_id is null)
+		),
+		x as (
+			select *, ROW_NUMBER() OVER(PARTITION BY joined.jobID 
+										 ORDER BY joined.statusID DESC) AS rank
+			  FROM joined
+		),
+		y as (
+			SELECT * FROM x WHERE rank = 1
+		)
+		select count(*), customVal, customer from y group by customVal, customer;`, ds.JobTable, ds.JobStatusTable)
+		rows, err := jd.dbHandle.Query(queryString)
+		jd.assertError(err)
+
+		for rows.Next() {
+			var count sql.NullInt64
+			var customVal string
+			var customer string
+			err := rows.Scan(&count, &customVal, &customer)
+			jd.assertError(err)
+			if _, ok := statMap[customer]; !ok {
+				statMap[customer] = make(map[string]int)
+			}
+			statMap[customer][customVal] += int(count.Int64)
+		}
+		if err = rows.Err(); err != nil {
+			jd.assertError(err)
+		}
+	}
+}
+
 func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, copyID bool, jobList []*JobT) error {
 	var stmt *sql.Stmt
 	var err error
 
 	if copyID {
 		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "job_id", "uuid", "user_id", "custom_val", "parameters",
-			"event_payload", "event_count", "created_at", "expire_at", "customer"))
+			"event_payload", "event_count", "created_at", "expire_at", "workspaceid"))
 	} else {
-		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "customer"))
+		stmt, err = txHandler.Prepare(pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspaceid"))
 	}
 
 	if err != nil {
@@ -1847,9 +1888,9 @@ func (jd *HandleT) storeJobsDSInTxn(txHandler transactionHandler, ds dataSetT, c
 
 		if copyID {
 			_, err = stmt.Exec(job.JobID, job.UUID, job.UserID, job.CustomVal, string(job.Parameters),
-				string(job.EventPayload), eventCount, job.CreatedAt, job.ExpireAt, job.Customer)
+				string(job.EventPayload), eventCount, job.CreatedAt, job.ExpireAt, job.WorkspaceId)
 		} else {
-			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.Customer)
+			_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId)
 		}
 		if err != nil {
 			return err
@@ -1869,7 +1910,7 @@ func (jd *HandleT) storeJobDS(ds dataSetT, job *JobT) (err error) {
 	_, err = stmt.Exec(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload))
 	if err == nil {
 		//Empty customValFilters means we want to clear for all
-		jd.markClearEmptyResult(ds, job.Customer, []string{}, []string{}, nil, hasJobs, nil)
+		jd.markClearEmptyResult(ds, job.WorkspaceId, []string{}, []string{}, nil, hasJobs, nil)
 		// fmt.Println("Bursting CACHE")
 		return
 	}
@@ -2086,7 +2127,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	if getAll {
 		sqlStatement := fmt.Sprintf(`SELECT
                                   jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters,  jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                  jobs.created_at, jobs.expire_at, jobs.customer,
+                                  jobs.created_at, jobs.expire_at, jobs.workspaceid,
 								  sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
                                   job_latest_state.job_state, job_latest_state.attempt,
                                   job_latest_state.exec_time, job_latest_state.retry_time,
@@ -2106,7 +2147,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 	} else {
 		sqlStatement := fmt.Sprintf(`SELECT
                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                               jobs.created_at, jobs.expire_at, jobs.customer,
+                                               jobs.created_at, jobs.expire_at, jobs.workspaceid,
 											   sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
@@ -2142,7 +2183,7 @@ func (jd *HandleT) getProcessedJobsDS(ds dataSetT, getAll bool, limitCount int, 
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.Customer, &_null,
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &_null,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
 			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
@@ -2192,7 +2233,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 	if useJoinForUnprocessed {
 		// event_count default 1, number of items in payload
 		sqlStatement = fmt.Sprintf(
-			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.customer,`+
+			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspaceid,`+
 				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `+
 				`FROM "%[1]s" AS jobs `+
 				`LEFT JOIN "%[2]s" AS job_status ON jobs.job_id=job_status.job_id `+
@@ -2200,7 +2241,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 			ds.JobTable, ds.JobStatusTable)
 	} else {
 		sqlStatement = fmt.Sprintf(
-			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.customer,`+
+			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspaceid,`+
 				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts `+
 				` FROM AS jobs `+
 				`WHERE jobs.job_id NOT IN (SELECT DISTINCT(job_status.job_id) FROM "%[2]s" AS job_status)`,
@@ -2250,7 +2291,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ds dataSetT, order bool, count int, para
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.Customer, &_null)
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &_null)
 		jd.assertError(err)
 		jobList = append(jobList, &job)
 	}
@@ -2313,10 +2354,10 @@ func (jd *HandleT) updateJobStatusDSInTxn(txHandler transactionHandler, ds dataS
 	updatedStatesMap := map[string]map[string]bool{}
 	for _, status := range statusList {
 		//  Handle the case when google analytics returns gif in response
-		if _, ok := updatedStatesMap[status.Customer]; !ok {
-			updatedStatesMap[status.Customer] = make(map[string]bool)
+		if _, ok := updatedStatesMap[status.WorkspaceId]; !ok {
+			updatedStatesMap[status.WorkspaceId] = make(map[string]bool)
 		}
-		updatedStatesMap[status.Customer][status.JobState] = true
+		updatedStatesMap[status.WorkspaceId][status.JobState] = true
 		if !utf8.ValidString(string(status.ErrorResponse)) {
 			status.ErrorResponse = []byte(`{}`)
 		}

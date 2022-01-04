@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	selectQuery = `SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.customer,jobs.running_event_counts `
+	selectQuery = `SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspaceid,jobs.running_event_counts `
 )
 
 type MultiTenantHandleT struct {
@@ -53,17 +53,46 @@ func (mj *MultiTenantHandleT) GetPileUpCounts(statMap map[string]map[string]int)
 	dsList := mj.getDSList(false)
 	for _, ds := range dsList {
 		queryString := fmt.Sprintf(`with joined as (
-			select j.job_id as jobID, j.custom_val as customVal, s.id as statusID, s.job_state as jobState, j.customer as customer from %[1]s j left join %[2]s s on j.job_id = s.job_id where (s.job_state not in ('aborted', 'succeeded', 'migrated') or s.job_id is null)
-		),
-		x as (
-			select *, ROW_NUMBER() OVER(PARTITION BY joined.jobID 
-										 ORDER BY joined.statusID DESC) AS rank
-			  FROM joined
-		),
-		y as (
-			SELECT * FROM x WHERE rank = 1
-		)
-		select count(*), customVal, customer from y group by customVal, customer;`, ds.JobTable, ds.JobStatusTable)
+			select 
+			  j.job_id as jobID, 
+			  j.custom_val as customVal, 
+			  s.id as statusID, 
+			  s.job_state as jobState, 
+			  j.workspaceid as customer 
+			from 
+			  %[1]s j 
+			  left join (
+				select * from (select 
+					  *, 
+					  ROW_NUMBER() OVER(
+						PARTITION BY rs.job_id 
+						ORDER BY 
+						  rs.id DESC
+					  ) AS row_no 
+					FROM 
+					  %[2]s as rs) nq1
+				  where 
+				  nq1.row_no = 1
+		  
+			  ) s on j.job_id = s.job_id 
+			where 
+			  (
+				s.job_state not in (
+				  'executing', 'aborted', 'succeeded', 
+				  'migrated'
+				) 
+				or s.job_id is null
+			  )
+		  ) 
+		  select 
+			count(*), 
+			customVal, 
+			customer 
+		  from 
+			joined 
+		  group by 
+			customVal, 
+			customer;`, ds.JobTable, ds.JobStatusTable)
 		rows, err := mj.dbHandle.Query(queryString)
 		mj.assertError(err)
 
@@ -95,7 +124,7 @@ func (mj *MultiTenantHandleT) GetCustomerCounts(defaultBatchSize int) map[string
 	mj.dsListLock.RLock()
 	defer mj.dsMigrationLock.RUnlock()
 	defer mj.dsListLock.RUnlock()
-	rows, err := mj.dbHandle.Query(fmt.Sprintf(`select customer, count(job_id) from %s group by customer;`, mj.getDSList(false)[0].JobTable))
+	rows, err := mj.dbHandle.Query(fmt.Sprintf(`select workspaceid, count(job_id) from %s group by workspaceid;`, mj.getDSList(false)[0].JobTable))
 	mj.assertError(err)
 
 	for rows.Next() {
@@ -121,7 +150,7 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionQuerystring(customerCount map[s
 		if mj.isEmptyResult(ds, customer, []string{NotProcessed.State}, params.CustomValFilters, params.ParameterFilters) {
 			continue
 		}
-		if count < 0 {
+		if count <= 0 {
 			mj.logger.Errorf("customerCount < 0 (%d) for customer: %s. Limiting at 0 unprocessed jobs for this customer.", count, customer)
 			continue
 		}
@@ -153,13 +182,13 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(ds 
 				  jobs.event_count, 
 				  jobs.created_at, 
 				  jobs.expire_at, 
-				  jobs.customer ,
+				  jobs.workspaceid ,
 				  0 as running_event_counts
 					
 				FROM 
 				%[1]s jobs LEFT JOIN %[2]s AS job_status ON jobs.job_id = job_status.job_id 
 					WHERE 
-					job_status.job_id is NULL AND jobs.customer IN %[3]s			   
+					job_status.job_id is NULL AND jobs.workspaceid IN %[3]s			   
 			  `,
 		ds.JobTable, ds.JobStatusTable, customerString)
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
@@ -176,10 +205,6 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerUnprocessedQueryString(ds 
 		sqlStatement += fmt.Sprintf(" AND created_at < %s", params.Before)
 	}
 
-	if order {
-		sqlStatement += " ORDER BY jobs.job_id"
-	}
-
 	return sqlStatement + ")"
 }
 
@@ -189,10 +214,11 @@ func (mj *MultiTenantHandleT) getSingleCustomerUnprocessedQueryString(customer s
 	sqlStatement = fmt.Sprintf(
 		selectQuery+
 			`FROM %[1]s AS jobs `+
-			`WHERE jobs.customer='%[2]s'`,
+			`WHERE jobs.workspaceid='%[2]s'`,
 		"rt_jobs_view", customer)
-
-	if count > 0 {
+	orderQuery := " ORDER BY jobs.job_id"
+	sqlStatement += orderQuery
+	if count >= 0 {
 		sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 	}
 
@@ -252,10 +278,10 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 	customerCountStat := make(map[string]int)
 
 	for _, job := range outJobs {
-		if _, ok := customerCountStat[job.Customer]; !ok {
-			customerCountStat[job.Customer] = 0
+		if _, ok := customerCountStat[job.WorkspaceId]; !ok {
+			customerCountStat[job.WorkspaceId] = 0
 		}
-		customerCountStat[job.Customer] += 1
+		customerCountStat[job.WorkspaceId] += 1
 	}
 
 	for customer, jobCount := range customerCountStat {
@@ -300,16 +326,16 @@ func (mj *MultiTenantHandleT) getUnprocessedUnionDS(ds dataSetT, customerCount m
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.Customer, &_null)
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &_null)
 		mj.assertError(err)
 		jobList = append(jobList, &job)
 
-		customerCount[job.Customer] -= 1
-		if customerCount[job.Customer] == 0 {
-			delete(customerCount, job.Customer)
+		customerCount[job.WorkspaceId] -= 1
+		if customerCount[job.WorkspaceId] == 0 {
+			delete(customerCount, job.WorkspaceId)
 		}
 
-		cacheUpdateByCustomer[job.Customer] = string(hasJobs)
+		cacheUpdateByCustomer[job.WorkspaceId] = string(hasJobs)
 	}
 	if err = rows.Err(); err != nil {
 		mj.assertError(err)
@@ -344,16 +370,13 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 	var tablesQueriedStat stats.RudderStats
 	var queryTime stats.RudderStats
 	queryTime = stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
-		"state":    params.StateFilters[0],
+		"state":    "nonterminal",
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
 	})
 
 	start := time.Now()
-	for i, ds := range dsList {
-		if i > maxDSQuerySize {
-			continue
-		}
+	for _, ds := range dsList {
 		jobs := mj.getProcessedUnionDS(ds, customerCount, params)
 		outJobs = append(outJobs, jobs...)
 		tablesQueried++
@@ -366,8 +389,8 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 	}
 
 	queryTime.SendTiming(time.Since(start))
-	tablesQueriedStat = stats.NewTaggedStat("tables_queried", stats.GaugeType, stats.Tags{
-		"state":    params.StateFilters[0],
+	tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+		"state":    "nonterminal",
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
 	})
@@ -378,10 +401,10 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 	customerCountStat := make(map[string]int)
 
 	for _, job := range outJobs {
-		if _, ok := customerCountStat[job.Customer]; !ok {
-			customerCountStat[job.Customer] = 0
+		if _, ok := customerCountStat[job.WorkspaceId]; !ok {
+			customerCountStat[job.WorkspaceId] = 0
 		}
-		customerCountStat[job.Customer] += 1
+		customerCountStat[job.WorkspaceId] += 1
 	}
 
 	for customer, jobCount := range customerCountStat {
@@ -430,19 +453,19 @@ func (mj *MultiTenantHandleT) getProcessedUnionDS(ds dataSetT, customerCount map
 		var job JobT
 		var _null int
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.Customer, &_null,
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &_null,
 			&job.LastJobStatus.JobState, &job.LastJobStatus.AttemptNum,
 			&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
 			&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse, &job.LastJobStatus.Parameters)
 		mj.assertError(err)
 		jobList = append(jobList, &job)
 
-		customerCount[job.Customer] -= 1
-		if customerCount[job.Customer] == 0 {
-			delete(customerCount, job.Customer)
+		customerCount[job.WorkspaceId] -= 1
+		if customerCount[job.WorkspaceId] == 0 {
+			delete(customerCount, job.WorkspaceId)
 		}
 
-		cacheUpdateByCustomer[job.Customer] = string(hasJobs)
+		cacheUpdateByCustomer[job.WorkspaceId] = string(hasJobs)
 	}
 	if err = rows.Err(); err != nil {
 		mj.assertError(err)
@@ -517,7 +540,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(ds da
 	sqlStatement = fmt.Sprintf(`with rt_jobs_view AS (
 										SELECT
                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-                                               jobs.created_at, jobs.expire_at, jobs.customer,
+                                               jobs.created_at, jobs.expire_at, jobs.workspaceid,
 											   sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
                                                job_latest_state.job_state, job_latest_state.attempt,
                                                job_latest_state.exec_time, job_latest_state.retry_time,
@@ -528,9 +551,9 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerProcessedQueryString(ds da
                                                  error_code, error_response, parameters FROM %[2]s WHERE id IN
                                                    (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
                                                AS job_latest_state
-                                            WHERE jobs.job_id=job_latest_state.job_id AND jobs.customer IN %[7]s
+                                            WHERE jobs.job_id=job_latest_state.job_id AND jobs.workspaceid IN %[7]s
                                              %[4]s %[5]s
-                                             AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[6]s`,
+                                             AND job_latest_state.retry_time < $1 %[6]s`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, customerString)
 
 	return sqlStatement + ")"
@@ -546,7 +569,7 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
 	}
 
 	//some stats
-
+	orderQuery := " ORDER BY jobs.job_id"
 	limitQuery := fmt.Sprintf(" LIMIT %d ", count)
 
 	sqlStatement = fmt.Sprintf(`SELECT
@@ -559,8 +582,8 @@ func (mj *MultiTenantHandleT) getSingleCustomerProcessedQueryString(customer str
                                             FROM
                                                %[1]s 
                                                AS jobs
-                                            WHERE jobs.customer='%[3]s'  %[2]s`,
-		"rt_jobs_view", limitQuery, customer)
+                                            WHERE jobs.workspaceid='%[3]s' %[4]s %[2]s`,
+		"rt_jobs_view", limitQuery, customer, orderQuery)
 
 	return sqlStatement
 }
@@ -571,10 +594,10 @@ func (mj *MultiTenantHandleT) printNumJobsByCustomer(jobs []*JobT) {
 	}
 	customerJobCountMap := make(map[string]int)
 	for _, job := range jobs {
-		if _, ok := customerJobCountMap[job.Customer]; !ok {
-			customerJobCountMap[job.Customer] = 0
+		if _, ok := customerJobCountMap[job.WorkspaceId]; !ok {
+			customerJobCountMap[job.WorkspaceId] = 0
 		}
-		customerJobCountMap[job.Customer] += 1
+		customerJobCountMap[job.WorkspaceId] += 1
 	}
 	for customer, count := range customerJobCountMap {
 		mj.logger.Debug(customer, `: `, count)

@@ -352,7 +352,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 											ErrorCode:     "",
 											ErrorResponse: []byte(`{}`),
 											Parameters:    []byte(`{}`),
-											Customer:      job.Customer,
+											WorkspaceId:   job.WorkspaceId,
 										}
 										statusList = append(statusList, &status)
 									}
@@ -397,7 +397,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 												ErrorCode:     strconv.Itoa(statusCode),
 												ErrorResponse: []byte(`{}`),
 												Parameters:    []byte(`{}`),
-												Customer:      job.Customer,
+												WorkspaceId:   job.WorkspaceId,
 											}
 											statusList = append(statusList, status)
 										}
@@ -423,7 +423,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 												ErrorCode:     "200",
 												ErrorResponse: []byte(`{}`),
 												Parameters:    []byte(`{}`),
-												Customer:      job.Customer,
+												WorkspaceId:   job.WorkspaceId,
 											}
 										} else if misc.Contains(failedKeys, job.JobID) {
 											errorResp, _ := json.Marshal(ErrorResponseT{Error: gjson.GetBytes(failedBodyBytes, fmt.Sprintf("metadata.failedReasons.%v", job.JobID)).String()})
@@ -435,7 +435,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 												ErrorCode:     "",
 												ErrorResponse: errorResp,
 												Parameters:    []byte(`{}`),
-												Customer:      job.Customer,
+												WorkspaceId:   job.WorkspaceId,
 											}
 										}
 										statusList = append(statusList, status)
@@ -463,7 +463,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 											ErrorCode:     "",
 											ErrorResponse: []byte(`{}`),
 											Parameters:    []byte(`{}`),
-											Customer:      job.Customer,
+											WorkspaceId:   job.WorkspaceId,
 										}
 										statusList = append(statusList, &status)
 									}
@@ -477,7 +477,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 											ErrorCode:     "",
 											ErrorResponse: []byte(`{}`),
 											Parameters:    []byte(`{}`),
-											Customer:      job.Customer,
+											WorkspaceId:   job.WorkspaceId,
 										}
 										statusList = append(statusList, &status)
 									}
@@ -1093,7 +1093,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			ErrorCode:     "",
 			ErrorResponse: errorResp,
 			Parameters:    []byte(`{}`),
-			Customer:      job.Customer,
+			WorkspaceId:   job.WorkspaceId,
 		}
 		statusList = append(statusList, &status)
 		if jobStateCounts[jobState] == nil {
@@ -1242,7 +1242,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "200",
 				ErrorResponse: []byte(`{}`),
 				Parameters:    asyncOutput.ImportingParameters,
-				Customer:      customer,
+				WorkspaceId:   customer,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -1257,7 +1257,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "200",
 				ErrorResponse: json.RawMessage(asyncOutput.SuccessResponse),
 				Parameters:    []byte(`{}`),
-				Customer:      customer,
+				WorkspaceId:   customer,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -1272,7 +1272,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "500",
 				ErrorResponse: json.RawMessage(asyncOutput.FailedReason),
 				Parameters:    []byte(`{}`),
-				Customer:      customer,
+				WorkspaceId:   customer,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -1287,7 +1287,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ErrorCode:     "400",
 				ErrorResponse: json.RawMessage(asyncOutput.AbortReason),
 				Parameters:    []byte(`{}`),
-				Customer:      customer,
+				WorkspaceId:   customer,
 			}
 			statusList = append(statusList, &status)
 		}
@@ -1513,7 +1513,7 @@ func (worker *workerT) workerProcess() {
 						ErrorCode:     "",
 						ErrorResponse: router_utils.EnhanceJSON([]byte(`{}`), "reason", reason),
 						Parameters:    []byte(`{}`), // check
-						Customer:      job.Customer,
+						WorkspaceId:   job.WorkspaceId,
 					}
 					//Enhancing job parameter with the drain reason.
 					job.Parameters = router_utils.EnhanceJSON(job.Parameters, "stage", "batch_router")
@@ -1546,7 +1546,7 @@ func (worker *workerT) workerProcess() {
 						ErrorCode:     "",
 						ErrorResponse: []byte(`{}`), // check
 						Parameters:    []byte(`{}`), // check
-						Customer:      job.Customer,
+						WorkspaceId:   job.WorkspaceId,
 					}
 					statusList = append(statusList, &status)
 				}

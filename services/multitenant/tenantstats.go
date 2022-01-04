@@ -151,7 +151,9 @@ func AddToInMemoryCount(customerID string, destinationType string, count int, ta
 		multitenantStat.routerJobCountMutex.RLock()
 	}
 	multitenantStat.routerJobCountMutex.RUnlock()
+	multitenantStat.routerJobCountMutex.Lock()
 	multitenantStat.RouterInMemoryJobCounts[tableType][customerID][destinationType] += count
+	multitenantStat.routerJobCountMutex.Unlock()
 }
 
 func RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string) {
@@ -165,7 +167,9 @@ func RemoveFromInMemoryCount(customerID string, destinationType string, count in
 		multitenantStat.routerJobCountMutex.RLock()
 	}
 	multitenantStat.routerJobCountMutex.RUnlock()
+	multitenantStat.routerJobCountMutex.Lock()
 	multitenantStat.RouterInMemoryJobCounts[tableType][customerID][destinationType] += -1 * count
+	multitenantStat.routerJobCountMutex.Unlock()
 }
 
 func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string) {
@@ -239,18 +243,17 @@ func getCorrectedJobsPickupCount(customerKey string, destType string, jobsPicked
 	_, ok = multitenantStat.RouterCircuitBreakerMap[customerKey][destType]
 	if !ok {
 		multitenantStat.RouterCircuitBreakerMap[customerKey][destType] = BackOffT{backOff: backOff, timeToRetry: time.Now().Add(backOff.Duration())}
-		pkgLogger.Infof("Backing off for %v customer for the first time. Next Time to Retry would be %v", customerKey, multitenantStat.RouterCircuitBreakerMap[customerKey][destType].timeToRetry)
+		pkgLogger.Debugf("Backing off for %v customer for the first time. Next Time to Retry would be %v", customerKey, multitenantStat.RouterCircuitBreakerMap[customerKey][destType].timeToRetry)
 		return 0, 0, true
 	} else if time.Now().After(multitenantStat.RouterCircuitBreakerMap[customerKey][destType].timeToRetry) {
 		timeToRetry := time.Now().Add(multitenantStat.RouterCircuitBreakerMap[customerKey][destType].backOff.Duration())
 		multitenantStat.RouterCircuitBreakerMap[customerKey][destType] = BackOffT{backOff: multitenantStat.RouterCircuitBreakerMap[customerKey][destType].backOff, timeToRetry: timeToRetry}
-		pkgLogger.Infof("Backing off for %v customer. Next Time to Retry would be %v", customerKey, timeToRetry)
+		pkgLogger.Debugf("Backing off for %v customer. Next Time to Retry would be %v", customerKey, timeToRetry)
 		return 0, misc.MinInt(jobsPicked, 10), true
 	} else {
 		return 0, 0, true
 	}
 }
-
 func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64) map[string]int {
 	customerPickUpCount := make(map[string]int)
 	runningTimeCounter := float64(noOfWorkers) * float64(routerTimeOut) / float64(time.Second)
@@ -271,16 +274,16 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 					}
 					continue
 				}
+
 				if latencyMap[customerKey].Value() != 0 {
-					timeRequired = float64(latencyMap[customerKey].Value() * destTypeCount.Value() * float64(routerTimeOut) / float64(time.Second))
-					customerPickUpCount[customerKey] = int(math.Min(timeRequired, runningTimeCounter) / latencyMap[customerKey].Value())
+					customerPickUpCount[customerKey] = misc.MaxInt(int(math.Min(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second), runningTimeCounter/(latencyMap[customerKey].Value()))), 1)
 					if customerPickUpCount[customerKey] > multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] {
 						customerPickUpCount[customerKey] = misc.MaxInt(multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType], 0)
-						timeRequired = latencyMap[customerKey].Value() * float64(customerPickUpCount[customerKey])
 					}
 				} else {
 					customerPickUpCount[customerKey] = misc.MinInt(int(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second)), multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
 				}
+				timeRequired = float64(customerPickUpCount[customerKey]) * latencyMap[customerKey].Value()
 				successRate := 1.0
 				_, ok = successRateMap[customerKey]
 				if ok {
@@ -291,11 +294,13 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 				runningTimeCounter = runningTimeCounter - updatedTimeRequired
 				customerPickUpCount[customerKey] = updatedPickUpCount
 				runningJobCount = runningJobCount - customerPickUpCount[customerKey]
+				if customerPickUpCount[customerKey] == 0 {
+					delete(customerPickUpCount, customerKey)
+				}
 				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
 			}
 		}
 	}
-
 	for _, customerKey := range sortedLatencyList {
 		customerCountKey, ok := multitenantStat.RouterInMemoryJobCounts["router"][customerKey]
 		if !ok {
@@ -313,16 +318,13 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			}
 			continue
 		}
-
 		timeRequired := latencyMap[customerKey].Value() * float64(customerCountKey[destType])
 		//TODO : Include earliestJobMap into the algorithm if required or get away with earliestJobMap
 		if timeRequired < runningTimeCounter {
-			if latencyMap[customerKey].Value() != 0 {
-				pickUpCount := misc.MinInt(customerCountKey[destType]-customerPickUpCount[destType], runningJobCount)
-				customerPickUpCount[customerKey] += pickUpCount
-				runningTimeCounter = runningTimeCounter - timeRequired
-				runningJobCount = runningJobCount - pickUpCount
-			}
+			pickUpCount := misc.MinInt(customerCountKey[destType]-customerPickUpCount[destType], runningJobCount)
+			customerPickUpCount[customerKey] += pickUpCount
+			runningTimeCounter = runningTimeCounter - timeRequired
+			runningJobCount = runningJobCount - pickUpCount
 			// Migrated jobs fix in else condition
 		} else {
 			pickUpCount := int(runningTimeCounter / latencyMap[customerKey].Value())
@@ -335,4 +337,5 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 	}
 
 	return customerPickUpCount
+
 }
