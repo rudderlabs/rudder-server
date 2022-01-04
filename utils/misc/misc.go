@@ -255,12 +255,12 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	// Get the file information
 	info, err := fileToZip.Stat()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	header, err := zip.FileInfoHeader(info)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	// Using FileInfoHeader() above only uses the basename of the file. If we want
@@ -274,30 +274,42 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 
 	writer, err := zipWriter.CreateHeader(header)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	_, err = io.Copy(writer, fileToZip)
 	return err
 }
 
 // UnZipSingleFile unzips zip containing single file into ouputfile path passed
-func UnZipSingleFile(outputfile string, filename string) {
+func UnZipSingleFile(outputFile string, filename string) error {
 	r, err := zip.OpenReader(filename)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	defer r.Close()
-	inputfile := r.File[0]
+	defer func(r *zip.ReadCloser) {
+		err := r.Close()
+		if err != nil {
+			pkgLogger.Errorf("error closing the ReadCloser")
+		}
+	}(r)
+	inputFile := r.File[0]
 	// Make File
-	os.MkdirAll(filepath.Dir(outputfile), os.ModePerm)
-	outFile, err := os.OpenFile(outputfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputfile.Mode())
+	err = os.MkdirAll(filepath.Dir(outputFile), os.ModePerm)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	rc, _ := inputfile.Open()
-	io.Copy(outFile, rc)
+	outFile, err := os.OpenFile(outputFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputFile.Mode())
+	if err != nil {
+		return err
+	}
+	rc, _ := inputFile.Open()
+	_, err = io.Copy(outFile, rc)
+	if err != nil {
+		return err
+	}
 	outFile.Close()
 	rc.Close()
+	return nil
 }
 
 // RemoveFilePaths removes filePaths as well as cleans up the empty folder structure.
