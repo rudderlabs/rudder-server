@@ -1551,7 +1551,8 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 			proc.logger.Debugf("addition_processor_stat is %v for customer %v", count, customer)
 		}
 	}
-	timeElapsed := 10 * time.Millisecond // TODO : Find a better way to fix this
+
+	timeElapsed := 100 * time.Millisecond // TODO : Find a better way to fix this
 	if !firstRun {
 		timeElapsed = time.Since(stageStartTime)
 	}
