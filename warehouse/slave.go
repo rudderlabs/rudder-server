@@ -684,7 +684,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 			Err: err,
 		}
 		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
-		notifier.UpdateClaimedEvent(claimedJob.ID, &response)
+		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
 
 	var job PayloadT
@@ -711,7 +711,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	} else {
 		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
 	}
-	notifier.UpdateClaimedEvent(claimedJob.ID, &response)
+	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
 
 func setupSlave() {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"strconv"
 	"time"
 
@@ -277,7 +278,7 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 	})
 }
 
-func (notifier *PgNotifierT) updateClaimedEvent(claim *ClaimT, response *ClaimResponseT) {
+func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimResponseT) {
 	//rruntime.Go(func() {
 	//	response := <-ch
 	var err error
