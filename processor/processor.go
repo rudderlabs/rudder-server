@@ -190,7 +190,7 @@ func buildStatTags(sourceID, workspaceID string, destination backendconfig.Desti
 		"destination":    destination.ID,
 		"destType":       destination.DestinationDefinition.Name,
 		"source":         sourceID,
-		"customer":       workspaceID,
+		"workspace":      workspaceID,
 		"transformation": transformationType,
 	}
 }
@@ -797,7 +797,7 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.SourceJobID = userTransformedEvent.Metadata.SourceJobID
 		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
-		eventMetadata.Customer = userTransformedEvent.Metadata.Customer
+		eventMetadata.WorkspaceID = userTransformedEvent.Metadata.WorkspaceID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
 		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
 		eventMetadata.EventName = userTransformedEvent.Metadata.EventName
@@ -948,7 +948,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			ExpireAt:     time.Now(),
 			CustomVal:    commonMetaData.DestinationType,
 			UserID:       failedEvent.Metadata.RudderID,
-			WorkspaceId:  failedEvent.Metadata.Customer,
+			WorkspaceId:  failedEvent.Metadata.WorkspaceID,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
