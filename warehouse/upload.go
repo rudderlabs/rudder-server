@@ -1291,12 +1291,14 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	defer job.uploadLock.Unlock()
 	upload := job.upload
 	newjobState := Waiting
-	var metadata map[string]string
+	var metadata map[string]interface{}
 	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
 	if unmarshallErr != nil {
-		metadata = make(map[string]string)
+		metadata = make(map[string]interface{})
 	}
 	metadata["nextRetryTime"] = time.Now().Add(-time.Hour * 1).Format(time.RFC3339)
+	metadata["retried"] = true
+	metadata["priority"] = 50
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return err
