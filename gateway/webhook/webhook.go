@@ -263,7 +263,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				body, err = json.Marshal(tempBody)
 
 				if err != nil {
-					req.done <- webhookErrorRespT{err: response.GetStatus(response.RequestBodyReadFailed)}
+					req.done <- webhookErrorRespT{err: response.GetStatus(response.ErrorInMarshal)}
 					continue
 				}
 			}
