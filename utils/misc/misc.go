@@ -280,37 +280,6 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	return err
 }
 
-// UnZipSingleFile unzips zip containing single file into ouputfile path passed
-func UnZipSingleFile(outputFile string, filename string) error {
-	r, err := zip.OpenReader(filename)
-	if err != nil {
-		return err
-	}
-	defer func(r *zip.ReadCloser) {
-		err := r.Close()
-		if err != nil {
-			pkgLogger.Errorf("error closing the ReadCloser")
-		}
-	}(r)
-	inputFile := r.File[0]
-	// Make File
-	err = os.MkdirAll(filepath.Dir(outputFile), os.ModePerm)
-	if err != nil {
-		return err
-	}
-	outFile, err := os.OpenFile(outputFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, inputFile.Mode())
-	if err != nil {
-		return err
-	}
-	rc, _ := inputFile.Open()
-	_, err = io.Copy(outFile, rc)
-	if err != nil {
-		return err
-	}
-	outFile.Close()
-	rc.Close()
-	return nil
-}
 
 // RemoveFilePaths removes filePaths as well as cleans up the empty folder structure.
 func RemoveFilePaths(filePaths ...string) {
