@@ -38,7 +38,7 @@ type BackOffT struct {
 
 func Init() {
 	multitenantStat = MultitenantStatsT{}
-	config.RegisterDurationConfigVariable(time.Duration(300), &minBackOff, false, time.Second, "tenantStats.minBackOff")
+	config.RegisterDurationConfigVariable(time.Duration(60), &minBackOff, false, time.Second, "tenantStats.minBackOff")
 	config.RegisterDurationConfigVariable(time.Duration(900), &maxBackOff, false, time.Second, "tenantStats.maxBackOff")
 	config.RegisterFloat64ConfigVariable(2, &backOffFactor, false, "tenantStats.backOffFactor")
 
@@ -234,7 +234,7 @@ func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Dura
 func getCorrectedJobsPickupCount(customerKey string, destType string, jobsPicked int, timeRequired float64, successRate float64) (float64, int, bool) {
 
 	if successRate > 1 {
-		panic(fmt.Errorf("Success Rate is more than 1.Panicking for %v customer , %v destType with successRate %v", customerKey, destType, successRate))
+		panic(fmt.Errorf("success rate is more than 1.Panicking for %v customer , %v destType with successRate %v", customerKey, destType, successRate))
 	} else if successRate > 0 {
 		_, ok := multitenantStat.RouterCircuitBreakerMap[customerKey]
 		if ok {

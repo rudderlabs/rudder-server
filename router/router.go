@@ -2113,6 +2113,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 				}
 			}
 		}
+		rt.routerLatencyStat[""] = misc.NewMovingAverage()
 		if !rt.isBackendConfigInitialized {
 			rt.isBackendConfigInitialized = true
 			rt.backendConfigInitialized <- true
@@ -2227,7 +2228,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 			// Errors like OOM kills of transformer, transformer down etc,.
 			// If destResBody comes out with a plain string, then this will occur
 			return http.StatusInternalServerError, fmt.Sprintf(`{
-				Error: %v, 
+				Error: %v,
 				(trRespStCd, trRespBody): (%v, %v),
 			}`, destError, trRespStatusCode, trRespBody)
 		}
