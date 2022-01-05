@@ -132,13 +132,13 @@ func (notifier PgNotifierT) GetDBHandle() *sql.DB {
 	return notifier.dbHandle
 }
 
-func (notifier PgNotifierT) AddTopic(ctx context.Context, topic string) (err error) {
+func (notifier PgNotifierT) ClearJobs(ctx context.Context) (err error) {
 
 	// clean up all jobs in pgnotifier for same workspace
 	// additional safety check to not delete all jobs with empty workspaceIdentifier
 	if notifier.workspaceIdentifier != "" {
-		stmt := fmt.Sprintf("DELETE FROM %s WHERE workspace='%s' AND topic ='%s'", queueName, notifier.workspaceIdentifier, topic)
-		pkgLogger.Infof("PgNotifier: Deleting all jobs on topic: %s", topic)
+		stmt := fmt.Sprintf("DELETE FROM %s WHERE workspace='%s'", queueName, notifier.workspaceIdentifier)
+		pkgLogger.Infof("PgNotifier: Deleting all jobs for workspace: %s", notifier.workspaceIdentifier)
 		_, err = notifier.dbHandle.Exec(stmt)
 		if err != nil {
 			return
@@ -298,7 +298,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(topic string, jobs []json.RawMessage, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(jobs []JobPayload, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
 	defer func() {
 		if err == nil {
@@ -315,7 +315,7 @@ func (notifier *PgNotifierT) Publish(topic string, jobs []json.RawMessage, prior
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "topic", "payload", "workspace", "priority"))
+	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority"))
 	if err != nil {
 		return
 	}
@@ -324,7 +324,7 @@ func (notifier *PgNotifierT) Publish(topic string, jobs []json.RawMessage, prior
 	batchID := uuid.Must(uuid.NewV4()).String()
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	for _, job := range jobs {
-		_, err = stmt.Exec(batchID, WaitingState, topic, string(job), notifier.workspaceIdentifier, priority)
+		_, err = stmt.Exec(batchID, WaitingState, string(job), notifier.workspaceIdentifier, priority)
 		if err != nil {
 			return
 		}
@@ -349,15 +349,15 @@ func (notifier *PgNotifierT) Publish(topic string, jobs []json.RawMessage, prior
 	return
 }
 
-func (notifier *PgNotifierT) Subscribe(workerId string, topic string, channelSize int) chan ClaimT {
+func (notifier *PgNotifierT) Subscribe(workerId string, jobsBufferSize int) chan ClaimT {
 
-	ch := make(chan ClaimT, channelSize)
+	jobs := make(chan ClaimT, jobsBufferSize)
 	rruntime.Go(func() {
 		pollSleep := time.Duration(0)
 		for {
 			claimedJob, err := notifier.claim(workerId)
 			if err == nil {
-				ch <- claimedJob
+				jobs <- claimedJob
 				pollSleep = time.Duration(0)
 			} else {
 				pollSleep = 2*pollSleep + time.Duration(rand.Intn(100))*time.Millisecond
@@ -368,7 +368,7 @@ func (notifier *PgNotifierT) Subscribe(workerId string, topic string, channelSiz
 			time.Sleep(pollSleep)
 		}
 	})
-	return ch
+	return jobs
 }
 
 func (notifier *PgNotifierT) setupQueue() (err error) {

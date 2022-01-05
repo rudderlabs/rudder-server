@@ -97,9 +97,8 @@ const (
 )
 
 const (
-	DegradedMode                  = "degraded"
-	StagingFilesPGNotifierChannel = "process_staging_file"
-	triggerUploadQPName           = "triggerUpload"
+	DegradedMode        = "degraded"
+	triggerUploadQPName = "triggerUpload"
 )
 
 type WorkerIdentifierT string
@@ -142,7 +141,7 @@ func loadConfig() {
 	//Port where WH is running
 	config.RegisterIntConfigVariable(8082, &webPort, false, 1, "Warehouse.webPort")
 	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE"}
-	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
+	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, false, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
 	config.RegisterDurationConfigVariable(time.Duration(5), &mainLoopSleep, true, time.Second, []string{"Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS"}...)
@@ -171,7 +170,7 @@ func loadConfig() {
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	config.RegisterDurationConfigVariable(time.Duration(30), &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
 	config.RegisterIntConfigVariable(180, &uploadBufferTimeInMin, false, 1, "Warehouse.uploadBufferTimeInMin")
-  config.RegisterIntConfigVariable(1000, &columnCountThreshold, false, 1, "Warehouse.columnCountThreshold")
+	config.RegisterIntConfigVariable(1000, &columnCountThreshold, false, 1, "Warehouse.columnCountThreshold")
 	config.RegisterDurationConfigVariable(time.Duration(5), &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
@@ -1057,7 +1056,6 @@ func (wh *HandleT) resetInProgressJobs() {
 	}
 }
 
-
 func getLoadFileFormat(whType string) string {
 	switch whType {
 	case "BQ":
@@ -1721,7 +1719,7 @@ func Start(ctx context.Context, app app.Interface) error {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")
 
 		g.Go(misc.WithBugsnag(func() error {
-			return notifier.AddTopic(ctx, StagingFilesPGNotifierChannel)
+			return notifier.ClearJobs(ctx)
 		}))
 		g.Go(misc.WithBugsnag(func() error {
 			monitorDestRouters(ctx)

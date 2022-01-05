@@ -710,7 +710,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 func setupSlave() {
 	slaveID := uuid.Must(uuid.NewV4()).String()
 	rruntime.Go(func() {
-		jobNotificationChannel := notifier.Subscribe(slaveID, StagingFilesPGNotifierChannel, 4*noOfSlaveWorkerRoutines)
+		jobNotificationChannel := notifier.Subscribe(slaveID, noOfSlaveWorkerRoutines)
 		for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
 			idx := workerIdx
 			rruntime.Go(func() {
