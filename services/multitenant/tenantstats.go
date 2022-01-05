@@ -360,8 +360,18 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			break
 		}
 		if drainedMap[customerKey] {
-			customerPickUpCount[customerKey] += misc.MinInt(drainedRunningCounter, multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
+			jobsPickedUp := misc.MinInt(drainedRunningCounter, multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
+			successRate := 1.0
+			_, ok := successRateMap[customerKey]
+			if ok {
+				successRate = successRateMap[customerKey]
+			}
+			_, updatedPickUpCount, _ := getCorrectedJobsPickupCount(customerKey, destType, jobsPickedUp, 0, successRate)
+			customerPickUpCount[customerKey] = updatedPickUpCount
 			drainedRunningCounter -= customerPickUpCount[customerKey]
+		}
+		if drainedMap[customerKey] {
+			pkgLogger.Infof("[Drained Loop] Customer : %v , PickUpCount : %v , Drained Value : %v", customerKey, customerPickUpCount[customerKey], drainedMap[customerKey])
 		}
 	}
 
