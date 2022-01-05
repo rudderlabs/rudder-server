@@ -281,7 +281,7 @@ For Samples:
 WarehouseSchema: https://jsonformatter.org/ca43d2
 LocalSchema: https://jsonformatter.org/1c2dd2
 */
-func compareSchema(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
+func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) bool {
 	// Iterating through all tableName in the localSchema
 	for tableName := range localSchema {
 		localColumns := localSchema[tableName]

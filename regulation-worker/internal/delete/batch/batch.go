@@ -347,35 +347,27 @@ func (b *Batch) upload(ctx context.Context, uploadFileAbsPath, actualFileName, a
 
 func (b *Batch) createPatternFile(userAttributes []model.UserAttribute) (string, error) {
 	pkgLogger.Debug("creating a file with pattern to be searched & deleted.")
-	var n int
 
-	for i := 0; i < len(userAttributes); i++ {
-		n += len(userAttributes[i].UserID) + 4
-		if userAttributes[i].Email != nil {
-			n += len(*userAttributes[i].Email) + 4
-		}
-		if userAttributes[i].Phone != nil {
-			n += len(*userAttributes[i].Phone) + 4
-		}
-	}
-
-	searchObject := make([]byte, 0, n)
+	searchObject := make([]byte, 0)
 
 	for _, users := range userAttributes {
 		searchObject = append(searchObject, "/"...)
+		searchObject = append(searchObject, "\"userId\": *\""...)
 		searchObject = append(searchObject, users.UserID...)
-		searchObject = append(searchObject, "/d;"...)
+		searchObject = append(searchObject, "\"/d;"...)
 
 		if users.Email != nil {
 			searchObject = append(searchObject, "/"...)
+			searchObject = append(searchObject, "\"email\": *\""...)
 			searchObject = append(searchObject, []byte(*users.Email)...)
-			searchObject = append(searchObject, "/d;"...)
+			searchObject = append(searchObject, "\"/d;"...)
 		}
 
 		if users.Phone != nil {
 			searchObject = append(searchObject, "/"...)
+			searchObject = append(searchObject, "\"phone\": *\""...)
 			searchObject = append(searchObject, []byte(*users.Phone)...)
-			searchObject = append(searchObject, "/d;"...)
+			searchObject = append(searchObject, "\"/d;"...)
 		}
 	}
 

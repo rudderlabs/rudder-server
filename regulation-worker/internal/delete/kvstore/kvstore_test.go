@@ -93,20 +93,20 @@ func TestRedisDeletion(t *testing.T) {
 		fields map[string]interface{}
 	}{
 		{
-			key: "Jermaine1473336609491897794707338",
+			key: "user:Jermaine1473336609491897794707338",
 			fields: map[string]interface{}{
 				"Phone": "6463633841",
 				"Email": "dorowane8n285680461479465450293436@gmail.com",
 			},
 		},
 		{
-			key: "Mercie8221821544021583104106123",
+			key: "user:Mercie8221821544021583104106123",
 			fields: map[string]interface{}{
 				"Email": "dshirilad8536019424659691213279980@gmail.com",
 			},
 		},
 		{
-			key: "Claiborn443446989226249191822329",
+			key: "user:Claiborn443446989226249191822329",
 			fields: map[string]interface{}{
 				"Phone": "8782905113",
 			},
