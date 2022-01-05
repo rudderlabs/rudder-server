@@ -16,7 +16,6 @@ import (
 var (
 	pkgLogger       logger.LoggerI
 	multitenantStat MultitenantStatsT
-	backOff         *backoff.Backoff
 	minBackOff      time.Duration
 	maxBackOff      time.Duration
 	backOffFactor   float64
@@ -41,13 +40,6 @@ func Init() {
 	config.RegisterDurationConfigVariable(time.Duration(60), &minBackOff, false, time.Second, "tenantStats.minBackOff")
 	config.RegisterDurationConfigVariable(time.Duration(900), &maxBackOff, false, time.Second, "tenantStats.maxBackOff")
 	config.RegisterFloat64ConfigVariable(2, &backOffFactor, false, "tenantStats.backOffFactor")
-
-	backOff = &backoff.Backoff{
-		Min:    minBackOff,
-		Max:    maxBackOff,
-		Factor: backOffFactor,
-		Jitter: false,
-	}
 	pkgLogger = logger.NewLogger().Child("services").Child("multitenant")
 	multitenantStat.RouterInMemoryJobCounts = make(map[string]map[string]map[string]int)
 	multitenantStat.RouterInMemoryJobCounts["router"] = make(map[string]map[string]int)
@@ -253,6 +245,12 @@ func getCorrectedJobsPickupCount(customerKey string, destType string, jobsPicked
 	}
 	_, ok = multitenantStat.RouterCircuitBreakerMap[customerKey][destType]
 	if !ok {
+		backOff := &backoff.Backoff{
+			Min:    minBackOff,
+			Max:    maxBackOff,
+			Factor: backOffFactor,
+			Jitter: false,
+		}
 		multitenantStat.RouterCircuitBreakerMap[customerKey][destType] = BackOffT{backOff: backOff, timeToRetry: time.Now().Add(backOff.Duration())}
 		pkgLogger.Debugf("Backing off for %v customer for the first time. Next Time to Retry would be %v", customerKey, multitenantStat.RouterCircuitBreakerMap[customerKey][destType].timeToRetry)
 		return 0, 0, true
