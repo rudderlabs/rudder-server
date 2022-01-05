@@ -912,3 +912,7 @@ func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
+
+func (sf *HandleT) RefreshPartitions(tableName string, loadFile warehouseutils.LoadFileT) (err error) {
+	return
+}

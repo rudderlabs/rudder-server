@@ -2,6 +2,7 @@ package schemarepository
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -105,7 +106,7 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 	})
 	if err != nil {
 		if _, ok := err.(*glue.AlreadyExistsException); ok {
-			pkgLogger.Infof("Skipping database creation : database %s already eists", gl.Namespace)
+			pkgLogger.Infof("Skipping database creation : database %s already exists", gl.Namespace)
 			err = nil
 		}
 	}
@@ -114,14 +115,19 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 
 func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// create table request
-	input := glue.CreateTableInput{
-		DatabaseName: aws.String(gl.Namespace),
-		TableInput: &glue.TableInput{
-			Name:          aws.String(tableName),
-			PartitionKeys: []*glue.Column{&glue.Column{Name: aws.String("day"), Type: aws.String("date")}},
-		},
+	tableInput := &glue.TableInput{
+		Name: aws.String(tableName),
 	}
-
+	timeWindowFormat := gl.Warehouse.Destination.TimeWindowFormat
+	if timeWindowFormat != "" {
+		// Assumes a well-formed partitioning format
+		columnName := strings.Split(timeWindowFormat, "=")
+		tableInput.PartitionKeys = []*glue.Column{&glue.Column{Name: aws.String(timeWindowFormat), Type: aws.String(columName)}}
+	}
+	input := glue.CreateTableInput{
+		DatabaseName:     aws.String(gl.Namespace),
+		TableInput: tableInput
+	}
 	// add storage descriptor to create table request
 	input.TableInput.StorageDescriptor = gl.getStorageDescriptor(tableName, columnMap)
 
@@ -230,4 +236,27 @@ func (gl *GlueSchemaRepository) getS3LocationForTable(tableName string) string {
 	}
 	filePath += warehouseutils.GetTablePathInObjectStorage(gl.Namespace, tableName)
 	return fmt.Sprintf("%s/%s", bucketPath, filePath)
+}
+
+func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFile warehouseutils.LoadFileT) (err error) {
+	locationFolder := warehouseutils.GetS3LocationFolder(loadFile.Location)
+	storageDescriptor := glue.StorageDescriptor{
+		Location: aws.String(locationFolder),
+		SerdeInfo: &glue.SerDeInfo{
+			Name:                 aws.String(glueSerdeName),
+			SerializationLibrary: aws.String(glueSerdeSerializationLib),
+		},
+		InputFormat:  aws.String(glueParquetInputFormat),
+		OutputFormat: aws.String(glueParquetOutputFormat)}
+	pathParts := strings.Split(locationFolder, "/")
+	// Assumes a well-formed partitioning format
+	partition := strings.Split(pathParts[len(pathParts)-1], "=")[1]
+	partitionInput := glue.PartitionInput{StorageDescriptor: &storageDescriptor, Values: []*string{aws.String(partition)}}
+	batchCreatePartitionInput := glue.BatchCreatePartitionInput{
+		DatabaseName:       aws.String(gl.Namespace),
+		PartitionInputList: []*glue.PartitionInput{&partitionInput},
+		TableName:          aws.String(tableName),
+	}
+	_, err = gl.glueClient.BatchCreatePartition(&batchCreatePartitionInput)
+	return err
 }

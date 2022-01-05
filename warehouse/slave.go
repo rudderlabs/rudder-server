@@ -249,6 +249,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	var uploadLocation filemanager.UploadOutput
 	if job.DestinationType == "S3_DATALAKE" {
 		uploadLocation, err = uploader.Upload(file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
+
 	} else {
 		uploadLocation, err = uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
 	}
@@ -705,7 +706,7 @@ func setupSlave() {
 		}
 		for {
 			ev := <-jobNotificationChannel
-			pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
+			pkgLogger.Debugf("[WH]: Notification received, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
 			for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
 				if !slaveWorkerRoutineBusy[workerIdx] {
 					slaveWorkerRoutineBusy[workerIdx] = true

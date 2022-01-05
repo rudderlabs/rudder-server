@@ -48,8 +48,8 @@ require (
 	github.com/minio/minio-go v6.0.14+incompatible
 	github.com/minio/minio-go/v6 v6.0.49
 	github.com/mkmik/multierror v0.3.0
-	github.com/onsi/ginkgo v1.16.4
-	github.com/onsi/gomega v1.10.1
+	github.com/onsi/ginkgo v1.16.5
+	github.com/onsi/gomega v1.17.0
 	github.com/opencontainers/runc v1.0.1 // indirect
 	github.com/ory/dockertest v3.3.5+incompatible
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect

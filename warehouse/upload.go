@@ -394,7 +394,6 @@ func (job *UploadJobT) run() (err error) {
 				job.setStagingFilesStatus(job.stagingFiles, warehouseutils.StagingFileFailedState)
 				break
 			}
-
 			err = job.setLoadFileIDs(startLoadFileID, endLoadFileID)
 			if err != nil {
 				break
@@ -402,7 +401,19 @@ func (job *UploadJobT) run() (err error) {
 
 			job.matchRowsInStagingAndLoadFiles()
 			job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
-
+			if job.warehouse.Type == "S3_DATALAKE" {
+				for tableName := range job.upload.UploadSchema {
+					loadFiles := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{
+						Table:   tableName,
+						StartID: startLoadFileID,
+						EndID:   endLoadFileID,
+					})
+					// FIX: This is better done every 100 files, since it's a batch request
+					for _, loadFile := range loadFiles {
+						whManager.RefreshPartitions(tableName, loadFile)
+					}
+				}
+			}
 			newStatus = nextUploadState.completed
 
 		case UpdatedTableUploadsCounts:
@@ -1638,7 +1649,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			}
 
 			if job.warehouse.Type == "S3_DATALAKE" {
-				payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+				if job.warehouse.Destination.TimeWindowFormat != "" {
+					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(job.warehouse.Destination.TimeWindowFormat)
+				} else {
+					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+				}
 			}
 
 			// set merged schema as upload schema if the load file type is parquet
@@ -1673,11 +1688,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
 				// Error handling during generating_load_files step:
-				// 1. any error returned by pgnotifier is set on corresponding staging_gile
-				// 2. any error effecting a batch/all of the staging files like saving load file records to wh db
+				// 1. any error returned by pgnotifier is set on corresponding staging_file
+				// 2. any error affecting a batch/all of the staging files like saving load file records to wh db
 				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
 				if resp.Status == "aborted" {
-					pkgLogger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
+					pkgLogger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
 					sampleError = fmt.Errorf(resp.Error)
 					job.setStagingFileErr(resp.JobID, sampleError)
 					continue
@@ -1699,6 +1714,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				saveLoadFileErrs = append(saveLoadFileErrs, err)
 			}
 			job.setStagingFileSuccess(successfulStagingFileIDs)
+
 			wg.Done()
 		})
 	}
