@@ -74,14 +74,18 @@ func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.RudderStat
 	return stats.NewTaggedStat(name, stats.GaugeType, tags)
 }
 
-func (jobRun *JobRunT) timerStat(name string) stats.RudderStats {
-	return stats.NewTaggedStat(name, stats.TimerType, map[string]string{
+func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.RudderStats {
+	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
 		"warehouseID": jobRun.warehouseID(),
 		"destID":      jobRun.job.DestinationID,
 		"sourceID":    jobRun.job.SourceID,
-	})
+	}
+	for _, extraTag := range extraTags {
+		tags[extraTag.name] = extraTag.value
+	}
+	return stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
 func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.RudderStats {
