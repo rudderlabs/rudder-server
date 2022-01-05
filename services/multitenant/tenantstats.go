@@ -38,8 +38,8 @@ type BackOffT struct {
 
 func Init() {
 	multitenantStat = MultitenantStatsT{}
-	config.RegisterDurationConfigVariable(time.Duration(30), &minBackOff, false, time.Second, "tenantStats.minBackOff")
-	config.RegisterDurationConfigVariable(time.Duration(600), &maxBackOff, false, time.Second, "tenantStats.maxBackOff")
+	config.RegisterDurationConfigVariable(time.Duration(300), &minBackOff, false, time.Second, "tenantStats.minBackOff")
+	config.RegisterDurationConfigVariable(time.Duration(900), &maxBackOff, false, time.Second, "tenantStats.maxBackOff")
 	config.RegisterFloat64ConfigVariable(2, &backOffFactor, false, "tenantStats.backOffFactor")
 
 	backOff = &backoff.Backoff{

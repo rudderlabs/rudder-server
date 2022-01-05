@@ -260,9 +260,6 @@ func (mj *MultiTenantHandleT) GetUnprocessedUnion(customerCount map[string]int, 
 		if len(customerCount) == 0 {
 			break
 		}
-		if tablesQueried > maxDSQuerySize {
-			break
-		}
 	}
 
 	queryTime.SendTiming(time.Since(start))
@@ -381,9 +378,6 @@ func (mj *MultiTenantHandleT) GetProcessedUnion(customerCount map[string]int, pa
 		outJobs = append(outJobs, jobs...)
 		tablesQueried++
 		if len(customerCount) == 0 {
-			break
-		}
-		if tablesQueried > maxDSQuerySize {
 			break
 		}
 	}
