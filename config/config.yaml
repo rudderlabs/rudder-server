@@ -35,6 +35,7 @@ Gateway:
     maxTransformerProcess: 64
     maxRetry: 5
     maxRetryTime: 10s
+    parseAllQueryParams: false
 EventSchemas:
   enableEventSchemasFeature: false
   syncInterval: 240s

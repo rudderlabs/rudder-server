@@ -21,4 +21,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(time.Duration(100), &webhookRetryWaitMin, false, time.Millisecond, []string{"Gateway.webhook.minRetryTime", "Gateway.webhook.minRetryTimeInMS"}...)
 	// Max retry attempts to source transformer
 	config.RegisterIntConfigVariable(5, &webhookRetryMax, false, 1, "Gateway.webhook.maxRetry")
+	// Parse all query params from webhook source url if this is set to true
+	config.RegisterBoolConfigVariable(false, &parseAllQueryParams, true, "Gateway.webhook.parseAllQueryParams")
 }
