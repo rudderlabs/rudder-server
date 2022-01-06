@@ -22,15 +22,15 @@ import (
 )
 
 var (
-	sourceTransformerURL  string
-	webhookBatchTimeout   time.Duration
-	maxTransformerProcess int
-	maxWebhookBatchSize   int
-	webhookRetryMax       int
-	webhookRetryWaitMax   time.Duration
-	webhookRetryWaitMin   time.Duration
-	pkgLogger             logger.LoggerI
-	parseAllQueryParams   bool
+	sourceTransformerURL       string
+	webhookBatchTimeout        time.Duration
+	maxTransformerProcess      int
+	maxWebhookBatchSize        int
+	webhookRetryMax            int
+	webhookRetryWaitMax        time.Duration
+	webhookRetryWaitMin        time.Duration
+	pkgLogger                  logger.LoggerI
+	sourceListForParsingParams []string
 )
 
 func Init() {
@@ -249,7 +249,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			}
 
 			// begin
-			if parseAllQueryParams {
+			if misc.ContainsString(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
 				queryParams := req.request.URL.Query()
 				var tempBody map[string]interface{}
 				err = json.Unmarshal(body, &tempBody)
