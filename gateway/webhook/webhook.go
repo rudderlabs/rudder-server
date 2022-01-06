@@ -248,26 +248,21 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				continue
 			}
 
-			// begin
 			if misc.ContainsString(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
 				queryParams := req.request.URL.Query()
-				var tempBody map[string]interface{}
-				err = json.Unmarshal(body, &tempBody)
-
-				if err != nil {
-					req.done <- webhookErrorRespT{err: response.GetStatus(response.RequestBodyReadFailed)}
-					continue
-				}
-
-				tempBody["query_parameters"] = queryParams
-				body, err = json.Marshal(tempBody)
+				paramsBytes, err := json.Marshal(queryParams)
 
 				if err != nil {
 					req.done <- webhookErrorRespT{err: response.GetStatus(response.ErrorInMarshal)}
 					continue
 				}
+
+				closingBraceIdx := bytes.LastIndexByte(body, '}')
+				appendData := []byte(`, "query_parameters": ` + string(paramsBytes))
+
+				body = append(body[:closingBraceIdx], appendData...)
+				body = append(body, '}')
 			}
-			// end
 
 			if !json.Valid(body) {
 				req.done <- webhookErrorRespT{err: response.GetStatus(response.InvalidJSON)}
