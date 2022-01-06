@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/rudderlabs/rudder-server/admin"
@@ -307,9 +308,9 @@ jobs. The caller must call the SetUp function on a HandleT object
 type HandleT struct {
 	dbHandle                      *sql.DB
 	tablePrefix                   string
-	datasetList                   []dataSetT
-	datasetRangeList              []dataSetRangeT
-	dsListLock                    sync.RWMutex
+	datasetList                   atomic.Value // []dataSetT
+	datasetRangeList              atomic.Value // []dataSetRangeT
+	dsListLock                    sync.RWMutex // TODO: explain what this lock is used for
 	dsMigrationLock               sync.RWMutex
 	dsRetentionPeriod             time.Duration
 	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]cacheEntry
@@ -756,11 +757,11 @@ func (jd *HandleT) writerSetup(ctx context.Context) {
 	//Refresh in memory list. We don't take lock
 	//here because this is called before anything
 	//else
-	jd.getDSList(true)
+	dsList := jd.getDSList(true)
 	jd.getDSRangeList(true)
 
 	//If no DS present, add one
-	if len(jd.datasetList) == 0 {
+	if len(dsList) == 0 {
 		jd.addNewDS(appendToDsList, dataSetT{})
 	}
 
@@ -900,31 +901,28 @@ Most callers use the in-memory list of dataset and datasetRanges
 Caller must have the dsListLock readlocked
 */
 func (jd *HandleT) getDSList(refreshFromDB bool) []dataSetT {
-
 	if !refreshFromDB {
-		return jd.datasetList
+		return jd.datasetList.Load().([]dataSetT)
 	}
 
-	//At this point we MUST have write-locked dsListLock
-	//since we are modiying the list
-
-	//Reset the global list
-	jd.datasetList = nil
-
-	jd.datasetList = getDSList(jd, jd.dbHandle, jd.tablePrefix)
+	newDSList := getDSList(jd, jd.dbHandle, jd.tablePrefix)
 
 	//if the owner of this jobsdb is a writer, then shrinking datasetList to have only last two datasets
 	//this shrinked datasetList is used to compute DSRangeList
 	//This is done because, writers don't care about the left datasets in the sorted datasetList
 	if jd.ownerType == Write {
-		if len(jd.datasetList) > 2 {
-			jd.datasetList = jd.datasetList[len(jd.datasetList)-2 : len(jd.datasetList)]
+		if len(newDSList) > 2 {
+			newDSList = newDSList[len(newDSList)-2:]
 		}
 	}
 
-	jd.statTableCount.Gauge(len(jd.datasetList))
-	jd.statDSCount.Gauge(len(jd.datasetList))
-	return jd.datasetList
+	jd.statTableCount.Gauge(len(newDSList))
+	jd.statDSCount.Gauge(len(newDSList))
+
+	// update the in-memory datasetList
+	jd.datasetList.Store(newDSList)
+
+	return newDSList
 }
 
 //Function must be called with read-lock held in dsListLock
@@ -934,12 +932,12 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 	var prevMax int64
 
 	if !refreshFromDB {
-		return jd.datasetRangeList
+		return jd.datasetRangeList.Load().([]dataSetRangeT)
 	}
 
 	//At this point we must have write-locked dsListLock
 	dsList := jd.getDSList(true)
-	jd.datasetRangeList = nil
+	datasetRangeList := make([]dataSetRangeT, 0)
 
 	for idx, ds := range dsList {
 		jd.assert(ds.Index != "", "ds.Index is empty")
@@ -971,13 +969,16 @@ func (jd *HandleT) getDSRangeList(refreshFromDB bool) []dataSetRangeT {
 			//TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
 			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
 			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
-			jd.datasetRangeList = append(jd.datasetRangeList,
+			datasetRangeList = append(datasetRangeList,
 				dataSetRangeT{minJobID: int64(minID.Int64),
 					maxJobID: int64(maxID.Int64), ds: ds})
 			prevMax = maxID.Int64
 		}
 	}
-	return jd.datasetRangeList
+
+	jd.datasetRangeList.Store(datasetRangeList)
+
+	return datasetRangeList
 }
 
 /*
@@ -1418,10 +1419,6 @@ func (jd *HandleT) setSequenceNumber(newDSIdx string) dataSetT {
  * Function to return max dataset index in the DB
  */
 func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
-
-	jd.dsListLock.RLock()
-	defer jd.dsListLock.RUnlock()
-
 	//dList is already sorted.
 	dList := jd.getDSList(false)
 	ds := dList[len(dList)-1]
@@ -2336,9 +2333,7 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 		}
 
 		jd.logger.Debugf("[[ %s : addNewDSLoop ]]: Start", jd.tablePrefix)
-		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
-		jd.dsListLock.RUnlock()
 		latestDS := dsList[len(dsList)-1]
 		if jd.checkIfFullDS(latestDS) {
 			//Adding a new DS updates the list
@@ -2385,9 +2380,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 			continue
 		}
 
-		jd.dsListLock.RLock()
 		dsList := jd.getDSList(false)
-		jd.dsListLock.RUnlock()
 
 		var migrateFrom []dataSetT
 		var insertBeforeDS dataSetT
@@ -3232,10 +3225,6 @@ func (jd *HandleT) Store(jobList []*JobT) error {
 store call is used to create new Jobs
 */
 func (jd *HandleT) store(jobList []*JobT) error {
-	//Only locks the list
-	jd.dsListLock.RLock()
-	defer jd.dsListLock.RUnlock()
-
 	dsList := jd.getDSList(false)
 	err := jd.storeJobsDS(dsList[len(dsList)-1], false, jobList)
 	return err
@@ -3268,11 +3257,6 @@ func (jd *HandleT) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
 storeWithRetryEach call is used to create new Jobs. This retries if the bulk store fails and retries for each job returning error messages for jobs failed to store
 */
 func (jd *HandleT) storeWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
-
-	//Only locks the list
-	jd.dsListLock.RLock()
-	defer jd.dsListLock.RUnlock()
-
 	dsList := jd.getDSList(false)
 	return jd.storeJobsDSWithRetryEach(dsList[len(dsList)-1], false, jobList)
 }
@@ -3787,9 +3771,7 @@ func (jd *HandleT) CheckPGHealth() bool {
 }
 
 func (jd *HandleT) GetLastJobID() int64 {
-	jd.dsListLock.RLock()
 	dsList := jd.getDSList(false)
-	jd.dsListLock.RUnlock()
 	return jd.GetMaxIDForDs(dsList[len(dsList)-1])
 }
 
