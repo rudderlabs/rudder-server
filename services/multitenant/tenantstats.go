@@ -362,11 +362,14 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 	}
 	//TODO : Draining Pass , Optimise it later
 	for _, customerKey := range sortedLatencyList {
-		if runningJobCount <= 0 {
+		if runningJobCount <= 0 || int(runningTimeCounter) <= 0 {
 			break
 		}
 		if drainedMap[customerKey] {
 			jobsPickedUp := misc.MinInt(runningJobCount, multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
+			if latencyMap[customerKey].Value() != 0 {
+				jobsPickedUp = misc.MinInt(jobsPickedUp, int(runningTimeCounter/latencyMap[customerKey].Value()))
+			}
 			customerPickUpCount[customerKey] += jobsPickedUp
 			runningJobCount -= jobsPickedUp
 		}
