@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -248,7 +249,9 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				continue
 			}
 
+			fmt.Println("***NEW BODY before****", string(body))
 			if misc.ContainsString(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
+				fmt.Println("coming inside if block")
 				queryParams := req.request.URL.Query()
 				paramsBytes, err := json.Marshal(queryParams)
 
@@ -262,6 +265,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 
 				body = append(body[:closingBraceIdx], appendData...)
 				body = append(body, '}')
+				fmt.Println("***NEW BODY****", string(body))
 			}
 
 			if !json.Valid(body) {
