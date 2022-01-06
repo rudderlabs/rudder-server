@@ -107,6 +107,15 @@ func CalculateSuccessFailureCounts(customer string, destType string, isSuccess b
 	}
 }
 
+func checkIfBackedOff(customer string, destType string) bool {
+	_, ok := multitenantStat.RouterCircuitBreakerMap[customer]
+	if !ok {
+		return false
+	}
+	_, ok = multitenantStat.RouterCircuitBreakerMap[customer][destType]
+	return ok
+}
+
 func GenerateSuccessRateMap(destType string) (map[string]float64, map[string]bool) {
 	multitenantStat.routerSuccessRateMutex.RLock()
 	customerSuccessRate := make(map[string]float64)
@@ -116,8 +125,11 @@ func GenerateSuccessRateMap(destType string) (map[string]float64, map[string]boo
 		if ok {
 			successCount := destTypeMap[destType]["success"]
 			failureCount := destTypeMap[destType]["failure"]
-			if failureCount == 0 {
+			isBackedOff := checkIfBackedOff(customer, destType)
+			if failureCount == 0 && !isBackedOff {
 				customerSuccessRate[customer] = 1
+			} else if failureCount == 0 {
+				customerSuccessRate[customer] = 0
 			} else {
 				customerSuccessRate[customer] = float64(successCount) / float64(successCount+failureCount)
 			}
@@ -276,9 +288,6 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 		if ok {
 			destTypeCount, ok := customerCountKey[destType]
 			if ok {
-				if drainedMap[customerKey] {
-					continue
-				}
 				timeRequired := 0.0
 				//runningJobCount should be a number large enough to ensure fairness but small enough to not cause OOM Issues
 				if runningJobCount <= 0 || runningTimeCounter <= 0 {
@@ -351,22 +360,15 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 		}
 		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , PileUpLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
 	}
-	drainedRunningCounter := jobQueryBatchSize
 	//TODO : Draining Pass , Optimise it later
 	for _, customerKey := range sortedLatencyList {
-		if drainedRunningCounter <= 0 {
+		if runningJobCount <= 0 {
 			break
 		}
 		if drainedMap[customerKey] {
-			jobsPickedUp := misc.MinInt(drainedRunningCounter, multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
-			successRate := 1.0
-			_, ok := successRateMap[customerKey]
-			if ok {
-				successRate = successRateMap[customerKey]
-			}
-			_, updatedPickUpCount, _ := getCorrectedJobsPickupCount(customerKey, destType, jobsPickedUp, 0, successRate)
-			customerPickUpCount[customerKey] = updatedPickUpCount
-			drainedRunningCounter -= customerPickUpCount[customerKey]
+			jobsPickedUp := misc.MinInt(runningJobCount, multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
+			customerPickUpCount[customerKey] += jobsPickedUp
+			runningJobCount -= jobsPickedUp
 		}
 		if drainedMap[customerKey] {
 			pkgLogger.Infof("[Drained Loop] Customer : %v , PickUpCount : %v , Drained Value : %v", customerKey, customerPickUpCount[customerKey], drainedMap[customerKey])
