@@ -57,12 +57,10 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		})
 	}
 
+	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.HandleT
 	var batchRouterDB jobsdb.HandleT
 	var procErrorDB jobsdb.HandleT
-	gatewayDB := jobsdb.HandleT{
-		DisableInternalMigrations: true,
-	}
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 

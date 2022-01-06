@@ -37,9 +37,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	rudderCoreWorkSpaceTableSetup()
 	rudderCoreBaseSetup()
 
-	gatewayDB := jobsdb.HandleT{
-		DisableInternalMigrations: true,
-	}
+	var gatewayDB jobsdb.HandleT
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
 
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)

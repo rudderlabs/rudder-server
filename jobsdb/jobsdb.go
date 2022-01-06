@@ -324,7 +324,6 @@ type HandleT struct {
 	isStatDropDSPeriodInitialized bool
 	migrationState                MigrationState
 	inProgressMigrationTargetDS   *dataSetT
-	DisableInternalMigrations     bool
 	logger                        logger.LoggerI
 	ownerType                     OwnerType
 	writeChannel                  chan writeJob
@@ -713,10 +712,6 @@ func (jd *HandleT) startBackupDSLoop(ctx context.Context) {
 }
 
 func (jd *HandleT) startMigrateDSLoop(ctx context.Context) {
-	if jd.DisableInternalMigrations {
-		return
-	}
-
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		jd.migrateDSLoop(ctx)
 		return nil
