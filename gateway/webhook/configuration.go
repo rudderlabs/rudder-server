@@ -22,5 +22,5 @@ func loadConfig() {
 	// Max retry attempts to source transformer
 	config.RegisterIntConfigVariable(5, &webhookRetryMax, false, 1, "Gateway.webhook.maxRetry")
 	// Parse all query params from sources mentioned in this list
-	config.RegisterStringSliceConfigVariable(make([]string, 0), &sourceListForParsingParams, false, "Gateway.webhook.sourceListForParsingParams")
+	config.RegisterStringSliceConfigVariable(make([]string, 0), &sourceListForParsingParams, true, "Gateway.webhook.sourceListForParsingParams")
 }

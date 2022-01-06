@@ -570,7 +570,6 @@ func RegisterStringSliceConfigVariable(defaultValue []string, ptr *[]string, isH
 
 	if !isSet {
 		*ptr = defaultValue
-		fmt.Println("vallue from config", *ptr)
 	}
 }
 
