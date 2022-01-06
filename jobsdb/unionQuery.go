@@ -50,7 +50,7 @@ func (mj *MultiTenantHandleT) GetPileUpCounts(statMap map[string]map[string]int)
 	defer mj.dsMigrationLock.RUnlock()
 	defer mj.dsListLock.RUnlock()
 
-	dsList := mj.getDSList(false)
+	dsList := mj.getDSList(true)
 	for _, ds := range dsList {
 		queryString := fmt.Sprintf(`with joined as (
 			select 

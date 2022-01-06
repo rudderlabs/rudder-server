@@ -797,7 +797,6 @@ func (proc *HandleT) getDestTransformerEvents(response transformer.ResponseT, co
 		eventMetadata.SourceJobID = userTransformedEvent.Metadata.SourceJobID
 		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
-		eventMetadata.WorkspaceID = userTransformedEvent.Metadata.WorkspaceID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
 		eventMetadata.SessionID = userTransformedEvent.Metadata.SessionID
 		eventMetadata.EventName = userTransformedEvent.Metadata.EventName
