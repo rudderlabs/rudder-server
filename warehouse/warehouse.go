@@ -46,8 +46,8 @@ var (
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
 	WarehouseDestinations               []string
+	timeWindowDestinations              []string
 	noOfSlaveWorkerRoutines             int
-	slaveWorkerRoutineBusy              []bool //Busy-true
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
 	mainLoopSleep                       time.Duration
@@ -142,12 +142,13 @@ func Init4() {
 func loadConfig() {
 	//Port where WH is running
 	config.RegisterIntConfigVariable(8082, &webPort, false, 1, "Warehouse.webPort")
-	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE"}
+	WarehouseDestinations = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
+	timeWindowDestinations = []string{"S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE"}
 	config.RegisterIntConfigVariable(4, &noOfSlaveWorkerRoutines, true, 1, "Warehouse.noOfSlaveWorkerRoutines")
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
 	config.RegisterDurationConfigVariable(time.Duration(5), &mainLoopSleep, true, time.Second, []string{"Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS"}...)
-	crashRecoverWarehouses = []string{"RS", "POSTGRES", "MSSQL", "AZURE_SYNAPSE"}
+	crashRecoverWarehouses = []string{"RS", "POSTGRES", "MSSQL", "AZURE_SYNAPSE", "DELTALAKE"}
 	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
 	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
@@ -1063,12 +1064,14 @@ func getLoadFileFormat(whType string) string {
 	switch whType {
 	case "BQ":
 		return "json.gz"
-	case "S3_DATALAKE":
+	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
 		return "parquet"
 	case "RS":
 		if useParquetLoadFilesRS {
 			return "parquet"
 		}
+		return "csv.gz"
+	case "DELTALAKE":
 		return "csv.gz"
 	default:
 		return "csv.gz"
@@ -1751,8 +1754,10 @@ func getLoadFileType(wh string) string {
 			return warehouseutils.LOAD_FILE_TYPE_PARQUET
 		}
 		return warehouseutils.LOAD_FILE_TYPE_CSV
-	case "S3_DATALAKE":
+	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
 		return warehouseutils.LOAD_FILE_TYPE_PARQUET
+	case "DELTALAKE":
+		return warehouseutils.LOAD_FILE_TYPE_CSV
 	default:
 		return warehouseutils.LOAD_FILE_TYPE_CSV
 	}

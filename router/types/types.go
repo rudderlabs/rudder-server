@@ -36,6 +36,8 @@ type JobMetadataT struct {
 	CreatedAt        string       `json:"createdAt"`
 	FirstAttemptedAt string       `json:"firstAttemptedAt"`
 	TransformAt      string       `json:"transformAt"`
+	WorkspaceId      string       `json:"workspaceId"`
+	OAuthAccessToken string       `json:"oauthAccessToken"`
 	JobT             *jobsdb.JobT `json:"jobsT"`
 }
 

@@ -67,8 +67,8 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	pkgLogger.Info("Processor starting")
 
 	rudderCoreDBValidator()
-	rudderCoreNodeSetup()
 	rudderCoreWorkSpaceTableSetup()
+	rudderCoreNodeSetup()
 	rudderCoreBaseSetup()
 	g, ctx := errgroup.WithContext(ctx)
 

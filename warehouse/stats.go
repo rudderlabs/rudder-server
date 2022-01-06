@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/tidwall/gjson"
 )
 
 const moduleName = "warehouse"
@@ -74,14 +75,18 @@ func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.RudderStat
 	return stats.NewTaggedStat(name, stats.GaugeType, tags)
 }
 
-func (jobRun *JobRunT) timerStat(name string) stats.RudderStats {
-	return stats.NewTaggedStat(name, stats.TimerType, map[string]string{
+func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.RudderStats {
+	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
 		"warehouseID": jobRun.warehouseID(),
 		"destID":      jobRun.job.DestinationID,
 		"sourceID":    jobRun.job.SourceID,
-	})
+	}
+	for _, extraTag := range extraTags {
+		tags[extraTag.name] = extraTag.value
+	}
+	return stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
 func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.RudderStats {
@@ -162,7 +167,16 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
-	job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}).SendTiming(time.Since(firstEventAt))
+
+	retried := gjson.GetBytes(job.upload.Metadata, "retried").Bool()
+	if !retried {
+		config := job.warehouse.Destination.Config
+		syncFrequency := "1440"
+		if config[warehouseutils.SyncFrequency] != nil {
+			syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
+		}
+		job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}, tag{name: "syncFrequency", value: syncFrequency}).SendTiming(time.Since(firstEventAt))
+	}
 }
 
 func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (err error) {
