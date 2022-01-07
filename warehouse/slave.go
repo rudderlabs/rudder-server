@@ -16,12 +16,12 @@ import (
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -707,29 +707,30 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	notifier.UpdateClaimedEvent(claimedJob.ID, &response)
 }
 
-func setupSlave() {
-	slaveID := uuid.Must(uuid.NewV4()).String()
-	rruntime.Go(func() {
-		jobNotificationChannel := notifier.Subscribe(slaveID, noOfSlaveWorkerRoutines)
-		for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
-			idx := workerIdx
-			rruntime.Go(func() {
-				// create tags and timers
-				workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)})
-				for {
-					// wait for a notification
-					workerIdleTimeStart := time.Now()
-					claimedJob := <-jobNotificationChannel
-					workerIdleTimer.Since(workerIdleTimeStart)
-					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
+func setupSlave(ctx context.Context) {
+	g, ctx := errgroup.WithContext(ctx)
 
-					// process job
-					processClaimedJob(claimedJob, idx)
-					pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
-				}
-			})
-		}
-	})
+	slaveID := uuid.Must(uuid.NewV4()).String()
+	jobNotificationChannel := notifier.Subscribe(ctx, slaveID, noOfSlaveWorkerRoutines)
+	for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
+		idx := workerIdx
+		g.Go(misc.WithBugsnag(func() error {
+			// create tags and timers
+			workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)})
+			workerIdleTimeStart := time.Now()
+			for claimedJob := range jobNotificationChannel {
+				workerIdleTimer.Since(workerIdleTimeStart)
+				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
+
+				// process job
+				processClaimedJob(claimedJob, idx)
+				pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
+				workerIdleTimeStart = time.Now()
+			}
+			return nil
+		}))
+	}
+	notifier.StartMaintenanceWorker(ctx)
 }
 
 func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, discardWriter warehouseutils.LoadFileWriterI) error {

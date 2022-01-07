@@ -16,6 +16,7 @@ require (
 	github.com/Microsoft/go-winio v0.5.0 // indirect
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/Shopify/sarama v1.30.0
+	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/araddon/dateparse v0.0.0-20190622164848-0fb0a474d195
 	github.com/aws/aws-sdk-go v1.37.23
 	github.com/bitly/go-simplejson v0.5.0 // indirect
