@@ -1853,5 +1853,4 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 		require.Equal(t, err, nil)
 	}
 }
-
 // TODO: Verify in Live Evets API
