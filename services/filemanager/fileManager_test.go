@@ -119,7 +119,7 @@ func run(m *testing.M) int {
 	return 0
 }
 
-func TestS3Manager(t *testing.T) {
+func TestFileManager(t *testing.T) {
 
 	// ctx := context.Background()
 	tests := []struct {
