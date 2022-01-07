@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"runtime/pprof"
+
 	"strconv"
 	"strings"
 
@@ -44,6 +45,8 @@ import (
 	event_schema "github.com/rudderlabs/rudder-server/event-schema"
 
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/admin/profiler"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	"github.com/rudderlabs/rudder-server/config"
@@ -282,6 +285,11 @@ func Run(ctx context.Context) {
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return admin.StartServer(ctx)
+	})
+
+	g.Go(func() error {
+		p := &profiler.Profiler{}
+		return p.StartServer(ctx)
 	})
 
 	misc.AppStartTime = time.Now().Unix()
