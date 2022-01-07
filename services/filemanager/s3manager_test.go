@@ -1,13 +1,11 @@
 package filemanager_test
 
 import (
-	"crypto/sha1"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -26,9 +24,12 @@ import (
 
 var (
 	// Configure to use MinIO Server
-	minioEndpoint       string
-	bucket              = "filemanager-test-1"
-	region              = "us-east-1"
+	minioEndpoint   string
+	bucket          = "filemanager-test-1"
+	region          = "us-east-1"
+	accessKeyId     = "MYACCESSKEY"
+	secretAccessKey = "MYSECRETKEY"
+
 	hold                bool
 	regexRequiredSuffix = regexp.MustCompile(".json.gz$")
 	fileList            []string
@@ -56,7 +57,11 @@ func run(m *testing.M) int {
 		Repository: "minio/minio",
 		Tag:        "latest",
 		Cmd:        []string{"server", "/data"},
-		Env:        []string{"MINIO_ACCESS_KEY=MYACCESSKEY", "MINIO_SECRET_KEY=MYSECRETKEY", "MINIO_SITE_REGION=us-east-1"},
+		Env: []string{
+			fmt.Sprintf("MINIO_ACCESS_KEY=%s", accessKeyId),
+			fmt.Sprintf("MINIO_SECRET_KEY=%s", secretAccessKey),
+			fmt.Sprintf("MINIO_SITE_REGION=%s", region),
+		},
 	})
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
@@ -85,19 +90,19 @@ func run(m *testing.M) int {
 	}
 	fmt.Println("minio is up & running properly")
 
-	accessKeyId := "MYACCESSKEY"
-	secretAccessKey := "MYSECRETKEY"
 	useSSL := false
 	minioClient, err := minio.New(minioEndpoint, accessKeyId, secretAccessKey, useSSL)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("minioClient created successfully")
-	err = minioClient.MakeBucket(bucket, "")
+
+	err = minioClient.MakeBucket(bucket, "us-east-1")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("bucket created successfully")
+
 	searchDir := "./testData"
 	err = filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
 		if regexRequiredSuffix.Match([]byte(path)) {
@@ -127,14 +132,29 @@ func TestS3Manager(t *testing.T) {
 			destName: "S3",
 			config: map[string]interface{}{
 				"bucketName":       bucket,
-				"accessKeyID":      "MYACCESSKEY",
-				"accessKey":        "MYSECRETKEY",
+				"accessKeyID":      accessKeyId,
+				"accessKey":        secretAccessKey,
 				"enableSSE":        false,
 				"prefix":           "some-prefix",
 				"endPoint":         minioEndpoint,
 				"s3ForcePathStyle": true,
 				"disableSSL":       true,
-				"region":           "us-east-1",
+				"region":           region,
+			},
+		},
+		{
+			name:     "testing minio functionality",
+			destName: "MINIO",
+			config: map[string]interface{}{
+				"bucketName":       bucket,
+				"accessKeyID":      accessKeyId,
+				"secretAccessKey":  secretAccessKey,
+				"enableSSE":        false,
+				"prefix":           "some-prefix",
+				"endPoint":         minioEndpoint,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+				"region":           region,
 			},
 		},
 	}
@@ -163,6 +183,7 @@ func TestS3Manager(t *testing.T) {
 					panic(err)
 				}
 				uploadOutputs = append(uploadOutputs, uploadOutput)
+				filePtr.Close()
 			}
 
 			//list files using ListFilesWithPrefix
@@ -177,8 +198,7 @@ func TestS3Manager(t *testing.T) {
 			require.Equal(t, uploadOutputs[0].ObjectName, objectName, "actual object name different than expected")
 
 			//also get download key from file location by calling GetDownloadKeyFromFileLocation
-			parsedUrl, _ := url.Parse(uploadOutputs[0].Location)
-			expectedKey := strings.TrimLeft(parsedUrl.Path, "/")
+			expectedKey := uploadOutputs[0].ObjectName
 			key := fm.GetDownloadKeyFromFileLocation(uploadOutputs[0].Location)
 			require.Equal(t, expectedKey, key, "actual object key different than expected")
 
@@ -189,6 +209,7 @@ func TestS3Manager(t *testing.T) {
 			require.Equal(t, expectedPrefix, prefix, "actual prefix different than expected")
 
 			//download one of the files & assert if it matches the original one present locally.
+			// dmp := diffmatchpatch.New()
 			filePtr, err := os.Open(fileList[0])
 			if err != nil {
 				fmt.Printf("error: %s while opening file: %s ", err, fileList[0])
@@ -197,9 +218,7 @@ func TestS3Manager(t *testing.T) {
 			if err != nil {
 				fmt.Printf("error: %s, while reading file: %s", err, fileList[0])
 			}
-			h1 := sha1.New()
-			h1.Write(originalFile)
-			expectedHash := h1.Sum(nil)
+			filePtr.Close()
 
 			DownloadedFileName := "TmpDownloadedFile"
 			filePtr, err = os.OpenFile(DownloadedFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
@@ -207,20 +226,25 @@ func TestS3Manager(t *testing.T) {
 				fmt.Println("error while Creating file to download data: ", err)
 			}
 			defer os.Remove(DownloadedFileName)
-
-			err = fm.Download(filePtr, uploadOutputs[0].ObjectName)
+			err = fm.Download(filePtr, key)
 			require.NoError(t, err, "expected no error")
+			filePtr.Close()
+
+			filePtr, err = os.OpenFile(DownloadedFileName, os.O_RDWR, 0644)
+			if err != nil {
+				fmt.Println("error while Creating file to download data: ", err)
+			}
 			downloadedFile, err := io.ReadAll(filePtr)
 			if err != nil {
 				fmt.Println("error while reading downloaded file: ", err)
 			}
-			h2 := sha1.New()
-			h2.Write(downloadedFile)
-			actualHash := h2.Sum(nil)
-			require.Equal(t, expectedHash, actualHash, "actual hash different than expected")
+			filePtr.Close()
 
-			// //delete that file
-			err = fm.DeleteObjects([]string{uploadOutputs[1].ObjectName})
+			ans := strings.Compare(string(originalFile), string(downloadedFile))
+			require.Equal(t, 0, ans, "downloaded file different than actual file")
+
+			//delete that file
+			err = fm.DeleteObjects([]string{key})
 			require.NoError(t, err, "expected no error while deleting object")
 
 			// list files again & assert if that file is still present.

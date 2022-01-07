@@ -2,6 +2,8 @@ package filemanager
 
 import (
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -25,6 +27,7 @@ func (manager *MinioManager) Upload(file *os.File, prefixes ...string) (UploadOu
 		return UploadOutput{}, err
 	}
 	if err = minioClient.MakeBucket(manager.Config.Bucket, "us-east-1"); err != nil {
+		fmt.Println("error while creating bucket: ", err)
 		exists, errBucketExists := minioClient.BucketExists(manager.Config.Bucket)
 		if !(errBucketExists == nil && exists) {
 			return UploadOutput{}, err
@@ -79,7 +82,12 @@ func (manager *MinioManager) GetObjectNameFromLocation(location string) (string,
 
 //TODO complete this
 func (manager *MinioManager) GetDownloadKeyFromFileLocation(location string) string {
-	return location
+	parsedUrl, err := url.Parse(location)
+	if err != nil {
+		fmt.Println("error while parsing location url: ", err)
+	}
+	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
+	return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket))
 }
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
@@ -116,8 +124,19 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	}
 }
 
-func (manager *MinioManager) DeleteObjects(locations []string) (err error) {
-	return
+func (manager *MinioManager) DeleteObjects(keys []string) (err error) {
+	minioClient, err := minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
+	if err != nil {
+		return err
+	}
+
+	objectChannel := make(chan string, len(keys))
+	for _, key := range keys {
+		objectChannel <- key
+	}
+	close(objectChannel)
+	tmp := <-minioClient.RemoveObjects(manager.Config.Bucket, objectChannel)
+	return tmp.Err
 }
 
 type MinioManager struct {

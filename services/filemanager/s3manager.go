@@ -86,17 +86,17 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 GetObjectNameFromLocation gets the object name/key name from the object location url
 	https://bucket-name.s3.amazonaws.com/key - >> key
 */
+
 func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, error) {
-	uri, err := url.Parse(location)
+	parsedUrl, err := url.Parse(location)
 	if err != nil {
 		return "", err
 	}
-	host := uri.Host
-	path := uri.Path[1:]
-	if strings.Contains(host, manager.Config.Bucket) {
-		return path, nil
+	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
+	if manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle {
+		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 	}
-	return strings.TrimPrefix(path, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
+	return trimedUrl, nil
 }
 
 func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string {
@@ -105,6 +105,9 @@ func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string
 		fmt.Println("error while parsing location url: ", err)
 	}
 	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
+	if manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle {
+		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket))
+	}
 	return trimedUrl
 }
 
