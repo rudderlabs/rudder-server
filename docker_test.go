@@ -1839,16 +1839,14 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 
 	// Rename tables to tables_shard
 	for _, table := range tables {
-		var sqlStatement string
-		sqlStatement = fmt.Sprintf("RENAME TABLE %[1]s to %[1]s_shard ON CLUSTER rudder_cluster;", table)
+		sqlStatement := fmt.Sprintf("RENAME TABLE %[1]s to %[1]s_shard ON CLUSTER rudder_cluster;", table)
 		_, err := chClusterTestT.db.Exec(sqlStatement)
 		require.Equal(t, err, nil)
 	}
 
 	// Create distribution views for tables
 	for _, table := range tables {
-		var sqlStatement string
-		sqlStatement = fmt.Sprintf("CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed('rudder_cluster', rudderdb, %[1]s_shard, cityHash64(id));", table)
+		sqlStatement := fmt.Sprintf("CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed('rudder_cluster', rudderdb, %[1]s_shard, cityHash64(id));", table)
 		_, err := chClusterTestT.db.Exec(sqlStatement)
 		require.Equal(t, err, nil)
 	}
