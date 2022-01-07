@@ -417,7 +417,17 @@ func (notifier *PgNotifierT) StartMaintenanceWorker(ctx context.Context) {
 		panic(err)
 	}
 	go misc.WithBugsnag(func() error {
-		maintenanceWorkerLock.WaitAndLock(ctx)
+		for {
+			locked, err := maintenanceWorkerLock.Lock(ctx)
+			if err != nil {
+				pkgLogger.Errorf("Received error trying to acquire maintenance worker lock %v ", err)
+			}
+			if locked {
+				defer maintenanceWorkerLock.Unlock(ctx)
+				break
+			}
+			time.Sleep(jobOrphanTimeout / 5)
+		}
 		for {
 			select {
 			case <-ctx.Done():
