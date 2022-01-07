@@ -673,7 +673,7 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("MINIO_SSL", "false")
 	os.Setenv("WAREHOUSE_URL", "http://localhost:8082")
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
-	os.Setenv("RSERVER_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
+	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10s")
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
