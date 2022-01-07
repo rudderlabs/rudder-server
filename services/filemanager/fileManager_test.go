@@ -121,7 +121,6 @@ func run(m *testing.M) int {
 
 func TestFileManager(t *testing.T) {
 
-	// ctx := context.Background()
 	tests := []struct {
 		name     string
 		destName string
