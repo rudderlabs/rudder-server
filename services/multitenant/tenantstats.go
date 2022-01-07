@@ -106,13 +106,19 @@ func CalculateSuccessFailureCounts(customer string, destType string, isSuccess b
 	}
 }
 
-func checkIfBackedOff(customer string, destType string) bool {
+func checkIfBackedOff(customer string, destType string) (backedOff bool, timeExpired bool) {
 	_, ok := multitenantStat.RouterCircuitBreakerMap[customer]
 	if !ok {
-		return false
+		return false, false
 	}
 	_, ok = multitenantStat.RouterCircuitBreakerMap[customer][destType]
-	return ok
+	if !ok {
+		return false, false
+	}
+	if time.Now().After(multitenantStat.RouterCircuitBreakerMap[customer][destType].timeToRetry) {
+		return true, true
+	}
+	return true, false
 }
 
 func GenerateSuccessRateMap(destType string) (map[string]float64, map[string]bool) {
@@ -124,7 +130,7 @@ func GenerateSuccessRateMap(destType string) (map[string]float64, map[string]boo
 		if ok {
 			successCount := destTypeMap[destType]["success"]
 			failureCount := destTypeMap[destType]["failure"]
-			isBackedOff := checkIfBackedOff(customer, destType)
+			isBackedOff, _ := checkIfBackedOff(customer, destType)
 			if failureCount == 0 && !isBackedOff {
 				customerSuccessRate[customer] = 1
 			} else if failureCount == 0 {
@@ -288,9 +294,23 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			destTypeCount, ok := customerCountKey[destType]
 			if ok {
 				timeRequired := 0.0
-				if checkIfBackedOff(customerKey, destType) {
+
+				successRate := 1.0
+
+				isBackedOff, isTimeExpired := checkIfBackedOff(customerKey, destType)
+				if isBackedOff && !isTimeExpired {
 					continue
+				} else if isBackedOff && isTimeExpired {
+					successRate = 0.0
 				}
+				_, ok = successRateMap[customerKey]
+				if ok {
+					successRate = successRateMap[customerKey]
+				}
+
+				// If backed off : Ignore
+				// If backedoff and time expired : Pick up Beta : Success rate -0
+
 				//runningJobCount should be a number large enough to ensure fairness but small enough to not cause OOM Issues
 				if runningJobCount <= 0 || runningTimeCounter <= 0 {
 					if multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] > 0 {
@@ -308,11 +328,6 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 					customerPickUpCount[customerKey] = misc.MinInt(int(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second)), multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
 				}
 				timeRequired = float64(customerPickUpCount[customerKey]) * latencyMap[customerKey].Value()
-				successRate := 1.0
-				_, ok = successRateMap[customerKey]
-				if ok {
-					successRate = successRateMap[customerKey]
-				}
 				updatedTimeRequired, updatedPickUpCount, isCustomerLimited := getCorrectedJobsPickupCount(customerKey, destType, customerPickUpCount[customerKey], timeRequired, successRate)
 				customerBlockedMap[customerKey] = isCustomerLimited
 				runningTimeCounter = runningTimeCounter - updatedTimeRequired
@@ -339,7 +354,8 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 		if drainedMap[customerKey] {
 			continue
 		}
-		if checkIfBackedOff(customerKey, destType) {
+		isBackedOff, _ := checkIfBackedOff(customerKey, destType)
+		if isBackedOff {
 			continue
 		}
 		if runningJobCount <= 0 || runningTimeCounter <= 0 {
