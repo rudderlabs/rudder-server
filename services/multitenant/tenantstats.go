@@ -37,9 +37,9 @@ type BackOffT struct {
 
 func Init() {
 	multitenantStat = MultitenantStatsT{}
-	config.RegisterDurationConfigVariable(time.Duration(60), &minBackOff, false, time.Second, "tenantStats.minBackOff")
-	config.RegisterDurationConfigVariable(time.Duration(900), &maxBackOff, false, time.Second, "tenantStats.maxBackOff")
-	config.RegisterFloat64ConfigVariable(2, &backOffFactor, false, "tenantStats.backOffFactor")
+	config.RegisterDurationConfigVariable(time.Duration(10), &minBackOff, false, time.Second, "tenantStats.minBackOff")
+	config.RegisterDurationConfigVariable(time.Duration(300), &maxBackOff, false, time.Second, "tenantStats.maxBackOff")
+	config.RegisterFloat64ConfigVariable(1.5, &backOffFactor, false, "tenantStats.backOffFactor")
 	pkgLogger = logger.NewLogger().Child("services").Child("multitenant")
 	multitenantStat.RouterInMemoryJobCounts = make(map[string]map[string]map[string]int)
 	multitenantStat.RouterInMemoryJobCounts["router"] = make(map[string]map[string]int)
@@ -88,7 +88,6 @@ func CalculateSuccessFailureCounts(customer string, destType string, isSuccess b
 	defer multitenantStat.routerSuccessRateMutex.Unlock()
 	_, ok := multitenantStat.RouterSuccessRatioLoopCount[customer]
 	if !ok {
-
 		multitenantStat.RouterSuccessRatioLoopCount[customer] = make(map[string]map[string]int)
 	}
 	_, ok = multitenantStat.RouterSuccessRatioLoopCount[customer][destType]
@@ -289,6 +288,9 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			destTypeCount, ok := customerCountKey[destType]
 			if ok {
 				timeRequired := 0.0
+				if checkIfBackedOff(customerKey, destType) {
+					continue
+				}
 				//runningJobCount should be a number large enough to ensure fairness but small enough to not cause OOM Issues
 				if runningJobCount <= 0 || runningTimeCounter <= 0 {
 					if multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] > 0 {
@@ -335,6 +337,9 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			continue
 		}
 		if drainedMap[customerKey] {
+			continue
+		}
+		if checkIfBackedOff(customerKey, destType) {
 			continue
 		}
 		if runningJobCount <= 0 || runningTimeCounter <= 0 {
