@@ -16,11 +16,6 @@ import (
 	"syscall"
 	"testing"
 
-	// "github.com/aws/aws-sdk-go/aws"
-	// "github.com/aws/aws-sdk-go/aws/credentials"
-	// "github.com/aws/aws-sdk-go/aws/session"
-	// "github.com/aws/aws-sdk-go/service/s3"
-
 	"github.com/minio/minio-go/v6"
 	"github.com/ory/dockertest"
 	"github.com/rudderlabs/rudder-server/config"
@@ -32,7 +27,7 @@ import (
 var (
 	// Configure to use MinIO Server
 	minioEndpoint       string
-	bucket              = "filemanager"
+	bucket              = "filemanager-test-1"
 	region              = "us-east-1"
 	hold                bool
 	regexRequiredSuffix = regexp.MustCompile(".json.gz$")
