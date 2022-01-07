@@ -1174,10 +1174,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
 				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, backendconfig.DestinationT{})
 
-				eventType, ok := singularEvent["type"].(string)
-				if !ok {
-					proc.logger.Error("singular event type is unknown")
-				}
+				eventType := misc.GetStringifiedData(singularEvent["type"])
+				eventName := misc.GetStringifiedData(singularEvent["event"])
 
 				source, sourceError := getSourceByWriteKey(writeKey)
 				if sourceError != nil {
@@ -1195,7 +1193,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				//REPORTING - GATEWAY metrics - START
 				if proc.isReportingEnabled() {
 					//Grouping events by sourceid + destinationid + source batch id to find the count
-					key := fmt.Sprintf("%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID)
+					key := fmt.Sprintf("%s:%s:%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID, eventName, eventType)
 					if _, ok := inCountMap[key]; !ok {
 						inCountMap[key] = 0
 					}
@@ -1211,7 +1209,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					}
 					sd, ok := statusDetailsMap[key]
 					if !ok {
-						sd = types.CreateStatusDetail(jobsdb.Succeeded.State, 0, 200, "", []byte(`{}`), "", "")
+						sd = types.CreateStatusDetail(jobsdb.Succeeded.State, 0, 200, "", []byte(`{}`), eventName, eventType)
 						statusDetailsMap[key] = sd
 					}
 					sd.Count++
