@@ -170,6 +170,7 @@ func runAllInit() {
 	warehouse.Init3()
 	warehouse.Init4()
 	warehouse.Init5()
+	warehouse.Init6()
 	azuresynapse.Init()
 	mssql.Init()
 	postgres.Init()
