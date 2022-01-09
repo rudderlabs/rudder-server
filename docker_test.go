@@ -52,21 +52,21 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-type PostgresTestT struct {
+type PostgresTest struct {
 	resource    *dockertest.Resource
 	credentials *postgres.CredentialsT
 	db          *sql.DB
 	writeKey    string
 }
 
-type ClickHouseTestT struct {
+type ClickHouseTest struct {
 	resource    *dockertest.Resource
 	credentials *clickhouse.CredentialsT
 	db          *sql.DB
 	writeKey    string
 }
 
-type ClickHouseClusterTestT struct {
+type ClickHouseClusterTest struct {
 	network      *dc.Network
 	zookeeper    *dockertest.Resource
 	clickhouse01 *dockertest.Resource
@@ -78,7 +78,7 @@ type ClickHouseClusterTestT struct {
 	writeKey     string
 }
 
-type MSSqlTestT struct {
+type MSSqlTest struct {
 	resource    *dockertest.Resource
 	credentials *mssql.CredentialsT
 	db          *sql.DB
@@ -95,11 +95,11 @@ type WareHouseDestinationTest struct {
 	schema           string
 }
 
-type WareHouseTestT struct {
-	pgTest                 *PostgresTestT
-	chTest                 *ClickHouseTestT
-	chClusterTest          *ClickHouseClusterTestT
-	mssqlTest              *MSSqlTestT
+type WareHouseTest struct {
+	pgTest                 *PostgresTest
+	chTest                 *ClickHouseTest
+	chClusterTest          *ClickHouseClusterTest
+	mssqlTest              *MSSqlTest
 	gwJobsSqlFunction      string
 	batchRtJobsSqlFunction string
 }
@@ -123,7 +123,7 @@ var (
 	brokerPort       string
 	localhostPort    string
 	localhostPortInt int
-	whTest           *WareHouseTestT
+	whTest           *WareHouseTest
 )
 
 type WebhookRecorder struct {
@@ -485,14 +485,14 @@ func run(m *testing.M) (int, error) {
 	}
 	fmt.Println("DB_DSN:", DB_DSN)
 
-	initWhConfig()
+	initWHConfig()
 
-	defer SetWhPostgresDestination(pool)()
-	defer SetWhClickHouseDestination(pool)()
-	defer SetWhClickHouseClusterDestination(pool)()
-	defer SetWhMSSqlDestination(pool)()
+	defer SetWHPostgresDestination(pool)()
+	defer SetWHClickHouseDestination(pool)()
+	defer SetWHClickHouseClusterDestination(pool)()
+	defer SetWHMssqlDestination(pool)()
 
-	AddWhSpecificSqlFunctionsToJobsDb()
+	AddWHSpecificSqlFunctionsToJobsDb()
 
 	// ----------
 	// Set Rudder Transformer
@@ -883,54 +883,9 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 	return consumers, errors
 }
 
-// initWhConfig Initialize warehouse config
-func initWhConfig() {
-	whTest = &WareHouseTestT{}
-	whTest.pgTest = &PostgresTestT{
-		writeKey: randString(27),
-		credentials: &postgres.CredentialsT{
-			DbName:   "rudderdb",
-			Password: "rudder-password",
-			User:     "rudder",
-			Host:     "localhost",
-			SslMode:  "disable",
-		},
-	}
-
-	whTest.chTest = &ClickHouseTestT{
-		writeKey: randString(27),
-		credentials: &clickhouse.CredentialsT{
-			Host:          "localhost",
-			User:          "rudder",
-			Password:      "rudder-password",
-			DbName:        "rudderdb",
-			Secure:        "false",
-			SkipVerify:    "true",
-			TlsConfigName: "",
-		},
-	}
-	whTest.chClusterTest = &ClickHouseClusterTestT{
-		writeKey: randString(27),
-		credentials: &clickhouse.CredentialsT{
-			Host:          "localhost",
-			User:          "rudder",
-			Password:      "rudder-password",
-			DbName:        "rudderdb",
-			Secure:        "false",
-			SkipVerify:    "true",
-			TlsConfigName: "",
-		},
-	}
-	whTest.mssqlTest = &MSSqlTestT{
-		writeKey: randString(27),
-		credentials: &mssql.CredentialsT{
-			DbName:   "master",
-			Password: "reallyStrongPwd123",
-			User:     "SA",
-			Host:     "localhost",
-			SslMode:  "disable",
-		},
-	}
+// initWHConfig Initialize warehouse config
+func initWHConfig() {
+	whTest = &WareHouseTest{}
 	whTest.gwJobsSqlFunction = `CREATE OR REPLACE FUNCTION gw_jobs_for_user_id_and_write_key(user_id varchar, write_key varchar)
 								RETURNS TABLE
 										(
@@ -980,15 +935,25 @@ func initWhConfig() {
 	config.Load()
 	logger.Init()
 	postgres.Init()
-	mssql.Init()
 	clickhouse.Init()
+	mssql.Init()
 }
 
-// SetWhPostgresDestination setup warehouse postgres destination
-func SetWhPostgresDestination(pool *dockertest.Pool) (output func()) {
+// SetWHPostgresDestination setup warehouse postgres destination
+func SetWHPostgresDestination(pool *dockertest.Pool) (cleanup func()) {
+	whTest.pgTest = &PostgresTest{
+		writeKey: randString(27),
+		credentials: &postgres.CredentialsT{
+			DbName:   "rudderdb",
+			Password: "rudder-password",
+			User:     "rudder",
+			Host:     "localhost",
+			SslMode:  "disable",
+		},
+	}
 	pgTest := whTest.pgTest
 	credentials := pgTest.credentials
-	output = func() {}
+	cleanup = func() {}
 
 	var err error
 	if pgTest.resource, err = pool.Run("postgres", "11-alpine", []string{
@@ -1022,15 +987,27 @@ func SetWhPostgresDestination(pool *dockertest.Pool) (output func()) {
 		defer purgeResources()
 		panic(fmt.Errorf("Could not connect to warehouse postgres with error: %w\n", err))
 	}
-	output = purgeResources
+	cleanup = purgeResources
 	return
 }
 
-// SetWhClickHouseDestination setup warehouse clickhouse destination
-func SetWhClickHouseDestination(pool *dockertest.Pool) (output func()) {
+// SetWHClickHouseDestination setup warehouse clickhouse destination
+func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
+	whTest.chTest = &ClickHouseTest{
+		writeKey: randString(27),
+		credentials: &clickhouse.CredentialsT{
+			Host:          "localhost",
+			User:          "rudder",
+			Password:      "rudder-password",
+			DbName:        "rudderdb",
+			Secure:        "false",
+			SkipVerify:    "true",
+			TlsConfigName: "",
+		},
+	}
 	chTest := whTest.chTest
 	credentials := chTest.credentials
-	output = func() {}
+	cleanup = func() {}
 
 	var err error
 	if chTest.resource, err = pool.Run("yandex/clickhouse-server", "21-alpine", []string{
@@ -1061,18 +1038,30 @@ func SetWhClickHouseDestination(pool *dockertest.Pool) (output func()) {
 		}
 		return chTest.db.Ping()
 	}); err != nil {
-		defer output()
+		defer cleanup()
 		panic(fmt.Errorf("Could not connect to warehouse clickhouse with error: %w\n", err))
 	}
-	output = purgeResources
+	cleanup = purgeResources
 	return
 }
 
-// SetWhClickHouseClusterDestination setup warehouse clickhouse cluster mode destination
-func SetWhClickHouseClusterDestination(pool *dockertest.Pool) (output func()) {
+// SetWHClickHouseClusterDestination setup warehouse clickhouse cluster mode destination
+func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
+	whTest.chClusterTest = &ClickHouseClusterTest{
+		writeKey: randString(27),
+		credentials: &clickhouse.CredentialsT{
+			Host:          "localhost",
+			User:          "rudder",
+			Password:      "rudder-password",
+			DbName:        "rudderdb",
+			Secure:        "false",
+			SkipVerify:    "true",
+			TlsConfigName: "",
+		},
+	}
 	chClusterTest := whTest.chClusterTest
 	credentials := chClusterTest.credentials
-	output = func() {}
+	cleanup = func() {}
 
 	pwd, err := os.Getwd()
 	if err != nil {
@@ -1111,7 +1100,7 @@ func SetWhClickHouseClusterDestination(pool *dockertest.Pool) (output func()) {
 			"9000": {{HostIP: "127.0.0.1", HostPort: "9000"}},
 		},
 		ExposedPorts: []string{"8123", "9000"},
-		Mounts:       []string{fmt.Sprintf(`%s/warehouse/clickhouse/cluster/clickhouse01:/etc/clickhouse-server`, pwd)},
+		Mounts:       []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/clickhouse01:/etc/clickhouse-server`, pwd)},
 		Links:        []string{"clickhouse-zookeeper"},
 	}); err != nil {
 		log.Println("Could not create clickhouse cluster 1: %w", err)
@@ -1121,7 +1110,7 @@ func SetWhClickHouseClusterDestination(pool *dockertest.Pool) (output func()) {
 		Tag:        "21-alpine",
 		Hostname:   "clickhouse02",
 		Name:       "clickhouse02",
-		Mounts:     []string{fmt.Sprintf(`%s/warehouse/clickhouse/cluster/clickhouse02:/etc/clickhouse-server`, pwd)},
+		Mounts:     []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/clickhouse02:/etc/clickhouse-server`, pwd)},
 		Links:      []string{"clickhouse-zookeeper"},
 	}); err != nil {
 		log.Println("Could not create clickhouse cluster 2: %w", err)
@@ -1131,7 +1120,7 @@ func SetWhClickHouseClusterDestination(pool *dockertest.Pool) (output func()) {
 		Tag:        "21-alpine",
 		Hostname:   "clickhouse03",
 		Name:       "clickhouse03",
-		Mounts:     []string{fmt.Sprintf(`%s/warehouse/clickhouse/cluster/clickhouse03:/etc/clickhouse-server`, pwd)},
+		Mounts:     []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/clickhouse03:/etc/clickhouse-server`, pwd)},
 		Links:      []string{"clickhouse-zookeeper"},
 	}); err != nil {
 		log.Println("Could not create clickhouse cluster 3: %w", err)
@@ -1141,7 +1130,7 @@ func SetWhClickHouseClusterDestination(pool *dockertest.Pool) (output func()) {
 		Tag:        "21-alpine",
 		Hostname:   "clickhouse04",
 		Name:       "clickhouse04",
-		Mounts:     []string{fmt.Sprintf(`%s/warehouse/clickhouse/cluster/clickhouse04:/etc/clickhouse-server`, pwd)},
+		Mounts:     []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/clickhouse04:/etc/clickhouse-server`, pwd)},
 		Links:      []string{"clickhouse-zookeeper"},
 	}); err != nil {
 		log.Println("Could not create clickhouse cluster 4: %w", err)
@@ -1260,15 +1249,25 @@ func SetWhClickHouseClusterDestination(pool *dockertest.Pool) (output func()) {
 		defer purgeResources()
 		panic(fmt.Errorf("Could not connect to warehouse clickhouse cluster with error: %w\n", err))
 	}
-	output = purgeResources
+	cleanup = purgeResources
 	return
 }
 
-// SetWhMSSqlDestination setup clickhouse mssql destination
-func SetWhMSSqlDestination(pool *dockertest.Pool) (output func()) {
+// SetWHMssqlDestination setup clickhouse mssql destination
+func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
+	whTest.mssqlTest = &MSSqlTest{
+		writeKey: randString(27),
+		credentials: &mssql.CredentialsT{
+			DbName:   "master",
+			Password: "reallyStrongPwd123",
+			User:     "SA",
+			Host:     "localhost",
+			SslMode:  "disable",
+		},
+	}
 	mssqlTest := whTest.mssqlTest
 	credentials := mssqlTest.credentials
-	output = func() {}
+	cleanup = func() {}
 
 	var err error
 	if mssqlTest.resource, err = pool.Run("mcr.microsoft.com/mssql/server", "2019-latest", []string{
@@ -1302,12 +1301,12 @@ func SetWhMSSqlDestination(pool *dockertest.Pool) (output func()) {
 		defer purgeResources()
 		panic(fmt.Errorf("Could not connect to warehouse mssql with error: %w\n", err))
 	}
-	output = purgeResources
+	cleanup = purgeResources
 	return
 }
 
 // Adding necessary sql functions which needs to be used during warehouse testing
-func AddWhSpecificSqlFunctionsToJobsDb() {
+func AddWHSpecificSqlFunctionsToJobsDb() {
 	var err error
 	_, err = db.Exec(whTest.gwJobsSqlFunction)
 	if err != nil {
@@ -1323,7 +1322,7 @@ func AddWhSpecificSqlFunctionsToJobsDb() {
 }
 
 // Verify Event in WareHouse Postgres
-func TestWhPostgresDestination(t *testing.T) {
+func TestWHPostgresDestination(t *testing.T) {
 	pgTest := whTest.pgTest
 
 	whDestTest := &WareHouseDestinationTest{
@@ -1353,14 +1352,14 @@ func TestWhPostgresDestination(t *testing.T) {
 }
 
 // Verify Event in WareHouse ClickHouse
-func TestWhClickHouseDestination(t *testing.T) {
-	chTestT := whTest.chTest
+func TestWHClickHouseDestination(t *testing.T) {
+	chTest := whTest.chTest
 
 	whDestTest := &WareHouseDestinationTest{
-		writeKey: chTestT.writeKey,
+		writeKey: chTest.writeKey,
 		userId:   "userId_clickhouse",
 		schema:   "rudderdb",
-		db:       chTestT.db,
+		db:       chTest.db,
 		whEventsCountMap: whEventsCountMap{
 			"identifies":    1,
 			"users":         1,
@@ -1383,14 +1382,14 @@ func TestWhClickHouseDestination(t *testing.T) {
 }
 
 // Verify Event in WareHouse ClickHouse Cluster
-func TestWhClickHouseClusterDestination(t *testing.T) {
-	chClusterTestT := whTest.chClusterTest
+func TestWHClickHouseClusterDestination(t *testing.T) {
+	chClusterTest := whTest.chClusterTest
 
 	whDestTest := &WareHouseDestinationTest{
-		writeKey: chClusterTestT.writeKey,
+		writeKey: chClusterTest.writeKey,
 		userId:   "userId_clickhouse_cluster",
 		schema:   "rudderdb",
-		db:       chClusterTestT.db,
+		db:       chClusterTest.db,
 		whEventsCountMap: whEventsCountMap{
 			"identifies":    1,
 			"users":         1,
@@ -1416,14 +1415,12 @@ func TestWhClickHouseClusterDestination(t *testing.T) {
 }
 
 // Verify Event in WareHouse MSSQL
-func TestWhMsSqlDestination(t *testing.T) {
-	mssqlTestT := whTest.mssqlTest
-
+func TestWHMssqlDestination(t *testing.T) {
 	whDestTest := &WareHouseDestinationTest{
-		writeKey: mssqlTestT.writeKey,
+		writeKey: whTest.mssqlTest.writeKey,
 		userId:   "userId_mssql",
 		schema:   "mssql_wh_integration",
-		db:       mssqlTestT.db,
+		db:       whTest.mssqlTest.db,
 		whEventsCountMap: whEventsCountMap{
 			"identifies":    1,
 			"users":         1,
@@ -1834,21 +1831,22 @@ func whWareHouseTest(t *testing.T, wdt *WareHouseDestinationTest) {
 
 // initWHClickHouseClusterModeSetup Initialize cluster mode setup
 func initWHClickHouseClusterModeSetup(t *testing.T) {
-	chClusterTestT := whTest.chClusterTest
+	chClusterTest := whTest.chClusterTest
 	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
 	// Rename tables to tables_shard
 	for _, table := range tables {
 		sqlStatement := fmt.Sprintf("RENAME TABLE %[1]s to %[1]s_shard ON CLUSTER rudder_cluster;", table)
-		_, err := chClusterTestT.db.Exec(sqlStatement)
+		_, err := chClusterTest.db.Exec(sqlStatement)
 		require.Equal(t, err, nil)
 	}
 
 	// Create distribution views for tables
 	for _, table := range tables {
 		sqlStatement := fmt.Sprintf("CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed('rudder_cluster', rudderdb, %[1]s_shard, cityHash64(id));", table)
-		_, err := chClusterTestT.db.Exec(sqlStatement)
+		_, err := chClusterTest.db.Exec(sqlStatement)
 		require.Equal(t, err, nil)
 	}
 }
+
 // TODO: Verify in Live Evets API
