@@ -130,8 +130,12 @@ func GenerateSuccessRateMap(destType string) (map[string]float64, map[string]boo
 		if ok {
 			successCount := destTypeMap[destType]["success"]
 			failureCount := destTypeMap[destType]["failure"]
+			drainedCount := destTypeMap[destType]["drained"]
 			isBackedOff, _ := checkIfBackedOff(customer, destType)
+			// TODO : Maintain this logic cleanly
 			if failureCount == 0 && !isBackedOff {
+				customerSuccessRate[customer] = 1
+			} else if failureCount == 0 && drainedCount != 0 {
 				customerSuccessRate[customer] = 1
 			} else if failureCount == 0 {
 				customerSuccessRate[customer] = 0
@@ -141,17 +145,17 @@ func GenerateSuccessRateMap(destType string) (map[string]float64, map[string]boo
 		}
 	}
 
-	for customer, destTypeMap := range multitenantStat.RouterSuccessRatioLoopCount {
-		_, ok := destTypeMap[destType]
-		if ok {
-			drainedCount := destTypeMap[destType]["drained"]
-			if drainedCount == 0 {
-				customerDrainedMap[customer] = false
-			} else {
-				customerDrainedMap[customer] = true
-			}
-		}
-	}
+	// for customer, destTypeMap := range multitenantStat.RouterSuccessRatioLoopCount {
+	// 	_, ok := destTypeMap[destType]
+	// 	drainedCount := destTypeMap[destType]["drained"]
+	// 	if ok {
+	// 		if drainedCount == 0 {
+	// 			customerDrainedMap[customer] = false
+	// 		} else {
+	// 			customerDrainedMap[customer] = true
+	// 		}
+	// 	}
+	// }
 
 	multitenantStat.routerSuccessRateMutex.RUnlock()
 	multitenantStat.routerSuccessRateMutex.Lock()
@@ -297,19 +301,21 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 
 				successRate := 1.0
 
-				isBackedOff, isTimeExpired := checkIfBackedOff(customerKey, destType)
-				if isBackedOff && !isTimeExpired {
-					continue
-				} else if isBackedOff && isTimeExpired {
-					successRate = 0.0
-				}
 				_, ok = successRateMap[customerKey]
 				if ok {
 					successRate = successRateMap[customerKey]
+				} else {
+					isBackedOff, isTimeExpired := checkIfBackedOff(customerKey, destType)
+					if isBackedOff && !isTimeExpired {
+						customerBlockedMap[customerKey] = true
+						continue
+					} else if isBackedOff && isTimeExpired {
+						successRate = 0.0
+					}
 				}
 
 				// If backed off : Ignore
-				// If backedoff and time expired : Pick up Beta : Success rate -0
+				// If backedoff and time expired : Pick up Beta : Success rate 0
 
 				//runningJobCount should be a number large enough to ensure fairness but small enough to not cause OOM Issues
 				if runningJobCount <= 0 || runningTimeCounter <= 0 {
@@ -351,9 +357,9 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 		if customerBlockedMap[customerKey] {
 			continue
 		}
-		if drainedMap[customerKey] {
-			continue
-		}
+		// if drainedMap[customerKey] {
+		// 	continue
+		// }
 		isBackedOff, _ := checkIfBackedOff(customerKey, destType)
 		if isBackedOff {
 			continue
@@ -381,12 +387,12 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 		}
 		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , PileUpLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
 	}
-	//TODO : Draining Pass , Optimise it later
+	//TODO : BackedOff Pass , Optimise it later
 	for _, customerKey := range sortedLatencyList {
 		if runningJobCount <= 0 || int(runningTimeCounter) <= 0 {
 			break
 		}
-		if drainedMap[customerKey] {
+		if customerBlockedMap[customerKey] {
 			jobsPickedUp := misc.MinInt(runningJobCount, multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
 			if latencyMap[customerKey].Value() != 0 {
 				jobsPickedUp = misc.MinInt(jobsPickedUp, int(runningTimeCounter/latencyMap[customerKey].Value()))
@@ -394,8 +400,8 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			customerPickUpCount[customerKey] += jobsPickedUp
 			runningJobCount -= jobsPickedUp
 		}
-		if drainedMap[customerKey] {
-			pkgLogger.Infof("[Drained Loop] Customer : %v , PickUpCount : %v , Drained Value : %v", customerKey, customerPickUpCount[customerKey], drainedMap[customerKey])
+		if customerBlockedMap[customerKey] {
+			pkgLogger.Infof("[BackedOff Loop] Customer : %v , PickUpCount : %v , Drained Value : %v", customerKey, customerPickUpCount[customerKey], customerPickUpCount[customerKey])
 		}
 	}
 
