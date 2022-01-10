@@ -698,7 +698,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				}
 
 				//Assuming 30% overhead
-				if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(1.3*float64(worker.rt.routerTimeout)) {
+				if resultSetID < worker.localResultSet.resultSetID || time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(1.3*float64(worker.rt.routerTimeout)) {
 					respStatusCode, respBody = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
 
 				} else if worker.rt.customDestinationManager != nil {
