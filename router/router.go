@@ -715,8 +715,8 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken) / float64(time.Second))
 				}
 
-				worker.rt.logger.Debugf("moving_average_latency is %.8f for customer %v", float64(timeTaken)/float64(time.Second), workspaceID)
-				//Using reponse status code and body to get response code rudder router logic is based on.
+				worker.rt.logger.Debugf("moving_average_latency is %.8f for customer %v", worker.rt.routerLatencyStat[workspaceID], workspaceID)
+				//Using response status code and body to get response code rudder router logic is based on.
 				// Works when transformer proxy in disabled
 				if !worker.rt.transformerProxy && destinationResponseHandler != nil {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)

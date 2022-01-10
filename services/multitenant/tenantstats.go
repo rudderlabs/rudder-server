@@ -337,7 +337,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 				if customerPickUpCount[customerKey] == 0 {
 					delete(customerPickUpCount, customerKey)
 				}
-				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
+				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , moving_average_latency : %v ,InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount, destTypeCount.Value())
 			}
 		}
 	}
@@ -380,7 +380,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			runningJobCount = runningJobCount - pileupPickUp
 			runningTimeCounter = runningTimeCounter - float64(pileupPickUp)*latencyMap[customerKey].Value()
 		}
-		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , PileUpLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount)
+		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , moving_average_latency : %v, pileUpCount : %v ,PileUpLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount, latencyMap[customerKey].Value(), customerCountKey[destType])
 	}
 	//TODO : BackedOff Pass , Optimise it later
 	for _, customerKey := range sortedLatencyList {
@@ -397,7 +397,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			runningTimeCounter = runningTimeCounter - float64(jobsPickedUp)*latencyMap[customerKey].Value()
 		}
 		if customerBlockedMap[customerKey] {
-			pkgLogger.Infof("[BackedOff Loop] Customer : %v , PickUpCount : %v , Drained Value : %v", customerKey, customerPickUpCount[customerKey], customerPickUpCount[customerKey])
+			pkgLogger.Infof("[BackedOff Loop] Customer : %v , PickUpCount : %v , Drained Value : %v ,moving_average_latency : %v ", customerKey, customerPickUpCount[customerKey], customerPickUpCount[customerKey], latencyMap[customerKey].Value())
 		}
 	}
 
