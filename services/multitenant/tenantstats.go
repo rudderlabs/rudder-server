@@ -130,15 +130,10 @@ func GenerateSuccessRateMap(destType string) (map[string]float64, map[string]boo
 		if ok {
 			successCount := destTypeMap[destType]["success"]
 			failureCount := destTypeMap[destType]["failure"]
-			drainedCount := destTypeMap[destType]["drained"]
-			isBackedOff, _ := checkIfBackedOff(customer, destType)
+
 			// TODO : Maintain this logic cleanly
-			if failureCount == 0 && !isBackedOff {
+			if failureCount == 0 && successCount == 0 {
 				customerSuccessRate[customer] = 1
-			} else if failureCount == 0 && drainedCount != 0 {
-				customerSuccessRate[customer] = 1
-			} else if failureCount == 0 {
-				customerSuccessRate[customer] = 0
 			} else {
 				customerSuccessRate[customer] = float64(successCount) / float64(successCount+failureCount)
 			}
@@ -399,6 +394,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 			}
 			customerPickUpCount[customerKey] += jobsPickedUp
 			runningJobCount -= jobsPickedUp
+			runningTimeCounter = runningTimeCounter - float64(jobsPickedUp)*latencyMap[customerKey].Value()
 		}
 		if customerBlockedMap[customerKey] {
 			pkgLogger.Infof("[BackedOff Loop] Customer : %v , PickUpCount : %v , Drained Value : %v", customerKey, customerPickUpCount[customerKey], customerPickUpCount[customerKey])

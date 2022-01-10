@@ -649,7 +649,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := worker.trackStuckDelivery()
 				if time.Since(pickedAtTime) > worker.rt.routerTimeout {
-					respStatusCode, respBodyTemp = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
+					respStatusCode, respBody = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
 				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
@@ -710,7 +710,12 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					respBody = strings.Join(respBodyArr, " ")
 				}
 				ch <- struct{}{}
+				timeTaken := time.Since(startedAt)
+				if respStatusCode != types.RouterTimedOut {
+					worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken) / float64(time.Second))
+				}
 
+				worker.rt.logger.Debugf("moving_average_latency is %.8f for customer %v", float64(timeTaken)/float64(time.Second), workspaceID)
 				//Using reponse status code and body to get response code rudder router logic is based on.
 				// Works when transformer proxy in disabled
 				if !worker.rt.transformerProxy && destinationResponseHandler != nil {
@@ -721,16 +726,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 				worker.deliveryTimeStat.End()
 				deliveryLatencyStat.End()
-				timeTaken := time.Since(startedAt)
-				if respStatusCode != types.RouterTimedOut {
-					worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken) / float64(time.Second))
-				}
-				movingAverageLatencyStat := stats.NewTaggedStat("moving_average_latency", stats.GaugeType, stats.Tags{
-					"customer": workspaceID,
-					"destType": worker.rt.destName,
-				})
-				movingAverageLatencyStat.Gauge(float64(timeTaken) / float64(time.Second))
-				worker.rt.logger.Debugf("moving_average_latency is %.8f for customer %v", float64(timeTaken)/float64(time.Second), workspaceID)
+
 				// END: request to destination endpoint
 
 				if isSuccessStatus(respStatusCode) && !worker.rt.saveDestinationResponseOverride {
@@ -1457,12 +1453,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 	for customer, value := range rt.routerCustomerJobStatusCount {
 		for destType, count := range value {
-			countStat := stats.NewTaggedStat("removal_router_stat", stats.GaugeType, stats.Tags{
-				"customer": customer,
-				"destType": destType,
-			})
-			countStat.Gauge(count)
-			rt.logger.Debugf("removal_router_stat is %v for customer %v", count, customer)
+			rt.logger.Debugf("removal_router_stat is %v for customer %v destType %v", count, customer, destType)
 		}
 	}
 
