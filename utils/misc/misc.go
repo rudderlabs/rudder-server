@@ -745,20 +745,6 @@ func SingleQuoteLiteralJoin(slice []string) string {
 	return str
 }
 
-// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
-// of garage collection cycles completed.
-func PrintMemUsage() {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
-	pkgLogger.Debug("#########")
-	pkgLogger.Debugf("Alloc = %v MiB\n", bToMb(m.Alloc))
-	pkgLogger.Debugf("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
-	pkgLogger.Debugf("\tSys = %v MiB\n", bToMb(m.Sys))
-	pkgLogger.Debugf("\tNumGC = %v\n", m.NumGC)
-	pkgLogger.Debug("#########")
-}
-
 type BufferedWriter struct {
 	File   *os.File
 	Writer *bufio.Writer
