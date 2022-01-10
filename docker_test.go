@@ -14,15 +14,6 @@ import (
 	_ "encoding/json"
 	"flag"
 	"fmt"
-	"github.com/gofrs/uuid"
-	redigo "github.com/gomodule/redigo/redis"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/postgres"
-	"github.com/tidwall/gjson"
 	"html/template"
 	"io"
 	"log"
@@ -38,6 +29,16 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gofrs/uuid"
+	redigo "github.com/gomodule/redigo/redis"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"github.com/tidwall/gjson"
 
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis"
@@ -506,7 +507,7 @@ func run(m *testing.M) (int, error) {
 		Tag:          "latest",
 		ExposedPorts: []string{"9090"},
 		Env: []string{
-			"CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com",
+			"CONFIG_BACKEND_URL=https://api.rudderlabs.com",
 		},
 	})
 	if err != nil {
@@ -533,7 +534,7 @@ func run(m *testing.M) (int, error) {
 
 	os.Setenv("WORKSPACE_TOKEN", "1vLbwltztKUgpuFxmJlSe1esX8c")
 
-	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
+	os.Setenv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 
 	httpPortInt, err := freeport.GetFreePort()
 	if err != nil {
@@ -770,6 +771,7 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified user id")
 	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
+	require.Equal(t, gjson.GetBytes(body, "myuniqueid").Str, "identified user idanonymousId_1")
 
 }
 
@@ -1883,6 +1885,5 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 		require.Equal(t, err, nil)
 	}
 }
-
 
 // TODO: Verify in Live Evets API

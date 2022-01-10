@@ -33,8 +33,13 @@
                     "deleted": false,
                     "createdAt": "2021-08-27T06:49:38.546Z",
                     "updatedAt": "2021-08-27T06:49:38.546Z",
-                    "transformations":
-                    [],
+                    "transformations": [
+                        {
+                            "versionId": "23VLxFvyDw0MTQWtWCXocLBMj59",
+                            "config": {},
+                            "id": "23VJjP3bbHMzUhWjI7bvNL5S9xx"
+                        }
+                    ],
                     "destinationDefinition":
                     {
                         "config":
@@ -119,7 +124,13 @@
                     "deleted": false,
                     "createdAt": "2021-08-27T06:48:12.946Z",
                     "updatedAt": "2021-08-27T06:48:12.946Z",
-                    "transformations": [],
+                    "transformations": [
+                        {
+                            "versionId": "23VLxFvyDw0MTQWtWCXocLBMj59",
+                            "config": {},
+                            "id": "23VJjP3bbHMzUhWjI7bvNL5S9xx"
+                        }
+                    ],
                     "destinationDefinition": {
                         "config": {
                             "destConfig": {
@@ -170,7 +181,7 @@
                                 "reactnative",
                                 "cloudSource",
                                 "flutter",
-                                "warehouse"
+                                "cordova"
                             ],
                             "saveDestinationResponse": true
                         },
@@ -2162,6 +2173,9 @@
         },
         {
             "versionId": "ghi"
+        },
+        {
+            "versionId": "23Uxw7QEiOg8e0KkQV8LmNfWaWh"
         }
     ]
 }
