@@ -24,6 +24,14 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+const (
+	STATS_WORKER_IDLE_TIME                  = "worker_idle_time"
+	STATS_WORKER_CLAIM_PROCESSING_TIME      = "worker_claim_processing_time"
+	STATS_WORKER_CLAIM_PROCESSING_FAILED    = "worker_claim_processing_failed"
+	STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED = "worker_claim_processing_succeeded"
+	TAG_WORKERID                            = "workerId"
+)
+
 // Temporary store for processing staging file to load file
 type JobRunT struct {
 	job                  PayloadT
@@ -172,6 +180,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 	var stagingFileId = jobRun.job.StagingFileID
 
 	loadFileOutputChan := make(chan loadFileUploadOutputT, len(jobRun.outputFileWritersMap))
+	loadFileUploadTimer := jobRun.timerStat("load_file_upload_time")
 	uploadJobChan := make(chan *loadFileUploadJob, len(jobRun.outputFileWritersMap))
 	// close chan to avoid memory leak ranging over it
 	defer close(uploadJobChan)
@@ -187,11 +196,13 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 					return // stop further processing
 				default:
 					tableName := uploadJob.tableName
+					loadFileUploadStart := time.Now()
 					uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, uploadJob.outputFile, tableName)
 					if err != nil {
 						uploadErrorChan <- err
 						return
 					}
+					loadFileUploadTimer.Since(loadFileUploadStart)
 					loadFileStats, err := os.Stat(uploadJob.outputFile.GetLoadFile().Name())
 					if err != nil {
 						uploadErrorChan <- err
@@ -247,7 +258,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	defer file.Close()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
-	if job.DestinationType == "S3_DATALAKE" {
+	if misc.Contains(timeWindowDestinations, job.DestinationType) {
 		uploadLocation, err = uploader.Upload(file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 	} else {
 		uploadLocation, err = uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
@@ -330,13 +341,16 @@ func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo Col
 //
 
 func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
-
+	processStartTime := time.Now()
 	jobRun := JobRunT{
 		job:          job,
 		whIdentifier: warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 	}
 
 	defer jobRun.counterStat("staging_files_processed", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Count(1)
+	defer func() {
+		jobRun.timerStat("staging_files_total_processing_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Since(processStartTime)
+	}()
 	defer jobRun.cleanup()
 
 	pkgLogger.Debugf("[WH]: Starting processing staging file: %v at %s for %s", job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
@@ -657,11 +671,6 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	// return loadFileUploadOutputs, err
 }
 
-func freeWorker(workerIdx int) {
-	slaveWorkerRoutineBusy[workerIdx] = false
-	pkgLogger.Debugf("[WH]: Setting free slave worker %d: %v", workerIdx, slaveWorkerRoutineBusy)
-}
-
 func claim(workerIdx int, slaveID string) (claimedJob pgnotifier.ClaimT, claimed bool) {
 	pkgLogger.Debugf("[WH]: Attempting to claim job by slave worker-%v-%v", workerIdx, slaveID)
 	workerID := warehouseutils.GetSlaveWorkerId(workerIdx, slaveID)
@@ -670,12 +679,17 @@ func claim(workerIdx int, slaveID string) (claimedJob pgnotifier.ClaimT, claimed
 }
 
 func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
+	claimProcessTimeStart := time.Now()
+	defer func() {
+		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
+	} ()
 	handleErr := func(err error, claim pgnotifier.ClaimT) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponseT{
 			Err: err,
 		}
-		claim.ClaimResponseChan <- response
+		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
 
 	var job PayloadT
@@ -697,37 +711,45 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 		Err:     err,
 		Payload: output,
 	}
-	claimedJob.ClaimResponseChan <- response
+	if response.Err != nil {
+		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+	} else {
+		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+	}
+	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
 
 func setupSlave() {
-	slaveWorkerRoutineBusy = make([]bool, noOfSlaveWorkerRoutines)
 	slaveID := uuid.Must(uuid.NewV4()).String()
 	rruntime.Go(func() {
-		jobNotificationChannel, err := notifier.Subscribe(StagingFilesPGNotifierChannel, 2*noOfSlaveWorkerRoutines)
+		jobNotificationChannel, err := notifier.Subscribe(StagingFilesPGNotifierChannel, 4*noOfSlaveWorkerRoutines)
 		if err != nil {
 			panic(err)
 		}
-		for {
-			ev := <-jobNotificationChannel
-			pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workers: %v", ev, slaveWorkerRoutineBusy)
-			for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
-				if !slaveWorkerRoutineBusy[workerIdx] {
-					slaveWorkerRoutineBusy[workerIdx] = true
-					idx := workerIdx
+		for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
+			idx := workerIdx
+			rruntime.Go(func() {
+				// create tags and timers
+				workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)})
+				for {
+					// wait for a notification
+					workerIdleTimeStart := time.Now()
+					ev := <-jobNotificationChannel
+					workerIdleTimer.Since(workerIdleTimeStart)
+					pkgLogger.Debugf("[WH]: Notification recieved, event: %v, workerId: %v", ev, idx)
+
+					// claim job
 					claimedJob, claimed := claim(idx, slaveID)
 					if !claimed {
-						freeWorker(idx)
-						break
+						continue
 					}
 					pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
-					rruntime.Go(func() {
-						processClaimedJob(claimedJob, idx)
-						freeWorker(idx)
-					})
-					break
+
+					// process job
+					processClaimedJob(claimedJob, idx)
+					pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 				}
-			}
+			})
 		}
 	})
 }

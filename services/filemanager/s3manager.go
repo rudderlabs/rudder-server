@@ -248,6 +248,9 @@ func (manager *S3Manager) ListFilesWithPrefix(prefix string, maxItems int64) (fi
 	if err != nil {
 		return
 	}
+	if resp.IsTruncated != nil {
+		manager.Config.IsTruncated = *resp.IsTruncated
+	}
 	manager.Config.IsTruncated = *resp.IsTruncated
 	manager.Config.ContinuationToken = resp.NextContinuationToken
 	for _, item := range resp.Contents {
