@@ -648,7 +648,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				// TODO: remove trackStuckDelivery once we verify it is not needed,
 				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := worker.trackStuckDelivery()
-				if time.Since(pickedAtTime) > worker.rt.routerTimeout {
+
+				//Assuming 50% overhead
+				if time.Since(pickedAtTime) > 1.5*worker.rt.routerTimeout {
 					respStatusCode, respBody = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
 				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
