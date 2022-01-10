@@ -445,12 +445,12 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 			}
 
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
-			constraintsViolation := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
-			if ok && ((columnType != dataTypeInSchema) || (constraintsViolation.violated)) {
+			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
+			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.isViolated)) {
 				newColumnVal, ok := handleSchemaChange(dataTypeInSchema, columnType, columnVal)
-				if !ok || constraintsViolation.violated {
-					if constraintsViolation.violated {
-						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], constraintsViolation.violatedIdentifier)
+				if !ok || violatedConstraints.isViolated {
+					if violatedConstraints.isViolated {
+						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.violatedIdentifier)
 					} else {
 						eventLoader.AddEmptyColumn(columnName)
 					}
@@ -462,7 +462,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 					// add discardWriter to outputFileWritersMap
 					jobRun.outputFileWritersMap[discardsTable] = discardWriter
 
-					err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, constraintsViolation, discardWriter)
+					err = jobRun.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, discardWriter)
 
 					if err != nil {
 						pkgLogger.Errorf("[WH]: Failed to write to discards: %v", err)
@@ -754,11 +754,11 @@ func setupSlave() {
 	})
 }
 
-func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, cv *ConstraintsViolationT, discardWriter warehouseutils.LoadFileWriterI) error {
+func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, violatedConstraints *ConstraintsViolationT, discardWriter warehouseutils.LoadFileWriterI) error {
 	job := jobRun.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
-	if (hasID && hasReceivedAt) || cv.violated {
+	if (hasID && hasReceivedAt) || violatedConstraints.isViolated {
 		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, discardWriter)
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))

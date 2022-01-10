@@ -18,7 +18,7 @@ type ConstraintsI interface {
 }
 
 type ConstraintsViolationT struct {
-	violated           bool
+	isViolated         bool
 	violatedIdentifier string
 }
 
@@ -74,7 +74,7 @@ func ViolatedConstraints(destinationType string, brEvent *BatchRouterEventT, col
 	}
 	for _, constraint := range constraints {
 		cv = constraint.violates(brEvent, columnName)
-		if cv.violated {
+		if cv.isViolated {
 			return
 		}
 	}
@@ -83,7 +83,7 @@ func ViolatedConstraints(destinationType string, brEvent *BatchRouterEventT, col
 
 func (ic *IndexConstraintT) violates(brEvent *BatchRouterEventT, columnName string) (cv *ConstraintsViolationT) {
 	if brEvent.Metadata.Table != ic.TableName || columnName != ic.ColumnName {
-		return
+		return &ConstraintsViolationT{}
 	}
 	var concatenatedLength = 0
 	for _, column := range ic.IndexColumns {
@@ -100,7 +100,7 @@ func (ic *IndexConstraintT) violates(brEvent *BatchRouterEventT, columnName stri
 		}
 	}
 	return &ConstraintsViolationT{
-		violated:           concatenatedLength > ic.Limit,
+		isViolated:         concatenatedLength > ic.Limit,
 		violatedIdentifier: fmt.Sprintf(`%s-%s-`, strcase.ToKebab(warehouseutils.DiscardsTable), uuid.Must(uuid.NewV4()).String()),
 	}
 }
