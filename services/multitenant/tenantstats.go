@@ -3,6 +3,7 @@ package multitenant
 import (
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -286,6 +287,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 	multitenantStat.routerJobCountMutex.RLock()
 	defer multitenantStat.routerJobCountMutex.RUnlock()
 	runningJobCount := jobQueryBatchSize
+	pkgLogger.Debugf("Sorted Latency Map is : %v ", strings.Join(sortedLatencyList, ", "))
 	//TODO : Optimise the loop only for customers having jobs
 	for _, customerKey := range sortedLatencyList {
 		customerCountKey, ok := multitenantStat.RouterInputRates["router"][customerKey]
@@ -337,7 +339,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 				if customerPickUpCount[customerKey] == 0 {
 					delete(customerPickUpCount, customerKey)
 				}
-				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , moving_average_latency : %v ,InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount, destTypeCount.Value())
+				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , moving_average_latency : %v, routerInRare : %v ,InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount, latencyMap[customerKey].Value(), destTypeCount.Value())
 			}
 		}
 	}
