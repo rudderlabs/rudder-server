@@ -15,11 +15,14 @@ import (
 	"flag"
 	"fmt"
 	"github.com/gofrs/uuid"
+	redigo "github.com/gomodule/redigo/redis"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"github.com/tidwall/gjson"
 	"html/template"
 	"io"
 	"log"
@@ -38,7 +41,6 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis"
-	redigo "github.com/gomodule/redigo/redis"
 	_ "github.com/lib/pq"
 	"github.com/minio/minio-go"
 	"github.com/ory/dockertest"
@@ -47,15 +49,16 @@ import (
 	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
+
+type WHEventsCountMap map[string]int
 
 type PostgresTest struct {
 	resource    *dockertest.Resource
 	credentials *postgres.CredentialsT
 	db          *sql.DB
+	eventsMap   WHEventsCountMap
 	writeKey    string
 }
 
@@ -63,6 +66,7 @@ type ClickHouseTest struct {
 	resource    *dockertest.Resource
 	credentials *clickhouse.CredentialsT
 	db          *sql.DB
+	eventsMap   WHEventsCountMap
 	writeKey    string
 }
 
@@ -75,6 +79,7 @@ type ClickHouseClusterTest struct {
 	clickhouse04 *dockertest.Resource
 	credentials  *clickhouse.CredentialsT
 	db           *sql.DB
+	eventsMap    WHEventsCountMap
 	writeKey     string
 }
 
@@ -82,16 +87,15 @@ type MSSqlTest struct {
 	resource    *dockertest.Resource
 	credentials *mssql.CredentialsT
 	db          *sql.DB
+	eventsMap   WHEventsCountMap
 	writeKey    string
 }
 
-type whEventsCountMap map[string]int
-
 type WareHouseDestinationTest struct {
+	db               *sql.DB
+	whEventsCountMap WHEventsCountMap
 	writeKey         string
 	userId           string
-	whEventsCountMap whEventsCountMap
-	db               *sql.DB
 	schema           string
 }
 
@@ -932,6 +936,7 @@ func initWHConfig() {
 										END LOOP;
 								END ;
 								$$ LANGUAGE plpgsql`
+
 	config.Load()
 	logger.Init()
 	postgres.Init()
@@ -949,6 +954,18 @@ func SetWHPostgresDestination(pool *dockertest.Pool) (cleanup func()) {
 			User:     "rudder",
 			Host:     "localhost",
 			SslMode:  "disable",
+		},
+		eventsMap: WHEventsCountMap{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+			"gateway":       6,
+			"batchRT":       8,
 		},
 	}
 	pgTest := whTest.pgTest
@@ -1004,6 +1021,18 @@ func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 			SkipVerify:    "true",
 			TlsConfigName: "",
 		},
+		eventsMap: WHEventsCountMap{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+			"gateway":       6,
+			"batchRT":       8,
+		},
 	}
 	chTest := whTest.chTest
 	credentials := chTest.credentials
@@ -1038,7 +1067,7 @@ func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 		}
 		return chTest.db.Ping()
 	}); err != nil {
-		defer cleanup()
+		defer purgeResources()
 		panic(fmt.Errorf("Could not connect to warehouse clickhouse with error: %w\n", err))
 	}
 	cleanup = purgeResources
@@ -1058,6 +1087,18 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 			SkipVerify:    "true",
 			TlsConfigName: "",
 		},
+		eventsMap: WHEventsCountMap{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+			"gateway":       6,
+			"batchRT":       8,
+		},
 	}
 	chClusterTest := whTest.chClusterTest
 	credentials := chClusterTest.credentials
@@ -1068,6 +1109,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		panic(fmt.Errorf("Could not get working directory: %w", err))
 	}
 
+	var chSetupError error
 	if chClusterTest.network, err = pool.Client.CreateNetwork(dc.CreateNetworkOptions{
 		Name: "clickhouse-network",
 		IPAM: &dc.IPAMOptions{
@@ -1078,6 +1120,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 			},
 		},
 	}); err != nil {
+		chSetupError = err
 		log.Println("Could not create clickhouse cluster network: %w", err)
 	}
 
@@ -1087,6 +1130,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		Hostname:   "clickhouse-zookeeper",
 		Name:       "clickhouse-zookeeper",
 	}); err != nil {
+		chSetupError = err
 		log.Println("Could not create clickhouse cluster zookeeper: %w", err)
 	}
 
@@ -1103,6 +1147,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		Mounts:       []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/clickhouse01:/etc/clickhouse-server`, pwd)},
 		Links:        []string{"clickhouse-zookeeper"},
 	}); err != nil {
+		chSetupError = err
 		log.Println("Could not create clickhouse cluster 1: %w", err)
 	}
 	if chClusterTest.clickhouse02, err = pool.RunWithOptions(&dockertest.RunOptions{
@@ -1113,6 +1158,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		Mounts:     []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/clickhouse02:/etc/clickhouse-server`, pwd)},
 		Links:      []string{"clickhouse-zookeeper"},
 	}); err != nil {
+		chSetupError = err
 		log.Println("Could not create clickhouse cluster 2: %w", err)
 	}
 	if chClusterTest.clickhouse03, err = pool.RunWithOptions(&dockertest.RunOptions{
@@ -1123,6 +1169,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		Mounts:     []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/clickhouse03:/etc/clickhouse-server`, pwd)},
 		Links:      []string{"clickhouse-zookeeper"},
 	}); err != nil {
+		chSetupError = err
 		log.Println("Could not create clickhouse cluster 3: %w", err)
 	}
 	if chClusterTest.clickhouse04, err = pool.RunWithOptions(&dockertest.RunOptions{
@@ -1133,6 +1180,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		Mounts:     []string{fmt.Sprintf(`%s/testdata/warehouse/clickhouse/cluster/clickhouse04:/etc/clickhouse-server`, pwd)},
 		Links:      []string{"clickhouse-zookeeper"},
 	}); err != nil {
+		chSetupError = err
 		log.Println("Could not create clickhouse cluster 4: %w", err)
 	}
 
@@ -1144,6 +1192,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 					IPAddress: "172.23.0.10",
 				},
 			}); err != nil {
+				chSetupError = err
 				log.Println("Could not configure clickhouse clutser zookeeper network: %w", err)
 			}
 		}
@@ -1155,6 +1204,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 					IPAddress: "172.23.0.11",
 				},
 			}); err != nil {
+				chSetupError = err
 				log.Println("Could not configure clickhouse cluster 1 network: %w", err)
 			}
 		}
@@ -1165,6 +1215,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 					IPAddress: "172.23.0.12",
 				},
 			}); err != nil {
+				chSetupError = err
 				log.Println("Could not configure clickhouse cluster 2 network: %w", err)
 			}
 		}
@@ -1175,6 +1226,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 					IPAddress: "172.23.0.13",
 				},
 			}); err != nil {
+				chSetupError = err
 				log.Println("Could not configure clickhouse cluster 3 network: %w", err)
 			}
 		}
@@ -1185,6 +1237,7 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 					IPAddress: "172.23.0.14",
 				},
 			}); err != nil {
+				chSetupError = err
 				log.Println("Could not configure clickhouse cluster 4 network: %w", err)
 			}
 		}
@@ -1229,9 +1282,9 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 		}
 	}
 
-	if err != nil {
+	if chSetupError != nil {
 		defer purgeResources()
-		panic(fmt.Errorf("Could not create WareHouse ClickHouse Cluster: %v\n", err))
+		panic(fmt.Errorf("Could not create WareHouse ClickHouse Cluster: %v\n", chSetupError))
 	}
 
 	// Getting at which port the container is running
@@ -1263,6 +1316,18 @@ func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
 			User:     "SA",
 			Host:     "localhost",
 			SslMode:  "disable",
+		},
+		eventsMap: WHEventsCountMap{
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+			"gateway":       6,
+			"batchRT":       8,
 		},
 	}
 	mssqlTest := whTest.mssqlTest
@@ -1326,22 +1391,11 @@ func TestWHPostgresDestination(t *testing.T) {
 	pgTest := whTest.pgTest
 
 	whDestTest := &WareHouseDestinationTest{
-		writeKey: pgTest.writeKey,
-		userId:   "userId_postgres",
-		schema:   "postgres_wh_integration",
-		db:       pgTest.db,
-		whEventsCountMap: whEventsCountMap{
-			"identifies":    1,
-			"users":         1,
-			"tracks":        1,
-			"product_track": 1,
-			"pages":         1,
-			"screens":       1,
-			"aliases":       1,
-			"groups":        1,
-			"gateway":       6,
-			"batchRT":       8,
-		},
+		db:               pgTest.db,
+		whEventsCountMap: pgTest.eventsMap,
+		writeKey:         pgTest.writeKey,
+		userId:           "userId_postgres",
+		schema:           "postgres_wh_integration",
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
@@ -1356,22 +1410,11 @@ func TestWHClickHouseDestination(t *testing.T) {
 	chTest := whTest.chTest
 
 	whDestTest := &WareHouseDestinationTest{
-		writeKey: chTest.writeKey,
-		userId:   "userId_clickhouse",
-		schema:   "rudderdb",
-		db:       chTest.db,
-		whEventsCountMap: whEventsCountMap{
-			"identifies":    1,
-			"users":         1,
-			"tracks":        1,
-			"product_track": 1,
-			"pages":         1,
-			"screens":       1,
-			"aliases":       1,
-			"groups":        1,
-			"gateway":       6,
-			"batchRT":       8,
-		},
+		db:               chTest.db,
+		whEventsCountMap: chTest.eventsMap,
+		writeKey:         chTest.writeKey,
+		userId:           "userId_clickhouse",
+		schema:           "rudderdb",
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
@@ -1386,53 +1429,44 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 	chClusterTest := whTest.chClusterTest
 
 	whDestTest := &WareHouseDestinationTest{
-		writeKey: chClusterTest.writeKey,
-		userId:   "userId_clickhouse_cluster",
-		schema:   "rudderdb",
-		db:       chClusterTest.db,
-		whEventsCountMap: whEventsCountMap{
-			"identifies":    1,
-			"users":         1,
-			"tracks":        1,
-			"product_track": 1,
-			"pages":         1,
-			"screens":       1,
-			"aliases":       1,
-			"groups":        1,
-			"gateway":       6,
-			"batchRT":       8,
-		},
+		db:               chClusterTest.db,
+		whEventsCountMap: chClusterTest.eventsMap,
+		writeKey:         chClusterTest.writeKey,
+		userId:           "userId_clickhouse_cluster",
+		schema:           "rudderdb",
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
 
-	// TODO: Send Updated Warehouse Events and alter all cluster for new columns
-	//initWHClickHouseClusterModeSetup(t)
+	initWHClickHouseClusterModeSetup(t)
 
 	whDestTest.userId = "userId_clickhouse_cluster_1"
-	sendUpdatedWHEvents(whDestTest)
+	sendWHEvents(whDestTest)
+
+	// Update events count Map
+	whDestTest.whEventsCountMap = WHEventsCountMap{
+		"identifies":    2,
+		"users":         2,
+		"tracks":        2,
+		"product_track": 2,
+		"pages":         2,
+		"screens":       2,
+		"aliases":       2,
+		"groups":        2,
+		"gateway":       6,
+		"batchRT":       8,
+	}
 	whDestinationTest(t, whDestTest)
 }
 
 // Verify Event in WareHouse MSSQL
 func TestWHMssqlDestination(t *testing.T) {
 	whDestTest := &WareHouseDestinationTest{
-		writeKey: whTest.mssqlTest.writeKey,
-		userId:   "userId_mssql",
-		schema:   "mssql_wh_integration",
-		db:       whTest.mssqlTest.db,
-		whEventsCountMap: whEventsCountMap{
-			"identifies":    1,
-			"users":         1,
-			"tracks":        1,
-			"product_track": 1,
-			"pages":         1,
-			"screens":       1,
-			"aliases":       1,
-			"groups":        1,
-			"gateway":       6,
-			"batchRT":       8,
-		},
+		db:               whTest.mssqlTest.db,
+		whEventsCountMap: whTest.mssqlTest.eventsMap,
+		writeKey:         whTest.mssqlTest.writeKey,
+		userId:           "userId_mssql",
+		schema:           "mssql_wh_integration",
 	}
 	sendWHEvents(whDestTest)
 	whDestinationTest(t, whDestTest)
@@ -1843,7 +1877,7 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 
 	// Create distribution views for tables
 	for _, table := range tables {
-		sqlStatement := fmt.Sprintf("CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed('rudder_cluster', rudderdb, %[1]s_shard, cityHash64(id));", table)
+		sqlStatement := fmt.Sprintf("CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed('rudder_cluster', rudderdb, %[1]s_shard, cityHash64(concat(toString(received_at), id)));", table)
 		_, err := chClusterTest.db.Exec(sqlStatement)
 		require.Equal(t, err, nil)
 	}
