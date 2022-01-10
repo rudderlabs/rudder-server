@@ -2491,6 +2491,8 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 func (jd *HandleT) backupDSLoop(ctx context.Context) {
 	sleepMultiplier := time.Duration(1)
 
+	jd.logger.Info("BackupDS loop is running")
+
 	for {
 		select {
 		case <-time.After(sleepMultiplier * backupCheckSleepDuration):
@@ -2498,7 +2500,6 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 			return
 		}
 
-		jd.logger.Info("BackupDS check:Start")
 		backupDSRange := jd.getBackupDSRange()
 		// check if non empty dataset is present to backup
 		// else continue

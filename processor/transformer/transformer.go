@@ -258,7 +258,6 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	trans.receivedStat.Count(len(outClientEvents))
 	trans.failedStat.Count(len(failedEvents))
 	trans.perfStats.Rate(len(clientEvents), time.Since(s))
-	trans.perfStats.Print()
 
 	return ResponseT{
 		Events:       outClientEvents,
