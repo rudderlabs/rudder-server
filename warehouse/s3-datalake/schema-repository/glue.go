@@ -121,12 +121,12 @@ func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[stri
 	timeWindowFormat := gl.Warehouse.Destination.TimeWindowFormat
 	if timeWindowFormat != "" {
 		// Assumes a well-formed partitioning format
-		columnName := strings.Split(timeWindowFormat, "=")
-		tableInput.PartitionKeys = []*glue.Column{&glue.Column{Name: aws.String(timeWindowFormat), Type: aws.String(columName)}}
+		columnName := strings.Split(timeWindowFormat, "=")[0]
+		tableInput.PartitionKeys = []*glue.Column{&glue.Column{Name: aws.String(timeWindowFormat), Type: aws.String(columnName)}}
 	}
 	input := glue.CreateTableInput{
-		DatabaseName:     aws.String(gl.Namespace),
-		TableInput: tableInput
+		DatabaseName: aws.String(gl.Namespace),
+		TableInput:   tableInput,
 	}
 	// add storage descriptor to create table request
 	input.TableInput.StorageDescriptor = gl.getStorageDescriptor(tableName, columnMap)
