@@ -1335,7 +1335,7 @@ func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
 	cleanup = func() {}
 
 	var err error
-	if mssqlTest.resource, err = pool.Run("mcr.microsoft.com/mssql/server", "2019-latest", []string{
+	if mssqlTest.resource, err = pool.Run("mcr.microsoft.com/mssql/server", "2019-CU10-ubuntu-20.04", []string{
 		fmt.Sprintf("ACCEPT_EULA=%s", "Y"),
 		fmt.Sprintf("SA_PASSWORD=%s", credentials.Password),
 		fmt.Sprintf("SA_DB=%s", credentials.DbName),
