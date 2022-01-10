@@ -1444,6 +1444,7 @@ func TestWHClickHouseClusterDestination(t *testing.T) {
 	sendWHEvents(whDestTest)
 
 	// Update events count Map
+	// This is required as because of the cluster mode setup and distributed view, events are getting duplicated.
 	whDestTest.whEventsCountMap = WHEventsCountMap{
 		"identifies":    2,
 		"users":         2,
