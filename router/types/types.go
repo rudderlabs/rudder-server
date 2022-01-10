@@ -45,6 +45,7 @@ type JobMetadataT struct {
 	OAuthAccessToken string       `json:"oauthAccessToken"`
 	JobT             *jobsdb.JobT `json:"jobsT"`
 	PickedAtTime     time.Time    `json:"pickedAtTime"`
+	ResultSetID      int64        `json:"resultSetID"`
 }
 
 //TransformMessageT is used to pass message to the transformer workers

@@ -135,6 +135,9 @@ type HandleT struct {
 
 	customerCount  map[string]int
 	earliestJobMap map[string]time.Time
+
+	currentResultSet *resultSetT
+	lastResultSet    *resultSetT
 }
 
 type jobResponseT struct {
@@ -168,6 +171,7 @@ type workerMessageT struct {
 	job                *jobsdb.JobT
 	throttledAtTime    time.Time
 	workerAssignedTime time.Time
+	resultSetID        int64
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -194,6 +198,8 @@ type workerT struct {
 	jobCountsByDestAndUser     map[string]*destJobCountsT
 	throttledAtTime            time.Time
 	encounteredRouterTransform bool
+
+	localResultSet *resultSetT
 }
 
 type destJobCountsT struct {
@@ -229,6 +235,40 @@ type failureMetric struct {
 	RouterAttemptNum  int             `json:"router_attempt_num"`
 	ErrorCode         string          `json:"error_code"`
 	ErrorResponse     json.RawMessage `json:"error_response"`
+}
+
+type resultSetT struct {
+	resultSetLock      sync.RWMutex
+	resultSetID        int64
+	resultSetBeginTime time.Time
+}
+
+func (rt *HandleT) incrLastResultSetID() {
+	rt.lastResultSet.resultSetLock.Lock()
+	defer rt.lastResultSet.resultSetLock.Unlock()
+	rt.lastResultSet.resultSetID++
+}
+
+func (rt *HandleT) getLastResultSetID() int64 {
+	rt.lastResultSet.resultSetLock.RLock()
+	defer rt.lastResultSet.resultSetLock.RUnlock()
+	return rt.lastResultSet.resultSetID
+}
+
+func (rt *HandleT) setCurrentResultSet(id int64) *resultSetT {
+	rt.currentResultSet.resultSetLock.Lock()
+	defer rt.currentResultSet.resultSetLock.Unlock()
+	if rt.currentResultSet.resultSetID < id {
+		rt.currentResultSet.resultSetID = id
+		rt.currentResultSet.resultSetBeginTime = time.Now()
+	}
+	return rt.currentResultSet
+}
+
+func (rt *HandleT) getCurrentResultSet() *resultSetT {
+	rt.currentResultSet.resultSetLock.RLock()
+	defer rt.currentResultSet.resultSetLock.RUnlock()
+	return rt.currentResultSet
 }
 
 func isSuccessStatus(status int) bool {
@@ -423,6 +463,7 @@ func (worker *workerT) workerProcess() {
 				TransformAt:      parameters.TransformAt,
 				JobT:             job,
 				PickedAtTime:     message.workerAssignedTime,
+				ResultSetID:      message.resultSetID,
 				WorkspaceId:      parameters.WorkspaceId,
 			}
 
@@ -627,7 +668,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				diagnosisStartTime := time.Now()
 				sourceID := destinationJob.JobMetadataArray[0].SourceID
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
-				pickedAtTime := destinationJob.JobMetadataArray[0].PickedAtTime
+				//pickedAtTime := destinationJob.JobMetadataArray[0].PickedAtTime
 
 				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
 				transformAt := destinationJob.JobMetadataArray[0].TransformAt
@@ -649,9 +690,17 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := worker.trackStuckDelivery()
 
+				resultSetID := destinationJob.JobMetadataArray[0].ResultSetID
+				if worker.localResultSet.resultSetID < resultSetID {
+					resultSet := worker.rt.setCurrentResultSet(resultSetID)
+					worker.localResultSet.resultSetID = resultSet.resultSetID
+					worker.localResultSet.resultSetBeginTime = resultSet.resultSetBeginTime
+				}
+
 				//Assuming 50% overhead
-				if time.Since(pickedAtTime) > int64(1.5*float64(worker.rt.routerTimeout)) {
+				if resultSetID < worker.currentResultSet.resultSetID || time.Since(worker.currentResultSet.resultSetBeginTime) > time.Duration(1.3*float64(worker.rt.routerTimeout)) {
 					respStatusCode, respBody = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
+
 				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
@@ -1186,6 +1235,7 @@ func (rt *HandleT) initWorkers() {
 			routerProxyStat:           stats.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
 			abortedUserIDMap:          make(map[string]int),
 			jobCountsByDestAndUser:    make(map[string]*destJobCountsT),
+			localResultSet:            &resultSetT{},
 		}
 		rt.workers[i] = worker
 
@@ -1752,6 +1802,7 @@ func (rt *HandleT) readAndProcess() int {
 		customerCountStat.Count(count)
 		//note that this will give an aggregated count
 	}
+	rt.incrLastResultSetID()
 	nonTerminalList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State, jobsdb.Failed.State}}, rt.maxDSQuerySize)
 	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
 
@@ -1880,7 +1931,7 @@ func (rt *HandleT) readAndProcess() int {
 
 	//Send the jobs to the jobQ
 	for _, wrkJob := range toProcess {
-		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime, workerAssignedTime: time.Now()}
+		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime, workerAssignedTime: time.Now(), resultSetID: rt.getLastResultSetID()}
 	}
 
 	if len(toProcess) == 0 {
@@ -1923,6 +1974,8 @@ func Init() {
 //Setup initializes this module
 func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
 
+	rt.currentResultSet = &resultSetT{}
+	rt.lastResultSet = &resultSetT{}
 	rt.backendConfig = backendConfig
 	rt.generatorPauseChannel = make(chan *PauseT)
 	rt.generatorResumeChannel = make(chan bool)
