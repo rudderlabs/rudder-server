@@ -136,8 +136,9 @@ type HandleT struct {
 	customerCount  map[string]int
 	earliestJobMap map[string]time.Time
 
-	currentResultSet *resultSetT
-	lastResultSet    *resultSetT
+	resultSetMeta map[string]*resultSetT
+	resultSetLock sync.RWMutex
+	lastResultSet *resultSetT
 }
 
 type jobResponseT struct {
@@ -256,19 +257,40 @@ func (rt *HandleT) getLastResultSetID() int64 {
 }
 
 func (rt *HandleT) setCurrentResultSet(id int64) *resultSetT {
-	rt.currentResultSet.resultSetLock.Lock()
-	defer rt.currentResultSet.resultSetLock.Unlock()
-	if rt.currentResultSet.resultSetID < id {
-		rt.currentResultSet.resultSetID = id
-		rt.currentResultSet.resultSetBeginTime = time.Now()
+	rt.resultSetLock.Lock()
+	defer rt.resultSetLock.Unlock()
+	val, ok := rt.resultSetMeta[strconv.FormatInt(id, 10)]
+	if !ok {
+		val = &resultSetT{}
+		val.resultSetID = id
+		val.resultSetBeginTime = time.Now()
+		rt.resultSetMeta[strconv.FormatInt(id, 10)] = val
 	}
-	return rt.currentResultSet
-}
 
-func (rt *HandleT) getCurrentResultSet() *resultSetT {
-	rt.currentResultSet.resultSetLock.RLock()
-	defer rt.currentResultSet.resultSetLock.RUnlock()
-	return rt.currentResultSet
+	//Cleanup the resultSetMeta
+	minResultSetID := int64(math.MaxInt64)
+	for i := 0; i < rt.noOfWorkers; i++ {
+		tmpID := rt.workers[i].localResultSet.resultSetID
+		if minResultSetID > tmpID {
+			minResultSetID = tmpID
+		}
+	}
+
+	keys := make([]string, 0, len(rt.resultSetMeta))
+	for key := range rt.resultSetMeta {
+		keys = append(keys, key)
+	}
+
+	for _, key := range keys {
+		rsID, err := strconv.ParseInt(key, 10, 64)
+		if err != nil {
+			panic("Error: resultSetKey not an integer")
+		}
+		if rsID < minResultSetID {
+			delete(rt.resultSetMeta, key)
+		}
+	}
+	return val
 }
 
 func isSuccessStatus(status int) bool {
@@ -697,8 +719,14 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					worker.localResultSet.resultSetBeginTime = resultSet.resultSetBeginTime
 				}
 
-				//Assuming 30% overhead
-				if resultSetID < worker.localResultSet.resultSetID || time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(1.3*float64(worker.rt.routerTimeout)) {
+				if resultSetID < worker.localResultSet.resultSetID {
+					worker.rt.logger.Debugf("Will drop with 1113 because of lower resultSetID %v", destinationJob.JobMetadataArray[0].JobID)
+				}
+
+				if time.Since(worker.localResultSet.resultSetBeginTime) > worker.rt.routerTimeout {
+					worker.rt.logger.Debugf("Will drop with 1113 because of time expiry %v", destinationJob.JobMetadataArray[0].JobID)
+				}
+				if resultSetID < worker.localResultSet.resultSetID || time.Since(worker.localResultSet.resultSetBeginTime) > worker.rt.routerTimeout {
 					respStatusCode, respBody = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
 
 				} else if worker.rt.customDestinationManager != nil {
@@ -1976,7 +2004,7 @@ func Init() {
 //Setup initializes this module
 func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
 
-	rt.currentResultSet = &resultSetT{}
+	rt.resultSetMeta = make(map[string]*resultSetT)
 	rt.lastResultSet = &resultSetT{}
 	rt.backendConfig = backendConfig
 	rt.generatorPauseChannel = make(chan *PauseT)
