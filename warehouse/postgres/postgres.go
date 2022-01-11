@@ -95,6 +95,10 @@ type sslParamsT struct {
 	id         string
 }
 
+func (ssl *sslParamsT) getFolderName() (folderName string) {
+	return fmt.Sprintf("/tmp/ssl-files-%s", ssl.id)
+}
+
 func (ssl *sslParamsT) saveToFileSystem() {
 	///sslrootcert=server-ca.pem sslcert=client-cert.pem sslkey=client-key.pem
 	if ssl.id != "" {
@@ -102,7 +106,7 @@ func (ssl *sslParamsT) saveToFileSystem() {
 	}
 	ssl.id = uuid.Must(uuid.NewV4()).String()
 	var err error
-	sslBasePath := fmt.Sprintf("/tmp/ssl-files-%s", ssl.id)
+	sslBasePath := ssl.getFolderName()
 	if err = os.MkdirAll(sslBasePath, 700); err != nil {
 		panic(fmt.Sprintf("Error creating ssl-files root directory %s", err))
 	}
@@ -138,7 +142,7 @@ func connect(cred credentialsT) (*sql.DB, error) {
 		cred.dbName,
 		cred.sslMode)
 	if cred.sslMode == verifyCA {
-		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.sslParams.id)
+		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.sslParams.getFolderName())
 	}
 
 	var err error
