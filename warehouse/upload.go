@@ -1622,7 +1622,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 		// }
 
 		// td : add prefix to payload for s3 dest
-		var messages []pgnotifier.MessageT
+		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
 			payload := PayloadT{
 				UploadID:             job.upload.ID,
@@ -1655,14 +1655,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 			if err != nil {
 				panic(err)
 			}
-			message := pgnotifier.MessageT{
-				Payload: payloadJSON,
-			}
-			messages = append(messages, message)
+			messages = append(messages, payloadJSON)
 		}
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		ch, err := job.pgNotifier.Publish(StagingFilesPGNotifierChannel, messages, job.upload.Priority)
+		ch, err := job.pgNotifier.Publish(messages, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}
