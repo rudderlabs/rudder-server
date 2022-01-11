@@ -685,13 +685,22 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 			continue
 		}
 
+		wg := sync.WaitGroup{}
+		wh.configSubscriberLock.RLock()
 		for _, warehouse := range wh.warehouses {
-			pkgLogger.Debugf("[WH] Processing Jobs for warehouse: %s", warehouse.Identifier)
-			err := wh.createJobs(warehouse)
-			if err != nil {
-				pkgLogger.Errorf("[WH] Failed to process warehouse Jobs: %v", err)
-			}
+			w := warehouse
+			wg.Add(1)
+			rruntime.Go(func() {
+				defer wg.Done()
+				pkgLogger.Debugf("[WH] Processing Jobs for warehouse: %s", w.Identifier)
+				err := wh.createJobs(w)
+				if err != nil {
+					pkgLogger.Errorf("[WH] Failed to process warehouse Jobs: %v", err)
+				}
+			})
 		}
+		wh.configSubscriberLock.RUnlock()
+		wg.Wait()
 
 		select {
 		case <-ctx.Done():
