@@ -628,10 +628,6 @@ func SortedStructSliceValues(input interface{}, filedName string) []string {
 	return keys
 }
 
-func bToMb(b uint64) uint64 {
-	return b / 1024 / 1024
-}
-
 func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 	replacedStr := str
 	for regex, substitute := range expList {
