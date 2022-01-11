@@ -91,29 +91,26 @@ type sslParamsT struct {
 	serverCa   string
 	clientCert string
 	clientKey  string
-	_id        string
 }
 
-func (ssl *sslParamsT) saveToFileSystem() {
+func (ssl *sslParamsT) saveToFileSystem() (sslFolderBasePath string) {
 	///sslrootcert=server-ca.pem sslcert=client-cert.pem sslkey=client-key.pem
-	if ssl._id != "" {
-		return
-	}
-	ssl._id = uuid.Must(uuid.NewV4()).String()
+	_id := uuid.Must(uuid.NewV4()).String()
 	var err error
-	sslBasePath := fmt.Sprintf("/tmp/ssl-files-%s", ssl._id)
+	sslBasePath := fmt.Sprintf("/tmp/ssl-files-%s", _id)
 	if err = os.MkdirAll(sslBasePath, 700); err != nil {
-		panic(fmt.Sprint("Error creating ssl-files root directory %s", err))
+		panic(fmt.Sprintf("Error creating ssl-files root directory %s", err))
 	}
-	if err = ioutil.WriteFile(fmt.Sprint("%s/server-ca.pem", sslBasePath), []byte(ssl.serverCa), 600); err != nil {
+	if err = ioutil.WriteFile(fmt.Sprintf("%s/server-ca.pem", sslBasePath), []byte(ssl.serverCa), 600); err != nil {
 		panic(fmt.Sprintf("Error persisting server-ca.pem file to file system %s", err))
 	}
-	if err = ioutil.WriteFile(fmt.Sprint("%s/client-cert.pem", sslBasePath), []byte(ssl.clientCert), 600); err != nil {
+	if err = ioutil.WriteFile(fmt.Sprintf("%s/client-cert.pem", sslBasePath), []byte(ssl.clientCert), 600); err != nil {
 		panic(fmt.Sprintf("Error persisting client-cert.pem file to file system %s", err))
 	}
-	if err = ioutil.WriteFile(fmt.Sprint("%s/client-key.pem", sslBasePath), []byte(ssl.clientKey), 600); err != nil {
+	if err = ioutil.WriteFile(fmt.Sprintf("%s/client-key.pem", sslBasePath), []byte(ssl.clientKey), 600); err != nil {
 		panic(fmt.Sprintf("Error persisting client-key.pem file to file system %s", err))
 	}
+	return sslBasePath
 }
 
 var primaryKeyMap = map[string]string{
