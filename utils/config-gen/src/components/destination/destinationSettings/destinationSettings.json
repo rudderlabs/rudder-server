@@ -1165,11 +1165,11 @@
         {
           "type": "textInput",
           "preRequisiteField": {
-            "name": "singleSelect",
+            "name": "sslMode",
             "selectedValue": "verify-ca"
           },
           "label": "Client Key Pem File",
-          "value": "client-key-pem",
+          "value": "clientKey",
           "regex": "-----BEGIN RSA PRIVATE KEY-----.*-----END RSA PRIVATE KEY-----",
           "required": true,
           "placeholder": "-----BEGIN RSA PRIVATE KEY-----",
@@ -1182,7 +1182,7 @@
             "selectedValue": "verify-ca"
           },
           "label": "Client Cert Pem File",
-          "value": "client-cert-pem",
+          "value": "clientCert",
           "regex": "-----BEGIN CERTIFICATE-----.*-----END CERTIFICATE-----",
           "required": true,
           "placeholder": "-----BEGIN CERTIFICATE-----",
@@ -1195,7 +1195,7 @@
             "selectedValue": "verify-ca"
           },
           "label": "Server CA Pem File",
-          "value": "server-ca-pem",
+          "value": "serverCA",
           "regex": "-----BEGIN CERTIFICATE-----.*-----END CERTIFICATE-----",
           "required": true,
           "placeholder": "-----BEGIN CERTIFICATE-----",
