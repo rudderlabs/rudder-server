@@ -408,63 +408,69 @@ func GetSQLTimestamp(t time.Time) string {
 	return t.Format(SQLTimeFormat)
 }
 
-// RunMaintenanceWorker starts goroutine to retrigger zombie jobs
+// RunMaintenanceWorker (blocking - to be called from go routine) retriggers zombie jobs
 // which were left behind by dead workers in executing state
-func (notifier *PgNotifierT) StartMaintenanceWorker(ctx context.Context) {
+//
+func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
 	maintenanceWorkerLockID := murmur3.Sum32([]byte(queueName))
 	maintenanceWorkerLock, err := pglock.NewLock(ctx, int64(maintenanceWorkerLockID), notifier.dbHandle)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	go misc.WithBugsnag(func() error {
-		for {
-			locked, err := maintenanceWorkerLock.Lock(ctx)
-			if err != nil {
-				pkgLogger.Errorf("Received error trying to acquire maintenance worker lock %v ", err)
-			}
-			if locked {
-				defer maintenanceWorkerLock.Unlock(ctx)
-				break
-			}
-			time.Sleep(jobOrphanTimeout / 5)
+	for {
+		locked, err := maintenanceWorkerLock.Lock(ctx)
+		if err != nil {
+			pkgLogger.Errorf("Received error trying to acquire maintenance worker lock %v ", err)
 		}
-		for {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-time.After(jobOrphanTimeout / 5):
-			}
+		if locked {
+			defer maintenanceWorkerLock.Unlock(ctx)
+			break
+		}
 
-			stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[3]s',
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(jobOrphanTimeout / 5):
+		}
+	}
+	for {
+
+		stmt := fmt.Sprintf(`UPDATE %[1]s SET status='%[3]s',
  								updated_at = '%[2]s'
  								WHERE id IN (
  									SELECT id FROM %[1]s
  									WHERE status='%[4]s' AND last_exec_time <= NOW() - INTERVAL '%[5]v seconds'
  									FOR UPDATE SKIP LOCKED
  								) RETURNING id`,
-				queueName,
-				GetCurrentSQLTimestamp(),
-				WaitingState,
-				ExecutingState,
-				int(jobOrphanTimeout/time.Second))
-			pkgLogger.Debugf("PgNotifier: retriggering zombie jobs: %v", stmt)
-			rows, err := notifier.dbHandle.Query(stmt)
-			if err != nil {
-				panic(err)
-			}
-			var ids []int64
-			for rows.Next() {
-				var id int64
-				err := rows.Scan(&id)
-				if err != nil {
-					pkgLogger.Errorf("PgNotifier: Error scanning returned id from retriggered jobs: %v", err)
-					continue
-				}
-				ids = append(ids, id)
-			}
-			rows.Close()
-			pkgLogger.Debugf("PgNotifier: Retriggerd job ids: %v", ids)
+			queueName,
+			GetCurrentSQLTimestamp(),
+			WaitingState,
+			ExecutingState,
+			int(jobOrphanTimeout/time.Second))
+		pkgLogger.Debugf("PgNotifier: retriggering zombie jobs: %v", stmt)
+		rows, err := notifier.dbHandle.Query(stmt)
+		if err != nil {
+			panic(err)
 		}
-	})()
+		var ids []int64
+		for rows.Next() {
+			var id int64
+			err := rows.Scan(&id)
+			if err != nil {
+				pkgLogger.Errorf("PgNotifier: Error scanning returned id from retriggered jobs: %v", err)
+				continue
+			}
+			ids = append(ids, id)
+		}
+		rows.Close()
+		pkgLogger.Debugf("PgNotifier: Retriggered job ids: %v", ids)
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(jobOrphanTimeout / 5):
+		}
+
+	}
 
 }

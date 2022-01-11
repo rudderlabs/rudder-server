@@ -1712,7 +1712,9 @@ func Start(ctx context.Context, app app.Interface) error {
 
 	if isSlave() {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
-		setupSlave(ctx)
+		g.Go(misc.WithBugsnag(func() error {
+			return setupSlave(ctx)
+		}))
 	}
 
 	if isMaster() {

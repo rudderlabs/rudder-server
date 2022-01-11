@@ -707,7 +707,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	notifier.UpdateClaimedEvent(claimedJob.ID, &response)
 }
 
-func setupSlave(ctx context.Context) {
+func setupSlave(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	slaveID := uuid.Must(uuid.NewV4()).String()
@@ -730,7 +730,10 @@ func setupSlave(ctx context.Context) {
 			return nil
 		}))
 	}
-	notifier.StartMaintenanceWorker(ctx)
+	g.Go(misc.WithBugsnag(func() error {
+		return notifier.RunMaintenanceWorker(ctx)
+	}))
+	return g.Wait()
 }
 
 func (jobRun *JobRunT) handleDiscardTypes(tableName string, columnName string, columnVal interface{}, columnData DataT, discardWriter warehouseutils.LoadFileWriterI) error {
