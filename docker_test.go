@@ -318,12 +318,11 @@ func run(m *testing.M) (int, error) {
 
 	KAFKA_ADVERTISED_LISTENERS := fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=INTERNAL://broker:9090,EXTERNAL://localhost:%s", strconv.Itoa(localhostPortInt))
 	KAFKA_LISTENERS := "KAFKA_LISTENERS=INTERNAL://broker:9090,EXTERNAL://:9092"
-
 	log.Println("KAFKA_ADVERTISED_LISTENERS", KAFKA_ADVERTISED_LISTENERS)
 
 	resourceKafka, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "confluentinc/cp-kafka",
-		Tag:        "latest",
+		Tag:        "7.0.0",
 		NetworkID:  network.ID,
 		Hostname:   "broker",
 		PortBindings: map[dc.Port][]dc.PortBinding{

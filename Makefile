@@ -32,6 +32,7 @@ ifeq ($(RACE_ENABLED), TRUE)
 endif
 	$(GO) build $(BUILD_OPTIONS) -a -installsuffix cgo -ldflags="$(LDFLAGS)"
 	$(GO) build -o build/wait-for-go/wait-for-go build/wait-for-go/wait-for.go
+	$(GO) build -o build/regulation-worker ./regulation-worker/cmd/
 
 run: prepare-build ## Run rudder-server using go run
 	$(GO) run main.go

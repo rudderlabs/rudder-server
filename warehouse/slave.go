@@ -258,7 +258,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	defer file.Close()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
-	if job.DestinationType == "S3_DATALAKE" {
+	if misc.Contains(timeWindowDestinations, job.DestinationType) {
 		uploadLocation, err = uploader.Upload(file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 	} else {
 		uploadLocation, err = uploader.Upload(file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
@@ -677,7 +677,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 			Err: err,
 		}
 		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
-		notifier.UpdateClaimedEvent(claimedJob.ID, &response)
+		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
 
 	var job PayloadT
@@ -704,7 +704,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	} else {
 		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
 	}
-	notifier.UpdateClaimedEvent(claimedJob.ID, &response)
+	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
 
 func setupSlave(ctx context.Context) error {
