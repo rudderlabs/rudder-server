@@ -282,8 +282,7 @@ func getCorrectedJobsPickupCount(customerKey string, destType string, jobsPicked
 }
 func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]bool) map[string]int {
 	customerPickUpCount := make(map[string]int)
-	//Adding 15% overhead
-	runningTimeCounter := 0.85 * float64(noOfWorkers) * float64(routerTimeOut) / float64(time.Second)
+	runningTimeCounter := float64(noOfWorkers) * float64(routerTimeOut) / float64(time.Second)
 	customerBlockedMap := make(map[string]bool)
 	multitenantStat.routerJobCountMutex.RLock()
 	defer multitenantStat.routerJobCountMutex.RUnlock()

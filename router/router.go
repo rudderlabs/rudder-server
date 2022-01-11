@@ -714,9 +714,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 				resultSetID := destinationJob.JobMetadataArray[0].ResultSetID
 				if worker.localResultSet.resultSetID < resultSetID {
-					resultSet := worker.rt.setCurrentResultSet(resultSetID)
-					worker.localResultSet.resultSetID = resultSet.resultSetID
-					worker.localResultSet.resultSetBeginTime = resultSet.resultSetBeginTime
+					//resultSet := worker.rt.setCurrentResultSet(resultSetID)
+					worker.localResultSet.resultSetID = resultSetID
+					worker.localResultSet.resultSetBeginTime = time.Now()
 				}
 
 				if resultSetID < worker.localResultSet.resultSetID {
