@@ -39,6 +39,7 @@ const (
 	serverCAPem   = "serverCA"
 	clientSSLCert = "clientCert"
 	clientSSLKey  = "clientKey"
+	verifyCA      = "verify-ca"
 )
 
 const PROVIDER = "POSTGRES"
@@ -91,13 +92,17 @@ type sslParamsT struct {
 	serverCa   string
 	clientCert string
 	clientKey  string
+	id         string
 }
 
-func (ssl *sslParamsT) saveToFileSystem() (sslFolderBasePath string) {
+func (ssl *sslParamsT) saveToFileSystem() {
 	///sslrootcert=server-ca.pem sslcert=client-cert.pem sslkey=client-key.pem
-	_id := uuid.Must(uuid.NewV4()).String()
+	if ssl.id != "" {
+		return
+	}
+	ssl.id = uuid.Must(uuid.NewV4()).String()
 	var err error
-	sslBasePath := fmt.Sprintf("/tmp/ssl-files-%s", _id)
+	sslBasePath := fmt.Sprintf("/tmp/ssl-files-%s", ssl.id)
 	if err = os.MkdirAll(sslBasePath, 700); err != nil {
 		panic(fmt.Sprintf("Error creating ssl-files root directory %s", err))
 	}
@@ -110,7 +115,7 @@ func (ssl *sslParamsT) saveToFileSystem() (sslFolderBasePath string) {
 	if err = ioutil.WriteFile(fmt.Sprintf("%s/client-key.pem", sslBasePath), []byte(ssl.clientKey), 600); err != nil {
 		panic(fmt.Sprintf("Error persisting client-key.pem file to file system %s", err))
 	}
-	return sslBasePath
+
 }
 
 var primaryKeyMap = map[string]string{
@@ -132,6 +137,9 @@ func connect(cred credentialsT) (*sql.DB, error) {
 		cred.port,
 		cred.dbName,
 		cred.sslMode)
+	if cred.sslMode == verifyCA {
+		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.sslParams.id)
+	}
 
 	var err error
 	var db *sql.DB
@@ -154,11 +162,12 @@ func loadConfig() {
 func (pg *HandleT) getConnectionCredentials() credentialsT {
 	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
 	var sslParams sslParamsT
-	if sslMode == "verify-ca" {
+	if sslMode == verifyCA {
 		sslParams = sslParamsT{
 			warehouseutils.GetConfigValue(serverCAPem, pg.Warehouse),
 			warehouseutils.GetConfigValue(clientSSLCert, pg.Warehouse),
 			warehouseutils.GetConfigValue(clientSSLKey, pg.Warehouse),
+			"",
 		}
 		sslParams.saveToFileSystem()
 	}
