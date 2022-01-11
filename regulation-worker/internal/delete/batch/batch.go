@@ -32,7 +32,7 @@ import (
 var (
 	pkgLogger             = logger.NewLogger().Child("batch")
 	regexRequiredSuffix   = regexp.MustCompile(".json.gz$")
-	statusTrackerFileName = "ruddderDeleteTracker.txt"
+	statusTrackerFileName = "rudderDeleteTracker.txt"
 	supportedDestinations = []string{"S3"}
 )
 
@@ -318,7 +318,6 @@ func (b *Batch) upload(ctx context.Context, uploadFileAbsPath, actualFileName, a
 		return fmt.Errorf("error while opening file, %w", err)
 	}
 	defer uploadFilePtr.Close()
-
 	_, err = b.FM.Upload(uploadFilePtr, fileNamePrefixes[1:len(fileNamePrefixes)-1]...)
 	if err != nil {
 		return fmt.Errorf("error while uploading cleaned file: %w", err)
@@ -389,9 +388,7 @@ func (b *Batch) createPatternFile(userAttributes []model.UserAttribute) (string,
 }
 
 type BatchManager struct {
-}
-
-type KVDeleteManager struct {
+	FMFactory filemanager.FileManagerFactory
 }
 
 func (bm *BatchManager) GetSupportedDestinations() []string {
@@ -399,13 +396,11 @@ func (bm *BatchManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
-//TODO: aws s3 ListObject allows listing of at max 1000 object at a time. So, implement paginatin.
 //Delete users corresponding to input userAttributes from a given batch destination
 func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 	pkgLogger.Debugf("deleting job: %v", job, "from batch destination: %v", destName)
 
-	fmFactory := filemanager.FileManagerFactoryT{}
-	fm, err := fmFactory.New(&filemanager.SettingsT{
+	fm, err := bm.FMFactory.New(&filemanager.SettingsT{
 		Provider: destName,
 		Config:   destConfig,
 	})
