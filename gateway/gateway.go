@@ -298,15 +298,11 @@ func (gateway *HandleT) dbWriterWorkerProcess(process int) {
 			jobList = append(jobList, userWorkerBatchRequest.jobList...)
 		}
 
-		if gwAllowPartialWriteWithErrors {
-			errorMessagesMap = gateway.jobsDB.StoreWithRetryEach(jobList)
-		} else {
-			err := gateway.jobsDB.Store(jobList)
-			if err != nil {
-				gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
-				gateway.logger.Errorf("JobList: %+v", jobList)
-				panic(err)
-			}
+		err := gateway.jobsDB.Store(jobList)
+		if err != nil {
+			gateway.logger.Errorf("Store into gateway db failed with error: %v", err)
+			gateway.logger.Errorf("JobList: %+v", jobList)
+			panic(err)
 		}
 		gateway.dbWritesStat.Count(1)
 

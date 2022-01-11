@@ -55,9 +55,9 @@ import (
 // configuration from the config/env files to
 // instantiate jobdb correctly
 type BackupSettingsT struct {
+	PathPrefix    string
 	BackupEnabled bool
 	FailedOnly    bool
-	PathPrefix    string
 }
 
 // GetQueryParamsT is a struct to hold jobsdb query params.
@@ -99,7 +99,6 @@ type JobsDB interface {
 	CommitTransaction(txn *sql.Tx)
 	AcquireStoreLock()
 	ReleaseStoreLock()
-	StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string
 	CheckPGHealth() bool
 	UpdateJobStatus(statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 	UpdateJobStatusInTxn(txHandler *sql.Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
@@ -295,7 +294,6 @@ type writeReqType int
 
 const (
 	writeReqTypeStore writeReqType = iota
-	writeReqTypeStoreWithRetry
 	writeReqTypeUpdateJobStatus
 	writeReqTypeDeleteExecuting
 )
@@ -446,9 +444,9 @@ func (jd *HandleT) Status() interface{} {
 }
 
 type jobStateT struct {
+	State      string
 	isValid    bool
 	isTerminal bool
-	State      string
 }
 
 //State definitions
@@ -786,14 +784,14 @@ func (jd *HandleT) readerWriterSetup(ctx context.Context) {
 }
 
 type writeJob struct {
-	reqType              writeReqType
+	errorMapResponse     chan map[uuid.UUID]string
+	errorResponse        chan error
 	jobsList             []*JobT
 	jobStatusesList      []*JobStatusT
 	customValFiltersList []string
 	parameterFiltersList []ParameterFilterT
-	errorResponse        chan error
-	errorMapResponse     chan map[uuid.UUID]string
 	deleteParams         GetQueryParamsT
+	reqType              writeReqType
 }
 
 func (jd *HandleT) initDBWriters(ctx context.Context) {
@@ -813,9 +811,6 @@ func (jd *HandleT) dbWriter(ctx context.Context) {
 		case writeReqTypeStore:
 			err := jd.store(writeReq.jobsList)
 			writeReq.errorResponse <- err
-		case writeReqTypeStoreWithRetry:
-			errMap := jd.storeWithRetryEach(writeReq.jobsList)
-			writeReq.errorMapResponse <- errMap
 		case writeReqTypeUpdateJobStatus:
 			err := jd.updateJobStatus(writeReq.jobStatusesList, writeReq.customValFiltersList, writeReq.parameterFiltersList)
 			writeReq.errorResponse <- err
@@ -827,9 +822,9 @@ func (jd *HandleT) dbWriter(ctx context.Context) {
 }
 
 type readJob struct {
-	getQueryParams GetQueryParamsT
 	jobsListChan   chan []*JobT
 	reqType        string
+	getQueryParams GetQueryParamsT
 }
 
 func (jd *HandleT) initDBReaders(ctx context.Context) {
@@ -1729,28 +1724,6 @@ func (jd *HandleT) storeJobsDS(ds dataSetT, copyID bool, jobList []*JobT) error 
 	return nil
 }
 
-func (jd *HandleT) storeJobsDSWithRetryEach(ds dataSetT, copyID bool, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
-	queryStat := jd.storeTimerStat("store_jobs_retry_each")
-	queryStat.Start()
-	defer queryStat.End()
-
-	err := jd.storeJobsDS(ds, copyID, jobList)
-	if err == nil {
-		return
-	}
-
-	errorMessagesMap = make(map[uuid.UUID]string)
-
-	for _, job := range jobList {
-		err := jd.storeJobDS(ds, job)
-		if err != nil {
-			errorMessagesMap[job.UUID] = err.Error()
-		}
-	}
-
-	return
-}
-
 // Creates a map of customVal:Params(Dest_type: []Dest_ids for brt and Dest_type: [] for rt)
 //and then loop over them to selectively clear cache instead of clearing the cache for the entire dataset
 func (jd *HandleT) populateCustomValParamMap(CVPMap map[string]map[string]struct{}, customVal string, params []byte) {
@@ -1882,8 +1855,8 @@ const (
 )
 
 type cacheEntry struct {
-	value cacheValue
 	t     time.Time
+	value cacheValue
 }
 
 /*
@@ -2831,10 +2804,10 @@ const (
 )
 
 type JournalEntryT struct {
-	OpID      int64
 	OpType    string
-	OpDone    bool
 	OpPayload json.RawMessage
+	OpID      int64
+	OpDone    bool
 }
 
 func (jd *HandleT) dropJournal() {
@@ -3242,42 +3215,6 @@ func (jd *HandleT) store(jobList []*JobT) error {
 	dsList := jd.getDSList(false)
 	err := jd.storeJobsDS(dsList[len(dsList)-1], false, jobList)
 	return err
-}
-
-func (jd *HandleT) StoreWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
-	totalWriteTime := jd.storeTimerStat("store_retry_each_total_time")
-	totalWriteTime.Start()
-	defer totalWriteTime.End()
-
-	if jd.enableWriterQueue {
-		waitTimeStat := jd.storeTimerStat("store_retry_each_wait_time")
-		waitTimeStat.Start()
-		respCh := make(chan map[uuid.UUID]string)
-		writeJobRequest := writeJob{
-			reqType:          writeReqTypeStoreWithRetry,
-			jobsList:         jobList,
-			errorMapResponse: respCh,
-		}
-		jd.writeChannel <- writeJobRequest
-		waitTimeStat.End()
-		errMap := <-respCh
-		return errMap
-	} else {
-		return jd.storeWithRetryEach(jobList)
-	}
-}
-
-/*
-storeWithRetryEach call is used to create new Jobs. This retries if the bulk store fails and retries for each job returning error messages for jobs failed to store
-*/
-func (jd *HandleT) storeWithRetryEach(jobList []*JobT) map[uuid.UUID]string {
-
-	//Only locks the list
-	jd.dsListLock.RLock()
-	defer jd.dsListLock.RUnlock()
-
-	dsList := jd.getDSList(false)
-	return jd.storeJobsDSWithRetryEach(dsList[len(dsList)-1], false, jobList)
 }
 
 /*

@@ -9,7 +9,6 @@ import (
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	uuid "github.com/gofrs/uuid"
 	"github.com/jinzhu/copier"
-	"github.com/lib/pq"
 	"github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
@@ -342,82 +341,6 @@ var _ = Describe("jobsdb", func() {
 
 			err := jd.Store(mockedStoreJobs)
 			Expect(err).To(Equal(errors.New("failed to prepare")))
-
-			// we make sure that all expectations were met
-			if err := c.mock.ExpectationsWereMet(); err != nil {
-				ginkgo.Fail("there were unfulfilled expectations")
-			}
-		})
-	})
-
-	Context("StoreWithRetryEach", func() {
-		var jd *HandleT
-		var ds dataSetT
-
-		BeforeEach(func() {
-			jd = &HandleT{}
-			jd.dbHandle = c.db
-			jd.datasetList = dsListInMemory
-			jd.enableWriterQueue = true
-			ds = jd.datasetList[len(jd.datasetList)-1]
-
-			jd.skipSetupDBSetup = true
-			jd.Setup(ReadWrite, false, "tt", 0*time.Hour, "", false, QueryFiltersT{})
-		})
-
-		AfterEach(func() {
-			jd.TearDown()
-		})
-
-		It("should store jobs to db with storeJobsDS", func() {
-			c.mock.ExpectBegin()
-			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`COPY "%s" ("uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count") FROM STDIN`, ds.JobTable))
-			for _, job := range mockedStoreJobs {
-				stmt.ExpectExec().WithArgs(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), 1).WillReturnResult(sqlmock.NewResult(0, 1))
-			}
-			stmt.ExpectExec().WithArgs().WillReturnResult(sqlmock.NewResult(0, int64(len(mockedStoreJobs))))
-			c.mock.ExpectCommit()
-
-			errorMessagesMap := jd.StoreWithRetryEach(mockedStoreJobs)
-			Expect(errorMessagesMap).To(BeEmpty())
-
-			// we make sure that all expectations were met
-			if err := c.mock.ExpectationsWereMet(); err != nil {
-				ginkgo.Fail("there were unfulfilled expectations")
-			}
-		})
-		It("should store jobs to db even when bulk store(storeJobsDS) returns error", func() {
-			c.mock.ExpectBegin().WillReturnError(errors.New("failed to prepare"))
-
-			for _, job := range mockedStoreJobs {
-				stmt := c.mock.ExpectPrepare(fmt.Sprintf(`INSERT INTO %s (uuid, user_id, custom_val, parameters, event_payload)
-			VALUES ($1, $2, $3, $4, (regexp_replace($5::text, '\\u0000', '', 'g'))::json) RETURNING job_id`, ds.JobTable))
-				stmt.ExpectExec().WithArgs(job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload)).WillReturnResult(sqlmock.NewResult(0, 1))
-			}
-			errorMessagesMap := jd.StoreWithRetryEach(mockedStoreJobs)
-			Expect(errorMessagesMap).To(BeEmpty())
-
-			// we make sure that all expectations were met
-			if err := c.mock.ExpectationsWereMet(); err != nil {
-				ginkgo.Fail("there were unfulfilled expectations")
-			}
-		})
-		It("should store jobs partially because one job has invalid json payload", func() {
-			c.mock.ExpectBegin().WillReturnError(errors.New("failed to prepare"))
-
-			job1 := mockedPartiallyStoredJobs[0]
-			job2 := mockedPartiallyStoredJobs[1]
-			stmt := c.mock.ExpectPrepare(fmt.Sprintf(`INSERT INTO %s (uuid, user_id, custom_val, parameters, event_payload)
-			VALUES ($1, $2, $3, $4, (regexp_replace($5::text, '\\u0000', '', 'g'))::json) RETURNING job_id`, ds.JobTable))
-			stmt.ExpectExec().WithArgs(job1.UUID, job1.UserID, job1.CustomVal, string(job1.Parameters), string(job1.EventPayload)).WillReturnResult(sqlmock.NewResult(0, 1))
-			stmt = c.mock.ExpectPrepare(fmt.Sprintf(`INSERT INTO %s (uuid, user_id, custom_val, parameters, event_payload)
-			VALUES ($1, $2, $3, $4, (regexp_replace($5::text, '\\u0000', '', 'g'))::json) RETURNING job_id`, ds.JobTable))
-			err := &pq.Error{}
-			err.Code = "22P02" //Invalid JSON syntax
-			stmt.ExpectExec().WithArgs(job2.UUID, job2.UserID, job2.CustomVal, string(job2.Parameters), string(job2.EventPayload)).WillReturnError(err)
-
-			errorMessagesMap := jd.StoreWithRetryEach(mockedPartiallyStoredJobs)
-			Expect(errorMessagesMap).To(Equal(map[uuid.UUID]string{s: "Invalid JSON"}))
 
 			// we make sure that all expectations were met
 			if err := c.mock.ExpectationsWereMet(); err != nil {
