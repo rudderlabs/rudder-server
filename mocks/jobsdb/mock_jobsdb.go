@@ -9,7 +9,6 @@ import (
 	json "encoding/json"
 	reflect "reflect"
 
-	uuid "github.com/gofrs/uuid"
 	gomock "github.com/golang/mock/gomock"
 	jobsdb "github.com/rudderlabs/rudder-server/jobsdb"
 )
@@ -301,20 +300,6 @@ func (m *MockJobsDB) Store(arg0 []*jobsdb.JobT) error {
 func (mr *MockJobsDBMockRecorder) Store(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Store", reflect.TypeOf((*MockJobsDB)(nil).Store), arg0)
-}
-
-// StoreWithRetryEach mocks base method.
-func (m *MockJobsDB) StoreWithRetryEach(arg0 []*jobsdb.JobT) map[uuid.UUID]string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StoreWithRetryEach", arg0)
-	ret0, _ := ret[0].(map[uuid.UUID]string)
-	return ret0
-}
-
-// StoreWithRetryEach indicates an expected call of StoreWithRetryEach.
-func (mr *MockJobsDBMockRecorder) StoreWithRetryEach(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreWithRetryEach", reflect.TypeOf((*MockJobsDB)(nil).StoreWithRetryEach), arg0)
 }
 
 // UpdateJobStatus mocks base method.
