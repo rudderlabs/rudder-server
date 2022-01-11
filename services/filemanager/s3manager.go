@@ -19,11 +19,6 @@ import (
 
 // Upload passed in file to s3
 func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
-	uploadSession, err := manager.getSession()
-	if err != nil {
-		return UploadOutput{}, fmt.Errorf(`error starting S3 session: %v`, err)
-	}
-	s3manager := awsS3Manager.NewUploader(uploadSession)
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
 
@@ -49,6 +44,11 @@ func (manager *S3Manager) Upload(file *os.File, prefixes ...string) (UploadOutpu
 		uploadInput.ServerSideEncryption = aws.String("AES256")
 	}
 
+	uploadSession, err := manager.getSession()
+	if err != nil {
+		return UploadOutput{}, fmt.Errorf(`error starting S3 session: %v`, err)
+	}
+	s3manager := awsS3Manager.NewUploader(uploadSession)
 	output, err := s3manager.Upload(uploadInput)
 	if err != nil {
 		if awsError, ok := err.(awserr.Error); ok && awsError.Code() == "MissingRegion" {

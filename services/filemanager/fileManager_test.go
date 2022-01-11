@@ -156,6 +156,21 @@ func TestFileManager(t *testing.T) {
 				"region":           region,
 			},
 		},
+		{
+			name:     "testing digital ocean functionality",
+			destName: "DIGITAL_OCEAN_SPACES",
+			config: map[string]interface{}{
+				"bucketName":       bucket,
+				"accessKeyID":      accessKeyId,
+				"accessKey":        secretAccessKey,
+				"enableSSE":        false,
+				"prefix":           "some-prefix",
+				"endPoint":         minioEndpoint,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+				"region":           region,
+			},
+		},
 	}
 
 	for _, tt := range tests {
