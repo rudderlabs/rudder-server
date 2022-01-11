@@ -676,22 +676,13 @@ func (wh *HandleT) sortWarehousesByOldestUnSyncedEventAt() (err error) {
 
 func (wh *HandleT) mainLoop(ctx context.Context) {
 	for {
-		wh.configSubscriberLock.RLock()
 		if !wh.isEnabled {
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(mainLoopSleep):
 			}
-
-			wh.configSubscriberLock.RUnlock()
 			continue
-		}
-
-		err := wh.sortWarehousesByOldestUnSyncedEventAt()
-		wh.configSubscriberLock.RUnlock()
-		if err != nil {
-			pkgLogger.Errorf(`[WH] Error sorting warehouses by last event time: %v`, err)
 		}
 
 		for _, warehouse := range wh.warehouses {
