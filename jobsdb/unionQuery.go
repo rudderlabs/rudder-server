@@ -785,38 +785,38 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, p
 	}
 
 	sqlStatement = fmt.Sprintf(`with rt_jobs_view AS (
-											SELECT
-												jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, 
-												jobs.event_payload, jobs.event_count, jobs.created_at, 
-												jobs.expire_at, jobs.workspaceid, 
-												sum(jobs.event_count) over ( 
-													order by jobs.job_id asc 
-												) as running_event_counts, 
-												job_latest_state.job_state, job_latest_state.attempt, 
-												job_latest_state.exec_time, job_latest_state.retry_time, 
-												job_latest_state.error_code, job_latest_state.error_response, 
-												job_latest_state.parameters as status_parameters 
-											FROM 
-												%[1]s AS jobs 
-											    LEFT JOIN ( 
-											        SELECT 
-														job_id, job_state, attempt, exec_time, retry_time, 
-														error_code, error_response, parameters 
-													FROM %[2]s 
-													WHERE 
-														id IN ( 
-															SELECT MAX(id) 
-															from %[2]s 
-															GROUP BY job_id 
-														)
-												) AS job_latest_state ON jobs.job_id = job_latest_state.job_id 
-											WHERE 
-												(
-													job_latest_state.job_id IS NULL 
-													%[3]s 
-												) 
-												AND jobs.workspaceid IN %[5]s 
-												%[4]s`,
+		                                    SELECT
+                                                jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, 
+                                                jobs.event_payload, jobs.event_count, jobs.created_at, 
+                                                jobs.expire_at, jobs.workspaceid, 
+                                                sum(jobs.event_count) over ( 
+                                                    order by jobs.job_id asc 
+                                                ) as running_event_counts, 
+                                                job_latest_state.job_state, job_latest_state.attempt, 
+                                                job_latest_state.exec_time, job_latest_state.retry_time, 
+                                                job_latest_state.error_code, job_latest_state.error_response, 
+                                                job_latest_state.parameters as status_parameters 
+                                            FROM 
+                                                %[1]s AS jobs 
+                                                LEFT JOIN ( 
+                                                    SELECT 
+                                                        job_id, job_state, attempt, exec_time, retry_time, 
+                                                        error_code, error_response, parameters 
+                                                    FROM %[2]s 
+                                                    WHERE 
+                                                        id IN ( 
+                                                        SELECT MAX(id) 
+                                                        from %[2]s 
+                                                        GROUP BY job_id 
+                                                        )
+                                                ) AS job_latest_state ON jobs.job_id = job_latest_state.job_id 
+                                            WHERE 
+                                                (
+                                                    job_latest_state.job_id IS NULL 
+                                                    %[3]s 
+                                                ) 
+                                                AND jobs.workspaceid IN %[5]s 
+                                                %[4]s`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, customerString)
 	return sqlStatement + ")"
 }
