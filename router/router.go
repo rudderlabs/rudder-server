@@ -1752,10 +1752,13 @@ func (rt *HandleT) readAndProcess() int {
 		customerCountStat.Count(count)
 		//note that this will give an aggregated count
 	}
-	nonTerminalList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State, jobsdb.Failed.State}}, rt.maxDSQuerySize)
-	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
+	// TODO: remove separate querying methods and possibly clean the interface as well.
+	//nonTerminalList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State, jobsdb.Failed.State}}, rt.maxDSQuerySize)
+	//unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
 
-	combinedList := append(nonTerminalList, unprocessedList...)
+	//combinedList := append(nonTerminalList, unprocessedList...)
+	combinedList := rt.jobsDB.GetUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.
+		destName}, StateFilters: []string{jobsdb.Waiting.State, jobsdb.Failed.State}}, rt.maxDSQuerySize)
 	rt.earliestJobMap = make(map[string]time.Time)
 
 	if len(combinedList) == 0 {
