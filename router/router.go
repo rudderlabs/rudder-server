@@ -139,6 +139,10 @@ type HandleT struct {
 	resultSetMeta map[string]*resultSetT
 	resultSetLock sync.RWMutex
 	lastResultSet *resultSetT
+
+	count200         int64
+	count500         int64
+	respcounterMutex sync.RWMutex
 }
 
 type jobResponseT struct {
@@ -793,6 +797,14 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				if respStatusCode != types.RouterTimedOut {
 					worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken) / float64(time.Second))
 				}
+
+				worker.rt.respcounterMutex.Lock()
+				if respStatusCode == 200 {
+					worker.rt.count200++
+				} else if respStatusCode == 500 {
+					worker.rt.count500++
+				}
+				worker.rt.respcounterMutex.Unlock()
 
 				worker.rt.logger.Debugf("moving_average_latency is %.8f for customer %v", worker.rt.routerLatencyStat[workspaceID], workspaceID)
 				//Using response status code and body to get response code rudder router logic is based on.
@@ -1818,23 +1830,42 @@ func (rt *HandleT) readAndProcess() int {
 
 	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
 	successRateMap, drainedMap := multitenant.GenerateSuccessRateMap(rt.destName)
+	rt.respcounterMutex.RLock()
+	rt.logger.Debugf("[DRAIN DEBUG] counts %v  count200 %v count500 %v", rt.destName, rt.count200, rt.count500)
+	rt.respcounterMutex.RUnlock()
 	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
 
-	var customerCountStat stats.RudderStats
-	for customer, count := range rt.customerCount {
-		customerCountStat = stats.NewTaggedStat("customer_pickup_count", stats.CountType, stats.Tags{
-			"customer": customer,
-			"module":   "router",
-			"destType": rt.destName,
-		})
-		customerCountStat.Count(count)
+	totalErrorCount := 0.0
+	customerCountKey, ok := rt.customerCount["232PCWYFDLbQctUX9NIiMpZVbkM"]
+	if ok {
+		totalErrorCount += float64(customerCountKey)
+	}
+
+	customerCountKey, ok = rt.customerCount["232PE7YyabKgxFw8NRcebShAUHq"]
+	if ok {
+		totalErrorCount += float64(customerCountKey)
+	}
+
+	totalRequestedJobCount := 0
+	/*var customerCountStat stats.RudderStats
+	customerCountStat = stats.NewTaggedStat("customer_pickup_count", stats.CountType, stats.Tags{
+		"module":   "router",
+		"destType": rt.destName,
+	})
+	for _, count := range rt.customerCount {
+		totalRequestedJobCount += count
 		//note that this will give an aggregated count
 	}
+	customerCountStat.Count(totalRequestedJobCount)
+	*/
+	rt.logger.Debugf("[DRAIN DEBUG] counts errors requested %v 500's %v total %v  ratio %v", rt.destName, totalErrorCount, totalRequestedJobCount, totalErrorCount/float64(totalRequestedJobCount))
+
 	nonTerminalList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State, jobsdb.Failed.State}}, rt.maxDSQuerySize)
 	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
 
 	combinedList := append(nonTerminalList, unprocessedList...)
 	rt.earliestJobMap = make(map[string]time.Time)
+	rt.logger.Debugf("[DRAIN DEBUG] counts  %v db jobs returned %v", rt.destName, len(combinedList))
 
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
@@ -1955,6 +1986,7 @@ func (rt *HandleT) readAndProcess() int {
 			rt.drainedJobsStat.Count(destDrainStat.Count)
 		}
 	}
+	rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destName, len(toProcess))
 
 	if len(toProcess) == 0 {
 		rt.logger.Debugf("RT: No workers found for the jobs. Sleeping. Destination: %s", rt.destName)
