@@ -186,9 +186,12 @@ func randString(n int) string {
 }
 
 type Event struct {
-	anonymous_id string
-	user_id      string
-	count        string
+	anonymous_id		 string
+	user_id    			 string
+	count      		 	 string
+	context_myuniqueid	 string
+	context_id 			 string
+	context_ip 			 string
 }
 
 type Author struct {
@@ -680,6 +683,7 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
 	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10s")
+	os.Setenv("RUDDER_GRACEFUL_SHUTDOWN", "false")
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := make(chan struct{})
@@ -772,6 +776,9 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
 	require.Equal(t, gjson.GetBytes(body, "myuniqueid").Str, "identified user idanonymousId_1")
+	require.Equal(t, gjson.GetBytes(body, "context.myuniqueid").Str, "identified user idanonymousId_1")
+	require.Equal(t, gjson.GetBytes(body, "context.id").Str, "0.0.0.0")
+	require.Equal(t, gjson.GetBytes(body, "context.ip").Str, "0.0.0.0")
 
 }
 
@@ -786,6 +793,27 @@ func TestPostgres(t *testing.T) {
 	eventSql := "select count(*) from dev_integration_test_1.identifies"
 	db.QueryRow(eventSql).Scan(&myEvent.count)
 	require.Equal(t, myEvent.count, "1")
+
+	eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies"
+	db.QueryRow(eventSql).Scan(&myEvent.context_myuniqueid, &myEvent.context_id, &myEvent.context_ip)
+	require.Equal(t, myEvent.context_myuniqueid, "identified user idanonymousId_1")
+	require.Equal(t, myEvent.context_id, "0.0.0.0")
+	require.Equal(t, myEvent.context_ip, "0.0.0.0")
+
+	require.Eventually(t, func() bool {
+		eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1"
+		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
+		return myEvent.anonymous_id == "anonymousId_1"
+	}, time.Minute, 10*time.Millisecond)
+	eventSql = "select count(*) from dev_integration_test_1.users"
+	db.QueryRow(eventSql).Scan(&myEvent.count)
+	require.Equal(t, myEvent.count, "1")
+
+	eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users"
+	db.QueryRow(eventSql).Scan(&myEvent.context_myuniqueid, &myEvent.context_id, &myEvent.context_ip)
+	require.Equal(t, myEvent.context_myuniqueid, "identified user idanonymousId_1")
+	require.Equal(t, myEvent.context_id, "0.0.0.0")
+	require.Equal(t, myEvent.context_ip, "0.0.0.0")
 }
 
 // Verify Event in Redis
@@ -880,7 +908,6 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 
 				case msg := <-consumer.Messages():
 					consumers <- msg
-					log.Println("Got message on topic ", topic, msg.Value)
 				}
 			}
 		}(topic, consumer)

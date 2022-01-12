@@ -338,8 +338,9 @@ func Run(ctx context.Context) {
 			logger.Log.Sync()
 		}
 		stats.StopRuntimeStats()
-
-		os.Exit(1)
+		if config.GetEnv("RUDDER_GRACEFUL_SHUTDOWN", "true") == "true" {
+			os.Exit(1)
+		}
 	}()
 
 	err := g.Wait()
