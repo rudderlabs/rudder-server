@@ -915,7 +915,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		for columnName, columnType := range columns {
 			if _, ok := schemaMap[tableName][columnName]; !ok {
 				schemaMap[tableName][columnName] = columnType
-			} else if  columnType == "text" && schemaMap[tableName][columnName] == "string" {
+			} else if columnType == "text" && schemaMap[tableName][columnName] == "string" {
 				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
 				schemaMap[tableName][columnName] = columnType
 			}

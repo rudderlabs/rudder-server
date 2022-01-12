@@ -34,7 +34,7 @@ type ManagerI interface {
 	DownloadIdentityRules(*misc.GZipWriter) error
 	GetTotalCountInTable(tableName string) (int64, error)
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
-	RefreshPartitions(tableName string, loadFile warehouseutils.LoadFileT) error
+	RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error
 }
 
 //New is a Factory function that returns a ManagerI of a given destination-type

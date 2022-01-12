@@ -823,6 +823,6 @@ func (ms *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (ms *HandleT) RefreshPartitions(tableName string, loadFile warehouseutils.LoadFileT) (err error) {
+func (ms *HandleT) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) (err error) {
 	return
 }

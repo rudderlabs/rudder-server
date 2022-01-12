@@ -106,6 +106,6 @@ func (wh *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{}, fmt.Errorf("s3_datalake err :not implemented")
 }
 
-func (wh *HandleT) RefreshPartitions(tableName string, loadFile warehouseutils.LoadFileT) error {
-	return wh.SchemaRepository.RefreshPartitions(tableName, loadFile)
+func (wh *HandleT) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error {
+	return wh.SchemaRepository.RefreshPartitions(tableName, loadFiles)
 }

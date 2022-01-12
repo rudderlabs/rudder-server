@@ -105,7 +105,6 @@ type DestinationT struct {
 	Enabled               bool
 	Transformations       []TransformationT
 	IsProcessorEnabled    bool
-	TimeWindowFormat      string // FIX: Probably not the best place to define this, better at warehouse?
 }
 
 type SourceT struct {

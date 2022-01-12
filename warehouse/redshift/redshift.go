@@ -726,10 +726,6 @@ func (rs *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (rs *HandleT) RefreshPartitions(tableName string, loadFile warehouseutils.LoadFileT) (err error) {
-	return
-}
-
 func (rs *HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
@@ -763,4 +759,8 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	}
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
+}
+
+func (rs *HandleT) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) (err error) {
+	return
 }

@@ -409,8 +409,16 @@ func (job *UploadJobT) run() (err error) {
 						EndID:   endLoadFileID,
 					})
 					// FIX: This is better done every 100 files, since it's a batch request
-					for _, loadFile := range loadFiles {
-						whManager.RefreshPartitions(tableName, loadFile)
+					partitionBatchSize := 99
+					timeWindowFormat, _ := job.warehouse.Destination.Config["timeWindowFormat"].(string)
+					for i := 0; i < len(loadFiles) && timeWindowFormat != ""; i += partitionBatchSize {
+						end := i + partitionBatchSize
+
+						if end > len(loadFiles) {
+							end = len(loadFiles)
+						}
+
+						whManager.RefreshPartitions(tableName, loadFiles[i:end])
 					}
 				}
 			}
@@ -1647,10 +1655,10 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				UseRudderStorage:     job.upload.UseRudderStorage,
 				RudderStoragePrefix:  misc.GetRudderObjectStoragePrefix(),
 			}
-
 			if job.warehouse.Type == "S3_DATALAKE" {
-				if job.warehouse.Destination.TimeWindowFormat != "" {
-					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(job.warehouse.Destination.TimeWindowFormat)
+				timeWindowFormat, _ := job.warehouse.Destination.Config["timeWindowFormat"].(string)
+				if timeWindowFormat != "" {
+					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(timeWindowFormat)
 				} else {
 					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 				}
