@@ -797,7 +797,7 @@ func (mj *MultiTenantHandleT) getInitialSingleCustomerQueryString(ds dataSetT, p
 												job_latest_state.error_code, job_latest_state.error_response, 
 												job_latest_state.parameters as status_parameters 
 											FROM 
-												%[1]s AS jobs, 
+												%[1]s AS jobs 
 											    LEFT JOIN ( 
 											        SELECT 
 														job_id, job_state, attempt, exec_time, retry_time, 
