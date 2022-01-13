@@ -25,12 +25,12 @@ prepare-build: build-sql-migrations enterprise-prepare-build
 ./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations)
 	$(GO) run -tags=dev cmd/generate-migrations/generate-sql-migrations.go
 
-build: prepare-build ## Build rudder-server binary. Wait for go does not seem to be used, and without extension is hard to ignore in GH. LDflags do not seem necessary in Go 1.17 (but then need to be added from env?)
+build: prepare-build ## Build rudder-server binary
 	$(eval BUILD_OPTIONS = )
 ifeq ($(RACE_ENABLED), TRUE)
 	$(eval BUILD_OPTIONS = $(BUILD_OPTIONS) -race -o rudder-server-with-race)
 endif
-	$(GO) build $(BUILD_OPTIONS) -a -installsuffix cgo #-ldflags="$(LDFLAGS)"
+	$(GO) build $(BUILD_OPTIONS) -a -installsuffix cgo -ldflags="$(LDFLAGS)"
 	$(GO) build -o build/wait-for-go/wait-for-go.x build/wait-for-go/wait-for.go
 	$(GO) build -o build/regulation-worker ./regulation-worker/cmd/
 
