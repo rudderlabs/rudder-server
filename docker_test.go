@@ -186,12 +186,12 @@ func randString(n int) string {
 }
 
 type Event struct {
-	anonymous_id		 string
-	user_id    			 string
-	count      		 	 string
-	context_myuniqueid	 string
-	context_id 			 string
-	context_ip 			 string
+	anonymous_id       string
+	user_id            string
+	count              string
+	context_myuniqueid string
+	context_id         string
+	context_ip         string
 }
 
 type Author struct {
@@ -775,10 +775,12 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified user id")
 	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
+	// Verify User Transformation
 	require.Equal(t, gjson.GetBytes(body, "myuniqueid").Str, "identified user idanonymousId_1")
 	require.Equal(t, gjson.GetBytes(body, "context.myuniqueid").Str, "identified user idanonymousId_1")
 	require.Equal(t, gjson.GetBytes(body, "context.id").Str, "0.0.0.0")
 	require.Equal(t, gjson.GetBytes(body, "context.ip").Str, "0.0.0.0")
+	// TODO: Verify Destination Transformation
 
 }
 
@@ -794,26 +796,35 @@ func TestPostgres(t *testing.T) {
 	db.QueryRow(eventSql).Scan(&myEvent.count)
 	require.Equal(t, myEvent.count, "1")
 
+	// Verify User Transformation
 	eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies"
 	db.QueryRow(eventSql).Scan(&myEvent.context_myuniqueid, &myEvent.context_id, &myEvent.context_ip)
 	require.Equal(t, myEvent.context_myuniqueid, "identified user idanonymousId_1")
 	require.Equal(t, myEvent.context_id, "0.0.0.0")
 	require.Equal(t, myEvent.context_ip, "0.0.0.0")
 
+	// TODO: Verify Destination Transformation
+
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1"
 		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
 		return myEvent.anonymous_id == "anonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
-	eventSql = "select count(*) from dev_integration_test_1.users"
-	db.QueryRow(eventSql).Scan(&myEvent.count)
-	require.Equal(t, myEvent.count, "1")
 
+	require.Eventually(t, func() bool {
+		eventSql = "select count(*) from dev_integration_test_1.users"
+		db.QueryRow(eventSql).Scan(&myEvent.count)
+		return myEvent.count == "1"
+	}, time.Minute, 10*time.Millisecond)
+
+	// Verify User Transformation
 	eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users"
 	db.QueryRow(eventSql).Scan(&myEvent.context_myuniqueid, &myEvent.context_id, &myEvent.context_ip)
 	require.Equal(t, myEvent.context_myuniqueid, "identified user idanonymousId_1")
 	require.Equal(t, myEvent.context_id, "0.0.0.0")
 	require.Equal(t, myEvent.context_ip, "0.0.0.0")
+
+	// TODO: Verify Destination Transformation
 }
 
 // Verify Event in Redis
@@ -828,7 +839,7 @@ func TestRedis(t *testing.T) {
 		event, _ := redigo.String(conn.Do("HGET", "user:identified user id", "trait1"))
 		return event == "new-val"
 	}, time.Minute, 10*time.Millisecond)
-
+	// TODO: Verify Destination Transformation
 }
 
 func TestKafka(t *testing.T) {
@@ -870,6 +881,11 @@ out:
 			require.Equal(t, "identified user id", string(msg.Key))
 			require.Contains(t, string(msg.Value), "new-val")
 			require.Contains(t, string(msg.Value), "identified user id")
+			// Verify User Transformation
+			require.Contains(t, string(msg.Value), "identified user idanonymousId_1")
+			require.Contains(t, string(msg.Value), "0.0.0.0")
+
+			// TODO: Verify Destination Transformation
 			if msgCount == expectedCount {
 				break out
 			}

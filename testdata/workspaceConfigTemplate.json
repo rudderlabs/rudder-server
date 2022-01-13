@@ -501,7 +501,13 @@
                     "deleted": false,
                     "createdAt": "2021-08-27T06:45:46.149Z",
                     "updatedAt": "2021-08-27T06:45:46.149Z",
-                    "transformations": [],
+                    "transformations": [
+                        {
+                            "versionId": "23b5Jx2XJb0YLk6CkzHso6NVbZ6",
+                            "config": {},
+                            "id": "23VJjP3bbHMzUhWjI7bvNL5S9xx"
+                        }
+                    ],
                     "destinationDefinition": {
                         "config": {
                             "destConfig": {
@@ -572,7 +578,13 @@
                     "deleted": false,
                     "createdAt": "2021-08-27T06:44:37.836Z",
                     "updatedAt": "2021-08-27T09:09:11.873Z",
-                    "transformations": [],
+                    "transformations": [
+                        {
+                            "versionId": "23b5Jx2XJb0YLk6CkzHso6NVbZ6",
+                            "config": {},
+                            "id": "23VJjP3bbHMzUhWjI7bvNL5S9xx"
+                        }
+                    ],
                     "destinationDefinition": {
                         "config": {
                             "destConfig": {
