@@ -74,12 +74,12 @@ type HandleT struct {
 }
 
 type CredentialsT struct {
-	Host   string
-	DbName string
+	Host     string
+	DBName   string
 	User     string
 	Password string
 	Port     string
-	SslMode  string
+	SSLMode  string
 }
 
 var primaryKeyMap = map[string]string{
@@ -99,8 +99,8 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 		cred.Password,
 		cred.Host,
 		cred.Port,
-		cred.DbName,
-		cred.SslMode)
+		cred.DBName,
+		cred.SSLMode)
 
 	var err error
 	var db *sql.DB
@@ -123,11 +123,11 @@ func loadConfig() {
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
 	return CredentialsT{
 		Host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
-		DbName:   warehouseutils.GetConfigValue(dbName, pg.Warehouse),
+		DBName:   warehouseutils.GetConfigValue(dbName, pg.Warehouse),
 		User:     warehouseutils.GetConfigValue(user, pg.Warehouse),
 		Password: warehouseutils.GetConfigValue(password, pg.Warehouse),
 		Port:     warehouseutils.GetConfigValue(port, pg.Warehouse),
-		SslMode:  warehouseutils.GetConfigValue(sslMode, pg.Warehouse),
+		SSLMode:  warehouseutils.GetConfigValue(sslMode, pg.Warehouse),
 	}
 }
 
