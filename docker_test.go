@@ -83,7 +83,7 @@ type ClickHouseClusterTest struct {
 	writeKey     string
 }
 
-type MSSqlTest struct {
+type MSSQLTest struct {
 	resource    *dockertest.Resource
 	credentials *mssql.CredentialsT
 	db          *sql.DB
@@ -103,7 +103,7 @@ type WareHouseTest struct {
 	pgTest                 *PostgresTest
 	chTest                 *ClickHouseTest
 	chClusterTest          *ClickHouseClusterTest
-	mssqlTest              *MSSqlTest
+	mssqlTest              *MSSQLTest
 	gwJobsSqlFunction      string
 	batchRtJobsSqlFunction string
 }
@@ -949,11 +949,11 @@ func SetWHPostgresDestination(pool *dockertest.Pool) (cleanup func()) {
 	whTest.pgTest = &PostgresTest{
 		writeKey: randString(27),
 		credentials: &postgres.CredentialsT{
-			DbName:   "rudderdb",
+			DBName:   "rudderdb",
 			Password: "rudder-password",
 			User:     "rudder",
 			Host:     "localhost",
-			SslMode:  "disable",
+			SSLMode:  "disable",
 		},
 		eventsMap: WHEventsCountMap{
 			"identifies":    1,
@@ -974,7 +974,7 @@ func SetWHPostgresDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	var err error
 	if pgTest.resource, err = pool.Run("postgres", "11-alpine", []string{
-		fmt.Sprintf("POSTGRES_DB=%s", credentials.DbName),
+		fmt.Sprintf("POSTGRES_DB=%s", credentials.DBName),
 		fmt.Sprintf("POSTGRES_PASSWORD=%s", credentials.Password),
 		fmt.Sprintf("POSTGRES_USER=%s", credentials.User),
 	}); err != nil {
@@ -1016,10 +1016,10 @@ func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 			Host:          "localhost",
 			User:          "rudder",
 			Password:      "rudder-password",
-			DbName:        "rudderdb",
+			DBName:        "rudderdb",
 			Secure:        "false",
 			SkipVerify:    "true",
-			TlsConfigName: "",
+			TLSConfigName: "",
 		},
 		eventsMap: WHEventsCountMap{
 			"identifies":    1,
@@ -1040,7 +1040,7 @@ func SetWHClickHouseDestination(pool *dockertest.Pool) (cleanup func()) {
 
 	var err error
 	if chTest.resource, err = pool.Run("yandex/clickhouse-server", "21-alpine", []string{
-		fmt.Sprintf("CLICKHOUSE_DB=%s", credentials.DbName),
+		fmt.Sprintf("CLICKHOUSE_DB=%s", credentials.DBName),
 		fmt.Sprintf("CLICKHOUSE_PASSWORD=%s", credentials.Password),
 		fmt.Sprintf("CLICKHOUSE_USER=%s", credentials.User),
 	}); err != nil {
@@ -1082,10 +1082,10 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 			Host:          "localhost",
 			User:          "rudder",
 			Password:      "rudder-password",
-			DbName:        "rudderdb",
+			DBName:        "rudderdb",
 			Secure:        "false",
 			SkipVerify:    "true",
-			TlsConfigName: "",
+			TLSConfigName: "",
 		},
 		eventsMap: WHEventsCountMap{
 			"identifies":    1,
@@ -1308,14 +1308,14 @@ func SetWHClickHouseClusterDestination(pool *dockertest.Pool) (cleanup func()) {
 
 // SetWHMssqlDestination setup clickhouse mssql destination
 func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
-	whTest.mssqlTest = &MSSqlTest{
+	whTest.mssqlTest = &MSSQLTest{
 		writeKey: randString(27),
 		credentials: &mssql.CredentialsT{
-			DbName:   "master",
+			DBName:   "master",
 			Password: "reallyStrongPwd123",
 			User:     "SA",
 			Host:     "localhost",
-			SslMode:  "disable",
+			SSLMode:  "disable",
 		},
 		eventsMap: WHEventsCountMap{
 			"identifies":    1,
@@ -1338,7 +1338,7 @@ func SetWHMssqlDestination(pool *dockertest.Pool) (cleanup func()) {
 	if mssqlTest.resource, err = pool.Run("mcr.microsoft.com/mssql/server", "2019-CU10-ubuntu-20.04", []string{
 		fmt.Sprintf("ACCEPT_EULA=%s", "Y"),
 		fmt.Sprintf("SA_PASSWORD=%s", credentials.Password),
-		fmt.Sprintf("SA_DB=%s", credentials.DbName),
+		fmt.Sprintf("SA_DB=%s", credentials.DBName),
 		fmt.Sprintf("SA_USER=%s", credentials.User),
 	}); err != nil {
 		panic(fmt.Errorf("Could not create WareHouse Mssql: %v\n", err))

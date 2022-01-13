@@ -94,12 +94,12 @@ type HandleT struct {
 }
 
 type CredentialsT struct {
-	Host   string
-	DbName string
+	Host     string
+	DBName   string
 	User     string
 	Password string
 	Port     string
-	SslMode  string
+	SSLMode  string
 }
 
 var primaryKeyMap = map[string]string{
@@ -122,8 +122,8 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	//		https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/SQLServer.Concepts.General.SSL.Using.html
 	//more combination explanations here: https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/connection-string-keywords-and-data-source-names-dsns?view=sql-server-ver15
 	query := url.Values{}
-	query.Add("database", cred.DbName)
-	query.Add("encrypt", cred.SslMode)
+	query.Add("database", cred.DBName)
+	query.Add("encrypt", cred.SSLMode)
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.Port)
 	if err != nil {
@@ -156,11 +156,11 @@ func loadConfig() {
 func (ms *HandleT) getConnectionCredentials() CredentialsT {
 	return CredentialsT{
 		Host:     warehouseutils.GetConfigValue(host, ms.Warehouse),
-		DbName:   warehouseutils.GetConfigValue(dbName, ms.Warehouse),
+		DBName:   warehouseutils.GetConfigValue(dbName, ms.Warehouse),
 		User:     warehouseutils.GetConfigValue(user, ms.Warehouse),
 		Password: warehouseutils.GetConfigValue(password, ms.Warehouse),
 		Port:     warehouseutils.GetConfigValue(port, ms.Warehouse),
-		SslMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
+		SSLMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
 	}
 }
 

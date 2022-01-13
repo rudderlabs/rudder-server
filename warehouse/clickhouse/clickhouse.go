@@ -137,14 +137,14 @@ type HandleT struct {
 }
 
 type CredentialsT struct {
-	Host   string
-	DbName string
-	User   string
-	Password string
-	Port     string
-	Secure   string
+	Host          string
+	DBName        string
+	User          string
+	Password      string
+	Port          string
+	Secure        string
 	SkipVerify    string
-	TlsConfigName string
+	TLSConfigName string
 }
 
 type clickHouseStatT struct {
@@ -198,7 +198,7 @@ func Init() {
 func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
 	var dbNameParam string
 	if includeDBInConn {
-		dbNameParam = fmt.Sprintf(`database=%s`, cred.DbName)
+		dbNameParam = fmt.Sprintf(`database=%s`, cred.DBName)
 	}
 
 	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&compress=%t",
@@ -211,7 +211,7 @@ func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
 		queryDebugLogs,
 		cred.Secure,
 		cred.SkipVerify,
-		cred.TlsConfigName,
+		cred.TLSConfigName,
 		dbNameParam,
 		readTimeout,
 		writeTimeout,
@@ -265,13 +265,13 @@ func (ch *HandleT) getConnectionCredentials() CredentialsT {
 	}
 	credentials := CredentialsT{
 		Host:          warehouseutils.GetConfigValue(host, ch.Warehouse),
-		DbName:        warehouseutils.GetConfigValue(dbName, ch.Warehouse),
+		DBName:        warehouseutils.GetConfigValue(dbName, ch.Warehouse),
 		User:          warehouseutils.GetConfigValue(user, ch.Warehouse),
 		Password:      warehouseutils.GetConfigValue(password, ch.Warehouse),
 		Port:          warehouseutils.GetConfigValue(port, ch.Warehouse),
 		Secure:        warehouseutils.GetConfigValueBoolString(secure, ch.Warehouse),
 		SkipVerify:    warehouseutils.GetConfigValueBoolString(skipVerify, ch.Warehouse),
-		TlsConfigName: tlsName,
+		TLSConfigName: tlsName,
 	}
 	return credentials
 }
