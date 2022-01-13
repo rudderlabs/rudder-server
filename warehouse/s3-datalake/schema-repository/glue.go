@@ -269,15 +269,30 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 	}
 	partitionInputs := make([]*glue.PartitionInput, 0, len(locationToPartition))
 	for _, partition := range locationToPartition {
-		partitionInputs = append(partitionInputs, &partition)
+		getPartitionInput := glue.GetPartitionInput{
+			DatabaseName:    aws.String(gl.Namespace),
+			PartitionValues: partition.Values,
+			TableName:       aws.String(tableName),
+		}
+		_, err := gl.glueClient.GetPartition(&getPartitionInput)
+		if err != nil {
+			partitionInputs = append(partitionInputs, &partition)
+		} else {
+			pkgLogger.Debugf("Skipping: %s", partition)
+		}
 	}
-	pkgLogger.Infof("Refreshing %d partitions", len(partitionInputs))
-	pkgLogger.Debugf("PartitionInputs: %s", partitionInputs)
-	batchCreatePartitionInput := glue.BatchCreatePartitionInput{
-		DatabaseName:       aws.String(gl.Namespace),
-		PartitionInputList: partitionInputs,
-		TableName:          aws.String(tableName),
+	if len(partitionInputs) == 0 {
+		pkgLogger.Infof("No new partitions to refresh")
+		return
+	} else {
+		pkgLogger.Infof("Refreshing %d partitions", len(partitionInputs))
+		pkgLogger.Debugf("PartitionInputs: %s", partitionInputs)
+		batchCreatePartitionInput := glue.BatchCreatePartitionInput{
+			DatabaseName:       aws.String(gl.Namespace),
+			PartitionInputList: partitionInputs,
+			TableName:          aws.String(tableName),
+		}
+		_, err = gl.glueClient.BatchCreatePartition(&batchCreatePartitionInput)
+		return err
 	}
-	_, err = gl.glueClient.BatchCreatePartition(&batchCreatePartitionInput)
-	return err
 }
