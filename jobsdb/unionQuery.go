@@ -667,14 +667,15 @@ func (mj *MultiTenantHandleT) GetUnion(customerCount map[string]int, params GetQ
 
 func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]int, params GetQueryParamsT) []*JobT {
 	var jobList []*JobT
+	stateFilter := append([]string{NotProcessed.State}, params.StateFilters...)
+	params.StateFilters = stateFilter
 	queryString, customersToQuery := mj.getUnionQuerystring(customerCount, ds, params)
 
 	if len(customersToQuery) == 0 {
 		return jobList
 	}
-
 	for _, customer := range customersToQuery {
-		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters, willTryToSet, nil)
+		mj.markClearEmptyResult(ds, customer, stateFilter, params.CustomValFilters, params.ParameterFilters, willTryToSet, nil)
 	}
 
 	cacheUpdateByCustomer := make(map[string]string)
@@ -708,8 +709,6 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 		var job JobT
 		var _null int
 		columns, err := rows.Columns()
-		ct, _ := rows.ColumnTypes()
-		fmt.Println(ct)
 		mj.assertError(err)
 		processedJob := false
 		for _, clm := range columns {
@@ -746,7 +745,6 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 		if customerCount[job.WorkspaceId] == 0 {
 			delete(customerCount, job.WorkspaceId)
 		}
-
 		cacheUpdateByCustomer[job.WorkspaceId] = string(hasJobs)
 	}
 	if err = rows.Err(); err != nil {
@@ -756,7 +754,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 	//do cache stuff here
 	_willTryToSet := willTryToSet
 	for customer, cacheUpdate := range cacheUpdateByCustomer {
-		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters, cacheValue(cacheUpdate), &_willTryToSet)
+		mj.markClearEmptyResult(ds, customer, stateFilter, params.CustomValFilters, params.ParameterFilters, cacheValue(cacheUpdate), &_willTryToSet)
 	}
 
 	mj.printNumJobsByCustomer(jobList)
@@ -768,7 +766,6 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(customerCount map[string]int, 
 	queryInitial := mj.getInitialSingleCustomerQueryString(ds, params, true, customerCount)
 
 	for customer, count := range customerCount {
-		//do cache stuff here
 		if mj.isEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters) {
 			continue
 		}
