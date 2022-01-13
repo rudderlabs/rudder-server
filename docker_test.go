@@ -1762,7 +1762,7 @@ func sendUpdatedWHEvents(wdt *WareHouseDestinationTest) {
 func whDestinationTest(t *testing.T, wdt *WareHouseDestinationTest) {
 	whGatewayTest(t, wdt)
 	whBatchRouterTest(t, wdt)
-	whWareHouseTest(t, wdt)
+	whTablesTest(t, wdt)
 }
 
 // whGatewayTest Checking for gateway jobs
@@ -1848,8 +1848,8 @@ func whBatchRouterTest(t *testing.T, wdt *WareHouseDestinationTest) {
 	}, 2*time.Minute, 100*time.Millisecond)
 }
 
-// whWareHouseTest Checking warehouse
-func whWareHouseTest(t *testing.T, wdt *WareHouseDestinationTest) {
+// whTablesTest Checking warehouse
+func whTablesTest(t *testing.T, wdt *WareHouseDestinationTest) {
 	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 	primaryKeys := []string{"user_id", "id", "user_id", "user_id", "user_id", "user_id", "user_id", "user_id"}
 	for idx, table := range tables {
