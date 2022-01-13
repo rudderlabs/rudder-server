@@ -410,7 +410,7 @@ func (job *UploadJobT) run() (err error) {
 						StartID: startLoadFileID,
 						EndID:   endLoadFileID,
 					})
-					// FIX: This is better done every 100 files, since it's a batch request
+					// This is best done every 100 files, since it's a batch request for updates in Glue
 					partitionBatchSize := 99
 					timeWindowFormat, _ := job.warehouse.Destination.Config["timeWindowFormat"].(string)
 					for i := 0; i < len(loadFiles) && timeWindowFormat != ""; i += partitionBatchSize {
@@ -1666,10 +1666,9 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				timeWindowFormat, _ := job.warehouse.Destination.Config["timeWindowFormat"].(string)
 				if timeWindowFormat != "" {
 					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(timeWindowFormat)
-				} else {
-					if misc.Contains(timeWindowDestinations, job.warehouse.Type) {
-						payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
-					}
+				} else if misc.Contains(timeWindowDestinations, job.warehouse.Type) {
+					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+
 				}
 			}
 			// set merged schema as upload schema if the load file type is parquet
