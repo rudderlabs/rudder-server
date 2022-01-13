@@ -37,7 +37,7 @@ import (
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
-var testTimeout = 5 * time.Second
+var testTimeout = 20 * time.Second
 
 type testContext struct {
 	asyncHelper       testutils.AsyncTestHelper
