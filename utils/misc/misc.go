@@ -45,7 +45,7 @@ import (
 
 var AppStartTime int64
 var errorStorePath string
-var reservedFolderPaths map[string]bool
+var reservedFolderPaths []*RFP
 
 const (
 	// RFC3339Milli with milli sec precision
@@ -81,6 +81,11 @@ type RudderError struct {
 	Code              int
 }
 
+type RFP struct {
+	path         string
+	levelsToKeep int
+}
+
 var pkgLogger logger.LoggerI
 
 func Init() {
@@ -90,7 +95,7 @@ func Init() {
 }
 
 func LoadDestinations() ([]string, []string) {
-	batchDestinations := []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "MARKETO_BULK_UPLOAD"}
+	batchDestinations := []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "MARKETO_BULK_UPLOAD", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
 	customDestinations := []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
 	return batchDestinations, customDestinations
 }
@@ -312,24 +317,43 @@ func RemoveFilePaths(filePaths ...string) {
 }
 
 // GetReservedFolderPaths returns all temporary folder paths.
-func GetReservedFolderPaths() (paths map[string]bool) {
-	tmpDirPath, err := CreateTMPDIR()
+func GetReservedFolderPaths() []*RFP {
+	return []*RFP{
+		{path: RudderAsyncDestinationLogs, levelsToKeep: 0},
+		{path: RudderArchives, levelsToKeep: 0},
+		{path: RudderWarehouseStagingUploads, levelsToKeep: 0},
+		{path: RudderRawDataDestinationLogs, levelsToKeep: 0},
+		{path: RudderWarehouseLoadUploadsTmp, levelsToKeep: 0},
+		{path: RudderIdentityMergeRulesTmp, levelsToKeep: 1},
+		{path: RudderIdentityMappingsTmp, levelsToKeep: 1},
+		{path: RudderRedshiftManifests, levelsToKeep: 0},
+		{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 1},
+		{path: config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload), levelsToKeep: 0},
+	}
+}
+
+func checkMatch(currDir string) bool {
+	for _, rfp := range reservedFolderPaths {
+		if ok, err := rfp.matches(currDir); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *RFP) matches(currDir string) (match bool, err error) {
+	var tmpDirPath string
+	tmpDirPath, err = CreateTMPDIR()
 	if err != nil {
 		return
 	}
 
-	paths = make(map[string]bool)
-	paths[tmpDirPath] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderAsyncDestinationLogs)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderArchives)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderWarehouseStagingUploads)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderRawDataDestinationLogs)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderWarehouseLoadUploadsTmp)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderIdentityMergeRulesTmp)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderIdentityMappingsTmp)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderRedshiftManifests)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, RudderWarehouseJsonUploadsTmp)] = true
-	paths[fmt.Sprintf(`%s/%s`, tmpDirPath, config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload))] = true
+	splits := strings.Split(currDir, "/")
+	if len(splits) < r.levelsToKeep {
+		return
+	}
+	join := strings.Join(splits[0:len(splits)-r.levelsToKeep], "/")
+	match = fmt.Sprintf("%s/%s", tmpDirPath, r.path) == join
 	return
 }
 
@@ -341,7 +365,7 @@ func RemoveEmptyFolderStructureForFilePath(fp string) {
 	for currDir := filepath.Dir(fp); currDir != "/" && currDir != "."; {
 		// Checking if the currDir is present in the temporary folders or not
 		// If present we should stop at that point.
-		if _, ok := reservedFolderPaths[currDir]; ok {
+		if checkMatch(currDir) {
 			break
 		}
 		parentDir := filepath.Dir(currDir)
@@ -392,20 +416,14 @@ func CreateTMPDIR() (string, error) {
 type PerfStats struct {
 	eventCount           int64
 	elapsedTime          time.Duration
-	lastPrintEventCount  int64
-	lastPrintElapsedTime time.Duration
-	lastPrintTime        time.Time
 	compStr              string
 	tmpStart             time.Time
 	instantRateCall      float64
-	printThres           int
 }
 
 //Setup initializes the stat collector
 func (stats *PerfStats) Setup(comp string) {
 	stats.compStr = comp
-	stats.lastPrintTime = time.Now()
-	stats.printThres = 5 //seconds
 }
 
 //Start marks the start of event collection
@@ -425,19 +443,6 @@ func (stats *PerfStats) Rate(events int, elapsed time.Duration) {
 	stats.elapsedTime += elapsed
 	stats.eventCount += int64(events)
 	stats.instantRateCall = float64(events) * float64(time.Second) / float64(elapsed)
-}
-
-//Print displays the stats
-func (stats *PerfStats) Print() {
-	if time.Since(stats.lastPrintTime) > time.Duration(stats.printThres)*time.Second {
-		overallRate := float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime)
-		instantRate := float64(stats.eventCount-stats.lastPrintEventCount) * float64(time.Second) / float64(stats.elapsedTime-stats.lastPrintElapsedTime)
-		pkgLogger.Infof("%s: Total: %d Overall:%f, Instant(print):%f, Instant(call):%f",
-			stats.compStr, stats.eventCount, overallRate, instantRate, stats.instantRateCall)
-		stats.lastPrintEventCount = stats.eventCount
-		stats.lastPrintElapsedTime = stats.elapsedTime
-		stats.lastPrintTime = time.Now()
-	}
 }
 
 func (stats *PerfStats) Status() map[string]interface{} {
@@ -623,10 +628,6 @@ func SortedStructSliceValues(input interface{}, filedName string) []string {
 	return keys
 }
 
-func bToMb(b uint64) uint64 {
-	return b / 1024 / 1024
-}
-
 func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 	replacedStr := str
 	for regex, substitute := range expList {
@@ -738,20 +739,6 @@ func SingleQuoteLiteralJoin(slice []string) string {
 		str += QuoteLiteral(key)
 	}
 	return str
-}
-
-// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
-// of garage collection cycles completed.
-func PrintMemUsage() {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
-	pkgLogger.Debug("#########")
-	pkgLogger.Debugf("Alloc = %v MiB\n", bToMb(m.Alloc))
-	pkgLogger.Debugf("\tTotalAlloc = %v MiB\n", bToMb(m.TotalAlloc))
-	pkgLogger.Debugf("\tSys = %v MiB\n", bToMb(m.Sys))
-	pkgLogger.Debugf("\tNumGC = %v\n", m.NumGC)
-	pkgLogger.Debug("#########")
 }
 
 type BufferedWriter struct {
@@ -985,6 +972,9 @@ func IsValidUUID(uuid string) bool {
 
 func HasAWSKeysInConfig(config interface{}) bool {
 	configMap := config.(map[string]interface{})
+	if configMap["useSTSTokens"] == false {
+		return false
+	}
 	if configMap["accessKeyID"] == nil || configMap["accessKey"] == nil {
 		return false
 	}
@@ -1260,6 +1250,32 @@ func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
 	return result
 }
 
+// NestedMapLookup
+// m:  a map from strings to other maps or values, of arbitrary depth
+// ks: successive keys to reach an internal or leaf node (variadic)
+// If an internal node is reached, will return the internal map
+//
+// Returns: (Exactly one of these will be nil)
+// rval: the target node (if found)
+// err:  an error created by fmt.Errorf
+//
+func NestedMapLookup(m map[string]interface{}, ks ...string) (rval interface{}, err error) {
+	var ok bool
+
+	if len(ks) == 0 { // degenerate input
+		return nil, fmt.Errorf("NestedMapLookup needs at least one key")
+	}
+	if rval, ok = m[ks[0]]; !ok {
+		return nil, fmt.Errorf("key not found; remaining keys: %v", ks)
+	} else if len(ks) == 1 { // we've reached the final key
+		return rval, nil
+	} else if m, ok = rval.(map[string]interface{}); !ok {
+		return nil, fmt.Errorf("malformed structure at %#v", rval)
+	} else { // 1+ more keys
+		return NestedMapLookup(m, ks[1:]...)
+	}
+}
+
 // GetJsonSchemaDTFromGoDT returns the json schema supported data types from go lang supported data types.
 // References:
 // 1. Go supported types: https://golangbyexample.com/all-data-types-in-golang-with-examples/
@@ -1286,3 +1302,4 @@ func SleepCtx(ctx context.Context, delay time.Duration) bool {
 		return false
 	}
 }
+

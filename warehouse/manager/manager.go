@@ -2,6 +2,8 @@ package manager
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/datalake"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
@@ -11,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
-	s3datalake "github.com/rudderlabs/rudder-server/warehouse/s3-datalake"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -61,9 +62,12 @@ func New(destType string) (ManagerI, error) {
 	case "AZURE_SYNAPSE":
 		var as azuresynapse.HandleT
 		return &as, nil
-	case "S3_DATALAKE":
-		var s3datalake s3datalake.HandleT
-		return &s3datalake, nil
+	case "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE":
+		var dl datalake.HandleT
+		return &dl, nil
+	case "DELTALAKE":
+		var dl deltalake.HandleT
+		return &dl, nil
 	}
 	return nil, fmt.Errorf("Provider of type %s is not configured for WarehouseManager", destType)
 }

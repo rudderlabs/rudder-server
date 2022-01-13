@@ -150,6 +150,7 @@ type ParametersT struct {
 	DestinationDefinitionID string      `json:"destination_definition_id"`
 	SourceCategory          string      `json:"source_category"`
 	RecordID                interface{} `json:"record_id"`
+	WorkspaceId             string      `json:"workspaceId"`
 }
 
 type MetricMetadata struct {
@@ -1173,10 +1174,8 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
 				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, backendconfig.DestinationT{})
 
-				eventType, ok := singularEvent["type"].(string)
-				if !ok {
-					proc.logger.Error("singular event type is unknown")
-				}
+				eventType := misc.GetStringifiedData(singularEvent["type"])
+				eventName := misc.GetStringifiedData(singularEvent["event"])
 
 				source, sourceError := getSourceByWriteKey(writeKey)
 				if sourceError != nil {
@@ -1194,7 +1193,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 				//REPORTING - GATEWAY metrics - START
 				if proc.isReportingEnabled() {
 					//Grouping events by sourceid + destinationid + source batch id to find the count
-					key := fmt.Sprintf("%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID)
+					key := fmt.Sprintf("%s:%s:%s:%s", commonMetadataFromSingularEvent.SourceID, commonMetadataFromSingularEvent.SourceBatchID, eventName, eventType)
 					if _, ok := inCountMap[key]; !ok {
 						inCountMap[key] = 0
 					}
@@ -1210,7 +1209,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 					}
 					sd, ok := statusDetailsMap[key]
 					if !ok {
-						sd = types.CreateStatusDetail(jobsdb.Succeeded.State, 0, 200, "", []byte(`{}`), "", "")
+						sd = types.CreateStatusDetail(jobsdb.Succeeded.State, 0, 200, "", []byte(`{}`), eventName, eventType)
 						statusDetailsMap[key] = sd
 					}
 					sd.Count++
@@ -1479,7 +1478,7 @@ func (proc *HandleT) Store(in storeMessage) {
 		in.procErrorJobs = append(in.procErrorJobs, jobs...)
 	}
 	if len(in.procErrorJobs) > 0 {
-		proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
+		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
 		err := proc.errorDB.Store(in.procErrorJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
@@ -1527,9 +1526,6 @@ func (proc *HandleT) Store(in storeMessage) {
 	proc.statRouterDBW.Count(len(destJobs))
 	proc.statBatchRouterDBW.Count(len(batchDestJobs))
 	proc.statProcErrDBW.Count(len(in.procErrorJobs))
-
-	proc.pStatsJobs.Print()
-	proc.pStatsDBW.Print()
 }
 
 type transformSrcDestOutput struct {
@@ -1819,6 +1815,7 @@ func (proc *HandleT) transformSrcDest(
 		sourceDefID := destEvent.Metadata.SourceDefinitionID
 		destDefID := destEvent.Metadata.DestinationDefinitionID
 		sourceCategory := destEvent.Metadata.SourceCategory
+		workspaceId := destEvent.Metadata.WorkspaceID
 		//If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 		//This is done to respect findWorker logic in router.
 		if rudderID == "" {
@@ -1843,6 +1840,7 @@ func (proc *HandleT) transformSrcDest(
 			SourceDefinitionID:      sourceDefID,
 			DestinationDefinitionID: destDefID,
 			RecordID:                recordId,
+			WorkspaceId:             workspaceId,
 		}
 		marshalledParams, err := json.Marshal(params)
 		if err != nil {
@@ -2001,8 +1999,6 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 	proc.statDBReadRequests.Observe(float64(len(unprocessedList)))
 	proc.statDBReadEvents.Observe(float64(totalEvents))
 	proc.statDBReadPayloadBytes.Observe(float64(totalPayloadBytes))
-
-	proc.pStatsDBR.Print()
 
 	return unprocessedList
 }

@@ -1,17 +1,20 @@
 package destination_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	destination "github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGetDestDetails(t *testing.T) {
-
+	initialize.Init()
+	ctx := context.Background()
 	config := map[string]interface{}{
 		"bucketName":  "malani-deletefeature-testdata",
 		"prefix":      "regulation",
@@ -76,7 +79,7 @@ func TestGetDestDetails(t *testing.T) {
 		Dest: mockDestMiddleware,
 	}
 
-	destDetail, err := dest.GetDestDetails(testDestID)
+	destDetail, err := dest.GetDestDetails(ctx, testDestID)
 
 	require.NoError(t, err, "expected no err")
 	require.Equal(t, expDest, destDetail, "actual dest detail different than expected")

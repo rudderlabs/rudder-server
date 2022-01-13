@@ -1627,6 +1627,9 @@ func (jd *HandleT) migrateJobs(srcDS dataSetT, destDS dataSetT) (noJobsMigrated 
 	queryStat := stats.NewTaggedStat("migration_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
+	jd.dsListLock.RLock()
+	defer jd.dsListLock.RUnlock()
+
 	//Unprocessed jobs
 	unprocessedList := jd.getUnprocessedJobsDS(srcDS, false, 0, GetQueryParamsT{})
 
@@ -2491,6 +2494,8 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 func (jd *HandleT) backupDSLoop(ctx context.Context) {
 	sleepMultiplier := time.Duration(1)
 
+	jd.logger.Info("BackupDS loop is running")
+
 	for {
 		select {
 		case <-time.After(sleepMultiplier * backupCheckSleepDuration):
@@ -2498,7 +2503,6 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 			return
 		}
 
-		jd.logger.Info("BackupDS check:Start")
 		backupDSRange := jd.getBackupDSRange()
 		// check if non empty dataset is present to backup
 		// else continue

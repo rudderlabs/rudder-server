@@ -165,6 +165,7 @@ func setMaxParallelLoads() {
 		"MSSQL":      config.GetInt("Warehouse.mssql.maxParallelLoads", 3),
 		"SNOWFLAKE":  config.GetInt("Warehouse.snowflake.maxParallelLoads", 3),
 		"CLICKHOUSE": config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
+		"DELTALAKE":  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
 }
 
@@ -230,7 +231,7 @@ func (job *UploadJobT) initTableUploads() error {
 	return createTableUploads(job.upload.ID, tables)
 }
 
-func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
+func (job *UploadJobT) syncRemoteSchema() (schemaChanged bool, err error) {
 	schemaHandle := SchemaHandleT{
 		warehouse:    job.warehouse,
 		stagingFiles: job.stagingFiles,
@@ -243,8 +244,8 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 		return false, err
 	}
 
-	hasSchemaChanged = !compareSchema(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
-	if hasSchemaChanged {
+	schemaChanged = hasSchemaChanged(schemaHandle.localSchema, schemaHandle.schemaInWarehouse)
+	if schemaChanged {
 		err = schemaHandle.updateLocalSchema(schemaHandle.schemaInWarehouse)
 		if err != nil {
 			return false, err
@@ -252,7 +253,7 @@ func (job *UploadJobT) syncRemoteSchema() (hasSchemaChanged bool, err error) {
 		schemaHandle.localSchema = schemaHandle.schemaInWarehouse
 	}
 
-	return hasSchemaChanged, nil
+	return schemaChanged, nil
 }
 
 func (job *UploadJobT) getTotalRowsInStagingFiles() int64 {
@@ -360,6 +361,7 @@ func (job *UploadJobT) run() (err error) {
 	}
 
 	for {
+		stateStartTime := time.Now()
 		err = nil
 
 		job.setUploadStatus(UploadStatusOpts{Status: nextUploadState.inProgress})
@@ -561,6 +563,9 @@ func (job *UploadJobT) run() (err error) {
 			uploadStatusOpts.ReportingMetric = reportingMetric
 		}
 		job.setUploadStatus(uploadStatusOpts)
+
+		// record metric for time taken by the current state
+		job.timerStat(nextUploadState.inProgress).SendTiming(time.Since(stateStartTime))
 
 		if newStatus == ExportedData {
 			break
@@ -1305,12 +1310,14 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	defer job.uploadLock.Unlock()
 	upload := job.upload
 	newjobState := Waiting
-	var metadata map[string]string
+	var metadata map[string]interface{}
 	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
 	if unmarshallErr != nil {
-		metadata = make(map[string]string)
+		metadata = make(map[string]interface{})
 	}
 	metadata["nextRetryTime"] = time.Now().Add(-time.Hour * 1).Format(time.RFC3339)
+	metadata["retried"] = true
+	metadata["priority"] = 50
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return err
@@ -1660,10 +1667,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID int64,
 				if timeWindowFormat != "" {
 					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(timeWindowFormat)
 				} else {
-					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+					if misc.Contains(timeWindowDestinations, job.warehouse.Type) {
+						payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+					}
 				}
 			}
-
 			// set merged schema as upload schema if the load file type is parquet
 			if job.upload.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 				payload.UploadSchema = job.upload.MergedSchema

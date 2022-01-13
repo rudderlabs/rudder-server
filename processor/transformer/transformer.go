@@ -50,6 +50,7 @@ type MetadataT struct {
 	RecordID            interface{}                       `json:"recordId"`
 	DestinationType     string                            `json:"destinationType"`
 	MessageID           string                            `json:"messageId"`
+	OAuthAccessToken    string                            `json:"oauthAccessToken"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
 	MessageIDs              []string `json:"messageIds"`
 	RudderID                string   `json:"rudderId"`
@@ -257,7 +258,6 @@ func (trans *HandleT) Transform(clientEvents []TransformerEventT,
 	trans.receivedStat.Count(len(outClientEvents))
 	trans.failedStat.Count(len(failedEvents))
 	trans.perfStats.Rate(len(clientEvents), time.Since(s))
-	trans.perfStats.Print()
 
 	return ResponseT{
 		Events:       outClientEvents,

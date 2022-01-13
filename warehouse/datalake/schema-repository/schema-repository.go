@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("s3-datalake").Child("schema-repository")
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("datalake").Child("schema-repository")
 }
 
 const MAX_CHARACTER_LIMIT = 65535
