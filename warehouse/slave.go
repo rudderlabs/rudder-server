@@ -381,7 +381,6 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	jobRun.outputFileWritersMap = make(map[string]warehouseutils.LoadFileWriterI)
 	jobRun.tableEventCountMap = make(map[string]int)
 	jobRun.uuidTS = timeutil.Now()
-	misc.PrintMemUsage()
 
 	// Initilize Discards Table
 	discardsTable := job.getDiscardsTable()
@@ -496,7 +495,6 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 		jobRun.tableEventCountMap[tableName]++
 	}
 	timer.End()
-	misc.PrintMemUsage()
 
 	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
