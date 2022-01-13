@@ -900,6 +900,6 @@ func (dl *HandleT) GetLogIdentifier(args ...string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", dl.Warehouse.Type, dl.Warehouse.Source.ID, dl.Warehouse.Destination.ID, dl.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (_ *HandleT) RefreshPartitions(_ string, _ []warehouseutils.LoadFileT) (err error) {
+func (*HandleT) RefreshPartitions(_ string, _ []warehouseutils.LoadFileT) (err error) {
 	return nil
 }
