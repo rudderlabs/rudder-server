@@ -727,10 +727,11 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					worker.rt.logger.Debugf("Will drop with 1113 because of lower resultSetID %v", destinationJob.JobMetadataArray[0].JobID)
 				}
 
-				if time.Since(worker.localResultSet.resultSetBeginTime) > worker.localResultSet.timeAlloted {
+				//Assuming twice the overhead - defensive: 30% was just fine though
+				if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*float64(worker.localResultSet.timeAlloted)) {
 					worker.rt.logger.Debugf("Will drop with 1113 because of time expiry %v", destinationJob.JobMetadataArray[0].JobID)
 				}
-				if resultSetID < worker.localResultSet.id || time.Since(worker.localResultSet.resultSetBeginTime) > worker.localResultSet.timeAlloted {
+				if resultSetID < worker.localResultSet.id || time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*float64(worker.localResultSet.timeAlloted)) {
 					respStatusCode, respBody = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
 
 				} else if worker.rt.customDestinationManager != nil {
@@ -1868,13 +1869,13 @@ func (rt *HandleT) readAndProcess() int {
 	customerCountStat = stats.NewTaggedStat("customer_pickup_count", stats.CountType, stats.Tags{
 		"module":   "router",
 		"destType": rt.destName,
-	})
+	})*/
 	for _, count := range rt.customerCount {
 		totalRequestedJobCount += count
 		//note that this will give an aggregated count
 	}
-	customerCountStat.Count(totalRequestedJobCount)
-	*/
+	//customerCountStat.Count(totalRequestedJobCount)
+
 	rt.logger.Debugf("[DRAIN DEBUG] counts errors requested %v 500's %v total %v  ratio %v", rt.destName, totalErrorCount, totalRequestedJobCount, totalErrorCount/float64(totalRequestedJobCount))
 
 	nonTerminalList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State, jobsdb.Failed.State}}, rt.maxDSQuerySize)
