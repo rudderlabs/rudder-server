@@ -894,6 +894,6 @@ func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.BQClient, BQ: dbClient}, err
 }
 
-func (bq *HandleT) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) (err error) {
-	return
+func (_ *HandleT) RefreshPartitions(_ string, _ []warehouseutils.LoadFileT) (err error) {
+	return nil
 }

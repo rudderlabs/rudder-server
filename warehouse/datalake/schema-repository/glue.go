@@ -268,7 +268,7 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 		locationToPartition[locationFolder] = partitionInput
 	}
 	partitionInputs := make([]*glue.PartitionInput, 0, len(locationToPartition))
-	for _, partition := range locationToPartition {
+	for key, partition := range locationToPartition {
 		getPartitionInput := glue.GetPartitionInput{
 			DatabaseName:    aws.String(gl.Namespace),
 			PartitionValues: partition.Values,
@@ -276,7 +276,8 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 		}
 		_, err := gl.glueClient.GetPartition(&getPartitionInput)
 		if err != nil {
-			partitionInputs = append(partitionInputs, &partition)
+			_partition := locationToPartition[key]
+			partitionInputs = append(partitionInputs, &_partition)
 		} else {
 			pkgLogger.Debugf("Skipping: %s", partition)
 		}

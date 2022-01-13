@@ -718,6 +718,6 @@ func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
-func (pg *HandleT) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) (err error) {
-	return
+func (_ *HandleT) RefreshPartitions(_ string, _ []warehouseutils.LoadFileT) (err error) {
+	return nil
 }
