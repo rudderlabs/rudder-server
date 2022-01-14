@@ -119,7 +119,9 @@ var (
 	dbHandle         *sql.DB
 	sourceJSON       backendconfig.ConfigT
 	webhookurl       string
+	webhookurl2      string
 	webhook          *WebhookRecorder
+	webhook2		 *WebhookRecorder
 	address          string
 	runIntegration   bool
 	writeKey         string
@@ -186,12 +188,12 @@ func randString(n int) string {
 }
 
 type Event struct {
-	anonymous_id       string
-	user_id            string
-	count              string
-	context_myuniqueid string
-	context_id         string
-	context_ip         string
+	anonymous_id		 string
+	user_id    			 string
+	count      		 	 string
+	context_myuniqueid	 string
+	context_id 			 string
+	context_ip 			 string
 }
 
 type Author struct {
@@ -558,6 +560,11 @@ func run(m *testing.M) (int, error) {
 	webhookurl = webhook.Server.URL
 	log.Println("webhookurl", webhookurl)
 
+	webhook2 = NewWebhook()
+	defer webhook2.Close()
+	webhookurl2 = webhook2.Server.URL
+	log.Println("webhookurl2", webhookurl2)
+
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
 		log.Panic(err)
@@ -629,6 +636,7 @@ func run(m *testing.M) (int, error) {
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
 			"webhookUrl":                          webhookurl,
+			"webhookUrl2":                         webhookurl2,
 			"writeKey":                            writeKey,
 			"workspaceId":                         workspaceID,
 			"postgresPort":                        resourcePostgres.GetPort("5432/tcp"),
@@ -782,6 +790,9 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "context.ip").Str, "0.0.0.0")
 	// TODO: Verify Destination Transformation
 
+	// Verify Disabled destination doesn't receive any event.
+	fmt.Println("len(webhook2.Requests())",len(webhook2.Requests()))
+	require.Equal(t, 0, len(webhook2.Requests()))
 }
 
 // Verify Event in POSTGRES
@@ -839,7 +850,7 @@ func TestRedis(t *testing.T) {
 		event, _ := redigo.String(conn.Do("HGET", "user:identified user id", "trait1"))
 		return event == "new-val"
 	}, time.Minute, 10*time.Millisecond)
-	// TODO: Verify Destination Transformation
+// TODO: Verify Destination Transformation
 }
 
 func TestKafka(t *testing.T) {

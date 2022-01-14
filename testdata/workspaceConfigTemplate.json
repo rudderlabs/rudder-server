@@ -639,6 +639,86 @@
                     },
                     "isConnectionEnabled": true,
                     "isProcessorEnabled": true
+                },
+                {
+                    "config":
+                    {
+                        "webhookUrl": "{{.webhookUrl2}}",
+                        "webhookMethod": "POST"
+                    },
+                    "secretConfig":
+                    {},
+                    "id": "xxxyyyzzzP9kQfzOoKd1tuxchYAG",
+                    "name": "Des WebHook Integration Test 1",
+                    "enabled": false,
+                    "workspaceId": "{{.workspaceId}}",
+                    "deleted": false,
+                    "createdAt": "2021-08-27T06:49:38.546Z",
+                    "updatedAt": "2021-08-27T06:49:38.546Z",
+                    "transformations": [
+                        {
+                            "versionId": "23b5Jx2XJb0YLk6CkzHso6NVbZ6",
+                            "config": {},
+                            "id": "23VJjP3bbHMzUhWjI7bvNL5S9xx"
+                        }
+                    ],
+                    "destinationDefinition":
+                    {
+                        "config":
+                        {
+                            "destConfig":
+                            {
+                                "defaultConfig":
+                                [
+                                    "webhookUrl",
+                                    "webhookMethod",
+                                    "headers"
+                                ]
+                            },
+                            "secretKeys":
+                            [
+                                "headers.to"
+                            ],
+                            "excludeKeys":
+                            [],
+                            "includeKeys":
+                            [],
+                            "transformAt": "processor",
+                            "transformAtV1": "processor",
+                            "supportedSourceTypes":
+                            [
+                                "android",
+                                "ios",
+                                "web",
+                                "unity",
+                                "amp",
+                                "cloud",
+                                "warehouse",
+                                "reactnative",
+                                "flutter"
+                            ],
+                            "supportedMessageTypes":
+                            [
+                                "alias",
+                                "group",
+                                "identify",
+                                "page",
+                                "screen",
+                                "track"
+                            ],
+                            "saveDestinationResponse": false
+                        },
+                        "configSchema": null,
+                        "responseRules": null,
+                        "id": "xxxyyyzzSOU9pLRavMf0GuVnWV3",
+                        "name": "WEBHOOK",
+                        "displayName": "Webhook",
+                        "category": null,
+                        "createdAt": "2020-03-16T19:25:28.141Z",
+                        "updatedAt": "2021-08-26T07:06:01.445Z"
+                    },
+                    "isConnectionEnabled": true,
+                    "isProcessorEnabled": true
                 }
             ],
             "sourceDefinition":
