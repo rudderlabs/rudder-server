@@ -898,3 +898,27 @@ func (dl *HandleT) GetLogIdentifier(args ...string) string {
 	}
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", dl.Warehouse.Type, dl.Warehouse.Source.ID, dl.Warehouse.Destination.ID, dl.Warehouse.Namespace, strings.Join(args, "]["))
 }
+
+// GetDatabricksVersion Gets the databricks version by making a grpc call to Version stub.
+func GetDatabricksVersion() (databricksBuildVersion string) {
+	databricksBuildVersion = "Not an official release. Get the latest release from dockerhub."
+
+	ctx := context.Background()
+
+	conn, err := grpc.DialContext(ctx, GetDatabricksConnectorURL(), grpc.WithInsecure())
+	if err != nil {
+		pkgLogger.Errorf("Error while creating grpc connection to databricks with error: %s", err.Error())
+		databricksBuildVersion = fmt.Sprintf("Unable to create grpc connection to databricks. %s", databricksBuildVersion)
+		return
+	}
+
+	versionClient := proto.NewVersionClient(conn)
+	versionResponse, err := versionClient.GetVersion(ctx, &proto.VersionRequest{})
+	if err != nil {
+		pkgLogger.Errorf("Error while getting version response from databricks with error : %s", err.Error())
+		databricksBuildVersion = "Unable to read response from databricks."
+		return
+	}
+	databricksBuildVersion = versionResponse.GetVersion()
+	return
+}
