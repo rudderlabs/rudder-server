@@ -908,7 +908,7 @@ func GetDatabricksVersion() (databricksBuildVersion string) {
 	conn, err := grpc.DialContext(ctx, GetDatabricksConnectorURL(), grpc.WithInsecure())
 	if err != nil {
 		pkgLogger.Errorf("Error while creating grpc connection to databricks with error: %s", err.Error())
-		databricksBuildVersion = fmt.Sprintf("Unable to create grpc connection to databricks. %s", databricksBuildVersion)
+		databricksBuildVersion = "Unable to create grpc connection to databricks."
 		return
 	}
 
