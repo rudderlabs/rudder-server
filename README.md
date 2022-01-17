@@ -94,7 +94,7 @@ RudderStack is an independent, stand-alone system with a dependency only on the 
 
 A high-level view of RudderStack’s architecture is shown below:
 
-![Architecture](https://user-images.githubusercontent.com/59817155/141984012-2fa29268-7144-47c0-864c-74d6af61b9a5.png)
+![Architecture](resources/rudder-server-architecture.png)
 
 For more details on the various architectural components, refer to our [**documentation**](https://rudderstack.com/docs/get-started/rudderstack-architecture/).
 
