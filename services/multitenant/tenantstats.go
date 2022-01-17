@@ -402,15 +402,26 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 
 				timeRequired := 0.0
 
+				unReliableLatencyORInRate := false
 				if latencyMap[customerKey].Value() != 0 {
-					customerPickUpCount[customerKey] = misc.MaxInt(int(math.Min(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second), runningTimeCounter/(latencyMap[customerKey].Value()))), 1)
+					tmpPickCount := int(math.Min(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second), runningTimeCounter/(latencyMap[customerKey].Value())))
+					if tmpPickCount < 1 {
+						tmpPickCount = 1
+						pkgLogger.Debugf("[DRAIN DEBUG] %v  checking for high latency/low in rate customer %v latency value %v in rate %v", destType, customerKey, latencyMap[customerKey].Value(), destTypeCount.Value())
+						unReliableLatencyORInRate = true
+					}
+					customerPickUpCount[customerKey] = tmpPickCount
 					if customerPickUpCount[customerKey] > multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] {
 						customerPickUpCount[customerKey] = misc.MaxInt(multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType], 0)
 					}
 				} else {
 					customerPickUpCount[customerKey] = misc.MinInt(int(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second)), multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
 				}
+
 				timeRequired = float64(customerPickUpCount[customerKey]) * latencyMap[customerKey].Value()
+				if unReliableLatencyORInRate {
+					timeRequired = 0
+				}
 				//updatedTimeRequired, updatedPickUpCount, isCustomerLimited := getCorrectedJobsPickupCount(customerKey, destType, customerPickUpCount[customerKey], timeRequired, successRate, drainRate)
 				//customerBlockedMap[customerKey] = isCustomerLimited
 				runningTimeCounter = runningTimeCounter - timeRequired
@@ -460,7 +471,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 		if timeRequired < runningTimeCounter {
 			pickUpCount := misc.MinInt(customerCountKey[destType]-customerPickUpCount[destType], runningJobCount)
 			customerPickUpCount[customerKey] += pickUpCount
-			runningTimeCounter = runningTimeCounter - timeRequired
+			runningTimeCounter = runningTimeCounter - float64(pickUpCount)*latencyMap[customerKey].Value()
 			runningJobCount = runningJobCount - pickUpCount
 			// Migrated jobs fix in else condition
 		} else {
