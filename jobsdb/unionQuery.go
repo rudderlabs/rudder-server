@@ -16,6 +16,25 @@ const (
 
 type MultiTenantHandleT struct {
 	HandleT
+	Cache CacheOperator
+}
+
+type CacheOperator interface {
+	IsEmpty(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool
+	UpdateCache(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue)
+}
+
+type JobsDBStatusCache struct {
+	a HandleT
+}
+
+func (c *JobsDBStatusCache) IsEmpty(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
+	return c.a.isEmptyResult(ds, customer, stateFilters, customValFilters, parameterFilters)
+}
+
+func (c *JobsDBStatusCache)UpdateCache(ds dataSetT, customer string, stateFilters []string, customValFilters []string,
+	parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
+	c.a.markClearEmptyResult(ds, customer, stateFilters, customValFilters, parameterFilters, value, checkAndSet)
 }
 
 type MultiTenantJobsDB interface {
@@ -24,7 +43,7 @@ type MultiTenantJobsDB interface {
 
 	GetUnprocessedUnion(map[string]int, GetQueryParamsT, int) []*JobT
 	GetProcessedUnion(map[string]int, GetQueryParamsT, int) []*JobT
-	GetUnion(map[string]int, GetQueryParamsT, int) []*JobT
+	GetAllJobs(map[string]int, GetQueryParamsT) []*JobT
 	GetCustomerCounts(int) map[string]int
 
 	GetImportingList(params GetQueryParamsT) []*JobT
@@ -599,7 +618,7 @@ func (mj *MultiTenantHandleT) printNumJobsByCustomer(jobs []*JobT) {
 	}
 }
 
-func (mj *MultiTenantHandleT) GetUnion(customerCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) []*JobT {
+func (mj *MultiTenantHandleT) GetAllJobs(customerCount map[string]int, params GetQueryParamsT) []*JobT {
 
 	//The order of lock is very important. The migrateDSLoop
 	//takes lock in this order so reversing this will cause
@@ -615,12 +634,12 @@ func (mj *MultiTenantHandleT) GetUnion(customerCount map[string]int, params GetQ
 	var tablesQueried int
 	var tablesQueriedStat stats.RudderStats
 	var queryTime stats.RudderStats
-	// TODO: Change stats
 	queryTime = stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
 		"state":    "nonterminal",
 		"module":   mj.tablePrefix,
 		"destType": params.CustomValFilters[0],
 	})
+	params.StateFilters = []string{Waiting.State, Failed.State, NotProcessed.State}
 
 	start := time.Now()
 	for _, ds := range dsList {
@@ -633,7 +652,6 @@ func (mj *MultiTenantHandleT) GetUnion(customerCount map[string]int, params GetQ
 	}
 
 	queryTime.SendTiming(time.Since(start))
-	// TODO: Change stats
 	tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
 		"state":    "nonterminal",
 		"module":   mj.tablePrefix,
@@ -667,15 +685,14 @@ func (mj *MultiTenantHandleT) GetUnion(customerCount map[string]int, params GetQ
 
 func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]int, params GetQueryParamsT) []*JobT {
 	var jobList []*JobT
-	stateFilter := append([]string{NotProcessed.State}, params.StateFilters...)
-	params.StateFilters = stateFilter
 	queryString, customersToQuery := mj.getUnionQuerystring(customerCount, ds, params)
 
 	if len(customersToQuery) == 0 {
 		return jobList
 	}
 	for _, customer := range customersToQuery {
-		mj.markClearEmptyResult(ds, customer, stateFilter, params.CustomValFilters, params.ParameterFilters, willTryToSet, nil)
+		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
+			willTryToSet, nil)
 	}
 
 	cacheUpdateByCustomer := make(map[string]string)
@@ -754,7 +771,8 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 	//do cache stuff here
 	_willTryToSet := willTryToSet
 	for customer, cacheUpdate := range cacheUpdateByCustomer {
-		mj.markClearEmptyResult(ds, customer, stateFilter, params.CustomValFilters, params.ParameterFilters, cacheValue(cacheUpdate), &_willTryToSet)
+		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
+			cacheValue(cacheUpdate), &_willTryToSet)
 	}
 
 	mj.printNumJobsByCustomer(jobList)

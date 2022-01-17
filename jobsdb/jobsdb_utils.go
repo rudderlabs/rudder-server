@@ -192,16 +192,16 @@ func constructParameterJSONQuery(table string, parameterFilters []ParameterFilte
 	for _, parameter := range parameterFilters {
 		allKeyValues = append(allKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
 		if parameter.Optional {
-			opNullConditions = append(opNullConditions, fmt.Sprintf(`"%s".parameters -> '%s' IS NULL`, table, parameter.Name))
+			opNullConditions = append(opNullConditions, fmt.Sprintf(`%s.parameters -> '%s' IS NULL`, table, parameter.Name))
 		} else {
 			mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
 		}
 	}
 	opQuery := ""
 	if len(opNullConditions) > 0 {
-		opQuery += fmt.Sprintf(` OR ("%s".parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
+		opQuery += fmt.Sprintf(` OR (%s.parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
 	}
-	return fmt.Sprintf(`("%s".parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
+	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
 }
 
 //Admin Handlers
