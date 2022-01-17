@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../mocks/jobsdb/mock_unionQuery.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb MultiTenantJobsDB
+
 package jobsdb
 
 import (
@@ -32,7 +34,7 @@ func (c *JobsDBStatusCache) IsEmpty(ds dataSetT, customer string, stateFilters [
 	return c.a.isEmptyResult(ds, customer, stateFilters, customValFilters, parameterFilters)
 }
 
-func (c *JobsDBStatusCache)UpdateCache(ds dataSetT, customer string, stateFilters []string, customValFilters []string,
+func (c *JobsDBStatusCache) UpdateCache(ds dataSetT, customer string, stateFilters []string, customValFilters []string,
 	parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
 	c.a.markClearEmptyResult(ds, customer, stateFilters, customValFilters, parameterFilters, value, checkAndSet)
 }
