@@ -600,6 +600,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 	failedUserIDsMap := make(map[string]struct{})
 	apiCallsCount := make(map[string]*destJobCountsT)
+	//Struct to hold unique users in the batch (worker.destinationJobs)
+	userToJobIDMap := make(map[string]int64)
+	routerJobResponses := make([]*RouterJobResponse, 0)
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
 		respBodyArr := make([]string, 0)
@@ -717,6 +720,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			respBody = destinationJob.Error
 		}
 
+		//TODO remove
+		respStatusCode = 504
+
 		prevRespStatusCode = respStatusCode
 
 		if !isJobTerminated(respStatusCode) {
@@ -725,45 +731,86 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			}
 		}
 
-		var sourceIDs []string
-		for i, destinationJobMetadata := range destinationJob.JobMetadataArray {
+		for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 			handledJobMetadatas[destinationJobMetadata.JobID] = &destinationJobMetadata
 
-			attemptNum := destinationJobMetadata.AttemptNum
-			if attemptedToSendTheJob {
-				attemptNum++
-			}
+			_destinationJob := destinationJob
+			_destinationJobMetadata := destinationJobMetadata
 
-			status := jobsdb.JobStatusT{
-				JobID:         destinationJobMetadata.JobID,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				AttemptNum:    attemptNum,
-				ErrorCode:     strconv.Itoa(respStatusCode),
-				ErrorResponse: []byte(`{}`),
-				Parameters:    []byte(`{}`),
-			}
+			routerJobResponses = append(routerJobResponses, &RouterJobResponse{jobID: destinationJobMetadata.JobID,
+				destinationJob:         &_destinationJob,
+				destinationJobMetadata: &_destinationJobMetadata,
+				respStatusCode:         respStatusCode,
+				respBody:               respBody,
+				attemptedToSendTheJob:  attemptedToSendTheJob})
+		}
+	}
 
-			worker.postStatusOnResponseQ(respStatusCode, respBody, destinationJob.Message, respContentType, &destinationJobMetadata, &status)
+	sort.Slice(routerJobResponses, func(i, j int) bool {
+		return routerJobResponses[i].jobID < routerJobResponses[j].jobID
+	})
 
-			worker.sendEventDeliveryStat(&destinationJobMetadata, &status, &destinationJob.Destination)
-
-			if attemptedToSendTheJob {
-				worker.sendRouterResponseCountStat(&destinationJobMetadata, &status, &destinationJob.Destination)
-			}
-			payload := destinationJob.Message
-			if destinationJob.Message == nil {
-				payload = destinationJobMetadata.JobT.EventPayload
-			}
-
-			if !misc.Contains(sourceIDs, destinationJobMetadata.SourceID) {
-				sourceIDs = append(sourceIDs, destinationJobMetadata.SourceID)
-			}
-			//Sending only one destination live event for every destinationJob.
-			if i == len(destinationJob.JobMetadataArray)-1 {
-				worker.sendDestinationResponseToConfigBackend(payload, &destinationJobMetadata, &status, sourceIDs)
+	for _, routerJobResponse := range routerJobResponses {
+		destinationJobMetadata := routerJobResponse.destinationJobMetadata
+		destinationJob := routerJobResponse.destinationJob
+		attemptedToSendTheJob := routerJobResponse.attemptedToSendTheJob
+		if !isSuccessStatus(respStatusCode) {
+			if prevFailedJobID, ok := userToJobIDMap[destinationJobMetadata.UserID]; ok {
+				//This means more than two jobs of the same user are in the batch & the batch job is failed
+				//Only one job is marked failed and the rest are marked waiting
+				//Job order logic requires that at any point of time, we should have only one failed job per user
+				//This is introduced to ensure the above statement
+				resp := fmt.Sprintf(`{"blocking_id":"%v", "user_id":"%s", "moreinfo": "attempted to send in a batch"}`, prevFailedJobID, destinationJobMetadata.UserID)
+				status := jobsdb.JobStatusT{
+					JobID:         destinationJobMetadata.JobID,
+					AttemptNum:    destinationJobMetadata.AttemptNum,
+					ExecTime:      time.Now(),
+					RetryTime:     time.Now(),
+					JobState:      jobsdb.Waiting.State,
+					ErrorResponse: []byte(resp), // check
+					Parameters:    []byte(`{}`),
+				}
+				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
+				continue
+			} else {
+				userToJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
 			}
 		}
+
+		attemptNum := destinationJobMetadata.AttemptNum
+		if attemptedToSendTheJob {
+			attemptNum++
+		}
+
+		status := jobsdb.JobStatusT{
+			JobID:         destinationJobMetadata.JobID,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			AttemptNum:    attemptNum,
+			ErrorCode:     strconv.Itoa(respStatusCode),
+			ErrorResponse: []byte(`{}`),
+			Parameters:    []byte(`{}`),
+		}
+
+		worker.postStatusOnResponseQ(respStatusCode, respBody, destinationJob.Message, respContentType, destinationJobMetadata, &status)
+
+		worker.sendEventDeliveryStat(destinationJobMetadata, &status, &destinationJob.Destination)
+
+		if attemptedToSendTheJob {
+			worker.sendRouterResponseCountStat(destinationJobMetadata, &status, &destinationJob.Destination)
+		}
+		/*payload := destinationJob.Message
+		if destinationJob.Message == nil {
+			payload = destinationJobMetadata.JobT.EventPayload
+		}
+
+		if !misc.Contains(sourceIDs, destinationJobMetadata.SourceID) {
+			sourceIDs = append(sourceIDs, destinationJobMetadata.SourceID)
+		}
+		//Sending only one destination live event for every destinationJob.
+		if i == len(destinationJob.JobMetadataArray)-1 {
+			worker.sendDestinationResponseToConfigBackend(payload, &destinationJobMetadata, &status, sourceIDs)
+		}*/
 	}
 
 	worker.decrementInThrottleMap(apiCallsCount)
@@ -787,6 +834,15 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	}
 
 	worker.batchTimeStat.End()
+}
+
+type RouterJobResponse struct {
+	jobID                  int64
+	destinationJob         *types.DestinationJobT
+	destinationJobMetadata *types.JobMetadataT
+	respStatusCode         int
+	respBody               string
+	attemptedToSendTheJob  bool
 }
 
 func (worker *workerT) recordCountsByDestAndUser(destID, userID string) {
@@ -2102,7 +2158,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 			// Errors like OOM kills of transformer, transformer down etc,.
 			// If destResBody comes out with a plain string, then this will occur
 			return http.StatusInternalServerError, fmt.Sprintf(`{
-				Error: %v, 
+				Error: %v,
 				(trRespStCd, trRespBody): (%v, %v),
 			}`, destError, trRespStatusCode, trRespBody)
 		}
