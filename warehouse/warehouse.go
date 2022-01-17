@@ -1395,7 +1395,7 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 		sourceOrDestColumn = "destination_id"
 	}
 	var lastStagingFileID int64
-	sqlStatement := fmt.Sprintf(`SELECT end_staging_file_id FROM %[1]s WHERE %[1]s.%[3]s='%[2]s' ORDER BY %[1]s.id DESC`, warehouseutils.WarehouseUploadsTable, sourceOrDestId, sourceOrDestColumn)
+	sqlStatement := fmt.Sprintf(`SELECT MAX(end_staging_file_id) FROM %[1]s WHERE %[1]s.%[3]s='%[2]s'`, warehouseutils.WarehouseUploadsTable, sourceOrDestId, sourceOrDestColumn)
 
 	err = dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileID)
 	if err != nil && err != sql.ErrNoRows {
