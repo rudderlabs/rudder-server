@@ -337,9 +337,9 @@ func getLastDrainedTimestamp(customerKey string, destType string) time.Time {
 }
 
 func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]float64) map[string]int {
-	//Add 30% to the time interval as exact difference leads to a catchup scenario, but causes to give some priority to pileup in the inrate pass
+	//Add 30% to the time interval as exact difference leads to a catchup scenario, but this may cause to give some priority to pileup in the inrate pass
 	boostedRouterTimeOut := time.Duration(1.3 * float64(routerTimeOut))
-	//TODO: Also while allocating jobs to router workers, we need to assign so that packed jobs latency equals the timeout
+	//TODO: Also while allocating jobs to router workers, we need to assign so that sum of assigned jobs latency equals the timeout
 
 	customerPickUpCount := make(map[string]int)
 	runningTimeCounter := float64(noOfWorkers) * float64(boostedRouterTimeOut) / float64(time.Second)
@@ -349,6 +349,7 @@ func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, s
 	runningJobCount := jobQueryBatchSize
 	pkgLogger.Debugf("Sorted Latency Map is : %v ", strings.Join(sortedLatencyList, ", "))
 
+	//Note: Essentially, we need to have a distinction between piling up customers & realtime customers. Failure Percentage & Draining are good indicators of it.
 	//deprioritise draining and failing customers in the inrate & pileup pass
 	finalList := make([]string, len(sortedLatencyList))
 	depriorityIndicator := make([]bool, len(sortedLatencyList))
