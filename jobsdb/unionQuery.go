@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -27,16 +28,28 @@ type CacheOperator interface {
 }
 
 type JobsDBStatusCache struct {
-	a HandleT
+	once sync.Once
+	a    HandleT
 }
 
-func (c *JobsDBStatusCache) IsEmpty(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool {
+func (c *JobsDBStatusCache) IsEmpty(ds dataSetT, customer string, stateFilters []string, customValFilters []string,
+	parameterFilters []ParameterFilterT) bool {
+	c.initCache()
 	return c.a.isEmptyResult(ds, customer, stateFilters, customValFilters, parameterFilters)
 }
 
 func (c *JobsDBStatusCache) UpdateCache(ds dataSetT, customer string, stateFilters []string, customValFilters []string,
 	parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
+	c.initCache()
 	c.a.markClearEmptyResult(ds, customer, stateFilters, customValFilters, parameterFilters, value, checkAndSet)
+}
+
+func (c *JobsDBStatusCache)initCache() {
+	c.once.Do(func() {
+		if c.a.dsEmptyResultCache == nil {
+			c.a.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry{}
+		}
+	})
 }
 
 type MultiTenantJobsDB interface {
