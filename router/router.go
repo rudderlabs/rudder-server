@@ -713,7 +713,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
 			} else {
 				respStatusCode = 500
-				respBody = "skipping sending to destination because previous job (of user) in batch is failed."
+				if !worker.rt.enableBatching {
+					respBody = "skipping sending to destination because previous job (of user) in batch is failed."
+				}
 			}
 		} else {
 			respStatusCode = destinationJob.StatusCode
@@ -749,6 +751,8 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	sort.Slice(routerJobResponses, func(i, j int) bool {
 		return routerJobResponses[i].jobID < routerJobResponses[j].jobID
 	})
+
+	destLiveEventSentMap := make(map[*types.DestinationJobT]struct{})
 
 	for _, routerJobResponse := range routerJobResponses {
 		destinationJobMetadata := routerJobResponse.destinationJobMetadata
@@ -792,25 +796,27 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			Parameters:    []byte(`{}`),
 		}
 
-		worker.postStatusOnResponseQ(respStatusCode, respBody, destinationJob.Message, respContentType, destinationJobMetadata, &status)
+		worker.postStatusOnResponseQ(respStatusCode, routerJobResponse.respBody, destinationJob.Message, respContentType, destinationJobMetadata, &status)
 
 		worker.sendEventDeliveryStat(destinationJobMetadata, &status, &destinationJob.Destination)
 
 		if attemptedToSendTheJob {
 			worker.sendRouterResponseCountStat(destinationJobMetadata, &status, &destinationJob.Destination)
 		}
-		/*payload := destinationJob.Message
-		if destinationJob.Message == nil {
-			payload = destinationJobMetadata.JobT.EventPayload
-		}
 
-		if !misc.Contains(sourceIDs, destinationJobMetadata.SourceID) {
-			sourceIDs = append(sourceIDs, destinationJobMetadata.SourceID)
-		}
+		//not needed because from same source in a destinationJob(look at asserts above)
+		// if !misc.Contains(sourceIDs, destinationJobMetadata.SourceID) {
+		// 	sourceIDs = append(sourceIDs, destinationJobMetadata.SourceID)
+		// }
 		//Sending only one destination live event for every destinationJob.
-		if i == len(destinationJob.JobMetadataArray)-1 {
-			worker.sendDestinationResponseToConfigBackend(payload, &destinationJobMetadata, &status, sourceIDs)
-		}*/
+		if _, ok := destLiveEventSentMap[destinationJob]; !ok {
+			payload := destinationJob.Message
+			if destinationJob.Message == nil {
+				payload = destinationJobMetadata.JobT.EventPayload
+			}
+			worker.sendDestinationResponseToConfigBackend(payload, destinationJobMetadata, &status, []string{destinationJobMetadata.SourceID})
+			destLiveEventSentMap[destinationJob] = struct{}{}
+		}
 	}
 
 	worker.decrementInThrottleMap(apiCallsCount)
