@@ -1841,6 +1841,7 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
+	recentCustomerList := misc.SortMapDescByTimeValue(rt.earliestJobMap)
 	successRateMap, drainedMap := multitenant.GenerateSuccessRateMap(rt.destName)
 	rt.respcounterMutex.RLock()
 	rt.logger.Debugf("[DRAIN DEBUG] counts %v  count200 %v count500 %v", rt.destName, rt.count200, rt.count500)
@@ -1855,7 +1856,7 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	rt.lastQueryRunTime = time.Now()
-	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
+	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, recentCustomerList, sortedLatencyMap, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
 
 	totalErrorCount := 0.0
 	customerCountKey, ok := rt.customerCount["232PCWYFDLbQctUX9NIiMpZVbkM"]

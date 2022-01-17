@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -1355,6 +1356,25 @@ func SortMap(inputMap map[string]MovingAverage) []string {
 	i := 0
 	for k, v := range inputMap {
 		pairArr[i] = Pair{k, v.Value()}
+		i++
+	}
+
+	sort.Sort(pairArr)
+	var sortedCustomerList []string
+	//p is sorted
+	for _, k := range pairArr {
+		//Workspace ID - RS Check
+		sortedCustomerList = append(sortedCustomerList, k.Key)
+	}
+	return sortedCustomerList
+}
+
+func SortMapDescByTimeValue(inputMap map[string]time.Time) []string {
+	pairArr := make(PairList, len(inputMap))
+
+	i := 0
+	for k, v := range inputMap {
+		pairArr[i] = Pair{k, math.MaxFloat64 - float64(v.UnixNano())}
 		i++
 	}
 
