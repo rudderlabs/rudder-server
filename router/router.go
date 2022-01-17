@@ -728,10 +728,14 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				}
 
 				//Assuming twice the overhead - defensive: 30% was just fine though
-				if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*float64(worker.localResultSet.timeAlloted)) {
+				//if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*float64(worker.localResultSet.timeAlloted)) {
+
+				//Infact , the timeout should be more than the maximum latency allowed by these workers.
+				//Assuming 10s maximum latency
+				if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*math.Max(float64(worker.localResultSet.timeAlloted), float64(10*time.Second))) {
 					worker.rt.logger.Debugf("Will drop with 1113 because of time expiry %v", destinationJob.JobMetadataArray[0].JobID)
 				}
-				if resultSetID < worker.localResultSet.id || time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*float64(worker.localResultSet.timeAlloted)) {
+				if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*math.Max(float64(worker.localResultSet.timeAlloted), float64(10*time.Second))) {
 					respStatusCode, respBody = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
 
 				} else if worker.rt.customDestinationManager != nil {
