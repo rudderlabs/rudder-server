@@ -23,7 +23,7 @@ type MultiTenantHandleT struct {
 }
 
 type CacheOperator interface {
-	IsEmpty(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool
+	HaveEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT) bool
 	UpdateCache(ds dataSetT, customer string, stateFilters []string, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue)
 }
 
@@ -32,7 +32,7 @@ type JobsDBStatusCache struct {
 	a    HandleT
 }
 
-func (c *JobsDBStatusCache) IsEmpty(ds dataSetT, customer string, stateFilters []string, customValFilters []string,
+func (c *JobsDBStatusCache) HaveEmptyResult(ds dataSetT, customer string, stateFilters []string, customValFilters []string,
 	parameterFilters []ParameterFilterT) bool {
 	c.initCache()
 	return c.a.isEmptyResult(ds, customer, stateFilters, customValFilters, parameterFilters)
