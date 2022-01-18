@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"io"
 	"net/http"
 	"runtime"
@@ -1515,6 +1516,11 @@ func TriggerUploadHandler(sourceID string, destID string) error {
 	return nil
 }
 
+func databricksVersionHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(deltalake.GetDatabricksVersion()))
+}
+
 func isUploadTriggered(wh warehouseutils.WarehouseT) bool {
 	triggerUploadsMapLock.Lock()
 	isTriggered := triggerUploadsMap[wh.Identifier]
@@ -1583,6 +1589,7 @@ func startWebHandler(ctx context.Context) error {
 		mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
 		// triggers uploads for a source
 		mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
+		mux.HandleFunc("/databricksVersion", databricksVersionHandler)
 		pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 	} else {
 		pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
