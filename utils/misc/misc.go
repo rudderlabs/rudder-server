@@ -1213,7 +1213,7 @@ func GetDatabricksVersion() (version string) {
 		return
 	}
 	if resp == nil {
-		version = fmt.Sprintf("No response from warehouse.")
+		version = "No response from warehouse."
 		return
 	}
 	defer resp.Body.Close()
