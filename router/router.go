@@ -133,8 +133,8 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
-	customerCount  map[string]int
-	earliestJobMap map[string]time.Time
+	customerCount        map[string]int
+	recentJobInResultSet map[string]time.Time
 
 	resultSetMeta    map[int64]*resultSetT
 	resultSetLock    sync.RWMutex
@@ -1841,7 +1841,6 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
-	recentCustomerList := misc.SortMapDescByTimeValue(rt.earliestJobMap)
 	successRateMap, drainedMap := multitenant.GenerateSuccessRateMap(rt.destName)
 	rt.respcounterMutex.RLock()
 	rt.logger.Debugf("[DRAIN DEBUG] counts %v  count200 %v count500 %v", rt.destName, rt.count200, rt.count500)
@@ -1856,7 +1855,7 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	rt.lastQueryRunTime = time.Now()
-	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, recentCustomerList, sortedLatencyMap, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
+	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.recentJobInResultSet, sortedLatencyMap, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
 
 	totalErrorCount := 0.0
 	customerCountKey, ok := rt.customerCount["232PCWYFDLbQctUX9NIiMpZVbkM"]
@@ -1887,7 +1886,7 @@ func (rt *HandleT) readAndProcess() int {
 	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
 
 	combinedList := append(nonTerminalList, unprocessedList...)
-	rt.earliestJobMap = make(map[string]time.Time)
+	rt.recentJobInResultSet = make(map[string]time.Time)
 	rt.logger.Debugf("[DRAIN DEBUG] counts  %v db jobs returned %v", rt.destName, len(combinedList))
 
 	if len(combinedList) == 0 {
@@ -1922,10 +1921,10 @@ func (rt *HandleT) readAndProcess() int {
 	throttledAtTime := time.Now()
 	//Identify jobs which can be processed
 	for _, job := range combinedList {
-		//populating earliestJobMap
-		if _, ok := rt.earliestJobMap[job.WorkspaceId]; !ok {
-			rt.earliestJobMap[job.WorkspaceId] = job.CreatedAt
-		}
+		//populating recentJobInResultSet
+		//if _, ok := rt.earliestJobMap[job.WorkspaceId]; !ok {
+		rt.recentJobInResultSet[job.WorkspaceId] = job.CreatedAt
+		//}
 
 		destID := destinationID(job)
 		rt.configSubscriberLock.RLock()

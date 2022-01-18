@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"math"
 	"net"
 	"net/http"
 	"os"
@@ -1373,8 +1372,9 @@ func SortMapDescByTimeValue(inputMap map[string]time.Time) []string {
 	pairArr := make(PairList, len(inputMap))
 
 	i := 0
+	maxTime := time.Now().Add(time.Hour * 24 * 365 * 200)
 	for k, v := range inputMap {
-		pairArr[i] = Pair{k, math.MaxFloat64 - float64(v.UnixNano())}
+		pairArr[i] = Pair{k, float64(maxTime.UnixNano() - v.UnixNano())}
 		i++
 	}
 
