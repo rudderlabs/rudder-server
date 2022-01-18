@@ -1573,6 +1573,28 @@ func getConnectionString() string {
 		host, port, user, password, dbname, sslmode)
 }
 
+func startHealthWebHandler(ctx context.Context) (err error) {
+	if !isStandAlone() {
+		return
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", healthHandler)
+	srv := http.Server{
+		Addr:    fmt.Sprintf(":%d", webPort),
+		Handler: bugsnag.Handler(mux),
+	}
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		<-ctx.Done()
+		return srv.Shutdown(context.Background())
+	})
+	g.Go(func() error {
+		return srv.ListenAndServe()
+	})
+
+	return g.Wait()
+}
+
 func startWebHandler(ctx context.Context) error {
 	mux := http.NewServeMux()
 
@@ -1692,6 +1714,7 @@ func Start(ctx context.Context, app app.Interface) error {
 				minimalConfigSubscriber()
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+			return startHealthWebHandler(ctx)
 		}
 		return nil
 	}
