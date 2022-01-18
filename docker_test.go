@@ -273,7 +273,7 @@ func GetEvent(url string, method string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Add("Authorization", "Basic cnVkZGVyOnBhc3N3b3Jk")
+	// req.Header.Add("Authorization", "Basic cnVkZGVyOnBhc3N3b3Jk")
 	res, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -995,7 +995,6 @@ func TestPostgres(t *testing.T) {
 	require.Eventually(t, func() bool {
 			eventSql = "select count(*) from dev_integration_test_1.screens"
 			db.QueryRow(eventSql).Scan(&myEvent.count)
-			require.Equal(t, myEvent.count, "1")
 		return  myEvent.count == "1"
 	}, time.Minute, 10*time.Millisecond)
 	
@@ -1003,8 +1002,7 @@ func TestPostgres(t *testing.T) {
 	require.Eventually(t, func() bool {
 			eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
 			db.QueryRow(eventSql).Scan(&myEvent.prop_key, &myEvent.myuniqueid, &myEvent.ip)
-			require.Equal(t, myEvent.myuniqueid, "identified_user_idanonymousId_1")
-		return  myEvent.count == "1"
+		return  myEvent.myuniqueid == "identified_user_idanonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
 	
 	require.Equal(t, myEvent.prop_key, "prop_value_edited")
