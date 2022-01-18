@@ -390,8 +390,9 @@ func (proc *HandleT) Start(ctx context.Context) {
 		return nil
 	}))
 
-	_ = g.Wait()
 	proc.processorInitialized = true
+	proc.logger.Info("processor intialized")
+	_ = g.Wait()
 }
 
 func (proc *HandleT) Shutdown() {
