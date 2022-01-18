@@ -3,8 +3,9 @@ package router
 import (
 	"encoding/json"
 	"fmt"
-	mock_tenantstats "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	"time"
+
+	mock_tenantstats "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 
 	uuid "github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
@@ -142,7 +143,7 @@ var _ = Describe("Router", func() {
 
 			// crash recovery check
 			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
-			c.mockRouterJobsDB.EXPECT().GetPileUpCounts([]map[string]int{}).Times(1)
+			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
 		})
 
 		It("should send failed, unprocessed jobs to ga destination", func() {
@@ -154,7 +155,7 @@ var _ = Describe("Router", func() {
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
-
+			workspaceID := uuid.Must(uuid.NewV4()).String()
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
@@ -168,7 +169,8 @@ var _ = Describe("Router", func() {
 						AttemptNum:    1,
 						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
 					},
-					Parameters: []byte(parameters),
+					Parameters:  []byte(parameters),
+					WorkspaceId: workspaceID,
 				},
 			}
 
@@ -184,18 +186,20 @@ var _ = Describe("Router", func() {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 0,
 					},
-					Parameters: []byte(parameters),
+					Parameters:  []byte(parameters),
+					WorkspaceId: workspaceID,
 				},
 			}
 			var successRateMap = map[string]float64{}
 			var drainedMap = map[string]float64{}
 			var customerCount = map[string]int{}
+			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			customerCountOut := customerCount
+			callGenerateSuccessMap := c.mockMultitenant.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
+				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
 
-			c.mockMultitenant.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func()(map[string]float64, map[string]float64) {return successRateMap, drainedMap})
 			c.mockMultitenant.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-					func() map[string]int {return customerCount})
+				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
 			c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1)
@@ -255,10 +259,10 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 
 			c.mockMultitenant.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func()(map[string]float64, map[string]float64) {return successRateMap, drainedMap})
+				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
 			c.mockMultitenant.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func() map[string]int {return customerCount})
+				func() map[string]int { return customerCount })
 
 			c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1)
@@ -331,10 +335,10 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 
 			c.mockMultitenant.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func()(map[string]float64, map[string]float64) {return successRateMap, drainedMap})
+				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
 			c.mockMultitenant.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func() map[string]int {return customerCount})
+				func() map[string]int { return customerCount })
 
 			c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1)
@@ -443,10 +447,10 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 
 			c.mockMultitenant.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func()(map[string]float64, map[string]float64) {return successRateMap, drainedMap})
+				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
 			c.mockMultitenant.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func() map[string]int {return customerCount})
+				func() map[string]int { return customerCount })
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1)
@@ -580,10 +584,10 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 
 			c.mockMultitenant.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func()(map[string]float64, map[string]float64) {return successRateMap, drainedMap})
+				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
 			c.mockMultitenant.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func() map[string]int {return customerCount})
+				func() map[string]int { return customerCount })
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
@@ -775,10 +779,10 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 
 			c.mockMultitenant.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func()(map[string]float64, map[string]float64) {return successRateMap, drainedMap})
+				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
 			c.mockMultitenant.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func() map[string]int {return customerCount})
+				func() map[string]int { return customerCount })
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1)
@@ -963,10 +967,10 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 
 			c.mockMultitenant.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func()(map[string]float64, map[string]float64) {return successRateMap, drainedMap})
+				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
 			c.mockMultitenant.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func() map[string]int {return customerCount})
+				func() map[string]int { return customerCount })
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)

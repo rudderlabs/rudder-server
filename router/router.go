@@ -1742,7 +1742,6 @@ func (rt *HandleT) readAndProcess() int {
 	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
 	successRateMap, drainedMap := rt.multitenantI.GenerateSuccessRateMap(rt.destName)
 	rt.customerCount = rt.multitenantI.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
-
 	var customerCountStat stats.RudderStats
 	for customer, count := range rt.customerCount {
 		customerCountStat = stats.NewTaggedStat("customer_pickup_count", stats.CountType, stats.Tags{
