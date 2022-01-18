@@ -111,7 +111,6 @@ type HandleT struct {
 	transformerFeatures            json.RawMessage
 	readLoopSleep                  time.Duration
 	maxLoopSleep                   time.Duration
-	processorLoopStats             map[string]int // TODO : Remove this
 
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
@@ -290,7 +289,6 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	//TODO : Remove this
-	proc.processorLoopStats = make(map[string]int)
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
@@ -1460,7 +1458,6 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 				processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
 			}
 			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
-			proc.processorLoopStats["router"] += 1
 			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
 		}
 
@@ -1484,7 +1481,6 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 			}
 			destination_id := gjson.Get(string(batchDestJobs[i].Parameters), "destination_id").String()
 			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][destination_id] += 1
-			proc.processorLoopStats["batch_router"] += 1
 			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
 		}
 
@@ -1529,12 +1525,6 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 			}
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
-	}
-	for customVal, value := range proc.processorLoopStats {
-		countStat := stats.NewTaggedStat("addition_processor_stat", stats.GaugeType, stats.Tags{
-			"customVal": customVal,
-		})
-		countStat.Gauge(value)
 	}
 	timeElapsed := 100 * time.Millisecond // TODO : Find a better way to fix this
 	if !firstRun {

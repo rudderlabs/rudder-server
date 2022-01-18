@@ -133,8 +133,13 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
-	customerCount  map[string]int
-	earliestJobMap map[string]time.Time
+	customerCount        map[string]int
+	recentJobInResultSet map[string]time.Time
+
+	resultSetMeta    map[int64]*resultSetT
+	resultSetLock    sync.RWMutex
+	lastResultSet    *resultSetT
+	lastQueryRunTime time.Time
 }
 
 type jobResponseT struct {
@@ -168,6 +173,7 @@ type workerMessageT struct {
 	job                *jobsdb.JobT
 	throttledAtTime    time.Time
 	workerAssignedTime time.Time
+	resultSetID        int64
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -194,6 +200,8 @@ type workerT struct {
 	jobCountsByDestAndUser     map[string]*destJobCountsT
 	throttledAtTime            time.Time
 	encounteredRouterTransform bool
+
+	localResultSet *resultSetT
 }
 
 type destJobCountsT struct {
@@ -229,6 +237,59 @@ type failureMetric struct {
 	RouterAttemptNum  int             `json:"router_attempt_num"`
 	ErrorCode         string          `json:"error_code"`
 	ErrorResponse     json.RawMessage `json:"error_response"`
+}
+
+type resultSetT struct {
+	resultSetLock      sync.RWMutex
+	id                 int64
+	resultSetBeginTime time.Time
+	timeAlloted        time.Duration
+}
+
+func (rt *HandleT) initResultSet(timeAlloted time.Duration) {
+	rt.lastResultSet.resultSetLock.Lock()
+	defer rt.lastResultSet.resultSetLock.Unlock()
+	rt.lastResultSet.id++
+	rt.lastResultSet.timeAlloted = timeAlloted
+	rt.addResultSetMeta(rt.lastResultSet)
+}
+
+func (rt *HandleT) getLastResultSetID() int64 {
+	rt.lastResultSet.resultSetLock.RLock()
+	defer rt.lastResultSet.resultSetLock.RUnlock()
+	return rt.lastResultSet.id
+}
+
+func (rt *HandleT) addResultSetMeta(resultSet *resultSetT) {
+	rt.resultSetLock.Lock()
+	defer rt.resultSetLock.Unlock()
+	rt.resultSetMeta[resultSet.id] = resultSet
+
+	//Cleanup the resultSetMeta
+	minResultSetID := int64(math.MaxInt64)
+	for i := 0; i < rt.noOfWorkers; i++ {
+		tmpID := rt.workers[i].localResultSet.id
+		if minResultSetID > tmpID {
+			minResultSetID = tmpID
+		}
+	}
+
+	keys := make([]int64, 0, len(rt.resultSetMeta))
+	for key := range rt.resultSetMeta {
+		keys = append(keys, key)
+	}
+
+	for _, key := range keys {
+		if key < minResultSetID {
+			delete(rt.resultSetMeta, key)
+		}
+	}
+}
+
+func (rt *HandleT) getResultSet(id int64) *resultSetT {
+	rt.resultSetLock.Lock()
+	defer rt.resultSetLock.Unlock()
+	return rt.resultSetMeta[id]
 }
 
 func isSuccessStatus(status int) bool {
@@ -423,6 +484,7 @@ func (worker *workerT) workerProcess() {
 				TransformAt:      parameters.TransformAt,
 				JobT:             job,
 				PickedAtTime:     message.workerAssignedTime,
+				ResultSetID:      message.resultSetID,
 				WorkspaceId:      parameters.WorkspaceId,
 			}
 
@@ -627,7 +689,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				diagnosisStartTime := time.Now()
 				sourceID := destinationJob.JobMetadataArray[0].SourceID
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
-				pickedAtTime := destinationJob.JobMetadataArray[0].PickedAtTime
+				//pickedAtTime := destinationJob.JobMetadataArray[0].PickedAtTime
 
 				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
 				transformAt := destinationJob.JobMetadataArray[0].TransformAt
@@ -649,9 +711,22 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				//			router_delivery_exceeded_timeout -> goes to zero
 				ch := worker.trackStuckDelivery()
 
-				//Assuming 50% overhead
-				if time.Since(pickedAtTime) > worker.rt.routerTimeout {
+				resultSetID := destinationJob.JobMetadataArray[0].ResultSetID
+				if worker.localResultSet.id < resultSetID {
+					resultSet := worker.rt.getResultSet(resultSetID)
+					worker.localResultSet.id = resultSetID
+					worker.localResultSet.resultSetBeginTime = time.Now()
+					worker.localResultSet.timeAlloted = resultSet.timeAlloted
+				}
+
+				//Assuming twice the overhead - defensive: 30% was just fine though
+				//if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*float64(worker.localResultSet.timeAlloted)) {
+
+				//Infact , the timeout should be more than the maximum latency allowed by these workers.
+				//Assuming 10s maximum latency
+				if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*math.Max(float64(worker.localResultSet.timeAlloted), float64(10*time.Second))) {
 					respStatusCode, respBody = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
+					worker.rt.logger.Debugf("Will drop with 1113 because of time expiry %v", destinationJob.JobMetadataArray[0].JobID)
 				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
@@ -1186,6 +1261,7 @@ func (rt *HandleT) initWorkers() {
 			routerProxyStat:           stats.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
 			abortedUserIDMap:          make(map[string]int),
 			jobCountsByDestAndUser:    make(map[string]*destJobCountsT),
+			localResultSet:            &resultSetT{},
 		}
 		rt.workers[i] = worker
 
@@ -1716,7 +1792,14 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 
 			countStat.Count(processCount)
 			generatorStat.End()
-			time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
+
+			timeElapsed := time.Since(rt.lastQueryRunTime)
+			if timeElapsed < time.Second {
+				time.Sleep(time.Second - timeElapsed)
+			}
+
+			//TODO: Merge above code with fixedLoopSleep. Commenting for now
+			//time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
 		}
 	}
 }
@@ -1740,23 +1823,27 @@ func (rt *HandleT) readAndProcess() int {
 
 	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
 	successRateMap, drainedMap := multitenant.GenerateSuccessRateMap(rt.destName)
-	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
 
-	var customerCountStat stats.RudderStats
-	for customer, count := range rt.customerCount {
-		customerCountStat = stats.NewTaggedStat("customer_pickup_count", stats.CountType, stats.Tags{
-			"customer": customer,
-			"module":   "router",
-			"destType": rt.destName,
-		})
-		customerCountStat.Count(count)
-		//note that this will give an aggregated count
+	timeOut := rt.routerTimeout
+
+	timeElapsed := time.Since(rt.lastQueryRunTime)
+
+	if timeElapsed < timeOut {
+		timeOut = timeElapsed
 	}
+
+	rt.lastQueryRunTime = time.Now()
+	if rt.recentJobInResultSet == nil {
+		rt.recentJobInResultSet = make(map[string]time.Time)
+	}
+	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.recentJobInResultSet, sortedLatencyMap, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
+
 	nonTerminalList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State, jobsdb.Failed.State}}, rt.maxDSQuerySize)
 	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
 
 	combinedList := append(nonTerminalList, unprocessedList...)
-	rt.earliestJobMap = make(map[string]time.Time)
+	rt.recentJobInResultSet = make(map[string]time.Time)
+	rt.logger.Debugf("[DRAIN DEBUG] counts  %v db jobs returned %v", rt.destName, len(combinedList))
 
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
@@ -1790,10 +1877,7 @@ func (rt *HandleT) readAndProcess() int {
 	throttledAtTime := time.Now()
 	//Identify jobs which can be processed
 	for _, job := range combinedList {
-		//populating earliestJobMap
-		if _, ok := rt.earliestJobMap[job.WorkspaceId]; !ok {
-			rt.earliestJobMap[job.WorkspaceId] = job.CreatedAt
-		}
+		rt.recentJobInResultSet[job.WorkspaceId] = job.CreatedAt
 
 		destID := destinationID(job)
 		rt.configSubscriberLock.RLock()
@@ -1877,16 +1961,20 @@ func (rt *HandleT) readAndProcess() int {
 			rt.drainedJobsStat.Count(destDrainStat.Count)
 		}
 	}
-
-	//Send the jobs to the jobQ
-	for _, wrkJob := range toProcess {
-		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime, workerAssignedTime: time.Now()}
-	}
+	rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destName, len(toProcess))
 
 	if len(toProcess) == 0 {
 		rt.logger.Debugf("RT: No workers found for the jobs. Sleeping. Destination: %s", rt.destName)
 		time.Sleep(readSleep)
 		return 0
+	}
+
+	//TODO is int64 good enough?
+	rt.initResultSet(timeOut)
+
+	//Send the jobs to the jobQ
+	for _, wrkJob := range toProcess {
+		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime, workerAssignedTime: time.Now(), resultSetID: rt.getLastResultSetID()}
 	}
 
 	return len(toProcess)
@@ -1922,6 +2010,9 @@ func Init() {
 
 //Setup initializes this module
 func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
+
+	rt.resultSetMeta = make(map[int64]*resultSetT)
+	rt.lastResultSet = &resultSetT{}
 
 	rt.backendConfig = backendConfig
 	rt.generatorPauseChannel = make(chan *PauseT)

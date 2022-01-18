@@ -1331,6 +1331,26 @@ func SortMap(inputMap map[string]MovingAverage) []string {
 	return sortedCustomerList
 }
 
+func SortMapDescByTimeValue(inputMap map[string]time.Time) []string {
+	pairArr := make(PairList, len(inputMap))
+	// TODO : Figure out a better way to do the reverse sort for the Map
+	i := 0
+	maxTime := time.Now().Add(time.Hour * 24 * 365 * 200)
+	for k, v := range inputMap {
+		pairArr[i] = Pair{k, float64(maxTime.UnixNano() - v.UnixNano())}
+		i++
+	}
+
+	sort.Sort(pairArr)
+	var sortedCustomerList []string
+	//p is sorted
+	for _, k := range pairArr {
+		//Workspace ID - RS Check
+		sortedCustomerList = append(sortedCustomerList, k.Key)
+	}
+	return sortedCustomerList
+}
+
 func SleepCtx(ctx context.Context, delay time.Duration) bool {
 	select {
 	case <-ctx.Done():
