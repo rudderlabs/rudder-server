@@ -72,6 +72,7 @@ type HandleT struct {
 	jobsDB                                 jobsdb.MultiTenantJobsDB
 	errorDB                                jobsdb.JobsDB
 	netHandle                              NetHandleI
+	multitenantI                           multitenant.MultiTenantI
 	destName                               string
 	workers                                []*workerT
 	perfStats                              *misc.PerfStats
@@ -1390,7 +1391,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				sd.Count++
 			}
 			if resp.status.JobState == jobsdb.Failed.State && resp.status.ErrorCode != "1113" {
-				multitenant.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, false)
+				rt.multitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, false)
 			}
 
 			if resp.status.JobState != jobsdb.Failed.State {
@@ -1400,7 +1401,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 					sd.Count++
 				}
 				if resp.status.JobState == jobsdb.Succeeded.State {
-					multitenant.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
+					rt.multitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
 				}
 			}
 		}
@@ -1461,7 +1462,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 	for customer := range routerCustomerJobStatusCount {
 		for destType := range routerCustomerJobStatusCount[customer] {
-			multitenant.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router")
+			rt.multitenantI.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router")
 		}
 	}
 
@@ -1739,8 +1740,8 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
-	successRateMap, drainedMap := multitenant.GenerateSuccessRateMap(rt.destName)
-	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
+	successRateMap, drainedMap := rt.multitenantI.GenerateSuccessRateMap(rt.destName)
+	rt.customerCount = rt.multitenantI.GetRouterPickupJobs(rt.destName, rt.earliestJobMap, sortedLatencyMap, rt.noOfWorkers, rt.routerTimeout, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
 
 	var customerCountStat stats.RudderStats
 	for customer, count := range rt.customerCount {
@@ -1828,8 +1829,8 @@ func (rt *HandleT) readAndProcess() int {
 			if !misc.Contains(drainStatsbyDest[destID].Reasons, reason) {
 				drainStatsbyDest[destID].Reasons = append(drainStatsbyDest[destID].Reasons, reason)
 			}
-			multitenant.RemoveFromInMemoryCount(job.WorkspaceId, rt.destName, 1, "router")
-			multitenant.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
+			rt.multitenantI.RemoveFromInMemoryCount(job.WorkspaceId, rt.destName, 1, "router")
+			rt.multitenantI.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
 			continue
 		}
 		w := rt.findWorker(job, throttledAtTime)
@@ -1910,7 +1911,7 @@ func (rt *HandleT) fillPileUpCounts() {
 	rt.jobsDB.GetPileUpCounts(pileUpStatMap)
 	for customer := range pileUpStatMap {
 		for destType := range pileUpStatMap[customer] {
-			multitenant.AddToInMemoryCount(customer, destType, pileUpStatMap[customer][destType], "router")
+			rt.multitenantI.AddToInMemoryCount(customer, destType, pileUpStatMap[customer][destType], "router")
 		}
 	}
 }
@@ -1962,6 +1963,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	netHandle.logger = rt.logger.Child("network")
 	netHandle.Setup(destName, rt.netClientTimeout)
 	rt.netHandle = netHandle
+	mutltitenantStatT := &multitenant.MultitenantStatsT{}
+	rt.multitenantI = mutltitenantStatT
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customDestinationManager.New(destName, customDestinationManager.Opts{

@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../../mocks/services/multitenant/mock_tenantstats.go -package mock_tenantstats github.com/rudderlabs/rudder-server/services/multitenant MultiTenantI
+
 package multitenant
 
 import (
@@ -34,6 +36,15 @@ type MultitenantStatsT struct {
 type BackOffT struct {
 	backOff     *backoff.Backoff
 	timeToRetry time.Time
+}
+
+type MultiTenantI interface {
+	CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool)
+	GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]float64) map[string]int
+	GenerateSuccessRateMap(destType string) (map[string]float64, map[string]float64)
+	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
+	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
+	ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string)
 }
 
 func Init() {
@@ -84,7 +95,7 @@ func SendRouterInMovingAverageStat() {
 	}
 }
 
-func CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool) {
+func (multitenant *MultitenantStatsT) CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool) {
 	multitenantStat.routerSuccessRateMutex.Lock()
 	defer multitenantStat.routerSuccessRateMutex.Unlock()
 	_, ok := multitenantStat.RouterSuccessRatioLoopCount[customer]
@@ -122,36 +133,27 @@ func checkIfBackedOff(customer string, destType string) (backedOff bool, timeExp
 	return true, false
 }
 
-func GenerateSuccessRateMap(destType string) (map[string]float64, map[string]bool) {
+func (multitenant *MultitenantStatsT) GenerateSuccessRateMap(destType string) (map[string]float64, map[string]float64) {
 	multitenantStat.routerSuccessRateMutex.RLock()
 	customerSuccessRate := make(map[string]float64)
-	customerDrainedMap := make(map[string]bool)
+	customerDrainedMap := make(map[string]float64)
 	for customer, destTypeMap := range multitenantStat.RouterSuccessRatioLoopCount {
 		_, ok := destTypeMap[destType]
 		if ok {
 			successCount := destTypeMap[destType]["success"]
 			failureCount := destTypeMap[destType]["failure"]
+			drainedCount := destTypeMap[destType]["drained"]
 
 			// TODO : Maintain this logic cleanly
-			if failureCount == 0 && successCount == 0 {
+			if failureCount == 0 && successCount == 0 && drainedCount == 0 {
 				customerSuccessRate[customer] = 1
+				customerDrainedMap[customer] = 0
 			} else {
-				customerSuccessRate[customer] = float64(successCount) / float64(successCount+failureCount)
+				customerSuccessRate[customer] = float64(successCount) / float64(successCount+failureCount+drainedCount)
+				customerDrainedMap[customer] = float64(drainedCount) / float64(successCount+failureCount+drainedCount)
 			}
 		}
 	}
-
-	// for customer, destTypeMap := range multitenantStat.RouterSuccessRatioLoopCount {
-	// 	_, ok := destTypeMap[destType]
-	// 	drainedCount := destTypeMap[destType]["drained"]
-	// 	if ok {
-	// 		if drainedCount == 0 {
-	// 			customerDrainedMap[customer] = false
-	// 		} else {
-	// 			customerDrainedMap[customer] = true
-	// 		}
-	// 	}
-	// }
 
 	multitenantStat.routerSuccessRateMutex.RUnlock()
 	multitenantStat.routerSuccessRateMutex.Lock()
@@ -160,7 +162,7 @@ func GenerateSuccessRateMap(destType string) (map[string]float64, map[string]boo
 	return customerSuccessRate, customerDrainedMap
 }
 
-func AddToInMemoryCount(customerID string, destinationType string, count int, tableType string) {
+func (multitenant *MultitenantStatsT) AddToInMemoryCount(customerID string, destinationType string, count int, tableType string) {
 	multitenantStat.routerJobCountMutex.RLock()
 	_, ok := multitenantStat.RouterInMemoryJobCounts[tableType][customerID]
 	if !ok {
@@ -176,7 +178,7 @@ func AddToInMemoryCount(customerID string, destinationType string, count int, ta
 	multitenantStat.routerJobCountMutex.Unlock()
 }
 
-func RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string) {
+func (multitenant *MultitenantStatsT) RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string) {
 	multitenantStat.routerJobCountMutex.RLock()
 	_, ok := multitenantStat.RouterInMemoryJobCounts[tableType][customerID]
 	if !ok {
@@ -192,7 +194,7 @@ func RemoveFromInMemoryCount(customerID string, destinationType string, count in
 	multitenantStat.routerJobCountMutex.Unlock()
 }
 
-func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string) {
+func (multitenant *MultitenantStatsT) ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string) {
 	for key := range stats {
 		multitenantStat.routerJobCountMutex.RLock()
 		_, ok := multitenantStat.RouterInputRates[tableType][key]
@@ -216,7 +218,7 @@ func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Dura
 			}
 			multitenantStat.routerJobCountMutex.RUnlock()
 			multitenantStat.RouterInputRates[tableType][key][destType].Add((float64(stats[key][destType]) * float64(time.Second)) / float64(timeTaken))
-			AddToInMemoryCount(key, destType, stats[key][destType], tableType)
+			multitenant.AddToInMemoryCount(key, destType, stats[key][destType], tableType)
 		}
 	}
 	for customerKey := range multitenantStat.RouterInputRates[tableType] {
@@ -280,12 +282,13 @@ func getCorrectedJobsPickupCount(customerKey string, destType string, jobsPicked
 		return 0, 0, true
 	}
 }
-func GetRouterPickupJobs(destType string, earliestJobMap map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]bool) map[string]int {
+
+func (multitenant *MultitenantStatsT) GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]float64) map[string]int {
+	multitenantStat.routerJobCountMutex.RLock()
+	defer multitenantStat.routerJobCountMutex.RUnlock()
 	customerPickUpCount := make(map[string]int)
 	runningTimeCounter := float64(noOfWorkers) * float64(routerTimeOut) / float64(time.Second)
 	customerBlockedMap := make(map[string]bool)
-	multitenantStat.routerJobCountMutex.RLock()
-	defer multitenantStat.routerJobCountMutex.RUnlock()
 	runningJobCount := jobQueryBatchSize
 	pkgLogger.Debugf("Sorted Latency Map is : %v ", strings.Join(sortedLatencyList, ", "))
 	//TODO : Optimise the loop only for customers having jobs

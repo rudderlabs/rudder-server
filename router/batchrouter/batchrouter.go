@@ -80,6 +80,7 @@ type HandleT struct {
 	errorDB                        jobsdb.JobsDB
 	isEnabled                      bool
 	batchRequestsMetricLock        sync.RWMutex
+	multitenantI                   multitenant.MultiTenantI
 	diagnosisTicker                *time.Ticker
 	batchRequestsMetric            []batchRequestMetric
 	logger                         logger.LoggerI
@@ -1138,7 +1139,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 	for customer := range batchRouterCustomerJobStatusCount {
 		for destID := range batchRouterCustomerJobStatusCount[customer] {
-			multitenant.RemoveFromInMemoryCount(customer, destID, batchRouterCustomerJobStatusCount[customer][destID], "batch_router")
+			brt.multitenantI.RemoveFromInMemoryCount(customer, destID, batchRouterCustomerJobStatusCount[customer][destID], "batch_router")
 		}
 	}
 	//tracking batch router errors
@@ -2077,7 +2078,8 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobs
 	brt.asyncUploadWorkerResumeChannel = make(chan bool)
 	brt.pollAsyncStatusPauseChannel = make(chan *PauseT)
 	brt.pollAsyncStatusResumeChannel = make(chan bool)
-
+	mutltitenantStatT := &multitenant.MultitenantStatsT{}
+	brt.multitenantI = mutltitenantStatT
 	//waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {
 		brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
