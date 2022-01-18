@@ -5,7 +5,6 @@ package multitenant
 import (
 	"fmt"
 	"math"
-	"strings"
 	"sync"
 	"time"
 
@@ -290,7 +289,6 @@ func (multitenant *MultitenantStatsT) GetRouterPickupJobs(destType string, recen
 	runningTimeCounter := float64(noOfWorkers) * float64(routerTimeOut) / float64(time.Second)
 	customerBlockedMap := make(map[string]bool)
 	runningJobCount := jobQueryBatchSize
-	pkgLogger.Debugf("Sorted Latency Map is : %v ", strings.Join(sortedLatencyList, ", "))
 	//TODO : Optimise the loop only for customers having jobs
 	for _, customerKey := range sortedLatencyList {
 		customerCountKey, ok := multitenantStat.RouterInputRates["router"][customerKey]
