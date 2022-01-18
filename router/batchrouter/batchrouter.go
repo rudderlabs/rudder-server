@@ -374,9 +374,15 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									if err != nil {
 										panic("JSON Unmarshal Failed" + err.Error())
 									}
+									internalStatusCode, ok := failedJobsResponse["status"].(string)
+									if internalStatusCode != "200" || !ok {
+										pkgLogger.Errorf("[Batch Router] Failed to fetch failed jobs for Dest Type %v with statusCode %v and body %v", brt.destType, internalStatusCode, string(failedBodyBytes))
+										continue
+									}
 									metadata, ok := failedJobsResponse["metadata"].(map[string]interface{})
 									if !ok {
-										panic("Typecasting Failed Because of Transformer Response" + err.Error())
+										pkgLogger.Errorf("[Batch Router] Failed to typecast failed jobs response for Dest Type %v with statusCode %v and body %v with error %v", brt.destType, internalStatusCode, string(failedBodyBytes), err)
+										continue
 									}
 									failedKeys, errFailed := misc.ConvertStringInterfaceToIntArray(metadata["failedKeys"])
 									warningKeys, errWarning := misc.ConvertStringInterfaceToIntArray(metadata["warningKeys"])
@@ -916,7 +922,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		for columnName, columnType := range columns {
 			if _, ok := schemaMap[tableName][columnName]; !ok {
 				schemaMap[tableName][columnName] = columnType
-			} else if  columnType == "text" && schemaMap[tableName][columnName] == "string" {
+			} else if columnType == "text" && schemaMap[tableName][columnName] == "string" {
 				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
 				schemaMap[tableName][columnName] = columnType
 			}

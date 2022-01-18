@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"io"
 	"net/http"
 	"runtime"
@@ -98,9 +99,8 @@ const (
 )
 
 const (
-	DegradedMode                  = "degraded"
-	StagingFilesPGNotifierChannel = "process_staging_file"
-	triggerUploadQPName           = "triggerUpload"
+	DegradedMode        = "degraded"
+	triggerUploadQPName = "triggerUpload"
 )
 
 type WorkerIdentifierT string
@@ -173,7 +173,7 @@ func loadConfig() {
 	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
 	config.RegisterDurationConfigVariable(time.Duration(30), &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
 	config.RegisterIntConfigVariable(180, &uploadBufferTimeInMin, false, 1, "Warehouse.uploadBufferTimeInMin")
-  config.RegisterIntConfigVariable(1000, &columnCountThreshold, false, 1, "Warehouse.columnCountThreshold")
+	config.RegisterIntConfigVariable(1000, &columnCountThreshold, false, 1, "Warehouse.columnCountThreshold")
 	config.RegisterDurationConfigVariable(time.Duration(5), &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(time.Duration(5), &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
@@ -677,31 +677,31 @@ func (wh *HandleT) sortWarehousesByOldestUnSyncedEventAt() (err error) {
 
 func (wh *HandleT) mainLoop(ctx context.Context) {
 	for {
-		wh.configSubscriberLock.RLock()
 		if !wh.isEnabled {
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(mainLoopSleep):
 			}
-
-			wh.configSubscriberLock.RUnlock()
 			continue
 		}
 
-		err := wh.sortWarehousesByOldestUnSyncedEventAt()
-		wh.configSubscriberLock.RUnlock()
-		if err != nil {
-			pkgLogger.Errorf(`[WH] Error sorting warehouses by last event time: %v`, err)
-		}
-
+		wg := sync.WaitGroup{}
+		wh.configSubscriberLock.RLock()
 		for _, warehouse := range wh.warehouses {
-			pkgLogger.Debugf("[WH] Processing Jobs for warehouse: %s", warehouse.Identifier)
-			err := wh.createJobs(warehouse)
-			if err != nil {
-				pkgLogger.Errorf("[WH] Failed to process warehouse Jobs: %v", err)
-			}
+			w := warehouse
+			wg.Add(1)
+			rruntime.Go(func() {
+				defer wg.Done()
+				pkgLogger.Debugf("[WH] Processing Jobs for warehouse: %s", w.Identifier)
+				err := wh.createJobs(w)
+				if err != nil {
+					pkgLogger.Errorf("[WH] Failed to process warehouse Jobs: %v", err)
+				}
+			})
 		}
+		wh.configSubscriberLock.RUnlock()
+		wg.Wait()
 
 		select {
 		case <-ctx.Done():
@@ -1059,7 +1059,6 @@ func (wh *HandleT) resetInProgressJobs() {
 	}
 }
 
-
 func getLoadFileFormat(whType string) string {
 	switch whType {
 	case "BQ":
@@ -1395,7 +1394,7 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 		sourceOrDestColumn = "destination_id"
 	}
 	var lastStagingFileID int64
-	sqlStatement := fmt.Sprintf(`SELECT end_staging_file_id FROM %[1]s WHERE %[1]s.%[3]s='%[2]s' ORDER BY %[1]s.id DESC`, warehouseutils.WarehouseUploadsTable, sourceOrDestId, sourceOrDestColumn)
+	sqlStatement := fmt.Sprintf(`SELECT MAX(end_staging_file_id) FROM %[1]s WHERE %[1]s.%[3]s='%[2]s'`, warehouseutils.WarehouseUploadsTable, sourceOrDestId, sourceOrDestColumn)
 
 	err = dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileID)
 	if err != nil && err != sql.ErrNoRows {
@@ -1517,6 +1516,11 @@ func TriggerUploadHandler(sourceID string, destID string) error {
 	return nil
 }
 
+func databricksVersionHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(deltalake.GetDatabricksVersion()))
+}
+
 func isUploadTriggered(wh warehouseutils.WarehouseT) bool {
 	triggerUploadsMapLock.Lock()
 	isTriggered := triggerUploadsMap[wh.Identifier]
@@ -1585,6 +1589,7 @@ func startWebHandler(ctx context.Context) error {
 		mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
 		// triggers uploads for a source
 		mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
+		mux.HandleFunc("/databricksVersion", databricksVersionHandler)
 		pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 	} else {
 		pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
@@ -1718,14 +1723,16 @@ func Start(ctx context.Context, app app.Interface) error {
 
 	if isSlave() {
 		pkgLogger.Infof("WH: Starting warehouse slave...")
-		setupSlave()
+		g.Go(misc.WithBugsnag(func() error {
+			return setupSlave(ctx)
+		}))
 	}
 
 	if isMaster() {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")
 
 		g.Go(misc.WithBugsnag(func() error {
-			return notifier.AddTopic(ctx, StagingFilesPGNotifierChannel)
+			return notifier.ClearJobs(ctx)
 		}))
 		g.Go(misc.WithBugsnag(func() error {
 			monitorDestRouters(ctx)
