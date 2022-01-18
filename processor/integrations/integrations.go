@@ -58,20 +58,6 @@ type PostParametersT struct {
 	Files       map[string]interface{} `json:"files"`
 }
 
-// This struct represents the datastructure present in Transformer network layer Error builder
-type TransErrorSpecT struct {
-	Message                  string                 `json:"message"`
-	Status                   int                    `json:"status"`
-	StatTags                 map[string]string      `json:"statTags"`
-	DestinationResponse      map[string]interface{} `json:"destinationResponse"`
-	ApiLimit                 map[string]interface{} `json:"apiLimit"`
-	Metadata                 map[string]interface{} `json:"metadata"`
-	ResponseTransformFailure bool                   `json:"responseTransformFailure"`
-	FailureAt                string                 `json:"failureAt"`
-	AuthErrorCategory        string                 `json:"authErrorCategory"`
-	AccessToken              string                 `json:"accessToken"`
-}
-
 type TransStatsT struct {
 	StatTags map[string]string `json:"statTags"`
 }

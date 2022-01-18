@@ -27,18 +27,18 @@ type DestinationJobT struct {
 
 //JobMetadataT holds the job metadata
 type JobMetadataT struct {
-	UserID           string       `json:"userId"`
-	JobID            int64        `json:"jobId"`
-	SourceID         string       `json:"sourceId"`
-	DestinationID    string       `json:"destinationId"`
-	AttemptNum       int          `json:"attemptNum"`
-	ReceivedAt       string       `json:"receivedAt"`
-	CreatedAt        string       `json:"createdAt"`
-	FirstAttemptedAt string       `json:"firstAttemptedAt"`
-	TransformAt      string       `json:"transformAt"`
-	WorkspaceId      string       `json:"workspaceId"`
-	OAuthAccessToken string       `json:"oauthAccessToken"`
-	JobT             *jobsdb.JobT `json:"jobsT"`
+	UserID           string          `json:"userId"`
+	JobID            int64           `json:"jobId"`
+	SourceID         string          `json:"sourceId"`
+	DestinationID    string          `json:"destinationId"`
+	AttemptNum       int             `json:"attemptNum"`
+	ReceivedAt       string          `json:"receivedAt"`
+	CreatedAt        string          `json:"createdAt"`
+	FirstAttemptedAt string          `json:"firstAttemptedAt"`
+	TransformAt      string          `json:"transformAt"`
+	WorkspaceId      string          `json:"workspaceId"`
+	Secret           json.RawMessage `json:"secret"`
+	JobT             *jobsdb.JobT    `json:"jobsT"`
 }
 
 //TransformMessageT is used to pass message to the transformer workers
