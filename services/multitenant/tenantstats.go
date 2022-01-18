@@ -239,9 +239,9 @@ func ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Dura
 }
 
 //if a workspace has a pileup, returns True
-func isWorkspaceLagging(customerKey string, recentJobInResultSet map[string]time.Time) bool {
+func isWorkspaceLagging(customerKey string, recentJobInResultSet map[string]time.Time, realMaxRecency time.Time) bool {
 	if ts, ok := recentJobInResultSet[customerKey]; ok {
-		if time.Since(ts) > 120*time.Second {
+		if realMaxRecency.After(ts) && realMaxRecency.Sub(ts) > 900*time.Second { //15 minutes arbitrary
 			return true
 		}
 	}
@@ -289,6 +289,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 	maxTime := time.Now().Add(time.Hour * 24 * 365 * 200)
 	minRecency := maxTime
 	maxRecency := minTime
+	realMaxRecency := minTime
 
 	//Below two loops, normalize the values and compute the score of each workspace
 	//No need for sorting latency list before calling this function.
@@ -304,6 +305,10 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		if !ok {
 			recentJobInResultSet[customerKey] = maxTime //Gives priority in the pileup pass to non-existent workspaces in the last loop
 			ts = maxTime
+		} else {
+			if ts.After(realMaxRecency) {
+				realMaxRecency = ts
+			}
 		}
 		if minRecency.After(ts) {
 			minRecency = ts
@@ -322,7 +327,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		}
 
 		invertedRecencyScore := 0.0
-		if isWorkspaceLagging(customerKey, recentJobInResultSet) {
+		if isWorkspaceLagging(customerKey, recentJobInResultSet, realMaxRecency) {
 			if float64(maxRecency.UnixNano()-minRecency.UnixNano()) != 0 {
 				recencyScore := (float64(recentJobInResultSet[customerKey].UnixNano() - minRecency.UnixNano())) / float64(maxRecency.UnixNano()-minRecency.UnixNano())
 				invertedRecencyScore = 1 - recencyScore
@@ -344,6 +349,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 	})
 
 	//TODO : Optimise the loop only for customers having jobs
+	//Latency sorted in rate pass
 	for _, scoredWorkspace := range scores {
 		customerKey := scoredWorkspace.workspaceId
 		customerCountKey, ok := multitenantStat.RouterInputRates["router"][customerKey]
@@ -360,9 +366,8 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 				}
 
 				timeGiven := boostedRouterTimeOut
-				if scoredWorkspace.score > 100 { //Draining cases
-					//timeGiven = routerTimeOut
-					continue
+				if scoredWorkspace.score > 10 { //Lagging cases
+					timeGiven = routerTimeOut
 				}
 
 				timeRequired := 0.0
@@ -397,9 +402,35 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		}
 	}
 
-	recentCustomerList := misc.SortMapDescByTimeValue(recentJobInResultSet)
+	//Recency sorted pileup pass -- otherwise draining customers get priority
+	scores = make([]workspaceScore, len(recentJobInResultSet))
+	for i, customerKey := range sortedLatencyList {	
+		scores[i] = workspaceScore{}
+		scores[i].workspaceId = customerKey
 
-	for _, customerKey := range recentCustomerList {
+		invertedRecencyScore := 0.0
+		if isWorkspaceLagging(customerKey, recentJobInResultSet, realMaxRecency) {
+			if float64(maxRecency.UnixNano()-minRecency.UnixNano()) != 0 {
+				recencyScore := (float64(recentJobInResultSet[customerKey].UnixNano() - minRecency.UnixNano())) / float64(maxRecency.UnixNano()-minRecency.UnixNano())
+				invertedRecencyScore = 1 - recencyScore
+				invertedRecencyScore++ //Moving Range from 1 to 2
+			}
+		}
+
+		isDraining := 0.0
+		if time.Since(getLastDrainedTimestamp(customerKey, destType)) < 10*routerTimeOut {
+			isDraining = 1.0
+		}
+
+		scores[i].score = float64(maxTime.UnixNano()-recentJobInResultSet[customerKey].UnixNano())/float64(maxTime.UnixNano()) + 10*(invertedRecencyScore) + 100*isDraining
+	}
+
+	sort.Slice(scores[:], func(i, j int) bool {
+		return scores[i].score < scores[j].score
+	})
+
+	for _, scoredWorkspace := range scores {
+		customerKey := scoredWorkspace.workspaceId
 		customerCountKey, ok := multitenantStat.RouterInMemoryJobCounts["router"][customerKey]
 		if !ok || customerCountKey[destType] <= 0 {
 			continue
@@ -407,6 +438,9 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		//BETA already added in the above loop
 		if runningJobCount <= 0 || runningTimeCounter <= 0 {
 			break
+		}
+		if scoredWorkspace.score > 100 { //Draining cases - ignore
+			continue
 		}
 		timeRequired := latencyMap[customerKey].Value() * float64(customerCountKey[destType])
 		pickUpCount := 0

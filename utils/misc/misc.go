@@ -425,11 +425,11 @@ func CreateTMPDIR() (string, error) {
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
 type PerfStats struct {
-	eventCount           int64
-	elapsedTime          time.Duration
-	compStr              string
-	tmpStart             time.Time
-	instantRateCall      float64
+	eventCount      int64
+	elapsedTime     time.Duration
+	compStr         string
+	tmpStart        time.Time
+	instantRateCall float64
 }
 
 //Setup initializes the stat collector
@@ -1318,26 +1318,6 @@ func SortMap(inputMap map[string]MovingAverage) []string {
 	i := 0
 	for k, v := range inputMap {
 		pairArr[i] = Pair{k, v.Value()}
-		i++
-	}
-
-	sort.Sort(pairArr)
-	var sortedCustomerList []string
-	//p is sorted
-	for _, k := range pairArr {
-		//Workspace ID - RS Check
-		sortedCustomerList = append(sortedCustomerList, k.Key)
-	}
-	return sortedCustomerList
-}
-
-func SortMapDescByTimeValue(inputMap map[string]time.Time) []string {
-	pairArr := make(PairList, len(inputMap))
-	// TODO : Figure out a better way to do the reverse sort for the Map
-	i := 0
-	maxTime := time.Now().Add(time.Hour * 24 * 365 * 200)
-	for k, v := range inputMap {
-		pairArr[i] = Pair{k, float64(maxTime.UnixNano() - v.UnixNano())}
 		i++
 	}
 
