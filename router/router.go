@@ -1855,6 +1855,9 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	rt.lastQueryRunTime = time.Now()
+	if rt.recentJobInResultSet == nil {
+		rt.recentJobInResultSet = make(map[string]time.Time)
+	}
 	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.recentJobInResultSet, sortedLatencyMap, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
 
 	totalErrorCount := 0.0
