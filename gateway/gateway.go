@@ -541,6 +541,9 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			//Should be function of body
+			configSubscriberLock.RLock()
+			workspaceId, _ := enabledWriteKeyWorkspaceMap[writeKey]
+			configSubscriberLock.RUnlock()
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       builtUserID,
@@ -548,7 +551,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 				EventCount:   totalEventsInReq,
-				WorkspaceId:  enabledWriteKeyWorkspaceMap[writeKey],
+				WorkspaceId:  workspaceId,
 			}
 			jobList = append(jobList, &newJob)
 
