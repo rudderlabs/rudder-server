@@ -361,7 +361,8 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 
 				timeGiven := boostedRouterTimeOut
 				if scoredWorkspace.score > 100 { //Lagging cases
-					timeGiven = routerTimeOut
+					//timeGiven = routerTimeOut
+					continue
 				}
 
 				timeRequired := 0.0
