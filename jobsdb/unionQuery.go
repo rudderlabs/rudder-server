@@ -706,7 +706,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 		return jobList
 	}
 	for _, customer := range customersToQuery {
-		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
+		mj.Cache.UpdateCache(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
 			willTryToSet, nil)
 	}
 
@@ -786,7 +786,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ds dataSetT, customerCount map[string]i
 	//do cache stuff here
 	_willTryToSet := willTryToSet
 	for customer, cacheUpdate := range cacheUpdateByCustomer {
-		mj.markClearEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
+		mj.Cache.UpdateCache(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters,
 			cacheValue(cacheUpdate), &_willTryToSet)
 	}
 
@@ -799,7 +799,7 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(customerCount map[string]int, 
 	queryInitial := mj.getInitialSingleCustomerQueryString(ds, params, true, customerCount)
 
 	for customer, count := range customerCount {
-		if mj.isEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters) {
+		if mj.Cache.HaveEmptyResult(ds, customer, params.StateFilters, params.CustomValFilters, params.ParameterFilters) {
 			continue
 		}
 		if count < 0 {
