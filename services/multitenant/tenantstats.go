@@ -404,25 +404,15 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 
 	//Recency sorted pileup pass -- otherwise draining customers get priority
 	scores = make([]workspaceScore, len(recentJobInResultSet))
-	for i, customerKey := range sortedLatencyList {	
+	for i, customerKey := range sortedLatencyList {
 		scores[i] = workspaceScore{}
 		scores[i].workspaceId = customerKey
-
-		invertedRecencyScore := 0.0
-		if isWorkspaceLagging(customerKey, recentJobInResultSet, realMaxRecency) {
-			if float64(maxRecency.UnixNano()-minRecency.UnixNano()) != 0 {
-				recencyScore := (float64(recentJobInResultSet[customerKey].UnixNano() - minRecency.UnixNano())) / float64(maxRecency.UnixNano()-minRecency.UnixNano())
-				invertedRecencyScore = 1 - recencyScore
-				invertedRecencyScore++ //Moving Range from 1 to 2
-			}
-		}
 
 		isDraining := 0.0
 		if time.Since(getLastDrainedTimestamp(customerKey, destType)) < 10*routerTimeOut {
 			isDraining = 1.0
 		}
-
-		scores[i].score = float64(maxTime.UnixNano()-recentJobInResultSet[customerKey].UnixNano())/float64(maxTime.UnixNano()) + 10*(invertedRecencyScore) + 100*isDraining
+		scores[i].score = float64(maxTime.UnixNano()-recentJobInResultSet[customerKey].UnixNano())/float64(maxTime.UnixNano()) + 100*isDraining
 	}
 
 	sort.Slice(scores[:], func(i, j int) bool {
