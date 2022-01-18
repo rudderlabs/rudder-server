@@ -109,7 +109,8 @@ type HandleT struct {
 	backgroundWait   func() error
 	backgroundCancel context.CancelFunc
 
-	podStatusChan chan struct{}
+	podStatusChan        chan struct{}
+	processorInitialized bool
 }
 
 var defaultTransformerFeatures = `{
@@ -390,6 +391,7 @@ func (proc *HandleT) Start(ctx context.Context) {
 	}))
 
 	_ = g.Wait()
+	proc.processorInitialized = true
 }
 
 func (proc *HandleT) Shutdown() {
@@ -1927,7 +1929,8 @@ func (proc *HandleT) Pause() {
 	proc.pauseLock.Lock()
 	defer proc.pauseLock.Unlock()
 
-	if proc.paused {
+	if proc.paused || !proc.processorInitialized {
+		proc.logger.Info("processor already_paused/not_initialized.")
 		return
 	}
 
@@ -1945,6 +1948,7 @@ func (proc *HandleT) Resume() {
 	}
 
 	proc.resumeChannel <- true
+	proc.logger.Info("Processor has resumed.")
 }
 
 func (proc *HandleT) isReportingEnabled() bool {

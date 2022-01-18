@@ -173,7 +173,7 @@ func etcdHeartBeat(ctx context.Context) {
 				case <-ctxHeartBeat.Done():
 					panic(ctxHeartBeat.Err())
 				case <-heartBeatChan:
-					time.Sleep(1 * time.Second)
+					time.Sleep(1 * time.Second) //change this to configurable
 				}
 			}(client, etcdConnectTimeout)
 		}
@@ -181,7 +181,7 @@ func etcdHeartBeat(ctx context.Context) {
 }
 
 func heartBeatFunc(ctxHeartBeat context.Context, client *clientv3.Client, heartBeatChan chan bool) {
-	lease, err := client.Lease.Grant(ctxHeartBeat, 2)
+	lease, err := client.Lease.Grant(ctxHeartBeat, 2) //change this to configurable
 	if err != nil {
 		panic(err)
 	}
@@ -208,12 +208,12 @@ func WatchForMigration(ctx context.Context, statusWatchChannel chan utils.DataEv
 	var initialPodState string
 	initialState, err := cli.Get(ctx, podPrefix+`/mode`)
 	if err != nil {
-		panic(err)
+		panic(err) //panic..? go over all panics and address them
 	}
 	if len(initialState.Kvs) > 0 {
 		initialPodState = string(initialState.Kvs[0].Value)
 	} else {
-		initialPodState = `` //or simply degraded?	works the same now anyway -> processor, router don't start unless initialPodState = `normal`
+		initialPodState = `normal` //default normal state, scheduler's responsibilty to assign the mode of a pod before it spawns
 	}
 	return initialPodState, podStatusWaitGroup
 }
@@ -231,6 +231,7 @@ func MigrationWatch(ctx context.Context) {
 			switch event.Type {
 			case mvccpb.PUT:
 				podStatus = string(event.Kv.Value)
+				pkgLogger.Infof("status update received: %s", podStatus)
 			case mvccpb.DELETE:
 				//This pod's status has been deleted from etcd store, pod no longer needed..?
 				podStatus = `terminated`
@@ -244,6 +245,7 @@ func MigrationWatch(ctx context.Context) {
 			podStatusWaitGroup.Wait()
 			//after all subscribers have processed the podstate, put the completed state in etcd
 			cli.Put(watchCtx, podPrefix+`/status`, podStatus+`_completed`)
+			pkgLogger.Infof("status updated: %s", podStatus+`_completed`)
 		}
 	}
 }
