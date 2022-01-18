@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://rudderstack.com/">
-    <img src="https://user-images.githubusercontent.com/59817155/121357083-1c571300-c94f-11eb-8cc7-ce6df13855c9.png">
+    <img src="resources/logo.png">
   </a>
 </p>
 
@@ -94,7 +94,7 @@ RudderStack is an independent, stand-alone system with a dependency only on the 
 
 A high-level view of RudderStack’s architecture is shown below:
 
-![Architecture](https://user-images.githubusercontent.com/59817155/141984012-2fa29268-7144-47c0-864c-74d6af61b9a5.png)
+![Architecture](resources/rudder-server-architecture.png)
 
 For more details on the various architectural components, refer to our [**documentation**](https://rudderstack.com/docs/get-started/rudderstack-architecture/).
 
