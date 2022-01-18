@@ -1793,13 +1793,15 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 			countStat.Count(processCount)
 			generatorStat.End()
 
+			timeToSleep := 0 * time.Nanosecond
 			timeElapsed := time.Since(rt.lastQueryRunTime)
 			if timeElapsed < time.Second {
-				time.Sleep(time.Second - timeElapsed)
+				timeToSleep = time.Second - timeElapsed
 			}
-
-			//TODO: Merge above code with fixedLoopSleep. Commenting for now
-			//time.Sleep(fixedLoopSleep) // adding sleep here to reduce cpu load on postgres when we have less rps
+			if timeToSleep < fixedLoopSleep {
+				timeToSleep = fixedLoopSleep
+			}
+			time.Sleep(timeToSleep)
 		}
 	}
 }
