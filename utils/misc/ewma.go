@@ -38,7 +38,7 @@ type MovingAverage interface {
 // by the formula given for the DECAY constant. It signifies the average age
 // of the samples as time goes to infinity.
 func NewMovingAverage(age ...float64) MovingAverage {
-	if len(age) == 0 || age[0] == AVG_METRIC_AGE {
+	if len(age) == 0 {
 		return new(SimpleEWMA)
 	}
 	return &VariableEWMA{
