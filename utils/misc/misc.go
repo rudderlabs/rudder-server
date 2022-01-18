@@ -1370,7 +1370,7 @@ func SortMap(inputMap map[string]MovingAverage) []string {
 
 func SortMapDescByTimeValue(inputMap map[string]time.Time) []string {
 	pairArr := make(PairList, len(inputMap))
-
+	// TODO : Figure out a better way to do the reverse sort for the Map
 	i := 0
 	maxTime := time.Now().Add(time.Hour * 24 * 365 * 200)
 	for k, v := range inputMap {
