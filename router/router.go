@@ -1949,6 +1949,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
 	rt.destName = destName
+	multitenantStatT := &multitenant.MultitenantStruct{}
+	rt.multitenantI = multitenantStatT
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	rt.crashRecover()
@@ -1962,8 +1964,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	netHandle.logger = rt.logger.Child("network")
 	netHandle.Setup(destName, rt.netClientTimeout)
 	rt.netHandle = netHandle
-	mutltitenantStatT := &multitenant.MultitenantStatsT{}
-	rt.multitenantI = mutltitenantStatT
 	rt.perfStats = &misc.PerfStats{}
 	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customDestinationManager.New(destName, customDestinationManager.Opts{

@@ -298,8 +298,8 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.readLoopSleep = readLoopSleep
 	proc.maxLoopSleep = maxLoopSleep
 
-	mutltitenantStatT := &multitenant.MultitenantStatsT{}
-	proc.multitenantI = mutltitenantStatT
+	multitenantStatT := &multitenant.MultitenantStruct{}
+	proc.multitenantI = multitenantStatT
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB

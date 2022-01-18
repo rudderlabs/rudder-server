@@ -2078,7 +2078,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobs
 	brt.asyncUploadWorkerResumeChannel = make(chan bool)
 	brt.pollAsyncStatusPauseChannel = make(chan *PauseT)
 	brt.pollAsyncStatusResumeChannel = make(chan bool)
-	mutltitenantStatT := &multitenant.MultitenantStatsT{}
+	mutltitenantStatT := &multitenant.MultitenantStruct{}
 	brt.multitenantI = mutltitenantStatT
 	//waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {
