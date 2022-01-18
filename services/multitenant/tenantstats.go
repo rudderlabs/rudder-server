@@ -349,7 +349,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 	})
 
 	//TODO : Optimise the loop only for customers having jobs
-	//Latency sorted in rate pass
+	//Latency sorted input rate pass
 	for _, scoredWorkspace := range scores {
 		customerKey := scoredWorkspace.workspaceId
 		customerCountKey, ok := multitenantStat.RouterInputRates["router"][customerKey]
@@ -366,7 +366,9 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 				}
 
 				timeGiven := boostedRouterTimeOut
-				if scoredWorkspace.score > 10 { //Lagging cases
+				if scoredWorkspace.score > 100 { //Draining cases - ignore
+					continue
+				} else if scoredWorkspace.score > 10 { //Lagging cases
 					timeGiven = routerTimeOut
 				}
 
@@ -429,9 +431,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		if runningJobCount <= 0 || runningTimeCounter <= 0 {
 			break
 		}
-		if scoredWorkspace.score > 100 { //Draining cases - ignore
-			continue
-		}
+
 		timeRequired := latencyMap[customerKey].Value() * float64(customerCountKey[destType])
 		pickUpCount := 0
 		if timeRequired < runningTimeCounter {
