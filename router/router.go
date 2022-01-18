@@ -140,10 +140,6 @@ type HandleT struct {
 	resultSetLock    sync.RWMutex
 	lastResultSet    *resultSetT
 	lastQueryRunTime time.Time
-
-	count200         int64
-	count500         int64
-	respcounterMutex sync.RWMutex
 }
 
 type jobResponseT struct {
@@ -723,21 +719,14 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 					worker.localResultSet.timeAlloted = resultSet.timeAlloted
 				}
 
-				if resultSetID < worker.localResultSet.id {
-					worker.rt.logger.Debugf("Will drop with 1113 because of lower resultSetID %v", destinationJob.JobMetadataArray[0].JobID)
-				}
-
 				//Assuming twice the overhead - defensive: 30% was just fine though
 				//if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*float64(worker.localResultSet.timeAlloted)) {
 
 				//Infact , the timeout should be more than the maximum latency allowed by these workers.
 				//Assuming 10s maximum latency
 				if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*math.Max(float64(worker.localResultSet.timeAlloted), float64(10*time.Second))) {
-					worker.rt.logger.Debugf("Will drop with 1113 because of time expiry %v", destinationJob.JobMetadataArray[0].JobID)
-				}
-				if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*math.Max(float64(worker.localResultSet.timeAlloted), float64(10*time.Second))) {
 					respStatusCode, respBody = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
-
+					worker.rt.logger.Debugf("Will drop with 1113 because of time expiry %v", destinationJob.JobMetadataArray[0].JobID)
 				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if sourceID != destinationJobMetadata.SourceID {
@@ -802,14 +791,6 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				if respStatusCode != types.RouterTimedOut {
 					worker.rt.routerLatencyStat[workspaceID].Add(float64(timeTaken) / float64(time.Second))
 				}
-
-				worker.rt.respcounterMutex.Lock()
-				if respStatusCode == 200 {
-					worker.rt.count200++
-				} else if respStatusCode == 500 {
-					worker.rt.count500++
-				}
-				worker.rt.respcounterMutex.Unlock()
 
 				worker.rt.logger.Debugf("moving_average_latency is %.8f for customer %v", worker.rt.routerLatencyStat[workspaceID], workspaceID)
 				//Using response status code and body to get response code rudder router logic is based on.
@@ -1842,9 +1823,6 @@ func (rt *HandleT) readAndProcess() int {
 
 	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
 	successRateMap, drainedMap := multitenant.GenerateSuccessRateMap(rt.destName)
-	rt.respcounterMutex.RLock()
-	rt.logger.Debugf("[DRAIN DEBUG] counts %v  count200 %v count500 %v", rt.destName, rt.count200, rt.count500)
-	rt.respcounterMutex.RUnlock()
 
 	timeOut := rt.routerTimeout
 
@@ -1859,31 +1837,6 @@ func (rt *HandleT) readAndProcess() int {
 		rt.recentJobInResultSet = make(map[string]time.Time)
 	}
 	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.recentJobInResultSet, sortedLatencyMap, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
-
-	totalErrorCount := 0.0
-	customerCountKey, ok := rt.customerCount["232PCWYFDLbQctUX9NIiMpZVbkM"]
-	if ok {
-		totalErrorCount += float64(customerCountKey)
-	}
-
-	customerCountKey, ok = rt.customerCount["232PE7YyabKgxFw8NRcebShAUHq"]
-	if ok {
-		totalErrorCount += float64(customerCountKey)
-	}
-
-	totalRequestedJobCount := 0
-	/*var customerCountStat stats.RudderStats
-	customerCountStat = stats.NewTaggedStat("customer_pickup_count", stats.CountType, stats.Tags{
-		"module":   "router",
-		"destType": rt.destName,
-	})*/
-	for _, count := range rt.customerCount {
-		totalRequestedJobCount += count
-		//note that this will give an aggregated count
-	}
-	//customerCountStat.Count(totalRequestedJobCount)
-
-	rt.logger.Debugf("[DRAIN DEBUG] counts errors requested %v 500's %v total %v  ratio %v", rt.destName, totalErrorCount, totalRequestedJobCount, totalErrorCount/float64(totalRequestedJobCount))
 
 	nonTerminalList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State, jobsdb.Failed.State}}, rt.maxDSQuerySize)
 	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
@@ -1924,10 +1877,7 @@ func (rt *HandleT) readAndProcess() int {
 	throttledAtTime := time.Now()
 	//Identify jobs which can be processed
 	for _, job := range combinedList {
-		//populating recentJobInResultSet
-		//if _, ok := rt.earliestJobMap[job.WorkspaceId]; !ok {
 		rt.recentJobInResultSet[job.WorkspaceId] = job.CreatedAt
-		//}
 
 		destID := destinationID(job)
 		rt.configSubscriberLock.RLock()
