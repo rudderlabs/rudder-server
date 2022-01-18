@@ -26,6 +26,8 @@ phases:
       - docker pull redis:alpine3.14
       - docker pull postgres:11-alpine
       - docker pull rudderlabs/rudder-transformer:latest
+      - docker pull yandex/clickhouse-server:21-alpine
+      - docker pull mcr.microsoft.com/mssql/server:2019-CU10-ubuntu-20.04
       - go mod download
   build:
     commands:
