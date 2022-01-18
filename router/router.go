@@ -2179,7 +2179,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 			workspaceID := source.WorkspaceID
 			rt.sourceIDWorkspaceMap[source.ID] = source.WorkspaceID
 			if _, ok := rt.routerLatencyStat[workspaceID]; !ok {
-				rt.routerLatencyStat[workspaceID] = misc.NewMovingAverage()
+				rt.routerLatencyStat[workspaceID] = misc.NewMovingAverage(misc.AVG_METRIC_AGE)
 			}
 			if len(source.Destinations) > 0 {
 				for _, destination := range source.Destinations {
@@ -2197,7 +2197,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 				}
 			}
 		}
-		rt.routerLatencyStat[""] = misc.NewMovingAverage()
+		rt.routerLatencyStat[""] = misc.NewMovingAverage(misc.AVG_METRIC_AGE)
 		if !rt.isBackendConfigInitialized {
 			rt.isBackendConfigInitialized = true
 			rt.backendConfigInitialized <- true

@@ -1493,7 +1493,7 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 		in.procErrorJobs = append(in.procErrorJobs, jobs...)
 	}
 	if len(in.procErrorJobs) > 0 {
-		proc.logger.Info("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
+		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
 		err := proc.errorDB.Store(in.procErrorJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
@@ -1548,9 +1548,6 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 	proc.statRouterDBW.Count(len(destJobs))
 	proc.statBatchRouterDBW.Count(len(batchDestJobs))
 	proc.statProcErrDBW.Count(len(in.procErrorJobs))
-
-	proc.pStatsJobs.Print()
-	proc.pStatsDBW.Print()
 }
 
 type transformSrcDestOutput struct {
@@ -2025,8 +2022,6 @@ func (proc *HandleT) getJobs() []*jobsdb.JobT {
 	proc.statDBReadRequests.Observe(float64(len(unprocessedList)))
 	proc.statDBReadEvents.Observe(float64(totalEvents))
 	proc.statDBReadPayloadBytes.Observe(float64(totalPayloadBytes))
-
-	proc.pStatsDBR.Print()
 
 	return unprocessedList
 }
