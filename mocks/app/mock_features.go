@@ -38,7 +38,7 @@ func (m *MockMigratorFeature) EXPECT() *MockMigratorFeatureMockRecorder {
 }
 
 // PrepareJobsdbsForImport mocks base method.
-func (m *MockMigratorFeature) PrepareJobsdbsForImport(arg0 *jobsdb.HandleT, arg1, arg2 *jobsdb.MultiTenantHandleT) {
+func (m *MockMigratorFeature) PrepareJobsdbsForImport(arg0 *jobsdb.HandleT, arg1 *jobsdb.MultiTenantHandleT, arg2 *jobsdb.HandleT) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "PrepareJobsdbsForImport", arg0, arg1, arg2)
 }
