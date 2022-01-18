@@ -119,9 +119,9 @@ var (
 	dbHandle         *sql.DB
 	sourceJSON       backendconfig.ConfigT
 	webhookurl       string
-	webhookurl2      string
+	disableDestinationwebhookurl     string
 	webhook          *WebhookRecorder
-	webhook2		 *WebhookRecorder
+	disableDestinationwebhook		 *WebhookRecorder
 	address          string
 	runIntegration   bool
 	writeKey         string
@@ -194,6 +194,9 @@ type Event struct {
 	context_myuniqueid	 string
 	context_id 			 string
 	context_ip 			 string
+	prop_key			 string
+	myuniqueid	 		 string
+	ip 					 string
 }
 
 type Author struct {
@@ -268,20 +271,17 @@ func GetEvent(url string, method string) (string, error) {
 	req, err := http.NewRequest(method, url, nil)
 
 	if err != nil {
-		fmt.Println(err)
 		return "", err
 	}
 	req.Header.Add("Authorization", "Basic cnVkZGVyOnBhc3N3b3Jk")
 	res, err := client.Do(req)
 	if err != nil {
-		fmt.Println(err)
 		return "", err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		fmt.Println(err)
 		return "", err
 	}
 	return string(body), err
@@ -289,20 +289,26 @@ func GetEvent(url string, method string) (string, error) {
 
 func SendPixelEvents(writeKey string) {
 	// Send pixel/v1/page
-	log.Println("Sending pixel/v1/page Event")
 	url := fmt.Sprintf("http://localhost:%s/pixel/v1/page?writeKey=%s&anonymousId=identified_user_id", httpPort, writeKey)
 	method := "GET"
-	resBody, _ := GetEvent(url, method)
-	log.Println(resBody)
-	log.Println("pixel/v1/page Event Sent Successfully")
+	resBody, err := GetEvent(url, method)
+	if err != nil {
+		log.Println(err)
+		log.Println(resBody)
+		return
 
+	}
 	// Send pixel/v1/track
 	log.Println("Sending pixel/v1/track Event")
 	url = fmt.Sprintf("http://localhost:%s/pixel/v1/track?writeKey=%s&anonymousId=identified_user_id&event=product_reviewed_again", httpPort, writeKey)
 	method = "GET"
 	resBody, _ = GetEvent(url, method)
-	log.Println(resBody)
-	log.Println("pixel/v1/track Event Sent Successfully")
+	if err != nil {
+		log.Println(err)
+		log.Println(resBody)
+		return
+
+	}
 }
 
 func SendEvent(payload *strings.Reader, callType string, writeKey string) {
@@ -385,11 +391,12 @@ func run(m *testing.M) (int, error) {
 		log.Panic(err)
 	}
 	defer func() {
-		if network != nil {
-			log.Printf("Purging kafka network resource: %s \n", err)
-			if err := pool.Client.RemoveNetwork(network.ID); err != nil {
-				log.Printf("Could not purge kafka network resource: %s \n", err)
-			}
+		if network == nil {
+		    return
+		}
+	        log.Printf("Purging kafka network resource: %s \n", err)
+	        if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+			log.Printf("Could not purge kafka network resource: %s \n", err)
 		}
 	}()
 	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
@@ -599,12 +606,10 @@ func run(m *testing.M) (int, error) {
 	webhook = NewWebhook()
 	defer webhook.Close()
 	webhookurl = webhook.Server.URL
-	log.Println("webhookurl", webhookurl)
 
-	webhook2 = NewWebhook()
-	defer webhook2.Close()
-	webhookurl2 = webhook2.Server.URL
-	log.Println("webhookurl2", webhookurl2)
+	disableDestinationwebhook = NewWebhook()
+	defer disableDestinationwebhook.Close()
+	disableDestinationwebhookurl = disableDestinationwebhook.Server.URL
 
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
@@ -677,7 +682,7 @@ func run(m *testing.M) (int, error) {
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
 			"webhookUrl":                          webhookurl,
-			"webhookUrl2":                         webhookurl2,
+			"disableDestinationwebhookUrl":                         disableDestinationwebhookurl,
 			"writeKey":                            writeKey,
 			"workspaceId":                         workspaceID,
 			"postgresPort":                        resourcePostgres.GetPort("5432/tcp"),
@@ -937,10 +942,9 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "context.myuniqueid").Str, "identified_user_idanonymousId_1")
 	require.Equal(t, gjson.GetBytes(body, "context.id").Str, "0.0.0.0")
 	require.Equal(t, gjson.GetBytes(body, "context.ip").Str, "0.0.0.0")
-	// TODO: Verify Destination Transformation
 
 	// Verify Disabled destination doesn't receive any event.
-	require.Equal(t, 0, len(webhook2.Requests()))
+	require.Equal(t, 0, len(disableDestinationwebhook.Requests()))
 }
 
 // Verify Event in POSTGRES
@@ -962,7 +966,6 @@ func TestPostgres(t *testing.T) {
 	require.Equal(t, myEvent.context_id, "0.0.0.0")
 	require.Equal(t, myEvent.context_ip, "0.0.0.0")
 
-	// TODO: Verify Destination Transformation
 
 	require.Eventually(t, func() bool {
 		eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1"
@@ -983,7 +986,29 @@ func TestPostgres(t *testing.T) {
 	require.Equal(t, myEvent.context_id, "0.0.0.0")
 	require.Equal(t, myEvent.context_ip, "0.0.0.0")
 
-	// TODO: Verify Destination Transformation
+
+	require.Eventually(t, func() bool {
+			eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1"
+			db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
+		return myEvent.anonymous_id == "anonymousId_1"
+	}, time.Minute, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+			eventSql = "select count(*) from dev_integration_test_1.screens"
+			db.QueryRow(eventSql).Scan(&myEvent.count)
+			require.Equal(t, myEvent.count, "1")
+		return  myEvent.count == "1"
+	}, time.Minute, 10*time.Millisecond)
+	
+	// Verify User Transformation
+	require.Eventually(t, func() bool {
+			eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
+			db.QueryRow(eventSql).Scan(&myEvent.prop_key, &myEvent.myuniqueid, &myEvent.ip)
+			require.Equal(t, myEvent.myuniqueid, "identified_user_idanonymousId_1")
+		return  myEvent.count == "1"
+	}, time.Minute, 10*time.Millisecond)
+	
+	require.Equal(t, myEvent.prop_key, "prop_value_edited")
+	require.Equal(t, myEvent.ip, "0.0.0.0")
 }
 
 // Verify Event in Redis
@@ -998,7 +1023,6 @@ func TestRedis(t *testing.T) {
 		event, _ := redigo.String(conn.Do("HGET", "user:identified_user_id", "trait1"))
 		return event == "new-val"
 	}, time.Minute, 10*time.Millisecond)
-// TODO: Verify Destination Transformation
 }
 
 func TestKafka(t *testing.T) {
@@ -1030,7 +1054,7 @@ func TestKafka(t *testing.T) {
 	// Count how many message processed
 	msgCount := 0
 	// Get signnal for finish
-	expectedCount := 1
+	expectedCount := 10
 out:
 	for {
 		select {
@@ -1039,9 +1063,7 @@ out:
 			t.Log("Received messages", string(msg.Key), string(msg.Value))
 			require.Equal(t, "identified_user_id", string(msg.Key))
 			require.Contains(t, string(msg.Value), "identified_user_id")
-			// TODO: Verify User Transformation
-			
-			// TODO: Verify Destination Transformation
+
 			if msgCount == expectedCount {
 				break out
 			}
@@ -1972,6 +1994,7 @@ func whGatewayTest(t *testing.T, wdt *WareHouseDestinationTest) {
 	gwEvents := wdt.whEventsCountMap["gateway"]
 
 	// Checking for the gateway jobs
+	t.Log("Checking for the gateway jobs")
 	require.Eventually(t, func() bool {
 		var count int64
 		jobSqlStatement := fmt.Sprintf(`select count(*) from gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids`, wdt.userId, wdt.writeKey)
@@ -1999,6 +2022,7 @@ func whGatewayTest(t *testing.T, wdt *WareHouseDestinationTest) {
 	}, time.Minute, 10*time.Millisecond)
 
 	// Checking for the gateway jobs state
+	t.Log("Checking for the gateway jobs state")
 	require.Eventually(t, func() bool {
 		var count int64
 		jobsSqlStatement := fmt.Sprintf("select count(*) from gw_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
@@ -2084,5 +2108,3 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 		require.Equal(t, err, nil)
 	}
 }
-
-// TODO: Verify in Live Evets API

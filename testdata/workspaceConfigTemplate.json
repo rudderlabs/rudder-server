@@ -643,7 +643,7 @@
                 {
                     "config":
                     {
-                        "webhookUrl": "{{.webhookUrl2}}",
+                        "webhookUrl": "{{.disableDestinationwebhookUrl}}",
                         "webhookMethod": "POST"
                     },
                     "secretConfig":
