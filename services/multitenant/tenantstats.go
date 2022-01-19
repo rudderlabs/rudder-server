@@ -298,8 +298,10 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 	defer multitenantStat.routerJobCountMutex.RUnlock()
 
 	//Add 30% to the time interval as exact difference leads to a catchup scenario, but this may cause to give some priority to pileup in the inrate pass
-	boostedRouterTimeOut := time.Duration(1.3 * float64(routerTimeOut))
-
+	//boostedRouterTimeOut := 3 * time.Second //time.Duration(1.3 * float64(routerTimeOut))
+	//if boostedRouterTimeOut < time.Duration(1.3*float64(routerTimeOut)) {
+	boostedRouterTimeOut := time.Duration(2.0 * float64(routerTimeOut))
+	//}
 	//TODO: Also while allocating jobs to router workers, we need to assign so that sum of assigned jobs latency equals the timeout
 
 	runningJobCount := jobQueryBatchSize
@@ -370,8 +372,6 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 					continue
 				}
 
-				timeRequired := 0.0
-
 				unReliableLatencyORInRate := false
 				if latencyMap[customerKey].Value() != 0 {
 					tmpPickCount := int(math.Min(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second), runningTimeCounter/(latencyMap[customerKey].Value())))
@@ -388,7 +388,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 					customerPickUpCount[customerKey] = misc.MinInt(int(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second)), multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
 				}
 
-				timeRequired = float64(customerPickUpCount[customerKey]) * latencyMap[customerKey].Value()
+				timeRequired := float64(customerPickUpCount[customerKey]) * latencyMap[customerKey].Value()
 				if unReliableLatencyORInRate {
 					timeRequired = 0
 				}
