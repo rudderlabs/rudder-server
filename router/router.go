@@ -600,8 +600,6 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 
 	failedUserIDsMap := make(map[string]struct{})
 	apiCallsCount := make(map[string]*destJobCountsT)
-	//Struct to hold unique users in the batch (worker.destinationJobs)
-	userToJobIDMap := make(map[string]int64)
 	routerJobResponses := make([]*RouterJobResponse, 0)
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
@@ -737,7 +735,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			_destinationJobMetadata := destinationJobMetadata
 
 			routerJobResponses = append(routerJobResponses, &RouterJobResponse{
-			    jobID: destinationJobMetadata.JobID,
+				jobID:                  destinationJobMetadata.JobID,
 				destinationJob:         &_destinationJob,
 				destinationJobMetadata: &_destinationJobMetadata,
 				respStatusCode:         respStatusCode,
@@ -752,6 +750,8 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 	})
 
 	destLiveEventSentMap := make(map[*types.DestinationJobT]struct{})
+	//Struct to hold unique users in the batch (worker.destinationJobs)
+	userToJobIDMap := make(map[string]int64)
 
 	for _, routerJobResponse := range routerJobResponses {
 		destinationJobMetadata := routerJobResponse.destinationJobMetadata
