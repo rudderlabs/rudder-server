@@ -93,13 +93,13 @@ type HandleT struct {
 	Uploader      warehouseutils.UploaderI
 }
 
-type credentialsT struct {
-	host     string
-	dbName   string
-	user     string
-	password string
-	port     string
-	sslMode  string
+type CredentialsT struct {
+	Host     string
+	DBName   string
+	User     string
+	Password string
+	Port     string
+	SSLMode  string
 }
 
 var primaryKeyMap = map[string]string{
@@ -113,7 +113,7 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
-func connect(cred credentialsT) (*sql.DB, error) {
+func Connect(cred CredentialsT) (*sql.DB, error) {
 	// Create connection string
 	//url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	//Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
@@ -122,18 +122,18 @@ func connect(cred credentialsT) (*sql.DB, error) {
 	//		https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/SQLServer.Concepts.General.SSL.Using.html
 	//more combination explanations here: https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/connection-string-keywords-and-data-source-names-dsns?view=sql-server-ver15
 	query := url.Values{}
-	query.Add("database", cred.dbName)
-	query.Add("encrypt", cred.sslMode)
+	query.Add("database", cred.DBName)
+	query.Add("encrypt", cred.SSLMode)
 	query.Add("TrustServerCertificate", "true")
-	port, err := strconv.Atoi(cred.port)
+	port, err := strconv.Atoi(cred.Port)
 	if err != nil {
 		pkgLogger.Errorf("Error parsing mssql connection port : %v", err)
 		return nil, err
 	}
 	connUrl := &url.URL{
 		Scheme:   "sqlserver",
-		User:     url.UserPassword(cred.user, cred.password),
-		Host:     fmt.Sprintf("%s:%d", cred.host, port),
+		User:     url.UserPassword(cred.User, cred.Password),
+		Host:     fmt.Sprintf("%s:%d", cred.Host, port),
 		RawQuery: query.Encode(),
 	}
 	pkgLogger.Debugf("mssql connection string : %s", connUrl.String())
@@ -153,14 +153,14 @@ func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 }
 
-func (ms *HandleT) getConnectionCredentials() credentialsT {
-	return credentialsT{
-		host:     warehouseutils.GetConfigValue(host, ms.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(dbName, ms.Warehouse),
-		user:     warehouseutils.GetConfigValue(user, ms.Warehouse),
-		password: warehouseutils.GetConfigValue(password, ms.Warehouse),
-		port:     warehouseutils.GetConfigValue(port, ms.Warehouse),
-		sslMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
+func (ms *HandleT) getConnectionCredentials() CredentialsT {
+	return CredentialsT{
+		Host:     warehouseutils.GetConfigValue(host, ms.Warehouse),
+		DBName:   warehouseutils.GetConfigValue(dbName, ms.Warehouse),
+		User:     warehouseutils.GetConfigValue(user, ms.Warehouse),
+		Password: warehouseutils.GetConfigValue(password, ms.Warehouse),
+		Port:     warehouseutils.GetConfigValue(port, ms.Warehouse),
+		SSLMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
 	}
 }
 
@@ -655,7 +655,7 @@ func (ms *HandleT) AlterColumn(tableName string, columnName string, columnType s
 
 func (ms *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
 	ms.Warehouse = warehouse
-	ms.Db, err = connect(ms.getConnectionCredentials())
+	ms.Db, err = Connect(ms.getConnectionCredentials())
 	if err != nil {
 		return
 	}
@@ -683,14 +683,14 @@ func (ms *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	ms.Uploader = uploader
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.MSSQL, warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
 
-	ms.Db, err = connect(ms.getConnectionCredentials())
+	ms.Db, err = Connect(ms.getConnectionCredentials())
 	return err
 }
 
 func (ms *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
-	ms.Db, err = connect(ms.getConnectionCredentials())
+	ms.Db, err = Connect(ms.getConnectionCredentials())
 	if err != nil {
 		return err
 	}
@@ -736,7 +736,7 @@ func (ms *HandleT) dropDanglingStagingTables() bool {
 func (ms *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
-	dbHandle, err := connect(ms.getConnectionCredentials())
+	dbHandle, err := Connect(ms.getConnectionCredentials())
 	if err != nil {
 		return
 	}
@@ -815,7 +815,7 @@ func (ms *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 func (ms *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
-	dbHandle, err := connect(ms.getConnectionCredentials())
+	dbHandle, err := Connect(ms.getConnectionCredentials())
 	if err != nil {
 		return client.Client{}, err
 	}
