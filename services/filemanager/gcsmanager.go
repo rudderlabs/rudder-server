@@ -18,6 +18,7 @@ func objectURL(objAttrs *storage.ObjectAttrs) string {
 }
 
 func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutput, error) {
+	fmt.Println("upload called")
 	ctx := context.Background()
 	var client *storage.Client
 	var err error
@@ -61,6 +62,7 @@ func (manager *GCSManager) Upload(file *os.File, prefixes ...string) (UploadOutp
 }
 
 func (manager *GCSManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	fmt.Println("list files called")
 	fileObjects = make([]*FileObject, 0)
 	ctx := context.Background()
 
@@ -93,6 +95,7 @@ func (manager *GCSManager) ListFilesWithPrefix(prefix string, maxItems int64) (f
 		fileObjects = append(fileObjects, &FileObject{attrs.Name, attrs.Updated})
 		maxItems--
 	}
+	fmt.Println("len of file object: ", len(fileObjects))
 	return
 }
 
@@ -106,6 +109,7 @@ func (manager *GCSManager) getClient() (*storage.Client, error) {
 }
 
 func (manager *GCSManager) Download(output *os.File, key string) error {
+	fmt.Println("Downloading for key: ", key)
 	ctx := context.Background()
 
 	client, err := manager.getClient()
