@@ -289,8 +289,9 @@ func getLastDrainedTimestamp(customerKey string, destType string) time.Time {
 }
 
 type workspaceScore struct {
-	score       float64
-	workspaceId string
+	score           float64
+	secondary_score float64
+	workspaceId     string
 }
 
 func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]float64) map[string]int {
@@ -411,6 +412,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		customerCountKey, ok := multitenantStat.RouterInMemoryJobCounts["router"][customerKey]
 		if !ok || customerCountKey[destType]-customerPickUpCount[customerKey] <= 0 {
 			scores[i].score = math.MaxFloat64
+			scores[i].secondary_score = 0
 			continue
 		}
 		if 1 == getFailureRate(customerKey, destType) {
@@ -418,9 +420,13 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		} else {
 			scores[i].score = float64(customerCountKey[destType]-customerPickUpCount[customerKey]) * latencyMap[customerKey].Value() / (1 - getFailureRate(customerKey, destType))
 		}
+		scores[i].secondary_score = float64(customerCountKey[destType] - customerPickUpCount[customerKey])
 	}
 
 	sort.Slice(scores[:], func(i, j int) bool {
+		if scores[i].score == math.MaxFloat64 && scores[j].score == math.MaxFloat64 {
+			return scores[i].secondary_score < scores[j].secondary_score
+		}
 		return scores[i].score < scores[j].score
 	})
 
