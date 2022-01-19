@@ -1714,9 +1714,8 @@ func Start(ctx context.Context, app app.Interface) error {
 				minimalConfigSubscriber()
 			})
 			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
-			return startHealthWebHandler(ctx)
 		}
-		return nil
+		return startHealthWebHandler(ctx)
 	}
 	var err error
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
