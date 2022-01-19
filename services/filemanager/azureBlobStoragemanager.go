@@ -31,6 +31,23 @@ func supressMinorErrors(err error) error {
 	}
 	return err
 }
+func (manager *AzureBlobStorageManager) getBaseURL() string {
+	protocol := "https"
+	if manager.Config.DisableSSL != nil && *manager.Config.DisableSSL {
+		protocol = "http"
+	}
+
+	endpoint := "blob.core.windows.net"
+	if manager.Config.EndPoint != nil {
+		endpoint = *manager.Config.EndPoint
+	}
+
+	baseURL := fmt.Sprintf("%s://%s.%s/%s/", protocol, manager.Config.AccountName, endpoint, manager.Config.Container)
+	if manager.Config.ForcePathStyle != nil && *manager.Config.ForcePathStyle {
+		baseURL = fmt.Sprintf("%s://%s/%s/%s/", protocol, *manager.Config.EndPoint, manager.Config.AccountName, manager.Config.Container)
+	}
+	return baseURL
+}
 
 func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, error) {
 	if manager.Config.Container == "" {
@@ -39,7 +56,7 @@ func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, 
 
 	accountName, accountKey := manager.Config.AccountName, manager.Config.AccountKey
 	if len(accountName) == 0 || len(accountKey) == 0 {
-		return azblob.ContainerURL{}, errors.New("Either the AccountName or AccountKey is not correct")
+		return azblob.ContainerURL{}, errors.New("either the AccountName or AccountKey is not correct")
 	}
 
 	// Create a default request pipeline using your storage account name and account key.
@@ -47,13 +64,17 @@ func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, 
 	if err != nil {
 		return azblob.ContainerURL{}, err
 	}
+
 	p := azblob.NewPipeline(credential, azblob.PipelineOptions{})
 
 	// From the Azure portal, get your storage account blob service URL endpoint.
-	URL, _ := url.Parse(
-		fmt.Sprintf("https://%s.blob.core.windows.net/%s", accountName, manager.Config.Container))
+	URL := manager.getBaseURL()
+	url, err := url.Parse(URL)
+	if err != nil {
+		return azblob.ContainerURL{}, err
+	}
 
-	containerURL := azblob.NewContainerURL(*URL, p)
+	containerURL := azblob.NewContainerURL(*url, p)
 
 	return containerURL, nil
 }
@@ -68,7 +89,6 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 	ctx := context.Background()
 	_, err = containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
 	err = supressMinorErrors(err)
-
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -86,13 +106,12 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 			fileName = manager.Config.Prefix + "/" + fileName
 		}
 	}
+
 	// Here's how to upload a blob.
 	blobURL := containerURL.NewBlockBlobURL(fileName)
-
 	_, err = azblob.UploadFileToBlockBlob(ctx, file, blobURL, azblob.UploadToBlockBlobOptions{
 		BlockSize:   4 * 1024 * 1024,
 		Parallelism: 16})
-
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -101,26 +120,11 @@ func (manager *AzureBlobStorageManager) Upload(file *os.File, prefixes ...string
 }
 
 func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
-	ctx := context.Background()
-	marker := string("")
-
-	// From the Azure portal, get your storage account blob service URL endpoint.
-	azureURL, err := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net", manager.Config.AccountName))
+	containerURL, err := manager.getContainerURL()
 	if err != nil {
-		return
+		return []*FileObject{}, err
 	}
 
-	// From the Azure portal, get your storage account name and key and set environment variables.
-	credential, err := azblob.NewSharedKeyCredential(manager.Config.AccountName, manager.Config.AccountKey)
-	if err != nil {
-		return
-	}
-
-	// pipeline to make requests.
-	// Create a ContainerURL object that wraps the container URL and a request
-	p := azblob.NewPipeline(credential, azblob.PipelineOptions{})
-	serviceURL := azblob.NewServiceURL(*azureURL, p)
-	containerURL := serviceURL.NewContainerURL(manager.Config.Container)
 	blobListingDetails := azblob.BlobListingDetails{
 		Metadata: true,
 	}
@@ -131,6 +135,8 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(prefix string, maxIt
 	}
 
 	// List the blobs in the container
+	ctx := context.Background()
+	marker := string("")
 	response, err := containerURL.ListBlobsFlatSegment(ctx, azblob.Marker{Val: &marker}, segmentOptions)
 	if err != nil {
 		return
@@ -150,8 +156,9 @@ func (manager *AzureBlobStorageManager) Download(output *os.File, key string) er
 	}
 
 	blobURL := containerURL.NewBlockBlobURL(key)
-	ctx := context.Background()
+
 	// Here's how to download the blob
+	ctx := context.Background()
 	downloadResponse, err := blobURL.Download(ctx, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return err
@@ -176,16 +183,16 @@ GetObjectNameFromLocation gets the object name/key name from the object location
 	https://account-name.blob.core.windows.net/container-name/key - >> key
 */
 func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location string) (string, error) {
-	var baseURL string
-	baseURL += "https://"
-	baseURL += manager.Config.AccountName + ".blob.core.windows.net/"
-	baseURL += manager.Config.Container + "/"
-	return location[len(baseURL):], nil
+	url := manager.getBaseURL()
+	str := strings.Split(location, url)
+	return str[len(str)-1], nil
 }
 
-//TODO complete this
 func (manager *AzureBlobStorageManager) GetDownloadKeyFromFileLocation(location string) string {
-	return location
+
+	url := manager.getBaseURL()
+	str := strings.Split(location, url)
+	return str[len(str)-1]
 }
 
 type AzureBlobStorageManager struct {
@@ -194,6 +201,8 @@ type AzureBlobStorageManager struct {
 
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
 	var containerName, accountName, accountKey, prefix string
+	var endPoint *string
+	var forcePathStyle, disableSSL *bool
 	if config["containerName"] != nil {
 		containerName = config["containerName"].(string)
 	}
@@ -206,22 +215,52 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 	if config["accountKey"] != nil {
 		accountKey = config["accountKey"].(string)
 	}
+	if config["endPoint"] != nil {
+		tmp := config["endPoint"].(string)
+		endPoint = &tmp
+	}
+	if config["forcePathStyle"] != nil {
+		tmp := config["forcePathStyle"].(bool)
+		forcePathStyle = &tmp
+	}
+	if config["disableSSL"] != nil {
+		tmp := config["disableSSL"].(bool)
+		disableSSL = &tmp
+	}
 	return &AzureBlobStorageConfig{
-		Container:   containerName,
-		Prefix:      prefix,
-		AccountName: accountName,
-		AccountKey:  accountKey,
+		Container:      containerName,
+		Prefix:         prefix,
+		AccountName:    accountName,
+		AccountKey:     accountKey,
+		EndPoint:       endPoint,
+		ForcePathStyle: forcePathStyle,
+		DisableSSL:     disableSSL,
 	}
 }
 
 type AzureBlobStorageConfig struct {
-	Container   string
-	Prefix      string
-	AccountName string
-	AccountKey  string
+	Container      string
+	Prefix         string
+	AccountName    string
+	AccountKey     string
+	EndPoint       *string
+	ForcePathStyle *bool
+	DisableSSL     *bool
 }
 
-func (manager *AzureBlobStorageManager) DeleteObjects(locations []string) (err error) {
+func (manager *AzureBlobStorageManager) DeleteObjects(keys []string) (err error) {
+	containerURL, err := manager.getContainerURL()
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		blobURL := containerURL.NewBlockBlobURL(key)
+		ctx := context.Background()
+		_, err := blobURL.Delete(ctx, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
+		if err != nil {
+			return err
+		}
+	}
 	return
 }
 

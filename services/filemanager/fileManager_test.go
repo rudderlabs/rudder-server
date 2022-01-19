@@ -1,6 +1,7 @@
 package filemanager_test
 
 import (
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
@@ -23,12 +24,12 @@ import (
 )
 
 var (
-	// Configure to use MinIO Server
-	minioEndpoint   string
-	bucket          = "filemanager-test-1"
-	region          = "us-east-1"
-	accessKeyId     = "MYACCESSKEY"
-	secretAccessKey = "MYSECRETKEY"
+	AzuriteEndpoint, gcsURL, minioEndpoint string
+	base64Secret                           = base64.StdEncoding.EncodeToString([]byte(secretAccessKey))
+	bucket                                 = "filemanager-test-1"
+	region                                 = "us-east-1"
+	accessKeyId                            = "MYACCESSKEY"
+	secretAccessKey                        = "MYSECRETKEY"
 
 	hold                bool
 	regexRequiredSuffix = regexp.MustCompile(".json.gz$")
@@ -53,7 +54,7 @@ func run(m *testing.M) int {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 
-	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
+	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "minio/minio",
 		Tag:        "latest",
 		Cmd:        []string{"server", "/data"},
@@ -67,12 +68,12 @@ func run(m *testing.M) int {
 		log.Fatalf("Could not start resource: %s", err)
 	}
 	defer func() {
-		if err := pool.Purge(resource); err != nil {
+		if err := pool.Purge(minioResource); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
-	minioEndpoint = fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
+	minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
 
 	//check if minio server is up & running.
 	if err := pool.Retry(func() error {
@@ -103,6 +104,57 @@ func run(m *testing.M) int {
 	}
 	fmt.Println("bucket created successfully")
 
+	//Running Azure emulator, Azurite.
+	AzuriteResource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "mcr.microsoft.com/azure-storage/azurite",
+		Tag:        "latest",
+		Env: []string{
+			fmt.Sprintf("AZURITE_ACCOUNTS=%s:%s", accessKeyId, base64Secret),
+			fmt.Sprintf("DefaultEndpointsProtocol=%s", "http"),
+		},
+	})
+	if err != nil {
+		log.Fatalf("Could not start resource: %s", err)
+	}
+	defer func() {
+		if err := pool.Purge(AzuriteResource); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	AzuriteEndpoint = fmt.Sprintf("localhost:%s", AzuriteResource.GetPort("10000/tcp"))
+	fmt.Println("azurite resource successfully created")
+	fmt.Println("Azurite endpoint", AzuriteEndpoint)
+
+	// // Running GCS emulator
+	// GCSResource, err := pool.RunWithOptions(&dockertest.RunOptions{
+	// 	Repository: "fsouza/fake-gcs-server",
+	// 	Tag:        "latest",
+	// 	Cmd:        []string{"-scheme", "http"},
+	// })
+	// if err != nil {
+	// 	log.Fatalf("Could not start resource: %s", err)
+	// }
+	// defer func() {
+	// 	if err := pool.Purge(GCSResource); err != nil {
+	// 		log.Printf("Could not purge resource: %s \n", err)
+	// 	}
+	// }()
+
+	// GCSEndpoint := fmt.Sprintf("localhost:%s", GCSResource.GetPort("4443/tcp"))
+	// fmt.Println("GCS test server successfully created with endpoint: ", GCSEndpoint)
+	// gcsURL = fmt.Sprintf("http://%s/storage/v1/", GCSEndpoint)
+	// os.Setenv("STORAGE_EMULATOR_HOST", fmt.Sprintf("%s/storage/v1/", GCSEndpoint))
+	// client, err := storage.NewClient(context.TODO(), option.WithEndpoint(gcsURL))
+	// if err != nil {
+	// 	log.Fatalf("failed to create client: %v", err)
+	// }
+	// bkt := client.Bucket(bucket)
+	// err = bkt.Create(context.Background(), "test", &storage.BucketAttrs{Name: bucket})
+	// if err != nil {
+	// 	fmt.Println("error while creating bucket: ", err)
+	// }
+	// fmt.Println("bucket created successfully")
+
 	searchDir := "./testData"
 	err = filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
 		if regexRequiredSuffix.Match([]byte(path)) {
@@ -126,51 +178,79 @@ func TestFileManager(t *testing.T) {
 		destName string
 		config   map[string]interface{}
 	}{
-		{
-			name:     "testing s3manager functionality",
-			destName: "S3",
-			config: map[string]interface{}{
-				"bucketName":       bucket,
-				"accessKeyID":      accessKeyId,
-				"accessKey":        secretAccessKey,
-				"enableSSE":        false,
-				"prefix":           "some-prefix",
-				"endPoint":         minioEndpoint,
-				"s3ForcePathStyle": true,
-				"disableSSL":       true,
-				"region":           region,
-			},
-		},
-		{
-			name:     "testing minio functionality",
-			destName: "MINIO",
-			config: map[string]interface{}{
-				"bucketName":       bucket,
-				"accessKeyID":      accessKeyId,
-				"secretAccessKey":  secretAccessKey,
-				"enableSSE":        false,
-				"prefix":           "some-prefix",
-				"endPoint":         minioEndpoint,
-				"s3ForcePathStyle": true,
-				"disableSSL":       true,
-				"region":           region,
-			},
-		},
-		{
-			name:     "testing digital ocean functionality",
-			destName: "DIGITAL_OCEAN_SPACES",
-			config: map[string]interface{}{
-				"bucketName":       bucket,
-				"accessKeyID":      accessKeyId,
-				"accessKey":        secretAccessKey,
-				"enableSSE":        false,
-				"prefix":           "some-prefix",
-				"endPoint":         minioEndpoint,
-				"s3ForcePathStyle": true,
-				"disableSSL":       true,
-				"region":           region,
-			},
-		},
+		// {
+		// 	name:     "testing s3manager functionality",
+		// 	destName: "S3",
+		// 	config: map[string]interface{}{
+		// 		"bucketName":       bucket,
+		// 		"accessKeyID":      accessKeyId,
+		// 		"accessKey":        secretAccessKey,
+		// 		"enableSSE":        false,
+		// 		"prefix":           "some-prefix",
+		// 		"endPoint":         minioEndpoint,
+		// 		"s3ForcePathStyle": true,
+		// 		"disableSSL":       true,
+		// 		"region":           region,
+		// 	},
+		// },
+		// {
+		// 	name:     "testing minio functionality",
+		// 	destName: "MINIO",
+		// 	config: map[string]interface{}{
+		// 		"bucketName":       bucket,
+		// 		"accessKeyID":      accessKeyId,
+		// 		"secretAccessKey":  secretAccessKey,
+		// 		"enableSSE":        false,
+		// 		"prefix":           "some-prefix",
+		// 		"endPoint":         minioEndpoint,
+		// 		"s3ForcePathStyle": true,
+		// 		"disableSSL":       true,
+		// 		"region":           region,
+		// 	},
+		// },
+		// {
+		// 	name:     "testing digital ocean functionality",
+		// 	destName: "DIGITAL_OCEAN_SPACES",
+		// 	config: map[string]interface{}{
+		// 		"bucketName":       bucket,
+		// 		"accessKeyID":      accessKeyId,
+		// 		"accessKey":        secretAccessKey,
+		// 		"enableSSE":        false,
+		// 		"prefix":           "some-prefix",
+		// 		"endPoint":         minioEndpoint,
+		// 		"s3ForcePathStyle": true,
+		// 		"disableSSL":       true,
+		// 		"region":           region,
+		// 	},
+		// },
+		// {
+		// 	name:     "testing Azure blob storage filemanager functionality",
+		// 	destName: "AZURE_BLOB",
+		// 	config: map[string]interface{}{
+		// 		"containerName":  bucket,
+		// 		"accountName":    accessKeyId,
+		// 		"accountKey":     string(base64Secret),
+		// 		"prefix":         "some-prefix",
+		// 		"endPoint":       AzuriteEndpoint,
+		// 		"forcePathStyle": true,
+		// 		"disableSSL":     true,
+		// 	},
+		// },
+		// {
+		// 	name:     "testing GCS filemanager functionality",
+		// 	destName: "GCS",
+		// 	config: map[string]interface{}{
+		// 		"bucketName": bucket,
+		// 		// "accessKeyID":      accessKeyId,
+		// 		// "accessKey":        secretAccessKey,
+		// 		// "enableSSE":        false,
+		// 		"prefix":           "some-prefix",
+		// 		"endPoint":         gcsURL,
+		// 		"s3ForcePathStyle": true,
+		// 		"disableSSL":       true,
+		// 		// "region":           region,
+		// 	},
+		// },
 	}
 
 	for _, tt := range tests {
@@ -223,7 +303,6 @@ func TestFileManager(t *testing.T) {
 			require.Equal(t, expectedPrefix, prefix, "actual prefix different than expected")
 
 			//download one of the files & assert if it matches the original one present locally.
-			// dmp := diffmatchpatch.New()
 			filePtr, err := os.Open(fileList[0])
 			if err != nil {
 				fmt.Printf("error: %s while opening file: %s ", err, fileList[0])
