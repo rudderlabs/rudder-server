@@ -402,8 +402,8 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		}
 	}
 
-	//Recency sorted pileup pass -- otherwise draining customers get priority
-	scores = make([]workspaceScore, len(recentJobInResultSet))
+	//Sort by customers who can get to realtime quickly
+	scores = make([]workspaceScore, len(sortedLatencyList))
 	for i, customerKey := range sortedLatencyList {
 		scores[i] = workspaceScore{}
 		scores[i].workspaceId = customerKey
