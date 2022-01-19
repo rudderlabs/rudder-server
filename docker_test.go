@@ -737,7 +737,7 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
 	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10s")
-	os.Setenv("RUDDER_GRACEFUL_SHUTDOWN", "false")
+	os.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := make(chan struct{})
