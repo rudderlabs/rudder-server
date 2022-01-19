@@ -722,9 +722,6 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			respBody = destinationJob.Error
 		}
 
-		//TODO remove
-		respStatusCode = 504
-
 		prevRespStatusCode = respStatusCode
 
 		if !isJobTerminated(respStatusCode) {
@@ -804,7 +801,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			worker.sendRouterResponseCountStat(destinationJobMetadata, &status, &destinationJob.Destination)
 		}
 
-		//not needed because from same source in a destinationJob(look at asserts above)
+		//not needed because from same source in a destinationJob(see asserts above)
 		// if !misc.Contains(sourceIDs, destinationJobMetadata.SourceID) {
 		// 	sourceIDs = append(sourceIDs, destinationJobMetadata.SourceID)
 		// }
