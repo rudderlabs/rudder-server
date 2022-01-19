@@ -309,9 +309,6 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 	runningTimeCounter := float64(noOfWorkers) * float64(boostedRouterTimeOut) / float64(time.Second)
 	customerPickUpCount := make(map[string]int)
 
-	//Note: Essentially, we need to have a distinction between piling up customers & realtime customers. Draining &&  Recent Job in the result set are good indicators of it.
-	//deprioritise lagging workspaces in the inrate pass
-
 	minLatency := math.MaxFloat64
 	maxLatency := -math.MaxFloat64
 
