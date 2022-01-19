@@ -442,8 +442,6 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 			tmpCount := int(runningTimeCounter / latencyMap[customerKey].Value())
 			pickUpCount = misc.MinInt(misc.MinInt(tmpCount, runningJobCount), customerCountKey[destType]-customerPickUpCount[destType])
 		}
-		pickUpCount = misc.MinInt(customerCountKey[destType]-customerPickUpCount[destType], runningJobCount)
-
 		customerPickUpCount[customerKey] += pickUpCount
 		runningJobCount = runningJobCount - pickUpCount
 		runningTimeCounter = runningTimeCounter - float64(pickUpCount)*latencyMap[customerKey].Value()
