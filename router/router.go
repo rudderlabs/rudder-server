@@ -736,12 +736,14 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			_destinationJob := destinationJob
 			_destinationJobMetadata := destinationJobMetadata
 
-			routerJobResponses = append(routerJobResponses, &RouterJobResponse{jobID: destinationJobMetadata.JobID,
+			routerJobResponses = append(routerJobResponses, &RouterJobResponse{
+			    jobID: destinationJobMetadata.JobID,
 				destinationJob:         &_destinationJob,
 				destinationJobMetadata: &_destinationJobMetadata,
 				respStatusCode:         respStatusCode,
 				respBody:               respBody,
-				attemptedToSendTheJob:  attemptedToSendTheJob})
+				attemptedToSendTheJob:  attemptedToSendTheJob,
+			})
 		}
 	}
 
