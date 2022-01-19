@@ -336,7 +336,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		}
 
 		isDraining := 0.0
-		if time.Since(getLastDrainedTimestamp(customerKey, destType)) < 10*time.Second {
+		if time.Since(getLastDrainedTimestamp(customerKey, destType)) < 100*time.Second {
 			isDraining = 1.0
 		}
 
@@ -411,7 +411,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		scores[i].workspaceId = customerKey
 
 		isDraining := 0.0
-		if time.Since(getLastDrainedTimestamp(customerKey, destType)) < 10*time.Second {
+		if time.Since(getLastDrainedTimestamp(customerKey, destType)) < 100*time.Second {
 			isDraining = 1.0
 		}
 		scores[i].score = float64(maxTime.UnixNano()-recentJobInResultSet[customerKey].UnixNano())/float64(maxTime.UnixNano()) + 100*isDraining
