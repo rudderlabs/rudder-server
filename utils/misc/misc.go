@@ -1209,6 +1209,30 @@ func GetWarehouseURL() (url string) {
 	return
 }
 
+func GetDatabricksVersion() (version string) {
+	url := fmt.Sprintf(`%s/databricksVersion`, GetWarehouseURL())
+	resp, err := http.Get(url)
+	if err != nil {
+		pkgLogger.Errorf("Unable to make a warehouse databricks build version call with error : %s", err.Error())
+		return
+	}
+	if resp == nil {
+		version = "No response from warehouse."
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			pkgLogger.Errorf("Unable to read response into bytes with error : %s", err.Error())
+			version = "Unable to read response from warehouse."
+			return
+		}
+		version = string(bodyBytes)
+	}
+	return
+}
+
 func WithBugsnag(fn func() error) func() error {
 	return func() error {
 		ctx := bugsnag.StartSession(context.Background())
