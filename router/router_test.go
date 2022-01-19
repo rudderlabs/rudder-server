@@ -44,10 +44,12 @@ var testTimeout = 10 * time.Second
 
 var gaDestinationDefinition = backendconfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GA", DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
 
+var workspaceID = uuid.Must(uuid.NewV4()).String()
 // This configuration is assumed by all router tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
 	Sources: []backendconfig.SourceT{
 		{
+			WorkspaceID: workspaceID,
 			ID:           SourceIDEnabled,
 			WriteKey:     WriteKeyEnabled,
 			Enabled:      true,
@@ -64,6 +66,7 @@ type testContext struct {
 	mockRouterJobsDB  *mocksJobsDB.MockMultiTenantJobsDB
 	mockProcErrorsDB  *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	mockMultitenantI  *mocksMultitenant.MockMultiTenantI
 }
 
 // Initiaze mocks and common expectations
@@ -73,6 +76,7 @@ func (c *testContext) Setup() {
 	c.mockRouterJobsDB = mocksJobsDB.NewMockMultiTenantJobsDB(c.mockCtrl)
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
+	c.mockMultitenantI = mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
 	// During Setup, router subscribes to backend config
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
@@ -140,7 +144,7 @@ var _ = Describe("Router", func() {
 
 			// crash recovery check
 			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
-			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
+			//c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).Times(1)
 		})
 
 		It("should send failed, unprocessed jobs to ga destination", func() {
@@ -154,7 +158,6 @@ var _ = Describe("Router", func() {
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
-			workspaceID := uuid.Must(uuid.NewV4()).String()
 			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
@@ -189,8 +192,7 @@ var _ = Describe("Router", func() {
 					WorkspaceId: workspaceID,
 				},
 			}
-			// var successRateMap = map[string]float64{}
-			// var drainedMap = map[string]float64{}
+			allJobs := append(toRetryJobsList, unprocessedJobsList...)
 			var customerCount = map[string]int{}
 			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 			customerCountOut := customerCount
@@ -199,7 +201,8 @@ var _ = Describe("Router", func() {
 				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
 			c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
-				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1)
+				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(allJobs)
+
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
@@ -221,7 +224,7 @@ var _ = Describe("Router", func() {
 
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
-			Expect(count).To(Equal(0))
+			Expect(count).To(Equal(2))
 
 			time.Sleep(3 * time.Second)
 		})
@@ -251,20 +254,22 @@ var _ = Describe("Router", func() {
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
+					WorkspaceId: workspaceID,
 				},
 			}
-			var successRateMap = map[string]float64{}
-			var drainedMap = map[string]float64{}
+
 			var customerCount = map[string]int{}
+			customerCount[workspaceID] = len(unprocessedJobsList)
+			customerCountOut := customerCount
+			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap("GA").Times(1)
 
-			mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
-			mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func() map[string]int { return customerCount })
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(),
+				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+				gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
-			c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
-				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1)
+			c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(unprocessedJobsList).After(callGetRouterPickupJobs)
+
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
@@ -329,20 +334,28 @@ var _ = Describe("Router", func() {
 						AttemptNum: 0,
 					},
 					Parameters: []byte(parameters),
+					WorkspaceId: workspaceID,
 				},
 			}
-			var successRateMap = map[string]float64{}
-			var drainedMap = map[string]float64{}
+
 			var customerCount = map[string]int{}
+			customerCount[workspaceID] = len(unprocessedJobsList)
+			customerCountOut := customerCount
+			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap("GA").Times(1)
 
-			mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
-			mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func() map[string]int { return customerCount })
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(),
+				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+				gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
-			c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
-				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1)
+			c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
+				CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(unprocessedJobsList).After(callGetRouterPickupJobs)
+
+			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(),
+				gomock.Any()).Times(1)
+
+			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(),
+				gomock.Any()).Times(1)
+
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1)
 
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any()).Times(1).
@@ -378,145 +391,147 @@ var _ = Describe("Router", func() {
 
 			// crash recovery check
 			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
-			c.mockRouterJobsDB.EXPECT().GetPileUpCounts([]map[string]int{}).Times(1)
+			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
 		})
 
-		It("can batch jobs together", func() {
-			router := &HandleT{}
-
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
-
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router.transformer = mockTransformer
-
-			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
-			router.netHandle = mockNetHandle
-			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
-			router.multitenantI = mockMultitenantHandle
-			router.enableBatching = true
-			router.noOfWorkers = 1
-			noOfJobsToBatchInAWorker = 3
-
-			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
-
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
-				{
-					UUID:         uuid.Must(uuid.NewV4()),
-					UserID:       "u1",
-					JobID:        2009,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					CustomVal:    CustomVal["GA"],
-					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
-						AttemptNum:    1,
-						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
-					},
-					Parameters: []byte(parameters),
-				},
-			}
-
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
-				{
-					UUID:         uuid.Must(uuid.NewV4()),
-					UserID:       "u2",
-					JobID:        2010,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
-					CustomVal:    CustomVal["GA"],
-					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
-						AttemptNum: 0,
-					},
-					Parameters: []byte(parameters),
-				},
-				{
-					UUID:         uuid.Must(uuid.NewV4()),
-					UserID:       "u3",
-					JobID:        2011,
-					CreatedAt:    time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
-					ExpireAt:     time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
-					CustomVal:    CustomVal["GA"],
-					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
-						AttemptNum: 0,
-					},
-					Parameters: []byte(parameters),
-				},
-			}
-			var successRateMap = map[string]float64{}
-			var drainedMap = map[string]float64{}
-			var customerCount = map[string]int{}
-
-			mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
-			mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func() map[string]int { return customerCount })
-
-			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
-				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1)
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
-				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
-				}).Return(nil)
-
-			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).
-				DoAndReturn(
-					func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-						assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
-						assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
-						assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
-						return []types.DestinationJobT{
-							{
-								Message: []byte(`{"message": "some transformed message"}`),
-								JobMetadataArray: []types.JobMetadataT{
-									{
-										UserID: "u1",
-										JobID:  2009,
-										JobT:   toRetryJobsList[0],
-									},
-									{
-										UserID: "u2",
-										JobID:  2010,
-										JobT:   unprocessedJobsList[0],
-									},
-									{
-										UserID: "u3",
-										JobID:  2011,
-										JobT:   unprocessedJobsList[1],
-									},
-								},
-								Batched:    true,
-								Error:      `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`,
-								StatusCode: 200,
-							},
-						}
-					})
-
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
-
-			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
-			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
-			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
-				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-					assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", 1)
-					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", 1)
-					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", 1)
-				})
-			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
-			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
-
-			<-router.backendConfigInitialized
-			count := router.readAndProcess()
-			Expect(count).To(Equal(3))
-
-			time.Sleep(3 * time.Second)
-
-		})
+		//It("can batch jobs together", func() {
+		//	router := &HandleT{}
+		//
+		//	router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+		//
+		//	mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+		//	router.transformer = mockTransformer
+		//
+		//	mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
+		//	router.netHandle = mockNetHandle
+		//	mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
+		//	router.multitenantI = mockMultitenantHandle
+		//	router.enableBatching = true
+		//	router.noOfWorkers = 1
+		//	noOfJobsToBatchInAWorker = 3
+		//
+		//	gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
+		//	parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
+		//
+		//	var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+		//		{
+		//			UUID:         uuid.Must(uuid.NewV4()),
+		//			UserID:       "u1",
+		//			JobID:        2009,
+		//			CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+		//			ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+		//			CustomVal:    CustomVal["GA"],
+		//			EventPayload: []byte(gaPayload),
+		//			LastJobStatus: jobsdb.JobStatusT{
+		//				AttemptNum:    1,
+		//				ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
+		//			},
+		//			Parameters: []byte(parameters),
+		//		},
+		//	}
+		//
+		//	var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+		//		{
+		//			UUID:         uuid.Must(uuid.NewV4()),
+		//			UserID:       "u2",
+		//			JobID:        2010,
+		//			CreatedAt:    time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+		//			ExpireAt:     time.Date(2020, 04, 28, 13, 26, 00, 00, time.UTC),
+		//			CustomVal:    CustomVal["GA"],
+		//			EventPayload: []byte(gaPayload),
+		//			LastJobStatus: jobsdb.JobStatusT{
+		//				AttemptNum: 0,
+		//			},
+		//			Parameters: []byte(parameters),
+		//		},
+		//		{
+		//			UUID:         uuid.Must(uuid.NewV4()),
+		//			UserID:       "u3",
+		//			JobID:        2011,
+		//			CreatedAt:    time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
+		//			ExpireAt:     time.Date(2020, 04, 28, 13, 27, 00, 00, time.UTC),
+		//			CustomVal:    CustomVal["GA"],
+		//			EventPayload: []byte(gaPayload),
+		//			LastJobStatus: jobsdb.JobStatusT{
+		//				AttemptNum: 0,
+		//			},
+		//			Parameters: []byte(parameters),
+		//		},
+		//	}
+		//
+		//	var customerCount = map[string]int{}
+		//	customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+		//	customerCountOut := customerCount
+		//	jobsList := append(toRetryJobsList, unprocessedJobsList...)
+		//	callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap("GA").Times(1)
+		//
+		//	callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(),
+		//		gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+		//		gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
+		//
+		//	callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
+		//		CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(jobsList).After(callGetRouterPickupJobs)
+		//
+		//	c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
+		//		Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+		//			assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
+		//			assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
+		//			assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
+		//		}).Return(nil)
+		//
+		//	mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).
+		//		DoAndReturn(
+		//			func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
+		//				assertRouterJobs(transformMessage.Data[0], toRetryJobsList[0])
+		//				assertRouterJobs(transformMessage.Data[1], unprocessedJobsList[0])
+		//				assertRouterJobs(transformMessage.Data[2], unprocessedJobsList[1])
+		//				return []types.DestinationJobT{
+		//					{
+		//						Message: []byte(`{"message": "some transformed message"}`),
+		//						JobMetadataArray: []types.JobMetadataT{
+		//							{
+		//								UserID: "u1",
+		//								JobID:  2009,
+		//								JobT:   toRetryJobsList[0],
+		//							},
+		//							{
+		//								UserID: "u2",
+		//								JobID:  2010,
+		//								JobT:   unprocessedJobsList[0],
+		//							},
+		//							{
+		//								UserID: "u3",
+		//								JobID:  2011,
+		//								JobT:   unprocessedJobsList[1],
+		//							},
+		//						},
+		//						Batched:    true,
+		//						Error:      `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`,
+		//						StatusCode: 200,
+		//					},
+		//				}
+		//			})
+		//
+		//	mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+		//
+		//	callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1).Return(nil)
+		//	callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
+		//	callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
+		//		Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+		//			assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", 1)
+		//			assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", 1)
+		//			assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", 1)
+		//		})
+		//	callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
+		//	c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
+		//
+		//	<-router.backendConfigInitialized
+		//	count := router.readAndProcess()
+		//	Expect(count).To(Equal(3))
+		//
+		//	time.Sleep(3 * time.Second)
+		//
+		//})
 
 		It("aborts jobs if batching fails for few of the jobs", func() {
 			router := &HandleT{}
@@ -584,18 +599,16 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 			}
-			var successRateMap = map[string]float64{}
-			var drainedMap = map[string]float64{}
+			allJobs := append(toRetryJobsList, unprocessedJobsList...)
 			var customerCount = map[string]int{}
-
-			mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
+			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			customerCountOut := customerCount
+			mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1)
 			mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func() map[string]int { return customerCount })
+				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(customerCountOut)
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
-				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
+				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Return(toRetryJobsList).Times(1).Return(allJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
@@ -781,18 +794,17 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 			}
-			var successRateMap = map[string]float64{}
-			var drainedMap = map[string]float64{}
-			var customerCount = map[string]int{}
 
-			mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
+			allJobs := append(toRetryJobsList, unprocessedJobsList...)
+			var customerCount = map[string]int{}
+			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			customerCountOut := customerCount
+			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap("GA").Times(1)
 			mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func() map[string]int { return customerCount })
+				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
-				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize - len(toRetryJobsList)}).Return(emptyJobsList).Times(1)
+				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(allJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
@@ -882,7 +894,7 @@ var _ = Describe("Router", func() {
 					}
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			//mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().AnyTimes().Return(nil)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().AnyTimes().After(callBeginTransaction)
@@ -971,18 +983,16 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			var successRateMap = map[string]float64{}
-			var drainedMap = map[string]float64{}
+			allJobs := append(toRetryJobsList, unprocessedJobsList...)
 			var customerCount = map[string]int{}
-
-			mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1).DoAndReturn(
-				func() (map[string]float64, map[string]float64) { return successRateMap, drainedMap })
+			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
+			customerCountOut := customerCount
+			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap("GA").Times(1)
 			mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func() map[string]int { return customerCount })
+				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
-				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}, JobCount: c.dbReadBatchSize}).Return(toRetryJobsList).Times(1)
+				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(allJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
