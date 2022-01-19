@@ -761,7 +761,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				//Only one job is marked failed and the rest are marked waiting
 				//Job order logic requires that at any point of time, we should have only one failed job per user
 				//This is introduced to ensure the above statement
-				resp := fmt.Sprintf(`{"blocking_id":"%v", "user_id":"%s", "moreinfo": "attempted to send in a batch"}`, prevFailedJobID, destinationJobMetadata.UserID)
+				resp := fmt.Sprintf(`{"blocking_id":"%d", "user_id":"%s", "moreinfo": "attempted to send in a batch"}`, prevFailedJobID, destinationJobMetadata.UserID)
 				status := jobsdb.JobStatusT{
 					JobID:         destinationJobMetadata.JobID,
 					AttemptNum:    destinationJobMetadata.AttemptNum,
