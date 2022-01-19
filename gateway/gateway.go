@@ -416,7 +416,12 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			sourceTagMap[sourceTag] = writeKey
 			sourceTagMap["reqType"] = req.reqType
 			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
+			//Should be function of body
+			configSubscriberLock.RLock()
+			workspaceId, _ := enabledWriteKeyWorkspaceMap[writeKey]
+			configSubscriberLock.RUnlock()
 
+			sourceTagMap["workspaceId"] = workspaceId
 			ipAddr := req.ipAddr
 
 			body := req.requestPayload
@@ -540,10 +545,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				marshalledParams = []byte(`{"error": "rudder-server gateway failed to marshal params"}`)
 			}
 
-			//Should be function of body
-			configSubscriberLock.RLock()
-			workspaceId, _ := enabledWriteKeyWorkspaceMap[writeKey]
-			configSubscriberLock.RUnlock()
 			newJob := jobsdb.JobT{
 				UUID:         id,
 				UserID:       builtUserID,
