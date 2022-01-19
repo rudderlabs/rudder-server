@@ -3,6 +3,7 @@ package router
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 
 	uuid "github.com/gofrs/uuid"
@@ -45,11 +46,12 @@ var testTimeout = 10 * time.Second
 var gaDestinationDefinition = backendconfig.DestinationDefinitionT{ID: GADestinationDefinitionID, Name: "GA", DisplayName: "Google Analytics", Config: nil, ResponseRules: nil}
 
 var workspaceID = uuid.Must(uuid.NewV4()).String()
+
 // This configuration is assumed by all router tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
 	Sources: []backendconfig.SourceT{
 		{
-			WorkspaceID: workspaceID,
+			WorkspaceID:  workspaceID,
 			ID:           SourceIDEnabled,
 			WriteKey:     WriteKeyEnabled,
 			Enabled:      true,
@@ -255,7 +257,7 @@ var _ = Describe("Router", func() {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 0,
 					},
-					Parameters: []byte(parameters),
+					Parameters:  []byte(parameters),
 					WorkspaceId: workspaceID,
 				},
 			}
@@ -335,7 +337,7 @@ var _ = Describe("Router", func() {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum: 0,
 					},
-					Parameters: []byte(parameters),
+					Parameters:  []byte(parameters),
 					WorkspaceId: workspaceID,
 				},
 			}
@@ -413,6 +415,7 @@ var _ = Describe("Router", func() {
 			router.enableBatching = true
 			router.noOfWorkers = 1
 			noOfJobsToBatchInAWorker = 3
+			router.routerTimeout = time.Duration(math.MaxInt64)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
@@ -466,6 +469,7 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 			customerCountOut := customerCount
+			jobsList := append(toRetryJobsList, unprocessedJobsList...)
 			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap("GA").Times(1)
 
 			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(),
@@ -473,14 +477,14 @@ var _ = Describe("Router", func() {
 				gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
-				CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(append(toRetryJobsList, unprocessedJobsList...)).After(callGetRouterPickupJobs)
+				CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(jobsList).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
-				})
+				}).Return(nil)
 
 			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).
 				DoAndReturn(
@@ -515,18 +519,16 @@ var _ = Describe("Router", func() {
 						}
 					})
 
-			//mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+
 			callBeginTransaction := c.mockRouterJobsDB.EXPECT().BeginGlobalTransaction().Times(1)
 			callAcquireLocks := c.mockRouterJobsDB.EXPECT().AcquireUpdateJobStatusLocks().Times(1).After(callBeginTransaction)
-			//callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(),
-			//	[]string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
-			//	Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
-			//		assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", 1)
-			//		assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", 1)
-			//		assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", 1)
-			//	})
-			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(),
-				[]string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks)
+			callUpdateStatus := c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTxn(gomock.Any(), gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).After(callAcquireLocks).
+				Do(func(_ interface{}, statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
+					assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", 1)
+					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", 1)
+					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", 1)
+				})
 			callCommitTransaction := c.mockRouterJobsDB.EXPECT().CommitTransaction(gomock.Any()).Times(1).After(callUpdateStatus)
 			c.mockRouterJobsDB.EXPECT().ReleaseUpdateJobStatusLocks().Times(1).After(callCommitTransaction)
 
@@ -537,7 +539,6 @@ var _ = Describe("Router", func() {
 			time.Sleep(3 * time.Second)
 
 		})
-
 
 		It("aborts jobs if batching fails for few of the jobs", func() {
 			router := &HandleT{}
