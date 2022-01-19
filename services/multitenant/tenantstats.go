@@ -27,6 +27,7 @@ type MultitenantStatsT struct {
 	RouterInputRates            map[string]map[string]map[string]misc.MovingAverage
 	RouterSuccessRatioLoopCount map[string]map[string]map[string]int
 	lastDrainedTimestamps       map[string]map[string]time.Time
+	failureRate                 map[string]map[string]misc.MovingAverage
 	RouterCircuitBreakerMap     map[string]map[string]BackOffT
 	routerSuccessRateMutex      sync.RWMutex
 }
@@ -50,6 +51,7 @@ func Init() {
 	multitenantStat.RouterInputRates["batch_router"] = make(map[string]map[string]misc.MovingAverage)
 	multitenantStat.RouterSuccessRatioLoopCount = make(map[string]map[string]map[string]int)
 	multitenantStat.lastDrainedTimestamps = make(map[string]map[string]time.Time)
+	multitenantStat.failureRate = make(map[string]map[string]misc.MovingAverage)
 	multitenantStat.RouterCircuitBreakerMap = make(map[string]map[string]BackOffT)
 	go SendRouterInMovingAverageStat()
 	go SendPileUpStats()
@@ -99,8 +101,19 @@ func CalculateSuccessFailureCounts(customer string, destType string, isSuccess b
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["failure"] = 0
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["drained"] = 0
 	}
+
+	_, ok = multitenantStat.failureRate[customer]
+	if !ok {
+		multitenantStat.failureRate[customer] = make(map[string]misc.MovingAverage)
+	}
+	_, ok = multitenantStat.failureRate[customer][destType]
+	if !ok {
+		multitenantStat.failureRate[customer][destType] = misc.NewMovingAverage(misc.AVG_METRIC_AGE)
+	}
+
 	if isSuccess {
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["success"] += 1
+		multitenantStat.failureRate[customer][destType].Add(0)
 	} else if isDrained {
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["drained"] += 1
 
@@ -109,8 +122,10 @@ func CalculateSuccessFailureCounts(customer string, destType string, isSuccess b
 			multitenantStat.lastDrainedTimestamps[customer] = make(map[string]time.Time)
 		}
 		multitenantStat.lastDrainedTimestamps[customer][destType] = time.Now()
+		multitenantStat.failureRate[customer][destType].Add(0)
 	} else {
 		multitenantStat.RouterSuccessRatioLoopCount[customer][destType]["failure"] += 1
+		multitenantStat.failureRate[customer][destType].Add(1)
 	}
 }
 
@@ -127,6 +142,17 @@ func checkIfBackedOff(customer string, destType string) (backedOff bool, timeExp
 		return true, true
 	}
 	return true, false
+}
+
+func getFailureRate(customerKey string, destType string) float64 {
+	_, ok := multitenantStat.failureRate[customerKey]
+	if ok {
+		_, ok = multitenantStat.failureRate[customerKey][destType]
+		if ok {
+			return multitenantStat.failureRate[customerKey][destType].Value()
+		}
+	}
+	return 0.0
 }
 
 func GenerateSuccessRateMap(destType string) (map[string]float64, map[string]float64) {
@@ -273,6 +299,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 
 	//Add 30% to the time interval as exact difference leads to a catchup scenario, but this may cause to give some priority to pileup in the inrate pass
 	boostedRouterTimeOut := time.Duration(1.3 * float64(routerTimeOut))
+
 	//TODO: Also while allocating jobs to router workers, we need to assign so that sum of assigned jobs latency equals the timeout
 
 	runningJobCount := jobQueryBatchSize
@@ -284,12 +311,6 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 
 	minLatency := math.MaxFloat64
 	maxLatency := -math.MaxFloat64
-	//TODO: may want to check for good max and min values
-	minTime := time.Now().Add(-time.Hour * 24 * 365 * 200)
-	maxTime := time.Now().Add(time.Hour * 24 * 365 * 200)
-	minRecency := maxTime
-	maxRecency := minTime
-	realMaxRecency := minTime
 
 	//Below two loops, normalize the values and compute the score of each workspace
 	//No need for sorting latency list before calling this function.
@@ -299,22 +320,6 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		}
 		if maxLatency < latencyMap[customerKey].Value() {
 			maxLatency = latencyMap[customerKey].Value()
-		}
-
-		ts, ok := recentJobInResultSet[customerKey]
-		if !ok {
-			recentJobInResultSet[customerKey] = maxTime //Gives priority in the pileup pass to non-existent workspaces in the last loop
-			ts = maxTime
-		} else {
-			if ts.After(realMaxRecency) {
-				realMaxRecency = ts
-			}
-		}
-		if minRecency.After(ts) {
-			minRecency = ts
-		}
-		if ts.After(maxRecency) {
-			maxRecency = ts
 		}
 	}
 
@@ -327,13 +332,13 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		}
 
 		invertedRecencyScore := 0.0
-		if isWorkspaceLagging(customerKey, recentJobInResultSet, realMaxRecency) {
+		/*if isWorkspaceLagging(customerKey, recentJobInResultSet, realMaxRecency) {
 			if float64(maxRecency.UnixNano()-minRecency.UnixNano()) != 0 {
 				recencyScore := (float64(recentJobInResultSet[customerKey].UnixNano() - minRecency.UnixNano())) / float64(maxRecency.UnixNano()-minRecency.UnixNano())
 				invertedRecencyScore = 1 - recencyScore
 				invertedRecencyScore++ //Moving Range from 1 to 2
 			}
-		}
+		}*/
 
 		isDraining := 0.0
 		if time.Since(getLastDrainedTimestamp(customerKey, destType)) < 100*time.Second {
@@ -365,16 +370,11 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 					continue
 				}
 
-				timeGiven := boostedRouterTimeOut
-				if scoredWorkspace.score > 10 { //Lagging cases
-					timeGiven = routerTimeOut
-				}
-
 				timeRequired := 0.0
 
 				unReliableLatencyORInRate := false
 				if latencyMap[customerKey].Value() != 0 {
-					tmpPickCount := int(math.Min(destTypeCount.Value()*float64(timeGiven)/float64(time.Second), runningTimeCounter/(latencyMap[customerKey].Value())))
+					tmpPickCount := int(math.Min(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second), runningTimeCounter/(latencyMap[customerKey].Value())))
 					if tmpPickCount < 1 {
 						tmpPickCount = 1 //Adding BETA
 						pkgLogger.Debugf("[DRAIN DEBUG] %v  checking for high latency/low in rate customer %v latency value %v in rate %v", destType, customerKey, latencyMap[customerKey].Value(), destTypeCount.Value())
@@ -385,7 +385,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 						customerPickUpCount[customerKey] = misc.MaxInt(multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType], 0)
 					}
 				} else {
-					customerPickUpCount[customerKey] = misc.MinInt(int(destTypeCount.Value()*float64(timeGiven)/float64(time.Second)), multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
+					customerPickUpCount[customerKey] = misc.MinInt(int(destTypeCount.Value()*float64(routerTimeOut)/float64(time.Second)), multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType])
 				}
 
 				timeRequired = float64(customerPickUpCount[customerKey]) * latencyMap[customerKey].Value()
@@ -408,11 +408,16 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		scores[i] = workspaceScore{}
 		scores[i].workspaceId = customerKey
 
-		isDraining := 0.0
-		if time.Since(getLastDrainedTimestamp(customerKey, destType)) < 100*time.Second {
-			isDraining = 1.0
+		customerCountKey, ok := multitenantStat.RouterInMemoryJobCounts["router"][customerKey]
+		if !ok || customerCountKey[destType]-customerPickUpCount[customerKey] <= 0 {
+			scores[i].score = math.MaxFloat64
+			continue
 		}
-		scores[i].score = float64(maxTime.UnixNano()-recentJobInResultSet[customerKey].UnixNano())/float64(maxTime.UnixNano()) + 100*isDraining
+		if 1 == getFailureRate(customerKey, destType) {
+			scores[i].score = math.MaxFloat64
+		} else {
+			scores[i].score = float64(customerCountKey[destType]-customerPickUpCount[customerKey]) * latencyMap[customerKey].Value() / (1 - getFailureRate(customerKey, destType))
+		}
 	}
 
 	sort.Slice(scores[:], func(i, j int) bool {
@@ -429,22 +434,21 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		if runningJobCount <= 0 || runningTimeCounter <= 0 {
 			break
 		}
-		if scoredWorkspace.score > 100 { //Draining cases - ignore
-			continue
-		}
-		timeRequired := latencyMap[customerKey].Value() * float64(customerCountKey[destType])
+
 		pickUpCount := 0
-		if timeRequired < runningTimeCounter {
+		if latencyMap[customerKey].Value() == 0 {
 			pickUpCount = misc.MinInt(customerCountKey[destType]-customerPickUpCount[destType], runningJobCount)
 		} else {
 			tmpCount := int(runningTimeCounter / latencyMap[customerKey].Value())
 			pickUpCount = misc.MinInt(misc.MinInt(tmpCount, runningJobCount), customerCountKey[destType]-customerPickUpCount[destType])
 		}
+		pickUpCount = misc.MinInt(customerCountKey[destType]-customerPickUpCount[destType], runningJobCount)
+
 		customerPickUpCount[customerKey] += pickUpCount
 		runningJobCount = runningJobCount - pickUpCount
 		runningTimeCounter = runningTimeCounter - float64(pickUpCount)*latencyMap[customerKey].Value()
 
-		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , moving_average_latency : %v, pileUpCount : %v ,PileUpLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount, latencyMap[customerKey].Value(), customerCountKey[destType])
+		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , moving_average_latency : %v, pileUpCount : %v ,PileUpLoop ", float64(pickUpCount)*latencyMap[customerKey].Value(), runningTimeCounter, customerKey, runningJobCount, latencyMap[customerKey].Value(), customerCountKey[destType])
 	}
 
 	return customerPickUpCount

@@ -1844,7 +1844,7 @@ func (rt *HandleT) readAndProcess() int {
 	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
 
 	combinedList := append(nonTerminalList, unprocessedList...)
-	rt.recentJobInResultSet = make(map[string]time.Time)
+	//rt.recentJobInResultSet = make(map[string]time.Time)
 	rt.logger.Debugf("[DRAIN DEBUG] counts  %v db jobs returned %v", rt.destName, len(combinedList))
 
 	if len(combinedList) == 0 {
