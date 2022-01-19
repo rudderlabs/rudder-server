@@ -121,7 +121,7 @@ func Init() {
 }
 
 func versionInfo() map[string]interface{} {
-	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL, "TransformerVersion": transformer.GetVersion()}
+	return map[string]interface{}{"Version": version, "Major": major, "Minor": minor, "Patch": patch, "Commit": commit, "BuildDate": buildDate, "BuiltBy": builtBy, "GitUrl": gitURL, "TransformerVersion": transformer.GetVersion(), "DatabricksVersion": misc.GetDatabricksVersion()}
 }
 
 func versionHandler(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +174,7 @@ func runAllInit() {
 	warehouse.Init3()
 	warehouse.Init4()
 	warehouse.Init5()
+	warehouse.Init6()
 	azuresynapse.Init()
 	mssql.Init()
 	postgres.Init()
