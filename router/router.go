@@ -1900,9 +1900,6 @@ func destinationID(job *jobsdb.JobT) string {
 
 func (rt *HandleT) crashRecover() {
 	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: -1})
-	once.Do(func() {
-		rt.fillPileUpCounts()
-	})
 }
 
 func (rt *HandleT) fillPileUpCounts() {
@@ -1953,6 +1950,9 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.multitenantI = multitenantStatT
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
+	once.Do(func() {
+		rt.fillPileUpCounts()
+	})
 	rt.crashRecover()
 	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)

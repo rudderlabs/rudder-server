@@ -119,7 +119,6 @@ var _ = Describe("Router", func() {
 		router_utils.JobRetention = time.Duration(175200) * time.Hour //20 Years(20*365*24)
 		c = &testContext{}
 		c.Setup()
-
 		// setup static requirements of dependencies
 		stats.Setup()
 		RoutersManagerSetup()
@@ -148,7 +147,7 @@ var _ = Describe("Router", func() {
 			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
 			// Skipping GetPileUpCounts, because it is supposed to run only once for each destination type.
 			//Uncomment it if running only a single test or single context
-			//c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
+			// c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
 		})
 
 		It("should send failed, unprocessed jobs to ga destination", func() {
@@ -400,7 +399,7 @@ var _ = Describe("Router", func() {
 			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
 			// Skipping GetPileUpCounts, because it is supposed to run only once for each destination type.
 			//Uncomment it if running only a single test or single context
-			//c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
+			// c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
 		})
 
 		It("can batch jobs together", func() {
@@ -620,7 +619,7 @@ var _ = Describe("Router", func() {
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Return(toRetryJobsList).Times(
-					1).Return(allJobs).After(callGetRouterPickupJobs)
+				1).Return(allJobs).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
@@ -703,7 +702,7 @@ var _ = Describe("Router", func() {
 			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
 			// Skipping GetPileUpCounts, because it is supposed to run only once for each destination type.
 			//Uncomment it if running only a single test or single context
-			//c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
+			// c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
 		})
 		/*
 			Router transform
@@ -821,7 +820,7 @@ var _ = Describe("Router", func() {
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
 				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(allJobs).After(
-					callGetRouterPickupJobs)
+				callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
