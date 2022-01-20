@@ -803,8 +803,8 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			worker.sendRouterResponseCountStat(destinationJobMetadata, &status, &destinationJob.Destination)
 		}
 
-		//Sending only one destination live event for every destinationJob.
-		if _, ok := destLiveEventSentMap[destinationJob]; !ok {
+		//Sending only one destination live event for every destinationJob, if it was attemptedToSendTheJob
+		if _, ok := destLiveEventSentMap[destinationJob]; !ok && attemptedToSendTheJob {
 			payload := destinationJob.Message
 			if destinationJob.Message == nil {
 				payload = destinationJobMetadata.JobT.EventPayload
