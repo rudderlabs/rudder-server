@@ -1,12 +1,12 @@
 package filemanager_test
 
 import (
-	"context"
 	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -15,22 +15,21 @@ import (
 	"syscall"
 	"testing"
 
-	"cloud.google.com/go/storage"
+	"github.com/minio/minio-go/v6"
 	"github.com/ory/dockertest"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/api/option"
 )
 
 var (
-	AzuriteEndpoint, gcsURL, minioEndpoint string
-	base64Secret                           = base64.StdEncoding.EncodeToString([]byte(secretAccessKey))
-	bucket                                 = "filemanager-test-1"
-	region                                 = "us-east-1"
-	accessKeyId                            = "MYACCESSKEY"
-	secretAccessKey                        = "MYSECRETKEY"
+	AzuriteEndpoint, minioEndpoint string
+	base64Secret                   = base64.StdEncoding.EncodeToString([]byte(secretAccessKey))
+	bucket                         = "filemanager-test-1"
+	region                         = "us-east-1"
+	accessKeyId                    = "MYACCESSKEY"
+	secretAccessKey                = "MYSECRETKEY"
 
 	hold                bool
 	regexRequiredSuffix = regexp.MustCompile(".json.gz$")
@@ -50,112 +49,86 @@ func run(m *testing.M) int {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
 	flag.Parse()
 
+	//docker pool setup
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 
-	// minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
-	// 	Repository: "minio/minio",
-	// 	Tag:        "latest",
-	// 	Cmd:        []string{"server", "/data"},
-	// 	Env: []string{
-	// 		fmt.Sprintf("MINIO_ACCESS_KEY=%s", accessKeyId),
-	// 		fmt.Sprintf("MINIO_SECRET_KEY=%s", secretAccessKey),
-	// 		fmt.Sprintf("MINIO_SITE_REGION=%s", region),
-	// 	},
-	// })
-	// if err != nil {
-	// 	log.Fatalf("Could not start resource: %s", err)
-	// }
-	// defer func() {
-	// 	if err := pool.Purge(minioResource); err != nil {
-	// 		log.Printf("Could not purge resource: %s \n", err)
-	// 	}
-	// }()
-
-	// minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
-
-	// //check if minio server is up & running.
-	// if err := pool.Retry(func() error {
-	// 	url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
-	// 	resp, err := http.Get(url)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	if resp.StatusCode != http.StatusOK {
-	// 		return fmt.Errorf("status code not OK")
-	// 	}
-	// 	return nil
-	// }); err != nil {
-	// 	log.Fatalf("Could not connect to docker: %s", err)
-	// }
-	// fmt.Println("minio is up & running properly")
-
-	// useSSL := false
-	// minioClient, err := minio.New(minioEndpoint, accessKeyId, secretAccessKey, useSSL)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Println("minioClient created successfully")
-
-	// err = minioClient.MakeBucket(bucket, "us-east-1")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Println("bucket created successfully")
-
-	// //Running Azure emulator, Azurite.
-	// AzuriteResource, err := pool.RunWithOptions(&dockertest.RunOptions{
-	// 	Repository: "mcr.microsoft.com/azure-storage/azurite",
-	// 	Tag:        "latest",
-	// 	Env: []string{
-	// 		fmt.Sprintf("AZURITE_ACCOUNTS=%s:%s", accessKeyId, base64Secret),
-	// 		fmt.Sprintf("DefaultEndpointsProtocol=%s", "http"),
-	// 	},
-	// })
-	// if err != nil {
-	// 	log.Fatalf("Could not start resource: %s", err)
-	// }
-	// defer func() {
-	// 	if err := pool.Purge(AzuriteResource); err != nil {
-	// 		log.Printf("Could not purge resource: %s \n", err)
-	// 	}
-	// }()
-	// AzuriteEndpoint = fmt.Sprintf("localhost:%s", AzuriteResource.GetPort("10000/tcp"))
-	// fmt.Println("azurite resource successfully created")
-	// fmt.Println("Azurite endpoint", AzuriteEndpoint)
-
-	// Running GCS emulator
-	GCSResource, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "fsouza/fake-gcs-server",
+	//running minio container on docker
+	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "minio/minio",
 		Tag:        "latest",
-		Cmd:        []string{"-scheme", "http"},
+		Cmd:        []string{"server", "/data"},
+		Env: []string{
+			fmt.Sprintf("MINIO_ACCESS_KEY=%s", accessKeyId),
+			fmt.Sprintf("MINIO_SECRET_KEY=%s", secretAccessKey),
+			fmt.Sprintf("MINIO_SITE_REGION=%s", region),
+		},
 	})
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
 	}
 	defer func() {
-		if err := pool.Purge(GCSResource); err != nil {
+		if err := pool.Purge(minioResource); err != nil {
 			log.Printf("Could not purge resource: %s \n", err)
 		}
 	}()
 
-	GCSEndpoint := fmt.Sprintf("localhost:%s", GCSResource.GetPort("4443/tcp"))
-	fmt.Println("GCS test server successfully created with endpoint: ", GCSEndpoint)
-	gcsURL = fmt.Sprintf("http://%s/storage/v1/", GCSEndpoint)
-	os.Setenv("STORAGE_EMULATOR_HOST", fmt.Sprintf("%s/storage/v1/", GCSEndpoint))
-	client, err := storage.NewClient(context.TODO(), option.WithEndpoint(gcsURL))
-	if err != nil {
-		log.Fatalf("failed to create client: %v", err)
+	minioEndpoint = fmt.Sprintf("localhost:%s", minioResource.GetPort("9000/tcp"))
+
+	//check if minio server is up & running.
+	if err := pool.Retry(func() error {
+		url := fmt.Sprintf("http://%s/minio/health/live", minioEndpoint)
+		resp, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("status code not OK")
+		}
+		return nil
+	}); err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
 	}
-	bkt := client.Bucket(bucket)
-	err = bkt.Create(context.Background(), "test", &storage.BucketAttrs{Name: bucket})
+	fmt.Println("minio is up & running properly")
+
+	useSSL := false
+	minioClient, err := minio.New(minioEndpoint, accessKeyId, secretAccessKey, useSSL)
 	if err != nil {
-		fmt.Println("error while creating bucket: ", err)
+		panic(err)
+	}
+	fmt.Println("minioClient created successfully")
+
+	//creating bucket inside minio where testing will happen.
+	err = minioClient.MakeBucket(bucket, "us-east-1")
+	if err != nil {
+		panic(err)
 	}
 	fmt.Println("bucket created successfully")
 
+	//Running Azure emulator, Azurite.
+	AzuriteResource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "mcr.microsoft.com/azure-storage/azurite",
+		Tag:        "latest",
+		Env: []string{
+			fmt.Sprintf("AZURITE_ACCOUNTS=%s:%s", accessKeyId, base64Secret),
+			fmt.Sprintf("DefaultEndpointsProtocol=%s", "http"),
+		},
+	})
+	if err != nil {
+		log.Fatalf("Could not start resource: %s", err)
+	}
+	defer func() {
+		if err := pool.Purge(AzuriteResource); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
+	AzuriteEndpoint = fmt.Sprintf("localhost:%s", AzuriteResource.GetPort("10000/tcp"))
+	fmt.Println("Azurite endpoint", AzuriteEndpoint)
+	fmt.Println("azurite resource successfully created")
+
+	//getting list of files in `testData` directory while will be used to testing filemanager.
 	searchDir := "./testData"
 	err = filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
 		if regexRequiredSuffix.Match([]byte(path)) {
@@ -164,9 +137,13 @@ func run(m *testing.M) int {
 		return nil
 	})
 	if err != nil {
-		fmt.Println("Error while getting fileList: ", err)
+		panic(err)
+	}
+	if len(fileList) == 0 {
+		panic("file list empty, no data to test.")
 	}
 	fmt.Println("files list: ", fileList)
+
 	m.Run()
 	blockOnHold()
 	return 0
@@ -179,77 +156,62 @@ func TestFileManager(t *testing.T) {
 		destName string
 		config   map[string]interface{}
 	}{
-		// {
-		// 	name:     "testing s3manager functionality",
-		// 	destName: "S3",
-		// 	config: map[string]interface{}{
-		// 		"bucketName":       bucket,
-		// 		"accessKeyID":      accessKeyId,
-		// 		"accessKey":        secretAccessKey,
-		// 		"enableSSE":        false,
-		// 		"prefix":           "some-prefix",
-		// 		"endPoint":         minioEndpoint,
-		// 		"s3ForcePathStyle": true,
-		// 		"disableSSL":       true,
-		// 		"region":           region,
-		// 	},
-		// },
-		// {
-		// 	name:     "testing minio functionality",
-		// 	destName: "MINIO",
-		// 	config: map[string]interface{}{
-		// 		"bucketName":       bucket,
-		// 		"accessKeyID":      accessKeyId,
-		// 		"secretAccessKey":  secretAccessKey,
-		// 		"enableSSE":        false,
-		// 		"prefix":           "some-prefix",
-		// 		"endPoint":         minioEndpoint,
-		// 		"s3ForcePathStyle": true,
-		// 		"disableSSL":       true,
-		// 		"region":           region,
-		// 	},
-		// },
-		// {
-		// 	name:     "testing digital ocean functionality",
-		// 	destName: "DIGITAL_OCEAN_SPACES",
-		// 	config: map[string]interface{}{
-		// 		"bucketName":       bucket,
-		// 		"accessKeyID":      accessKeyId,
-		// 		"accessKey":        secretAccessKey,
-		// 		"enableSSE":        false,
-		// 		"prefix":           "some-prefix",
-		// 		"endPoint":         minioEndpoint,
-		// 		"s3ForcePathStyle": true,
-		// 		"disableSSL":       true,
-		// 		"region":           region,
-		// 	},
-		// },
-		// {
-		// 	name:     "testing Azure blob storage filemanager functionality",
-		// 	destName: "AZURE_BLOB",
-		// 	config: map[string]interface{}{
-		// 		"containerName":  bucket,
-		// 		"accountName":    accessKeyId,
-		// 		"accountKey":     string(base64Secret),
-		// 		"prefix":         "some-prefix",
-		// 		"endPoint":       AzuriteEndpoint,
-		// 		"forcePathStyle": true,
-		// 		"disableSSL":     true,
-		// 	},
-		// },
 		{
-			name:     "testing GCS filemanager functionality",
-			destName: "GCS",
+			name:     "testing s3manager functionality",
+			destName: "S3",
 			config: map[string]interface{}{
-				"bucketName": bucket,
-				// "accessKeyID":      accessKeyId,
-				// "accessKey":        secretAccessKey,
-				// "enableSSE":        false,
+				"bucketName":       bucket,
+				"accessKeyID":      accessKeyId,
+				"accessKey":        secretAccessKey,
+				"enableSSE":        false,
 				"prefix":           "some-prefix",
-				"endPoint":         gcsURL,
+				"endPoint":         minioEndpoint,
 				"s3ForcePathStyle": true,
 				"disableSSL":       true,
-				// "region":           region,
+				"region":           region,
+			},
+		},
+		{
+			name:     "testing minio functionality",
+			destName: "MINIO",
+			config: map[string]interface{}{
+				"bucketName":       bucket,
+				"accessKeyID":      accessKeyId,
+				"secretAccessKey":  secretAccessKey,
+				"enableSSE":        false,
+				"prefix":           "some-prefix",
+				"endPoint":         minioEndpoint,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+				"region":           region,
+			},
+		},
+		{
+			name:     "testing digital ocean functionality",
+			destName: "DIGITAL_OCEAN_SPACES",
+			config: map[string]interface{}{
+				"bucketName":       bucket,
+				"accessKeyID":      accessKeyId,
+				"accessKey":        secretAccessKey,
+				"prefix":           "some-prefix",
+				"endPoint":         minioEndpoint,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+				"region":           region,
+				"enableSSE":        false,
+			},
+		},
+		{
+			name:     "testing Azure blob storage filemanager functionality",
+			destName: "AZURE_BLOB",
+			config: map[string]interface{}{
+				"containerName":  bucket,
+				"prefix":         "some-prefix",
+				"accountName":    accessKeyId,
+				"accountKey":     string(base64Secret),
+				"endPoint":       AzuriteEndpoint,
+				"forcePathStyle": true,
+				"disableSSL":     true,
 			},
 		},
 	}
@@ -282,11 +244,12 @@ func TestFileManager(t *testing.T) {
 			}
 
 			//list files using ListFilesWithPrefix
-			originalFileObject, err := fm.ListFilesWithPrefix("", 10)
+			originalFileObject, err := fm.ListFilesWithPrefix("", 1000)
 			if err != nil {
 				fmt.Println("error while getting file object: ", err)
 			}
 			require.Equal(t, len(fileList), len(originalFileObject), "actual number of files different than expected")
+
 			//based on the obtained location, get object name by calling GetObjectNameFromLocation
 			objectName, err := fm.GetObjectNameFromLocation(uploadOutputs[0].Location)
 			require.NoError(t, err, "no error expected")
@@ -350,7 +313,7 @@ func TestFileManager(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			newFileObject, err := fmNew.ListFilesWithPrefix("", 10)
+			newFileObject, err := fmNew.ListFilesWithPrefix("", 1000)
 			if err != nil {
 				fmt.Println("error while getting new file object: ", err)
 			}

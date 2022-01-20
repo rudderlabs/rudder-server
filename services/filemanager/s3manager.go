@@ -86,7 +86,6 @@ func (manager *S3Manager) Download(output *os.File, key string) error {
 GetObjectNameFromLocation gets the object name/key name from the object location url
 	https://bucket-name.s3.amazonaws.com/key - >> key
 */
-
 func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, error) {
 	parsedUrl, err := url.Parse(location)
 	if err != nil {
