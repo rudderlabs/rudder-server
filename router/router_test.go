@@ -162,7 +162,7 @@ var _ = Describe("Router", func() {
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var toRetryJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -180,7 +180,7 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -196,22 +196,25 @@ var _ = Describe("Router", func() {
 					WorkspaceId: workspaceID,
 				},
 			}
+
 			allJobs := append(toRetryJobsList, unprocessedJobsList...)
 			var customerCount = map[string]int{}
 			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 			customerCountOut := customerCount
-			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap("GA").Times(1)
-			mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
-			c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
-				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(allJobs)
+			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(CustomVal["GA"]).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(),
+				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+				gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
+
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
+				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(allJobs).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
-				}).Return(nil)
+				}).Return(nil).After(callGetAllJobs)
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(
 				&router_utils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
@@ -245,7 +248,7 @@ var _ = Describe("Router", func() {
 			gaPayload := `{}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -265,19 +268,19 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 			customerCount[workspaceID] = len(unprocessedJobsList)
 			customerCountOut := customerCount
-			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap("GA").Times(1)
+			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(CustomVal["GA"]).Times(1)
 
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(),
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(),
 				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 				gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
-			c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(unprocessedJobsList).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
-				})
+				}).After(callGetAllJobs)
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&router_utils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
 
@@ -325,7 +328,7 @@ var _ = Describe("Router", func() {
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -345,17 +348,17 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 			customerCount[workspaceID] = len(unprocessedJobsList)
 			customerCountOut := customerCount
-			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap("GA").Times(1)
+			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(CustomVal["GA"]).Times(1)
 
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(),
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(),
 				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 				gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
-			c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
+			callGetAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount, jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(unprocessedJobsList).After(callGetRouterPickupJobs)
 
 			mockMultitenantHandle.EXPECT().RemoveFromInMemoryCount(gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any()).Times(1)
+				gomock.Any()).Times(1).After(callGetAllJobs)
 
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(),
 				gomock.Any()).Times(1)
@@ -420,7 +423,7 @@ var _ = Describe("Router", func() {
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
 
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var toRetryJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -437,7 +440,7 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u2",
@@ -470,9 +473,9 @@ var _ = Describe("Router", func() {
 			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 			customerCountOut := customerCount
 			jobsList := append(toRetryJobsList, unprocessedJobsList...)
-			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap("GA").Times(1)
+			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(CustomVal["GA"]).Times(1)
 
-			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(),
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(),
 				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
 				gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
@@ -562,7 +565,7 @@ var _ = Describe("Router", func() {
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, GADestinationID)
 
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var toRetryJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -578,7 +581,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 			}
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -610,19 +613,21 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 			customerCountOut := customerCount
-			mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(gomock.Any()).Times(1)
-			mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(customerCountOut)
+			callGenerateSuccessRateMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(CustomVal["GA"]).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(),
+				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+				gomock.Any()).Times(1).Return(customerCountOut).After(callGenerateSuccessRateMap)
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
-				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Return(toRetryJobsList).Times(1).Return(allJobs)
+				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Return(toRetryJobsList).Times(
+					1).Return(allJobs).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
-				}).Return(nil)
+				}).Return(nil).After(callAllJobs)
 
 			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
@@ -733,7 +738,7 @@ var _ = Describe("Router", func() {
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, GADestinationID)
 
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var toRetryJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -750,7 +755,7 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -809,12 +814,14 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 			customerCountOut := customerCount
-			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap("GA").Times(1)
-			mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
+			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(CustomVal["GA"]).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(),
+				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+				gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
-				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(allJobs)
+				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(allJobs).After(
+					callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
@@ -823,7 +830,7 @@ var _ = Describe("Router", func() {
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[2], statuses[3], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[3], statuses[4], jobsdb.Executing.State, "", `{}`, 0)
-				}).Return(nil)
+				}).Return(nil).After(callAllJobs)
 
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
@@ -947,7 +954,7 @@ var _ = Describe("Router", func() {
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, GADestinationID)
 
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var toRetryJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -964,7 +971,7 @@ var _ = Describe("Router", func() {
 				},
 			}
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			var unprocessedJobsList = []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -997,19 +1004,20 @@ var _ = Describe("Router", func() {
 			var customerCount = map[string]int{}
 			customerCount[workspaceID] = len(unprocessedJobsList) + len(toRetryJobsList)
 			customerCountOut := customerCount
-			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap("GA").Times(1)
-			mockMultitenantHandle.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
+			callGenerateSuccessMap := mockMultitenantHandle.EXPECT().GenerateSuccessRateMap(CustomVal["GA"]).Times(1)
+			callGetRouterPickupJobs := mockMultitenantHandle.EXPECT().GetRouterPickupJobs(CustomVal["GA"], gomock.Any(),
+				gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+				gomock.Any()).Return(customerCountOut).Times(1).After(callGenerateSuccessMap)
 
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetAllJobs(customerCount,
-				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(allJobs)
+				jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["GA"]}}).Times(1).Return(allJobs).After(callGetRouterPickupJobs)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), []string{CustomVal["GA"]}, nil).Times(1).
 				Do(func(statuses []*jobsdb.JobStatusT, _ interface{}, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
-				}).Return(nil)
+				}).Return(nil).After(callAllJobs)
 
 			mockTransformer.EXPECT().Transform("ROUTER_TRANSFORM", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
