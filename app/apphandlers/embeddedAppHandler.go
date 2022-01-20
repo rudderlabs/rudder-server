@@ -85,7 +85,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
 		defer procErrorDB.TearDown()
 	}
-	multitenantStats := multitenant.New(&routerDB)
+	multitenantStats := multitenant.NewStats(&routerDB)
 
 	enableGateway := true
 	var reportingI types.ReportingI
