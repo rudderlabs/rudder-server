@@ -294,20 +294,21 @@ type workspaceScore struct {
 	workspaceId     string
 }
 
-func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]float64) map[string]int {
+func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]float64, timeGained float64) (map[string]int, map[string]float64) {
 	multitenantStat.routerJobCountMutex.RLock()
 	defer multitenantStat.routerJobCountMutex.RUnlock()
 
 	//Add 30% to the time interval as exact difference leads to a catchup scenario, but this may cause to give some priority to pileup in the inrate pass
 	//boostedRouterTimeOut := 3 * time.Second //time.Duration(1.3 * float64(routerTimeOut))
 	//if boostedRouterTimeOut < time.Duration(1.3*float64(routerTimeOut)) {
-	boostedRouterTimeOut := time.Duration(1.3 * float64(routerTimeOut))
+	boostedRouterTimeOut := time.Duration(1.01*float64(routerTimeOut)) + time.Duration(timeGained*float64(time.Second))
 	//}
 	//TODO: Also while allocating jobs to router workers, we need to assign so that sum of assigned jobs latency equals the timeout
 
 	runningJobCount := jobQueryBatchSize
 	runningTimeCounter := float64(noOfWorkers) * float64(boostedRouterTimeOut) / float64(time.Second)
 	customerPickUpCount := make(map[string]int)
+	usedLatencies := make(map[string]float64)
 
 	minLatency := math.MaxFloat64
 	maxLatency := -math.MaxFloat64
@@ -365,6 +366,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 				if runningJobCount <= 0 || runningTimeCounter <= 0 {
 					//Adding BETA
 					if multitenantStat.RouterInMemoryJobCounts["router"][customerKey][destType] > 0 {
+						usedLatencies[customerKey] = latencyMap[customerKey].Value()
 						customerPickUpCount[customerKey] = 1
 					}
 					continue
@@ -395,6 +397,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 				if customerPickUpCount[customerKey] == 0 {
 					delete(customerPickUpCount, customerKey)
 				}
+				usedLatencies[customerKey] = latencyMap[customerKey].Value()
 				pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , moving_average_latency : %v, routerInRare : %v ,InRateLoop ", timeRequired, runningTimeCounter, customerKey, runningJobCount, latencyMap[customerKey].Value(), destTypeCount.Value())
 			}
 		}
@@ -445,6 +448,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 			tmpCount := int(runningTimeCounter / latencyMap[customerKey].Value())
 			pickUpCount = misc.MinInt(misc.MinInt(tmpCount, runningJobCount), customerCountKey[destType]-customerPickUpCount[destType])
 		}
+		usedLatencies[customerKey] = latencyMap[customerKey].Value()
 		customerPickUpCount[customerKey] += pickUpCount
 		runningJobCount = runningJobCount - pickUpCount
 		runningTimeCounter = runningTimeCounter - float64(pickUpCount)*latencyMap[customerKey].Value()
@@ -452,6 +456,6 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 		pkgLogger.Debugf("Time Calculated : %v , Remaining Time : %v , Customer : %v ,runningJobCount : %v , moving_average_latency : %v, pileUpCount : %v ,PileUpLoop ", float64(pickUpCount)*latencyMap[customerKey].Value(), runningTimeCounter, customerKey, runningJobCount, latencyMap[customerKey].Value(), customerCountKey[destType])
 	}
 
-	return customerPickUpCount
+	return customerPickUpCount, usedLatencies
 
 }

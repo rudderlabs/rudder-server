@@ -140,6 +140,7 @@ type HandleT struct {
 	resultSetLock    sync.RWMutex
 	lastResultSet    *resultSetT
 	lastQueryRunTime time.Time
+	timeGained       float64
 }
 
 type jobResponseT struct {
@@ -1838,7 +1839,9 @@ func (rt *HandleT) readAndProcess() int {
 	if rt.recentJobInResultSet == nil {
 		rt.recentJobInResultSet = make(map[string]time.Time)
 	}
-	rt.customerCount = multitenant.GetRouterPickupJobs(rt.destName, rt.recentJobInResultSet, sortedLatencyMap, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap)
+	pickupMap, latenciesUsed := multitenant.GetRouterPickupJobs(rt.destName, rt.recentJobInResultSet, sortedLatencyMap, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap, rt.timeGained)
+	rt.customerCount = pickupMap
+	rt.timeGained = 0
 
 	nonTerminalList := rt.jobsDB.GetProcessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, StateFilters: []string{jobsdb.Waiting.State, jobsdb.Failed.State}}, rt.maxDSQuerySize)
 	unprocessedList := rt.jobsDB.GetUnprocessedUnion(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}}, rt.maxDSQuerySize)
@@ -1914,6 +1917,8 @@ func (rt *HandleT) readAndProcess() int {
 			}
 			multitenant.RemoveFromInMemoryCount(job.WorkspaceId, rt.destName, 1, "router")
 			multitenant.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
+			rt.timeGained += latenciesUsed[job.WorkspaceId]
+
 			continue
 		}
 		w := rt.findWorker(job, throttledAtTime)
