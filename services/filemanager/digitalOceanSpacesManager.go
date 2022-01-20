@@ -29,7 +29,7 @@ func (manager *DOSpacesManager) getSession() *session.Session {
 		Credentials:      credentials.NewStaticCredentials(manager.Config.AccessKeyID, manager.Config.AccessKey, ""),
 		Endpoint:         aws.String(manager.Config.EndPoint),
 		DisableSSL:       manager.Config.DisableSSL,
-		S3ForcePathStyle: manager.Config.S3ForcePathStyle,
+		S3ForcePathStyle: manager.Config.ForcePathStyle,
 	}))
 }
 
@@ -93,7 +93,7 @@ func (manager *DOSpacesManager) GetDownloadKeyFromFileLocation(location string) 
 		fmt.Println("error while parsing location url: ", err)
 	}
 	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
-	if manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle {
+	if (manager.Config.ForcePathStyle != nil && *manager.Config.ForcePathStyle) || (!strings.Contains(parsedUrl.Host, manager.Config.Bucket)) {
 		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket))
 	}
 	return trimedUrl
@@ -109,7 +109,7 @@ func (manager *DOSpacesManager) GetObjectNameFromLocation(location string) (stri
 		return "", err
 	}
 	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
-	if manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle {
+	if (manager.Config.ForcePathStyle != nil && *manager.Config.ForcePathStyle) || (!strings.Contains(parsedUrl.Host, manager.Config.Bucket)) {
 		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 	}
 	return trimedUrl, nil
@@ -190,7 +190,7 @@ type DOSpacesManager struct {
 func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 	var bucketName, prefix, endPoint, accessKeyID, accessKey string
 	var region *string
-	var s3ForcePathStyle, disableSSL *bool
+	var forcePathStyle, disableSSL *bool
 	if config["bucketName"] != nil {
 		bucketName = config["bucketName"].(string)
 	}
@@ -210,35 +210,35 @@ func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {
 		tmp := config["region"].(string)
 		region = &tmp
 	}
-	if config["s3ForcePathStyle"] != nil {
-		tmp := config["s3ForcePathStyle"].(bool)
-		s3ForcePathStyle = &tmp
+	if config["forcePathStyle"] != nil {
+		tmp := config["forcePathStyle"].(bool)
+		forcePathStyle = &tmp
 	}
 	if config["disableSSL"] != nil {
 		tmp := config["disableSSL"].(bool)
 		disableSSL = &tmp
 	}
 	return &DOSpacesConfig{
-		Bucket:           bucketName,
-		EndPoint:         endPoint,
-		Prefix:           prefix,
-		AccessKeyID:      accessKeyID,
-		AccessKey:        accessKey,
-		Region:           region,
-		S3ForcePathStyle: s3ForcePathStyle,
-		DisableSSL:       disableSSL,
+		Bucket:         bucketName,
+		EndPoint:       endPoint,
+		Prefix:         prefix,
+		AccessKeyID:    accessKeyID,
+		AccessKey:      accessKey,
+		Region:         region,
+		ForcePathStyle: forcePathStyle,
+		DisableSSL:     disableSSL,
 	}
 }
 
 type DOSpacesConfig struct {
-	Bucket           string
-	Prefix           string
-	EndPoint         string
-	AccessKeyID      string
-	AccessKey        string
-	Region           *string
-	S3ForcePathStyle *bool
-	DisableSSL       *bool
+	Bucket         string
+	Prefix         string
+	EndPoint       string
+	AccessKeyID    string
+	AccessKey      string
+	Region         *string
+	ForcePathStyle *bool
+	DisableSSL     *bool
 }
 
 func (manager *DOSpacesManager) GetConfiguredPrefix() string {

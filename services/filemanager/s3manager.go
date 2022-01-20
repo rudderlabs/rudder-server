@@ -92,10 +92,11 @@ func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, er
 		return "", err
 	}
 	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
-	if manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle {
+	if (manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle) || (!strings.Contains(parsedUrl.Host, manager.Config.Bucket)) {
 		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket)), nil
 	}
 	return trimedUrl, nil
+
 }
 
 func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string {
@@ -104,7 +105,7 @@ func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string
 		fmt.Println("error while parsing location url: ", err)
 	}
 	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
-	if manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle {
+	if (manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle) || (!strings.Contains(parsedUrl.Host, manager.Config.Bucket)) {
 		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket))
 	}
 	return trimedUrl
