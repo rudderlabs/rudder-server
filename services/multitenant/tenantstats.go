@@ -301,7 +301,7 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 	//Add 30% to the time interval as exact difference leads to a catchup scenario, but this may cause to give some priority to pileup in the inrate pass
 	//boostedRouterTimeOut := 3 * time.Second //time.Duration(1.3 * float64(routerTimeOut))
 	//if boostedRouterTimeOut < time.Duration(1.3*float64(routerTimeOut)) {
-	boostedRouterTimeOut := time.Duration(2.0 * float64(routerTimeOut))
+	boostedRouterTimeOut := time.Duration(1.3 * float64(routerTimeOut))
 	//}
 	//TODO: Also while allocating jobs to router workers, we need to assign so that sum of assigned jobs latency equals the timeout
 
