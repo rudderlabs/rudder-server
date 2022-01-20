@@ -811,7 +811,9 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 			}
 			sourcesIDs := make([]string, 0)
 			for _, metadata := range destinationJob.JobMetadataArray {
-				sourcesIDs = append(sourcesIDs, metadata.SourceID)
+				if !misc.Contains(sourcesIDs, metadata.SourceID) {
+					sourcesIDs = append(sourcesIDs, metadata.SourceID)
+				}
 			}
 			worker.sendDestinationResponseToConfigBackend(payload, destinationJobMetadata, &status, sourcesIDs)
 			destLiveEventSentMap[destinationJob] = struct{}{}
