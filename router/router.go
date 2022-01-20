@@ -1902,16 +1902,6 @@ func (rt *HandleT) crashRecover() {
 	rt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}, JobCount: -1})
 }
 
-func (rt *HandleT) fillPileUpCounts() {
-	pileUpStatMap := make(map[string]map[string]int) //customer->destStype->count	//non-terminal-only
-	rt.jobsDB.GetPileUpCounts(pileUpStatMap)
-	for customer := range pileUpStatMap {
-		for destType := range pileUpStatMap[customer] {
-			rt.multitenantI.AddToInMemoryCount(customer, destType, pileUpStatMap[customer][destType], "router")
-		}
-	}
-}
-
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
@@ -1920,7 +1910,7 @@ func Init() {
 }
 
 //Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI) {
+func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI, multitenantStat multitenant.MultiTenantI) {
 
 	rt.backendConfig = backendConfig
 	rt.generatorPauseChannel = make(chan *PauseT)
@@ -1946,13 +1936,9 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
 	rt.destName = destName
-	multitenantStatT := &multitenant.MultitenantStruct{}
-	rt.multitenantI = multitenantStatT
+	rt.multitenantI = multitenantStat
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
-	once.Do(func() {
-		rt.fillPileUpCounts()
-	})
 	rt.crashRecover()
 	rt.requestQ = make(chan *jobsdb.JobT, jobQueryBatchSize)
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)

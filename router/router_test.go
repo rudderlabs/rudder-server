@@ -134,8 +134,8 @@ var _ = Describe("Router", func() {
 			router := &HandleT{}
 
 			c.mockRouterJobsDB.EXPECT().DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{gaDestinationDefinition.Name}, JobCount: -1}).Times(1)
-			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			// c.mockRouterJobsDB.EXPECT().GetPileUpCounts(map[string]map[string]int{}).Times(1)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
 		})
 	})
 
@@ -153,7 +153,7 @@ var _ = Describe("Router", func() {
 		It("should send failed, unprocessed jobs to ga destination", func() {
 			router := &HandleT{}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
@@ -238,7 +238,7 @@ var _ = Describe("Router", func() {
 		It("should abort unprocessed jobs to ga destination because of bad payload", func() {
 			router := &HandleT{}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
@@ -318,7 +318,7 @@ var _ = Describe("Router", func() {
 			router_utils.JobRetention = time.Duration(24) * time.Hour
 			router := &HandleT{}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
@@ -405,7 +405,7 @@ var _ = Describe("Router", func() {
 		It("can batch jobs together", func() {
 			router := &HandleT{}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
@@ -545,7 +545,7 @@ var _ = Describe("Router", func() {
 		It("aborts jobs if batching fails for few of the jobs", func() {
 			router := &HandleT{}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
 
 			//we have a job that has failed once(toRetryJobsList), it should aborted when picked up next
 			//Because we only allow one failure per job with this
@@ -722,7 +722,7 @@ var _ = Describe("Router", func() {
 		It("can transform jobs at router", func() {
 			router := &HandleT{}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
@@ -938,7 +938,7 @@ var _ = Describe("Router", func() {
 		It("marks all jobs of a user failed if a preceding job fails due to transformation failure", func() {
 			router := &HandleT{}
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil)
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, nil, c.mockMultitenantI)
 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
