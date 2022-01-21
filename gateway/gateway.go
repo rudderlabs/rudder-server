@@ -80,6 +80,7 @@ var (
 	userWebRequestBatchTimeout, dbBatchWriteTimeout                           time.Duration
 	enabledWriteKeysSourceMap                                                 map[string]backendconfig.SourceT
 	enabledWriteKeyWebhookMap                                                 map[string]string
+	enabledWriteKeyWorkspaceMap                                               map[string]string
 	sourceIDToNameMap                                                         map[string]string
 	configSubscriberLock                                                      sync.RWMutex
 	maxReqSize                                                                int
@@ -106,6 +107,8 @@ var BatchEvent = []byte(`
 		]
 	}
 `)
+
+var DELIMITER = string("<<>>")
 
 func Init() {
 	loadConfig()
@@ -413,7 +416,12 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			sourceTagMap[sourceTag] = writeKey
 			sourceTagMap["reqType"] = req.reqType
 			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
+			//Should be function of body
+			configSubscriberLock.RLock()
+			workspaceId, _ := enabledWriteKeyWorkspaceMap[writeKey]
+			configSubscriberLock.RUnlock()
 
+			sourceTagMap["workspaceId"] = workspaceId
 			ipAddr := req.ipAddr
 
 			body := req.requestPayload
@@ -457,11 +465,15 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			// set anonymousId if not set in payload
 			result := gjson.GetBytes(body, "batch")
 			out := []map[string]interface{}{}
-
+			var builtUserID string
 			var notIdentifiable, containsAudienceList bool
 			result.ForEach(func(_, vjson gjson.Result) bool {
 				anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
 				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
+				if builtUserID == "" {
+					builtUserID = anonIDFromReq + DELIMITER + userIDFromReq
+				}
+
 				eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
 
 				if anonIDFromReq == "" {
@@ -533,14 +545,14 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				marshalledParams = []byte(`{"error": "rudder-server gateway failed to marshal params"}`)
 			}
 
-			//Should be function of body
 			newJob := jobsdb.JobT{
 				UUID:         id,
-				UserID:       gjson.GetBytes(body, "batch.0.rudderId").Str,
+				UserID:       builtUserID,
 				Parameters:   marshalledParams,
 				CustomVal:    CustomVal,
 				EventPayload: []byte(body),
 				EventCount:   totalEventsInReq,
+				WorkspaceId:  workspaceId,
 			}
 			jobList = append(jobList, &newJob)
 
@@ -1466,12 +1478,14 @@ func (gateway *HandleT) backendConfigSubscriber() {
 		configSubscriberLock.Lock()
 		enabledWriteKeysSourceMap = map[string]backendconfig.SourceT{}
 		enabledWriteKeyWebhookMap = map[string]string{}
+		enabledWriteKeyWorkspaceMap = map[string]string{}
 		sources := config.Data.(backendconfig.ConfigT)
 		sourceIDToNameMap = map[string]string{}
 		for _, source := range sources.Sources {
 			sourceIDToNameMap[source.ID] = source.Name
 			if source.Enabled {
 				enabledWriteKeysSourceMap[source.WriteKey] = source
+				enabledWriteKeyWorkspaceMap[source.WriteKey] = source.WorkspaceID
 				if source.SourceDefinition.Category == "webhook" {
 					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
 					gateway.webhookHandler.Register(source.SourceDefinition.Name)

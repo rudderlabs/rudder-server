@@ -35,8 +35,8 @@ type ProcessorApp struct {
 
 var (
 	gatewayDB         jobsdb.HandleT
-	routerDB          jobsdb.HandleT
-	batchRouterDB     jobsdb.HandleT
+	routerDB          jobsdb.MultiTenantHandleT
+	batchRouterDB     jobsdb.MultiTenantHandleT
 	procErrorDB       jobsdb.HandleT
 	ReadTimeout       time.Duration
 	ReadHeaderTimeout time.Duration
@@ -131,7 +131,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, &routerDB, &batchRouterDB)
 			g.Go(func() error {
-				processor.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB, &batchRouterDB, startProcessorFunc, startRouterFunc)
+				processor.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB.HandleT, &batchRouterDB.HandleT, startProcessorFunc, startRouterFunc) //TODO
 				return nil
 			})
 		}

@@ -2,9 +2,14 @@ package types
 
 import (
 	"encoding/json"
+	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+)
+
+const (
+	RouterTimedOut = 1113
 )
 
 //RouterJobT holds the router job and its related metadata
@@ -39,6 +44,8 @@ type JobMetadataT struct {
 	WorkspaceId      string       `json:"workspaceId"`
 	OAuthAccessToken string       `json:"oauthAccessToken"`
 	JobT             *jobsdb.JobT `json:"jobsT"`
+	PickedAtTime     time.Time    `json:"pickedAtTime"`
+	ResultSetID      int64        `json:"resultSetID"`
 }
 
 //TransformMessageT is used to pass message to the transformer workers

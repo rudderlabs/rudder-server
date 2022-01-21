@@ -112,7 +112,7 @@ func rudderCoreBaseSetup() {
 }
 
 //StartProcessor atomically starts processor process if not already started
-func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB, routerDB, batchRouterDB *jobsdb.HandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, gatewayDB *jobsdb.HandleT, routerDB, batchRouterDB *jobsdb.MultiTenantHandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
 	if !enableProcessor {
 		return
 	}
@@ -130,7 +130,7 @@ func StartProcessor(ctx context.Context, clearDB *bool, enableProcessor bool, ga
 }
 
 //StartRouter atomically starts router process if not already started
-func StartRouter(ctx context.Context, enableRouter bool, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+func StartRouter(ctx context.Context, enableRouter bool, routerDB, batchRouterDB *jobsdb.MultiTenantHandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
 	if !enableRouter {
 		return
 	}
@@ -146,7 +146,7 @@ func StartRouter(ctx context.Context, enableRouter bool, routerDB, batchRouterDB
 }
 
 // Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
+func monitorDestRouters(ctx context.Context, routerDB, batchRouterDB *jobsdb.MultiTenantHandleT, procErrorDB *jobsdb.HandleT, reporting types.ReportingI) {
 	ch := make(chan utils.DataEvent)
 	backendconfig.Subscribe(ch, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)

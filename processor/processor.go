@@ -19,6 +19,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"golang.org/x/sync/errgroup"
 
 	uuid "github.com/gofrs/uuid"
@@ -188,7 +189,7 @@ func buildStatTags(sourceID, workspaceID string, destination backendconfig.Desti
 		"destination":    destination.ID,
 		"destType":       destination.DestinationDefinition.Name,
 		"source":         sourceID,
-		"workspaceId":    workspaceID,
+		"workspace":      workspaceID,
 		"transformation": transformationType,
 	}
 }
@@ -287,6 +288,7 @@ func (proc *HandleT) Status() interface{} {
 func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI) {
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
+	//TODO : Remove this
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
 	proc.logger = pkgLogger
@@ -943,6 +945,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			ExpireAt:     time.Now(),
 			CustomVal:    commonMetaData.DestinationType,
 			UserID:       failedEvent.Metadata.RudderID,
+			WorkspaceId:  failedEvent.Metadata.WorkspaceID,
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
@@ -1071,9 +1074,6 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList [][]types.SingularEventT) transformationMessage {
 	start := time.Now()
 	defer proc.processJobsTime.Since(start)
-
-	proc.statNumRequests.Count(len(jobList))
-
 	var statusList []*jobsdb.JobStatusT
 	var groupedEvents = make(map[string][]transformer.TransformerEventT)
 	var groupedEventsByWriteKey = make(map[WriteKeyT][]transformer.TransformerEventT)
@@ -1228,6 +1228,7 @@ func (proc *HandleT) processJobsForDest(jobList []*jobsdb.JobT, parsedEventList 
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
+			//Add Customer Here
 		}
 		statusList = append(statusList, &newStatus)
 	}
@@ -1434,13 +1435,16 @@ type storeMessage struct {
 	start       time.Time
 }
 
-func (proc *HandleT) Store(in storeMessage) {
+func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun bool) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
-
+	processorLoopStats := make(map[string]map[string]map[string]int)
+	processorLoopStats["router"] = make(map[string]map[string]int)
+	processorLoopStats["batch_router"] = make(map[string]map[string]int)
 	beforeStoreStatus := time.Now()
 	//XX: Need to do this in a transaction
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
+
 		err := proc.routerDB.Store(destJobs)
 		if err != nil {
 			proc.logger.Errorf("Store into router table failed with error: %v", err)
@@ -1449,6 +1453,11 @@ func (proc *HandleT) Store(in storeMessage) {
 		}
 		totalPayloadRouterBytes := 0
 		for i := range destJobs {
+			_, ok := processorLoopStats["router"][destJobs[i].WorkspaceId]
+			if !ok {
+				processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
+			}
+			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
 			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
 		}
 
@@ -1466,6 +1475,12 @@ func (proc *HandleT) Store(in storeMessage) {
 		}
 		totalPayloadBatchBytes := 0
 		for i := range batchDestJobs {
+			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId]
+			if !ok {
+				processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId] = make(map[string]int)
+			}
+			destination_id := gjson.Get(string(batchDestJobs[i].Parameters), "destination_id").String()
+			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][destination_id] += 1
 			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
 		}
 
@@ -1511,6 +1526,13 @@ func (proc *HandleT) Store(in storeMessage) {
 			proc.dedupHandler.MarkProcessed(dedupedMessageIdsAcrossJobs)
 		}
 	}
+	timeElapsed := 100 * time.Millisecond // TODO : Find a better way to fix this
+	if !firstRun {
+		timeElapsed = time.Since(stageStartTime)
+	}
+	multitenant.ReportProcLoopAddStats(processorLoopStats["router"], timeElapsed, "router")
+	multitenant.ReportProcLoopAddStats(processorLoopStats["batch_router"], timeElapsed, "batch_router")
+
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()
 	proc.statDBW.Since(beforeStoreStatus)
@@ -1856,6 +1878,7 @@ func (proc *HandleT) transformSrcDest(
 			ExpireAt:     time.Now(),
 			CustomVal:    destType,
 			EventPayload: destEventJSON,
+			WorkspaceId:  workspaceId,
 		}
 		if misc.Contains(batchDestinations, newJob.CustomVal) {
 			batchDestJobs = append(batchDestJobs, &newJob)
@@ -2043,7 +2066,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.Store(
 		proc.transformations(
 			proc.processJobsForDest(unprocessedList, nil),
-		),
+		), time.Now(), false,
 	)
 	proc.statLoopTime.Since(s)
 
@@ -2198,9 +2221,12 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-
+		stagetime := time.Now()
+		firstRun := true
 		for msg := range chStore {
-			proc.Store(msg)
+			proc.Store(msg, stagetime, firstRun)
+			stagetime = time.Now()
+			firstRun = false
 		}
 	}()
 

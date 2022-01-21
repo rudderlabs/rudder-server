@@ -45,6 +45,7 @@ require (
 	github.com/jeremywohl/flatten v1.0.1
 	github.com/jinzhu/copier v0.3.2
 	github.com/joho/godotenv v1.3.0
+	github.com/jpillora/backoff v1.0.0
 	github.com/lib/pq v1.10.4
 	github.com/minio/minio-go v6.0.14+incompatible
 	github.com/minio/minio-go/v6 v6.0.49

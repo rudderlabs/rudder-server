@@ -81,6 +81,17 @@ type RudderError struct {
 	Code              int
 }
 
+type Pair struct {
+	Key   string
+	Value float64
+}
+
+type PairList []Pair
+
+func (p PairList) Len() int           { return len(p) }
+func (p PairList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+func (p PairList) Less(i, j int) bool { return p[i].Value < p[j].Value }
+
 type RFP struct {
 	path         string
 	levelsToKeep int
@@ -414,11 +425,11 @@ func CreateTMPDIR() (string, error) {
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
 type PerfStats struct {
-	eventCount           int64
-	elapsedTime          time.Duration
-	compStr              string
-	tmpStart             time.Time
-	instantRateCall      float64
+	eventCount      int64
+	elapsedTime     time.Duration
+	compStr         string
+	tmpStart        time.Time
+	instantRateCall float64
 }
 
 //Setup initializes the stat collector
@@ -1158,6 +1169,13 @@ func MinInt(a, b int) int {
 	return b
 }
 
+func MaxInt(a, b int) int {
+	if a >= b {
+		return a
+	}
+	return b
+}
+
 //GetTagName gets the tag name using a uuid and name
 func GetTagName(id string, names ...string) string {
 	var truncatedNames string
@@ -1318,6 +1336,25 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 	return "object"
 }
 
+func SortMap(inputMap map[string]MovingAverage) []string {
+	pairArr := make(PairList, len(inputMap))
+
+	i := 0
+	for k, v := range inputMap {
+		pairArr[i] = Pair{k, v.Value()}
+		i++
+	}
+
+	sort.Sort(pairArr)
+	var sortedCustomerList []string
+	//p is sorted
+	for _, k := range pairArr {
+		//Workspace ID - RS Check
+		sortedCustomerList = append(sortedCustomerList, k.Key)
+	}
+	return sortedCustomerList
+}
+
 func SleepCtx(ctx context.Context, delay time.Duration) bool {
 	select {
 	case <-ctx.Done():
@@ -1326,4 +1363,3 @@ func SleepCtx(ctx context.Context, delay time.Duration) bool {
 		return false
 	}
 }
-

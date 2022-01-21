@@ -60,7 +60,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	txn, txErr := jd.dbHandle.Begin()
 	jd.assertError(txErr)
 	var err error
-	updatedStatesByDS := make(map[dataSetT][]string)
+	updatedStatesByDS := make(map[dataSetT]map[string][]string)
 	for _, ds := range dsList {
 		jd.assert(count > 0, fmt.Sprintf("count:%d is less than or equal to 0", count))
 
@@ -82,7 +82,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 			statusList = append(statusList, BuildStatus(job, Migrating.State))
 		}
 
-		var updatedStates []string
+		var updatedStates map[string][]string
 		updatedStates, txErr = jd.updateJobStatusDSInTxn(txn, ds, statusList, StatTagsT{StateFilters: []string{Migrating.State}})
 		if txErr != nil {
 			break
@@ -111,8 +111,10 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 	err = txn.Commit()
 	jd.assertError(err)
 
-	for ds, updatedStates := range updatedStatesByDS {
-		jd.markClearEmptyResult(ds, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
+	for ds, updatedStatesByCustomer := range updatedStatesByDS {
+		for customer, updatedStates := range updatedStatesByCustomer {
+			jd.markClearEmptyResult(ds, customer, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
+		}
 	}
 	jd.assertError(err)
 
@@ -131,6 +133,7 @@ func BuildStatus(job *JobT, jobState string) *JobStatusT {
 		ErrorCode:     "200",
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
+		WorkspaceId:   job.WorkspaceId,
 	}
 	return &newStatus
 }
@@ -214,7 +217,7 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 	txn, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
-	var updatedStatesMap map[dataSetT][]string
+	var updatedStatesMap map[dataSetT]map[string][]string
 	updatedStatesMap, err = jd.updateJobStatusInTxn(txn, statusList, StatTagsT{})
 	jd.assertErrorAndRollbackTx(err, txn)
 
@@ -224,8 +227,10 @@ func (jd *HandleT) UpdateJobStatusAndCheckpoint(statusList []*JobStatusT, fromNo
 
 	err = txn.Commit()
 	jd.assertError(err)
-	for ds, updatedStates := range updatedStatesMap {
-		jd.markClearEmptyResult(ds, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
+	for ds, updatedStatesByCustomer := range updatedStatesMap {
+		for customer, updatedStates := range updatedStatesByCustomer {
+			jd.markClearEmptyResult(ds, customer, updatedStates, []string{}, []ParameterFilterT{}, hasJobs, nil)
+		}
 	}
 }
 
