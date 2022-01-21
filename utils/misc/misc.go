@@ -394,8 +394,6 @@ func ReadLines(path string) ([]string, error) {
 	return lines, scanner.Err()
 }
 
-var logOnce sync.Once
-
 // CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
 func CreateTMPDIR() (string, error) {
 	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
@@ -405,9 +403,7 @@ func CreateTMPDIR() (string, error) {
 		_, err := os.Stat(fallbackPath)
 		if err == nil {
 			tmpdirPath = fallbackPath
-			logOnce.Do(func() {
-				pkgLogger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
-			})
+			pkgLogger.Infof("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)
 		}
 	}
 	if tmpdirPath == "" {
@@ -418,11 +414,11 @@ func CreateTMPDIR() (string, error) {
 
 //PerfStats is the class for managing performance stats. Not multi-threaded safe now
 type PerfStats struct {
-	eventCount      int64
-	elapsedTime     time.Duration
-	compStr         string
-	tmpStart        time.Time
-	instantRateCall float64
+	eventCount           int64
+	elapsedTime          time.Duration
+	compStr              string
+	tmpStart             time.Time
+	instantRateCall      float64
 }
 
 //Setup initializes the stat collector
@@ -1330,3 +1326,4 @@ func SleepCtx(ctx context.Context, delay time.Duration) bool {
 		return false
 	}
 }
+
