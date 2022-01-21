@@ -287,7 +287,7 @@ func (rt *HandleT) addResultSetMeta(resultSet *resultSetT) {
 		}
 	}
 
-	rt.logger.Infof("MEM LEAK DEBUG router %v Length of result set %v minResultSetId %v newResultSetID ", rt.destName, len(rt.resultSetMeta), minResultSetID, newResultSet.id)
+	//rt.logger.Infof("MEM LEAK DEBUG router %v Length of result set %v minResultSetId %v newResultSetID %v", rt.destName, len(rt.resultSetMeta), minResultSetID, newResultSet.id)
 
 }
 
