@@ -111,9 +111,9 @@ type HandleT struct {
 	transformerFeatures            json.RawMessage
 	readLoopSleep                  time.Duration
 	maxLoopSleep                   time.Duration
-
-	backgroundWait   func() error
-	backgroundCancel context.CancelFunc
+	multitenantI                   multitenant.MultiTenantI
+	backgroundWait                 func() error
+	backgroundCancel               context.CancelFunc
 }
 
 var defaultTransformerFeatures = `{
@@ -285,7 +285,7 @@ func (proc *HandleT) Status() interface{} {
 }
 
 //Setup initializes the module
-func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI) {
+func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB jobsdb.JobsDB, routerDB jobsdb.JobsDB, batchRouterDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
 	proc.pauseChannel = make(chan *PauseT)
 	proc.resumeChannel = make(chan bool)
 	//TODO : Remove this
@@ -298,6 +298,7 @@ func (proc *HandleT) Setup(backendConfig backendconfig.BackendConfig, gatewayDB 
 	proc.readLoopSleep = readLoopSleep
 	proc.maxLoopSleep = maxLoopSleep
 
+	proc.multitenantI = multitenantStat
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
@@ -1530,8 +1531,8 @@ func (proc *HandleT) Store(in storeMessage, stageStartTime time.Time, firstRun b
 	if !firstRun {
 		timeElapsed = time.Since(stageStartTime)
 	}
-	multitenant.ReportProcLoopAddStats(processorLoopStats["router"], timeElapsed, "router")
-	multitenant.ReportProcLoopAddStats(processorLoopStats["batch_router"], timeElapsed, "batch_router")
+	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], timeElapsed, "router")
+	proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], timeElapsed, "batch_router")
 
 	proc.gatewayDB.CommitTransaction(txn)
 	proc.gatewayDB.ReleaseUpdateJobStatusLocks()

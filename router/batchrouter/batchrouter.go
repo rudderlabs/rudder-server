@@ -76,10 +76,11 @@ type HandleT struct {
 	connectionWHNamespaceMap       map[string]string                          // connectionIdentifier -> warehouseConnectionIdentifier(+namepsace)
 	netHandle                      *http.Client
 	processQ                       chan *BatchDestinationDataT
-	jobsDB                         jobsdb.MultiTenantJobsDB
+	jobsDB                         jobsdb.JobsDB
 	errorDB                        jobsdb.JobsDB
 	isEnabled                      bool
 	batchRequestsMetricLock        sync.RWMutex
+	multitenantI                   multitenant.MultiTenantI
 	diagnosisTicker                *time.Ticker
 	batchRequestsMetric            []batchRequestMetric
 	logger                         logger.LoggerI
@@ -1144,7 +1145,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 	for customer := range batchRouterCustomerJobStatusCount {
 		for destID := range batchRouterCustomerJobStatusCount[customer] {
-			multitenant.RemoveFromInMemoryCount(customer, destID, batchRouterCustomerJobStatusCount[customer][destID], "batch_router")
+			brt.multitenantI.RemoveFromInMemoryCount(customer, destID, batchRouterCustomerJobStatusCount[customer][destID], "batch_router")
 		}
 	}
 	//tracking batch router errors
@@ -1946,9 +1947,9 @@ func IsAsyncDestination(destType string) bool {
 func (brt *HandleT) crashRecover() {
 	brt.jobsDB.DeleteExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{brt.destType}, JobCount: -1})
 
-	// if misc.Contains(objectStorageDestinations, brt.destType) {
-	// 	brt.dedupRawDataDestJobsOnCrash()
-	// }
+	if misc.Contains(objectStorageDestinations, brt.destType) {
+		brt.dedupRawDataDestJobsOnCrash()
+	}
 }
 
 func IsObjectStorageDestination(destType string) bool {
@@ -2069,7 +2070,7 @@ func setQueryFilters() {
 }
 
 //Setup initializes this module
-func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI) {
+func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI) {
 	brt.isBackendConfigInitialized = false
 	brt.backendConfigInitialized = make(chan bool)
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
@@ -2083,7 +2084,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobs
 	brt.asyncUploadWorkerResumeChannel = make(chan bool)
 	brt.pollAsyncStatusPauseChannel = make(chan *PauseT)
 	brt.pollAsyncStatusResumeChannel = make(chan bool)
-
+	brt.multitenantI = multitenantStat
 	//waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {
 		brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)

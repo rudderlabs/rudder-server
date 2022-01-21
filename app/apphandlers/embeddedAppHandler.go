@@ -18,6 +18,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"golang.org/x/sync/errgroup"
 
@@ -59,7 +60,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	var gatewayDB jobsdb.HandleT
 	var routerDB jobsdb.MultiTenantHandleT
-	var batchRouterDB jobsdb.MultiTenantHandleT
+	var batchRouterDB jobsdb.HandleT
 	var procErrorDB jobsdb.HandleT
 
 	pkgLogger.Info("Clearing DB ", options.ClearDB)
@@ -69,7 +70,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
 	migrationMode := embedded.App.Options().MigrationMode
-
 	//IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gatewayDB.Setup(jobsdb.ReadWrite, options.ClearDB, "gw", gwDBRetention, migrationMode, true, jobsdb.QueryFiltersT{})
 	defer gatewayDB.TearDown()
@@ -85,6 +85,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		procErrorDB.Setup(jobsdb.ReadWrite, options.ClearDB, "proc_error", routerDBRetention, migrationMode, false, jobsdb.QueryFiltersT{})
 		defer procErrorDB.TearDown()
 	}
+	multitenantStats := multitenant.NewStats(&routerDB)
 
 	enableGateway := true
 	var reportingI types.ReportingI
@@ -97,13 +98,13 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			startProcessorFunc := func() {
 				clearDB := false
 				g.Go(misc.WithBugsnag(func() error {
-					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+					StartProcessor(ctx, &clearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 					return nil
 				}))
 			}
 			startRouterFunc := func() {
 				g.Go(misc.WithBugsnag(func() error {
-					StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+					StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 					return nil
 				}))
 			}
@@ -114,7 +115,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			embedded.App.Features().Migrator.PrepareJobsdbsForImport(&gatewayDB, &routerDB, &batchRouterDB)
 
 			g.Go(func() error {
-				embedded.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB.HandleT, &batchRouterDB.HandleT, startProcessorFunc, startRouterFunc) //TODO
+				embedded.App.Features().Migrator.Run(ctx, &gatewayDB, &routerDB.HandleT, &batchRouterDB, startProcessorFunc, startRouterFunc) //TODO
 				return nil
 			})
 		}
@@ -127,11 +128,11 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}))
 
 	g.Go(func() error {
-		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+		StartProcessor(ctx, &options.ClearDB, enableProcessor, &gatewayDB, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 		return nil
 	})
 	g.Go(func() error {
-		StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI)
+		StartRouter(ctx, enableRouter, &routerDB, &batchRouterDB, &procErrorDB, reportingI, multitenantStats)
 		return nil
 	})
 

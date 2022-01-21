@@ -201,7 +201,7 @@ func constructParameterJSONQuery(table string, parameterFilters []ParameterFilte
 	if len(opNullConditions) > 0 {
 		opQuery += fmt.Sprintf(` OR ("%s".parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
 	}
-	return fmt.Sprintf(`("%s".parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
+	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
 }
 
 //Admin Handlers
