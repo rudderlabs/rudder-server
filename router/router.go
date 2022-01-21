@@ -3,6 +3,7 @@ package router
 import (
 	"container/list"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -25,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
@@ -42,6 +42,20 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
+
+type reporter interface {
+	WaitForSetup(ctx context.Context, clientName string)
+	Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx)
+}
+
+type tenantStats interface {
+	CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool)
+	GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]float64, timeGained float64) (map[string]int, map[string]float64)
+	GenerateSuccessRateMap(destType string) (map[string]float64, map[string]float64)
+	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
+	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
+	ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string)
+}
 
 type PauseT struct {
 	respChannel   chan bool
@@ -72,7 +86,7 @@ type HandleT struct {
 	jobsDB                                 jobsdb.MultiTenantJobsDB
 	errorDB                                jobsdb.JobsDB
 	netHandle                              NetHandleI
-	multitenantI                           multitenant.MultiTenantI
+	MultitenantI                           tenantStats
 	destName                               string
 	workers                                []*workerT
 	perfStats                              *misc.PerfStats
@@ -118,8 +132,7 @@ type HandleT struct {
 	routerTimeout                          time.Duration
 	destinationResponseHandler             ResponseHandlerI
 	saveDestinationResponse                bool
-	reporting                              utilTypes.ReportingI
-	reportingEnabled                       bool
+	Reporting                              reporter
 	savePayloadOnError                     bool
 	oauth                                  oauth.Authorizer
 	transformerProxy                       bool
@@ -1438,50 +1451,48 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 		//Update metrics maps
 		//REPORTING - ROUTER - START
-		if rt.reporting != nil && rt.reportingEnabled {
-			workspaceID := rt.sourceIDWorkspaceMap[parameters.SourceID]
-			_, ok := routerCustomerJobStatusCount[workspaceID]
-			if !ok {
-				routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
+		workspaceID := rt.sourceIDWorkspaceMap[parameters.SourceID]
+		_, ok := routerCustomerJobStatusCount[workspaceID]
+		if !ok {
+			routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
+		}
+		_, ok = rt.routerCustomerJobStatusCount[workspaceID]
+		if !ok {
+			rt.routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
+		}
+		eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
+		eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
+		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
+		cd, ok := connectionDetailsMap[key]
+		if !ok {
+			cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
+			connectionDetailsMap[key] = cd
+			transformedAtMap[key] = parameters.TransformAt
+		}
+		sd, ok := statusDetailsMap[key]
+		if !ok {
+			errorCode, err := strconv.Atoi(resp.status.ErrorCode)
+			if err != nil {
+				errorCode = 200 //TODO handle properly
 			}
-			_, ok = rt.routerCustomerJobStatusCount[workspaceID]
-			if !ok {
-				rt.routerCustomerJobStatusCount[workspaceID] = make(map[string]int)
-			}
-			eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
-			eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
-			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
-			cd, ok := connectionDetailsMap[key]
-			if !ok {
-				cd = utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
-				connectionDetailsMap[key] = cd
-				transformedAtMap[key] = parameters.TransformAt
-			}
-			sd, ok := statusDetailsMap[key]
-			if !ok {
-				errorCode, err := strconv.Atoi(resp.status.ErrorCode)
-				if err != nil {
-					errorCode = 200 //TODO handle properly
-				}
-				sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload, eventName, eventType)
-				statusDetailsMap[key] = sd
-			}
-			if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 && resp.status.ErrorCode != "1113" {
+			sd = utilTypes.CreateStatusDetail(resp.status.JobState, 0, errorCode, string(resp.status.ErrorResponse), resp.JobT.EventPayload, eventName, eventType)
+			statusDetailsMap[key] = sd
+		}
+		if resp.status.JobState == jobsdb.Failed.State && resp.status.AttemptNum == 1 && resp.status.ErrorCode != "1113" {
+			sd.Count++
+		}
+		if resp.status.JobState == jobsdb.Failed.State && resp.status.ErrorCode != "1113" {
+			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, false)
+		}
+
+		if resp.status.JobState != jobsdb.Failed.State {
+			if resp.status.JobState == jobsdb.Succeeded.State || resp.status.JobState == jobsdb.Aborted.State {
+				rt.routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
+				routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
 				sd.Count++
 			}
-			if resp.status.JobState == jobsdb.Failed.State && resp.status.ErrorCode != "1113" {
-				rt.multitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, false)
-			}
-
-			if resp.status.JobState != jobsdb.Failed.State {
-				if resp.status.JobState == jobsdb.Succeeded.State || resp.status.JobState == jobsdb.Aborted.State {
-					rt.routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
-					routerCustomerJobStatusCount[workspaceID][rt.destName] += 1
-					sd.Count++
-				}
-				if resp.status.JobState == jobsdb.Succeeded.State {
-					rt.multitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
-				}
+			if resp.status.JobState == jobsdb.Succeeded.State {
+				rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
 			}
 		}
 		//REPORTING - ROUTER - END
@@ -1512,23 +1523,21 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 
 	//REPORTING - ROUTER - START
-	if rt.reporting != nil && rt.reportingEnabled {
-		utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
-		for k, cd := range connectionDetailsMap {
-			var inPu string
-			if transformedAtMap[k] == "processor" {
-				inPu = utilTypes.DEST_TRANSFORMER
-			} else {
-				inPu = utilTypes.EVENT_FILTER
-			}
-			m := &utilTypes.PUReportedMetric{
-				ConnectionDetails: *cd,
-				PUDetails:         *utilTypes.CreatePUDetails(inPu, utilTypes.ROUTER, true, false),
-				StatusDetail:      statusDetailsMap[k],
-			}
-			if m.StatusDetail.Count != 0 {
-				reportMetrics = append(reportMetrics, m)
-			}
+	utilTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+	for k, cd := range connectionDetailsMap {
+		var inPu string
+		if transformedAtMap[k] == "processor" {
+			inPu = utilTypes.DEST_TRANSFORMER
+		} else {
+			inPu = utilTypes.EVENT_FILTER
+		}
+		m := &utilTypes.PUReportedMetric{
+			ConnectionDetails: *cd,
+			PUDetails:         *utilTypes.CreatePUDetails(inPu, utilTypes.ROUTER, true, false),
+			StatusDetail:      statusDetailsMap[k],
+		}
+		if m.StatusDetail.Count != 0 {
+			reportMetrics = append(reportMetrics, m)
 		}
 	}
 	//REPORTING - ROUTER - END
@@ -1541,7 +1550,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 	for customer := range routerCustomerJobStatusCount {
 		for destType := range routerCustomerJobStatusCount[customer] {
-			rt.multitenantI.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router")
+			rt.MultitenantI.RemoveFromInMemoryCount(customer, destType, routerCustomerJobStatusCount[customer][destType], "router")
 		}
 	}
 
@@ -1567,9 +1576,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		if len(jobRunIDAbortedEventsMap) > 0 {
 			GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, txn)
 		}
-		if rt.reporting != nil && rt.reportingEnabled {
-			rt.reporting.Report(reportMetrics, txn)
-		}
+		rt.Reporting.Report(reportMetrics, txn)
 		rt.jobsDB.CommitTransaction(txn)
 		rt.jobsDB.ReleaseUpdateJobStatusLocks()
 	}
@@ -1915,8 +1922,8 @@ func (rt *HandleT) readAndProcess() int {
 
 			rt.timeGained += latenciesUsed[job.WorkspaceId]
 
-			rt.multitenantI.RemoveFromInMemoryCount(job.WorkspaceId, rt.destName, 1, "router")
-			rt.multitenantI.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
+			rt.MultitenantI.RemoveFromInMemoryCount(job.WorkspaceId, rt.destName, 1, "router")
+			rt.MultitenantI.CalculateSuccessFailureCounts(job.WorkspaceId, rt.destName, false, true)
 			continue
 		}
 		w := rt.findWorker(job, throttledAtTime)
@@ -2001,7 +2008,7 @@ func Init() {
 }
 
 //Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, reporting utilTypes.ReportingI, multitenantStat multitenant.MultiTenantI) {
+func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT) {
 
 	rt.resultSetMeta = make(map[int64]*resultSetT)
 	rt.lastResultSet = &resultSetT{}
@@ -2011,26 +2018,21 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.generatorResumeChannel = make(chan bool)
 	rt.statusLoopPauseChannel = make(chan *PauseT)
 	rt.statusLoopResumeChannel = make(chan bool)
-	rt.reporting = reporting
 	rt.routerLatencyStat = make(map[string]misc.MovingAverage)
 	//TODO : Remove this
 	rt.routerCustomerJobStatusCount = make(map[string]map[string]int)
 
-	config.RegisterBoolConfigVariable(utilTypes.DEFAULT_REPORTING_ENABLED, &rt.reportingEnabled, false, "Reporting.enabled")
 	destName := destinationDefinition.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
 
 	//waiting for reporting client setup
-	if rt.reporting != nil && rt.reportingEnabled {
-		rt.reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)
-	}
+	rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)
 
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
 	rt.destName = destName
-	rt.multitenantI = multitenantStat
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	rt.crashRecover()
