@@ -258,8 +258,8 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				}
 
 				closingBraceIdx := bytes.LastIndexByte(body, '}')
-				appendData := []byte(`, "query_parameters": ` + string(paramsBytes))
-
+				appendData := []byte(`, "query_parameters": `)
+				appendData = append(appendData, paramsBytes...)
 				body = append(body[:closingBraceIdx], appendData...)
 				body = append(body, '}')
 			}

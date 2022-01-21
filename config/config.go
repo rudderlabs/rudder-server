@@ -617,7 +617,6 @@ func GetString(key string, defaultValue string) (value string) {
 
 // GetStringSlice is wrapper for viper's GetStringSlice
 func GetStringSlice(key string, defaultValue []string) (value []string) {
-	fmt.Println("TransformKey(key)", TransformKey(key))
 	envVal := GetEnv(TransformKey(key), "")
 
 	// parsing comma separated string from env and populating a slice
