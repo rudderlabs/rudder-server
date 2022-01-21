@@ -40,7 +40,8 @@ type BackOffT struct {
 
 type MultiTenantI interface {
 	CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool)
-	GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, routerLatencyStat map[string]misc.MovingAverage, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)	GenerateSuccessRateMap(destType string) (map[string]float64, map[string]float64)
+	GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, routerLatencyStat map[string]misc.MovingAverage, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
+	GenerateSuccessRateMap(destType string) (map[string]float64, map[string]float64)
 	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	ReportProcLoopAddStats(stats map[string]map[string]int, timeTaken time.Duration, tableType string)

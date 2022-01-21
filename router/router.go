@@ -50,7 +50,7 @@ type reporter interface {
 
 type tenantStats interface {
 	CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool)
-	GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]float64, timeGained float64) (map[string]int, map[string]float64)
+	GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, routerLatencyStat map[string]misc.MovingAverage, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
 	GenerateSuccessRateMap(destType string) (map[string]float64, map[string]float64)
 	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
@@ -1848,7 +1848,7 @@ func (rt *HandleT) readAndProcess() int {
 	if rt.recentJobInResultSet == nil {
 		rt.recentJobInResultSet = make(map[string]time.Time)
 	}
-	pickupMap, latenciesUsed := rt.multitenantI.GetRouterPickupJobs(rt.destName, rt.recentJobInResultSet, rt.routerLatencyStat, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, rt.timeGained)
+	pickupMap, latenciesUsed := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.recentJobInResultSet, rt.routerLatencyStat, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, rt.timeGained)
 	rt.customerCount = pickupMap
 	rt.timeGained = 0
 
