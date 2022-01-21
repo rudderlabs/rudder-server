@@ -324,7 +324,6 @@ func GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.T
 	maxLatency := -math.MaxFloat64
 
 	//Below two loops, normalize the values and compute the score of each workspace
-	//No need for sorting latency list before calling this function.
 	for _, customerKey := range customersWithJobs {
 		if minLatency > latencyMap[customerKey].Value() {
 			minLatency = latencyMap[customerKey].Value()
