@@ -75,18 +75,18 @@ func (mr *MockMultiTenantIMockRecorder) GenerateSuccessRateMap(arg0 interface{})
 }
 
 // GetRouterPickupJobs mocks base method.
-func (m *MockMultiTenantI) GetRouterPickupJobs(arg0 string, arg1 map[string]time.Time, arg2 []string, arg3 int, arg4 time.Duration, arg5 map[string]misc.MovingAverage, arg6 int, arg7, arg8 map[string]float64, arg9 float64) (map[string]int, map[string]float64) {
+func (m *MockMultiTenantI) GetRouterPickupJobs(arg0 string, arg1 map[string]time.Time, arg2 map[string]misc.MovingAverage, arg3 int, arg4 time.Duration, arg5 map[string]misc.MovingAverage, arg6 int, arg7 float64) (map[string]int, map[string]float64) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRouterPickupJobs", arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+	ret := m.ctrl.Call(m, "GetRouterPickupJobs", arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
 	ret0, _ := ret[0].(map[string]int)
 	ret1, _ := ret[1].(map[string]float64)
 	return ret0, ret1
 }
 
 // GetRouterPickupJobs indicates an expected call of GetRouterPickupJobs.
-func (mr *MockMultiTenantIMockRecorder) GetRouterPickupJobs(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9 interface{}) *gomock.Call {
+func (mr *MockMultiTenantIMockRecorder) GetRouterPickupJobs(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouterPickupJobs", reflect.TypeOf((*MockMultiTenantI)(nil).GetRouterPickupJobs), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouterPickupJobs", reflect.TypeOf((*MockMultiTenantI)(nil).GetRouterPickupJobs), arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)
 }
 
 // RemoveFromInMemoryCount mocks base method.
