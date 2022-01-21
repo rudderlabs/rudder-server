@@ -40,7 +40,7 @@ type BackOffT struct {
 
 type MultiTenantI interface {
 	CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool)
-	GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]float64, timeGained float64) (map[string]int, map[string]float64)
+	GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, routerLatencyStat map[string]misc.MovingAverage, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
 	GenerateSuccessRateMap(destType string) (map[string]float64, map[string]float64)
 	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
@@ -283,10 +283,20 @@ type workspaceScore struct {
 	workspaceId     string
 }
 
-func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]float64, timeGained float64) (map[string]int, map[string]float64) {
+func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, routerLatencyStat map[string]misc.MovingAverage, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64) {
 	multitenantStat.routerJobCountMutex.RLock()
 	defer multitenantStat.routerJobCountMutex.RUnlock()
 
+	customersWithJobs := make([]string, 0)
+	for custKey := range routerLatencyStat {
+		destWiseMap, ok := multitenantStat.RouterInMemoryJobCounts["router"][custKey]
+		if ok {
+			val, ok := destWiseMap[destType]
+			if ok && val > 0 {
+				customersWithJobs = append(customersWithJobs, custKey)
+			}
+		}
+	}
 	//Add 30% to the time interval as exact difference leads to a catchup scenario, but this may cause to give some priority to pileup in the inrate pass
 	//boostedRouterTimeOut := 3 * time.Second //time.Duration(1.3 * float64(routerTimeOut))
 	//if boostedRouterTimeOut < time.Duration(1.3*float64(routerTimeOut)) {
@@ -303,8 +313,7 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, r
 	maxLatency := -math.MaxFloat64
 
 	//Below two loops, normalize the values and compute the score of each workspace
-	//No need for sorting latency list before calling this function.
-	for _, customerKey := range sortedLatencyList {
+	for _, customerKey := range customersWithJobs {
 		if minLatency > latencyMap[customerKey].Value() {
 			minLatency = latencyMap[customerKey].Value()
 		}
@@ -313,8 +322,8 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, r
 		}
 	}
 
-	scores := make([]workspaceScore, len(sortedLatencyList))
-	for i, customerKey := range sortedLatencyList {
+	scores := make([]workspaceScore, len(customersWithJobs))
+	for i, customerKey := range customersWithJobs {
 		scores[i] = workspaceScore{}
 		latencyScore := 0.0
 		if maxLatency-minLatency != 0 {
@@ -393,8 +402,8 @@ func (multitenantStat *MultitenantStatsT) GetRouterPickupJobs(destType string, r
 	}
 
 	//Sort by customers who can get to realtime quickly
-	scores = make([]workspaceScore, len(sortedLatencyList))
-	for i, customerKey := range sortedLatencyList {
+	scores = make([]workspaceScore, len(customersWithJobs))
+	for i, customerKey := range customersWithJobs {
 		scores[i] = workspaceScore{}
 		scores[i].workspaceId = customerKey
 

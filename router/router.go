@@ -50,7 +50,7 @@ type reporter interface {
 
 type tenantStats interface {
 	CalculateSuccessFailureCounts(customer string, destType string, isSuccess bool, isDrained bool)
-	GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, sortedLatencyList []string, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, successRateMap map[string]float64, drainedMap map[string]float64, timeGained float64) (map[string]int, map[string]float64)
+	GetRouterPickupJobs(destType string, recentJobInResultSet map[string]time.Time, routerLatencyStat map[string]misc.MovingAverage, noOfWorkers int, routerTimeOut time.Duration, latencyMap map[string]misc.MovingAverage, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
 	GenerateSuccessRateMap(destType string) (map[string]float64, map[string]float64)
 	AddToInMemoryCount(customerID string, destinationType string, count int, tableType string)
 	RemoveFromInMemoryCount(customerID string, destinationType string, count int, tableType string)
@@ -255,32 +255,33 @@ type failureMetric struct {
 }
 
 type resultSetT struct {
-	resultSetLock      sync.RWMutex
 	id                 int64
 	resultSetBeginTime time.Time
 	timeAlloted        time.Duration
 }
 
 func (rt *HandleT) initResultSet(timeAlloted time.Duration) {
-	rt.lastResultSet.resultSetLock.Lock()
-	defer rt.lastResultSet.resultSetLock.Unlock()
 	rt.lastResultSet.id++
 	rt.lastResultSet.timeAlloted = timeAlloted
 	rt.addResultSetMeta(rt.lastResultSet)
 }
 
 func (rt *HandleT) getLastResultSetID() int64 {
-	rt.lastResultSet.resultSetLock.RLock()
-	defer rt.lastResultSet.resultSetLock.RUnlock()
 	return rt.lastResultSet.id
 }
 
 func (rt *HandleT) addResultSetMeta(resultSet *resultSetT) {
 	rt.resultSetLock.Lock()
 	defer rt.resultSetLock.Unlock()
-	rt.resultSetMeta[resultSet.id] = resultSet
+
+	newResultSet := resultSetT{}
+	newResultSet.id = resultSet.id
+	newResultSet.timeAlloted = resultSet.timeAlloted
+
+	rt.resultSetMeta[resultSet.id] = &newResultSet
 
 	//Cleanup the resultSetMeta
+
 	minResultSetID := int64(math.MaxInt64)
 	for i := 0; i < rt.noOfWorkers; i++ {
 		tmpID := rt.workers[i].localResultSet.id
@@ -299,6 +300,9 @@ func (rt *HandleT) addResultSetMeta(resultSet *resultSetT) {
 			delete(rt.resultSetMeta, key)
 		}
 	}
+
+	//rt.logger.Infof("MEM LEAK DEBUG router %v Length of result set %v minResultSetId %v newResultSetID %v", rt.destName, len(rt.resultSetMeta), minResultSetID, newResultSet.id)
+
 }
 
 func (rt *HandleT) getResultSet(id int64) *resultSetT {
@@ -735,9 +739,7 @@ func (worker *workerT) handleWorkerDestinationJobs(ctx context.Context) {
 				}
 
 				//Assuming twice the overhead - defensive: 30% was just fine though
-				//if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*float64(worker.localResultSet.timeAlloted)) {
-
-				//Infact , the timeout should be more than the maximum latency allowed by these workers.
+				//And Infact , the timeout should be more than the maximum latency allowed by these workers.
 				//Assuming 10s maximum latency
 				if time.Since(worker.localResultSet.resultSetBeginTime) > time.Duration(2.0*math.Max(float64(worker.localResultSet.timeAlloted), float64(10*time.Second))) {
 					respStatusCode, respBody = types.RouterTimedOut, fmt.Sprintf(`1113 Jobs took more time than expected. Will be retried`)
@@ -1832,8 +1834,7 @@ func (rt *HandleT) readAndProcess() int {
 		//End of #JobOrder
 	}
 
-	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
-	successRateMap, drainedMap := rt.MultitenantI.GenerateSuccessRateMap(rt.destName)
+	//successRateMap, drainedMap := multitenant.GenerateSuccessRateMap(rt.destName)
 
 	timeOut := rt.routerTimeout
 
@@ -1847,7 +1848,7 @@ func (rt *HandleT) readAndProcess() int {
 	if rt.recentJobInResultSet == nil {
 		rt.recentJobInResultSet = make(map[string]time.Time)
 	}
-	pickupMap, latenciesUsed := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.recentJobInResultSet, sortedLatencyMap, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, successRateMap, drainedMap, rt.timeGained)
+	pickupMap, latenciesUsed := rt.MultitenantI.GetRouterPickupJobs(rt.destName, rt.recentJobInResultSet, rt.routerLatencyStat, rt.noOfWorkers, timeOut, rt.routerLatencyStat, jobQueryBatchSize, rt.timeGained)
 	rt.customerCount = pickupMap
 	rt.timeGained = 0
 
