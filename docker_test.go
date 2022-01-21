@@ -14,15 +14,6 @@ import (
 	_ "encoding/json"
 	"flag"
 	"fmt"
-	"github.com/gofrs/uuid"
-	redigo "github.com/gomodule/redigo/redis"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/postgres"
-	"github.com/tidwall/gjson"
 	"html/template"
 	"io"
 	"log"
@@ -38,6 +29,16 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gofrs/uuid"
+	redigo "github.com/gomodule/redigo/redis"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"github.com/tidwall/gjson"
 
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis"
@@ -109,25 +110,27 @@ type WareHouseTest struct {
 }
 
 var (
-	hold             bool = true
-	db               *sql.DB
-	redisClient      *redis.Client
-	DB_DSN           = "root@tcp(127.0.0.1:3306)/service"
-	httpPort         string
-	httpKafkaPort    string
-	dbHandle         *sql.DB
-	sourceJSON       backendconfig.ConfigT
-	webhookurl       string
-	webhook          *WebhookRecorder
-	address          string
-	runIntegration   bool
-	writeKey         string
-	workspaceID      string
-	redisAddress     string
-	brokerPort       string
-	localhostPort    string
-	localhostPortInt int
-	whTest           *WareHouseTest
+	hold                         bool = true
+	db                           *sql.DB
+	redisClient                  *redis.Client
+	DB_DSN                       = "root@tcp(127.0.0.1:3306)/service"
+	httpPort                     string
+	httpKafkaPort                string
+	dbHandle                     *sql.DB
+	sourceJSON                   backendconfig.ConfigT
+	webhookurl                   string
+	disableDestinationwebhookurl string
+	webhook                      *WebhookRecorder
+	disableDestinationwebhook    *WebhookRecorder
+	address                      string
+	runIntegration               bool
+	writeKey                     string
+	workspaceID                  string
+	redisAddress                 string
+	brokerPort                   string
+	localhostPort                string
+	localhostPortInt             int
+	whTest                       *WareHouseTest
 )
 
 type WebhookRecorder struct {
@@ -185,9 +188,15 @@ func randString(n int) string {
 }
 
 type Event struct {
-	anonymous_id string
-	user_id      string
-	count        string
+	anonymous_id       string
+	user_id            string
+	count              string
+	context_myuniqueid string
+	context_id         string
+	context_ip         string
+	prop_key           string
+	myuniqueid         string
+	ip                 string
 }
 
 type Author struct {
@@ -256,6 +265,50 @@ func blockOnHold() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
 	<-c
+}
+func GetEvent(url string, method string) (string, error) {
+	client := &http.Client{}
+	req, err := http.NewRequest(method, url, nil)
+
+	if err != nil {
+		return "", err
+	}
+	// req.Header.Add("Authorization", "Basic cnVkZGVyOnBhc3N3b3Jk")
+	res, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), err
+}
+
+func SendPixelEvents(writeKey string) {
+	// Send pixel/v1/page
+	url := fmt.Sprintf("http://localhost:%s/pixel/v1/page?writeKey=%s&anonymousId=identified_user_id", httpPort, writeKey)
+	method := "GET"
+	resBody, err := GetEvent(url, method)
+	if err != nil {
+		log.Println(err)
+		log.Println(resBody)
+		return
+
+	}
+	// Send pixel/v1/track
+	log.Println("Sending pixel/v1/track Event")
+	url = fmt.Sprintf("http://localhost:%s/pixel/v1/track?writeKey=%s&anonymousId=identified_user_id&event=product_reviewed_again", httpPort, writeKey)
+	method = "GET"
+	resBody, _ = GetEvent(url, method)
+	if err != nil {
+		log.Println(err)
+		log.Println(resBody)
+		return
+
+	}
 }
 
 func SendEvent(payload *strings.Reader, callType string, writeKey string) {
@@ -338,11 +391,12 @@ func run(m *testing.M) (int, error) {
 		log.Panic(err)
 	}
 	defer func() {
-		if network != nil {
-			log.Printf("Purging kafka network resource: %s \n", err)
-			if err := pool.Client.RemoveNetwork(network.ID); err != nil {
-				log.Printf("Could not purge kafka network resource: %s \n", err)
-			}
+		if network == nil {
+			return
+		}
+		log.Printf("Purging kafka network resource: %s \n", err)
+		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+			log.Printf("Could not purge kafka network resource: %s \n", err)
 		}
 	}()
 	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
@@ -506,7 +560,7 @@ func run(m *testing.M) (int, error) {
 		Tag:          "latest",
 		ExposedPorts: []string{"9090"},
 		Env: []string{
-			"CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com",
+			"CONFIG_BACKEND_URL=https://api.rudderlabs.com",
 		},
 	})
 	if err != nil {
@@ -533,7 +587,7 @@ func run(m *testing.M) (int, error) {
 
 	os.Setenv("WORKSPACE_TOKEN", "1vLbwltztKUgpuFxmJlSe1esX8c")
 
-	os.Setenv("CONFIG_BACKEND_URL", "https://api.dev.rudderlabs.com")
+	os.Setenv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 
 	httpPortInt, err := freeport.GetFreePort()
 	if err != nil {
@@ -552,7 +606,10 @@ func run(m *testing.M) (int, error) {
 	webhook = NewWebhook()
 	defer webhook.Close()
 	webhookurl = webhook.Server.URL
-	log.Println("webhookurl", webhookurl)
+
+	disableDestinationwebhook = NewWebhook()
+	defer disableDestinationwebhook.Close()
+	disableDestinationwebhookurl = disableDestinationwebhook.Server.URL
 
 	minioPortInt, err := freeport.GetFreePort()
 	if err != nil {
@@ -625,6 +682,7 @@ func run(m *testing.M) (int, error) {
 		"testdata/workspaceConfigTemplate.json",
 		map[string]string{
 			"webhookUrl":                          webhookurl,
+			"disableDestinationwebhookUrl":        disableDestinationwebhookurl,
 			"writeKey":                            writeKey,
 			"workspaceId":                         workspaceID,
 			"postgresPort":                        resourcePostgres.GetPort("5432/tcp"),
@@ -679,6 +737,7 @@ func run(m *testing.M) (int, error) {
 	os.Setenv("CP_ROUTER_USE_TLS", "true")
 	os.Setenv("RSERVER_WAREHOUSE_WAREHOUSE_SYNC_FREQ_IGNORE", "true")
 	os.Setenv("RSERVER_WAREHOUSE_UPLOAD_FREQ_IN_S", "10s")
+	os.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
 
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	svcDone := make(chan struct{})
@@ -718,9 +777,10 @@ func TestWebhook(t *testing.T) {
 
 	require.Empty(t, webhook.Requests(), "webhook should have no request before sending the event")
 	payload_1 := strings.NewReader(`{
-		"userId": "identified user id",
+		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
+		"type": "identify",
 		"eventOrderNo":"1",
 		"context": {
 		  "traits": {
@@ -735,9 +795,10 @@ func TestWebhook(t *testing.T) {
 	  }`)
 	SendEvent(payload_1, "identify", writeKey)
 	payload_2 := strings.NewReader(`{
-		"userId": "identified user id",
+		"userId": "identified_user_id",
 		"anonymousId":"anonymousId_1",
 		"messageId":"messageId_1",
+		"type": "identify",
 		"eventOrderNo":"2",
 		"context": {
 		  "traits": {
@@ -751,11 +812,117 @@ func TestWebhook(t *testing.T) {
 		"timestamp": "2020-02-02T00:23:09.544Z"
 	  }`)
 	SendEvent(payload_2, "identify", writeKey) //sending duplicate event to check dedup
+
+	// Sending Batch event
+	payload_Batch := strings.NewReader(`{
+		"batch":
+		[
+			{
+				"userId": "identified_user_id",
+				"anonymousId": "anonymousId_1",
+				"type": "identify",
+				"context":
+				{
+					"traits":
+					{
+						"trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library":
+					{
+						"name": "http"
+					}
+				},
+				"timestamp": "2020-02-02T00:23:09.544Z"
+			}
+		]
+	}`)
+	SendEvent(payload_Batch, "batch", writeKey)
+
+	// Sending track event
+	payload_track := strings.NewReader(`{
+		"userId": "identified_user_id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"type": "track",
+		"event": "Product Reviewed",
+		"properties": {
+		  "review_id": "12345",
+		  "product_id" : "123",
+		  "rating" : 3.0,
+		  "review_body" : "Average product, expected much more."
+		}
+	  }`)
+	SendEvent(payload_track, "track", writeKey)
+
+	// Sending page event
+	payload_page := strings.NewReader(`{
+		"userId": "identified_user_id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"type": "page",
+		"name": "Home",
+		"properties": {
+		  "title": "Home | RudderStack",
+		  "url": "http://www.rudderstack.com"
+		}
+	  }`)
+	SendEvent(payload_page, "page", writeKey)
+
+	// Sending screen event
+	payload_screen := strings.NewReader(`{
+		"userId": "identified_user_id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"type": "screen",
+		"name": "Main",
+		"properties": {
+		  "prop_key": "prop_value"
+		}
+	  }`)
+	SendEvent(payload_screen, "screen", writeKey)
+
+	// Sending alias event
+	payload_alias := strings.NewReader(`{
+		"userId": "identified_user_id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"type": "alias",
+		"previousId": "name@surname.com",
+		"userId": "12345"
+	  }`)
+	SendEvent(payload_alias, "alias", writeKey)
+
+	// Sending group event
+	payload_group := strings.NewReader(`{
+		"userId": "identified_user_id",
+		"anonymousId":"anonymousId_1",
+		"messageId":"messageId_1",
+		"type": "group",
+		"groupId": "12345",
+		"traits": {
+		  "name": "MyGroup",
+		  "industry": "IT",
+		  "employees": 450,
+		  "plan": "basic"
+		}
+	  }`)
+	SendEvent(payload_group, "group", writeKey)
+	SendPixelEvents(writeKey)
+
 	require.Eventually(t, func() bool {
-		return len(webhook.Requests()) == 2
+		return len(webhook.Requests()) == 10
+	}, time.Minute, 30*time.Millisecond)
+
+	i := -1
+	require.Eventually(t, func() bool {
+		i = i + 1
+		req := webhook.Requests()[i]
+		body, _ := io.ReadAll(req.Body)
+		return gjson.GetBytes(body, "anonymousId").Str == "anonymousId_1"
 	}, time.Minute, 10*time.Millisecond)
 
-	req := webhook.Requests()[0]
+	req := webhook.Requests()[i]
 	body, err := io.ReadAll(req.Body)
 
 	require.NoError(t, err)
@@ -767,10 +934,17 @@ func TestWebhook(t *testing.T) {
 	require.Equal(t, gjson.GetBytes(body, "anonymousId").Str, "anonymousId_1")
 	require.Equal(t, gjson.GetBytes(body, "messageId").Str, "messageId_1")
 	require.Equal(t, gjson.GetBytes(body, "eventOrderNo").Str, "1")
-	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified user id")
-	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "bcba8f05-49ff-4953-a4ee-9228d2f89f31")
+	require.Equal(t, gjson.GetBytes(body, "userId").Str, "identified_user_id")
+	require.Equal(t, gjson.GetBytes(body, "rudderId").Str, "e4cab80e-2f0e-4fa2-87e0-3a4af182634c")
 	require.Equal(t, gjson.GetBytes(body, "type").Str, "identify")
+	// Verify User Transformation
+	require.Equal(t, gjson.GetBytes(body, "myuniqueid").Str, "identified_user_idanonymousId_1")
+	require.Equal(t, gjson.GetBytes(body, "context.myuniqueid").Str, "identified_user_idanonymousId_1")
+	require.Equal(t, gjson.GetBytes(body, "context.id").Str, "0.0.0.0")
+	require.Equal(t, gjson.GetBytes(body, "context.ip").Str, "0.0.0.0")
 
+	// Verify Disabled destination doesn't receive any event.
+	require.Equal(t, 0, len(disableDestinationwebhook.Requests()))
 }
 
 // Verify Event in POSTGRES
@@ -783,7 +957,54 @@ func TestPostgres(t *testing.T) {
 	}, time.Minute, 10*time.Millisecond)
 	eventSql := "select count(*) from dev_integration_test_1.identifies"
 	db.QueryRow(eventSql).Scan(&myEvent.count)
-	require.Equal(t, myEvent.count, "1")
+	require.Equal(t, myEvent.count, "2")
+
+	// Verify User Transformation
+	eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies"
+	db.QueryRow(eventSql).Scan(&myEvent.context_myuniqueid, &myEvent.context_id, &myEvent.context_ip)
+	require.Equal(t, myEvent.context_myuniqueid, "identified_user_idanonymousId_1")
+	require.Equal(t, myEvent.context_id, "0.0.0.0")
+	require.Equal(t, myEvent.context_ip, "0.0.0.0")
+
+	require.Eventually(t, func() bool {
+		eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1"
+		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
+		return myEvent.anonymous_id == "anonymousId_1"
+	}, time.Minute, 10*time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		eventSql = "select count(*) from dev_integration_test_1.users"
+		db.QueryRow(eventSql).Scan(&myEvent.count)
+		return myEvent.count == "1"
+	}, time.Minute, 10*time.Millisecond)
+
+	// Verify User Transformation
+	eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users "
+	db.QueryRow(eventSql).Scan(&myEvent.context_myuniqueid, &myEvent.context_id, &myEvent.context_ip)
+	require.Equal(t, myEvent.context_myuniqueid, "identified_user_idanonymousId_1")
+	require.Equal(t, myEvent.context_id, "0.0.0.0")
+	require.Equal(t, myEvent.context_ip, "0.0.0.0")
+
+	require.Eventually(t, func() bool {
+		eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1"
+		db.QueryRow(eventSql).Scan(&myEvent.anonymous_id, &myEvent.user_id)
+		return myEvent.anonymous_id == "anonymousId_1"
+	}, time.Minute, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		eventSql = "select count(*) from dev_integration_test_1.screens"
+		db.QueryRow(eventSql).Scan(&myEvent.count)
+		return myEvent.count == "1"
+	}, time.Minute, 10*time.Millisecond)
+
+	// Verify User Transformation
+	require.Eventually(t, func() bool {
+		eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
+		db.QueryRow(eventSql).Scan(&myEvent.prop_key, &myEvent.myuniqueid, &myEvent.ip)
+		return myEvent.myuniqueid == "identified_user_idanonymousId_1"
+	}, time.Minute, 10*time.Millisecond)
+
+	require.Equal(t, myEvent.prop_key, "prop_value_edited")
+	require.Equal(t, myEvent.ip, "0.0.0.0")
 }
 
 // Verify Event in Redis
@@ -795,10 +1016,9 @@ func TestRedis(t *testing.T) {
 	defer conn.Close()
 	require.Eventually(t, func() bool {
 		// Similarly, get the trait1 and convert it to a string.
-		event, _ := redigo.String(conn.Do("HGET", "user:identified user id", "trait1"))
+		event, _ := redigo.String(conn.Do("HGET", "user:identified_user_id", "trait1"))
 		return event == "new-val"
 	}, time.Minute, 10*time.Millisecond)
-
 }
 
 func TestKafka(t *testing.T) {
@@ -830,16 +1050,16 @@ func TestKafka(t *testing.T) {
 	// Count how many message processed
 	msgCount := 0
 	// Get signnal for finish
-	expectedCount := 1
+	expectedCount := 10
 out:
 	for {
 		select {
 		case msg := <-consumer:
 			msgCount++
 			t.Log("Received messages", string(msg.Key), string(msg.Value))
-			require.Equal(t, "identified user id", string(msg.Key))
-			require.Contains(t, string(msg.Value), "new-val")
-			require.Contains(t, string(msg.Value), "identified user id")
+			require.Equal(t, "identified_user_id", string(msg.Key))
+			require.Contains(t, string(msg.Value), "identified_user_id")
+
 			if msgCount == expectedCount {
 				break out
 			}
@@ -878,7 +1098,6 @@ func consume(topics []string, master sarama.Consumer) (chan *sarama.ConsumerMess
 
 				case msg := <-consumer.Messages():
 					consumers <- msg
-					log.Println("Got message on topic ", topic, msg.Value)
 				}
 			}
 		}(topic, consumer)
@@ -1771,6 +1990,7 @@ func whGatewayTest(t *testing.T, wdt *WareHouseDestinationTest) {
 	gwEvents := wdt.whEventsCountMap["gateway"]
 
 	// Checking for the gateway jobs
+	t.Log("Checking for the gateway jobs")
 	require.Eventually(t, func() bool {
 		var count int64
 		jobSqlStatement := fmt.Sprintf(`select count(*) from gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids`, wdt.userId, wdt.writeKey)
@@ -1798,6 +2018,7 @@ func whGatewayTest(t *testing.T, wdt *WareHouseDestinationTest) {
 	}, time.Minute, 10*time.Millisecond)
 
 	// Checking for the gateway jobs state
+	t.Log("Checking for the gateway jobs state")
 	require.Eventually(t, func() bool {
 		var count int64
 		jobsSqlStatement := fmt.Sprintf("select count(*) from gw_job_status_1 where job_id in (%s) and job_state = 'succeeded'", strings.Join(jobIds, ","))
@@ -1883,6 +2104,3 @@ func initWHClickHouseClusterModeSetup(t *testing.T) {
 		require.Equal(t, err, nil)
 	}
 }
-
-
-// TODO: Verify in Live Evets API
