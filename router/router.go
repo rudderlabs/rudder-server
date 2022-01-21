@@ -1826,7 +1826,7 @@ func (rt *HandleT) readAndProcess() int {
 	}
 
 	sortedLatencyMap := misc.SortMap(rt.routerLatencyStat)
-	successRateMap, drainedMap := multitenant.GenerateSuccessRateMap(rt.destName)
+	successRateMap, drainedMap := rt.multitenantI.GenerateSuccessRateMap(rt.destName)
 
 	timeOut := rt.routerTimeout
 
@@ -1845,7 +1845,6 @@ func (rt *HandleT) readAndProcess() int {
 	rt.timeGained = 0
 
 	combinedList := rt.jobsDB.GetAllJobs(rt.customerCount, jobsdb.GetQueryParamsT{CustomValFilters: []string{rt.destName}})
-	rt.earliestJobMap = make(map[string]time.Time)
 
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
