@@ -1,0 +1,3 @@
+{{range .Datasets}}
+    ALTER TABLE {{$.Prefix}}_jobs_{{.}} DROP COLUMN workspace_id;
+{{end}}
