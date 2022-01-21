@@ -640,6 +640,13 @@ func GetEnv(key string, defaultVal string) string {
 	return defaultVal
 }
 
+func MustGetEnv(key string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	panic(fmt.Sprintf("environment variable not found: %q", key))
+}
+
 // GetEnvAsInt returns the int value of environment value stored in the key variable
 // If not set, default value will be return. If set but unparsable, returns 0
 func GetEnvAsInt(key string, defaultVal int) int {

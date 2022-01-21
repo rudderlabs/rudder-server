@@ -599,7 +599,9 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	return misc.Contains(enabledWriteKeysSourceMap, writeKey)
+
+	_, ok := enabledWriteKeysSourceMap[writeKey]
+	return ok
 }
 
 func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {
@@ -664,7 +666,7 @@ func (gateway *HandleT) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 	}
 
 	start := time.Now()
-	defer gateway.bodyReadTimeStat.SendTiming(time.Since(start))
+	defer gateway.bodyReadTimeStat.Since(start)
 
 	payload, err := io.ReadAll(r.Body)
 	r.Body.Close()
@@ -1033,7 +1035,7 @@ func (rrh *RegularRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respo
 	start := time.Now()
 	gateway.addToWebRequestQ(w, r, done, reqType, payload, writeKey)
 	gateway.addToWebRequestQWaitTime.SendTiming(time.Since(start))
-	defer gateway.ProcessRequestTime.SendTiming(time.Since(start))
+	defer gateway.ProcessRequestTime.Since(start)
 	errorMessage := <-done
 	return errorMessage
 }
@@ -1088,6 +1090,10 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 }
 
 func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
+	webReqHandlerTime := gateway.stats.NewTaggedStat("gateway.web_req_handler_time", stats.TimerType, stats.Tags{"reqType": reqType})
+	webReqHandlerStartTime := time.Now()
+	defer webReqHandlerTime.Since(webReqHandlerStartTime)
+
 	gateway.logger.LogRequest(r)
 	atomic.AddUint64(&gateway.recvCount, 1)
 	var errorMessage string
@@ -1109,7 +1115,11 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 		return
 	}
 	gateway.logger.Debug(fmt.Sprintf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok)))
+
+	httpWriteTime := gateway.stats.NewTaggedStat("gateway.http_write_time", stats.TimerType, stats.Tags{"reqType": reqType})
+	httpWriteStartTime := time.Now()
 	w.Write([]byte(response.GetStatus(response.Ok)))
+	httpWriteTime.Since(httpWriteStartTime)
 }
 
 func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {

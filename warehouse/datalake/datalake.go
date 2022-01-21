@@ -1,4 +1,4 @@
-package s3datalake
+package datalake
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	schemarepository "github.com/rudderlabs/rudder-server/warehouse/s3-datalake/schema-repository"
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/datalake/schema-repository"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -15,7 +15,7 @@ var (
 )
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("s3-datalake")
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("datalake")
 }
 
 type HandleT struct {
@@ -58,12 +58,12 @@ func (wh *HandleT) AlterColumn(tableName string, columnName string, columnType s
 }
 
 func (wh *HandleT) LoadTable(tableName string) error {
-	pkgLogger.Infof("Skipping load for table %s : %s is a s3 datalake destination", tableName, wh.Warehouse.Destination.ID)
+	pkgLogger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, wh.Warehouse.Destination.ID)
 	return nil
 }
 
 func (wh *HandleT) LoadUserTables() map[string]error {
-	pkgLogger.Infof("Skipping load for user tables : %s is a s3 datalake destination", wh.Warehouse.Destination.ID)
+	pkgLogger.Infof("Skipping load for user tables : %s is a datalake destination", wh.Warehouse.Destination.ID)
 	// return map with nil error entries for identifies and users(if any) tables
 	// this is so that they are marked as succeeded
 	errorMap := map[string]error{warehouseutils.IdentifiesTable: nil}
@@ -74,12 +74,12 @@ func (wh *HandleT) LoadUserTables() map[string]error {
 }
 
 func (wh *HandleT) LoadIdentityMergeRulesTable() error {
-	pkgLogger.Infof("Skipping load for identity merge rules : %s is a s3 datalake destination", wh.Warehouse.Destination.ID)
+	pkgLogger.Infof("Skipping load for identity merge rules : %s is a datalake destination", wh.Warehouse.Destination.ID)
 	return nil
 }
 
 func (wh *HandleT) LoadIdentityMappingsTable() error {
-	pkgLogger.Infof("Skipping load for identity mappings : %s is a s3 datalake destination", wh.Warehouse.Destination.ID)
+	pkgLogger.Infof("Skipping load for identity mappings : %s is a datalake destination", wh.Warehouse.Destination.ID)
 	return nil
 }
 
@@ -91,11 +91,11 @@ func (wh *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error) {
 }
 
 func (wh *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) error {
-	return fmt.Errorf("s3_datalake err :not implemented")
+	return fmt.Errorf("datalake err :not implemented")
 }
 
 func (wh *HandleT) DownloadIdentityRules(*misc.GZipWriter) error {
-	return fmt.Errorf("s3_datalake err :not implemented")
+	return fmt.Errorf("datalake err :not implemented")
 }
 
 func (wh *HandleT) GetTotalCountInTable(tableName string) (int64, error) {
@@ -103,5 +103,5 @@ func (wh *HandleT) GetTotalCountInTable(tableName string) (int64, error) {
 }
 
 func (wh *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
-	return client.Client{}, fmt.Errorf("s3_datalake err :not implemented")
+	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }
