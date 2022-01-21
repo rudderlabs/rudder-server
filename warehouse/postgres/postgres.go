@@ -141,9 +141,9 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 		cred.Port,
 		cred.DBName,
 		cred.SSLMode)
-	// if cred.sslMode == verifyCA {
-	// 	url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.sslParams.getFolderName())
-	// }
+	if cred.SSLMode == verifyCA {
+		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.sslParams.getFolderName())
+	}
 
 	var err error
 	var db *sql.DB
